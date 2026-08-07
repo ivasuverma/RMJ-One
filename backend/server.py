@@ -75,7 +75,7 @@ async def get_current(authorization: str = Header(default='')) -> dict:
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail='Invalid token')
     role = payload.get('role')
-    if role == 'owner':
+    if role in ('owner', 'admin', 'accountant'):
         u = await db.users.find_one({'id': payload.get('sub')}, {'_id': 0, 'password_hash': 0})
     else:
         u = await db.employees.find_one({'id': payload.get('sub')}, {'_id': 0, 'pin_hash': 0})
@@ -88,6 +88,27 @@ async def get_current(authorization: str = Header(default='')) -> dict:
 def require_owner(user=Depends(get_current)):
     if user.get('role') != 'owner':
         raise HTTPException(status_code=403, detail='Owner access required')
+    return user
+
+
+def require_admin(user=Depends(get_current)):
+    """Owner or admin — for employee management, corrections, leaves."""
+    if user.get('role') not in ('owner', 'admin'):
+        raise HTTPException(status_code=403, detail='Admin access required')
+    return user
+
+
+def require_staff(user=Depends(get_current)):
+    """Owner, admin, or accountant."""
+    if user.get('role') not in ('owner', 'admin', 'accountant'):
+        raise HTTPException(status_code=403, detail='Staff access required')
+    return user
+
+
+def require_payroll_writer(user=Depends(get_current)):
+    """Owner or accountant."""
+    if user.get('role') not in ('owner', 'accountant'):
+        raise HTTPException(status_code=403, detail='Payroll access required')
     return user
 
 
@@ -166,6 +187,55 @@ class DecisionIn(BaseModel):
     note: Optional[str] = ''
 
 
+# ---- M2B additions ----
+class UserCreateIn(BaseModel):
+    username: str
+    name: str
+    password: str
+    role: Literal['admin', 'accountant']
+
+
+class UserUpdateIn(BaseModel):
+    name: Optional[str] = None
+    password: Optional[str] = None
+    role: Optional[Literal['admin', 'accountant']] = None
+
+
+class ShiftIn(BaseModel):
+    name: str
+    start: str  # HH:MM
+    end: str    # HH:MM
+    grace_min: int = 15
+    is_active: bool = True
+
+
+class HolidayIn(BaseModel):
+    date: str  # YYYY-MM-DD
+    name: str
+    type: Literal['public', 'festival', 'store_closed'] = 'public'
+
+
+class LedgerEntryIn(BaseModel):
+    employee_id: str
+    entry_type: Literal['advance', 'bonus', 'fine', 'deduction', 'other']
+    amount: float
+    date: Optional[str] = None
+    note: Optional[str] = ''
+
+
+class PayrollGenerateIn(BaseModel):
+    month: int  # 1-12
+    year: int
+
+
+class PayrollAdjustIn(BaseModel):
+    bonus: Optional[float] = 0
+    fine: Optional[float] = 0
+    manual_deduction: Optional[float] = 0
+    note: Optional[str] = ''
+    paid: Optional[bool] = None
+
+
 # ---------------- Seed ----------------
 async def seed():
     await db.users.create_index('username', unique=True)
@@ -181,6 +251,40 @@ async def seed():
             'created_at': now_utc().isoformat(),
         })
         logger.info('Seeded owner user: owner / Owner@123')
+
+    # Seed demo admin + accountant
+    if not await db.users.find_one({'username': 'admin'}):
+        await db.users.insert_one({
+            'id': str(uuid.uuid4()), 'username': 'admin', 'name': 'Store Admin',
+            'role': 'admin', 'password_hash': hash_secret('Admin@123'),
+            'created_at': now_utc().isoformat(),
+        })
+        logger.info('Seeded admin user: admin / Admin@123')
+    if not await db.users.find_one({'username': 'accountant'}):
+        await db.users.insert_one({
+            'id': str(uuid.uuid4()), 'username': 'accountant', 'name': 'Store Accountant',
+            'role': 'accountant', 'password_hash': hash_secret('Accountant@123'),
+            'created_at': now_utc().isoformat(),
+        })
+        logger.info('Seeded accountant user: accountant / Accountant@123')
+
+    if await db.shifts.count_documents({}) == 0:
+        await db.shifts.insert_many([
+            {'id': str(uuid.uuid4()), 'name': 'General', 'start': '10:00', 'end': '19:30', 'grace_min': 15, 'is_active': True, 'created_at': now_utc().isoformat()},
+            {'id': str(uuid.uuid4()), 'name': 'Morning', 'start': '08:00', 'end': '16:00', 'grace_min': 10, 'is_active': True, 'created_at': now_utc().isoformat()},
+            {'id': str(uuid.uuid4()), 'name': 'Night', 'start': '20:00', 'end': '05:00', 'grace_min': 15, 'is_active': True, 'created_at': now_utc().isoformat()},
+        ])
+
+    if await db.holidays.count_documents({}) == 0:
+        yr = date.today().year
+        await db.holidays.insert_one({
+            'id': str(uuid.uuid4()), 'date': f'{yr}-01-26', 'name': 'Republic Day',
+            'type': 'public', 'created_at': now_utc().isoformat(),
+        })
+        await db.holidays.insert_one({
+            'id': str(uuid.uuid4()), 'date': f'{yr}-08-15', 'name': 'Independence Day',
+            'type': 'public', 'created_at': now_utc().isoformat(),
+        })
 
     if not await db.settings.find_one({'id': 'store'}):
         await db.settings.insert_one({
@@ -259,10 +363,10 @@ async def login(body: LoginIn):
     user = await db.users.find_one({'username': body.username.strip().lower()})
     if not user or not verify_secret(body.password, user.get('password_hash', '')):
         raise HTTPException(status_code=401, detail='Invalid username or password')
-    tok = create_token({'sub': user['id'], 'role': 'owner', 'username': user['username']})
+    tok = create_token({'sub': user['id'], 'role': user.get('role', 'owner'), 'username': user['username']})
     return {
         'access_token': tok, 'token_type': 'bearer',
-        'user': {'id': user['id'], 'username': user['username'], 'name': user['name'], 'role': 'owner'},
+        'user': {'id': user['id'], 'username': user['username'], 'name': user['name'], 'role': user.get('role', 'owner')},
     }
 
 
@@ -287,8 +391,8 @@ async def employee_login(body: EmployeeLoginIn):
 
 @api.get('/auth/me')
 async def me(user=Depends(get_current)):
-    if user['role'] == 'owner':
-        return {'id': user['id'], 'username': user['username'], 'name': user['name'], 'role': 'owner'}
+    if user['role'] in ('owner', 'admin', 'accountant'):
+        return {'id': user['id'], 'username': user['username'], 'name': user['name'], 'role': user['role']}
     return {
         'id': user['id'], 'username': user['employee_code'], 'name': user['name'], 'role': 'employee',
         'employee_code': user['employee_code'], 'designation': user.get('designation'),
@@ -327,7 +431,7 @@ async def get_employee(emp_id: str, _: dict = Depends(get_current)):
 
 
 @api.post('/employees')
-async def create_employee(body: EmployeeIn, _: dict = Depends(require_owner)):
+async def create_employee(body: EmployeeIn, _: dict = Depends(require_admin)):
     iso = now_utc().isoformat()
     eid = str(uuid.uuid4())
     data = body.model_dump()
@@ -352,7 +456,7 @@ async def create_employee(body: EmployeeIn, _: dict = Depends(require_owner)):
 
 
 @api.put('/employees/{emp_id}')
-async def update_employee(emp_id: str, body: EmployeeIn, _: dict = Depends(require_owner)):
+async def update_employee(emp_id: str, body: EmployeeIn, _: dict = Depends(require_admin)):
     iso = now_utc().isoformat()
     existing = await db.employees.find_one({'id': emp_id}, {'_id': 0})
     if not existing: raise HTTPException(status_code=404, detail='Employee not found')
@@ -513,7 +617,7 @@ async def my_today(user=Depends(require_employee)):
 
 
 @api.get('/attendance/today')
-async def attendance_today(_: dict = Depends(require_owner)):
+async def attendance_today(_: dict = Depends(require_staff)):
     d = today_str()
     employees = await db.employees.find({}, {'_id': 0, 'pin_hash': 0, 'photo': 0}).sort('name', 1).to_list(1000)
     att_map = {}
@@ -545,7 +649,7 @@ async def attendance_today(_: dict = Depends(require_owner)):
 
 
 @api.get('/attendance/live')
-async def attendance_live(_: dict = Depends(require_owner)):
+async def attendance_live(_: dict = Depends(require_staff)):
     events = await db.attendance_events.find({}, {'_id': 0}).sort('created_at', -1).limit(30).to_list(30)
     return events
 
@@ -577,7 +681,7 @@ async def list_corrections(
 
 
 @api.post('/attendance/corrections/{cid}/decide')
-async def decide_correction(cid: str, body: DecisionIn, user=Depends(require_owner)):
+async def decide_correction(cid: str, body: DecisionIn, user=Depends(require_admin)):
     r = await db.corrections.find_one({'id': cid}, {'_id': 0})
     if not r: raise HTTPException(status_code=404, detail='Correction not found')
     if r['status'] != 'pending': raise HTTPException(status_code=400, detail='Already decided')
@@ -625,7 +729,7 @@ async def list_leaves(
 
 
 @api.post('/leaves/{lid}/decide')
-async def decide_leave(lid: str, body: DecisionIn, user=Depends(require_owner)):
+async def decide_leave(lid: str, body: DecisionIn, user=Depends(require_admin)):
     l = await db.leaves.find_one({'id': lid}, {'_id': 0})
     if not l: raise HTTPException(status_code=404, detail='Leave not found')
     if l['status'] != 'pending': raise HTTPException(status_code=400, detail='Already decided')
@@ -694,6 +798,422 @@ async def dashboard(_: dict = Depends(get_current)):
             'bonuses': bonus_total,
         },
     }
+
+
+# ---------------- Users (Admin/Accountant) ----------------
+@api.get('/users')
+async def list_users(_: dict = Depends(require_owner)):
+    return await db.users.find({}, {'_id': 0, 'password_hash': 0}).sort('created_at', 1).to_list(200)
+
+
+@api.post('/users')
+async def create_user(body: UserCreateIn, _: dict = Depends(require_owner)):
+    uname = body.username.strip().lower()
+    if await db.users.find_one({'username': uname}):
+        raise HTTPException(status_code=400, detail='Username already exists')
+    uid = str(uuid.uuid4())
+    doc = {
+        'id': uid, 'username': uname, 'name': body.name.strip(), 'role': body.role,
+        'password_hash': hash_secret(body.password), 'created_at': now_utc().isoformat(),
+    }
+    await db.users.insert_one(dict(doc))
+    return {k: v for k, v in doc.items() if k not in ('_id', 'password_hash')}
+
+
+@api.put('/users/{uid}')
+async def update_user(uid: str, body: UserUpdateIn, _: dict = Depends(require_owner)):
+    u = await db.users.find_one({'id': uid}, {'_id': 0})
+    if not u: raise HTTPException(status_code=404, detail='User not found')
+    if u.get('role') == 'owner': raise HTTPException(status_code=400, detail='Cannot modify the owner')
+    upd: dict = {}
+    if body.name: upd['name'] = body.name.strip()
+    if body.password: upd['password_hash'] = hash_secret(body.password)
+    if body.role: upd['role'] = body.role
+    if upd: await db.users.update_one({'id': uid}, {'$set': upd})
+    return await db.users.find_one({'id': uid}, {'_id': 0, 'password_hash': 0})
+
+
+@api.delete('/users/{uid}')
+async def delete_user(uid: str, _: dict = Depends(require_owner)):
+    u = await db.users.find_one({'id': uid}, {'_id': 0})
+    if not u: raise HTTPException(status_code=404, detail='User not found')
+    if u.get('role') == 'owner': raise HTTPException(status_code=400, detail='Cannot delete the owner')
+    await db.users.delete_one({'id': uid})
+    return {'ok': True}
+
+
+# ---------------- Shifts ----------------
+@api.get('/shifts')
+async def list_shifts(_: dict = Depends(get_current)):
+    return await db.shifts.find({}, {'_id': 0}).sort('start', 1).to_list(50)
+
+
+@api.post('/shifts')
+async def create_shift(body: ShiftIn, _: dict = Depends(require_owner)):
+    doc = {'id': str(uuid.uuid4()), **body.model_dump(), 'created_at': now_utc().isoformat()}
+    await db.shifts.insert_one(dict(doc))
+    return {k: v for k, v in doc.items() if k != '_id'}
+
+
+@api.put('/shifts/{sid}')
+async def update_shift(sid: str, body: ShiftIn, _: dict = Depends(require_owner)):
+    if not await db.shifts.find_one({'id': sid}):
+        raise HTTPException(status_code=404, detail='Shift not found')
+    await db.shifts.update_one({'id': sid}, {'$set': body.model_dump()})
+    return await db.shifts.find_one({'id': sid}, {'_id': 0})
+
+
+@api.delete('/shifts/{sid}')
+async def delete_shift(sid: str, _: dict = Depends(require_owner)):
+    r = await db.shifts.delete_one({'id': sid})
+    if r.deleted_count == 0: raise HTTPException(status_code=404, detail='Shift not found')
+    return {'ok': True}
+
+
+# ---------------- Holidays ----------------
+@api.get('/holidays')
+async def list_holidays(_: dict = Depends(get_current)):
+    return await db.holidays.find({}, {'_id': 0}).sort('date', 1).to_list(500)
+
+
+@api.post('/holidays')
+async def create_holiday(body: HolidayIn, _: dict = Depends(require_owner)):
+    doc = {'id': str(uuid.uuid4()), **body.model_dump(), 'created_at': now_utc().isoformat()}
+    await db.holidays.insert_one(dict(doc))
+    return {k: v for k, v in doc.items() if k != '_id'}
+
+
+@api.delete('/holidays/{hid}')
+async def delete_holiday(hid: str, _: dict = Depends(require_owner)):
+    r = await db.holidays.delete_one({'id': hid})
+    if r.deleted_count == 0: raise HTTPException(status_code=404, detail='Holiday not found')
+    return {'ok': True}
+
+
+# ---------------- Ledger ----------------
+def _ledger_sign(entry_type: str) -> int:
+    # Positive = employer pays / employee receives; Negative = deductions.
+    return -1 if entry_type in ('advance', 'fine', 'deduction') else 1
+
+
+@api.post('/ledger/entries')
+async def add_ledger_entry(body: LedgerEntryIn, user=Depends(require_staff)):
+    emp = await db.employees.find_one({'id': body.employee_id}, {'_id': 0})
+    if not emp: raise HTTPException(status_code=404, detail='Employee not found')
+    iso = now_utc().isoformat()
+    when = body.date or iso
+    # Timeline event doubles as ledger entry.
+    title_map = {'advance': 'Salary Advance', 'bonus': 'Bonus', 'fine': 'Fine',
+                 'deduction': 'Deduction', 'other': 'Other'}
+    doc = {
+        'id': str(uuid.uuid4()), 'employee_id': body.employee_id, 'type': body.entry_type,
+        'title': title_map.get(body.entry_type, 'Ledger Entry'),
+        'description': body.note or '', 'amount': float(body.amount),
+        'sign': _ledger_sign(body.entry_type), 'created_at': when, 'added_by': user['name'],
+    }
+    await db.timeline.insert_one(dict(doc))
+    return {k: v for k, v in doc.items() if k != '_id'}
+
+
+@api.get('/ledger/{emp_id}')
+async def get_ledger(emp_id: str, _: dict = Depends(require_staff)):
+    if not await db.employees.find_one({'id': emp_id}):
+        raise HTTPException(status_code=404, detail='Employee not found')
+    events = await db.timeline.find({'employee_id': emp_id}, {'_id': 0}).sort('created_at', 1).to_list(2000)
+    running = 0.0
+    entries = []
+    for e in events:
+        amount = float(e.get('amount') or 0)
+        sign = e.get('sign', _ledger_sign(e.get('type', 'other')))
+        # Only monetary events affect balance
+        if e.get('type') in ('advance', 'bonus', 'fine', 'deduction', 'salary'):
+            delta = sign * abs(amount) if e.get('type') != 'salary' else amount
+            running += delta
+            entries.append({**e, 'delta': delta, 'balance': round(running, 2)})
+        else:
+            entries.append({**e, 'delta': 0, 'balance': round(running, 2)})
+    # Newest first for display
+    entries.sort(key=lambda x: x.get('created_at') or '', reverse=True)
+    return {'entries': entries, 'closing_balance': round(running, 2)}
+
+
+# ---------------- Payroll ----------------
+def _month_bounds(year: int, month: int) -> tuple:
+    from calendar import monthrange
+    start = f"{year:04d}-{month:02d}-01"
+    last_day = monthrange(year, month)[1]
+    end = f"{year:04d}-{month:02d}-{last_day:02d}"
+    return start, end, last_day
+
+
+async def _compute_payroll(year: int, month: int) -> list:
+    start, end, total_days = _month_bounds(year, month)
+    # Attendance in month
+    att_by_emp: dict = {}
+    async for a in db.attendance.find({'date': {'$gte': start, '$lte': end}}, {'_id': 0, 'check_in.selfie': 0, 'check_out.selfie': 0}):
+        att_by_emp.setdefault(a['employee_id'], []).append(a)
+    # Approved leaves in month
+    leaves_by_emp: dict = {}
+    async for l in db.leaves.find({'status': 'approved'}, {'_id': 0}):
+        if l['from_date'] <= end and l['to_date'] >= start:
+            leaves_by_emp.setdefault(l['employee_id'], []).append(l)
+    # Holidays in month
+    holidays = set()
+    async for h in db.holidays.find({'date': {'$gte': start, '$lte': end}}, {'_id': 0, 'date': 1}):
+        holidays.add(h['date'])
+    # Ledger entries in month (advance/bonus/fine/deduction)
+    ledger_by_emp: dict = {}
+    async for t in db.timeline.find(
+        {'type': {'$in': ['advance', 'bonus', 'fine', 'deduction']}, 'created_at': {'$gte': start, '$lte': f'{end}T23:59:59'}},
+        {'_id': 0},
+    ):
+        ledger_by_emp.setdefault(t['employee_id'], []).append(t)
+
+    rows = []
+    async for e in db.employees.find({}, {'_id': 0, 'pin_hash': 0}):
+        atts = att_by_emp.get(e['id'], [])
+        present = sum(1 for a in atts if a.get('status') == 'present')
+        half = sum(1 for a in atts if a.get('status') == 'half_day')
+        # Sunday work
+        sunday_work = 0
+        for a in atts:
+            if a.get('check_in') and a.get('date'):
+                try:
+                    d = date.fromisoformat(a['date'])
+                    if d.weekday() == 6: sunday_work += 1
+                except Exception: pass
+
+        # Approved leaves count of days in month
+        leave_days = 0
+        for l in leaves_by_emp.get(e['id'], []):
+            try:
+                fd = max(date.fromisoformat(l['from_date']), date.fromisoformat(start))
+                td = min(date.fromisoformat(l['to_date']), date.fromisoformat(end))
+                if td >= fd:
+                    leave_days += (td - fd).days + 1
+            except Exception: pass
+
+        base = float(e.get('salary') or 0)
+        per_day = base / total_days if total_days > 0 else 0
+        # Effective days paid: present + 0.5*half + sunday_work extra + paid_leaves (all leave types counted as paid for now)
+        effective = present + 0.5 * half + sunday_work + leave_days
+        # Cap at total_days (except sunday_work is bonus)
+        earned = round(per_day * min(effective, total_days), 2)
+
+        # Ledger tallies in month
+        month_advance = 0.0
+        month_bonus = 0.0
+        month_fine = 0.0
+        month_deduction = 0.0
+        for t in ledger_by_emp.get(e['id'], []):
+            amt = float(t.get('amount') or 0)
+            if t['type'] == 'advance': month_advance += amt
+            elif t['type'] == 'bonus': month_bonus += amt
+            elif t['type'] == 'fine': month_fine += amt
+            elif t['type'] == 'deduction': month_deduction += amt
+
+        net = round(earned + month_bonus - month_advance - month_fine - month_deduction, 2)
+        rows.append({
+            'employee_id': e['id'], 'employee_code': e.get('employee_code'), 'name': e['name'],
+            'designation': e.get('designation'), 'department': e.get('department'),
+            'base_salary': base, 'present_days': present, 'half_days': half,
+            'sunday_work': sunday_work, 'leave_days': leave_days,
+            'total_days': total_days, 'effective_days': round(min(effective, total_days), 2),
+            'earned': earned, 'advance': round(month_advance, 2), 'bonus': round(month_bonus, 2),
+            'fine': round(month_fine, 2), 'manual_deduction': round(month_deduction, 2),
+            'net_salary': net,
+        })
+    return rows
+
+
+@api.post('/payroll/compute')
+async def payroll_compute(body: PayrollGenerateIn, _: dict = Depends(require_payroll_writer)):
+    rows = await _compute_payroll(body.year, body.month)
+    lock = await db.payroll_locks.find_one({'year': body.year, 'month': body.month}, {'_id': 0})
+    return {
+        'year': body.year, 'month': body.month, 'rows': rows,
+        'total_net': round(sum(r['net_salary'] for r in rows), 2),
+        'locked': bool(lock and lock.get('locked')),
+        'generated_at': lock.get('generated_at') if lock else None,
+    }
+
+
+@api.post('/payroll/save')
+async def payroll_save(body: PayrollGenerateIn, user=Depends(require_payroll_writer)):
+    existing = await db.payroll_locks.find_one({'year': body.year, 'month': body.month}, {'_id': 0})
+    if existing and existing.get('locked'):
+        raise HTTPException(status_code=400, detail='Payroll is locked for this month')
+    rows = await _compute_payroll(body.year, body.month)
+    iso = now_utc().isoformat()
+    await db.payroll_entries.delete_many({'year': body.year, 'month': body.month})
+    for r in rows:
+        await db.payroll_entries.insert_one({
+            'id': str(uuid.uuid4()), 'year': body.year, 'month': body.month,
+            **r, 'paid': False, 'generated_at': iso, 'generated_by': user['name'],
+        })
+    await db.payroll_locks.update_one(
+        {'year': body.year, 'month': body.month},
+        {'$set': {'year': body.year, 'month': body.month, 'locked': False,
+                  'generated_at': iso, 'generated_by': user['name']}},
+        upsert=True,
+    )
+    return {'ok': True, 'entries': len(rows)}
+
+
+@api.get('/payroll/{year}/{month}')
+async def payroll_get(year: int, month: int, _: dict = Depends(require_staff)):
+    rows = await db.payroll_entries.find({'year': year, 'month': month}, {'_id': 0}).sort('name', 1).to_list(1000)
+    lock = await db.payroll_locks.find_one({'year': year, 'month': month}, {'_id': 0})
+    if not rows:
+        # Compute preview (not persisted)
+        computed = await _compute_payroll(year, month)
+        return {'year': year, 'month': month, 'rows': computed, 'saved': False,
+                'locked': False, 'total_net': round(sum(r['net_salary'] for r in computed), 2)}
+    return {
+        'year': year, 'month': month, 'rows': rows, 'saved': True,
+        'locked': bool(lock and lock.get('locked')),
+        'total_net': round(sum(float(r.get('net_salary') or 0) for r in rows), 2),
+    }
+
+
+@api.post('/payroll/{year}/{month}/lock')
+async def payroll_lock(year: int, month: int, user=Depends(require_payroll_writer)):
+    lock = await db.payroll_locks.find_one({'year': year, 'month': month}, {'_id': 0})
+    if not lock: raise HTTPException(status_code=400, detail='Save payroll before locking')
+    await db.payroll_locks.update_one(
+        {'year': year, 'month': month},
+        {'$set': {'locked': True, 'locked_by': user['name'], 'locked_at': now_utc().isoformat()}},
+    )
+    return {'ok': True}
+
+
+@api.post('/payroll/{year}/{month}/unlock')
+async def payroll_unlock(year: int, month: int, _: dict = Depends(require_owner)):
+    await db.payroll_locks.update_one({'year': year, 'month': month},
+                                       {'$set': {'locked': False}})
+    return {'ok': True}
+
+
+@api.post('/payroll/entry/{entry_id}/pay')
+async def payroll_mark_paid(entry_id: str, user=Depends(require_payroll_writer)):
+    entry = await db.payroll_entries.find_one({'id': entry_id}, {'_id': 0})
+    if not entry: raise HTTPException(status_code=404, detail='Entry not found')
+    if entry.get('paid'): return entry
+    iso = now_utc().isoformat()
+    await db.payroll_entries.update_one({'id': entry_id}, {'$set': {'paid': True, 'paid_at': iso, 'paid_by': user['name']}})
+    # Add salary event to timeline
+    await db.timeline.insert_one({
+        'id': str(uuid.uuid4()), 'employee_id': entry['employee_id'], 'type': 'salary',
+        'title': f"Salary {entry['year']}-{entry['month']:02d}",
+        'description': f"Net paid ₹{entry['net_salary']:.0f}", 'amount': float(entry['net_salary']),
+        'sign': 1, 'created_at': iso,
+    })
+    return await db.payroll_entries.find_one({'id': entry_id}, {'_id': 0})
+
+
+@api.get('/payroll/entry/{entry_id}/pdf')
+async def payroll_pdf(entry_id: str, _: dict = Depends(require_staff)):
+    from io import BytesIO
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors as rlcolors
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import mm
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    from starlette.responses import Response as StarletteResponse
+
+    entry = await db.payroll_entries.find_one({'id': entry_id}, {'_id': 0})
+    if not entry: raise HTTPException(status_code=404, detail='Entry not found')
+    store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
+    emp = await db.employees.find_one({'id': entry['employee_id']}, {'_id': 0, 'pin_hash': 0}) or {}
+
+    buf = BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=18*mm, rightMargin=18*mm, topMargin=18*mm, bottomMargin=18*mm)
+    styles = getSampleStyleSheet()
+    gold = rlcolors.HexColor('#D4AF37')
+    dark = rlcolors.HexColor('#0D0D0D')
+    title_style = ParagraphStyle('t', parent=styles['Title'], textColor=dark, fontSize=22)
+    sub_style = ParagraphStyle('s', parent=styles['Normal'], textColor=rlcolors.HexColor('#555'), fontSize=10)
+    label_style = ParagraphStyle('lbl', parent=styles['Normal'], fontSize=9, textColor=rlcolors.HexColor('#666'))
+    val_style = ParagraphStyle('v', parent=styles['Normal'], fontSize=11, textColor=dark)
+
+    elements = []
+    elements.append(Paragraph(store.get('name', 'Ram Murti Jewellers'), title_style))
+    elements.append(Paragraph('Salary Receipt', sub_style))
+    elements.append(Spacer(1, 6*mm))
+
+    period = f"{entry['year']}-{entry['month']:02d}"
+    header_data = [
+        ['Employee', emp.get('name', '—'), 'Code', emp.get('employee_code', '—')],
+        ['Designation', emp.get('designation', '—'), 'Department', emp.get('department', '—')],
+        ['Period', period, 'Base Salary', f"₹{entry['base_salary']:.0f}"],
+    ]
+    t1 = Table(header_data, colWidths=[28*mm, 60*mm, 28*mm, 60*mm])
+    t1.setStyle(TableStyle([
+        ('FONT', (0,0), (-1,-1), 'Helvetica', 10),
+        ('TEXTCOLOR', (0,0), (0,-1), rlcolors.HexColor('#888')),
+        ('TEXTCOLOR', (2,0), (2,-1), rlcolors.HexColor('#888')),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 6),
+        ('LINEBELOW', (0,0), (-1,-1), 0.25, rlcolors.HexColor('#eee')),
+    ]))
+    elements.append(t1)
+    elements.append(Spacer(1, 6*mm))
+
+    body_data = [
+        ['Days worked', f"{entry['present_days']}"],
+        ['Half days', f"{entry['half_days']}"],
+        ['Sunday work', f"{entry['sunday_work']}"],
+        ['Leave days', f"{entry['leave_days']}"],
+        ['Effective days', f"{entry['effective_days']} / {entry['total_days']}"],
+        ['Earned', f"₹{entry['earned']:.0f}"],
+        ['Bonus (+)', f"₹{entry['bonus']:.0f}"],
+        ['Advance (-)', f"₹{entry['advance']:.0f}"],
+        ['Fine (-)', f"₹{entry['fine']:.0f}"],
+        ['Manual Deduction (-)', f"₹{entry['manual_deduction']:.0f}"],
+    ]
+    t2 = Table(body_data, colWidths=[80*mm, 90*mm])
+    t2.setStyle(TableStyle([
+        ('FONT', (0,0), (-1,-1), 'Helvetica', 10),
+        ('TEXTCOLOR', (0,0), (0,-1), rlcolors.HexColor('#555')),
+        ('ALIGN', (1,0), (1,-1), 'RIGHT'),
+        ('LINEBELOW', (0,0), (-1,-1), 0.25, rlcolors.HexColor('#eee')),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 6),
+        ('TOPPADDING', (0,0), (-1,-1), 6),
+    ]))
+    elements.append(t2)
+    elements.append(Spacer(1, 6*mm))
+
+    net_data = [['NET SALARY', f"₹{entry['net_salary']:.0f}"]]
+    t3 = Table(net_data, colWidths=[80*mm, 90*mm])
+    t3.setStyle(TableStyle([
+        ('FONT', (0,0), (-1,-1), 'Helvetica-Bold', 14),
+        ('BACKGROUND', (0,0), (-1,-1), gold),
+        ('TEXTCOLOR', (0,0), (-1,-1), dark),
+        ('ALIGN', (1,0), (1,-1), 'RIGHT'),
+        ('TOPPADDING', (0,0), (-1,-1), 10),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 10),
+        ('LEFTPADDING', (0,0), (-1,-1), 10),
+        ('RIGHTPADDING', (0,0), (-1,-1), 10),
+    ]))
+    elements.append(t3)
+    elements.append(Spacer(1, 10*mm))
+
+    elements.append(Paragraph('Received by: __________________________', label_style))
+    elements.append(Spacer(1, 8*mm))
+    elements.append(Paragraph('Signature: ____________________________     Date: __________', label_style))
+    elements.append(Spacer(1, 12*mm))
+    elements.append(Paragraph(
+        f"Generated on {now_utc().strftime('%d %b %Y %H:%M UTC')} · RMJ One",
+        ParagraphStyle('f', parent=styles['Normal'], fontSize=8, textColor=rlcolors.HexColor('#999')),
+    ))
+    doc.build(elements)
+    pdf = buf.getvalue()
+    buf.close()
+    return StarletteResponse(
+        content=pdf,
+        media_type='application/pdf',
+        headers={'Content-Disposition': f'inline; filename="rmj-salary-{emp.get("employee_code", "emp")}-{period}.pdf"'},
+    )
 
 
 # ---------------- Mount ----------------

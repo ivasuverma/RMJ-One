@@ -140,6 +140,16 @@ export default function EmployeeProfile() {
             <Text style={styles.metaChip}>{emp.employee_code}</Text>
             <StatusChip status={emp.status} />
           </View>
+
+          <Pressable
+            onPress={() => router.push(`/ledger/${emp.id}`)}
+            style={styles.ledgerLink}
+            testID="open-ledger-btn"
+          >
+            <Ionicons name="book-outline" size={16} color={colors.onBrandPrimary} />
+            <Text style={styles.ledgerLinkText}>Open Ledger</Text>
+            <Ionicons name="chevron-forward" size={16} color={colors.onBrandPrimary} />
+          </Pressable>
         </View>
 
         {/* Segmented tabs */}
@@ -300,6 +310,12 @@ const styles = StyleSheet.create({
   },
   designation: { color: colors.onSurfaceTertiary, fontSize: 14, marginTop: 4 },
   metaRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md, alignItems: 'center' },
+  ledgerLink: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.md,
+    backgroundColor: colors.brandPrimary, paddingVertical: 10, paddingHorizontal: spacing.md,
+    borderRadius: radius.md, alignSelf: 'flex-start',
+  },
+  ledgerLinkText: { color: colors.onBrandPrimary, fontWeight: '700', fontSize: 13 },
   metaChip: {
     color: colors.brandSecondary, fontSize: 12, fontWeight: '600',
     backgroundColor: colors.brandTertiary, paddingHorizontal: 10, paddingVertical: 4, borderRadius: radius.pill,

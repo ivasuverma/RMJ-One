@@ -1,0 +1,53 @@
+{
+  "summary": "Milestone 2B backend verification: 49/49 pytest tests PASS (14 M1 + 15 M2A + 20 new M2B). All M2B backend surfaces verified: admin/accountant login + /auth/me roles; users list/create/update/delete owner-gated (admin & accountant get 403; cannot delete owner role); admin CAN create employees, accountant CANNOT (403); shifts seeded (General/Morning/Night) + owner-only CRUD; holidays seeded (Republic Day, Independence Day) + owner-only CRUD; ledger add/list with running balance verified (+bonus 500, -advance 200 == +300 delta on closing_balance); payroll compute row shape (13+ fields incl. base_salary/present_days/half_days/sunday_work/leave_days/effective_days/earned/bonus/advance/fine/manual_deduction/net_salary); admin cannot compute/save (403); accountant CAN save/lock; lock rejects re-save (400); accountant cannot unlock (403); owner unlocks; mark-paid inserts salary timeline event; PDF endpoint returns application/pdf with %PDF magic bytes; unsaved GET returns computed preview with saved:false. FRONTEND CRITICAL BUG: admin/accountant login triggers 'Maximum update depth exceeded' redirect loop — (tabs)/_layout.tsx and index.tsx only allow role==='owner' and bounce every other role to /(emp)/home, contradicting the spec 'admin/accountant share owner tabs'. As a result the entire admin/accountant frontend is unusable; UI could not be exercised for M2B screens under those roles. Owner-role frontend flows (payroll tab, ledger, shifts, holidays, users) were not re-verified after the redirect loop discovery. test_credentials.md was updated to include admin/accountant.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "app/(tabs)/_layout.tsx", "issue": "RBAC gate uses `user.role !== 'owner'` and redirects admin/accountant to /(emp)/home. Spec: 'Admin/accountant share owner tabs'. This creates a redirect loop with (emp) layout and throws React 'Maximum update depth exceeded'. Reference: /app/frontend/app/(tabs)/_layout.tsx:15.", "testID": "n/a", "priority": "CRITICAL"},
+      {"component": "app/index.tsx", "issue": "Root index has same bug: `user.role === 'owner' -> /(tabs)/dashboard else -> /(emp)/home`. Should send owner+admin+accountant to /(tabs)/dashboard. Reference: /app/frontend/app/index.tsx:14-15.", "testID": "n/a", "priority": "CRITICAL"},
+      {"component": "app/login.tsx", "issue": "After successful login it routes based on `mode`, not on returned `user.role`. If admin/accountant logs in via 'owner' mode form, they will hit the broken (tabs) gate. Recommend routing off user.role from response: owner|admin|accountant -> /(tabs)/dashboard, employee -> /(emp)/home. Reference: /app/frontend/app/login.tsx:32-38.", "testID": "login-submit", "priority": "HIGH"}
+    ],
+    "integration_issues": [
+      {"flow": "Admin/Accountant → any owner-tab screen (Dashboard/Attendance/Team/Payroll/Settings/Users/Shifts/Holidays)", "issue": "Blocked by redirect loop above. Frontend M2B screens (payroll tab, payroll detail, ledger, ledger-new, users, shifts, holidays) could NOT be exercised end-to-end under admin/accountant. Backend RBAC for those endpoints is verified via pytest.", "affected_testIDs": ["payroll-screen", "payroll-detail-screen", "ledger-screen", "ledger-new-screen", "users-screen", "shifts-screen", "holidays-screen"]}
+    ],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "React NavigationContainerInner", "issue": "Uncaught 'Maximum update depth exceeded' error at login as admin — caused by mutually-recursive router.replace() between /(tabs)/_layout, /(emp)/_layout, and /index.tsx role gates. Same infinite-loop pattern would also fire for accountant."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/backend/tests/test_m2a.py",
+    "/app/backend/tests/test_m2b.py",
+    "/app/test_reports/pytest/pytest_results.xml",
+    "/app/test_reports/pytest/m2b_results.xml"
+  ],
+  "action_items": [
+    "FIX (tabs)/_layout.tsx line 15: allow user.role in ['owner','admin','accountant'] to render the owner Tabs; only redirect to /(emp)/home when role === 'employee'.",
+    "FIX index.tsx: route ['owner','admin','accountant'] -> '/(tabs)/dashboard', 'employee' -> '/(emp)/home'.",
+    "FIX login.tsx onSubmit: navigate based on returned user.role (owner/admin/accountant -> /(tabs)/dashboard, employee -> /(emp)/home) instead of the login-form 'mode'. Otherwise admin/accountant in owner mode still hit the redirect loop even after (tabs) gate is relaxed.",
+    "After redirect-loop is fixed, retest the following UI flows (all backend endpoints already pass): Payroll tab month-nav + summary + rows + generate + lock/unlock; Payroll detail (mark-paid + PDF download); Ledger open + add entry; Settings → Users/Shifts/Holidays CRUD; Admin creating employees; Accountant blocked from POST /api/employees UI-side (403 handled gracefully).",
+    "Consider gating Users/Shifts/Holidays settings tiles by role in the UI (owner-only) so admin/accountant do not see dead links (all four backend routes are owner-gated).",
+    "Consider hiding payroll-save-btn / payroll-lock-btn for admin (403) and payroll-unlock action for non-owner (403), or show a toast when the API returns 403.",
+    "LOW priority — TestPayroll class-scoped fixture uses instance method (PytestRemovedIn10 warning). Convert to @classmethod or module-level fixture."
+  ],
+  "critical_code_review_comments": [
+    "server.py role helpers are clean: require_owner / require_admin / require_staff / require_payroll_writer correctly implement the owner>admin>accountant hierarchy (server.py:88-110).",
+    "Users API strips password_hash on every read (server.py:806, 833) — no leakage observed.",
+    "Payroll lock flow is correct: /save refuses when locked (server.py:1044-1045), /lock requires prior save (server.py:1082), /unlock is owner-only (server.py:1091).",
+    "Ledger sign convention is consistent: advance/fine/deduction = -1, bonus/other = +1 (server.py:894-896). Running balance verified end-to-end.",
+    "PDF is streamed via StarletteResponse with correct Content-Type + Content-Disposition and starts with %PDF magic bytes (server.py:1212-1216).",
+    "server.py is now 1224 lines — approaching the 700-line threshold guideline. Consider splitting into modules (auth.py, employees.py, payroll.py, ledger.py) for maintainability.",
+    "Frontend RBAC gates diverge from backend RBAC: backend admits admin+accountant to /api/dashboard, /api/attendance/*, /api/payroll/*, but the (tabs) layout blocks them client-side. This is the root cause of the redirect loop."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_m2b.py (new)",
+    "/app/memory/test_credentials.md (added admin/accountant credentials — previous file was missing them despite context note claiming otherwise)"
+  ],
+  "success_rate": {"backend": "100% (49/49)", "frontend": "0% for admin/accountant (redirect loop blocks everything); owner-side M2B UI not re-verified this iteration"},
+  "seed_data_creation": "Persisted payroll for 2025-11 (saved+unlocked at end of test), marked one entry as paid (added 'salary' timeline event on that employee), and added a bonus (₹500) + advance (₹200) ledger entry on RMJ002 as TEST data. One TEST holiday and TEST shift were created and then deleted.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend pytest suite is stable — run: `EXPO_PUBLIC_BACKEND_URL=https://rmj-nexus.preview.emergentagent.com pytest backend/tests/ -v`. All 49 tests pass. Credentials in /app/memory/test_credentials.md now include admin/Admin@123 and accountant/Accountant@123. The frontend redirect-loop bug is REPRODUCIBLE by simply logging in as admin (mode=owner) from /login — the URL stays on /login and console shows 'Maximum update depth exceeded'. Once main agent fixes app/(tabs)/_layout.tsx, app/index.tsx, and app/login.tsx role routing, the entire M2B UI flow needs re-validation (payroll-screen, payroll-detail-screen, ledger-screen, ledger-new-screen, users-screen, shifts-screen, holidays-screen). All expected testIDs are present in the code — verified by grep.",
+  "rca_of_issue": "Root cause: RBAC hierarchy was expanded on backend (owner+admin+accountant staff) but the frontend routing layer still uses a binary owner-vs-employee model. app/(tabs)/_layout.tsx:15 does `if (user.role !== 'owner') router.replace('/(emp)/home')` and app/(emp)/_layout.tsx presumably does the mirror check for employee, so admin lands in (tabs), gets bounced to (emp), which bounces back — React detects the setState loop and throws 'Maximum update depth exceeded'. Reproduction: open /login → tap 'Owner' mode → username=admin, password=Admin@123 → tap Log in. URL remains /login and a red LogBox appears. Mitigation: relax the check to `user.role === 'employee'` (redirect only employees away from tabs) OR use an explicit allow-list of staff roles. Also update /login onSubmit to route by returned user.role, not by the UI mode toggle."
+}

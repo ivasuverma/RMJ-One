@@ -36,6 +36,18 @@ export default function SettingsScreen() {
             <Row icon="storefront-outline" label="Store Settings" trailing="Configure" />
           </Pressable>
           <Divider />
+          <Pressable testID="settings-shifts-btn" onPress={() => router.push('/settings/shifts')}>
+            <Row icon="time-outline" label="Shifts" trailing="Manage" />
+          </Pressable>
+          <Divider />
+          <Pressable testID="settings-holidays-btn" onPress={() => router.push('/settings/holidays')}>
+            <Row icon="calendar-outline" label="Holidays" trailing="Calendar" />
+          </Pressable>
+          <Divider />
+          <Pressable testID="settings-users-btn" onPress={() => router.push('/settings/users')}>
+            <Row icon="people-circle-outline" label="Users & Roles" trailing="Manage" />
+          </Pressable>
+          <Divider />
           <Pressable testID="settings-approvals-btn" onPress={() => router.push('/approvals')}>
             <Row icon="checkmark-done-outline" label="Approvals" trailing="Review" />
           </Pressable>

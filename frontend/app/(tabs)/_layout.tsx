@@ -46,7 +46,11 @@ export default function OwnerTabsLayout() {
       />
       <Tabs.Screen
         name="employees"
-        options={{ title: 'Employees', tabBarIcon: ({ color, size }) => <Ionicons name="people-outline" color={color} size={size} /> }}
+        options={{ title: 'Team', tabBarIcon: ({ color, size }) => <Ionicons name="people-outline" color={color} size={size} /> }}
+      />
+      <Tabs.Screen
+        name="payroll"
+        options={{ title: 'Payroll', tabBarIcon: ({ color, size }) => <Ionicons name="cash-outline" color={color} size={size} /> }}
       />
       <Tabs.Screen
         name="settings"
