@@ -1005,11 +1005,12 @@ async def update_user(uid: str, body: UserUpdateIn, _: dict = Depends(require_ow
 
 
 @api.delete('/users/{uid}')
-async def delete_user(uid: str, _: dict = Depends(require_owner)):
+async def delete_user(uid: str, user=Depends(require_owner)):
     u = await db.users.find_one({'id': uid}, {'_id': 0})
     if not u: raise HTTPException(status_code=404, detail='User not found')
     if u.get('role') == 'owner': raise HTTPException(status_code=400, detail='Cannot delete the owner')
     await db.users.delete_one({'id': uid})
+    await log_audit(user, 'user.delete', 'user', uid, u.get('username', ''))
     return {'ok': True}
 
 
@@ -1245,6 +1246,7 @@ async def payroll_save(body: PayrollGenerateIn, user=Depends(require_payroll_wri
                   'generated_at': iso, 'generated_by': user['name']}},
         upsert=True,
     )
+    await log_audit(user, 'payroll.save', 'payroll', f'{body.year}-{body.month:02d}', '', {'entries': len(rows)})
     return {'ok': True, 'entries': len(rows)}
 
 
@@ -1272,13 +1274,15 @@ async def payroll_lock(year: int, month: int, user=Depends(require_payroll_write
         {'year': year, 'month': month},
         {'$set': {'locked': True, 'locked_by': user['name'], 'locked_at': now_utc().isoformat()}},
     )
+    await log_audit(user, 'payroll.lock', 'payroll', f'{year}-{month:02d}')
     return {'ok': True}
 
 
 @api.post('/payroll/{year}/{month}/unlock')
-async def payroll_unlock(year: int, month: int, _: dict = Depends(require_owner)):
+async def payroll_unlock(year: int, month: int, user=Depends(require_owner)):
     await db.payroll_locks.update_one({'year': year, 'month': month},
                                        {'$set': {'locked': False}})
+    await log_audit(user, 'payroll.unlock', 'payroll', f'{year}-{month:02d}')
     return {'ok': True}
 
 
@@ -1324,6 +1328,7 @@ async def payroll_mark_paid(entry_id: str, user=Depends(require_payroll_writer))
         'description': f"Net paid ₹{entry['net_salary']:.0f}", 'amount': float(entry['net_salary']),
         'sign': 1, 'created_at': iso,
     })
+    await log_audit(user, 'payroll.paid', 'payroll_entry', entry_id, entry.get('employee_code', ''), {'net': entry['net_salary']})
     return await db.payroll_entries.find_one({'id': entry_id}, {'_id': 0})
 
 
