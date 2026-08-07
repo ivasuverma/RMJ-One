@@ -114,7 +114,10 @@ export default function EmployeeProfile() {
                 <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
               </Pressable>
               <View style={{ flex: 1 }} />
-              <Pressable onPress={() => router.push(`/employee/edit/${emp.id}`)} style={styles.iconBtn} testID="edit-btn" hitSlop={12}>
+              <Pressable onPress={() => router.push(`/employee/set-pin/${emp.id}`)} style={styles.iconBtn} testID="pin-btn" hitSlop={12}>
+                <Ionicons name="finger-print-outline" size={20} color={colors.onSurface} />
+              </Pressable>
+              <Pressable onPress={() => router.push(`/employee/edit/${emp.id}`)} style={[styles.iconBtn, { marginLeft: spacing.sm }]} testID="edit-btn" hitSlop={12}>
                 <Ionicons name="create-outline" size={20} color={colors.onSurface} />
               </Pressable>
               <Pressable onPress={onDelete} style={[styles.iconBtn, { marginLeft: spacing.sm }]} testID="delete-btn" hitSlop={12}>

@@ -30,6 +30,17 @@ export default function SettingsScreen() {
           </View>
         </View>
 
+        <SectionLabel text="Business" />
+        <View style={styles.card}>
+          <Pressable testID="settings-store-btn" onPress={() => router.push('/store-settings')}>
+            <Row icon="storefront-outline" label="Store Settings" trailing="Configure" />
+          </Pressable>
+          <Divider />
+          <Pressable testID="settings-approvals-btn" onPress={() => router.push('/approvals')}>
+            <Row icon="checkmark-done-outline" label="Approvals" trailing="Review" />
+          </Pressable>
+        </View>
+
         <SectionLabel text="Preferences" />
         <View style={styles.card}>
           <Row icon="notifications-outline" label="Notifications" trailing="Off" />

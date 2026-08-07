@@ -1,0 +1,196 @@
+import { useEffect, useState } from 'react';
+import {
+  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, Platform, KeyboardAvoidingView, Linking,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
+import * as Location from 'expo-location';
+import { api } from '@/src/api/client';
+import { colors, spacing, radius } from '@/src/theme';
+
+type Form = {
+  name: string; latitude: string; longitude: string; radius_m: string;
+  work_start: string; work_end: string; grace_min: string;
+};
+
+const EMPTY: Form = {
+  name: '', latitude: '', longitude: '', radius_m: '150',
+  work_start: '10:00', work_end: '19:30', grace_min: '15',
+};
+
+export default function StoreSettings() {
+  const router = useRouter();
+  const [form, setForm] = useState<Form>(EMPTY);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [pickingLoc, setPickingLoc] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const s = await api.get<any>('/settings/store');
+        if (s?.id) {
+          setForm({
+            name: s.name || '', latitude: String(s.latitude ?? ''), longitude: String(s.longitude ?? ''),
+            radius_m: String(s.radius_m ?? 150), work_start: s.work_start || '10:00',
+            work_end: s.work_end || '19:30', grace_min: String(s.grace_min ?? 15),
+          });
+        }
+      } finally { setLoading(false); }
+    })();
+  }, []);
+
+  const useCurrent = async () => {
+    setPickingLoc(true);
+    try {
+      const existing = await Location.getForegroundPermissionsAsync();
+      let perm = existing;
+      if (!existing.granted && existing.canAskAgain) perm = await Location.requestForegroundPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert('Location denied', 'Enable location permission to use current location.', [
+          { text: 'Open Settings', onPress: () => Linking.openSettings() },
+          { text: 'Cancel', style: 'cancel' },
+        ]);
+        return;
+      }
+      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      setForm((f) => ({ ...f, latitude: pos.coords.latitude.toFixed(6), longitude: pos.coords.longitude.toFixed(6) }));
+    } catch (_e) {
+      Alert.alert('Failed', 'Could not fetch current location.');
+    } finally { setPickingLoc(false); }
+  };
+
+  const save = async () => {
+    const lat = parseFloat(form.latitude), lng = parseFloat(form.longitude);
+    if (!form.name.trim() || Number.isNaN(lat) || Number.isNaN(lng)) {
+      Alert.alert('Missing', 'Store name and valid coordinates are required.'); return;
+    }
+    setSaving(true);
+    try {
+      await api.put('/settings/store', {
+        name: form.name.trim(), latitude: lat, longitude: lng,
+        radius_m: parseInt(form.radius_m || '150', 10),
+        work_start: form.work_start, work_end: form.work_end,
+        grace_min: parseInt(form.grace_min || '15', 10),
+      });
+      Alert.alert('Saved', 'Store settings updated.', [{ text: 'OK', onPress: () => router.back() }]);
+    } catch (e: any) {
+      Alert.alert('Failed', e?.detail || 'Please try again');
+    } finally { setSaving(false); }
+  };
+
+  if (loading) {
+    return <View style={styles.centered}><ActivityIndicator color={colors.brandPrimary} size="large" /></View>;
+  }
+
+  return (
+    <SafeAreaView style={styles.root} edges={['top']} testID="store-settings-screen">
+      <View style={styles.header}>
+        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
+          <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
+        </Pressable>
+        <Text style={styles.title}>Store Settings</Text>
+        <View style={{ width: 40 }} />
+      </View>
+
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 120 }} keyboardShouldPersistTaps="handled">
+          <SectionTitle text="Store" />
+          <F label="Store Name" v={form.name} onC={(v) => setForm({ ...form, name: v })} testID="ss-name" />
+
+          <SectionTitle text="Location & Fence" />
+          <View style={styles.row2}>
+            <View style={{ flex: 1 }}>
+              <F label="Latitude" v={form.latitude} onC={(v) => setForm({ ...form, latitude: v.replace(/[^0-9.\-]/g, '') })} kt="numeric" testID="ss-lat" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <F label="Longitude" v={form.longitude} onC={(v) => setForm({ ...form, longitude: v.replace(/[^0-9.\-]/g, '') })} kt="numeric" testID="ss-lng" />
+            </View>
+          </View>
+          <Pressable onPress={useCurrent} style={styles.locBtn} disabled={pickingLoc} testID="ss-use-current-btn">
+            <Ionicons name="locate" size={16} color={colors.brandPrimary} />
+            <Text style={styles.locBtnText}>{pickingLoc ? 'Fetching…' : 'Use my current location'}</Text>
+          </Pressable>
+          <F label="Fence Radius (metres)" v={form.radius_m} onC={(v) => setForm({ ...form, radius_m: v.replace(/[^0-9]/g, '') })} kt="numeric" testID="ss-radius" />
+
+          <SectionTitle text="Shift Hours" />
+          <View style={styles.row2}>
+            <View style={{ flex: 1 }}>
+              <F label="Start (HH:MM)" v={form.work_start} onC={(v) => setForm({ ...form, work_start: v })} testID="ss-start" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <F label="End (HH:MM)" v={form.work_end} onC={(v) => setForm({ ...form, work_end: v })} testID="ss-end" />
+            </View>
+          </View>
+          <F label="Late Grace (minutes)" v={form.grace_min} onC={(v) => setForm({ ...form, grace_min: v.replace(/[^0-9]/g, '') })} kt="numeric" testID="ss-grace" />
+
+          <View style={styles.infoBox}>
+            <Ionicons name="information-circle-outline" size={16} color={colors.brandSecondary} />
+            <Text style={styles.infoText}>Employees can only check in when within the fence radius of these coordinates.</Text>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+
+      <View style={styles.footer}>
+        <Pressable onPress={save} disabled={saving} style={[styles.saveBtn, saving && { opacity: 0.6 }]} testID="ss-save-btn">
+          {saving ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.saveText}>Save Settings</Text>}
+        </Pressable>
+      </View>
+    </SafeAreaView>
+  );
+}
+
+function SectionTitle({ text }: { text: string }) {
+  return <Text style={styles.section}>{text}</Text>;
+}
+function F({ label, v, onC, kt, testID }: { label: string; v: string; onC: (s: string) => void; kt?: any; testID?: string }) {
+  return (
+    <View style={{ marginBottom: spacing.md }}>
+      <Text style={styles.label}>{label}</Text>
+      <TextInput testID={testID} value={v} onChangeText={onC} keyboardType={kt} style={styles.input} autoCapitalize="none" autoCorrect={false} placeholderTextColor={colors.mutedText} />
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: colors.surface },
+  centered: { flex: 1, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
+  header: {
+    flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md, gap: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.divider,
+  },
+  iconBtn: {
+    width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surfaceSecondary,
+    alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border,
+  },
+  title: {
+    flex: 1, color: colors.onSurface, fontSize: 22, fontWeight: '600',
+    fontFamily: Platform.select({ ios: 'Georgia', default: 'serif' }),
+  },
+  section: {
+    color: colors.brandSecondary, fontSize: 11, letterSpacing: 1, textTransform: 'uppercase',
+    marginTop: spacing.lg, marginBottom: spacing.sm,
+  },
+  label: { color: colors.onSurfaceSecondary, fontSize: 12, marginBottom: 6 },
+  input: {
+    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1,
+    borderColor: colors.border, color: colors.onSurface, paddingHorizontal: spacing.md,
+    paddingVertical: 12, fontSize: 14,
+  },
+  row2: { flexDirection: 'row', gap: spacing.md },
+  locBtn: {
+    flexDirection: 'row', gap: spacing.sm, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.brandTertiary, borderColor: colors.brandPrimary, borderWidth: 1,
+    borderRadius: radius.md, paddingVertical: 12, marginBottom: spacing.md,
+  },
+  locBtnText: { color: colors.brandSecondary, fontWeight: '700', fontSize: 13 },
+  infoBox: {
+    flexDirection: 'row', gap: spacing.sm, alignItems: 'center', backgroundColor: colors.surfaceTertiary,
+    borderRadius: radius.md, padding: spacing.md, borderWidth: 1, borderColor: colors.border, marginTop: spacing.md,
+  },
+  infoText: { color: colors.onSurfaceTertiary, fontSize: 12, flex: 1 },
+  footer: { position: 'absolute', left: 0, right: 0, bottom: 0, padding: spacing.lg, backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.divider },
+  saveBtn: { backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: 16, alignItems: 'center' },
+  saveText: { color: colors.onBrandPrimary, fontWeight: '700', fontSize: 15 },
+});

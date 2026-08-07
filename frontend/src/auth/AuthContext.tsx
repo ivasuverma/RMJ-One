@@ -1,13 +1,24 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { api, saveToken, clearToken, getToken } from '@/src/api/client';
 
-export type User = { id: string; username: string; name: string; role: 'owner' | 'employee' };
+export type User = {
+  id: string;
+  username: string;
+  name: string;
+  role: 'owner' | 'employee';
+  employee_code?: string;
+  designation?: string;
+  department?: string;
+  photo?: string;
+};
 
 type AuthState = {
   user: User | null;
   loading: boolean;
-  login: (username: string, password: string) => Promise<void>;
+  loginOwner: (username: string, password: string) => Promise<void>;
+  loginEmployee: (employee_code: string, pin: string) => Promise<void>;
   logout: () => Promise<void>;
+  refresh: () => Promise<void>;
 };
 
 const AuthCtx = createContext<AuthState>({} as AuthState);
@@ -16,27 +27,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const token = await getToken();
-        if (token) {
-          const me = await api.get<User>('/auth/me');
-          setUser(me);
-        }
-      } catch (_e) {
-        await clearToken();
-      } finally {
-        setLoading(false);
-      }
-    })();
+  const refresh = useCallback(async () => {
+    try {
+      const token = await getToken();
+      if (!token) { setUser(null); return; }
+      const me = await api.get<User>('/auth/me');
+      setUser(me);
+    } catch (_e) {
+      await clearToken();
+      setUser(null);
+    }
   }, []);
 
-  const login = useCallback(async (username: string, password: string) => {
+  useEffect(() => {
+    (async () => { await refresh(); setLoading(false); })();
+  }, [refresh]);
+
+  const loginOwner = useCallback(async (username: string, password: string) => {
     const res = await api.post<{ access_token: string; user: User }>(
-      '/auth/login',
-      { username, password },
-      false,
+      '/auth/login', { username, password }, false,
+    );
+    await saveToken(res.access_token);
+    setUser(res.user);
+  }, []);
+
+  const loginEmployee = useCallback(async (employee_code: string, pin: string) => {
+    const res = await api.post<{ access_token: string; user: User }>(
+      '/auth/employee-login', { employee_code, pin }, false,
     );
     await saveToken(res.access_token);
     setUser(res.user);
@@ -47,7 +64,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
   }, []);
 
-  return <AuthCtx.Provider value={{ user, loading, login, logout }}>{children}</AuthCtx.Provider>;
+  return (
+    <AuthCtx.Provider value={{ user, loading, loginOwner, loginEmployee, logout, refresh }}>
+      {children}
+    </AuthCtx.Provider>
+  );
 }
 
 export const useAuth = () => useContext(AuthCtx);

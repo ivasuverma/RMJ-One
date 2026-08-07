@@ -1,0 +1,46 @@
+{
+  "summary": "Milestone 2A end-to-end verification. Backend: 29/29 pytest tests pass (14 baseline in backend_test.py + 15 new in test_m2a.py) — employee PIN login (RMJ001/0001), owner set-pin, store settings GET/PUT, geo-fence + selfie validation, check-in/check-out with working_hours, corrections + leaves create/list/decide with side effects (attendance stub + timeline event), dashboard pending-approval counters, and no _id/pin_hash leakage. Frontend (390x844): owner login → Dashboard renders, 4-tab bottom bar (Dashboard/Attendance/Employees/Settings) is present and navigable, attendance-screen renders Today/Live sub-tabs and lists all seeded employees with status pills, approvals-btn opens approvals-screen with Corrections/Leaves sub-tabs (approved TEST correction visible from backend test), settings-store-btn opens store-settings-screen (fields editable + Use my current location + Save), pin-btn on employee profile opens set-pin-screen. Employee login (RMJ001/0001) reaches emp-home-screen with greeting, avatar initial, Punch card (Check In / Check Out slots), Quick actions row (Correction / Apply Leave). btn-check-in opens punch-modal and correctly renders 'Camera access needed' + 'Waiting for location…' permission UI without crashing — expected for headless web preview. No red-screen/pageerror events observed. RN-web console warning noted: props.pointerEvents is deprecated (unchanged from iter 2).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "(tabs)/attendance.tsx Today/Live sub-tabs", "issue": "Sub-tab pills are present visually but expected testIDs 'att-sub-today' / 'att-sub-live' are missing on the touchables — makes automated verification fragile.", "testID": "att-sub-today, att-sub-live", "priority": "LOW"},
+      {"component": "approvals.tsx Corrections/Leaves sub-tabs", "issue": "Sub-tab pills are present visually but expected testIDs 'appr-tab-corrections' / 'appr-tab-leaves' are missing on the touchables.", "testID": "appr-tab-corrections, appr-tab-leaves", "priority": "LOW"},
+      {"component": "(emp)/home.tsx quick actions", "issue": "Review request references 'quick-correction' / 'quick-leave' but actual testIDs are 'action-correction' / 'action-leave'. Please align either the code testIDs or the request docs.", "testID": "action-correction / action-leave (actual) vs quick-correction / quick-leave (requested)", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "store-settings", "issues": ["When the screen first opens, the form appears to load the API-provided values correctly but the previous session had left lat=30.891192 / lng=75.825537 / radius=50 / start=11:30 saved in the DB. Please verify that Store Settings does NOT auto-persist on mount or on 'Use my current location' without an explicit Save tap — this was observed as an unexpected write. I restored defaults (28.6139, 77.2090, 150m, 10:00) via API."]}
+    ],
+    "react_native_issues": [
+      {"component": "LinearGradient props.pointerEvents", "issue": "Console warning still present: props.pointerEvents is deprecated — should be moved into style.pointerEvents. Reference: /app/frontend/app/employee/new.tsx (also seen on login screen mount)."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/backend/tests/test_m2a.py",
+    "/app/test_reports/pytest/m2a_results.xml"
+  ],
+  "action_items": [
+    "Add testIDs 'att-sub-today' and 'att-sub-live' to the Attendance sub-tab touchables in /app/frontend/app/(tabs)/attendance.tsx.",
+    "Add testIDs 'appr-tab-corrections' and 'appr-tab-leaves' to the Approvals sub-tab touchables in /app/frontend/app/approvals.tsx.",
+    "Reconcile employee-home quick action testIDs — rename 'action-correction'/'action-leave' to 'quick-correction'/'quick-leave' (or update review docs).",
+    "Investigate whether store-settings screen writes to /api/settings/store without an explicit Save press (possible auto-save-on-mount or Use-current-location-auto-save). Confirmed one unexpected DB write during UI session; restored to defaults.",
+    "Optional: migrate LinearGradient props.pointerEvents → style.pointerEvents to silence RN-web deprecation warning."
+  ],
+  "critical_code_review_comments": [
+    "server.py cleanly returns projections without _id/pin_hash on every read path (list, get, timeline, dashboard) — verified via string-search assertions in tests.",
+    "PIN backfill on startup uses last 4 digits of employee_code — matches memory/test_credentials.md (0001..0005).",
+    "geofence check runs BEFORE selfie check in check_in/check_out — good ordering; both are strictly required per spec.",
+    "Attendance idempotency uses unique index (employee_id, date) — server.py:173 — plus explicit 'Already checked in' guard: robust.",
+    "Approved correction adds a stub attendance row with working_hours=8 — matches payroll expectations."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_m2a.py (new)"
+  ],
+  "success_rate": {"backend": "100% (29/29)", "frontend": "~95% — all critical flows render and navigate; only minor missing testIDs & one design observation"},
+  "seed_data_creation": "Backend tests created ONE approved TEST correction on RMJ003 and ONE approved TEST leave on RMJ003 (2026-02-01 → 2026-02-02, 'TEST leave'). The approve action added a 'leave' timeline entry on RMJ003 and a via_correction=True attendance stub. Store settings were restored to defaults (28.6139, 77.2090, radius 150m, 10:00-19:30).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Confirmed working credentials — Owner: owner/Owner@123; Employees PIN: RMJ001/0001..RMJ005/0005 (RMJ004 is on_leave). Login testIDs: login-screen, mode-owner, mode-employee, login-username, login-password (owner mode), emp-code-input, emp-pin-input (employee mode), login-submit, login-error. Emp home testIDs: emp-home-screen, punch-card, slot-check-in, slot-check-out, btn-check-in, action-correction, action-leave, reminder-checkin, reminder-checkin-btn, reminder-correction-btn, emp-logout-btn. Punch modal opens as 'punch-modal' with 'Enable Camera' UI in headless preview (expected). Owner tab labels: Dashboard/Attendance/Employees/Settings (no testIDs on tab bar itself — use get_by_text). Attendance screen exposes 'attendance-screen' + 'approvals-btn'; Approvals screen exposes 'approvals-screen'. Store settings: 'settings-store-btn' → 'store-settings-screen'. Employee profile → 'pin-btn' → 'set-pin-screen'. Base URL: https://rmj-nexus.preview.emergentagent.com. To exercise attendance without a camera, POST base64 selfie (>100 chars) + coords (28.6139, 77.2090) directly to /api/attendance/check-in as an employee.",
+  "rca_of_issue": "N/A — no functional bugs found. Only minor missing testIDs (see action_items) and one design observation about possible store-settings auto-write that main agent should verify by reviewing store-settings.tsx save flow."
+}

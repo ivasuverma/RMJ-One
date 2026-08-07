@@ -8,23 +8,6 @@
     "scheme": "frontend",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
-    "ios": {
-      "supportsTablet": true,
-      "bundleIdentifier": "com.emergent.rmjnexus.pyasmv"
-    },
-    "android": {
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#000000"
-      },
-      "edgeToEdgeEnabled": true,
-      "package": "com.emergent.rmjnexus.pyasmv"
-    },
-    "web": {
-      "bundler": "metro",
-      "output": "single",
-      "favicon": "./assets/images/favicon.png"
-    },
     "plugins": [
       "expo-router",
       [
@@ -35,8 +18,47 @@
           "resizeMode": "contain",
           "backgroundColor": "#000000"
         }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Take a selfie to confirm your attendance."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Confirm you are at the store to check in."
+        }
       ]
     ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.emergent.rmjnexus.pyasmv",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Take a selfie to confirm your attendance.",
+        "NSLocationWhenInUseUsageDescription": "Confirm you are at the store to check in.",
+        "NSPhotoLibraryUsageDescription": "Attach documents to employee profiles."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#000000"
+      },
+      "edgeToEdgeEnabled": true,
+      "package": "com.emergent.rmjnexus.pyasmv",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION"
+      ]
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single",
+      "favicon": "./assets/images/favicon.png"
+    },
     "experiments": {
       "typedRoutes": true
     }

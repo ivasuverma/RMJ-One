@@ -5,17 +5,17 @@ import { useEffect } from 'react';
 import { colors } from '@/src/theme';
 import { useAuth } from '@/src/auth/AuthContext';
 
-export default function OwnerTabsLayout() {
+export default function EmployeeTabsLayout() {
   const { user, loading } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
     if (loading) return;
     if (!user) router.replace('/login');
-    else if (user.role !== 'owner') router.replace('/(emp)/home');
+    else if (user.role !== 'employee') router.replace('/(tabs)/dashboard');
   }, [user, loading, router]);
 
-  if (loading || !user || user.role !== 'owner') {
+  if (loading || !user || user.role !== 'employee') {
     return (
       <View style={{ flex: 1, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' }}>
         <ActivityIndicator color={colors.brandPrimary} size="large" />
@@ -37,20 +37,16 @@ export default function OwnerTabsLayout() {
       }}
     >
       <Tabs.Screen
-        name="dashboard"
-        options={{ title: 'Dashboard', tabBarIcon: ({ color, size }) => <Ionicons name="grid-outline" color={color} size={size} /> }}
+        name="home"
+        options={{ title: 'Home', tabBarIcon: ({ color, size }) => <Ionicons name="scan-outline" color={color} size={size} /> }}
       />
       <Tabs.Screen
-        name="attendance"
-        options={{ title: 'Attendance', tabBarIcon: ({ color, size }) => <Ionicons name="time-outline" color={color} size={size} /> }}
+        name="leaves"
+        options={{ title: 'Leaves', tabBarIcon: ({ color, size }) => <Ionicons name="calendar-outline" color={color} size={size} /> }}
       />
       <Tabs.Screen
-        name="employees"
-        options={{ title: 'Employees', tabBarIcon: ({ color, size }) => <Ionicons name="people-outline" color={color} size={size} /> }}
-      />
-      <Tabs.Screen
-        name="settings"
-        options={{ title: 'Settings', tabBarIcon: ({ color, size }) => <Ionicons name="settings-outline" color={color} size={size} /> }}
+        name="profile"
+        options={{ title: 'Profile', tabBarIcon: ({ color, size }) => <Ionicons name="person-outline" color={color} size={size} /> }}
       />
     </Tabs>
   );

@@ -10,8 +10,9 @@ export default function Index() {
 
   useEffect(() => {
     if (loading) return;
-    if (user) router.replace('/(tabs)/dashboard');
-    else router.replace('/login');
+    if (!user) router.replace('/login');
+    else if (user.role === 'owner') router.replace('/(tabs)/dashboard');
+    else router.replace('/(emp)/home');
   }, [user, loading, router]);
 
   return (
@@ -22,10 +23,5 @@ export default function Index() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  container: { flex: 1, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
 });
