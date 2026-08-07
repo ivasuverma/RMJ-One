@@ -56,6 +56,10 @@ export default function SettingsScreen() {
             <Row icon="document-text-outline" label="Reports" trailing="Export PDF" />
           </Pressable>
           <Divider />
+          <Pressable testID="settings-biometric-btn" onPress={() => router.push('/settings/biometric')}>
+            <Row icon="hardware-chip-outline" label="Biometric Devices" trailing="eSSL" />
+          </Pressable>
+          <Divider />
           <Pressable testID="settings-audit-btn" onPress={() => router.push('/settings/audit')}>
             <Row icon="shield-checkmark-outline" label="Audit Logs" trailing="Owner" />
           </Pressable>

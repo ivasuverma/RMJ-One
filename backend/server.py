@@ -1683,6 +1683,239 @@ async def report_pdf(
     raise HTTPException(status_code=400, detail=f'Unknown report kind: {kind}')
 
 
+# ---------------- Biometric (eSSL Cloud Push) ----------------
+class DeviceIn(BaseModel):
+    serial: str
+    label: str
+    secret: str
+
+
+class BiometricPushIn(BaseModel):
+    serial: str
+    secret: str
+    user_id: str  # employee_code (as configured in eSSL device)
+    timestamp: Optional[str] = None  # ISO; defaults to now
+    event_type: Optional[Literal['check_in', 'check_out', 'auto']] = 'auto'
+    verify_mode: Optional[str] = ''  # 'face', 'fingerprint', etc.
+
+
+@api.get('/biometric/devices')
+async def list_devices(_: dict = Depends(require_staff)):
+    docs = await db.biometric_devices.find({}, {'_id': 0, 'secret': 0}).sort('created_at', 1).to_list(100)
+    return docs
+
+
+@api.post('/biometric/devices')
+async def create_device(body: DeviceIn, user=Depends(require_owner)):
+    if await db.biometric_devices.find_one({'serial': body.serial}):
+        raise HTTPException(status_code=400, detail='Device serial already registered')
+    doc = {
+        'id': str(uuid.uuid4()), 'serial': body.serial.strip(), 'label': body.label.strip(),
+        'secret': body.secret, 'created_at': now_utc().isoformat(),
+        'last_seen': None, 'status': 'idle',
+    }
+    await db.biometric_devices.insert_one(dict(doc))
+    await log_audit(user, 'biometric.device.create', 'device', doc['id'], body.serial)
+    return {k: v for k, v in doc.items() if k not in ('_id', 'secret')}
+
+
+@api.delete('/biometric/devices/{did}')
+async def delete_device(did: str, user=Depends(require_owner)):
+    d = await db.biometric_devices.find_one({'id': did}, {'_id': 0})
+    if not d: raise HTTPException(status_code=404, detail='Device not found')
+    await db.biometric_devices.delete_one({'id': did})
+    await log_audit(user, 'biometric.device.delete', 'device', did, d.get('serial', ''))
+    return {'ok': True}
+
+
+@api.get('/biometric/logs')
+async def biometric_logs(limit: int = 100, _: dict = Depends(require_staff)):
+    return await db.biometric_logs.find({}, {'_id': 0}).sort('created_at', -1).limit(limit).to_list(limit)
+
+
+@api.post('/biometric/push')
+async def biometric_push(body: BiometricPushIn):
+    # This endpoint is called by the eSSL device — no bearer JWT; validated via device serial + secret
+    device = await db.biometric_devices.find_one({'serial': body.serial}, {'_id': 0})
+    log_doc = {
+        'id': str(uuid.uuid4()), 'serial': body.serial, 'user_id': body.user_id,
+        'timestamp': body.timestamp or now_utc().isoformat(),
+        'event_type': body.event_type or 'auto', 'verify_mode': body.verify_mode or '',
+        'created_at': now_utc().isoformat(),
+    }
+    if not device or device.get('secret') != body.secret:
+        log_doc['result'] = 'rejected'; log_doc['reason'] = 'invalid_device_credentials'
+        await db.biometric_logs.insert_one(dict(log_doc))
+        raise HTTPException(status_code=401, detail='Invalid device credentials')
+
+    emp = await db.employees.find_one({'employee_code': body.user_id.upper()}, {'_id': 0, 'pin_hash': 0})
+    if not emp:
+        log_doc['result'] = 'rejected'; log_doc['reason'] = 'unknown_employee'
+        await db.biometric_logs.insert_one(dict(log_doc))
+        raise HTTPException(status_code=404, detail=f'Unknown employee {body.user_id}')
+
+    # Compute the day (IST)
+    try:
+        ts = datetime.fromisoformat(log_doc['timestamp'])
+    except Exception:
+        ts = now_utc()
+    ist = ts.astimezone(timezone(timedelta(hours=5, minutes=30)))
+    d = ist.date().isoformat()
+
+    existing = await db.attendance.find_one({'employee_id': emp['id'], 'date': d}, {'_id': 0})
+    kind = body.event_type
+    if kind == 'auto':
+        kind = 'check_out' if (existing and existing.get('check_in') and not existing.get('check_out')) else 'check_in'
+
+    iso = ts.astimezone(timezone.utc).isoformat()
+    store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
+    is_late = False
+    if kind == 'check_in':
+        try:
+            wsh, wsm = (store.get('work_start') or '10:00').split(':')
+            work_start_min = int(wsh) * 60 + int(wsm)
+            grace = int(store.get('grace_min', 15))
+            minutes_now = ist.hour * 60 + ist.minute
+            is_late = minutes_now > work_start_min + grace
+        except Exception: is_late = False
+        payload = {
+            'timestamp': iso, 'latitude': 0, 'longitude': 0, 'selfie': '',
+            'distance_m': 0, 'is_late': is_late, 'source': 'biometric', 'device_serial': body.serial,
+        }
+        if existing and existing.get('check_in'):
+            log_doc['result'] = 'skipped'; log_doc['reason'] = 'already_checked_in'
+            await db.biometric_logs.insert_one(dict(log_doc))
+            return {'ok': True, 'skipped': True, 'reason': 'already_checked_in'}
+        if existing:
+            await db.attendance.update_one({'id': existing['id']}, {'$set': {'check_in': payload, 'is_late': is_late, 'status': 'present'}})
+            att_id = existing['id']
+        else:
+            att_id = str(uuid.uuid4())
+            await db.attendance.insert_one({
+                'id': att_id, 'employee_id': emp['id'], 'date': d,
+                'check_in': payload, 'check_out': None, 'is_late': is_late, 'working_hours': 0,
+                'status': 'present', 'created_at': iso, 'source': 'biometric',
+            })
+    else:  # check_out
+        if not existing or not existing.get('check_in'):
+            log_doc['result'] = 'rejected'; log_doc['reason'] = 'no_check_in'
+            await db.biometric_logs.insert_one(dict(log_doc))
+            raise HTTPException(status_code=400, detail='No check-in yet today')
+        if existing.get('check_out'):
+            log_doc['result'] = 'skipped'; log_doc['reason'] = 'already_checked_out'
+            await db.biometric_logs.insert_one(dict(log_doc))
+            return {'ok': True, 'skipped': True, 'reason': 'already_checked_out'}
+        try:
+            ci_ts = datetime.fromisoformat(existing['check_in']['timestamp'])
+            hours = round((ts - ci_ts).total_seconds() / 3600, 2)
+        except Exception:
+            hours = 0
+        status = 'half_day' if hours < 4 else 'present'
+        payload = {'timestamp': iso, 'latitude': 0, 'longitude': 0, 'selfie': '',
+                   'distance_m': 0, 'source': 'biometric', 'device_serial': body.serial}
+        await db.attendance.update_one({'id': existing['id']}, {'$set': {'check_out': payload, 'working_hours': hours, 'status': status}})
+        att_id = existing['id']
+
+    # Update device last_seen
+    await db.biometric_devices.update_one({'serial': body.serial},
+                                          {'$set': {'last_seen': iso, 'status': 'online'}})
+    # Attendance event feed
+    await db.attendance_events.insert_one({
+        'id': str(uuid.uuid4()), 'employee_id': emp['id'], 'employee_name': emp['name'],
+        'type': kind, 'timestamp': iso, 'is_late': is_late if kind == 'check_in' else False,
+        'created_at': iso, 'source': 'biometric', 'device_serial': body.serial,
+    })
+    log_doc['result'] = 'accepted'; log_doc['action'] = kind; log_doc['attendance_id'] = att_id
+    log_doc['employee_id'] = emp['id']; log_doc['employee_name'] = emp['name']
+    await db.biometric_logs.insert_one(dict(log_doc))
+    return {'ok': True, 'action': kind, 'employee': emp['name'], 'attendance_id': att_id}
+
+
+# ---------------- AI Assistant (Gemini 3 Flash) ----------------
+class AssistantAskIn(BaseModel):
+    question: str
+
+
+async def _build_context() -> str:
+    """Compact snapshot for the assistant prompt (read-only)."""
+    d = today_str()
+    lines: list = []
+    employees = await db.employees.find({}, {'_id': 0, 'pin_hash': 0, 'photo': 0}).to_list(500)
+    lines.append(f"TODAY: {d}")
+    lines.append(f"TOTAL EMPLOYEES: {len(employees)}")
+    lines.append("EMPLOYEES:")
+    for e in employees:
+        lines.append(f"- {e.get('employee_code')} · {e.get('name')} · {e.get('designation') or '—'} · {e.get('department') or '—'} · ₹{e.get('salary', 0):.0f} · status={e.get('status')}")
+    # Today's attendance
+    lines.append("\nTODAY ATTENDANCE:")
+    att_map = {}
+    async for a in db.attendance.find({'date': d}, {'_id': 0, 'check_in.selfie': 0, 'check_out.selfie': 0}):
+        att_map[a['employee_id']] = a
+    for e in employees:
+        a = att_map.get(e['id'])
+        if a:
+            ci = (a.get('check_in') or {}).get('timestamp', '')
+            co = (a.get('check_out') or {}).get('timestamp', '')
+            lines.append(f"- {e['employee_code']} · {e['name']}: status={a.get('status')} in={ci or '—'} out={co or '—'} late={a.get('is_late', False)} hours={a.get('working_hours', 0)}")
+        else:
+            lines.append(f"- {e['employee_code']} · {e['name']}: no punch today")
+    # Pending items
+    p_corr = await db.corrections.count_documents({'status': 'pending'})
+    p_leaves = await db.leaves.count_documents({'status': 'pending'})
+    lines.append(f"\nPENDING: corrections={p_corr}, leave_requests={p_leaves}")
+    # Ledger balances
+    lines.append("\nLEDGER (closing balances):")
+    for e in employees:
+        bal = await _opening_balance(e['id'], (now_utc() + timedelta(days=1)).isoformat())
+        lines.append(f"- {e['employee_code']} · {e['name']}: ₹{bal:.0f}")
+    return "\n".join(lines)
+
+
+SYSTEM_PROMPT = (
+    "You are RMJ AI, the built-in assistant for RMJ One, an employee management app "
+    "for a jewellery business. You have read-only access to a snapshot of today's data. "
+    "Answer questions concisely and factually using ONLY the snapshot below. "
+    "If the answer isn't in the snapshot, say you don't have that data. "
+    "Use INR (₹) for money. Format lists with bullets when helpful. "
+    "Never invent employees, numbers, or actions. Never suggest destructive actions."
+)
+
+
+@api.post('/assistant/ask')
+async def assistant_ask(body: AssistantAskIn, user=Depends(require_staff)):
+    try:
+        from emergentintegrations.llm.chat import LlmChat, UserMessage
+    except Exception as ex:
+        raise HTTPException(status_code=500, detail=f'AI library unavailable: {ex}')
+    key = os.environ.get('EMERGENT_LLM_KEY')
+    if not key:
+        raise HTTPException(status_code=500, detail='EMERGENT_LLM_KEY not configured')
+    context = await _build_context()
+    session_id = f"assistant-{user['id']}-{uuid.uuid4()}"
+    chat = LlmChat(
+        api_key=key, session_id=session_id,
+        system_message=f"{SYSTEM_PROMPT}\n\nDATA SNAPSHOT:\n{context}",
+    ).with_model("gemini", "gemini-3-flash-preview")
+    try:
+        resp = await chat.send_message(UserMessage(text=body.question))
+        text = resp if isinstance(resp, str) else str(resp)
+    except Exception as ex:
+        raise HTTPException(status_code=502, detail=f'AI service error: {ex}')
+    # Store transcript
+    await db.assistant_history.insert_one({
+        'id': str(uuid.uuid4()), 'user_id': user['id'], 'user_name': user.get('name', ''),
+        'question': body.question, 'answer': text, 'created_at': now_utc().isoformat(),
+    })
+    return {'answer': text}
+
+
+@api.get('/assistant/history')
+async def assistant_history(user=Depends(require_staff), limit: int = 50):
+    return await db.assistant_history.find(
+        {'user_id': user['id']}, {'_id': 0}
+    ).sort('created_at', -1).limit(limit).to_list(limit)
+
+
 # ---------------- Mount ----------------
 app.include_router(api)
 app.add_middleware(

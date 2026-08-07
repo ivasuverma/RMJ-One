@@ -76,6 +76,10 @@ export default function DashboardScreen() {
             <Text style={styles.greeting}>Good day,</Text>
             <Text style={styles.owner} numberOfLines={1}>{user?.name || 'Owner'}</Text>
           </View>
+          <Pressable onPress={() => router.push('/assistant')} style={styles.aiBtn} testID="ai-assistant-btn">
+            <Ionicons name="sparkles" size={16} color={colors.onBrandPrimary} />
+            <Text style={styles.aiBtnText}>Ask AI</Text>
+          </Pressable>
           <View style={styles.headerBadge}>
             <Text style={styles.headerBadgeText}>RMJ</Text>
           </View>
@@ -221,6 +225,12 @@ const styles = StyleSheet.create({
     width: 44, height: 44, borderRadius: radius.md, backgroundColor: colors.brandPrimary,
     alignItems: 'center', justifyContent: 'center',
   },
+  aiBtn: {
+    flexDirection: 'row', gap: 6, alignItems: 'center', backgroundColor: colors.brandTertiary,
+    borderColor: colors.brandPrimary, borderWidth: 1,
+    paddingHorizontal: 12, paddingVertical: 8, borderRadius: radius.pill, marginRight: spacing.sm,
+  },
+  aiBtnText: { color: colors.brandSecondary, fontWeight: '700', fontSize: 12 },
   headerBadgeText: { color: colors.onBrandPrimary, fontWeight: '800', letterSpacing: 1 },
   loadingWrap: { paddingVertical: 80, alignItems: 'center' },
 
