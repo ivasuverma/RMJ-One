@@ -168,8 +168,9 @@ export default function EmployeeHome() {
             {/* Quick actions */}
             <Text style={styles.section}>Quick actions</Text>
             <View style={styles.actionsRow}>
+              <ActionCard icon="calendar-outline" label="My Calendar" onPress={() => router.push(`/attendance/calendar/${user?.id}`)} testID="action-my-calendar" />
               <ActionCard icon="create-outline" label="Correction" onPress={() => router.push('/attendance/correction')} testID="action-correction" />
-              <ActionCard icon="calendar-outline" label="Apply Leave" onPress={() => router.push('/leaves/new')} testID="action-leave" />
+              <ActionCard icon="airplane-outline" label="Apply Leave" onPress={() => router.push('/leaves/new')} testID="action-leave" />
             </View>
           </View>
         )}

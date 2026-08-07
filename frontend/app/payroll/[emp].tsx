@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Platform, Alert, Linking,
+  View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Platform, Alert, Linking, TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -77,12 +77,27 @@ export default function PayrollDetail() {
         <Line label="Leave days" value={String(row.leave_days)} />
         <Line label="Effective / Total" value={`${row.effective_days} / ${row.total_days}`} />
 
+        {row.opening_balance !== undefined && row.opening_balance !== 0 && (
+          <>
+            <SectionTitle text="Opening Balance" />
+            <Line
+              label={row.opening_balance > 0 ? 'Owed to employee (carry-in +)' : 'Owed by employee (carry-in −)'}
+              value={`${row.opening_balance > 0 ? '+' : '−'} ${fmtINR(row.opening_balance)}`}
+              pos={row.opening_balance > 0} neg={row.opening_balance < 0}
+            />
+          </>
+        )}
+
         <SectionTitle text="Breakdown" />
         <Line label="Earned" value={fmtINR(row.earned)} accent />
         <Line label="Bonus" value={`+ ${fmtINR(row.bonus)}`} pos />
         <Line label="Advance" value={`− ${fmtINR(row.advance)}`} neg />
         <Line label="Fine" value={`− ${fmtINR(row.fine)}`} neg />
         <Line label="Manual Deduction" value={`− ${fmtINR(row.manual_deduction)}`} neg />
+
+        {row._saved && canWrite && !row._locked && !row.paid && (
+          <OverridesEditor row={row} onSaved={load} />
+        )}
 
         <View style={styles.netBox}>
           <Text style={styles.netLabel}>NET SALARY</Text>
@@ -119,6 +134,94 @@ export default function PayrollDetail() {
     </SafeAreaView>
   );
 }
+
+function OverridesEditor({ row, onSaved }: { row: any; onSaved: () => void }) {
+  const [bonus, setBonus] = useState(String(row.bonus || ''));
+  const [fine, setFine] = useState(String(row.fine || ''));
+  const [ded, setDed] = useState(String(row.manual_deduction || ''));
+  const [note, setNote] = useState(row.note || '');
+  const [pay, setPay] = useState<'cash' | 'bank' | 'upi' | 'cheque'>(row.payment_mode || 'cash');
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await api.put(`/payroll/entry/${row.id}`, {
+        bonus_override: parseFloat(bonus || '0'),
+        fine_override: parseFloat(fine || '0'),
+        manual_deduction_override: parseFloat(ded || '0'),
+        note, payment_mode: pay,
+      });
+      onSaved();
+    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <View style={{ marginTop: spacing.lg }} testID="overrides-editor">
+      <SectionTitle text="Adjust (before payment)" />
+      <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+        <NumField label="Bonus" v={bonus} onC={setBonus} testID="ov-bonus" />
+        <NumField label="Fine" v={fine} onC={setFine} testID="ov-fine" />
+        <NumField label="Deduction" v={ded} onC={setDed} testID="ov-ded" />
+      </View>
+      <Text style={styles.section}>Payment Mode</Text>
+      <View style={{ flexDirection: 'row', gap: 6 }}>
+        {(['cash', 'bank', 'upi', 'cheque'] as const).map((m) => (
+          <Pressable
+            key={m} testID={`pay-mode-${m}`}
+            onPress={() => setPay(m)}
+            style={[stylesOv.mode, pay === m && stylesOv.modeActive]}
+          >
+            <Text style={[stylesOv.modeText, pay === m && { color: colors.onBrandPrimary }]}>{m.toUpperCase()}</Text>
+          </Pressable>
+        ))}
+      </View>
+      <Text style={styles.section}>Note (shows on PDF)</Text>
+      <TextInput
+        testID="ov-note"
+        value={note} onChangeText={setNote} multiline
+        placeholder="Optional payslip note"
+        placeholderTextColor={colors.mutedText}
+        style={stylesOv.noteInput}
+      />
+      <Pressable onPress={save} disabled={saving} style={[stylesOv.saveBtn, saving && { opacity: 0.6 }]} testID="save-overrides-btn">
+        {saving ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={stylesOv.saveText}>Save Adjustments</Text>}
+      </Pressable>
+    </View>
+  );
+}
+
+function NumField({ label, v, onC, testID }: { label: string; v: string; onC: (s: string) => void; testID?: string }) {
+  return (
+    <View style={{ flex: 1 }}>
+      <Text style={stylesOv.numLabel}>{label}</Text>
+      <TextInput testID={testID} value={v} onChangeText={(x) => onC(x.replace(/[^0-9.]/g, ''))} keyboardType="numeric" placeholder="0" placeholderTextColor={colors.mutedText} style={stylesOv.numInput} />
+    </View>
+  );
+}
+
+const stylesOv = StyleSheet.create({
+  numLabel: { color: colors.mutedText, fontSize: 11, marginBottom: 4 },
+  numInput: {
+    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1,
+    borderColor: colors.border, color: colors.onSurface, paddingHorizontal: 10,
+    paddingVertical: 10, fontSize: 14, textAlign: 'right',
+  },
+  mode: {
+    flex: 1, paddingVertical: 10, borderRadius: radius.md,
+    backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, alignItems: 'center',
+  },
+  modeActive: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
+  modeText: { color: colors.onSurfaceTertiary, fontWeight: '700', fontSize: 10 },
+  noteInput: {
+    minHeight: 60, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md,
+    borderWidth: 1, borderColor: colors.border, padding: spacing.md, color: colors.onSurface,
+    fontSize: 13, textAlignVertical: 'top',
+  },
+  saveBtn: { marginTop: spacing.md, backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: 12, alignItems: 'center' },
+  saveText: { color: colors.onBrandPrimary, fontWeight: '800', fontSize: 14 },
+});
 
 function Header({ title, onBack }: { title: string; onBack: () => void }) {
   return (

@@ -236,6 +236,31 @@ class PayrollAdjustIn(BaseModel):
     paid: Optional[bool] = None
 
 
+class PayrollEntryUpdateIn(BaseModel):
+    bonus_override: Optional[float] = None
+    fine_override: Optional[float] = None
+    manual_deduction_override: Optional[float] = None
+    paid_days_override: Optional[float] = None
+    note: Optional[str] = None
+    payment_mode: Optional[Literal['cash', 'bank', 'upi', 'cheque']] = None
+
+
+class AttendanceDayIn(BaseModel):
+    status: Literal['present', 'absent', 'half_day', 'leave', 'holiday'] = 'present'
+    check_in_time: Optional[str] = None   # HH:MM (local)
+    check_out_time: Optional[str] = None  # HH:MM (local)
+    working_hours: Optional[float] = None
+    note: Optional[str] = ''
+
+
+class CalendarCorrectionIn(BaseModel):
+    date: str
+    desired_check_in: Optional[str] = None   # HH:MM
+    desired_check_out: Optional[str] = None  # HH:MM
+    reason_type: Literal['forgot_check_in', 'forgot_check_out', 'machine_error', 'other'] = 'other'
+    note: Optional[str] = ''
+
+
 # ---------------- Seed ----------------
 async def seed():
     await db.users.create_index('username', unique=True)
@@ -654,6 +679,127 @@ async def attendance_live(_: dict = Depends(require_staff)):
     return events
 
 
+# ---- Calendar view + edit ----
+def _iter_month_dates(year: int, month: int):
+    from calendar import monthrange
+    days = monthrange(year, month)[1]
+    for d in range(1, days + 1):
+        yield date(year, month, d)
+
+
+@api.get('/attendance/calendar/{emp_id}')
+async def attendance_calendar(emp_id: str, year: int, month: int, user=Depends(get_current)):
+    if user['role'] == 'employee' and user['id'] != emp_id:
+        raise HTTPException(status_code=403, detail='Employees can view only their own calendar')
+    if not await db.employees.find_one({'id': emp_id}, {'_id': 0, 'id': 1}):
+        raise HTTPException(status_code=404, detail='Employee not found')
+    from calendar import monthrange
+    days = monthrange(year, month)[1]
+    start = f'{year:04d}-{month:02d}-01'
+    end = f'{year:04d}-{month:02d}-{days:02d}'
+    att_map = {}
+    async for a in db.attendance.find(
+        {'employee_id': emp_id, 'date': {'$gte': start, '$lte': end}},
+        {'_id': 0, 'check_in.selfie': 0, 'check_out.selfie': 0},
+    ):
+        att_map[a['date']] = a
+    holidays: dict = {}
+    async for h in db.holidays.find({'date': {'$gte': start, '$lte': end}}, {'_id': 0}):
+        holidays[h['date']] = h
+    leaves: list = []
+    async for l in db.leaves.find({'employee_id': emp_id, 'status': 'approved'}, {'_id': 0}):
+        leaves.append(l)
+
+    days_out = []
+    for d in _iter_month_dates(year, month):
+        ds = d.isoformat()
+        a = att_map.get(ds)
+        # Determine effective status
+        on_leave = any(l['from_date'] <= ds <= l['to_date'] for l in leaves)
+        holiday = holidays.get(ds)
+        status = 'absent'
+        if holiday: status = 'holiday'
+        if on_leave: status = 'leave'
+        if a:
+            if a.get('status') == 'present' and a.get('check_in'): status = 'present'
+            elif a.get('status') == 'half_day': status = 'half_day'
+            elif a.get('check_in') and not a.get('check_out'): status = 'missing_punch'
+        days_out.append({
+            'date': ds, 'weekday': d.weekday(),  # 0=Mon
+            'status': status,
+            'is_sunday': d.weekday() == 6,
+            'holiday_name': holiday['name'] if holiday else None,
+            'check_in': a.get('check_in', {}).get('timestamp') if a and a.get('check_in') else None,
+            'check_out': a.get('check_out', {}).get('timestamp') if a and a.get('check_out') else None,
+            'is_late': a.get('is_late', False) if a else False,
+            'working_hours': a.get('working_hours', 0) if a else 0,
+            'via_correction': a.get('via_correction', False) if a else False,
+        })
+    return {'year': year, 'month': month, 'days': days_out}
+
+
+def _combine_dt(date_str: str, hhmm: Optional[str]) -> Optional[str]:
+    if not hhmm: return None
+    try:
+        h, m = hhmm.split(':')
+        # Assume IST for display consistency; store UTC ISO
+        d = date.fromisoformat(date_str)
+        dt = datetime(d.year, d.month, d.day, int(h), int(m), tzinfo=timezone(timedelta(hours=5, minutes=30)))
+        return dt.astimezone(timezone.utc).isoformat()
+    except Exception:
+        return None
+
+
+@api.put('/attendance/day/{emp_id}/{d}')
+async def edit_day(emp_id: str, d: str, body: AttendanceDayIn, user=Depends(require_admin)):
+    if not await db.employees.find_one({'id': emp_id}):
+        raise HTTPException(status_code=404, detail='Employee not found')
+    iso = now_utc().isoformat()
+    check_in_ts = _combine_dt(d, body.check_in_time)
+    check_out_ts = _combine_dt(d, body.check_out_time)
+    working_hours = body.working_hours
+    if working_hours is None and check_in_ts and check_out_ts:
+        try:
+            working_hours = round(
+                (datetime.fromisoformat(check_out_ts) - datetime.fromisoformat(check_in_ts)).total_seconds() / 3600, 2
+            )
+        except Exception:
+            working_hours = 0
+    doc = {
+        'employee_id': emp_id, 'date': d,
+        'check_in': {'timestamp': check_in_ts, 'edited': True} if check_in_ts else None,
+        'check_out': {'timestamp': check_out_ts, 'edited': True} if check_out_ts else None,
+        'working_hours': working_hours or 0,
+        'status': body.status, 'is_late': False,
+        'note': body.note or '', 'edited_by': user['name'], 'edited_at': iso,
+    }
+    existing = await db.attendance.find_one({'employee_id': emp_id, 'date': d}, {'_id': 0})
+    if existing:
+        await db.attendance.update_one({'id': existing['id']}, {'$set': doc})
+        att_id = existing['id']
+    else:
+        att_id = str(uuid.uuid4())
+        await db.attendance.insert_one({'id': att_id, **doc, 'created_at': iso})
+    await log_audit(user, 'attendance.edit', 'attendance', att_id, f'{emp_id} · {d}',
+                    {'status': body.status, 'check_in': check_in_ts, 'check_out': check_out_ts})
+    return {'ok': True, 'attendance_id': att_id}
+
+
+# Extend corrections to accept desired times when raised from calendar
+@api.post('/attendance/corrections/calendar')
+async def calendar_correction(body: CalendarCorrectionIn, user=Depends(require_employee)):
+    iso = now_utc().isoformat()
+    doc = {
+        'id': str(uuid.uuid4()), 'employee_id': user['id'], 'employee_name': user['name'],
+        'employee_code': user['employee_code'], 'date': body.date,
+        'reason_type': body.reason_type, 'note': body.note or '',
+        'desired_check_in': body.desired_check_in, 'desired_check_out': body.desired_check_out,
+        'status': 'pending', 'created_at': iso, 'decided_by': None, 'decided_at': None, 'decision_note': '',
+    }
+    await db.corrections.insert_one(dict(doc))
+    return {k: v for k, v in doc.items() if k != '_id'}
+
+
 # ---------------- Corrections ----------------
 @api.post('/attendance/corrections')
 async def create_correction(body: CorrectionIn, user=Depends(require_employee)):
@@ -693,12 +839,37 @@ async def decide_correction(cid: str, body: DecisionIn, user=Depends(require_adm
     # If approved, add a stub attendance entry so it counts in payroll
     if new_status == 'approved':
         existing = await db.attendance.find_one({'employee_id': r['employee_id'], 'date': r['date']}, {'_id': 0})
-        if not existing:
+        # If desired times were provided, apply them precisely; otherwise create a stub 8-hour day.
+        desired_in = r.get('desired_check_in')
+        desired_out = r.get('desired_check_out')
+        if desired_in or desired_out:
+            iso_in = _combine_dt(r['date'], desired_in) if desired_in else None
+            iso_out = _combine_dt(r['date'], desired_out) if desired_out else None
+            hours = 0
+            if iso_in and iso_out:
+                try:
+                    hours = round((datetime.fromisoformat(iso_out) - datetime.fromisoformat(iso_in)).total_seconds() / 3600, 2)
+                except Exception: hours = 0
+            update = {
+                'check_in': {'timestamp': iso_in, 'edited': True} if iso_in else None,
+                'check_out': {'timestamp': iso_out, 'edited': True} if iso_out else None,
+                'working_hours': hours, 'status': 'present' if hours >= 4 else 'half_day' if hours > 0 else 'present',
+                'via_correction': True, 'edited_by': user['name'], 'edited_at': now_utc().isoformat(),
+            }
+            if existing:
+                await db.attendance.update_one({'id': existing['id']}, {'$set': update})
+            else:
+                await db.attendance.insert_one({
+                    'id': str(uuid.uuid4()), 'employee_id': r['employee_id'], 'date': r['date'],
+                    'is_late': False, 'created_at': now_utc().isoformat(), **update,
+                })
+        elif not existing:
             await db.attendance.insert_one({
                 'id': str(uuid.uuid4()), 'employee_id': r['employee_id'], 'date': r['date'],
                 'check_in': None, 'check_out': None, 'is_late': False, 'working_hours': 8,
                 'status': 'present', 'created_at': now_utc().isoformat(), 'via_correction': True,
             })
+    await log_audit(user, f'correction.{new_status}', 'correction', cid, r.get('employee_code', ''))
     return await db.corrections.find_one({'id': cid}, {'_id': 0})
 
 
@@ -946,6 +1117,20 @@ def _month_bounds(year: int, month: int) -> tuple:
     return start, end, last_day
 
 
+async def _opening_balance(emp_id: str, up_to_date_exclusive: str) -> float:
+    running = 0.0
+    async for e in db.timeline.find(
+        {'employee_id': emp_id, 'created_at': {'$lt': up_to_date_exclusive}}, {'_id': 0}
+    ).sort('created_at', 1):
+        t = e.get('type')
+        if t in ('advance', 'bonus', 'fine', 'deduction', 'salary'):
+            amt = float(e.get('amount') or 0)
+            sign = e.get('sign', _ledger_sign(t))
+            delta = sign * abs(amt) if t != 'salary' else amt
+            running += delta
+    return round(running, 2)
+
+
 async def _compute_payroll(year: int, month: int) -> list:
     start, end, total_days = _month_bounds(year, month)
     # Attendance in month
@@ -1013,6 +1198,8 @@ async def _compute_payroll(year: int, month: int) -> list:
             elif t['type'] == 'deduction': month_deduction += amt
 
         net = round(earned + month_bonus - month_advance - month_fine - month_deduction, 2)
+        opening = await _opening_balance(e['id'], start)
+        net_with_opening = round(net + opening, 2)
         rows.append({
             'employee_id': e['id'], 'employee_code': e.get('employee_code'), 'name': e['name'],
             'designation': e.get('designation'), 'department': e.get('department'),
@@ -1021,7 +1208,8 @@ async def _compute_payroll(year: int, month: int) -> list:
             'total_days': total_days, 'effective_days': round(min(effective, total_days), 2),
             'earned': earned, 'advance': round(month_advance, 2), 'bonus': round(month_bonus, 2),
             'fine': round(month_fine, 2), 'manual_deduction': round(month_deduction, 2),
-            'net_salary': net,
+            'opening_balance': opening,
+            'net_salary': net_with_opening,
         })
     return rows
 
@@ -1092,6 +1280,34 @@ async def payroll_unlock(year: int, month: int, _: dict = Depends(require_owner)
     await db.payroll_locks.update_one({'year': year, 'month': month},
                                        {'$set': {'locked': False}})
     return {'ok': True}
+
+
+@api.put('/payroll/entry/{entry_id}')
+async def payroll_entry_update(entry_id: str, body: PayrollEntryUpdateIn, user=Depends(require_payroll_writer)):
+    entry = await db.payroll_entries.find_one({'id': entry_id}, {'_id': 0})
+    if not entry: raise HTTPException(status_code=404, detail='Entry not found')
+    lock = await db.payroll_locks.find_one({'year': entry['year'], 'month': entry['month']}, {'_id': 0})
+    if lock and lock.get('locked'):
+        raise HTTPException(status_code=400, detail='Payroll month is locked')
+    upd: dict = {}
+    if body.bonus_override is not None: upd['bonus'] = float(body.bonus_override)
+    if body.fine_override is not None: upd['fine'] = float(body.fine_override)
+    if body.manual_deduction_override is not None: upd['manual_deduction'] = float(body.manual_deduction_override)
+    if body.paid_days_override is not None: upd['effective_days'] = float(body.paid_days_override)
+    if body.note is not None: upd['note'] = body.note
+    if body.payment_mode is not None: upd['payment_mode'] = body.payment_mode
+    # Recompute net using new numbers
+    merged = {**entry, **upd}
+    per_day = merged['base_salary'] / merged['total_days'] if merged['total_days'] else 0
+    earned = round(per_day * min(merged.get('effective_days', 0), merged['total_days']), 2)
+    upd['earned'] = earned
+    upd['net_salary'] = round(
+        earned + merged.get('bonus', 0) - merged.get('advance', 0)
+        - merged.get('fine', 0) - merged.get('manual_deduction', 0)
+        + merged.get('opening_balance', 0), 2)
+    await db.payroll_entries.update_one({'id': entry_id}, {'$set': upd})
+    await log_audit(user, 'payroll.entry.update', 'payroll_entry', entry_id, entry.get('employee_code', ''), upd)
+    return await db.payroll_entries.find_one({'id': entry_id}, {'_id': 0})
 
 
 @api.post('/payroll/entry/{entry_id}/pay')
@@ -1165,11 +1381,6 @@ async def payroll_pdf(entry_id: str, _: dict = Depends(require_staff)):
         ['Sunday work', f"{entry['sunday_work']}"],
         ['Leave days', f"{entry['leave_days']}"],
         ['Effective days', f"{entry['effective_days']} / {entry['total_days']}"],
-        ['Earned', f"₹{entry['earned']:.0f}"],
-        ['Bonus (+)', f"₹{entry['bonus']:.0f}"],
-        ['Advance (-)', f"₹{entry['advance']:.0f}"],
-        ['Fine (-)', f"₹{entry['fine']:.0f}"],
-        ['Manual Deduction (-)', f"₹{entry['manual_deduction']:.0f}"],
     ]
     t2 = Table(body_data, colWidths=[80*mm, 90*mm])
     t2.setStyle(TableStyle([
@@ -1181,7 +1392,42 @@ async def payroll_pdf(entry_id: str, _: dict = Depends(require_staff)):
         ('TOPPADDING', (0,0), (-1,-1), 6),
     ]))
     elements.append(t2)
-    elements.append(Spacer(1, 6*mm))
+    elements.append(Spacer(1, 5*mm))
+
+    # Earnings block
+    elements.append(Paragraph('EARNINGS', ParagraphStyle('h', parent=styles['Normal'], fontSize=9, textColor=gold, spaceAfter=4)))
+    earn_data = [
+        ['Earned salary', f"₹{entry['earned']:.0f}"],
+        ['Bonus', f"₹{entry['bonus']:.0f}"],
+    ]
+    if entry.get('opening_balance', 0) > 0:
+        earn_data.append(['Opening balance (owed to employee)', f"₹{entry.get('opening_balance', 0):.0f}"])
+    t_earn = Table(earn_data, colWidths=[110*mm, 60*mm])
+    t_earn.setStyle(TableStyle([
+        ('FONT', (0,0), (-1,-1), 'Helvetica', 10),
+        ('ALIGN', (1,0), (1,-1), 'RIGHT'),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+    ]))
+    elements.append(t_earn)
+    elements.append(Spacer(1, 4*mm))
+
+    # Deductions block
+    elements.append(Paragraph('DEDUCTIONS', ParagraphStyle('h', parent=styles['Normal'], fontSize=9, textColor=rlcolors.HexColor('#7A2828'), spaceAfter=4)))
+    ded_data = [
+        ['Advance', f"₹{entry['advance']:.0f}"],
+        ['Fine', f"₹{entry['fine']:.0f}"],
+        ['Manual deduction', f"₹{entry['manual_deduction']:.0f}"],
+    ]
+    if entry.get('opening_balance', 0) < 0:
+        ded_data.append(['Opening balance (owed by employee)', f"₹{abs(entry.get('opening_balance', 0)):.0f}"])
+    t_ded = Table(ded_data, colWidths=[110*mm, 60*mm])
+    t_ded.setStyle(TableStyle([
+        ('FONT', (0,0), (-1,-1), 'Helvetica', 10),
+        ('ALIGN', (1,0), (1,-1), 'RIGHT'),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+    ]))
+    elements.append(t_ded)
+    elements.append(Spacer(1, 5*mm))
 
     net_data = [['NET SALARY', f"₹{entry['net_salary']:.0f}"]]
     t3 = Table(net_data, colWidths=[80*mm, 90*mm])
@@ -1196,6 +1442,14 @@ async def payroll_pdf(entry_id: str, _: dict = Depends(require_staff)):
         ('RIGHTPADDING', (0,0), (-1,-1), 10),
     ]))
     elements.append(t3)
+    elements.append(Spacer(1, 4*mm))
+
+    # Payment mode + note
+    pay_mode = (entry.get('payment_mode') or '—').upper()
+    elements.append(Paragraph(f"Payment mode: <b>{pay_mode}</b>", label_style))
+    if entry.get('note'):
+        elements.append(Spacer(1, 2*mm))
+        elements.append(Paragraph(f"Note: {entry.get('note')}", label_style))
     elements.append(Spacer(1, 10*mm))
 
     elements.append(Paragraph('Received by: __________________________', label_style))
@@ -1214,6 +1468,214 @@ async def payroll_pdf(entry_id: str, _: dict = Depends(require_staff)):
         media_type='application/pdf',
         headers={'Content-Disposition': f'inline; filename="rmj-salary-{emp.get("employee_code", "emp")}-{period}.pdf"'},
     )
+
+
+# ---------------- Audit ----------------
+async def log_audit(user, action: str, entity_type: str, entity_id: str = '',
+                    entity_label: str = '', details: Optional[dict] = None):
+    try:
+        await db.audit_logs.insert_one({
+            'id': str(uuid.uuid4()),
+            'actor_id': user.get('id', ''),
+            'actor_name': user.get('name') or user.get('employee_code') or user.get('username', ''),
+            'actor_role': user.get('role', ''),
+            'action': action, 'entity_type': entity_type, 'entity_id': entity_id,
+            'entity_label': entity_label, 'details': details or {},
+            'created_at': now_utc().isoformat(),
+        })
+    except Exception as e:
+        logger.warning(f'audit log failed: {e}')
+
+
+@api.get('/audit/logs')
+async def audit_list(
+    actor: Optional[str] = None, entity_type: Optional[str] = None,
+    from_date: Optional[str] = None, to_date: Optional[str] = None,
+    limit: int = 200, _: dict = Depends(require_owner),
+):
+    q: dict = {}
+    if actor: q['actor_id'] = actor
+    if entity_type: q['entity_type'] = entity_type
+    if from_date or to_date:
+        rng: dict = {}
+        if from_date: rng['$gte'] = from_date
+        if to_date: rng['$lte'] = to_date + 'T23:59:59'
+        q['created_at'] = rng
+    return await db.audit_logs.find(q, {'_id': 0}).sort('created_at', -1).limit(limit).to_list(limit)
+
+
+# ---------------- Reports (PDF) ----------------
+def _report_pdf(title: str, subtitle: str, columns: list, rows: list) -> bytes:
+    from io import BytesIO
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib import colors as rlcolors
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import mm
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    buf = BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=landscape(A4), leftMargin=12*mm, rightMargin=12*mm, topMargin=14*mm, bottomMargin=14*mm)
+    styles = getSampleStyleSheet()
+    gold = rlcolors.HexColor('#D4AF37')
+    dark = rlcolors.HexColor('#0D0D0D')
+    els = [
+        Paragraph(f"<b>{title}</b>",
+                  ParagraphStyle('t', parent=styles['Title'], textColor=dark, fontSize=18)),
+        Paragraph(subtitle, ParagraphStyle('s', parent=styles['Normal'], textColor=rlcolors.HexColor('#555'), fontSize=9)),
+        Spacer(1, 6*mm),
+    ]
+    data = [columns] + [[str(v) if v is not None else '—' for v in r] for r in rows]
+    t = Table(data, repeatRows=1)
+    style = TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), gold),
+        ('TEXTCOLOR', (0, 0), (-1, 0), dark),
+        ('FONT', (0, 0), (-1, 0), 'Helvetica-Bold', 9),
+        ('FONT', (0, 1), (-1, -1), 'Helvetica', 8),
+        ('GRID', (0, 0), (-1, -1), 0.25, rlcolors.HexColor('#ddd')),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 5),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ('TOPPADDING', (0, 0), (-1, -1), 5),
+    ])
+    t.setStyle(style)
+    els.append(t)
+    els.append(Spacer(1, 8*mm))
+    els.append(Paragraph(f"Generated {now_utc().strftime('%d %b %Y %H:%M UTC')} · RMJ One",
+                          ParagraphStyle('f', parent=styles['Normal'], fontSize=7, textColor=rlcolors.HexColor('#999'))))
+    doc.build(els)
+    pdf = buf.getvalue(); buf.close()
+    return pdf
+
+
+def _pdf_response(pdf: bytes, filename: str):
+    from starlette.responses import Response as SR
+    return SR(content=pdf, media_type='application/pdf',
+              headers={'Content-Disposition': f'inline; filename="{filename}"'})
+
+
+@api.get('/reports/{kind}/pdf')
+async def report_pdf(
+    kind: str,
+    from_date: Optional[str] = None, to_date: Optional[str] = None,
+    year: Optional[int] = None, month: Optional[int] = None,
+    employee_id: Optional[str] = None,
+    user=Depends(require_staff),
+):
+    kind = kind.lower()
+    today = today_str()
+    frm = from_date or today[:7] + '-01'
+    to = to_date or today
+
+    if kind == 'attendance':
+        q: dict = {'date': {'$gte': frm, '$lte': to}}
+        if employee_id: q['employee_id'] = employee_id
+        rows = []
+        emp_map = {e['id']: e async for e in db.employees.find({}, {'_id': 0, 'pin_hash': 0, 'photo': 0})}
+        async for a in db.attendance.find(q, {'_id': 0, 'check_in.selfie': 0, 'check_out.selfie': 0}).sort('date', 1):
+            e = emp_map.get(a['employee_id'], {})
+            rows.append([a['date'], e.get('employee_code', '—'), e.get('name', '—'),
+                         a.get('status', '—'),
+                         (a.get('check_in') or {}).get('timestamp', '') or '—',
+                         (a.get('check_out') or {}).get('timestamp', '') or '—',
+                         a.get('working_hours', 0),
+                         'Yes' if a.get('is_late') else ''])
+        return _pdf_response(
+            _report_pdf('Attendance Report', f"{frm} to {to}",
+                         ['Date', 'Code', 'Employee', 'Status', 'In', 'Out', 'Hours', 'Late'], rows),
+            f'attendance-{frm}-to-{to}.pdf')
+
+    if kind == 'late':
+        q = {'date': {'$gte': frm, '$lte': to}, 'is_late': True}
+        if employee_id: q['employee_id'] = employee_id
+        rows = []
+        emp_map = {e['id']: e async for e in db.employees.find({}, {'_id': 0, 'pin_hash': 0, 'photo': 0})}
+        async for a in db.attendance.find(q, {'_id': 0, 'check_in.selfie': 0, 'check_out.selfie': 0}).sort('date', 1):
+            e = emp_map.get(a['employee_id'], {})
+            rows.append([a['date'], e.get('employee_code', '—'), e.get('name', '—'),
+                         (a.get('check_in') or {}).get('timestamp', '') or '—',
+                         e.get('shift', '—')])
+        return _pdf_response(
+            _report_pdf('Late Punches Report', f"{frm} to {to}",
+                         ['Date', 'Code', 'Employee', 'Check In', 'Shift'], rows),
+            f'late-{frm}-to-{to}.pdf')
+
+    if kind == 'missing_punch':
+        q = {'date': {'$gte': frm, '$lte': to}, 'check_in': {'$ne': None}, 'check_out': None}
+        if employee_id: q['employee_id'] = employee_id
+        rows = []
+        emp_map = {e['id']: e async for e in db.employees.find({}, {'_id': 0, 'pin_hash': 0, 'photo': 0})}
+        async for a in db.attendance.find(q, {'_id': 0, 'check_in.selfie': 0}).sort('date', 1):
+            e = emp_map.get(a['employee_id'], {})
+            rows.append([a['date'], e.get('employee_code', '—'), e.get('name', '—'),
+                         (a.get('check_in') or {}).get('timestamp', '') or '—'])
+        return _pdf_response(
+            _report_pdf('Missing Punch Report', f"{frm} to {to}",
+                         ['Date', 'Code', 'Employee', 'Check In'], rows),
+            f'missing-punch-{frm}-to-{to}.pdf')
+
+    if kind == 'leave':
+        q = {'from_date': {'$lte': to}, 'to_date': {'$gte': frm}}
+        if employee_id: q['employee_id'] = employee_id
+        rows = []
+        async for l in db.leaves.find(q, {'_id': 0}).sort('from_date', -1):
+            rows.append([l['from_date'], l['to_date'], l.get('employee_code', '—'),
+                         l.get('employee_name', '—'), (l.get('leave_type') or '').upper(),
+                         l.get('status', '').upper(), (l.get('reason') or '')[:60]])
+        return _pdf_response(
+            _report_pdf('Leave Report', f"{frm} to {to}",
+                         ['From', 'To', 'Code', 'Employee', 'Type', 'Status', 'Reason'], rows),
+            f'leave-{frm}-to-{to}.pdf')
+
+    if kind == 'payroll':
+        if not year or not month:
+            raise HTTPException(status_code=400, detail='year and month are required for payroll report')
+        rows = []
+        async for r in db.payroll_entries.find({'year': year, 'month': month}, {'_id': 0}).sort('name', 1):
+            rows.append([r.get('employee_code', '—'), r['name'], f"₹{r['base_salary']:.0f}",
+                         r['present_days'], r['half_days'], r['sunday_work'], r['leave_days'],
+                         f"₹{r.get('opening_balance', 0):.0f}",
+                         f"₹{r['bonus']:.0f}", f"₹{r['advance']:.0f}",
+                         f"₹{r['fine']:.0f}", f"₹{r['manual_deduction']:.0f}",
+                         f"₹{r['net_salary']:.0f}",
+                         (r.get('payment_mode') or '—').upper(),
+                         'PAID' if r.get('paid') else 'PENDING'])
+        total = sum(float(r.get('net_salary') or 0) for r in
+                     await db.payroll_entries.find({'year': year, 'month': month}, {'_id': 0}).to_list(1000))
+        title = f"Payroll Report — {year}-{month:02d}"
+        return _pdf_response(
+            _report_pdf(title, f"Total Net: ₹{total:.0f}",
+                         ['Code', 'Name', 'Base', 'P', 'HD', 'Su', 'Lv', 'Opening', 'Bonus', 'Adv', 'Fine', 'Ded', 'Net', 'Mode', 'Status'], rows),
+            f'payroll-{year}-{month:02d}.pdf')
+
+    if kind == 'ledger':
+        if not employee_id:
+            raise HTTPException(status_code=400, detail='employee_id required for ledger report')
+        emp = await db.employees.find_one({'id': employee_id}, {'_id': 0, 'pin_hash': 0})
+        if not emp: raise HTTPException(status_code=404, detail='Employee not found')
+        entries = await db.timeline.find({'employee_id': employee_id}, {'_id': 0}).sort('created_at', 1).to_list(2000)
+        running = 0.0; out = []
+        for e in entries:
+            amount = float(e.get('amount') or 0)
+            sign = e.get('sign', _ledger_sign(e.get('type', 'other')))
+            delta = 0.0
+            if e.get('type') in ('advance', 'bonus', 'fine', 'deduction'):
+                delta = sign * abs(amount)
+            elif e.get('type') == 'salary':
+                delta = amount
+            running += delta
+            out.append([e.get('created_at', '')[:10], (e.get('type') or '').upper(),
+                         e.get('title', ''),
+                         (f"{'+' if delta > 0 else ''}₹{delta:.0f}" if delta else '—'),
+                         f"₹{running:.0f}"])
+        # Reverse to newest first
+        out.reverse()
+        return _pdf_response(
+            _report_pdf(f'Ledger — {emp["name"]}', f"Closing balance: ₹{running:.0f}",
+                         ['Date', 'Type', 'Description', 'Delta', 'Balance'], out),
+            f'ledger-{emp.get("employee_code", "emp")}.pdf')
+
+    raise HTTPException(status_code=400, detail=f'Unknown report kind: {kind}')
 
 
 # ---------------- Mount ----------------

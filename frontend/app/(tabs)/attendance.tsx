@@ -98,7 +98,12 @@ export default function OwnerAttendance() {
             rows.length === 0 ? (
               <EmptyBox icon="people-outline" title="No employees" subtitle="Add employees first" />
             ) : rows.map((r) => (
-              <View key={r.employee_id} style={styles.row} testID={`att-row-${r.employee_id}`}>
+              <Pressable
+                key={r.employee_id}
+                style={styles.row}
+                testID={`att-row-${r.employee_id}`}
+                onPress={() => router.push(`/attendance/calendar/${r.employee_id}`)}
+              >
                 <View style={styles.avatar}><Text style={styles.avatarText}>{initials(r.name)}</Text></View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.rowName} numberOfLines={1}>{r.name}</Text>
@@ -113,7 +118,7 @@ export default function OwnerAttendance() {
                   </View>
                 </View>
                 <StatusPill row={r} />
-              </View>
+              </Pressable>
             ))
           ) : (
             events.length === 0 ? (

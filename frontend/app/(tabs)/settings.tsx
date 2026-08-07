@@ -51,6 +51,14 @@ export default function SettingsScreen() {
           <Pressable testID="settings-approvals-btn" onPress={() => router.push('/approvals')}>
             <Row icon="checkmark-done-outline" label="Approvals" trailing="Review" />
           </Pressable>
+          <Divider />
+          <Pressable testID="settings-reports-btn" onPress={() => router.push('/reports')}>
+            <Row icon="document-text-outline" label="Reports" trailing="Export PDF" />
+          </Pressable>
+          <Divider />
+          <Pressable testID="settings-audit-btn" onPress={() => router.push('/settings/audit')}>
+            <Row icon="shield-checkmark-outline" label="Audit Logs" trailing="Owner" />
+          </Pressable>
         </View>
 
         <SectionLabel text="Preferences" />
