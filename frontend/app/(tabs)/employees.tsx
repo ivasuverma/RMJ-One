@@ -254,6 +254,6 @@ const styles = StyleSheet.create({
     position: 'absolute', right: 20, bottom: 20,
     width: 56, height: 56, borderRadius: 28, backgroundColor: colors.brandPrimary,
     alignItems: 'center', justifyContent: 'center',
-    shadowColor: '#000', shadowOpacity: 0.4, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 8,
+    boxShadow: '0px 6px 12px rgba(0,0,0,0.4)', elevation: 8,
   },
 });

@@ -184,8 +184,7 @@ export default function EmployeeForm() {
       {/* Sticky save */}
       <LinearGradient
         colors={['rgba(13,13,13,0)', 'rgba(13,13,13,0.95)']}
-        style={styles.saveBarBg}
-        pointerEvents="none"
+        style={[styles.saveBarBg, { pointerEvents: 'none' as const }]}
       />
       <View style={styles.saveBar}>
         <Pressable
