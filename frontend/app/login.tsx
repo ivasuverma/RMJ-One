@@ -31,12 +31,12 @@ export default function LoginScreen() {
     try {
       if (mode === 'owner') {
         await loginOwner(username.trim(), password);
-        router.replace('/(tabs)/dashboard');
       } else {
         if (!/^\d{4}$/.test(pin)) throw { detail: 'PIN must be exactly 4 digits' };
         await loginEmployee(empCode.trim().toUpperCase(), pin);
-        router.replace('/(emp)/home');
       }
+      // Let the root layout / index router pick the right destination based on the actual role
+      router.replace('/');
     } catch (e: any) {
       setError(e?.detail || 'Login failed');
     } finally {

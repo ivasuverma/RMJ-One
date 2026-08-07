@@ -11,8 +11,8 @@ export default function Index() {
   useEffect(() => {
     if (loading) return;
     if (!user) router.replace('/login');
-    else if (user.role === 'owner') router.replace('/(tabs)/dashboard');
-    else router.replace('/(emp)/home');
+    else if (user.role === 'employee') router.replace('/(emp)/home');
+    else router.replace('/(tabs)/dashboard');
   }, [user, loading, router]);
 
   return (

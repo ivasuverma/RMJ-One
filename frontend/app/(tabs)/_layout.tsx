@@ -12,10 +12,10 @@ export default function OwnerTabsLayout() {
   useEffect(() => {
     if (loading) return;
     if (!user) router.replace('/login');
-    else if (user.role !== 'owner') router.replace('/(emp)/home');
+    else if (user.role === 'employee') router.replace('/(emp)/home');
   }, [user, loading, router]);
 
-  if (loading || !user || user.role !== 'owner') {
+  if (loading || !user || user.role === 'employee') {
     return (
       <View style={{ flex: 1, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' }}>
         <ActivityIndicator color={colors.brandPrimary} size="large" />
