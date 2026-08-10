@@ -8,7 +8,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '@/src/api/client';
-import { colors, spacing, radius, images } from '@/src/theme';
+import { colors, spacing, radius, images, fonts } from '@/src/theme';
 
 type Emp = {
   id: string; name: string; employee_code: string; department: string;
@@ -19,8 +19,9 @@ type Emp = {
 };
 type TL = { id: string; type: string; title: string; description: string; amount: number; created_at: string };
 
-const TABS = ['Timeline', 'Details', 'Payroll'] as const;
+const TABS = ['Details', 'Payroll', 'Timeline'] as const;
 type TabKey = typeof TABS[number];
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 const fmtDate = (iso?: string) => {
   if (!iso) return '—';
@@ -43,7 +44,7 @@ export default function EmployeeProfile() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const [data, setData] = useState<{ employee: Emp; timeline: TL[] } | null>(null);
-  const [tab, setTab] = useState<TabKey>('Timeline');
+  const [tab, setTab] = useState<TabKey>('Details');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -167,9 +168,9 @@ export default function EmployeeProfile() {
         </View>
 
         <View style={{ paddingHorizontal: spacing.lg }}>
-          {tab === 'Timeline' && <TimelineList items={data.timeline} />}
           {tab === 'Details' && <DetailsCard emp={emp} />}
           {tab === 'Payroll' && <PayrollCard emp={emp} />}
+          {tab === 'Timeline' && <TimelineList items={data.timeline} />}
         </View>
       </ScrollView>
     </View>
@@ -254,6 +255,32 @@ function DetailsCard({ emp }: { emp: Emp }) {
 }
 
 function PayrollCard({ emp }: { emp: Emp }) {
+  const router = useRouter();
+  const now = new Date();
+  const [year, setYear] = useState(now.getFullYear());
+  const [month, setMonth] = useState(now.getMonth() + 1);
+  const [row, setRow] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await api.get<any>(`/payroll/${year}/${month}`);
+      const found = (res.rows || []).find((r: any) => r.employee_id === emp.id);
+      setRow(found ? { ...found, _saved: res.saved } : null);
+    } catch (_e) { setRow(null); }
+    finally { setLoading(false); }
+  }, [emp.id, year, month]);
+
+  useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  const stepMonth = (delta: number) => {
+    let m = month + delta, y = year;
+    if (m > 12) { m = 1; y += 1; }
+    if (m < 1) { m = 12; y -= 1; }
+    setMonth(m); setYear(y);
+  };
+
   return (
     <View style={styles.detailCard}>
       <SectionTitle text="Compensation" />
@@ -264,13 +291,92 @@ function PayrollCard({ emp }: { emp: Emp }) {
       <View style={{ height: spacing.md }} />
       <DetailRow label="Shift" value={emp.shift || 'General'} />
       <DetailRow label="Joined" value={fmtDate(emp.joining_date)} />
-      <View style={styles.infoBox}>
-        <Ionicons name="information-circle-outline" size={16} color={colors.brandSecondary} />
-        <Text style={styles.infoText}>Full payroll module arrives in Milestone 3.</Text>
+
+      <View style={payrollCardStyles.monthRow}>
+        <Pressable onPress={() => stepMonth(-1)} style={payrollCardStyles.monthNav} testID="emp-payroll-prev" hitSlop={8}>
+          <Ionicons name="chevron-back" size={18} color={colors.onSurface} />
+        </Pressable>
+        <Text style={payrollCardStyles.monthLabel}>{MONTHS[month - 1]} {year}</Text>
+        <Pressable onPress={() => stepMonth(1)} style={payrollCardStyles.monthNav} testID="emp-payroll-next" hitSlop={8}>
+          <Ionicons name="chevron-forward" size={18} color={colors.onSurface} />
+        </Pressable>
       </View>
+
+      {loading ? (
+        <ActivityIndicator color={colors.brandPrimary} style={{ marginVertical: spacing.lg }} />
+      ) : !row ? (
+        <View style={styles.infoBox}>
+          <Ionicons name="information-circle-outline" size={16} color={colors.brandSecondary} />
+          <Text style={styles.infoText}>No attendance recorded for this month yet.</Text>
+        </View>
+      ) : (
+        <>
+          <View style={payrollCardStyles.glance} testID="emp-payroll-glance">
+            <GlanceCell label="Present" value={String(row.present_days)} />
+            <GlanceCell label="Half" value={String(row.half_days)} />
+            <GlanceCell label="Paid Off" value={String(row.weekly_off_days ?? 0)} />
+            <GlanceCell label="Leave" value={String(row.leave_days)} />
+          </View>
+          <View style={[payrollCardStyles.netRow, row.paid && payrollCardStyles.netRowPaid]}>
+            <View>
+              <Text style={payrollCardStyles.netLabel}>{row.paid ? 'PAID THIS MONTH' : row._saved ? 'CALCULATED (UNPAID)' : 'ESTIMATED'}</Text>
+              <Text style={payrollCardStyles.netVal}>{fmtINR(row.net_salary)}</Text>
+            </View>
+            {row.paid && <Ionicons name="checkmark-circle" size={22} color={colors.brandPrimary} />}
+          </View>
+          <Pressable
+            style={payrollCardStyles.detailBtn}
+            testID="emp-payroll-open-detail"
+            onPress={() => router.push({ pathname: '/payroll/[emp]', params: { emp: emp.id, year: String(year), month: String(month) } })}
+          >
+            <Ionicons name="document-text-outline" size={16} color={colors.onSurface} />
+            <Text style={payrollCardStyles.detailBtnText}>View full breakdown & formula</Text>
+            <Ionicons name="chevron-forward" size={16} color={colors.onSurface} />
+          </Pressable>
+        </>
+      )}
     </View>
   );
 }
+
+function GlanceCell({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={payrollCardStyles.glanceCell}>
+      <Text style={payrollCardStyles.glanceValue}>{value}</Text>
+      <Text style={payrollCardStyles.glanceLabel}>{label}</Text>
+    </View>
+  );
+}
+
+const payrollCardStyles = StyleSheet.create({
+  monthRow: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.lg,
+    backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: 6,
+  },
+  monthNav: { width: 32, height: 32, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center' },
+  monthLabel: { flex: 1, textAlign: 'center', color: colors.onSurface, fontWeight: '700', fontSize: 13 },
+  glance: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
+  glanceCell: {
+    flex: 1, backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, borderWidth: 1,
+    borderColor: colors.border, paddingVertical: spacing.sm, alignItems: 'center',
+  },
+  glanceValue: { color: colors.brandPrimary, fontSize: 16, fontWeight: '800' },
+  glanceLabel: { color: colors.mutedText, fontSize: 10, marginTop: 2 },
+  netRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    padding: spacing.md, marginTop: spacing.md,
+  },
+  netRowPaid: { backgroundColor: 'rgba(45,90,64,0.2)', borderColor: colors.success },
+  netLabel: { color: colors.brandSecondary, fontSize: 10, letterSpacing: 0.6 },
+  netVal: { color: colors.onSurface, fontSize: 20, fontWeight: '800', marginTop: 2 },
+  detailBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.md,
+    backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    padding: spacing.md,
+  },
+  detailBtnText: { flex: 1, color: colors.onSurface, fontWeight: '600', fontSize: 13 },
+});
 
 function SectionTitle({ text }: { text: string }) {
   return <Text style={styles.detailSection}>{text}</Text>;
@@ -306,7 +412,7 @@ const styles = StyleSheet.create({
   nameBlock: { paddingHorizontal: spacing.lg, paddingTop: spacing.xxl + spacing.md, paddingBottom: spacing.md },
   name: {
     color: colors.onSurface, fontSize: 28, fontWeight: '600',
-    fontFamily: Platform.select({ ios: 'Georgia', default: 'serif' }),
+    fontFamily: fonts.display,
   },
   designation: { color: colors.onSurfaceTertiary, fontSize: 14, marginTop: 4 },
   metaRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md, alignItems: 'center' },
@@ -371,7 +477,7 @@ const styles = StyleSheet.create({
   salaryLabel: { color: colors.brandSecondary, fontSize: 12, letterSpacing: 0.6, textTransform: 'uppercase' },
   salaryValue: {
     color: colors.onSurface, fontSize: 32, fontWeight: '700', marginTop: 4,
-    fontFamily: Platform.select({ ios: 'Georgia', default: 'serif' }),
+    fontFamily: fonts.display,
   },
   infoBox: {
     marginTop: spacing.lg, flexDirection: 'row', gap: spacing.sm, alignItems: 'center',

@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Platform, Alert, Linking, TextInput,
 } from 'react-native';
@@ -7,7 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { api } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthContext';
-import { colors, spacing, radius } from '@/src/theme';
+import { colors, spacing, radius, fonts } from '@/src/theme';
 
 const fmtINR = (n: number) => `₹${(n || 0).toLocaleString('en-IN')}`;
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -20,6 +20,7 @@ export default function PayrollDetail() {
   const canWrite = user?.role === 'owner' || user?.role === 'accountant';
   const [row, setRow] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const payGuard = useRef(false);
 
   const load = useCallback(async () => {
     try {
@@ -32,12 +33,15 @@ export default function PayrollDetail() {
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const markPaid = async () => {
+    if (payGuard.current) return; // stop rapid double/triple taps from double-firing
     if (!row?.id) { Alert.alert('Generate payroll first', 'Save the payroll for this month before marking paid.'); return; }
+    payGuard.current = true;
     try {
       await api.post(`/payroll/entry/${row.id}/pay`);
       await load();
       Alert.alert('Marked paid', 'Salary receipt is ready to download.');
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+    finally { payGuard.current = false; }
   };
 
   const downloadPdf = () => {
@@ -69,13 +73,42 @@ export default function PayrollDetail() {
           </View>
         </View>
 
+        <Pressable
+          style={styles.modifyBtn}
+          testID="modify-attendance-btn"
+          onPress={() => router.push(`/attendance/calendar/${row.employee_id}`)}
+        >
+          <Ionicons name="calendar-outline" size={16} color={colors.onSurface} />
+          <Text style={styles.modifyBtnText}>Modify attendance for this month</Text>
+          <Ionicons name="chevron-forward" size={16} color={colors.onSurface} />
+        </Pressable>
+
         <Line label="Base Salary" value={fmtINR(row.base_salary)} />
         <SectionTitle text="Days Summary" />
         <Line label="Present days" value={String(row.present_days)} />
         <Line label="Half days" value={String(row.half_days)} />
-        <Line label="Sunday work" value={String(row.sunday_work)} />
-        <Line label="Leave days" value={String(row.leave_days)} />
-        <Line label="Effective / Total" value={`${row.effective_days} / ${row.total_days}`} />
+        <Line label="Sunday work (bonus)" value={String(row.sunday_work)} />
+        <Line label="Leave days (paid)" value={String(row.leave_days)} />
+        <Line label="Holidays (paid)" value={String(row.holiday_days ?? 0)} />
+        <Line label="Weekly off / Paid off" value={String(row.weekly_off_days ?? 0)} />
+        <Line label="Effective / Total" value={`${row.effective_days} / ${row.total_days}`} accent />
+
+        <SectionTitle text="Formula" />
+        <View style={styles.formulaBox} testID="formula-box">
+          <Text style={styles.formulaLine}>Per-day rate = Base ÷ Total days</Text>
+          <Text style={styles.formulaCalc}>= {fmtINR(row.base_salary)} ÷ {row.total_days} = {fmtINR(row.per_day_rate ?? row.base_salary / row.total_days)}</Text>
+          <View style={styles.formulaDivider} />
+          <Text style={styles.formulaLine}>Earned = Per-day × Effective days + Per-day × Sunday work</Text>
+          <Text style={styles.formulaCalc}>
+            = {fmtINR(row.per_day_rate ?? 0)} × {row.effective_days} + {fmtINR(row.per_day_rate ?? 0)} × {row.sunday_work} = {fmtINR(row.earned)}
+          </Text>
+          <View style={styles.formulaDivider} />
+          <Text style={styles.formulaLine}>Net = Earned + Bonus − Advance − Fine − Deduction {row.opening_balance ? '± Opening balance' : ''}</Text>
+          <Text style={styles.formulaCalc}>
+            = {fmtINR(row.earned)} + {fmtINR(row.bonus)} − {fmtINR(row.advance)} − {fmtINR(row.fine)} − {fmtINR(row.manual_deduction)}
+            {row.opening_balance ? ` ${row.opening_balance > 0 ? '+' : '−'} ${fmtINR(Math.abs(row.opening_balance))}` : ''} = {fmtINR(row.net_salary)}
+          </Text>
+        </View>
 
         {row.opening_balance !== undefined && row.opening_balance !== 0 && (
           <>
@@ -142,8 +175,11 @@ function OverridesEditor({ row, onSaved }: { row: any; onSaved: () => void }) {
   const [note, setNote] = useState(row.note || '');
   const [pay, setPay] = useState<'cash' | 'bank' | 'upi' | 'cheque'>(row.payment_mode || 'cash');
   const [saving, setSaving] = useState(false);
+  const submittingRef = useRef(false);
 
   const save = async () => {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setSaving(true);
     try {
       await api.put(`/payroll/entry/${row.id}`, {
@@ -154,7 +190,7 @@ function OverridesEditor({ row, onSaved }: { row: any; onSaved: () => void }) {
       });
       onSaved();
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
-    finally { setSaving(false); }
+    finally { setSaving(false); submittingRef.current = false; }
   };
 
   return (
@@ -261,9 +297,22 @@ const styles = StyleSheet.create({
   },
   title: {
     flex: 1, color: colors.onSurface, fontSize: 22, fontWeight: '600',
-    fontFamily: Platform.select({ ios: 'Georgia', default: 'serif' }),
+    fontFamily: fonts.display,
   },
 
+  modifyBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.md,
+    backgroundColor: colors.surfaceSecondary, borderColor: colors.brand, borderWidth: 1,
+    borderRadius: radius.md, padding: spacing.md,
+  },
+  modifyBtnText: { flex: 1, color: colors.onSurface, fontWeight: '700', fontSize: 13 },
+  formulaBox: {
+    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1,
+    borderColor: colors.border, padding: spacing.md, marginBottom: spacing.sm,
+  },
+  formulaLine: { color: colors.onSurfaceTertiary, fontSize: 12 },
+  formulaCalc: { color: colors.brandSecondary, fontSize: 12, fontWeight: '700', marginTop: 2, marginBottom: 8 },
+  formulaDivider: { height: 1, backgroundColor: colors.divider, marginVertical: 6 },
   head: {
     flexDirection: 'row', gap: spacing.md, alignItems: 'center',
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1,

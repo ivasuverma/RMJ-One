@@ -7,7 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { api, TOKEN_KEY } from '@/src/api/client';
 import { storage } from '@/src/utils/storage';
-import { colors, spacing, radius } from '@/src/theme';
+import { colors, spacing, radius, fonts } from '@/src/theme';
 
 const KINDS = [
   { key: 'attendance', label: 'Attendance', icon: 'time-outline', needsRange: true },
@@ -158,7 +158,7 @@ const styles = StyleSheet.create({
   },
   title: {
     flex: 1, color: colors.onSurface, fontSize: 22, fontWeight: '600',
-    fontFamily: Platform.select({ ios: 'Georgia', default: 'serif' }),
+    fontFamily: fonts.display,
   },
   section: { color: colors.brandSecondary, fontSize: 11, letterSpacing: 1, textTransform: 'uppercase', marginBottom: spacing.sm },
   kindRow: {

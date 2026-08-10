@@ -6,7 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Location from 'expo-location';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
-import { colors, spacing, radius } from '@/src/theme';
+import { colors, spacing, radius, fonts } from '@/src/theme';
 
 export type PunchResult = { selfie: string; latitude: number; longitude: number };
 
@@ -24,6 +24,7 @@ export function PunchCaptureModal({ visible, mode, onClose, onCapture }: Props) 
   const [busy, setBusy] = useState(false);
   const [statusMsg, setStatusMsg] = useState('');
   const camRef = useRef<CameraView | null>(null);
+  const submittingRef = useRef(false);
 
   const reset = useCallback(() => {
     setBusy(false); setStatusMsg(''); setCoords(null);
@@ -62,14 +63,17 @@ export function PunchCaptureModal({ visible, mode, onClose, onCapture }: Props) 
   const openSettings = () => Linking.openSettings().catch(() => {});
 
   const onTakePhoto = async () => {
+    if (submittingRef.current) return; // guards rapid double/triple taps
+    submittingRef.current = true;
     if (!camPerm?.granted) {
       const p = await requestCamPerm();
-      if (!p.granted) return;
+      if (!p.granted) { submittingRef.current = false; return; }
     }
     if (!locPerm?.granted) {
       const p = await askLocation();
       if (!p?.granted || !coords) {
         setStatusMsg('Location required.');
+        submittingRef.current = false;
         return;
       }
     }
@@ -99,6 +103,7 @@ export function PunchCaptureModal({ visible, mode, onClose, onCapture }: Props) 
       Alert.alert('Failed', e?.detail || e?.message || 'Please try again');
     } finally {
       setBusy(false);
+      submittingRef.current = false;
     }
   };
 
@@ -197,7 +202,7 @@ const styles = StyleSheet.create({
   },
   title: {
     flex: 1, color: colors.onSurface, fontSize: 22, fontWeight: '700',
-    fontFamily: Platform.select({ ios: 'Georgia', default: 'serif' }),
+    fontFamily: fonts.display,
   },
   cameraWrap: { flex: 1, backgroundColor: '#000', overflow: 'hidden', marginHorizontal: spacing.lg, borderRadius: radius.lg, position: 'relative' },
   permBox: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl, gap: spacing.sm },

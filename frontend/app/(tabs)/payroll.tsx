@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Platform, RefreshControl, Alert,
 } from 'react-native';
@@ -7,7 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthContext';
-import { colors, spacing, radius } from '@/src/theme';
+import { colors, spacing, radius, fonts } from '@/src/theme';
 
 type Row = {
   employee_id: string; employee_code: string; name: string; designation: string; department: string;
@@ -31,6 +31,7 @@ export default function OwnerPayroll() {
   const [data, setData] = useState<PayrollResp | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const submittingRef = useRef(false);
 
   const load = useCallback(async () => {
     try {
@@ -52,23 +53,36 @@ export default function OwnerPayroll() {
     setMonth(m); setYear(y);
   };
 
-  const savePayroll = async () => {
+  const savePayroll = async (isRegenerate = false) => {
+    if (submittingRef.current) return; // block rapid double/triple taps
+    submittingRef.current = true;
     setSaving(true);
     try {
-      await api.post('/payroll/save', { year, month });
+      const res = await api.post<{ entries: number; kept_paid: number }>('/payroll/save', { year, month });
       await load();
-      Alert.alert('Saved', 'Payroll generated. You can now mark employees paid or lock the month.');
+      if (isRegenerate) {
+        Alert.alert(
+          'Regenerated',
+          `Refreshed ${res.entries} employee${res.entries === 1 ? '' : 's'} from the latest attendance.` +
+          (res.kept_paid ? ` ${res.kept_paid} already-paid entr${res.kept_paid === 1 ? 'y was' : 'ies were'} left untouched.` : ''),
+        );
+      } else {
+        Alert.alert('Saved', 'Payroll generated. You can now mark employees paid or lock the month.');
+      }
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
-    finally { setSaving(false); }
+    finally { setSaving(false); submittingRef.current = false; }
   };
 
   const toggleLock = async () => {
+    if (submittingRef.current) return;
     if (!data?.saved) { Alert.alert('Save first', 'Generate payroll before locking'); return; }
+    submittingRef.current = true;
     try {
       if (data.locked) await api.post(`/payroll/${year}/${month}/unlock`);
       else await api.post(`/payroll/${year}/${month}/lock`);
       await load();
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+    finally { submittingRef.current = false; }
   };
 
   const totalPaid = useMemo(() => (data?.rows || []).filter((r) => r.paid).reduce((a, r) => a + r.net_salary, 0), [data]);
@@ -120,16 +134,29 @@ export default function OwnerPayroll() {
           {isAccountantOrOwner && (
             <View style={styles.actionsRow}>
               {!data?.saved ? (
-                <Pressable style={styles.saveBtn} onPress={savePayroll} disabled={saving} testID="payroll-save-btn">
+                <Pressable style={[styles.saveBtn, saving && { opacity: 0.6 }]} onPress={() => savePayroll(false)} disabled={saving} testID="payroll-save-btn">
                   {saving ? <ActivityIndicator color={colors.onBrandPrimary} /> : <><Ionicons name="save-outline" size={16} color={colors.onBrandPrimary} /><Text style={styles.saveText}>Generate Payroll</Text></>}
                 </Pressable>
+              ) : !data.locked ? (
+                <>
+                  <Pressable style={[styles.regenBtn, saving && { opacity: 0.6 }]} onPress={() => savePayroll(true)} disabled={saving} testID="payroll-regenerate-btn">
+                    {saving ? <ActivityIndicator color={colors.onSurface} /> : <><Ionicons name="refresh-outline" size={16} color={colors.onSurface} /><Text style={styles.lockBtnText}>Regenerate</Text></>}
+                  </Pressable>
+                  <Pressable style={styles.lockBtn} onPress={toggleLock} testID="payroll-lock-btn">
+                    <Ionicons name="lock-closed-outline" size={16} color={colors.onSurface} />
+                    <Text style={styles.lockBtnText}>Lock Month</Text>
+                  </Pressable>
+                </>
               ) : (
                 <Pressable style={styles.lockBtn} onPress={toggleLock} testID="payroll-lock-btn">
-                  <Ionicons name={data.locked ? 'lock-open-outline' : 'lock-closed-outline'} size={16} color={colors.onSurface} />
-                  <Text style={styles.lockBtnText}>{data.locked ? 'Unlock' : 'Lock Month'}</Text>
+                  <Ionicons name="lock-open-outline" size={16} color={colors.onSurface} />
+                  <Text style={styles.lockBtnText}>Unlock</Text>
                 </Pressable>
               )}
             </View>
+          )}
+          {data?.saved && !data.locked && (
+            <Text style={styles.regenHint}>Adjusted attendance for someone this month? Tap Regenerate to refresh unpaid entries — paid ones stay untouched.</Text>
           )}
 
           {/* Employee rows */}
@@ -141,7 +168,7 @@ export default function OwnerPayroll() {
                 pathname: '/payroll/[emp]',
                 params: { emp: r.employee_id, year: String(year), month: String(month) },
               })}
-              style={styles.empRow}
+              style={[styles.empRow, r.paid && styles.empRowPaid]}
             >
               <View style={styles.avatar}><Text style={styles.avatarText}>{initials(r.name)}</Text></View>
               <View style={{ flex: 1 }}>
@@ -192,7 +219,7 @@ const styles = StyleSheet.create({
   },
   title: {
     flex: 1, color: colors.onSurface, fontSize: 30, fontWeight: '600',
-    fontFamily: Platform.select({ ios: 'Georgia', default: 'serif' }),
+    fontFamily: fonts.display,
   },
   lockedChip: {
     flexDirection: 'row', gap: 4, alignItems: 'center',
@@ -232,6 +259,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceSecondary, borderColor: colors.brand, borderWidth: 1,
     borderRadius: radius.md, paddingVertical: 12,
   },
+  regenBtn: {
+    flex: 1, flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.surfaceSecondary, borderColor: colors.border, borderWidth: 1,
+    borderRadius: radius.md, paddingVertical: 12,
+  },
+  regenHint: { color: colors.mutedText, fontSize: 11, marginBottom: spacing.md, marginTop: -4 },
   lockBtnText: { color: colors.onSurface, fontWeight: '700', fontSize: 13 },
 
   empRow: {
@@ -239,6 +272,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md,
     borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.sm,
   },
+  empRowPaid: { backgroundColor: 'rgba(45,90,64,0.16)', borderColor: colors.success },
   avatar: {
     width: 40, height: 40, borderRadius: 20, backgroundColor: colors.brandTertiary,
     alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.brand,

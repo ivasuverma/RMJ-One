@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TextInput, Pressable, KeyboardAvoidingView,
   Platform, ActivityIndicator, ScrollView, Keyboard,
@@ -8,7 +8,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/src/auth/AuthContext';
-import { colors, spacing, radius, images } from '@/src/theme';
+import { colors, spacing, radius, images, fonts } from '@/src/theme';
 
 type Mode = 'owner' | 'employee';
 
@@ -23,8 +23,11 @@ export default function LoginScreen() {
   const [secure, setSecure] = useState(true);
   const { loginOwner, loginEmployee } = useAuth();
   const router = useRouter();
+  const submittingRef = useRef(false);
 
   const onSubmit = async () => {
+    if (submittingRef.current) return; // guards rapid double/triple taps
+    submittingRef.current = true;
     Keyboard.dismiss();
     setError('');
     setLoading(true);
@@ -41,6 +44,7 @@ export default function LoginScreen() {
       setError(e?.detail || 'Login failed');
     } finally {
       setLoading(false);
+      submittingRef.current = false;
     }
   };
 
@@ -154,7 +158,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.brandPrimary, alignItems: 'center', justifyContent: 'center', marginBottom: spacing.md,
   },
   brandBadgeText: { color: colors.onBrandPrimary, fontWeight: '800', fontSize: 18, letterSpacing: 1 },
-  brandTitle: { color: colors.onSurface, fontSize: 44, fontFamily: Platform.select({ ios: 'Georgia', default: 'serif' }), letterSpacing: 0.5 },
+  brandTitle: { color: colors.onSurface, fontSize: 44, fontFamily: fonts.display, letterSpacing: 0.5 },
   brandTag: { color: colors.brandSecondary, marginTop: spacing.xs, fontSize: 14, letterSpacing: 0.3 },
 
   formCard: {

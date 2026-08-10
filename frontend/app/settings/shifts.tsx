@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, Platform, KeyboardAvoidingView, RefreshControl,
 } from 'react-native';
@@ -6,7 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { api } from '@/src/api/client';
-import { colors, spacing, radius } from '@/src/theme';
+import { colors, spacing, radius, fonts } from '@/src/theme';
 
 type Shift = { id: string; name: string; start: string; end: string; grace_min: number; is_active: boolean };
 
@@ -28,14 +28,17 @@ export default function ShiftsScreen() {
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
+  const submittingRef = useRef(false);
   const add = async () => {
+    if (submittingRef.current) return;
     if (!name.trim()) { Alert.alert('Missing', 'Shift name is required'); return; }
+    submittingRef.current = true;
     setSaving(true);
     try {
       await api.post('/shifts', { name: name.trim(), start, end, grace_min: parseInt(grace || '0', 10), is_active: true });
       setName(''); setStart('10:00'); setEnd('19:30'); setGrace('15'); await load();
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
-    finally { setSaving(false); }
+    finally { setSaving(false); submittingRef.current = false; }
   };
 
   const remove = (s: Shift) => {
@@ -108,7 +111,7 @@ const styles = StyleSheet.create({
   },
   title: {
     flex: 1, color: colors.onSurface, fontSize: 22, fontWeight: '600',
-    fontFamily: Platform.select({ ios: 'Georgia', default: 'serif' }),
+    fontFamily: fonts.display,
   },
   section: { color: colors.brandSecondary, fontSize: 11, letterSpacing: 1, textTransform: 'uppercase', marginBottom: spacing.sm },
   label: { color: colors.onSurfaceSecondary, fontSize: 12, marginBottom: 4, marginTop: 6 },

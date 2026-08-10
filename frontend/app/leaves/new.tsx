@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput, Pressable, Alert,
   ActivityIndicator, Platform, KeyboardAvoidingView,
@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
-import { colors, spacing, radius } from '@/src/theme';
+import { colors, spacing, radius, fonts } from '@/src/theme';
 
 const TYPES = ['casual', 'sick', 'paid', 'unpaid'] as const;
 
@@ -19,18 +19,21 @@ export default function NewLeave() {
   const [to, setTo] = useState(today);
   const [reason, setReason] = useState('');
   const [saving, setSaving] = useState(false);
+  const submittingRef = useRef(false);
 
   const submit = async () => {
+    if (submittingRef.current) return;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
       Alert.alert('Invalid date', 'Use format YYYY-MM-DD'); return;
     }
+    submittingRef.current = true;
     setSaving(true);
     try {
       await api.post('/leaves', { from_date: from, to_date: to, leave_type: type, reason });
       Alert.alert('Submitted', 'Leave request sent to owner.', [{ text: 'OK', onPress: () => router.back() }]);
     } catch (e: any) {
       Alert.alert('Failed', e?.detail || 'Please try again');
-    } finally { setSaving(false); }
+    } finally { setSaving(false); submittingRef.current = false; }
   };
 
   return (
@@ -97,7 +100,7 @@ const styles = StyleSheet.create({
   },
   title: {
     flex: 1, color: colors.onSurface, fontSize: 20, fontWeight: '600',
-    fontFamily: Platform.select({ ios: 'Georgia', default: 'serif' }),
+    fontFamily: fonts.display,
   },
   label: { color: colors.onSurfaceSecondary, fontSize: 12, marginBottom: 6, marginTop: spacing.md, fontWeight: '600' },
   typeRow: { flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap' },

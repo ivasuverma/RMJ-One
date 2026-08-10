@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput, Pressable, Alert,
   ActivityIndicator, Platform, KeyboardAvoidingView,
@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
-import { colors, spacing, radius } from '@/src/theme';
+import { colors, spacing, radius, fonts } from '@/src/theme';
 
 const OPTIONS = [
   { key: 'forgot_check_in', label: 'Forgot Check-In', icon: 'log-in-outline' },
@@ -21,8 +21,11 @@ export default function CorrectionForm() {
   const [type, setType] = useState<typeof OPTIONS[number]['key']>('forgot_check_in');
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
+  const submittingRef = useRef(false);
 
   const submit = async () => {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setSaving(true);
     try {
       await api.post('/attendance/corrections', { reason_type: type, note });
@@ -33,6 +36,7 @@ export default function CorrectionForm() {
       Alert.alert('Failed', e?.detail || 'Please try again');
     } finally {
       setSaving(false);
+      submittingRef.current = false;
     }
   };
 
@@ -96,7 +100,7 @@ const styles = StyleSheet.create({
   },
   title: {
     flex: 1, color: colors.onSurface, fontSize: 20, fontWeight: '600',
-    fontFamily: Platform.select({ ios: 'Georgia', default: 'serif' }),
+    fontFamily: fonts.display,
   },
   label: { color: colors.onSurfaceSecondary, fontSize: 13, marginBottom: spacing.md, fontWeight: '600' },
   optRow: {

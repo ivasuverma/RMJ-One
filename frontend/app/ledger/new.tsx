@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, Platform, KeyboardAvoidingView,
 } from 'react-native';
@@ -6,7 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
-import { colors, spacing, radius } from '@/src/theme';
+import { colors, spacing, radius, fonts } from '@/src/theme';
 
 const TYPES = [
   { key: 'advance', label: 'Advance', icon: 'cash-outline', color: '#F1A9A9' },
@@ -22,16 +22,19 @@ export default function NewLedgerEntry() {
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
+  const submittingRef = useRef(false);
 
   const submit = async () => {
+    if (submittingRef.current) return;
     const amt = parseFloat(amount);
     if (!amt || amt <= 0) { Alert.alert('Invalid', 'Amount must be greater than 0'); return; }
+    submittingRef.current = true;
     setSaving(true);
     try {
       await api.post('/ledger/entries', { employee_id: emp, entry_type: type, amount: amt, note });
       Alert.alert('Added', 'Ledger entry recorded.', [{ text: 'OK', onPress: () => router.back() }]);
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
-    finally { setSaving(false); }
+    finally { setSaving(false); submittingRef.current = false; }
   };
 
   return (
@@ -105,7 +108,7 @@ const styles = StyleSheet.create({
   },
   title: {
     flex: 1, color: colors.onSurface, fontSize: 20, fontWeight: '600',
-    fontFamily: Platform.select({ ios: 'Georgia', default: 'serif' }),
+    fontFamily: fonts.display,
   },
   label: { color: colors.onSurfaceSecondary, fontSize: 12, marginTop: spacing.md, marginBottom: 6 },
   input: {

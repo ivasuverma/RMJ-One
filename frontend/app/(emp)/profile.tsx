@@ -5,7 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useAuth } from '@/src/auth/AuthContext';
 import { api } from '@/src/api/client';
-import { colors, spacing, radius } from '@/src/theme';
+import { colors, spacing, radius, fonts } from '@/src/theme';
 
 export default function EmployeeProfile() {
   const { user, logout } = useAuth();
@@ -89,7 +89,7 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   title: {
     color: colors.onSurface, fontSize: 26, fontWeight: '600', marginBottom: spacing.lg,
-    fontFamily: Platform.select({ ios: 'Georgia', default: 'serif' }),
+    fontFamily: fonts.display,
   },
   card: {
     backgroundColor: colors.brandTertiary, borderRadius: radius.lg, borderColor: colors.brandPrimary,
@@ -99,7 +99,7 @@ const styles = StyleSheet.create({
   avatarText: { color: colors.onBrandPrimary, fontWeight: '800', fontSize: 28 },
   name: {
     color: colors.onSurface, fontSize: 20, fontWeight: '700', marginTop: spacing.md,
-    fontFamily: Platform.select({ ios: 'Georgia', default: 'serif' }),
+    fontFamily: fonts.display,
   },
   subtitle: { color: colors.brandSecondary, fontSize: 13, marginTop: 4 },
   dept: { color: colors.onSurfaceTertiary, fontSize: 12, marginTop: 2 },

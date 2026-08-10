@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, Platform, KeyboardAvoidingView, RefreshControl,
 } from 'react-native';
@@ -6,7 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { api } from '@/src/api/client';
-import { colors, spacing, radius } from '@/src/theme';
+import { colors, spacing, radius, fonts } from '@/src/theme';
 
 type Device = { id: string; serial: string; label: string; last_seen: string | null; status: string };
 type Log = { id: string; serial: string; user_id: string; timestamp: string; event_type: string; result: string; reason?: string; employee_name?: string; action?: string };
@@ -40,16 +40,19 @@ export default function BiometricScreen() {
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
+  const submittingRef = useRef(false);
   const add = async () => {
+    if (submittingRef.current) return;
     if (!serial.trim() || !label.trim() || !secret.trim()) {
       Alert.alert('Missing', 'Serial, label and secret are all required'); return;
     }
+    submittingRef.current = true;
     setSaving(true);
     try {
       await api.post('/biometric/devices', { serial: serial.trim(), label: label.trim(), secret });
       setSerial(''); setLabel(''); setSecret(''); await load();
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
-    finally { setSaving(false); }
+    finally { setSaving(false); submittingRef.current = false; }
   };
 
   const remove = (d: Device) => {
@@ -155,7 +158,7 @@ const styles = StyleSheet.create({
   },
   title: {
     flex: 1, color: colors.onSurface, fontSize: 22, fontWeight: '600',
-    fontFamily: Platform.select({ ios: 'Georgia', default: 'serif' }),
+    fontFamily: fonts.display,
   },
   segRow: {
     flexDirection: 'row', margin: spacing.lg, backgroundColor: colors.surfaceSecondary,

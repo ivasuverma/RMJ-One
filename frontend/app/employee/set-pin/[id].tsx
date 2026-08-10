@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TextInput, Pressable, ActivityIndicator, Alert, Platform, KeyboardAvoidingView,
 } from 'react-native';
@@ -6,7 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
-import { colors, spacing, radius } from '@/src/theme';
+import { colors, spacing, radius, fonts } from '@/src/theme';
 
 export default function SetPin() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -14,17 +14,20 @@ export default function SetPin() {
   const [pin, setPin] = useState('');
   const [confirm, setConfirm] = useState('');
   const [saving, setSaving] = useState(false);
+  const submittingRef = useRef(false);
 
   const submit = async () => {
+    if (submittingRef.current) return;
     if (!/^\d{4}$/.test(pin)) { Alert.alert('Invalid', 'PIN must be exactly 4 digits'); return; }
     if (pin !== confirm) { Alert.alert('Mismatch', 'PIN and confirmation don\'t match'); return; }
+    submittingRef.current = true;
     setSaving(true);
     try {
       await api.post(`/employees/${id}/set-pin`, { pin });
       Alert.alert('Updated', 'PIN was updated.', [{ text: 'OK', onPress: () => router.back() }]);
     } catch (e: any) {
       Alert.alert('Failed', e?.detail || 'Please try again');
-    } finally { setSaving(false); }
+    } finally { setSaving(false); submittingRef.current = false; }
   };
 
   return (
@@ -80,7 +83,7 @@ const styles = StyleSheet.create({
   },
   title: {
     flex: 1, color: colors.onSurface, fontSize: 22, fontWeight: '600',
-    fontFamily: Platform.select({ ios: 'Georgia', default: 'serif' }),
+    fontFamily: fonts.display,
   },
   info: { color: colors.onSurfaceTertiary, fontSize: 13, marginBottom: spacing.lg },
   label: { color: colors.onSurfaceSecondary, fontSize: 12, marginBottom: 6, marginTop: spacing.md },

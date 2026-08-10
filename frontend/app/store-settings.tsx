@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, Platform, KeyboardAvoidingView, Linking,
 } from 'react-native';
@@ -7,7 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as Location from 'expo-location';
 import { api } from '@/src/api/client';
-import { colors, spacing, radius } from '@/src/theme';
+import { colors, spacing, radius, fonts } from '@/src/theme';
 
 type Form = {
   name: string; latitude: string; longitude: string; radius_m: string;
@@ -61,11 +61,14 @@ export default function StoreSettings() {
     } finally { setPickingLoc(false); }
   };
 
+  const submittingRef = useRef(false);
   const save = async () => {
+    if (submittingRef.current) return;
     const lat = parseFloat(form.latitude), lng = parseFloat(form.longitude);
     if (!form.name.trim() || Number.isNaN(lat) || Number.isNaN(lng)) {
       Alert.alert('Missing', 'Store name and valid coordinates are required.'); return;
     }
+    submittingRef.current = true;
     setSaving(true);
     try {
       await api.put('/settings/store', {
@@ -77,7 +80,7 @@ export default function StoreSettings() {
       Alert.alert('Saved', 'Store settings updated.', [{ text: 'OK', onPress: () => router.back() }]);
     } catch (e: any) {
       Alert.alert('Failed', e?.detail || 'Please try again');
-    } finally { setSaving(false); }
+    } finally { setSaving(false); submittingRef.current = false; }
   };
 
   if (loading) {
@@ -166,7 +169,7 @@ const styles = StyleSheet.create({
   },
   title: {
     flex: 1, color: colors.onSurface, fontSize: 22, fontWeight: '600',
-    fontFamily: Platform.select({ ios: 'Georgia', default: 'serif' }),
+    fontFamily: fonts.display,
   },
   section: {
     color: colors.brandSecondary, fontSize: 11, letterSpacing: 1, textTransform: 'uppercase',

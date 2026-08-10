@@ -16,7 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthContext';
-import { colors, spacing, radius, images } from '@/src/theme';
+import { colors, spacing, radius, images, fonts } from '@/src/theme';
 
 type DashboardData = {
   todays_attendance: {
@@ -100,7 +100,11 @@ export default function DashboardScreen() {
         ) : data ? (
           <>
             {/* Today's Attendance hero */}
-            <View style={styles.heroCard} testID="attendance-hero-card">
+            <Pressable
+              style={styles.heroCard}
+              testID="attendance-hero-card"
+              onPress={() => router.push('/(tabs)/attendance')}
+            >
               <Image source={images.goldTexture} style={StyleSheet.absoluteFill} contentFit="cover" />
               <LinearGradient
                 colors={['rgba(13,13,13,0.65)', 'rgba(13,13,13,0.92)']}
@@ -120,36 +124,36 @@ export default function DashboardScreen() {
                 </View>
 
                 <View style={styles.attGrid}>
-                  <AttTile label="Present" value={data.todays_attendance.present} accent={colors.brandPrimary} testID="tile-present" />
-                  <AttTile label="Absent" value={data.todays_attendance.absent} accent="#F1A9A9" testID="tile-absent" />
-                  <AttTile label="Late" value={data.todays_attendance.late} accent={colors.brandSecondary} testID="tile-late" />
-                  <AttTile label="Half Day" value={data.todays_attendance.half_day} accent="#E9C46A" testID="tile-half-day" />
-                  <AttTile label="Missing Punch" value={data.todays_attendance.missing_punch} accent="#F1A9A9" testID="tile-missing" />
-                  <AttTile label="On Leave" value={data.todays_attendance.leave} accent={colors.onSurfaceTertiary} testID="tile-leave" />
+                  <AttTile label="Present" value={data.todays_attendance.present} accent={colors.brandPrimary} testID="tile-present" onPress={() => router.push('/(tabs)/attendance')} />
+                  <AttTile label="Absent" value={data.todays_attendance.absent} accent="#F1A9A9" testID="tile-absent" onPress={() => router.push('/(tabs)/attendance')} />
+                  <AttTile label="Late" value={data.todays_attendance.late} accent={colors.brandSecondary} testID="tile-late" onPress={() => router.push('/(tabs)/attendance')} />
+                  <AttTile label="Half Day" value={data.todays_attendance.half_day} accent="#E9C46A" testID="tile-half-day" onPress={() => router.push('/(tabs)/attendance')} />
+                  <AttTile label="Missing Punch" value={data.todays_attendance.missing_punch} accent="#F1A9A9" testID="tile-missing" onPress={() => router.push('/(tabs)/attendance')} />
+                  <AttTile label="On Leave" value={data.todays_attendance.leave} accent={colors.onSurfaceTertiary} testID="tile-leave" onPress={() => router.push('/(tabs)/attendance')} />
                 </View>
               </View>
-            </View>
+            </Pressable>
 
             {/* Pending Approvals */}
             <SectionHeader title="Pending Approvals" testID="section-approvals" />
             <View style={styles.listCard}>
-              <ApprovalRow icon="time-outline" label="Attendance Corrections" count={data.pending_approvals.attendance_corrections} testID="approval-corrections" />
+              <ApprovalRow icon="time-outline" label="Attendance Corrections" count={data.pending_approvals.attendance_corrections} testID="approval-corrections" onPress={() => router.push('/approvals?tab=Corrections')} />
               <Divider />
-              <ApprovalRow icon="calendar-outline" label="Leave Requests" count={data.pending_approvals.leave_requests} testID="approval-leaves" />
+              <ApprovalRow icon="calendar-outline" label="Leave Requests" count={data.pending_approvals.leave_requests} testID="approval-leaves" onPress={() => router.push('/approvals?tab=Leaves')} />
               <Divider />
-              <ApprovalRow icon="cash-outline" label="Salary Advances" count={data.pending_approvals.salary_advances} testID="approval-advances" />
+              <ApprovalRow icon="cash-outline" label="Salary Advances" count={data.pending_approvals.salary_advances} testID="approval-advances" onPress={() => router.push('/(tabs)/payroll')} />
               <Divider />
-              <ApprovalRow icon="document-text-outline" label="Payroll Approval" count={data.pending_approvals.payroll_approval} testID="approval-payroll" />
+              <ApprovalRow icon="document-text-outline" label="Payroll Approval" count={data.pending_approvals.payroll_approval} testID="approval-payroll" onPress={() => router.push('/(tabs)/payroll')} />
             </View>
 
             {/* Payroll Summary */}
             <SectionHeader title="Payroll Summary" testID="section-payroll" />
             <View style={styles.bento}>
-              <PayrollTile label="Current Month Payroll" value={fmtINR(data.payroll_summary.current_month_payroll)} big testID="payroll-current" />
-              <PayrollTile label="Pending Salary" value={fmtINR(data.payroll_summary.pending_salary)} testID="payroll-pending" />
-              <PayrollTile label="Advances" value={fmtINR(data.payroll_summary.advances_outstanding)} testID="payroll-advances" />
-              <PayrollTile label="Loans" value={fmtINR(data.payroll_summary.loans_outstanding)} testID="payroll-loans" />
-              <PayrollTile label="Bonuses" value={fmtINR(data.payroll_summary.bonuses)} testID="payroll-bonuses" />
+              <PayrollTile label="Current Month Payroll" value={fmtINR(data.payroll_summary.current_month_payroll)} big testID="payroll-current" onPress={() => router.push('/(tabs)/payroll')} />
+              <PayrollTile label="Pending Salary" value={fmtINR(data.payroll_summary.pending_salary)} testID="payroll-pending" onPress={() => router.push('/(tabs)/payroll')} />
+              <PayrollTile label="Advances" value={fmtINR(data.payroll_summary.advances_outstanding)} testID="payroll-advances" onPress={() => router.push('/(tabs)/payroll')} />
+              <PayrollTile label="Loans" value={fmtINR(data.payroll_summary.loans_outstanding)} testID="payroll-loans" onPress={() => router.push('/(tabs)/payroll')} />
+              <PayrollTile label="Bonuses" value={fmtINR(data.payroll_summary.bonuses)} testID="payroll-bonuses" onPress={() => router.push('/(tabs)/payroll')} />
             </View>
 
             <Pressable
@@ -169,12 +173,12 @@ export default function DashboardScreen() {
   );
 }
 
-function AttTile({ label, value, accent, testID }: { label: string; value: number; accent: string; testID?: string }) {
+function AttTile({ label, value, accent, testID, onPress }: { label: string; value: number; accent: string; testID?: string; onPress?: () => void }) {
   return (
-    <View style={styles.attTile} testID={testID}>
+    <Pressable style={({ pressed }) => [styles.attTile, pressed && { opacity: 0.7 }]} testID={testID} onPress={onPress}>
       <Text style={[styles.attValue, { color: accent }]}>{value}</Text>
       <Text style={styles.attLabel}>{label}</Text>
-    </View>
+    </Pressable>
   );
 }
 
@@ -186,9 +190,9 @@ function SectionHeader({ title, testID }: { title: string; testID?: string }) {
   );
 }
 
-function ApprovalRow({ icon, label, count, testID }: { icon: any; label: string; count: number; testID?: string }) {
+function ApprovalRow({ icon, label, count, testID, onPress }: { icon: any; label: string; count: number; testID?: string; onPress?: () => void }) {
   return (
-    <View style={styles.appRow} testID={testID}>
+    <Pressable style={({ pressed }) => [styles.appRow, pressed && { opacity: 0.7 }]} testID={testID} onPress={onPress}>
       <View style={styles.appIconWrap}>
         <Ionicons name={icon} size={18} color={colors.brandSecondary} />
       </View>
@@ -196,18 +200,19 @@ function ApprovalRow({ icon, label, count, testID }: { icon: any; label: string;
       <View style={[styles.countPill, count === 0 && styles.countPillEmpty]}>
         <Text style={[styles.countPillText, count === 0 && styles.countPillTextEmpty]}>{count}</Text>
       </View>
-    </View>
+      <Ionicons name="chevron-forward" size={16} color={colors.mutedText} style={{ marginLeft: 4 }} />
+    </Pressable>
   );
 }
 
 function Divider() { return <View style={styles.divider} />; }
 
-function PayrollTile({ label, value, big, testID }: { label: string; value: string; big?: boolean; testID?: string }) {
+function PayrollTile({ label, value, big, testID, onPress }: { label: string; value: string; big?: boolean; testID?: string; onPress?: () => void }) {
   return (
-    <View style={[styles.payrollTile, big && styles.payrollTileBig]} testID={testID}>
+    <Pressable style={({ pressed }) => [styles.payrollTile, big && styles.payrollTileBig, pressed && { opacity: 0.75 }]} testID={testID} onPress={onPress}>
       <Text style={styles.payrollLabel}>{label}</Text>
       <Text style={[styles.payrollValue, big && { fontSize: 26 }]} numberOfLines={1} adjustsFontSizeToFit>{value}</Text>
-    </View>
+    </Pressable>
   );
 }
 
@@ -219,7 +224,7 @@ const styles = StyleSheet.create({
   greeting: { color: colors.onSurfaceTertiary, fontSize: 14, marginTop: spacing.xs },
   owner: {
     color: colors.onSurface, fontSize: 26, fontWeight: '600',
-    fontFamily: Platform.select({ ios: 'Georgia', default: 'serif' }),
+    fontFamily: fonts.display,
   },
   headerBadge: {
     width: 44, height: 44, borderRadius: radius.md, backgroundColor: colors.brandPrimary,
@@ -243,7 +248,7 @@ const styles = StyleSheet.create({
   heroLabel: { color: colors.brandSecondary, fontSize: 11, letterSpacing: 1, textTransform: 'uppercase' },
   heroTitle: {
     color: colors.onSurface, fontSize: 30, fontWeight: '700', marginTop: 4,
-    fontFamily: Platform.select({ ios: 'Georgia', default: 'serif' }),
+    fontFamily: fonts.display,
   },
   heroSub: { color: colors.onSurfaceTertiary, fontSize: 12, marginTop: 2 },
   heroChip: {
@@ -267,7 +272,7 @@ const styles = StyleSheet.create({
   sectionHeader: { marginBottom: spacing.md, marginTop: spacing.sm },
   sectionTitle: {
     color: colors.onSurface, fontSize: 20, fontWeight: '600',
-    fontFamily: Platform.select({ ios: 'Georgia', default: 'serif' }),
+    fontFamily: fonts.display,
   },
   listCard: {
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg,

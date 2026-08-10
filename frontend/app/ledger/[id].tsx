@@ -6,7 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { api } from '@/src/api/client';
-import { colors, spacing, radius } from '@/src/theme';
+import { colors, spacing, radius, fonts } from '@/src/theme';
 
 const fmtINR = (n: number) => `₹${(Math.abs(n) || 0).toLocaleString('en-IN')}`;
 const fmtDate = (s?: string) => {
@@ -115,7 +115,7 @@ const styles = StyleSheet.create({
   },
   title: {
     flex: 1, color: colors.onSurface, fontSize: 22, fontWeight: '600',
-    fontFamily: Platform.select({ ios: 'Georgia', default: 'serif' }),
+    fontFamily: fonts.display,
   },
   addBtn: {
     width: 40, height: 40, borderRadius: 20, backgroundColor: colors.brandPrimary,
@@ -130,7 +130,7 @@ const styles = StyleSheet.create({
   balanceLabel: { color: colors.brandSecondary, fontSize: 11, letterSpacing: 1 },
   balanceValue: {
     fontSize: 34, fontWeight: '800', marginTop: 4,
-    fontFamily: Platform.select({ ios: 'Georgia', default: 'serif' }),
+    fontFamily: fonts.display,
   },
   balanceHint: { color: colors.onSurfaceTertiary, fontSize: 11, marginTop: spacing.sm, textAlign: 'center' },
 

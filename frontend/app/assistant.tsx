@@ -6,7 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { api } from '@/src/api/client';
-import { colors, spacing, radius } from '@/src/theme';
+import { colors, spacing, radius, fonts } from '@/src/theme';
 
 type Msg = { id: string; role: 'user' | 'assistant'; text: string };
 
@@ -150,7 +150,7 @@ const styles = StyleSheet.create({
   },
   title: {
     color: colors.onSurface, fontSize: 22, fontWeight: '600',
-    fontFamily: Platform.select({ ios: 'Georgia', default: 'serif' }),
+    fontFamily: fonts.display,
   },
   subtitle: { color: colors.brandSecondary, fontSize: 11 },
 
@@ -161,7 +161,7 @@ const styles = StyleSheet.create({
   },
   heroTitle: {
     color: colors.onSurface, fontSize: 20, fontWeight: '700', textAlign: 'center',
-    fontFamily: Platform.select({ ios: 'Georgia', default: 'serif' }),
+    fontFamily: fonts.display,
   },
   heroSub: { color: colors.onSurfaceTertiary, fontSize: 13, textAlign: 'center', paddingHorizontal: spacing.md },
   suggestions: { alignSelf: 'stretch', gap: spacing.sm, marginTop: spacing.lg },

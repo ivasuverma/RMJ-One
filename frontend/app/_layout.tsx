@@ -7,6 +7,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 
 import { useIconFonts } from '@/src/hooks/use-icon-fonts';
+import { useTextFonts } from '@/src/hooks/use-text-fonts';
 import { AuthProvider } from '@/src/auth/AuthContext';
 import { colors } from '@/src/theme';
 
@@ -20,7 +21,10 @@ LogBox.ignoreAllLogs(true);
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
-  const [loaded, error] = useIconFonts();
+  const [iconsLoaded, iconsError] = useIconFonts();
+  const [textFontsLoaded, textFontsError] = useTextFonts();
+  const loaded = iconsLoaded && textFontsLoaded;
+  const error = iconsError || textFontsError;
 
   useEffect(() => {
     if (loaded || error) {

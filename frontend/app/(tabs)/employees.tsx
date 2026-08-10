@@ -15,7 +15,7 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '@/src/api/client';
-import { colors, spacing, radius } from '@/src/theme';
+import { colors, spacing, radius, fonts } from '@/src/theme';
 
 type Emp = {
   id: string; name: string; employee_code: string; department: string;
@@ -191,7 +191,7 @@ const styles = StyleSheet.create({
   headerTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: spacing.md },
   title: {
     color: colors.onSurface, fontSize: 30, fontWeight: '600', flex: 1,
-    fontFamily: Platform.select({ ios: 'Georgia', default: 'serif' }),
+    fontFamily: fonts.display,
   },
   countBadge: {
     minWidth: 34, height: 26, paddingHorizontal: 10, borderRadius: radius.pill,

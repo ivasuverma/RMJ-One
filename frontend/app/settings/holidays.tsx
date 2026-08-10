@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, Platform, KeyboardAvoidingView, RefreshControl,
 } from 'react-native';
@@ -6,7 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { api } from '@/src/api/client';
-import { colors, spacing, radius } from '@/src/theme';
+import { colors, spacing, radius, fonts } from '@/src/theme';
 
 type H = { id: string; date: string; name: string; type: 'public' | 'festival' | 'store_closed' };
 
@@ -34,16 +34,19 @@ export default function HolidaysScreen() {
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
+  const submittingRef = useRef(false);
   const add = async () => {
+    if (submittingRef.current) return;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !name.trim()) {
       Alert.alert('Missing', 'Enter date (YYYY-MM-DD) and holiday name'); return;
     }
+    submittingRef.current = true;
     setSaving(true);
     try {
       await api.post('/holidays', { date, name: name.trim(), type });
       setDate(''); setName(''); setType('public'); await load();
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
-    finally { setSaving(false); }
+    finally { setSaving(false); submittingRef.current = false; }
   };
 
   const remove = (h: H) => {
@@ -116,7 +119,7 @@ const styles = StyleSheet.create({
   },
   title: {
     flex: 1, color: colors.onSurface, fontSize: 22, fontWeight: '600',
-    fontFamily: Platform.select({ ios: 'Georgia', default: 'serif' }),
+    fontFamily: fonts.display,
   },
   section: { color: colors.brandSecondary, fontSize: 11, letterSpacing: 1, textTransform: 'uppercase', marginBottom: spacing.sm },
   label: { color: colors.onSurfaceSecondary, fontSize: 12, marginBottom: 4, marginTop: 6 },

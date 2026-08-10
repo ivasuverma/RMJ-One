@@ -10,7 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthContext';
-import { colors, spacing, radius, images } from '@/src/theme';
+import { colors, spacing, radius, images, fonts } from '@/src/theme';
 import { PunchCaptureModal, PunchResult } from '@/src/components/PunchCaptureModal';
 
 type Att = {
@@ -269,7 +269,7 @@ const styles = StyleSheet.create({
   heroLabel: { color: colors.brandSecondary, fontSize: 10, letterSpacing: 1 },
   heroName: {
     color: colors.onSurface, fontSize: 22, fontWeight: '700',
-    fontFamily: Platform.select({ ios: 'Georgia', default: 'serif' }),
+    fontFamily: fonts.display,
   },
   heroCode: { color: colors.onSurfaceTertiary, fontSize: 12, marginTop: 2 },
   iconBtn: {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TextInput, ScrollView, Pressable,
   KeyboardAvoidingView, Platform, ActivityIndicator, Alert,
@@ -8,7 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { api } from '@/src/api/client';
-import { colors, spacing, radius } from '@/src/theme';
+import { colors, spacing, radius, fonts } from '@/src/theme';
 
 type EmployeeForm = {
   name: string; employee_code: string; department: string; designation: string;
@@ -36,6 +36,7 @@ export default function EmployeeForm() {
   const [loading, setLoading] = useState(isEdit);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const submittingRef = useRef(false);
 
   useEffect(() => {
     if (!isEdit) return;
@@ -71,7 +72,9 @@ export default function EmployeeForm() {
   };
 
   const onSave = async () => {
+    if (submittingRef.current) return;
     if (!validate()) return;
+    submittingRef.current = true;
     setSaving(true);
     try {
       const payload = {
@@ -85,6 +88,7 @@ export default function EmployeeForm() {
       Alert.alert('Save failed', e?.detail || 'Please try again');
     } finally {
       setSaving(false);
+      submittingRef.current = false;
     }
   };
 
@@ -246,7 +250,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     flex: 1, color: colors.onSurface, fontSize: 20, fontWeight: '600',
-    fontFamily: Platform.select({ ios: 'Georgia', default: 'serif' }),
+    fontFamily: fonts.display,
   },
 
   scroll: { padding: spacing.lg },

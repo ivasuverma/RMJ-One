@@ -246,7 +246,7 @@ class PayrollEntryUpdateIn(BaseModel):
 
 
 class AttendanceDayIn(BaseModel):
-    status: Literal['present', 'absent', 'half_day', 'leave', 'holiday'] = 'present'
+    status: Literal['present', 'absent', 'half_day', 'leave', 'holiday', 'weekly_off'] = 'present'
     check_in_time: Optional[str] = None   # HH:MM (local)
     check_out_time: Optional[str] = None  # HH:MM (local)
     working_hours: Optional[float] = None
@@ -720,9 +720,13 @@ async def attendance_calendar(emp_id: str, year: int, month: int, user=Depends(g
         status = 'absent'
         if holiday: status = 'holiday'
         if on_leave: status = 'leave'
+        if not holiday and not on_leave and not a and d.weekday() == 6:
+            status = 'weekly_off'  # default paid weekly off (Sunday) when nothing else recorded
         if a:
             if a.get('status') == 'present' and a.get('check_in'): status = 'present'
             elif a.get('status') == 'half_day': status = 'half_day'
+            elif a.get('status') == 'weekly_off': status = 'weekly_off'
+            elif a.get('status') == 'absent': status = 'absent'
             elif a.get('check_in') and not a.get('check_out'): status = 'missing_punch'
         days_out.append({
             'date': ds, 'weekday': d.weekday(),  # 0=Mon
@@ -752,25 +756,55 @@ def _combine_dt(date_str: str, hhmm: Optional[str]) -> Optional[str]:
 
 @api.put('/attendance/day/{emp_id}/{d}')
 async def edit_day(emp_id: str, d: str, body: AttendanceDayIn, user=Depends(require_admin)):
-    if not await db.employees.find_one({'id': emp_id}):
+    emp = await db.employees.find_one({'id': emp_id}, {'_id': 0})
+    if not emp:
         raise HTTPException(status_code=404, detail='Employee not found')
     iso = now_utc().isoformat()
     check_in_ts = _combine_dt(d, body.check_in_time)
     check_out_ts = _combine_dt(d, body.check_out_time)
+
+    status = body.status
     working_hours = body.working_hours
-    if working_hours is None and check_in_ts and check_out_ts:
+    is_late = False
+    NO_TIME_STATUSES = {'absent', 'leave', 'holiday', 'weekly_off'}
+
+    if check_in_ts and check_out_ts:
+        # Times were given — auto-calculate hours/status/lateness from the employee's shift,
+        # overriding any manually-picked present/half_day toggle so the calendar always
+        # reflects what the punch times actually mean.
         try:
             working_hours = round(
                 (datetime.fromisoformat(check_out_ts) - datetime.fromisoformat(check_in_ts)).total_seconds() / 3600, 2
             )
         except Exception:
             working_hours = 0
+        status = 'half_day' if working_hours < 4 else 'present'
+        shift = await db.shifts.find_one({'name': emp.get('shift')}, {'_id': 0})
+        shift_start = shift.get('start') if shift else None
+        grace = int(shift.get('grace_min', 15)) if shift else 15
+        if not shift_start:
+            store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
+            shift_start = store.get('work_start', '10:00')
+        try:
+            in_local = datetime.fromisoformat(check_in_ts).astimezone(timezone(timedelta(hours=5, minutes=30)))
+            minutes_in = in_local.hour * 60 + in_local.minute
+            is_late = minutes_in > (_minutes(shift_start) + grace)
+        except Exception:
+            is_late = False
+    elif status in NO_TIME_STATUSES:
+        # Paid/unpaid day off — no punch times required, clear any partial ones.
+        working_hours = 0
+        check_in_ts = None
+        check_out_ts = None
+    else:
+        working_hours = working_hours or 0
+
     doc = {
         'employee_id': emp_id, 'date': d,
         'check_in': {'timestamp': check_in_ts, 'edited': True} if check_in_ts else None,
         'check_out': {'timestamp': check_out_ts, 'edited': True} if check_out_ts else None,
         'working_hours': working_hours or 0,
-        'status': body.status, 'is_late': False,
+        'status': status, 'is_late': is_late,
         'note': body.note or '', 'edited_by': user['name'], 'edited_at': iso,
     }
     existing = await db.attendance.find_one({'employee_id': emp_id, 'date': d}, {'_id': 0})
@@ -1147,6 +1181,7 @@ async def _compute_payroll(year: int, month: int) -> list:
     holidays = set()
     async for h in db.holidays.find({'date': {'$gte': start, '$lte': end}}, {'_id': 0, 'date': 1}):
         holidays.add(h['date'])
+    all_month_dates = [d.isoformat() for d in _iter_month_dates(year, month)]
     # Ledger entries in month (advance/bonus/fine/deduction)
     ledger_by_emp: dict = {}
     async for t in db.timeline.find(
@@ -1160,6 +1195,7 @@ async def _compute_payroll(year: int, month: int) -> list:
         atts = att_by_emp.get(e['id'], [])
         present = sum(1 for a in atts if a.get('status') == 'present')
         half = sum(1 for a in atts if a.get('status') == 'half_day')
+        manual_off = sum(1 for a in atts if a.get('status') == 'weekly_off')
         # Sunday work
         sunday_work = 0
         for a in atts:
@@ -1171,20 +1207,44 @@ async def _compute_payroll(year: int, month: int) -> list:
 
         # Approved leaves count of days in month
         leave_days = 0
+        leave_dates = set()
         for l in leaves_by_emp.get(e['id'], []):
             try:
                 fd = max(date.fromisoformat(l['from_date']), date.fromisoformat(start))
                 td = min(date.fromisoformat(l['to_date']), date.fromisoformat(end))
                 if td >= fd:
                     leave_days += (td - fd).days + 1
+                    dd = fd
+                    while dd <= td:
+                        leave_dates.add(dd.isoformat())
+                        dd += timedelta(days=1)
             except Exception: pass
+
+        # Paid days off with no attendance record: store holidays and the weekly Sunday
+        # off are paid automatically, same as an approved leave, so staff aren't marked
+        # absent for days the store itself is closed / not scheduled to work.
+        att_dates = {a['date'] for a in atts}
+        holiday_days = 0
+        weekly_off_auto = 0
+        for ds in all_month_dates:
+            if ds in att_dates or ds in leave_dates:
+                continue
+            if ds in holidays:
+                holiday_days += 1
+            else:
+                try:
+                    if date.fromisoformat(ds).weekday() == 6:
+                        weekly_off_auto += 1
+                except Exception:
+                    pass
+        weekly_off_days = weekly_off_auto + manual_off
 
         base = float(e.get('salary') or 0)
         per_day = base / total_days if total_days > 0 else 0
-        # Effective days paid: present + 0.5*half + sunday_work extra + paid_leaves (all leave types counted as paid for now)
-        effective = present + 0.5 * half + sunday_work + leave_days
-        # Cap at total_days (except sunday_work is bonus)
-        earned = round(per_day * min(effective, total_days), 2)
+        # Effective days paid: present + 0.5*half + paid leaves/holidays/weekly-offs.
+        # Sunday work (actually clocking in on an off day) is bonus pay on top, uncapped.
+        effective = present + 0.5 * half + leave_days + holiday_days + weekly_off_days
+        earned = round(per_day * min(effective, total_days) + per_day * sunday_work, 2)
 
         # Ledger tallies in month
         month_advance = 0.0
@@ -1206,7 +1266,9 @@ async def _compute_payroll(year: int, month: int) -> list:
             'designation': e.get('designation'), 'department': e.get('department'),
             'base_salary': base, 'present_days': present, 'half_days': half,
             'sunday_work': sunday_work, 'leave_days': leave_days,
+            'holiday_days': holiday_days, 'weekly_off_days': weekly_off_days,
             'total_days': total_days, 'effective_days': round(min(effective, total_days), 2),
+            'per_day_rate': round(per_day, 2),
             'earned': earned, 'advance': round(month_advance, 2), 'bonus': round(month_bonus, 2),
             'fine': round(month_fine, 2), 'manual_deduction': round(month_deduction, 2),
             'opening_balance': opening,
@@ -1229,25 +1291,52 @@ async def payroll_compute(body: PayrollGenerateIn, _: dict = Depends(require_pay
 
 @api.post('/payroll/save')
 async def payroll_save(body: PayrollGenerateIn, user=Depends(require_payroll_writer)):
-    existing = await db.payroll_locks.find_one({'year': body.year, 'month': body.month}, {'_id': 0})
-    if existing and existing.get('locked'):
+    lock = await db.payroll_locks.find_one({'year': body.year, 'month': body.month}, {'_id': 0})
+    if lock and lock.get('locked'):
         raise HTTPException(status_code=400, detail='Payroll is locked for this month')
     rows = await _compute_payroll(body.year, body.month)
     iso = now_utc().isoformat()
-    await db.payroll_entries.delete_many({'year': body.year, 'month': body.month})
+
+    existing_entries = await db.payroll_entries.find({'year': body.year, 'month': body.month}, {'_id': 0}).to_list(1000)
+    existing_by_emp = {e['employee_id']: e for e in existing_entries}
+    is_regenerate = len(existing_entries) > 0
+
+    refreshed, kept_paid = 0, 0
     for r in rows:
-        await db.payroll_entries.insert_one({
-            'id': str(uuid.uuid4()), 'year': body.year, 'month': body.month,
-            **r, 'paid': False, 'generated_at': iso, 'generated_by': user['name'],
-        })
+        prior = existing_by_emp.get(r['employee_id'])
+        if prior and prior.get('paid'):
+            # Never touch an already-paid entry when regenerating after attendance edits.
+            kept_paid += 1
+            continue
+        entry_id = prior['id'] if prior else str(uuid.uuid4())
+        # Preserve any manual adjustments the owner/accountant already made on this
+        # (unpaid) entry; only the attendance-derived figures get refreshed.
+        bonus = prior.get('bonus', r['bonus']) if prior else r['bonus']
+        fine = prior.get('fine', r['fine']) if prior else r['fine']
+        manual_deduction = prior.get('manual_deduction', r['manual_deduction']) if prior else r['manual_deduction']
+        note = prior.get('note', '') if prior else ''
+        payment_mode = prior.get('payment_mode') if prior else None
+        net_salary = round(r['earned'] + bonus - r['advance'] - fine - manual_deduction + r['opening_balance'], 2)
+        doc = {
+            'id': entry_id, 'year': body.year, 'month': body.month, **r,
+            'bonus': bonus, 'fine': fine, 'manual_deduction': manual_deduction,
+            'net_salary': net_salary, 'note': note, 'payment_mode': payment_mode,
+            'paid': False, 'generated_at': iso, 'generated_by': user['name'],
+        }
+        await db.payroll_entries.update_one({'id': entry_id}, {'$set': doc}, upsert=True)
+        refreshed += 1
+
     await db.payroll_locks.update_one(
         {'year': body.year, 'month': body.month},
         {'$set': {'year': body.year, 'month': body.month, 'locked': False,
                   'generated_at': iso, 'generated_by': user['name']}},
         upsert=True,
     )
-    await log_audit(user, 'payroll.save', 'payroll', f'{body.year}-{body.month:02d}', '', {'entries': len(rows)})
-    return {'ok': True, 'entries': len(rows)}
+    await log_audit(
+        user, 'payroll.regenerate' if is_regenerate else 'payroll.save', 'payroll',
+        f'{body.year}-{body.month:02d}', '', {'refreshed': refreshed, 'kept_paid': kept_paid},
+    )
+    return {'ok': True, 'entries': refreshed, 'kept_paid': kept_paid, 'regenerated': is_regenerate}
 
 
 @api.get('/payroll/{year}/{month}')
@@ -1300,10 +1389,13 @@ async def payroll_entry_update(entry_id: str, body: PayrollEntryUpdateIn, user=D
     if body.paid_days_override is not None: upd['effective_days'] = float(body.paid_days_override)
     if body.note is not None: upd['note'] = body.note
     if body.payment_mode is not None: upd['payment_mode'] = body.payment_mode
-    # Recompute net using new numbers
+    # Recompute net using new numbers (keep the Sunday-work bonus, which sits outside
+    # the capped effective-days figure, intact when only bonus/fine/etc. change)
     merged = {**entry, **upd}
     per_day = merged['base_salary'] / merged['total_days'] if merged['total_days'] else 0
-    earned = round(per_day * min(merged.get('effective_days', 0), merged['total_days']), 2)
+    earned = round(
+        per_day * min(merged.get('effective_days', 0), merged['total_days'])
+        + per_day * merged.get('sunday_work', 0), 2)
     upd['earned'] = earned
     upd['net_salary'] = round(
         earned + merged.get('bonus', 0) - merged.get('advance', 0)

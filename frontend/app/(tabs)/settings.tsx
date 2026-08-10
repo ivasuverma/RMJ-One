@@ -3,7 +3,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/src/auth/AuthContext';
-import { colors, spacing, radius } from '@/src/theme';
+import { colors, spacing, radius, fonts } from '@/src/theme';
 
 export default function SettingsScreen() {
   const { user, logout } = useAuth();
@@ -115,7 +115,7 @@ const styles = StyleSheet.create({
   scroll: { padding: spacing.lg, paddingBottom: 120 },
   title: {
     color: colors.onSurface, fontSize: 30, fontWeight: '600', marginBottom: spacing.lg,
-    fontFamily: Platform.select({ ios: 'Georgia', default: 'serif' }),
+    fontFamily: fonts.display,
   },
   profileCard: {
     flexDirection: 'row', alignItems: 'center', gap: spacing.md,

@@ -1,12 +1,12 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, Alert, Platform, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
-import { colors, spacing, radius } from '@/src/theme';
+import { colors, spacing, radius, fonts } from '@/src/theme';
 
 type Correction = {
   id: string; employee_name: string; employee_code: string; date: string;
@@ -30,7 +30,9 @@ const fmtDate = (s?: string) => s ? new Date(s).toLocaleDateString('en-IN', { da
 
 export default function Approvals() {
   const router = useRouter();
-  const [tab, setTab] = useState<typeof TABS[number]>('Corrections');
+  const params = useLocalSearchParams<{ tab?: string }>();
+  const initialTab = (TABS as readonly string[]).includes(params.tab || '') ? (params.tab as typeof TABS[number]) : 'Corrections';
+  const [tab, setTab] = useState<typeof TABS[number]>(initialTab);
   const [corrections, setCorrections] = useState<Correction[]>([]);
   const [leaves, setLeaves] = useState<Leave[]>([]);
   const [loading, setLoading] = useState(true);
@@ -48,13 +50,19 @@ export default function Approvals() {
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
+  const inFlight = useRef<Set<string>>(new Set());
   const decide = async (kind: 'correction' | 'leave', id: string, action: 'approve' | 'reject') => {
+    const key = `${kind}:${id}`;
+    if (inFlight.current.has(key)) return; // guards rapid double/triple taps on Approve/Reject
+    inFlight.current.add(key);
     try {
       const path = kind === 'correction' ? `/attendance/corrections/${id}/decide` : `/leaves/${id}/decide`;
       await api.post(path, { action });
       await load();
     } catch (e: any) {
       Alert.alert('Failed', e?.detail || 'Please try again');
+    } finally {
+      inFlight.current.delete(key);
     }
   };
 
@@ -196,7 +204,7 @@ const styles = StyleSheet.create({
   },
   title: {
     flex: 1, color: colors.onSurface, fontSize: 22, fontWeight: '600',
-    fontFamily: Platform.select({ ios: 'Georgia', default: 'serif' }),
+    fontFamily: fonts.display,
   },
   segRow: {
     flexDirection: 'row', margin: spacing.lg, backgroundColor: colors.surfaceSecondary,

@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Platform, Modal, TextInput, Alert, KeyboardAvoidingView,
 } from 'react-native';
@@ -7,7 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { api } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthContext';
-import { colors, spacing, radius } from '@/src/theme';
+import { colors, spacing, radius, fonts } from '@/src/theme';
 
 type Day = {
   date: string; weekday: number; status: string; is_sunday: boolean;
@@ -20,8 +20,10 @@ const WEEK_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
 const STATUS_COLORS: Record<string, string> = {
   present: '#B7EFC5', absent: '#F1A9A9', late: '#F1D890', half_day: '#F1D890',
-  leave: '#8AB6D6', holiday: '#C2C2C2', missing_punch: '#F1A9A9',
+  leave: '#8AB6D6', holiday: '#C2C2C2', missing_punch: '#F1A9A9', weekly_off: '#9AD1C7',
 };
+
+type Shift = { id: string; name: string; start: string; end: string; grace_min: number };
 
 const fmtHM = (iso?: string | null) => {
   if (!iso) return '—';
@@ -38,6 +40,7 @@ export default function AttendanceCalendar() {
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [data, setData] = useState<{ days: Day[] } | null>(null);
+  const [shifts, setShifts] = useState<Shift[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Day | null>(null);
 
@@ -50,6 +53,7 @@ export default function AttendanceCalendar() {
   }, [id, year, month]);
 
   useFocusEffect(useCallback(() => { setLoading(true); load(); }, [load]));
+  useFocusEffect(useCallback(() => { api.get<Shift[]>('/shifts').then(setShifts).catch(() => {}); }, []));
 
   const stepMonth = (d: number) => {
     let m = month + d, y = year;
@@ -124,6 +128,7 @@ export default function AttendanceCalendar() {
               { k: 'absent', label: 'Absent' },
               { k: 'leave', label: 'Leave' },
               { k: 'holiday', label: 'Holiday' },
+              { k: 'weekly_off', label: 'Paid Off' },
             ].map((l) => (
               <View key={l.k} style={styles.legendItem}>
                 <View style={[styles.legendDot, { backgroundColor: STATUS_COLORS[l.k] }]} />
@@ -139,6 +144,7 @@ export default function AttendanceCalendar() {
           day={selected}
           empId={id!}
           canEdit={!!canEdit}
+          shifts={shifts}
           onClose={() => setSelected(null)}
           onSaved={() => { setSelected(null); load(); }}
         />
@@ -147,27 +153,66 @@ export default function AttendanceCalendar() {
   );
 }
 
-function DayDetail({ day, empId, canEdit, onClose, onSaved }: {
-  day: Day; empId: string; canEdit: boolean;
+const OFF_STATUSES = ['absent', 'leave', 'weekly_off'] as const;
+
+function toMinutes(hhmm: string): number | null {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm.trim());
+  if (!m) return null;
+  return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+}
+
+function DayDetail({ day, empId, canEdit, shifts, onClose, onSaved }: {
+  day: Day; empId: string; canEdit: boolean; shifts: Shift[];
   onClose: () => void; onSaved: () => void;
 }) {
   const [inTime, setInTime] = useState(day.check_in ? new Date(day.check_in).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false }) : '');
   const [outTime, setOutTime] = useState(day.check_out ? new Date(day.check_out).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false }) : '');
-  const [status, setStatus] = useState<Day['status']>(day.status === 'missing_punch' ? 'present' : day.status);
+  const initialOff = OFF_STATUSES.includes(day.status as any) ? (day.status as typeof OFF_STATUSES[number]) : null;
+  const [offStatus, setOffStatus] = useState<typeof OFF_STATUSES[number] | null>(initialOff);
+  const [selectedShift, setSelectedShift] = useState<Shift | null>(null);
   const [saving, setSaving] = useState(false);
+  const submittingRef = useRef(false);
+
+  // Live preview of what the times will resolve to — mirrors the backend's auto-calc
+  // so the owner sees the result before saving instead of having to guess a status.
+  const preview = useMemo(() => {
+    if (offStatus) return null;
+    const inM = toMinutes(inTime), outM = toMinutes(outTime);
+    if (inM === null || outM === null) return null;
+    let hours = (outM - inM) / 60;
+    if (hours < 0) hours += 24;
+    hours = Math.round(hours * 100) / 100;
+    const graceMin = selectedShift?.grace_min ?? 15;
+    const shiftStartM = selectedShift ? toMinutes(selectedShift.start) : null;
+    const isLate = shiftStartM !== null && inM > shiftStartM! + graceMin;
+    return { hours, status: hours < 4 ? 'half_day' : 'present', isLate };
+  }, [inTime, outTime, offStatus, selectedShift]);
+
+  const applyShift = (s: Shift) => {
+    setOffStatus(null);
+    setSelectedShift(s);
+    setInTime(s.start);
+    setOutTime(s.end);
+  };
 
   const save = async () => {
+    if (submittingRef.current) return; // guards rapid double/triple taps before re-render
+    submittingRef.current = true;
     setSaving(true);
     try {
       await api.put(`/attendance/day/${empId}/${day.date}`, {
-        status, check_in_time: inTime || null, check_out_time: outTime || null,
+        status: offStatus || 'present',
+        check_in_time: offStatus ? null : (inTime || null),
+        check_out_time: offStatus ? null : (outTime || null),
       });
       onSaved();
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
-    finally { setSaving(false); }
+    finally { setSaving(false); submittingRef.current = false; }
   };
 
   const requestChange = async () => {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setSaving(true);
     try {
       await api.post('/attendance/corrections/calendar', {
@@ -176,25 +221,44 @@ function DayDetail({ day, empId, canEdit, onClose, onSaved }: {
       });
       Alert.alert('Sent', 'Change request sent to owner.', [{ text: 'OK', onPress: onSaved }]);
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
-    finally { setSaving(false); }
+    finally { setSaving(false); submittingRef.current = false; }
   };
 
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalBg}>
         <Pressable style={{ flex: 1 }} onPress={onClose} />
-        <View style={styles.sheet} testID="day-detail-sheet">
+        <ScrollView style={styles.sheet} contentContainerStyle={{ paddingBottom: 36 }} testID="day-detail-sheet" keyboardShouldPersistTaps="handled">
           <View style={styles.sheetGrip} />
           <Text style={styles.sheetTitle}>{new Date(day.date).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}</Text>
           {day.holiday_name && <Text style={styles.sheetSub}>Holiday: {day.holiday_name}</Text>}
           {day.is_sunday && <Text style={styles.sheetSub}>Sunday</Text>}
+
+          {canEdit && shifts.length > 0 && (
+            <>
+              <Text style={styles.timeLabel}>Quick fill from shift</Text>
+              <View style={styles.shiftRow}>
+                {shifts.map((s) => (
+                  <Pressable
+                    key={s.id}
+                    testID={`day-shift-${s.id}`}
+                    onPress={() => applyShift(s)}
+                    style={[styles.shiftChip, selectedShift?.id === s.id && styles.shiftChipActive]}
+                  >
+                    <Text style={[styles.shiftChipText, selectedShift?.id === s.id && styles.shiftChipTextActive]}>{s.name}</Text>
+                    <Text style={[styles.shiftChipTime, selectedShift?.id === s.id && styles.shiftChipTextActive]}>{s.start}–{s.end}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </>
+          )}
 
           <View style={styles.timeRow}>
             <View style={{ flex: 1 }}>
               <Text style={styles.timeLabel}>Check-In</Text>
               <TextInput
                 testID="day-in-time"
-                value={inTime} onChangeText={setInTime}
+                value={inTime} onChangeText={(v) => { setInTime(v); setOffStatus(null); }}
                 editable={canEdit || !day.check_in}
                 placeholder="HH:MM" placeholderTextColor={colors.mutedText}
                 style={styles.timeInput} autoCapitalize="none"
@@ -204,7 +268,7 @@ function DayDetail({ day, empId, canEdit, onClose, onSaved }: {
               <Text style={styles.timeLabel}>Check-Out</Text>
               <TextInput
                 testID="day-out-time"
-                value={outTime} onChangeText={setOutTime}
+                value={outTime} onChangeText={(v) => { setOutTime(v); setOffStatus(null); }}
                 editable={canEdit || !day.check_out}
                 placeholder="HH:MM" placeholderTextColor={colors.mutedText}
                 style={styles.timeInput} autoCapitalize="none"
@@ -212,21 +276,34 @@ function DayDetail({ day, empId, canEdit, onClose, onSaved }: {
             </View>
           </View>
 
+          {preview && (
+            <View style={styles.previewBox} testID="day-preview">
+              <Ionicons name="calculator-outline" size={14} color={colors.brandSecondary} />
+              <Text style={styles.previewText}>
+                Auto: {preview.hours}h → {preview.status === 'present' ? 'Present' : 'Half Day'}
+                {preview.isLate ? ' · Late' : ''}
+              </Text>
+            </View>
+          )}
+
           {canEdit && (
             <>
-              <Text style={styles.timeLabel}>Status</Text>
+              <Text style={styles.timeLabel}>Or mark day as</Text>
               <View style={styles.statusRow}>
-                {(['present', 'half_day', 'absent', 'leave'] as const).map((s) => (
+                {(['absent', 'leave', 'weekly_off'] as const).map((s) => (
                   <Pressable
                     key={s}
                     testID={`day-status-${s}`}
-                    onPress={() => setStatus(s)}
-                    style={[styles.statusBtn, status === s && styles.statusBtnActive]}
+                    onPress={() => { setOffStatus(s); setInTime(''); setOutTime(''); }}
+                    style={[styles.statusBtn, offStatus === s && styles.statusBtnActive]}
                   >
-                    <Text style={[styles.statusText, status === s && styles.statusTextActive]}>{s.replace('_', ' ').toUpperCase()}</Text>
+                    <Text style={[styles.statusText, offStatus === s && styles.statusTextActive]}>
+                      {s === 'weekly_off' ? 'PAID OFF' : s.toUpperCase()}
+                    </Text>
                   </Pressable>
                 ))}
               </View>
+              <Text style={styles.hintText}>&quot;Paid Off&quot; is for weekly-offs / comp-offs — paid without a punch, just like Sunday.</Text>
             </>
           )}
 
@@ -237,16 +314,16 @@ function DayDetail({ day, empId, canEdit, onClose, onSaved }: {
               <Text style={styles.cancelText}>Close</Text>
             </Pressable>
             {canEdit ? (
-              <Pressable style={styles.saveBtn} onPress={save} disabled={saving} testID="day-save-btn">
+              <Pressable style={[styles.saveBtn, saving && { opacity: 0.6 }]} onPress={save} disabled={saving} testID="day-save-btn">
                 {saving ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.saveText}>Save</Text>}
               </Pressable>
             ) : (
-              <Pressable style={styles.saveBtn} onPress={requestChange} disabled={saving} testID="day-request-btn">
+              <Pressable style={[styles.saveBtn, saving && { opacity: 0.6 }]} onPress={requestChange} disabled={saving} testID="day-request-btn">
                 {saving ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.saveText}>Request Change</Text>}
               </Pressable>
             )}
           </View>
-        </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </Modal>
   );
@@ -264,7 +341,7 @@ const styles = StyleSheet.create({
   },
   title: {
     flex: 1, color: colors.onSurface, fontSize: 22, fontWeight: '600',
-    fontFamily: Platform.select({ ios: 'Georgia', default: 'serif' }),
+    fontFamily: fonts.display,
   },
   monthRow: {
     flexDirection: 'row', alignItems: 'center', gap: spacing.md,
@@ -299,9 +376,26 @@ const styles = StyleSheet.create({
 
   modalBg: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)' },
   sheet: {
+    maxHeight: '88%',
     backgroundColor: colors.surfaceSecondary, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg,
     borderColor: colors.brand, borderTopWidth: 1, padding: spacing.lg, paddingBottom: 36,
   },
+  shiftRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.sm },
+  shiftChip: {
+    paddingHorizontal: spacing.md, paddingVertical: 8, borderRadius: radius.md,
+    backgroundColor: colors.surfaceTertiary, borderWidth: 1, borderColor: colors.border,
+  },
+  shiftChipActive: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
+  shiftChipText: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '700' },
+  shiftChipTime: { color: colors.mutedText, fontSize: 10, marginTop: 1 },
+  shiftChipTextActive: { color: colors.onBrandPrimary },
+  previewBox: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: spacing.sm,
+    backgroundColor: colors.brandTertiary, borderRadius: radius.sm, paddingHorizontal: spacing.sm, paddingVertical: 6,
+    alignSelf: 'flex-start',
+  },
+  previewText: { color: colors.brandSecondary, fontSize: 11, fontWeight: '700' },
+  hintText: { color: colors.mutedText, fontSize: 10, marginTop: 6 },
   sheetGrip: { width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: spacing.md },
   sheetTitle: { color: colors.onSurface, fontSize: 18, fontWeight: '700' },
   sheetSub: { color: colors.brandSecondary, fontSize: 12, marginTop: 2 },
