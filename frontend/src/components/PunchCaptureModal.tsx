@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, Pressable, ActivityIndicator, Modal, Alert, Linking, Platform,
 } from 'react-native';
@@ -6,7 +6,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Location from 'expo-location';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
-import { colors, spacing, radius, fonts } from '@/src/theme';
+import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
+import { useTheme } from '@/src/theme/ThemeContext';
 
 export type PunchResult = { selfie: string; latitude: number; longitude: number };
 
@@ -18,6 +19,8 @@ type Props = {
 };
 
 export function PunchCaptureModal({ visible, mode, onClose, onCapture }: Props) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [camPerm, requestCamPerm] = useCameraPermissions();
   const [locPerm, setLocPerm] = useState<Location.PermissionResponse | null>(null);
   const [coords, setCoords] = useState<{ latitude: number; longitude: number } | null>(null);
@@ -189,7 +192,7 @@ export function PunchCaptureModal({ visible, mode, onClose, onCapture }: Props) 
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   header: {
     flexDirection: 'row', alignItems: 'center',
@@ -219,7 +222,7 @@ const styles = StyleSheet.create({
   },
   locOk: { color: colors.brandSecondary, fontSize: 12, flex: 1 },
   locWaiting: { color: colors.mutedText, fontSize: 12, flex: 1 },
-  locDenied: { color: '#F1A9A9', fontSize: 12 },
+  locDenied: { color: colors.onError, fontSize: 12 },
 
   statusMsg: { color: colors.brandSecondary, textAlign: 'center', marginTop: spacing.sm, fontSize: 12 },
 

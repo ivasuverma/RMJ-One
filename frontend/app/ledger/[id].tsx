@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Platform, RefreshControl,
 } from 'react-native';
@@ -6,7 +6,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { api } from '@/src/api/client';
-import { colors, spacing, radius, fonts } from '@/src/theme';
+import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
+import { useTheme } from '@/src/theme/ThemeContext';
 
 const fmtINR = (n: number) => `₹${(Math.abs(n) || 0).toLocaleString('en-IN')}`;
 const fmtDate = (s?: string) => {
@@ -25,6 +26,8 @@ const ICON: Record<string, any> = {
 export default function EmployeeLedger() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [data, setData] = useState<{ entries: any[]; closing_balance: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -59,7 +62,7 @@ export default function EmployeeLedger() {
         <>
           <View style={styles.balanceCard}>
             <Text style={styles.balanceLabel}>CLOSING BALANCE</Text>
-            <Text style={[styles.balanceValue, { color: (data?.closing_balance || 0) >= 0 ? colors.brandPrimary : '#F1A9A9' }]}>
+            <Text style={[styles.balanceValue, { color: (data?.closing_balance || 0) >= 0 ? colors.brandPrimary : colors.onError }]}>
               {(data?.closing_balance || 0) >= 0 ? '' : '- '}{fmtINR(data?.closing_balance || 0)}
             </Text>
             <Text style={styles.balanceHint}>Positive = employee is owed. Negative = employee owes.</Text>
@@ -87,7 +90,7 @@ export default function EmployeeLedger() {
                 </View>
                 <View style={{ alignItems: 'flex-end' }}>
                   {e.delta !== 0 ? (
-                    <Text style={[styles.delta, { color: e.delta > 0 ? '#B7EFC5' : '#F1A9A9' }]}>
+                    <Text style={[styles.delta, { color: e.delta > 0 ? colors.onSuccess : colors.onError }]}>
                       {e.delta > 0 ? '+' : '−'} {fmtINR(e.delta)}
                     </Text>
                   ) : <Text style={styles.deltaZero}>—</Text>}
@@ -102,7 +105,7 @@ export default function EmployeeLedger() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   header: {

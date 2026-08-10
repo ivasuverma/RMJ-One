@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, ActivityIndicator, Pressable, RefreshControl, Platform,
 } from 'react-native';
@@ -6,7 +6,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
-import { colors, spacing, radius, fonts } from '@/src/theme';
+import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
+import { useTheme } from '@/src/theme/ThemeContext';
 
 type Log = {
   id: string; actor_name: string; actor_role: string; action: string;
@@ -26,6 +27,8 @@ const fmtWhen = (iso: string) => {
 
 export default function AuditLogsScreen() {
   const router = useRouter();
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [items, setItems] = useState<Log[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -85,7 +88,7 @@ export default function AuditLogsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   header: {
     flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg,

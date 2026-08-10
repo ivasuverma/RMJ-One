@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, Platform, Linking,
 } from 'react-native';
@@ -7,22 +7,28 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { api, TOKEN_KEY } from '@/src/api/client';
 import { storage } from '@/src/utils/storage';
-import { colors, spacing, radius, fonts } from '@/src/theme';
+import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
+import { useTheme } from '@/src/theme/ThemeContext';
 
-const KINDS = [
+const KINDS: {
+  key: string; label: string; icon: any;
+  needsRange?: boolean; needsMonth?: boolean; needsEmp?: boolean;
+}[] = [
   { key: 'attendance', label: 'Attendance', icon: 'time-outline', needsRange: true },
   { key: 'late', label: 'Late Punches', icon: 'alarm-outline', needsRange: true },
   { key: 'missing_punch', label: 'Missing Punch', icon: 'alert-circle-outline', needsRange: true },
   { key: 'leave', label: 'Leave', icon: 'calendar-outline', needsRange: true },
   { key: 'payroll', label: 'Payroll', icon: 'cash-outline', needsMonth: true },
   { key: 'ledger', label: 'Ledger (per employee)', icon: 'book-outline', needsEmp: true },
-] as const;
+];
 
 const today = new Date().toISOString().slice(0, 10);
 const monthStart = today.slice(0, 7) + '-01';
 
 export default function Reports() {
   const router = useRouter();
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [kind, setKind] = useState<typeof KINDS[number]['key']>('attendance');
   const [from, setFrom] = useState(monthStart);
   const [to, setTo] = useState(today);
@@ -146,7 +152,7 @@ export default function Reports() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   header: {
     flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg,

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, Platform, KeyboardAvoidingView,
 } from 'react-native';
@@ -6,10 +6,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/src/auth/AuthContext';
-import { colors, spacing, radius, fonts } from '@/src/theme';
+import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
+import { useTheme } from '@/src/theme/ThemeContext';
 
 export default function MyAccountScreen() {
   const router = useRouter();
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const { user, updateMyAccount } = useAuth();
   const [currentPassword, setCurrentPassword] = useState('');
   const [newUsername, setNewUsername] = useState(user?.username || '');
@@ -103,7 +106,7 @@ export default function MyAccountScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   header: {
     flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg,

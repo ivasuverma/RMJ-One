@@ -25,7 +25,8 @@ export default function Root({ children }: { children: React.ReactNode }) {
 
         {/* Android / other browsers that support the web app manifest */}
         <meta name="mobile-web-app-capable" content="yes" />
-        <meta name="theme-color" content="#0D0D0D" />
+        <meta name="theme-color" content="#0E211A" media="(prefers-color-scheme: dark)" />
+        <meta name="theme-color" content="#F7F1E6" media="(prefers-color-scheme: light)" />
         <link rel="manifest" href="/manifest.json" />
         <link rel="icon" href="/favicon.ico" />
 

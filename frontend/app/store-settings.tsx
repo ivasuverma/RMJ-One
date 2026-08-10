@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, Platform, KeyboardAvoidingView, Linking,
 } from 'react-native';
@@ -7,7 +7,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as Location from 'expo-location';
 import { api } from '@/src/api/client';
-import { colors, spacing, radius, fonts } from '@/src/theme';
+import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
+import { useTheme } from '@/src/theme/ThemeContext';
 
 type Form = {
   name: string; latitude: string; longitude: string; radius_m: string;
@@ -21,6 +22,8 @@ const EMPTY: Form = {
 
 export default function StoreSettings() {
   const router = useRouter();
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [form, setForm] = useState<Form>(EMPTY);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -162,9 +165,13 @@ export default function StoreSettings() {
 }
 
 function SectionTitle({ text }: { text: string }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   return <Text style={styles.section}>{text}</Text>;
 }
 function F({ label, v, onC, kt, testID }: { label: string; v: string; onC: (s: string) => void; kt?: any; testID?: string }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <View style={{ marginBottom: spacing.md }}>
       <Text style={styles.label}>{label}</Text>
@@ -173,7 +180,7 @@ function F({ label, v, onC, kt, testID }: { label: string; v: string; onC: (s: s
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   centered: { flex: 1, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
   header: {

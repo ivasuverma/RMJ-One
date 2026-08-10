@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, Platform, KeyboardAvoidingView,
 } from 'react-native';
@@ -6,18 +6,22 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
-import { colors, spacing, radius, fonts } from '@/src/theme';
+import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
+import { useTheme } from '@/src/theme/ThemeContext';
 
 const TYPES = [
-  { key: 'advance', label: 'Advance', icon: 'cash-outline', color: '#F1A9A9' },
-  { key: 'bonus', label: 'Bonus', icon: 'gift-outline', color: '#B7EFC5' },
-  { key: 'fine', label: 'Fine', icon: 'warning-outline', color: '#F1A9A9' },
-  { key: 'deduction', label: 'Deduction', icon: 'remove-circle-outline', color: '#F1A9A9' },
+  { key: 'advance', label: 'Advance', icon: 'cash-outline', tone: 'error' },
+  { key: 'bonus', label: 'Bonus', icon: 'gift-outline', tone: 'success' },
+  { key: 'fine', label: 'Fine', icon: 'warning-outline', tone: 'error' },
+  { key: 'deduction', label: 'Deduction', icon: 'remove-circle-outline', tone: 'error' },
 ] as const;
 
 export default function NewLedgerEntry() {
   const { emp } = useLocalSearchParams<{ emp: string }>();
   const router = useRouter();
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+  const toneColor = { error: colors.onError, success: colors.onSuccess } as const;
   const [type, setType] = useState<typeof TYPES[number]['key']>('advance');
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
@@ -62,7 +66,7 @@ export default function NewLedgerEntry() {
                 style={[styles.typeBtn, type === t.key && styles.typeBtnActive]}
                 testID={`ledger-type-${t.key}`}
               >
-                <View style={styles.typeIcon}><Ionicons name={t.icon} size={20} color={t.color} /></View>
+                <View style={styles.typeIcon}><Ionicons name={t.icon} size={20} color={toneColor[t.tone]} /></View>
                 <Text style={[styles.typeLabel, type === t.key && { color: colors.onSurface }]}>{t.label}</Text>
               </Pressable>
             ))}
@@ -100,7 +104,7 @@ export default function NewLedgerEntry() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   header: {
     flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg,

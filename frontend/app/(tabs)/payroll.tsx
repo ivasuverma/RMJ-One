@@ -7,7 +7,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthContext';
-import { colors, spacing, radius, fonts } from '@/src/theme';
+import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
+import { useTheme } from '@/src/theme/ThemeContext';
 
 type Row = {
   employee_id: string; employee_code: string; name: string; designation: string; department: string;
@@ -23,6 +24,8 @@ const fmtINR = (n: number) => `₹${(n || 0).toLocaleString('en-IN')}`;
 
 export default function OwnerPayroll() {
   const router = useRouter();
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const { user } = useAuth();
   const isAccountantOrOwner = user?.role === 'owner' || user?.role === 'accountant';
   const now = new Date();
@@ -93,7 +96,7 @@ export default function OwnerPayroll() {
       <View style={styles.header}>
         <Text style={styles.title}>Payroll</Text>
         {data?.locked ? (
-          <View style={styles.lockedChip}><Ionicons name="lock-closed" size={12} color="#F1D890" /><Text style={styles.lockedText}>Locked</Text></View>
+          <View style={styles.lockedChip}><Ionicons name="lock-closed" size={12} color={colors.onWarning} /><Text style={styles.lockedText}>Locked</Text></View>
         ) : null}
       </View>
 
@@ -126,7 +129,7 @@ export default function OwnerPayroll() {
             </View>
             <View style={styles.summaryTile}>
               <Text style={styles.summaryLabel}>Pending</Text>
-              <Text style={[styles.summaryValue, { color: '#F1D890' }]}>{fmtINR(totalPending)}</Text>
+              <Text style={[styles.summaryValue, { color: colors.onWarning }]}>{fmtINR(totalPending)}</Text>
             </View>
           </View>
 
@@ -210,7 +213,7 @@ export default function OwnerPayroll() {
 
 const initials = (n: string) => n.trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() || '').join('');
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   header: {
@@ -223,10 +226,10 @@ const styles = StyleSheet.create({
   },
   lockedChip: {
     flexDirection: 'row', gap: 4, alignItems: 'center',
-    backgroundColor: 'rgba(163,125,30,0.25)', borderColor: colors.warning, borderWidth: 1,
+    backgroundColor: colors.warning, borderColor: colors.onWarning, borderWidth: 1,
     borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 4,
   },
-  lockedText: { color: '#F1D890', fontWeight: '700', fontSize: 11 },
+  lockedText: { color: colors.onWarning, fontWeight: '700', fontSize: 11 },
 
   monthRow: {
     flexDirection: 'row', alignItems: 'center', gap: spacing.md,
@@ -272,7 +275,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md,
     borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.sm,
   },
-  empRowPaid: { backgroundColor: 'rgba(45,90,64,0.16)', borderColor: colors.success },
+  empRowPaid: { backgroundColor: colors.success, borderColor: colors.onSuccess },
   avatar: {
     width: 40, height: 40, borderRadius: 20, backgroundColor: colors.brandTertiary,
     alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.brand,

@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, ActivityIndicator, Pressable, Platform, RefreshControl, Alert,
 } from 'react-native';
@@ -9,7 +9,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '@/src/api/client';
 import { confirmAction } from '@/src/utils/confirm';
-import { colors, spacing, radius, images, fonts } from '@/src/theme';
+import { spacing, radius, images, fonts, ThemeColors } from '@/src/theme';
+import { useTheme } from '@/src/theme/ThemeContext';
 
 type IdProof = { id: string; name: string; data_uri: string; uploaded_at: string };
 
@@ -70,6 +71,8 @@ const TL_ICONS: Record<string, any> = {
 export default function EmployeeProfile() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const { colors, scheme } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [data, setData] = useState<{ employee: Emp; timeline: TL[] } | null>(null);
   const [tab, setTab] = useState<TabKey>('Details');
   const [loading, setLoading] = useState(true);
@@ -118,6 +121,9 @@ export default function EmployeeProfile() {
 
   const emp = data.employee;
   const initials = emp.name.trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() || '').join('');
+  const gradientColors: [string, string] = scheme === 'light'
+    ? ['rgba(247,241,230,0.35)', 'rgba(247,241,230,0.97)']
+    : ['rgba(13,13,13,0.4)', 'rgba(13,13,13,0.98)'];
 
   return (
     <View style={styles.root} testID="employee-profile">
@@ -129,7 +135,7 @@ export default function EmployeeProfile() {
         {/* Cover */}
         <View style={styles.cover}>
           <Image source={images.goldTexture} style={StyleSheet.absoluteFill} contentFit="cover" />
-          <LinearGradient colors={['rgba(13,13,13,0.4)', 'rgba(13,13,13,0.98)']} style={StyleSheet.absoluteFill} />
+          <LinearGradient colors={gradientColors} style={StyleSheet.absoluteFill} />
           <SafeAreaView edges={['top']}>
             <View style={styles.coverTop}>
               <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
@@ -143,7 +149,7 @@ export default function EmployeeProfile() {
                 <Ionicons name="create-outline" size={20} color={colors.onSurface} />
               </Pressable>
               <Pressable onPress={onDelete} style={[styles.iconBtn, { marginLeft: spacing.sm }]} testID="delete-btn" hitSlop={12}>
-                <Ionicons name="trash-outline" size={20} color="#F1A9A9" />
+                <Ionicons name="trash-outline" size={20} color={colors.onError} />
               </Pressable>
             </View>
           </SafeAreaView>
@@ -199,10 +205,12 @@ export default function EmployeeProfile() {
 }
 
 function StatusChip({ status }: { status: Emp['status'] }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const map = {
-    active: { label: 'Active', bg: 'rgba(45,90,64,0.35)', bd: colors.success, fg: '#B7EFC5' },
-    on_leave: { label: 'On Leave', bg: 'rgba(163,125,30,0.25)', bd: colors.warning, fg: '#F1D890' },
-    inactive: { label: 'Inactive', bg: 'rgba(122,40,40,0.25)', bd: colors.error, fg: '#F1A9A9' },
+    active: { label: 'Active', bg: colors.success, bd: colors.onSuccess, fg: colors.onSuccess },
+    on_leave: { label: 'On Leave', bg: colors.warning, bd: colors.onWarning, fg: colors.onWarning },
+    inactive: { label: 'Inactive', bg: colors.error, bd: colors.onError, fg: colors.onError },
   } as const;
   const s = map[status] || map.active;
   return (
@@ -213,6 +221,8 @@ function StatusChip({ status }: { status: Emp['status'] }) {
 }
 
 function TimelineList({ items }: { items: TL[] }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   if (items.length === 0) {
     return (
       <View style={styles.emptyBox}>
@@ -246,6 +256,8 @@ function TimelineList({ items }: { items: TL[] }) {
 }
 
 function DetailsCard({ emp, onReload }: { emp: Emp; onReload: () => void }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <View style={styles.detailCard}>
       <SectionTitle text="Personal" />
@@ -279,6 +291,8 @@ function DetailsCard({ emp, onReload }: { emp: Emp; onReload: () => void }) {
 }
 
 function IdProofsSection({ empId, proofs, onChange }: { empId: string; proofs: IdProof[]; onChange: () => void }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [uploading, setUploading] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
@@ -331,8 +345,8 @@ function IdProofsSection({ empId, proofs, onChange }: { empId: string; proofs: I
             testID={`del-id-proof-${p.id}`}
           >
             {deletingId === p.id
-              ? <ActivityIndicator size="small" color="#F1A9A9" />
-              : <Ionicons name="trash-outline" size={16} color="#F1A9A9" />}
+              ? <ActivityIndicator size="small" color={colors.onError} />
+              : <Ionicons name="trash-outline" size={16} color={colors.onError} />}
           </Pressable>
         </Pressable>
       ))}
@@ -350,6 +364,9 @@ function IdProofsSection({ empId, proofs, onChange }: { empId: string; proofs: I
 
 function PayrollCard({ emp }: { emp: Emp }) {
   const router = useRouter();
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+  const payrollCardStyles = useMemo(() => makePayrollCardStyles(colors), [colors]);
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
@@ -434,6 +451,8 @@ function PayrollCard({ emp }: { emp: Emp }) {
 }
 
 function GlanceCell({ label, value }: { label: string; value: string }) {
+  const { colors } = useTheme();
+  const payrollCardStyles = useMemo(() => makePayrollCardStyles(colors), [colors]);
   return (
     <View style={payrollCardStyles.glanceCell}>
       <Text style={payrollCardStyles.glanceValue}>{value}</Text>
@@ -442,7 +461,7 @@ function GlanceCell({ label, value }: { label: string; value: string }) {
   );
 }
 
-const payrollCardStyles = StyleSheet.create({
+const makePayrollCardStyles = (colors: ThemeColors) => StyleSheet.create({
   monthRow: {
     flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.lg,
     backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: 6,
@@ -461,7 +480,7 @@ const payrollCardStyles = StyleSheet.create({
     backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
     padding: spacing.md, marginTop: spacing.md,
   },
-  netRowPaid: { backgroundColor: 'rgba(45,90,64,0.2)', borderColor: colors.success },
+  netRowPaid: { backgroundColor: colors.success, borderColor: colors.onSuccess },
   netLabel: { color: colors.brandSecondary, fontSize: 10, letterSpacing: 0.6 },
   netVal: { color: colors.onSurface, fontSize: 20, fontWeight: '800', marginTop: 2 },
   detailBtn: {
@@ -473,9 +492,13 @@ const payrollCardStyles = StyleSheet.create({
 });
 
 function SectionTitle({ text }: { text: string }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   return <Text style={styles.detailSection}>{text}</Text>;
 }
 function DetailRow({ label, value }: { label: string; value: string }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <View style={styles.detailRow}>
       <Text style={styles.detailLabel}>{label}</Text>
@@ -484,7 +507,7 @@ function DetailRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   centered: { flex: 1, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', gap: spacing.md },
   backBtnBig: { marginTop: spacing.md, backgroundColor: colors.brandPrimary, paddingHorizontal: spacing.xl, paddingVertical: 12, borderRadius: radius.md },
@@ -493,7 +516,7 @@ const styles = StyleSheet.create({
   coverTop: { flexDirection: 'row', paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
   iconBtn: {
     width: 40, height: 40, borderRadius: 20,
-    backgroundColor: 'rgba(38,38,38,0.85)', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.surfaceSecondary, alignItems: 'center', justifyContent: 'center',
     borderWidth: 1, borderColor: colors.border,
   },
   avatarWrap: { position: 'absolute', bottom: -36, left: spacing.lg },
@@ -573,7 +596,7 @@ const styles = StyleSheet.create({
   proofName: { flex: 1, color: colors.onSurface, fontSize: 13 },
   proofDelBtn: {
     width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: 'rgba(122,40,40,0.15)', borderColor: colors.error, borderWidth: 1,
+    backgroundColor: colors.error, borderColor: colors.onError, borderWidth: 1,
   },
   uploadBtn: {
     flexDirection: 'row', gap: spacing.sm, alignItems: 'center', justifyContent: 'center',

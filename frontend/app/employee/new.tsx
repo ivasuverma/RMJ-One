@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TextInput, ScrollView, Pressable,
   KeyboardAvoidingView, Platform, ActivityIndicator, Alert,
@@ -8,7 +8,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { api } from '@/src/api/client';
-import { colors, spacing, radius, fonts } from '@/src/theme';
+import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
+import { useTheme } from '@/src/theme/ThemeContext';
 
 type Shift = { id: string; name: string; start: string; end: string };
 
@@ -29,6 +30,8 @@ const STATUSES: EmployeeForm['status'][] = ['active', 'on_leave', 'inactive'];
 
 export default function EmployeeForm() {
   const router = useRouter();
+  const { colors, scheme } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const params = useLocalSearchParams<{ id?: string; edit?: string }>();
   // Route can be /employee/new or /employee/edit/[id] — see edit route
   const id = params.id;
@@ -214,7 +217,7 @@ export default function EmployeeForm() {
 
       {/* Sticky save */}
       <LinearGradient
-        colors={['rgba(13,13,13,0)', 'rgba(13,13,13,0.95)']}
+        colors={scheme === 'light' ? ['rgba(247,241,230,0)', 'rgba(247,241,230,0.95)'] : ['rgba(13,13,13,0)', 'rgba(13,13,13,0.95)']}
         style={[styles.saveBarBg, { pointerEvents: 'none' as const }]}
       />
       <View style={styles.saveBar}>
@@ -232,6 +235,8 @@ export default function EmployeeForm() {
 }
 
 function SectionTitle({ text }: { text: string }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   return <Text style={styles.section}>{text}</Text>;
 }
 
@@ -241,6 +246,8 @@ function Field({
   label: string; value: string; onChangeText: (v: string) => void;
   keyboardType?: any; multiline?: boolean; autoCapitalize?: any; placeholder?: string; error?: string; testID?: string;
 }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <View style={{ marginBottom: spacing.md }}>
       <Text style={styles.label}>{label}</Text>
@@ -261,7 +268,7 @@ function Field({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   centered: { flex: 1, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
 
@@ -291,8 +298,8 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: colors.border,
     color: colors.onSurface, paddingHorizontal: spacing.md, paddingVertical: 12, fontSize: 14,
   },
-  inputErr: { borderColor: colors.error },
-  errText: { color: '#F1A9A9', fontSize: 12, marginTop: 4 },
+  inputErr: { borderColor: colors.onError },
+  errText: { color: colors.onError, fontSize: 12, marginTop: 4 },
   row2: { flexDirection: 'row', gap: spacing.md },
 
   statusRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.md },
