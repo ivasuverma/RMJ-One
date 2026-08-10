@@ -10,6 +10,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { api } from '@/src/api/client';
 import { colors, spacing, radius, fonts } from '@/src/theme';
 
+type Shift = { id: string; name: string; start: string; end: string };
+
 type EmployeeForm = {
   name: string; employee_code: string; department: string; designation: string;
   shift: string; salary: string; joining_date: string; mobile: string; address: string;
@@ -36,7 +38,12 @@ export default function EmployeeForm() {
   const [loading, setLoading] = useState(isEdit);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [shifts, setShifts] = useState<Shift[]>([]);
   const submittingRef = useRef(false);
+
+  useEffect(() => {
+    api.get<Shift[]>('/shifts').then(setShifts).catch(() => setShifts([]));
+  }, []);
 
   useEffect(() => {
     if (!isEdit) return;
@@ -126,14 +133,34 @@ export default function EmployeeForm() {
           </View>
 
           <SectionTitle text="Job" />
-          <View style={styles.row2}>
-            <View style={{ flex: 1 }}>
-              <Field label="Employee Code" value={form.employee_code} onChangeText={(v) => setField('employee_code', v.toUpperCase())} placeholder="Auto if blank" autoCapitalize="characters" testID="field-code" />
+          <Field label="Employee Code" value={form.employee_code} onChangeText={(v) => setField('employee_code', v.toUpperCase())} placeholder="Auto if blank" autoCapitalize="characters" testID="field-code" />
+
+          <Text style={styles.label}>Shift</Text>
+          {shifts.length === 0 ? (
+            <Pressable onPress={() => router.push('/settings/shifts')} style={styles.noShifts} testID="no-shifts-link">
+              <Ionicons name="add-circle-outline" size={16} color={colors.brandSecondary} />
+              <Text style={styles.noShiftsText}>No shifts set up yet — tap to add one</Text>
+            </Pressable>
+          ) : (
+            <View style={styles.statusRow}>
+              {shifts.map((s) => (
+                <Pressable
+                  key={s.id}
+                  testID={`shift-opt-${s.id}`}
+                  onPress={() => setField('shift', s.name)}
+                  style={[styles.statusOpt, form.shift === s.name && styles.statusOptActive]}
+                >
+                  <Text style={[styles.statusOptText, form.shift === s.name && styles.statusOptTextActive]} numberOfLines={1}>
+                    {s.name}
+                  </Text>
+                  <Text style={[styles.shiftOptSub, form.shift === s.name && styles.shiftOptSubActive]}>
+                    {s.start}–{s.end}
+                  </Text>
+                </Pressable>
+              ))}
             </View>
-            <View style={{ flex: 1 }}>
-              <Field label="Shift" value={form.shift} onChangeText={(v) => setField('shift', v)} testID="field-shift" />
-            </View>
-          </View>
+          )}
+
           <View style={styles.row2}>
             <View style={{ flex: 1 }}>
               <Field label="Department" value={form.department} onChangeText={(v) => setField('department', v)} testID="field-department" />
@@ -268,14 +295,21 @@ const styles = StyleSheet.create({
   errText: { color: '#F1A9A9', fontSize: 12, marginTop: 4 },
   row2: { flexDirection: 'row', gap: spacing.md },
 
-  statusRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md },
+  statusRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.md },
   statusOpt: {
-    flex: 1, paddingVertical: 12, borderRadius: radius.md, alignItems: 'center',
+    flexGrow: 1, minWidth: 100, paddingVertical: 10, paddingHorizontal: spacing.sm, borderRadius: radius.md, alignItems: 'center',
     backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border,
   },
   statusOptActive: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
   statusOptText: { color: colors.onSurfaceTertiary, fontSize: 13, fontWeight: '600' },
   statusOptTextActive: { color: colors.onBrandPrimary },
+  shiftOptSub: { color: colors.mutedText, fontSize: 11, marginTop: 2 },
+  shiftOptSubActive: { color: colors.onBrandPrimary, opacity: 0.85 },
+  noShifts: {
+    flexDirection: 'row', gap: spacing.sm, alignItems: 'center', backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.md,
+  },
+  noShiftsText: { color: colors.brandSecondary, fontSize: 13 },
 
   saveBarBg: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 130 },
   saveBar: { position: 'absolute', left: 0, right: 0, bottom: 0, padding: spacing.lg, paddingBottom: spacing.xl },

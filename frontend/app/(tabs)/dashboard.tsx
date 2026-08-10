@@ -80,9 +80,9 @@ export default function DashboardScreen() {
             <Ionicons name="sparkles" size={16} color={colors.onBrandPrimary} />
             <Text style={styles.aiBtnText}>Ask AI</Text>
           </Pressable>
-          <View style={styles.headerBadge}>
-            <Text style={styles.headerBadgeText}>RMJ</Text>
-          </View>
+          <Pressable onPress={() => router.push('/')} testID="dashboard-logo-btn" hitSlop={8}>
+            <Image source={images.logo} style={styles.headerBadge} contentFit="contain" testID="dashboard-logo" />
+          </Pressable>
         </View>
 
         {loading && !data ? (
@@ -227,8 +227,7 @@ const styles = StyleSheet.create({
     fontFamily: fonts.display,
   },
   headerBadge: {
-    width: 44, height: 44, borderRadius: radius.md, backgroundColor: colors.brandPrimary,
-    alignItems: 'center', justifyContent: 'center',
+    width: 40, height: 40, borderRadius: radius.md,
   },
   aiBtn: {
     flexDirection: 'row', gap: 6, alignItems: 'center', backgroundColor: colors.brandTertiary,
@@ -236,7 +235,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12, paddingVertical: 8, borderRadius: radius.pill, marginRight: spacing.sm,
   },
   aiBtnText: { color: colors.brandSecondary, fontWeight: '700', fontSize: 12 },
-  headerBadgeText: { color: colors.onBrandPrimary, fontWeight: '800', letterSpacing: 1 },
   loadingWrap: { paddingVertical: 80, alignItems: 'center' },
 
   heroCard: {

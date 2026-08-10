@@ -65,6 +65,20 @@ Then either:
 
 ## What to test
 
+- **Home** — signing in as owner/admin/accountant now lands on a module hub first
+  (Employee Management, plus placeholder tiles for Repairs and Sample In/Out — first
+  step toward the multi-module RMJ-One app). Tap the logo in the Dashboard header, or
+  "All Modules" in Settings, to get back to it. Employees still land straight on their
+  own home screen as before.
+- **Payroll — Sunday pay** — a normal closed Sunday still counts as a paid weekly-off
+  (full base salary unaffected). If an employee actually clocks in on a Sunday, they now
+  get a half-day bonus instead of a full extra day (the old behavior double-paid worked
+  Sundays — this was a reported bug, now fixed).
+- **Add/Edit Employee → Shift** — is now a tap-to-select list of your configured shifts
+  instead of a free-text box.
+- **Ledger / Leave request / Store settings / Set PIN** — saving now returns you straight
+  to the previous screen instead of waiting on a confirmation popup that was unreliable on
+  web and made it look like nothing happened (this was also a reported bug).
 - **Dashboard** — attendance hero, pending-approvals rows, and payroll tiles are now
   tappable and route to the right screen.
 - **Attendance → tap an employee → a day** — pick a shift chip to prefill check-in/out,

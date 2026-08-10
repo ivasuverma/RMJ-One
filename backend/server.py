@@ -165,6 +165,7 @@ class StoreSettingsIn(BaseModel):
     work_start: str = '10:00'  # HH:MM
     work_end: str = '19:30'
     grace_min: int = 15
+    round_net_salary: bool = False
 
 
 class PunchIn(BaseModel):
@@ -211,9 +212,16 @@ class UserCreateIn(BaseModel):
 
 
 class UserUpdateIn(BaseModel):
+    username: Optional[str] = None
     name: Optional[str] = None
     password: Optional[str] = None
     role: Optional[Literal['admin', 'accountant']] = None
+
+
+class SelfAccountUpdateIn(BaseModel):
+    current_password: str
+    new_username: Optional[str] = None
+    new_password: Optional[str] = None
 
 
 class ShiftIn(BaseModel):
@@ -221,6 +229,9 @@ class ShiftIn(BaseModel):
     start: str  # HH:MM
     end: str    # HH:MM
     grace_min: int = 15
+    # "Late master": if set (>0), a check-in this many minutes past start+grace turns
+    # the whole day into a half-day for payroll, even if full hours were later worked.
+    late_half_day_after_min: Optional[int] = None
     is_active: bool = True
 
 
@@ -386,6 +397,7 @@ async def seed():
 @app.on_event('startup')
 async def on_startup():
     await seed()
+    asyncio.create_task(_attendance_reminder_loop())
 
 
 @app.on_event('shutdown')
@@ -606,13 +618,16 @@ async def check_in(body: PunchIn, user=Depends(require_employee)):
     now = now_utc()
     now_local = now.astimezone(timezone(timedelta(hours=5, minutes=30)))
     minutes_now = now_local.hour * 60 + now_local.minute
-    work_start = _minutes(store.get('work_start', '10:00'))
-    grace = int(store.get('grace_min', 15))
-    is_late = minutes_now > (work_start + grace)
+    shift = await db.shifts.find_one({'name': user.get('shift')}, {'_id': 0})
+    work_start = _minutes(shift['start']) if shift and shift.get('start') else _minutes(store.get('work_start', '10:00'))
+    grace = int(shift.get('grace_min', 15)) if shift else int(store.get('grace_min', 15))
+    late_by_min = minutes_now - (work_start + grace)
+    is_late = late_by_min > 0
 
     check_in_doc = {
         'timestamp': now.isoformat(), 'latitude': body.latitude, 'longitude': body.longitude,
         'selfie': body.selfie, 'distance_m': round(dist, 1), 'is_late': is_late,
+        'late_by_min': max(late_by_min, 0),
     }
     if existing:
         await db.attendance.update_one({'id': existing['id']}, {'$set': {'check_in': check_in_doc, 'is_late': is_late, 'status': 'present'}})
@@ -630,6 +645,8 @@ async def check_in(body: PunchIn, user=Depends(require_employee)):
         'type': 'check_in', 'timestamp': now.isoformat(), 'is_late': is_late,
         'created_at': now.isoformat(),
     })
+    await notify_roles(['owner', 'admin'], f"{user['name']} checked in",
+                        f"{now_local.strftime('%I:%M %p')}{' · Late' if is_late else ''}", '/(tabs)/attendance')
 
     return {'ok': True, 'attendance_id': att_id, 'is_late': is_late, 'timestamp': now.isoformat()}
 
@@ -653,20 +670,31 @@ async def check_out(body: PunchIn, user=Depends(require_employee)):
     now = now_utc()
     check_in_ts = datetime.fromisoformat(existing['check_in']['timestamp'])
     hours = round((now - check_in_ts).total_seconds() / 3600.0, 2)
-    status = 'half_day' if hours < 4 else 'present'
+
+    shift = await db.shifts.find_one({'name': user.get('shift')}, {'_id': 0})
+    late_half_day_after = int(shift.get('late_half_day_after_min') or 0) if shift else 0
+    late_by_min = int(existing['check_in'].get('late_by_min') or 0)
+    half_day_for_lateness = bool(late_half_day_after) and late_by_min >= late_half_day_after
+    status = 'half_day' if (hours < 4 or half_day_for_lateness) else 'present'
+    half_day_reason = None
+    if status == 'half_day':
+        half_day_reason = 'short_hours' if hours < 4 else 'late'
+
     check_out_doc = {
         'timestamp': now.isoformat(), 'latitude': body.latitude, 'longitude': body.longitude,
         'selfie': body.selfie, 'distance_m': round(dist, 1),
     }
     await db.attendance.update_one(
         {'id': existing['id']},
-        {'$set': {'check_out': check_out_doc, 'working_hours': hours, 'status': status}},
+        {'$set': {'check_out': check_out_doc, 'working_hours': hours, 'status': status, 'half_day_reason': half_day_reason}},
     )
     await db.attendance_events.insert_one({
         'id': str(uuid.uuid4()), 'employee_id': user['id'], 'employee_name': user['name'],
         'type': 'check_out', 'timestamp': now.isoformat(), 'working_hours': hours,
         'created_at': now.isoformat(),
     })
+    await notify_roles(['owner', 'admin'], f"{user['name']} checked out",
+                        f"Worked {hours}h today" + (' · Half day' if status == 'half_day' else ''), '/(tabs)/attendance')
     return {'ok': True, 'working_hours': hours, 'timestamp': now.isoformat()}
 
 
@@ -801,6 +829,7 @@ async def edit_day(emp_id: str, d: str, body: AttendanceDayIn, user=Depends(requ
     status = body.status
     working_hours = body.working_hours
     is_late = False
+    half_day_reason = None
     NO_TIME_STATUSES = {'absent', 'leave', 'holiday', 'weekly_off'}
 
     if check_in_ts and check_out_ts:
@@ -813,19 +842,28 @@ async def edit_day(emp_id: str, d: str, body: AttendanceDayIn, user=Depends(requ
             )
         except Exception:
             working_hours = 0
-        status = 'half_day' if working_hours < 4 else 'present'
         shift = await db.shifts.find_one({'name': emp.get('shift')}, {'_id': 0})
         shift_start = shift.get('start') if shift else None
         grace = int(shift.get('grace_min', 15)) if shift else 15
+        late_half_day_after = int(shift.get('late_half_day_after_min') or 0) if shift else 0
         if not shift_start:
             store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
             shift_start = store.get('work_start', '10:00')
+        late_by_min = 0
         try:
             in_local = datetime.fromisoformat(check_in_ts).astimezone(timezone(timedelta(hours=5, minutes=30)))
             minutes_in = in_local.hour * 60 + in_local.minute
-            is_late = minutes_in > (_minutes(shift_start) + grace)
+            late_by_min = minutes_in - (_minutes(shift_start) + grace)
+            is_late = late_by_min > 0
         except Exception:
             is_late = False
+        # Late master: if the employee is late by more than the shift's configured
+        # threshold, the day counts as a half-day for payroll even if full hours were
+        # otherwise worked. A short-hours day (<4h) still takes priority either way.
+        half_day_for_lateness = bool(late_half_day_after) and late_by_min >= late_half_day_after
+        status = 'half_day' if (working_hours < 4 or half_day_for_lateness) else 'present'
+        if status == 'half_day':
+            half_day_reason = 'short_hours' if working_hours < 4 else 'late'
     elif status in NO_TIME_STATUSES:
         # Paid/unpaid day off — no punch times required, clear any partial ones.
         working_hours = 0
@@ -839,7 +877,7 @@ async def edit_day(emp_id: str, d: str, body: AttendanceDayIn, user=Depends(requ
         'check_in': {'timestamp': check_in_ts, 'edited': True} if check_in_ts else None,
         'check_out': {'timestamp': check_out_ts, 'edited': True} if check_out_ts else None,
         'working_hours': working_hours or 0,
-        'status': status, 'is_late': is_late,
+        'status': status, 'is_late': is_late, 'half_day_reason': half_day_reason,
         'note': body.note or '', 'edited_by': user['name'], 'edited_at': iso,
     }
     existing = await db.attendance.find_one({'employee_id': emp_id, 'date': d}, {'_id': 0})
@@ -1074,11 +1112,47 @@ async def update_user(uid: str, body: UserUpdateIn, _: dict = Depends(require_ow
     if not u: raise HTTPException(status_code=404, detail='User not found')
     if u.get('role') == 'owner': raise HTTPException(status_code=400, detail='Cannot modify the owner')
     upd: dict = {}
+    if body.username:
+        uname = body.username.strip().lower()
+        if uname != u.get('username'):
+            if await db.users.find_one({'username': uname, 'id': {'$ne': uid}}):
+                raise HTTPException(status_code=400, detail='Username already exists')
+            upd['username'] = uname
     if body.name: upd['name'] = body.name.strip()
-    if body.password: upd['password_hash'] = hash_secret(body.password)
+    if body.password:
+        if len(body.password) < 4: raise HTTPException(status_code=400, detail='Password must be 4+ characters')
+        upd['password_hash'] = hash_secret(body.password)
     if body.role: upd['role'] = body.role
     if upd: await db.users.update_one({'id': uid}, {'$set': upd})
     return await db.users.find_one({'id': uid}, {'_id': 0, 'password_hash': 0})
+
+
+@api.put('/auth/me')
+async def update_my_account(body: SelfAccountUpdateIn, user=Depends(require_staff)):
+    """Self-service username/password change for owner/admin/accountant — requires
+    the current password so a logged-in-but-unattended session can't be hijacked
+    into a full account takeover."""
+    full = await db.users.find_one({'id': user['id']}, {'_id': 0})
+    if not full: raise HTTPException(status_code=404, detail='User not found')
+    if not verify_secret(body.current_password, full.get('password_hash', '')):
+        raise HTTPException(status_code=401, detail='Current password is incorrect')
+    upd: dict = {}
+    if body.new_username:
+        uname = body.new_username.strip().lower()
+        if uname != full.get('username'):
+            if await db.users.find_one({'username': uname, 'id': {'$ne': user['id']}}):
+                raise HTTPException(status_code=400, detail='Username already exists')
+            upd['username'] = uname
+    if body.new_password:
+        if len(body.new_password) < 4: raise HTTPException(status_code=400, detail='Password must be 4+ characters')
+        upd['password_hash'] = hash_secret(body.new_password)
+    if not upd:
+        raise HTTPException(status_code=400, detail='Nothing to update')
+    await db.users.update_one({'id': user['id']}, {'$set': upd})
+    updated = await db.users.find_one({'id': user['id']}, {'_id': 0, 'password_hash': 0})
+    # Issue a fresh token since the username embedded in the old token may now be stale
+    tok = create_token({'sub': updated['id'], 'role': updated.get('role', 'owner'), 'username': updated['username']})
+    return {'access_token': tok, 'token_type': 'bearer', 'user': updated}
 
 
 @api.delete('/users/{uid}')
@@ -1211,6 +1285,8 @@ async def _opening_balance(emp_id: str, up_to_date_exclusive: str) -> float:
 
 async def _compute_payroll(year: int, month: int) -> list:
     start, end, total_days = _month_bounds(year, month)
+    store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
+    round_nearest_10 = bool(store.get('round_net_salary'))
     # Attendance in month
     att_by_emp: dict = {}
     async for a in db.attendance.find({'date': {'$gte': start, '$lte': end}}, {'_id': 0, 'check_in.selfie': 0, 'check_out.selfie': 0}):
@@ -1285,9 +1361,12 @@ async def _compute_payroll(year: int, month: int) -> list:
         base = float(e.get('salary') or 0)
         per_day = base / total_days if total_days > 0 else 0
         # Effective days paid: present + 0.5*half + paid leaves/holidays/weekly-offs.
-        # Sunday work (actually clocking in on an off day) is bonus pay on top, uncapped.
+        # A normal (shop-closed) Sunday is still a paid weekly-off, same as before — full
+        # monthly salary isn't reduced just because the shop doesn't open on a Sunday.
+        # If an employee actually clocks in on a Sunday (shop opened that day), they get
+        # a half-day bonus on top of their normal pay for that day — not a full extra day.
         effective = present + 0.5 * half + leave_days + holiday_days + weekly_off_days
-        earned = round(per_day * min(effective, total_days) + per_day * sunday_work, 2)
+        earned = round(per_day * min(effective, total_days) + per_day * 0.5 * sunday_work, 2)
 
         # Ledger tallies in month
         month_advance = 0.0
@@ -1304,6 +1383,7 @@ async def _compute_payroll(year: int, month: int) -> list:
         net = round(earned + month_bonus - month_advance - month_fine - month_deduction, 2)
         opening = await _opening_balance(e['id'], start)
         net_with_opening = round(net + opening, 2)
+        net_rounded = round(net_with_opening / 10) * 10 if round_nearest_10 else net_with_opening
         rows.append({
             'employee_id': e['id'], 'employee_code': e.get('employee_code'), 'name': e['name'],
             'designation': e.get('designation'), 'department': e.get('department'),
@@ -1315,7 +1395,8 @@ async def _compute_payroll(year: int, month: int) -> list:
             'earned': earned, 'advance': round(month_advance, 2), 'bonus': round(month_bonus, 2),
             'fine': round(month_fine, 2), 'manual_deduction': round(month_deduction, 2),
             'opening_balance': opening,
-            'net_salary': net_with_opening,
+            'net_salary_exact': net_with_opening,
+            'net_salary': net_rounded,
         })
     return rows
 
@@ -1344,6 +1425,9 @@ async def payroll_save(body: PayrollGenerateIn, user=Depends(require_payroll_wri
     existing_by_emp = {e['employee_id']: e for e in existing_entries}
     is_regenerate = len(existing_entries) > 0
 
+    store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
+    round_nearest_10 = bool(store.get('round_net_salary'))
+
     refreshed, kept_paid = 0, 0
     for r in rows:
         prior = existing_by_emp.get(r['employee_id'])
@@ -1359,11 +1443,12 @@ async def payroll_save(body: PayrollGenerateIn, user=Depends(require_payroll_wri
         manual_deduction = prior.get('manual_deduction', r['manual_deduction']) if prior else r['manual_deduction']
         note = prior.get('note', '') if prior else ''
         payment_mode = prior.get('payment_mode') if prior else None
-        net_salary = round(r['earned'] + bonus - r['advance'] - fine - manual_deduction + r['opening_balance'], 2)
+        net_exact = round(r['earned'] + bonus - r['advance'] - fine - manual_deduction + r['opening_balance'], 2)
+        net_salary = round(net_exact / 10) * 10 if round_nearest_10 else net_exact
         doc = {
             'id': entry_id, 'year': body.year, 'month': body.month, **r,
             'bonus': bonus, 'fine': fine, 'manual_deduction': manual_deduction,
-            'net_salary': net_salary, 'note': note, 'payment_mode': payment_mode,
+            'net_salary_exact': net_exact, 'net_salary': net_salary, 'note': note, 'payment_mode': payment_mode,
             'paid': False, 'generated_at': iso, 'generated_by': user['name'],
         }
         await db.payroll_entries.update_one({'id': entry_id}, {'$set': doc}, upsert=True)
@@ -1432,18 +1517,21 @@ async def payroll_entry_update(entry_id: str, body: PayrollEntryUpdateIn, user=D
     if body.paid_days_override is not None: upd['effective_days'] = float(body.paid_days_override)
     if body.note is not None: upd['note'] = body.note
     if body.payment_mode is not None: upd['payment_mode'] = body.payment_mode
-    # Recompute net using new numbers (keep the Sunday-work bonus, which sits outside
-    # the capped effective-days figure, intact when only bonus/fine/etc. change)
+    # Recompute net using new numbers (keep the Sunday-work half-day bonus, which sits
+    # outside the capped effective-days figure, intact when only bonus/fine/etc. change)
     merged = {**entry, **upd}
     per_day = merged['base_salary'] / merged['total_days'] if merged['total_days'] else 0
     earned = round(
         per_day * min(merged.get('effective_days', 0), merged['total_days'])
-        + per_day * merged.get('sunday_work', 0), 2)
+        + per_day * 0.5 * merged.get('sunday_work', 0), 2)
     upd['earned'] = earned
-    upd['net_salary'] = round(
+    net_exact = round(
         earned + merged.get('bonus', 0) - merged.get('advance', 0)
         - merged.get('fine', 0) - merged.get('manual_deduction', 0)
         + merged.get('opening_balance', 0), 2)
+    store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
+    upd['net_salary_exact'] = net_exact
+    upd['net_salary'] = round(net_exact / 10) * 10 if store.get('round_net_salary') else net_exact
     await db.payroll_entries.update_one({'id': entry_id}, {'$set': upd})
     await log_audit(user, 'payroll.entry.update', 'payroll_entry', entry_id, entry.get('employee_code', ''), upd)
     return await db.payroll_entries.find_one({'id': entry_id}, {'_id': 0})
@@ -1696,6 +1784,54 @@ async def notify_roles(roles: list, title: str, body: str, url: str = '/'):
         await _send_push_to_subs(subs, title, body, url)
     except Exception as e:
         logger.warning(f'notify_roles failed: {e}')
+
+
+async def _check_missed_attendance():
+    now_ist = now_utc().astimezone(timezone(timedelta(hours=5, minutes=30)))
+    today = now_ist.date().isoformat()
+    if now_ist.weekday() == 6:
+        return  # Sunday — normally a day off, skip reminders
+    if await db.holidays.find_one({'date': today}, {'_id': 0, 'id': 1}):
+        return
+    store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
+    minutes_now = now_ist.hour * 60 + now_ist.minute
+
+    async for emp in db.employees.find({'status': 'active'}, {'_id': 0, 'pin_hash': 0}):
+        shift = await db.shifts.find_one({'name': emp.get('shift')}, {'_id': 0})
+        start = (shift.get('start') if shift else None) or store.get('work_start', '10:00')
+        if minutes_now < _minutes(start) + 60:
+            continue  # not yet an hour past their shift start
+
+        if await db.attendance_reminders.find_one({'employee_id': emp['id'], 'date': today}, {'_id': 0, 'id': 1}):
+            continue  # already reminded today
+
+        att = await db.attendance.find_one({'employee_id': emp['id'], 'date': today}, {'_id': 0})
+        if att and (att.get('check_in') or att.get('status') in ('leave', 'holiday', 'weekly_off', 'absent')):
+            continue
+
+        leave = await db.leaves.find_one({
+            'employee_id': emp['id'], 'status': 'approved',
+            'from_date': {'$lte': today}, 'to_date': {'$gte': today},
+        }, {'_id': 0, 'id': 1})
+        if leave:
+            continue
+
+        await notify_user(emp['id'], 'Missed check-in',
+                           "You haven't checked in yet today — don't forget to mark your attendance.", '/')
+        await db.attendance_reminders.update_one(
+            {'employee_id': emp['id'], 'date': today},
+            {'$set': {'employee_id': emp['id'], 'date': today, 'sent_at': now_utc().isoformat()}},
+            upsert=True,
+        )
+
+
+async def _attendance_reminder_loop():
+    while True:
+        try:
+            await asyncio.sleep(15 * 60)
+            await _check_missed_attendance()
+        except Exception as e:
+            logger.warning(f'attendance reminder loop error: {e}')
 
 
 @api.get('/notifications/vapid-public-key')

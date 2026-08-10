@@ -13,9 +13,9 @@ self.addEventListener('push', (event) => {
   try {
     data = event.data ? event.data.json() : {};
   } catch (e) {
-    data = { title: 'RMJ One', body: event.data ? event.data.text() : '' };
+    data = { title: 'RMJ-One', body: event.data ? event.data.text() : '' };
   }
-  const title = data.title || 'RMJ One';
+  const title = data.title || 'RMJ-One';
   const options = {
     body: data.body || '',
     tag: data.tag || 'rmj-one',

@@ -32,7 +32,11 @@ export default function NewLedgerEntry() {
     setSaving(true);
     try {
       await api.post('/ledger/entries', { employee_id: emp, entry_type: type, amount: amt, note });
-      Alert.alert('Added', 'Ledger entry recorded.', [{ text: 'OK', onPress: () => router.back() }]);
+      // Navigate back immediately rather than waiting on an Alert.alert() confirmation —
+      // multi-button Alert dialogs are unreliable on the web build, which made it look
+      // like nothing happened and led to double-tapping. Landing back on the ledger
+      // screen, where the new entry is now visible, is the confirmation.
+      router.back();
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
     finally { setSaving(false); submittingRef.current = false; }
   };

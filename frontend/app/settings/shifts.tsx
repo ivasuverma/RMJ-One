@@ -9,9 +9,12 @@ import { api } from '@/src/api/client';
 import { confirmAction } from '@/src/utils/confirm';
 import { colors, spacing, radius, fonts } from '@/src/theme';
 
-type Shift = { id: string; name: string; start: string; end: string; grace_min: number; is_active: boolean };
+type Shift = {
+  id: string; name: string; start: string; end: string; grace_min: number;
+  late_half_day_after_min?: number | null; is_active: boolean;
+};
 
-const EMPTY = { name: '', start: '10:00', end: '19:30', grace: '15' };
+const EMPTY = { name: '', start: '10:00', end: '19:30', grace: '15', lateHalfDay: '' };
 
 export default function ShiftsScreen() {
   const router = useRouter();
@@ -21,6 +24,7 @@ export default function ShiftsScreen() {
   const [start, setStart] = useState(EMPTY.start);
   const [end, setEnd] = useState(EMPTY.end);
   const [grace, setGrace] = useState(EMPTY.grace);
+  const [lateHalfDay, setLateHalfDay] = useState(EMPTY.lateHalfDay);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -34,11 +38,13 @@ export default function ShiftsScreen() {
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const resetForm = () => {
-    setEditingId(null); setName(EMPTY.name); setStart(EMPTY.start); setEnd(EMPTY.end); setGrace(EMPTY.grace);
+    setEditingId(null); setName(EMPTY.name); setStart(EMPTY.start); setEnd(EMPTY.end);
+    setGrace(EMPTY.grace); setLateHalfDay(EMPTY.lateHalfDay);
   };
 
   const startEdit = (s: Shift) => {
     setEditingId(s.id); setName(s.name); setStart(s.start); setEnd(s.end); setGrace(String(s.grace_min));
+    setLateHalfDay(s.late_half_day_after_min ? String(s.late_half_day_after_min) : '');
   };
 
   const submittingRef = useRef(false);
@@ -48,7 +54,11 @@ export default function ShiftsScreen() {
     submittingRef.current = true;
     setSaving(true);
     try {
-      const payload = { name: name.trim(), start, end, grace_min: parseInt(grace || '0', 10), is_active: true };
+      const payload = {
+        name: name.trim(), start, end, grace_min: parseInt(grace || '0', 10),
+        late_half_day_after_min: lateHalfDay.trim() ? parseInt(lateHalfDay, 10) : null,
+        is_active: true,
+      };
       if (editingId) await api.put(`/shifts/${editingId}`, payload);
       else await api.post('/shifts', payload);
       resetForm();
@@ -101,6 +111,21 @@ export default function ShiftsScreen() {
           </View>
           <Text style={styles.label}>Grace (min)</Text>
           <TextInput testID="shift-grace" value={grace} onChangeText={(v) => setGrace(v.replace(/[^0-9]/g, ''))} keyboardType="numeric" style={styles.input} />
+
+          <Text style={styles.label}>Late master — mark half-day if late by (min)</Text>
+          <TextInput
+            testID="shift-late-half-day"
+            value={lateHalfDay}
+            onChangeText={(v) => setLateHalfDay(v.replace(/[^0-9]/g, ''))}
+            keyboardType="numeric"
+            placeholder="Leave blank to disable"
+            placeholderTextColor={colors.mutedText}
+            style={styles.input}
+          />
+          <Text style={styles.hint}>
+            If someone checks in this many minutes past start + grace, that day counts as a half-day for payroll — even if they end up working full hours.
+          </Text>
+
           <View style={{ flexDirection: 'row', gap: spacing.sm }}>
             {editingId && (
               <Pressable style={styles.cancelEditBtn} onPress={resetForm} testID="cancel-edit-shift-btn">
@@ -123,6 +148,9 @@ export default function ShiftsScreen() {
               <Pressable style={{ flex: 1 }} onPress={() => startEdit(s)} testID={`edit-shift-${s.id}`}>
                 <Text style={styles.cName}>{s.name}</Text>
                 <Text style={styles.cMeta}>{s.start} – {s.end} · Grace {s.grace_min}m</Text>
+                {!!s.late_half_day_after_min && (
+                  <Text style={styles.cMetaWarn}>Half-day if late by {s.late_half_day_after_min}m+</Text>
+                )}
               </Pressable>
               <Pressable onPress={() => startEdit(s)} style={styles.editBtn} hitSlop={10} testID={`edit-icon-shift-${s.id}`}>
                 <Ionicons name="create-outline" size={16} color={colors.brandSecondary} />
@@ -154,6 +182,7 @@ const styles = StyleSheet.create({
   },
   section: { color: colors.brandSecondary, fontSize: 11, letterSpacing: 1, textTransform: 'uppercase', marginBottom: spacing.sm },
   label: { color: colors.onSurfaceSecondary, fontSize: 12, marginBottom: 4, marginTop: 6 },
+  hint: { color: colors.mutedText, fontSize: 11, marginTop: 6, marginBottom: spacing.sm, lineHeight: 15 },
   input: {
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1,
     borderColor: colors.border, color: colors.onSurface, paddingHorizontal: spacing.md,
@@ -179,6 +208,7 @@ const styles = StyleSheet.create({
   cardEditing: { borderColor: colors.brandPrimary },
   cName: { color: colors.onSurface, fontWeight: '700', fontSize: 14 },
   cMeta: { color: colors.onSurfaceTertiary, fontSize: 12, marginTop: 2 },
+  cMetaWarn: { color: colors.warning, fontSize: 11, marginTop: 2, fontWeight: '600' },
   editBtn: {
     width: 34, height: 34, borderRadius: 17, backgroundColor: colors.brandTertiary,
     borderColor: colors.brand, borderWidth: 1, alignItems: 'center', justifyContent: 'center',

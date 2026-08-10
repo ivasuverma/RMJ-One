@@ -11,12 +11,12 @@ import { colors, spacing, radius, fonts } from '@/src/theme';
 
 type Form = {
   name: string; latitude: string; longitude: string; radius_m: string;
-  work_start: string; work_end: string; grace_min: string;
+  work_start: string; work_end: string; grace_min: string; round_net_salary: boolean;
 };
 
 const EMPTY: Form = {
   name: '', latitude: '', longitude: '', radius_m: '150',
-  work_start: '10:00', work_end: '19:30', grace_min: '15',
+  work_start: '10:00', work_end: '19:30', grace_min: '15', round_net_salary: false,
 };
 
 export default function StoreSettings() {
@@ -35,6 +35,7 @@ export default function StoreSettings() {
             name: s.name || '', latitude: String(s.latitude ?? ''), longitude: String(s.longitude ?? ''),
             radius_m: String(s.radius_m ?? 150), work_start: s.work_start || '10:00',
             work_end: s.work_end || '19:30', grace_min: String(s.grace_min ?? 15),
+            round_net_salary: !!s.round_net_salary,
           });
         }
       } finally { setLoading(false); }
@@ -76,8 +77,9 @@ export default function StoreSettings() {
         radius_m: parseInt(form.radius_m || '150', 10),
         work_start: form.work_start, work_end: form.work_end,
         grace_min: parseInt(form.grace_min || '15', 10),
+        round_net_salary: form.round_net_salary,
       });
-      Alert.alert('Saved', 'Store settings updated.', [{ text: 'OK', onPress: () => router.back() }]);
+      router.back();
     } catch (e: any) {
       Alert.alert('Failed', e?.detail || 'Please try again');
     } finally { setSaving(false); submittingRef.current = false; }
@@ -127,6 +129,21 @@ export default function StoreSettings() {
             </View>
           </View>
           <F label="Late Grace (minutes)" v={form.grace_min} onC={(v) => setForm({ ...form, grace_min: v.replace(/[^0-9]/g, '') })} kt="numeric" testID="ss-grace" />
+
+          <SectionTitle text="Payroll" />
+          <Pressable
+            onPress={() => setForm({ ...form, round_net_salary: !form.round_net_salary })}
+            style={styles.toggleRow}
+            testID="ss-round-salary-toggle"
+          >
+            <View style={{ flex: 1 }}>
+              <Text style={styles.toggleLabel}>Round final pay to nearest ₹10</Text>
+              <Text style={styles.toggleSub}>e.g. ₹18,247 becomes ₹18,250</Text>
+            </View>
+            <View style={[styles.switch, form.round_net_salary && styles.switchOn]}>
+              <View style={[styles.switchKnob, form.round_net_salary && styles.switchKnobOn]} />
+            </View>
+          </Pressable>
 
           <View style={styles.infoBox}>
             <Ionicons name="information-circle-outline" size={16} color={colors.brandSecondary} />
@@ -188,6 +205,22 @@ const styles = StyleSheet.create({
     borderRadius: radius.md, paddingVertical: 12, marginBottom: spacing.md,
   },
   locBtnText: { color: colors.brandSecondary, fontWeight: '700', fontSize: 13 },
+  toggleRow: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1,
+    borderColor: colors.border, padding: spacing.md, marginBottom: spacing.md,
+  },
+  toggleLabel: { color: colors.onSurface, fontSize: 14, fontWeight: '600' },
+  toggleSub: { color: colors.mutedText, fontSize: 11, marginTop: 2 },
+  switch: {
+    width: 44, height: 26, borderRadius: 13, backgroundColor: colors.surfaceTertiary,
+    borderWidth: 1, borderColor: colors.border, padding: 2, justifyContent: 'center',
+  },
+  switchOn: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
+  switchKnob: {
+    width: 20, height: 20, borderRadius: 10, backgroundColor: colors.onSurfaceTertiary,
+  },
+  switchKnobOn: { backgroundColor: colors.onBrandPrimary, transform: [{ translateX: 18 }] },
   infoBox: {
     flexDirection: 'row', gap: spacing.sm, alignItems: 'center', backgroundColor: colors.surfaceTertiary,
     borderRadius: radius.md, padding: spacing.md, borderWidth: 1, borderColor: colors.border, marginTop: spacing.md,

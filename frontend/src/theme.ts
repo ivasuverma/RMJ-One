@@ -64,4 +64,5 @@ export const images = {
     'https://images.unsplash.com/photo-1781758333991-c5c59ca7673d?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NzR8MHwxfHNlYXJjaHwxfHxwcmVtaXVtJTIwamV3ZWxsZXJ5JTIwZGlhbW9uZCUyMHJpbmclMjBwaG90b2dyYXBoeXxlbnwwfHx8fDE3ODYxMjIyMjR8MA&ixlib=rb-4.1.0&q=85',
   goldTexture:
     'https://images.pexels.com/photos/6699772/pexels-photo-6699772.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940',
+  logo: require('../assets/images/icon.png'),
 };

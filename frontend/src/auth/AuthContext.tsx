@@ -19,6 +19,7 @@ type AuthState = {
   loginEmployee: (employee_code: string, pin: string) => Promise<void>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
+  updateMyAccount: (currentPassword: string, newUsername?: string, newPassword?: string) => Promise<void>;
 };
 
 const AuthCtx = createContext<AuthState>({} as AuthState);
@@ -64,8 +65,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
   }, []);
 
+  const updateMyAccount = useCallback(async (currentPassword: string, newUsername?: string, newPassword?: string) => {
+    const res = await api.put<{ access_token: string; user: User }>('/auth/me', {
+      current_password: currentPassword,
+      new_username: newUsername || undefined,
+      new_password: newPassword || undefined,
+    });
+    await saveToken(res.access_token);
+    setUser(res.user);
+  }, []);
+
   return (
-    <AuthCtx.Provider value={{ user, loading, loginOwner, loginEmployee, logout, refresh }}>
+    <AuthCtx.Provider value={{ user, loading, loginOwner, loginEmployee, logout, refresh, updateMyAccount }}>
       {children}
     </AuthCtx.Provider>
   );

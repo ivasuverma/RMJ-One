@@ -87,7 +87,7 @@ export default function PayrollDetail() {
         <SectionTitle text="Days Summary" />
         <Line label="Present days" value={String(row.present_days)} />
         <Line label="Half days" value={String(row.half_days)} />
-        <Line label="Sunday work (bonus)" value={String(row.sunday_work)} />
+        <Line label="Sunday work (half-day bonus)" value={String(row.sunday_work)} />
         <Line label="Leave days (paid)" value={String(row.leave_days)} />
         <Line label="Holidays (paid)" value={String(row.holiday_days ?? 0)} />
         <Line label="Weekly off / Paid off" value={String(row.weekly_off_days ?? 0)} />
@@ -98,16 +98,23 @@ export default function PayrollDetail() {
           <Text style={styles.formulaLine}>Per-day rate = Base ÷ Total days</Text>
           <Text style={styles.formulaCalc}>= {fmtINR(row.base_salary)} ÷ {row.total_days} = {fmtINR(row.per_day_rate ?? row.base_salary / row.total_days)}</Text>
           <View style={styles.formulaDivider} />
-          <Text style={styles.formulaLine}>Earned = Per-day × Effective days + Per-day × Sunday work</Text>
+          <Text style={styles.formulaLine}>Earned = Per-day × Effective days + Per-day × 0.5 × Sunday work</Text>
           <Text style={styles.formulaCalc}>
-            = {fmtINR(row.per_day_rate ?? 0)} × {row.effective_days} + {fmtINR(row.per_day_rate ?? 0)} × {row.sunday_work} = {fmtINR(row.earned)}
+            = {fmtINR(row.per_day_rate ?? 0)} × {row.effective_days} + {fmtINR(row.per_day_rate ?? 0)} × 0.5 × {row.sunday_work} = {fmtINR(row.earned)}
           </Text>
           <View style={styles.formulaDivider} />
           <Text style={styles.formulaLine}>Net = Earned + Bonus − Advance − Fine − Deduction {row.opening_balance ? '± Opening balance' : ''}</Text>
           <Text style={styles.formulaCalc}>
             = {fmtINR(row.earned)} + {fmtINR(row.bonus)} − {fmtINR(row.advance)} − {fmtINR(row.fine)} − {fmtINR(row.manual_deduction)}
-            {row.opening_balance ? ` ${row.opening_balance > 0 ? '+' : '−'} ${fmtINR(Math.abs(row.opening_balance))}` : ''} = {fmtINR(row.net_salary)}
+            {row.opening_balance ? ` ${row.opening_balance > 0 ? '+' : '−'} ${fmtINR(Math.abs(row.opening_balance))}` : ''} = {fmtINR(row.net_salary_exact ?? row.net_salary)}
           </Text>
+          {row.net_salary_exact !== undefined && row.net_salary_exact !== row.net_salary && (
+            <>
+              <View style={styles.formulaDivider} />
+              <Text style={styles.formulaLine}>Rounded to nearest ₹10</Text>
+              <Text style={styles.formulaCalc}>= {fmtINR(row.net_salary_exact)} → {fmtINR(row.net_salary)}</Text>
+            </>
+          )}
         </View>
 
         {row.opening_balance !== undefined && row.opening_balance !== 0 && (

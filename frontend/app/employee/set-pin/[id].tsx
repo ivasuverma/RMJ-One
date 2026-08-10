@@ -24,7 +24,7 @@ export default function SetPin() {
     setSaving(true);
     try {
       await api.post(`/employees/${id}/set-pin`, { pin });
-      Alert.alert('Updated', 'PIN was updated.', [{ text: 'OK', onPress: () => router.back() }]);
+      router.back();
     } catch (e: any) {
       Alert.alert('Failed', e?.detail || 'Please try again');
     } finally { setSaving(false); submittingRef.current = false; }

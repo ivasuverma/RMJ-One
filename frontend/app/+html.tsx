@@ -1,44 +1,37 @@
-// @ts-nocheck
-import { ScrollViewStyleReset } from "expo-router/html";
-import type { PropsWithChildren } from "react";
+import { ScrollViewStyleReset } from 'expo-router/html';
 
-export default function Root({ children }: PropsWithChildren) {
+/**
+ * Root HTML document for the web build. Expo Router uses this in place of its
+ * default template for every page — see https://docs.expo.dev/router/reference/static-rendering/#root-html.
+ *
+ * Added here specifically so "Add to Home Screen" on iPhone launches RMJ-One as a
+ * full-screen standalone app (no Safari address bar/chrome) instead of just a bookmark
+ * that reopens inside the browser.
+ */
+export default function Root({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" style={{ height: "100%" }}>
+    <html lang="en">
       <head>
         <meta charSet="utf-8" />
         <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
-        <meta
-          name="viewport"
-          content="width=device-width, initial-scale=1, shrink-to-fit=no"
-        />
-        {/*
-          Disable body scrolling on web to make ScrollView components work correctly.
-          If you want to enable scrolling, remove `ScrollViewStyleReset` and
-          set `overflow: auto` on the body style below.
-        */}
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+        <title>RMJ-One</title>
+
+        {/* iOS: launch full-screen from the Home Screen icon, no browser chrome */}
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="apple-mobile-web-app-title" content="RMJ-One" />
+        <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+
+        {/* Android / other browsers that support the web app manifest */}
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="theme-color" content="#0D0D0D" />
+        <link rel="manifest" href="/manifest.json" />
+        <link rel="icon" href="/favicon.ico" />
+
         <ScrollViewStyleReset />
-        <style
-          dangerouslySetInnerHTML={{
-            __html: `
-              body > div:first-child { position: fixed !important; top: 0; left: 0; right: 0; bottom: 0; }
-              [role="tablist"] [role="tab"] * { overflow: visible !important; }
-              [role="heading"], [role="heading"] * { overflow: visible !important; }
-            `,
-          }}
-        />
       </head>
-      <body
-        style={{
-          margin: 0,
-          height: "100%",
-          overflow: "hidden",
-          display: "flex",
-          flexDirection: "column",
-        }}
-      >
-        {children}
-      </body>
+      <body>{children}</body>
     </html>
   );
 }

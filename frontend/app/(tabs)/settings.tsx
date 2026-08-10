@@ -65,6 +65,12 @@ export default function SettingsScreen() {
           </View>
         </View>
 
+        <Pressable testID="settings-all-modules-btn" onPress={() => router.push('/')} style={styles.modulesBtn}>
+          <Ionicons name="grid-outline" size={16} color={colors.brandPrimary} />
+          <Text style={styles.modulesBtnText}>All Modules</Text>
+          <Ionicons name="chevron-forward" size={16} color={colors.mutedText} />
+        </Pressable>
+
         {isOwner && (
           <>
             <SectionLabel text="Business" />
@@ -117,6 +123,12 @@ export default function SettingsScreen() {
 
         <SectionLabel text="Preferences" />
         <View style={styles.card}>
+          {/* `as any`: expo-router's generated route types lag behind newly-added screens
+              until a dev server / fresh export regenerates them locally — harmless. */}
+          <Pressable testID="settings-account-btn" onPress={() => router.push('/settings/account' as any)}>
+            <Row icon="key-outline" label="My Account" trailing="Username & Password" />
+          </Pressable>
+          <Divider />
           <Pressable testID="settings-notifications-toggle" onPress={togglePush} disabled={pushBusy}>
             <View style={styles.row}>
               <View style={styles.rowIcon}>
@@ -146,7 +158,7 @@ export default function SettingsScreen() {
           <Text style={styles.logoutText}>Sign out</Text>
         </Pressable>
 
-        <Text style={styles.footer}>RMJ One · One system for the entire business</Text>
+        <Text style={styles.footer}>RMJ-One · One system for the entire business</Text>
       </ScrollView>
     </SafeAreaView>
   );
@@ -192,6 +204,13 @@ const styles = StyleSheet.create({
   role: { color: colors.brandSecondary, fontSize: 13, marginTop: 2 },
   username: { color: colors.onSurfaceTertiary, fontSize: 12, marginTop: 2 },
 
+  modulesBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md,
+    borderWidth: 1, borderColor: colors.border, paddingVertical: 12, paddingHorizontal: spacing.lg,
+    marginTop: spacing.md,
+  },
+  modulesBtnText: { flex: 1, color: colors.onSurface, fontSize: 13, fontWeight: '600' },
   sectionLabel: {
     color: colors.mutedText, fontSize: 11, letterSpacing: 1, textTransform: 'uppercase',
     marginTop: spacing.xl, marginBottom: spacing.sm, paddingHorizontal: spacing.xs,

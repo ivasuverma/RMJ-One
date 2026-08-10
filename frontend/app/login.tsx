@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TextInput, Pressable, KeyboardAvoidingView,
   Platform, ActivityIndicator, ScrollView, Keyboard,
@@ -14,9 +14,9 @@ type Mode = 'owner' | 'employee';
 
 export default function LoginScreen() {
   const [mode, setMode] = useState<Mode>('owner');
-  const [username, setUsername] = useState('owner');
-  const [password, setPassword] = useState('Owner@123');
-  const [empCode, setEmpCode] = useState('RMJ001');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [empCode, setEmpCode] = useState('');
   const [pin, setPin] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -42,11 +42,21 @@ export default function LoginScreen() {
       router.replace('/');
     } catch (e: any) {
       setError(e?.detail || 'Login failed');
+      if (mode === 'employee') setPin('');
     } finally {
       setLoading(false);
       submittingRef.current = false;
     }
   };
+
+  // Auto-submit once the PIN keypad has 4 digits and an employee code is present —
+  // mirrors a real punch-clock terminal instead of requiring an extra tap.
+  useEffect(() => {
+    if (mode === 'employee' && pin.length === 4 && empCode.trim() && !loading) {
+      onSubmit();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pin]);
 
   return (
     <View style={styles.root} testID="login-screen">
@@ -60,8 +70,8 @@ export default function LoginScreen() {
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
           <View style={styles.brand}>
-            <View style={styles.brandBadge}><Text style={styles.brandBadgeText}>RMJ</Text></View>
-            <Text style={styles.brandTitle}>RMJ One</Text>
+            <Image source={images.logo} style={styles.brandLogo} contentFit="contain" testID="brand-logo" />
+            <Text style={styles.brandTitle}>RMJ-One</Text>
             <Text style={styles.brandTag}>One system for the entire business.</Text>
           </View>
 
@@ -114,18 +124,54 @@ export default function LoginScreen() {
             ) : (
               <>
                 <Text style={styles.label}>Employee Code</Text>
-                <TextInput
-                  testID="emp-code-input" value={empCode} onChangeText={(v) => setEmpCode(v.toUpperCase())}
-                  autoCapitalize="characters" autoCorrect={false}
-                  placeholder="RMJ001" placeholderTextColor={colors.mutedText} style={styles.input}
-                />
-                <Text style={styles.label}>4-digit PIN</Text>
+                <View style={styles.empCodeRow}>
+                  <Ionicons name="finger-print-outline" size={18} color={colors.brandSecondary} style={{ marginRight: spacing.sm }} />
+                  <TextInput
+                    testID="emp-code-input" value={empCode} onChangeText={(v) => setEmpCode(v.toUpperCase())}
+                    autoCapitalize="characters" autoCorrect={false}
+                    placeholder="RMJ001" placeholderTextColor={colors.mutedText}
+                    style={{ flex: 1, color: colors.onSurface, fontSize: 16, fontWeight: '700', letterSpacing: 1 }}
+                  />
+                </View>
+
+                <Text style={[styles.label, { textAlign: 'center' }]}>Enter your 4-digit PIN</Text>
+                <View style={styles.pinDotsRow} testID="pin-dots-row">
+                  {[0, 1, 2, 3].map((i) => (
+                    <View key={i} style={[styles.pinDot, i < pin.length && styles.pinDotFilled]} />
+                  ))}
+                </View>
+                {/* Hidden field keeps `pin` state + testID wired for automation; entry itself happens via the keypad below */}
                 <TextInput
                   testID="emp-pin-input" value={pin} onChangeText={(v) => setPin(v.replace(/[^0-9]/g, '').slice(0, 4))}
                   keyboardType="number-pad" secureTextEntry maxLength={4}
-                  placeholder="••••" placeholderTextColor={colors.mutedText}
-                  style={[styles.input, { letterSpacing: 12, fontSize: 20, textAlign: 'center' }]}
+                  style={styles.hiddenPinInput}
                 />
+
+                <View style={styles.keypad}>
+                  {['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', 'back'].map((k, idx) => {
+                    if (k === '') return <View key={idx} style={styles.keypadKey} />;
+                    if (k === 'back') {
+                      return (
+                        <Pressable
+                          key={idx} testID="pin-backspace"
+                          onPress={() => setPin((p) => p.slice(0, -1))}
+                          style={({ pressed }) => [styles.keypadKey, pressed && styles.keypadKeyPressed]}
+                        >
+                          <Ionicons name="backspace-outline" size={20} color={colors.onSurfaceSecondary} />
+                        </Pressable>
+                      );
+                    }
+                    return (
+                      <Pressable
+                        key={idx} testID={`pin-key-${k}`}
+                        onPress={() => setPin((p) => (p.length < 4 ? p + k : p))}
+                        style={({ pressed }) => [styles.keypadKey, pressed && styles.keypadKeyPressed]}
+                      >
+                        <Text style={styles.keypadKeyText}>{k}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
               </>
             )}
 
@@ -140,7 +186,7 @@ export default function LoginScreen() {
             </Pressable>
 
             <Text style={styles.hint}>
-              {mode === 'owner' ? 'Demo: owner / Owner@123' : 'Demo: RMJ001 / 0001'}
+              {mode === 'employee' ? 'Ask your manager if you’ve forgotten your PIN.' : 'Contact your admin if you’ve lost access.'}
             </Text>
           </View>
         </ScrollView>
@@ -153,11 +199,9 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   scroll: { flexGrow: 1, justifyContent: 'space-between', padding: spacing.xl, paddingTop: 60, paddingBottom: 40 },
   brand: { alignItems: 'flex-start' },
-  brandBadge: {
-    width: 56, height: 56, borderRadius: radius.md,
-    backgroundColor: colors.brandPrimary, alignItems: 'center', justifyContent: 'center', marginBottom: spacing.md,
+  brandLogo: {
+    width: 56, height: 56, borderRadius: radius.md, marginBottom: spacing.md,
   },
-  brandBadgeText: { color: colors.onBrandPrimary, fontWeight: '800', fontSize: 18, letterSpacing: 1 },
   brandTitle: { color: colors.onSurface, fontSize: 44, fontFamily: fonts.display, letterSpacing: 0.5 },
   brandTag: { color: colors.brandSecondary, marginTop: spacing.xs, fontSize: 14, letterSpacing: 0.3 },
 
@@ -199,4 +243,31 @@ const styles = StyleSheet.create({
   },
   ctaText: { color: colors.onBrandPrimary, fontWeight: '700', fontSize: 16, letterSpacing: 0.5 },
   hint: { color: colors.mutedText, fontSize: 12, marginTop: spacing.lg, textAlign: 'center' },
+
+  empCodeRow: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surfaceTertiary,
+    borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    paddingHorizontal: spacing.lg, paddingVertical: 14, marginBottom: spacing.lg,
+  },
+  pinDotsRow: {
+    flexDirection: 'row', justifyContent: 'center', gap: spacing.lg,
+    marginTop: spacing.md, marginBottom: spacing.xl,
+  },
+  pinDot: {
+    width: 18, height: 18, borderRadius: 9, borderWidth: 1.5, borderColor: colors.border,
+    backgroundColor: colors.surfaceTertiary,
+  },
+  pinDotFilled: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
+  hiddenPinInput: { position: 'absolute', width: 1, height: 1, opacity: 0 },
+  keypad: {
+    flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between',
+    marginBottom: spacing.md,
+  },
+  keypadKey: {
+    width: '31%', aspectRatio: 1.5, borderRadius: radius.md, marginBottom: spacing.sm,
+    backgroundColor: colors.surfaceTertiary, borderWidth: 1, borderColor: colors.border,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  keypadKeyPressed: { backgroundColor: colors.brandTertiary, borderColor: colors.brandPrimary },
+  keypadKeyText: { color: colors.onSurface, fontSize: 20, fontWeight: '700' },
 });

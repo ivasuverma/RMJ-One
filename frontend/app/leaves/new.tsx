@@ -9,7 +9,7 @@ import { useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
 import { colors, spacing, radius, fonts } from '@/src/theme';
 
-const TYPES = ['casual', 'sick', 'paid', 'unpaid'] as const;
+const TYPES = ['casual', 'sick'] as const;
 
 export default function NewLeave() {
   const router = useRouter();
@@ -30,7 +30,7 @@ export default function NewLeave() {
     setSaving(true);
     try {
       await api.post('/leaves', { from_date: from, to_date: to, leave_type: type, reason });
-      Alert.alert('Submitted', 'Leave request sent to owner.', [{ text: 'OK', onPress: () => router.back() }]);
+      router.back();
     } catch (e: any) {
       Alert.alert('Failed', e?.detail || 'Please try again');
     } finally { setSaving(false); submittingRef.current = false; }

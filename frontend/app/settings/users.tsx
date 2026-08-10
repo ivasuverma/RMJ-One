@@ -20,6 +20,7 @@ export default function UsersScreen() {
   const [role, setRole] = useState<'admin' | 'accountant'>('admin');
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try { setItems(await api.get<U[]>('/users')); }
@@ -28,6 +29,13 @@ export default function UsersScreen() {
   }, []);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  const resetForm = () => { setEditingId(null); setName(''); setUsername(''); setPassword(''); setRole('admin'); };
+
+  const startEdit = (u: U) => {
+    setEditingId(u.id); setName(u.name); setUsername(u.username); setPassword('');
+    setRole(u.role === 'accountant' ? 'accountant' : 'admin');
+  };
 
   const submittingRef = useRef(false);
   const add = async () => {
@@ -39,14 +47,34 @@ export default function UsersScreen() {
     setSaving(true);
     try {
       await api.post('/users', { name: name.trim(), username: username.trim(), password, role });
-      setName(''); setUsername(''); setPassword(''); await load();
+      resetForm(); await load();
+    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+    finally { setSaving(false); submittingRef.current = false; }
+  };
+
+  const saveEdit = async () => {
+    if (submittingRef.current || !editingId) return;
+    if (!name.trim() || !username.trim()) {
+      Alert.alert('Missing', 'Name and username are required'); return;
+    }
+    if (password && password.length < 4) {
+      Alert.alert('Too short', 'New password must be 4+ characters, or leave it blank to keep the current one.'); return;
+    }
+    submittingRef.current = true;
+    setSaving(true);
+    try {
+      await api.put(`/users/${editingId}`, {
+        name: name.trim(), username: username.trim(), role,
+        password: password || undefined,
+      });
+      resetForm(); await load();
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
     finally { setSaving(false); submittingRef.current = false; }
   };
 
   const remove = (u: U) => {
     confirmAction('Delete user', `Remove ${u.name}?`, 'Delete', async () => {
-      try { await api.del(`/users/${u.id}`); await load(); }
+      try { await api.del(`/users/${u.id}`); if (editingId === u.id) resetForm(); await load(); }
       catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
     });
   };
@@ -67,10 +95,21 @@ export default function UsersScreen() {
           keyboardShouldPersistTaps="handled"
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}
         >
-          <Text style={styles.section}>Add User</Text>
+          <View style={styles.sectionRow}>
+            <Text style={styles.section}>{editingId ? 'Edit User' : 'Add User'}</Text>
+            {editingId && (
+              <Pressable onPress={resetForm} testID="cancel-edit-btn">
+                <Text style={styles.cancelEditText}>Cancel</Text>
+              </Pressable>
+            )}
+          </View>
           <TextInput testID="new-user-name" value={name} onChangeText={setName} placeholder="Full name" placeholderTextColor={colors.mutedText} style={styles.input} />
           <TextInput testID="new-user-username" value={username} onChangeText={(v) => setUsername(v.toLowerCase().replace(/\s/g, ''))} placeholder="Username" placeholderTextColor={colors.mutedText} style={styles.input} autoCapitalize="none" />
-          <TextInput testID="new-user-password" value={password} onChangeText={setPassword} placeholder="Temporary password" placeholderTextColor={colors.mutedText} secureTextEntry style={styles.input} />
+          <TextInput
+            testID="new-user-password" value={password} onChangeText={setPassword}
+            placeholder={editingId ? 'New password (leave blank to keep current)' : 'Temporary password'}
+            placeholderTextColor={colors.mutedText} secureTextEntry style={styles.input}
+          />
           <View style={styles.roleRow}>
             {(['admin', 'accountant'] as const).map((r) => (
               <Pressable
@@ -82,22 +121,35 @@ export default function UsersScreen() {
               </Pressable>
             ))}
           </View>
-          <Pressable style={[styles.addBtn, saving && { opacity: 0.6 }]} disabled={saving} onPress={add} testID="add-user-btn">
-            {saving ? <ActivityIndicator color={colors.onBrandPrimary} /> : <><Ionicons name="person-add-outline" size={16} color={colors.onBrandPrimary} /><Text style={styles.addBtnText}>Create User</Text></>}
+          <Pressable
+            style={[styles.addBtn, saving && { opacity: 0.6 }]} disabled={saving}
+            onPress={editingId ? saveEdit : add} testID={editingId ? 'save-user-edit-btn' : 'add-user-btn'}
+          >
+            {saving ? <ActivityIndicator color={colors.onBrandPrimary} /> : (
+              <>
+                <Ionicons name={editingId ? 'checkmark-outline' : 'person-add-outline'} size={16} color={colors.onBrandPrimary} />
+                <Text style={styles.addBtnText}>{editingId ? 'Save Changes' : 'Create User'}</Text>
+              </>
+            )}
           </Pressable>
 
           <Text style={[styles.section, { marginTop: spacing.xl }]}>Existing</Text>
           {items.map((u) => (
-            <View key={u.id} style={styles.row} testID={`user-${u.id}`}>
+            <View key={u.id} style={[styles.row, editingId === u.id && styles.rowEditing]} testID={`user-${u.id}`}>
               <View style={styles.avatar}><Text style={styles.avatarText}>{(u.name || u.username)[0]?.toUpperCase()}</Text></View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.userName}>{u.name}</Text>
                 <Text style={styles.userMeta}>@{u.username} · {u.role.toUpperCase()}</Text>
               </View>
               {u.role !== 'owner' && (
-                <Pressable onPress={() => remove(u)} style={styles.delBtn} hitSlop={10} testID={`del-user-${u.id}`}>
-                  <Ionicons name="trash-outline" size={16} color="#F1A9A9" />
-                </Pressable>
+                <>
+                  <Pressable onPress={() => startEdit(u)} style={styles.editBtn} hitSlop={10} testID={`edit-user-${u.id}`}>
+                    <Ionicons name="create-outline" size={16} color={colors.brandSecondary} />
+                  </Pressable>
+                  <Pressable onPress={() => remove(u)} style={styles.delBtn} hitSlop={10} testID={`del-user-${u.id}`}>
+                    <Ionicons name="trash-outline" size={16} color="#F1A9A9" />
+                  </Pressable>
+                </>
               )}
             </View>
           ))}
@@ -122,6 +174,8 @@ const styles = StyleSheet.create({
     fontFamily: fonts.display,
   },
   section: { color: colors.brandSecondary, fontSize: 11, letterSpacing: 1, textTransform: 'uppercase', marginBottom: spacing.sm },
+  sectionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  cancelEditText: { color: colors.mutedText, fontSize: 12, fontWeight: '700', marginBottom: spacing.sm },
   input: {
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1,
     borderColor: colors.border, color: colors.onSurface, paddingHorizontal: spacing.md,
@@ -145,6 +199,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row', gap: spacing.md, alignItems: 'center',
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md,
     borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.sm,
+  },
+  rowEditing: { borderColor: colors.brandPrimary },
+  editBtn: {
+    width: 34, height: 34, borderRadius: 17, backgroundColor: colors.brandTertiary,
+    borderColor: colors.brand, borderWidth: 1, alignItems: 'center', justifyContent: 'center',
   },
   avatar: {
     width: 36, height: 36, borderRadius: 18, backgroundColor: colors.brandTertiary,

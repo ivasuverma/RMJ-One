@@ -41,8 +41,12 @@ export default function EmployeeTabsLayout() {
         options={{ title: 'Home', tabBarIcon: ({ color, size }) => <Ionicons name="scan-outline" color={color} size={size} /> }}
       />
       <Tabs.Screen
+        name="calendar"
+        options={{ title: 'Calendar', tabBarIcon: ({ color, size }) => <Ionicons name="calendar-outline" color={color} size={size} /> }}
+      />
+      <Tabs.Screen
         name="leaves"
-        options={{ title: 'Leaves', tabBarIcon: ({ color, size }) => <Ionicons name="calendar-outline" color={color} size={size} /> }}
+        options={{ title: 'Leaves', tabBarIcon: ({ color, size }) => <Ionicons name="airplane-outline" color={color} size={size} /> }}
       />
       <Tabs.Screen
         name="profile"
