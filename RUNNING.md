@@ -27,6 +27,25 @@ Note: `requirements.txt` includes `emergentintegrations`, a package used only by
 `litellm`) from requirements.txt — every other screen (dashboard, attendance, payroll,
 employees) works without it.
 
+### Optional: browser push notifications
+
+Settings → Notifications now actually works — it sends a real browser push (works even
+with the tab closed) when: an employee submits a leave/correction request (notifies
+owner + admin), a leave/correction is approved or rejected (notifies the employee), or a
+salary is marked paid (notifies the employee). Without setup below, everything else still
+works fine — the toggle just says push isn't configured.
+
+```bash
+cd backend
+python generate_vapid_keys.py
+# paste the two printed lines into backend/.env
+pip install pywebpush
+```
+
+On iPhone, Safari only supports push for sites added to the Home Screen first (open the
+site → Share → Add to Home Screen → open it from there → enable notifications). Android
+Chrome supports it directly from a normal browser tab.
+
 ## 2. Frontend
 
 ```bash
@@ -60,10 +79,21 @@ Then either:
   this month" button that jumps straight to that employee's calendar.
 - Try double/triple-tapping any Save/Submit/Approve/Pay button — it should now only fire
   once.
+- **Settings** — owner sees everything; admin/accountant only see the sections their role
+  can actually act on (Approvals is owner+admin, Reports is everyone staff, Store/Shifts/
+  Holidays/Users/Biometric/Audit are owner-only, matching what the backend already
+  enforced but the UI didn't reflect before).
+- **Employee profile → Details → ID Proofs** — owner/admin can attach Aadhaar/PAN/etc. as
+  a photo or PDF (tap "Add ID Proof"); employees see their own uploaded documents
+  read-only on their Profile tab.
+- **Settings/Profile → Notifications** — toggling it on should prompt the browser for
+  permission, then say "On". See "Optional: browser push notifications" above for the
+  one-time server setup.
 
 ## Known limitation
 
-I made and statically verified (TypeScript + Python syntax) these changes from a sandboxed
-dev environment without outbound internet access, so I could not actually boot the
-backend/Mongo or run the app end-to-end myself. Please flag anything that doesn't behave
-as described above and I'll fix it.
+I statically verified (TypeScript typecheck, Python syntax check, and in-process backend
+smoke tests against a mock database) these changes from a sandboxed dev environment
+without a real MongoDB/Mongo Atlas connection, so I could not click through the actual
+running app end-to-end myself. Please flag anything that doesn't behave as described above
+and I'll fix it.

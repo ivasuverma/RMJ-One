@@ -6,18 +6,23 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { api } from '@/src/api/client';
+import { confirmAction } from '@/src/utils/confirm';
 import { colors, spacing, radius, fonts } from '@/src/theme';
 
 type Shift = { id: string; name: string; start: string; end: string; grace_min: number; is_active: boolean };
 
+const EMPTY = { name: '', start: '10:00', end: '19:30', grace: '15' };
+
 export default function ShiftsScreen() {
   const router = useRouter();
   const [items, setItems] = useState<Shift[]>([]);
-  const [name, setName] = useState('');
-  const [start, setStart] = useState('10:00');
-  const [end, setEnd] = useState('19:30');
-  const [grace, setGrace] = useState('15');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [name, setName] = useState(EMPTY.name);
+  const [start, setStart] = useState(EMPTY.start);
+  const [end, setEnd] = useState(EMPTY.end);
+  const [grace, setGrace] = useState(EMPTY.grace);
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
@@ -28,24 +33,43 @@ export default function ShiftsScreen() {
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
+  const resetForm = () => {
+    setEditingId(null); setName(EMPTY.name); setStart(EMPTY.start); setEnd(EMPTY.end); setGrace(EMPTY.grace);
+  };
+
+  const startEdit = (s: Shift) => {
+    setEditingId(s.id); setName(s.name); setStart(s.start); setEnd(s.end); setGrace(String(s.grace_min));
+  };
+
   const submittingRef = useRef(false);
-  const add = async () => {
+  const save = async () => {
     if (submittingRef.current) return;
     if (!name.trim()) { Alert.alert('Missing', 'Shift name is required'); return; }
     submittingRef.current = true;
     setSaving(true);
     try {
-      await api.post('/shifts', { name: name.trim(), start, end, grace_min: parseInt(grace || '0', 10), is_active: true });
-      setName(''); setStart('10:00'); setEnd('19:30'); setGrace('15'); await load();
+      const payload = { name: name.trim(), start, end, grace_min: parseInt(grace || '0', 10), is_active: true };
+      if (editingId) await api.put(`/shifts/${editingId}`, payload);
+      else await api.post('/shifts', payload);
+      resetForm();
+      await load();
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
     finally { setSaving(false); submittingRef.current = false; }
   };
 
   const remove = (s: Shift) => {
-    Alert.alert('Delete shift', `Remove ${s.name}?`, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: async () => { try { await api.del(`/shifts/${s.id}`); await load(); } catch (_e) {} } },
-    ]);
+    confirmAction('Delete shift', `Remove ${s.name}? This cannot be undone.`, 'Delete', async () => {
+      setDeletingId(s.id);
+      try {
+        await api.del(`/shifts/${s.id}`);
+        if (editingId === s.id) resetForm();
+        await load();
+      } catch (e: any) {
+        Alert.alert('Failed', e?.detail || 'Could not delete this shift. Please try again.');
+      } finally {
+        setDeletingId(null);
+      }
+    });
   };
 
   return (
@@ -63,7 +87,7 @@ export default function ShiftsScreen() {
           contentContainerStyle={{ padding: spacing.lg }} keyboardShouldPersistTaps="handled"
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}
         >
-          <Text style={styles.section}>Add Shift</Text>
+          <Text style={styles.section}>{editingId ? 'Edit Shift' : 'Add Shift'}</Text>
           <TextInput testID="shift-name" value={name} onChangeText={setName} placeholder="Shift name" placeholderTextColor={colors.mutedText} style={styles.input} />
           <View style={styles.row2}>
             <View style={{ flex: 1 }}>
@@ -77,19 +101,34 @@ export default function ShiftsScreen() {
           </View>
           <Text style={styles.label}>Grace (min)</Text>
           <TextInput testID="shift-grace" value={grace} onChangeText={(v) => setGrace(v.replace(/[^0-9]/g, ''))} keyboardType="numeric" style={styles.input} />
-          <Pressable style={[styles.addBtn, saving && { opacity: 0.6 }]} disabled={saving} onPress={add} testID="add-shift-btn">
-            {saving ? <ActivityIndicator color={colors.onBrandPrimary} /> : <><Ionicons name="add" size={16} color={colors.onBrandPrimary} /><Text style={styles.addBtnText}>Add Shift</Text></>}
-          </Pressable>
+          <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+            {editingId && (
+              <Pressable style={styles.cancelEditBtn} onPress={resetForm} testID="cancel-edit-shift-btn">
+                <Text style={styles.cancelEditText}>Cancel</Text>
+              </Pressable>
+            )}
+            <Pressable style={[styles.addBtn, { flex: 1 }, saving && { opacity: 0.6 }]} disabled={saving} onPress={save} testID="save-shift-btn">
+              {saving ? <ActivityIndicator color={colors.onBrandPrimary} /> : (
+                <>
+                  <Ionicons name={editingId ? 'checkmark' : 'add'} size={16} color={colors.onBrandPrimary} />
+                  <Text style={styles.addBtnText}>{editingId ? 'Update Shift' : 'Add Shift'}</Text>
+                </>
+              )}
+            </Pressable>
+          </View>
 
           <Text style={[styles.section, { marginTop: spacing.xl }]}>Existing Shifts</Text>
           {items.map((s) => (
-            <View key={s.id} style={styles.card} testID={`shift-${s.id}`}>
-              <View style={{ flex: 1 }}>
+            <View key={s.id} style={[styles.card, editingId === s.id && styles.cardEditing]} testID={`shift-${s.id}`}>
+              <Pressable style={{ flex: 1 }} onPress={() => startEdit(s)} testID={`edit-shift-${s.id}`}>
                 <Text style={styles.cName}>{s.name}</Text>
                 <Text style={styles.cMeta}>{s.start} – {s.end} · Grace {s.grace_min}m</Text>
-              </View>
-              <Pressable onPress={() => remove(s)} style={styles.delBtn} hitSlop={10} testID={`del-shift-${s.id}`}>
-                <Ionicons name="trash-outline" size={16} color="#F1A9A9" />
+              </Pressable>
+              <Pressable onPress={() => startEdit(s)} style={styles.editBtn} hitSlop={10} testID={`edit-icon-shift-${s.id}`}>
+                <Ionicons name="create-outline" size={16} color={colors.brandSecondary} />
+              </Pressable>
+              <Pressable onPress={() => remove(s)} style={styles.delBtn} hitSlop={10} disabled={deletingId === s.id} testID={`del-shift-${s.id}`}>
+                {deletingId === s.id ? <ActivityIndicator size="small" color="#F1A9A9" /> : <Ionicons name="trash-outline" size={16} color="#F1A9A9" />}
               </Pressable>
             </View>
           ))}
@@ -126,13 +165,24 @@ const styles = StyleSheet.create({
     backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: 14, marginTop: spacing.sm,
   },
   addBtnText: { color: colors.onBrandPrimary, fontWeight: '700' },
+  cancelEditBtn: {
+    paddingHorizontal: spacing.lg, borderRadius: radius.md, marginTop: spacing.sm,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border,
+  },
+  cancelEditText: { color: colors.onSurfaceTertiary, fontWeight: '700' },
   card: {
-    flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md,
     borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.sm,
   },
+  cardEditing: { borderColor: colors.brandPrimary },
   cName: { color: colors.onSurface, fontWeight: '700', fontSize: 14 },
   cMeta: { color: colors.onSurfaceTertiary, fontSize: 12, marginTop: 2 },
+  editBtn: {
+    width: 34, height: 34, borderRadius: 17, backgroundColor: colors.brandTertiary,
+    borderColor: colors.brand, borderWidth: 1, alignItems: 'center', justifyContent: 'center',
+  },
   delBtn: {
     width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(122,40,40,0.15)',
     borderColor: colors.error, borderWidth: 1, alignItems: 'center', justifyContent: 'center',

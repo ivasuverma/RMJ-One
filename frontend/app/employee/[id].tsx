@@ -8,7 +8,10 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '@/src/api/client';
+import { confirmAction } from '@/src/utils/confirm';
 import { colors, spacing, radius, images, fonts } from '@/src/theme';
+
+type IdProof = { id: string; name: string; data_uri: string; uploaded_at: string };
 
 type Emp = {
   id: string; name: string; employee_code: string; department: string;
@@ -16,7 +19,31 @@ type Emp = {
   mobile: string; address: string; aadhaar: string; pan: string;
   bank_account: string; bank_ifsc: string; bank_name: string;
   status: 'active' | 'inactive' | 'on_leave'; notes: string; photo?: string;
+  id_proofs?: IdProof[];
 };
+
+function pickIdProofFile(): Promise<{ name: string; dataUri: string } | null> {
+  return new Promise((resolve) => {
+    if (Platform.OS !== 'web' || typeof document === 'undefined') { resolve(null); return; }
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*,application/pdf';
+    input.onchange = () => {
+      const file = input.files && input.files[0];
+      if (!file) { resolve(null); return; }
+      if (file.size > 8 * 1024 * 1024) {
+        Alert.alert('Too large', 'Please choose a file under 8 MB.');
+        resolve(null);
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => resolve({ name: file.name, dataUri: String(reader.result || '') });
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(file);
+    };
+    input.click();
+  });
+}
 type TL = { id: string; type: string; title: string; description: string; amount: number; created_at: string };
 
 const TABS = ['Details', 'Payroll', 'Timeline'] as const;
@@ -63,16 +90,10 @@ export default function EmployeeProfile() {
   useFocusEffect(useCallback(() => { setLoading(true); load(); }, [load]));
 
   const onDelete = () => {
-    Alert.alert('Delete employee', 'This cannot be undone.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete', style: 'destructive',
-        onPress: async () => {
-          try { await api.del(`/employees/${id}`); router.replace('/(tabs)/employees'); }
-          catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
-        },
-      },
-    ]);
+    confirmAction('Delete employee', 'This cannot be undone.', 'Delete', async () => {
+      try { await api.del(`/employees/${id}`); router.replace('/(tabs)/employees'); }
+      catch (e: any) { Alert.alert('Failed', e?.detail || 'Could not delete this employee. Please try again.'); }
+    });
   };
 
   if (loading) {
@@ -168,7 +189,7 @@ export default function EmployeeProfile() {
         </View>
 
         <View style={{ paddingHorizontal: spacing.lg }}>
-          {tab === 'Details' && <DetailsCard emp={emp} />}
+          {tab === 'Details' && <DetailsCard emp={emp} onReload={load} />}
           {tab === 'Payroll' && <PayrollCard emp={emp} />}
           {tab === 'Timeline' && <TimelineList items={data.timeline} />}
         </View>
@@ -224,7 +245,7 @@ function TimelineList({ items }: { items: TL[] }) {
   );
 }
 
-function DetailsCard({ emp }: { emp: Emp }) {
+function DetailsCard({ emp, onReload }: { emp: Emp; onReload: () => void }) {
   return (
     <View style={styles.detailCard}>
       <SectionTitle text="Personal" />
@@ -244,12 +265,85 @@ function DetailsCard({ emp }: { emp: Emp }) {
       <DetailRow label="Account" value={emp.bank_account || '—'} />
       <DetailRow label="IFSC" value={emp.bank_ifsc || '—'} />
 
+      <SectionTitle text="ID Proofs" />
+      <IdProofsSection empId={emp.id} proofs={emp.id_proofs || []} onChange={onReload} />
+
       {!!emp.notes && (
         <>
           <SectionTitle text="Notes" />
           <Text style={styles.notes}>{emp.notes}</Text>
         </>
       )}
+    </View>
+  );
+}
+
+function IdProofsSection({ empId, proofs, onChange }: { empId: string; proofs: IdProof[]; onChange: () => void }) {
+  const [uploading, setUploading] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const upload = async () => {
+    const file = await pickIdProofFile();
+    if (!file) return;
+    setUploading(true);
+    try {
+      await api.post(`/employees/${empId}/id-proofs`, { name: file.name, data_uri: file.dataUri });
+      onChange();
+    } catch (e: any) {
+      Alert.alert('Upload failed', e?.detail || 'Please try again');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const remove = (p: IdProof) => {
+    confirmAction('Delete document', `Remove "${p.name}"?`, 'Delete', async () => {
+      setDeletingId(p.id);
+      try {
+        await api.del(`/employees/${empId}/id-proofs/${p.id}`);
+        onChange();
+      } catch (e: any) {
+        Alert.alert('Failed', e?.detail || 'Could not delete this document');
+      } finally {
+        setDeletingId(null);
+      }
+    });
+  };
+
+  const view = (p: IdProof) => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined') window.open(p.data_uri, '_blank');
+  };
+
+  return (
+    <View>
+      {proofs.length === 0 && (
+        <Text style={[styles.notes, { marginBottom: spacing.sm }]}>No ID proofs uploaded yet — Aadhaar, PAN, or any other document.</Text>
+      )}
+      {proofs.map((p) => (
+        <Pressable key={p.id} onPress={() => view(p)} style={styles.proofRow} testID={`id-proof-${p.id}`}>
+          <Ionicons name="document-attach-outline" size={18} color={colors.brandSecondary} />
+          <Text style={styles.proofName} numberOfLines={1}>{p.name}</Text>
+          <Pressable
+            onPress={() => remove(p)}
+            hitSlop={10}
+            disabled={deletingId === p.id}
+            style={styles.proofDelBtn}
+            testID={`del-id-proof-${p.id}`}
+          >
+            {deletingId === p.id
+              ? <ActivityIndicator size="small" color="#F1A9A9" />
+              : <Ionicons name="trash-outline" size={16} color="#F1A9A9" />}
+          </Pressable>
+        </Pressable>
+      ))}
+      <Pressable style={[styles.uploadBtn, uploading && { opacity: 0.6 }]} onPress={upload} disabled={uploading} testID="upload-id-proof-btn">
+        {uploading ? <ActivityIndicator size="small" color={colors.brandPrimary} /> : (
+          <>
+            <Ionicons name="add-circle-outline" size={18} color={colors.brandPrimary} />
+            <Text style={styles.uploadBtnText}>Add ID Proof</Text>
+          </>
+        )}
+      </Pressable>
     </View>
   );
 }
@@ -469,6 +563,24 @@ const styles = StyleSheet.create({
   detailLabel: { color: colors.mutedText, fontSize: 13, width: 100 },
   detailValue: { color: colors.onSurface, fontSize: 13, flex: 1, textAlign: 'right' },
   notes: { color: colors.onSurfaceSecondary, fontSize: 13, marginTop: 4 },
+
+  proofRow: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+    backgroundColor: colors.surfaceTertiary, borderRadius: radius.md,
+    borderWidth: 1, borderColor: colors.border, paddingVertical: 10, paddingHorizontal: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  proofName: { flex: 1, color: colors.onSurface, fontSize: 13 },
+  proofDelBtn: {
+    width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(122,40,40,0.15)', borderColor: colors.error, borderWidth: 1,
+  },
+  uploadBtn: {
+    flexDirection: 'row', gap: spacing.sm, alignItems: 'center', justifyContent: 'center',
+    borderRadius: radius.md, borderWidth: 1, borderColor: colors.brandPrimary, borderStyle: 'dashed',
+    paddingVertical: 12, marginTop: spacing.xs,
+  },
+  uploadBtnText: { color: colors.brandPrimary, fontWeight: '700', fontSize: 13 },
 
   salaryHero: {
     backgroundColor: colors.brandTertiary, borderColor: colors.brandPrimary, borderWidth: 1,

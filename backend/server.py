@@ -22,6 +22,10 @@ JWT_SECRET = os.environ.get('JWT_SECRET', 'rmj-one-dev-secret-change-in-prod')
 JWT_ALGO = 'HS256'
 JWT_EXPIRE_MIN = 60 * 24 * 7
 
+VAPID_PUBLIC_KEY = os.environ.get('VAPID_PUBLIC_KEY', '')
+VAPID_PRIVATE_KEY = os.environ.get('VAPID_PRIVATE_KEY', '')
+VAPID_SUBJECT = os.environ.get('VAPID_SUBJECT', 'mailto:admin@example.com')
+
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
 
@@ -185,6 +189,17 @@ class LeaveIn(BaseModel):
 class DecisionIn(BaseModel):
     action: Literal['approve', 'reject']
     note: Optional[str] = ''
+
+
+class IdProofIn(BaseModel):
+    name: str
+    data_uri: str  # base64 data URI (image or PDF)
+
+
+class PushSubscriptionIn(BaseModel):
+    endpoint: str
+    keys: dict
+    expirationTime: Optional[float] = None
 
 
 # ---- M2B additions ----
@@ -443,7 +458,7 @@ async def list_employees(
         ]
     if department: query['department'] = department
     if status_: query['status'] = status_
-    docs = await db.employees.find(query, {'_id': 0, 'pin_hash': 0}).sort('name', 1).to_list(1000)
+    docs = await db.employees.find(query, {'_id': 0, 'pin_hash': 0, 'id_proofs': 0}).sort('name', 1).to_list(1000)
     return docs
 
 
@@ -504,6 +519,26 @@ async def delete_employee(emp_id: str, _: dict = Depends(require_owner)):
     r = await db.employees.delete_one({'id': emp_id})
     if r.deleted_count == 0: raise HTTPException(status_code=404, detail='Employee not found')
     await db.timeline.delete_many({'employee_id': emp_id})
+    return {'ok': True}
+
+
+@api.post('/employees/{emp_id}/id-proofs')
+async def add_id_proof(emp_id: str, body: IdProofIn, user=Depends(require_admin)):
+    existing = await db.employees.find_one({'id': emp_id}, {'_id': 0})
+    if not existing: raise HTTPException(status_code=404, detail='Employee not found')
+    proof = {
+        'id': str(uuid.uuid4()), 'name': (body.name or 'Document').strip()[:200],
+        'data_uri': body.data_uri, 'uploaded_at': now_utc().isoformat(),
+    }
+    await db.employees.update_one({'id': emp_id}, {'$push': {'id_proofs': proof}})
+    await log_audit(user, 'employee.id_proof.add', 'employee', emp_id, existing.get('employee_code', ''), {'name': proof['name']})
+    return proof
+
+
+@api.delete('/employees/{emp_id}/id-proofs/{proof_id}')
+async def delete_id_proof(emp_id: str, proof_id: str, user=Depends(require_admin)):
+    await db.employees.update_one({'id': emp_id}, {'$pull': {'id_proofs': {'id': proof_id}}})
+    await log_audit(user, 'employee.id_proof.delete', 'employee', emp_id, '', {'proof_id': proof_id})
     return {'ok': True}
 
 
@@ -846,6 +881,8 @@ async def create_correction(body: CorrectionIn, user=Depends(require_employee)):
         'status': 'pending', 'created_at': iso, 'decided_by': None, 'decided_at': None, 'decision_note': '',
     }
     await db.corrections.insert_one(dict(doc))
+    await notify_roles(['owner', 'admin'], 'New attendance correction request',
+                        f"{user['name']} requested a correction for {doc['date']}", '/approvals')
     return {k: v for k, v in doc.items() if k != '_id'}
 
 
@@ -904,6 +941,8 @@ async def decide_correction(cid: str, body: DecisionIn, user=Depends(require_adm
                 'status': 'present', 'created_at': now_utc().isoformat(), 'via_correction': True,
             })
     await log_audit(user, f'correction.{new_status}', 'correction', cid, r.get('employee_code', ''))
+    await notify_user(r['employee_id'], f'Correction {new_status}',
+                       f"Your correction request for {r['date']} was {new_status}", '/leaves')
     return await db.corrections.find_one({'id': cid}, {'_id': 0})
 
 
@@ -919,6 +958,8 @@ async def create_leave(body: LeaveIn, user=Depends(require_employee)):
         'decided_by': None, 'decided_at': None, 'decision_note': '',
     }
     await db.leaves.insert_one(dict(doc))
+    await notify_roles(['owner', 'admin'], 'New leave request',
+                        f"{user['name']} requested leave {doc['from_date']} to {doc['to_date']}", '/approvals')
     return {k: v for k, v in doc.items() if k != '_id'}
 
 
@@ -951,6 +992,8 @@ async def decide_leave(lid: str, body: DecisionIn, user=Depends(require_admin)):
             'description': f"{l['from_date']} → {l['to_date']}", 'amount': 0,
             'created_at': now_utc().isoformat(),
         })
+    await notify_user(l['employee_id'], f'Leave {new_status}',
+                       f"Your leave request ({l['from_date']} → {l['to_date']}) was {new_status}", '/leaves')
     return await db.leaves.find_one({'id': lid}, {'_id': 0})
 
 
@@ -1421,6 +1464,8 @@ async def payroll_mark_paid(entry_id: str, user=Depends(require_payroll_writer))
         'sign': 1, 'created_at': iso,
     })
     await log_audit(user, 'payroll.paid', 'payroll_entry', entry_id, entry.get('employee_code', ''), {'net': entry['net_salary']})
+    await notify_user(entry['employee_id'], 'Salary paid',
+                       f"Your salary for {entry['year']}-{entry['month']:02d} (₹{entry['net_salary']:.0f}) has been paid", '/profile')
     return await db.payroll_entries.find_one({'id': entry_id}, {'_id': 0})
 
 
@@ -1599,6 +1644,89 @@ async def audit_list(
         if to_date: rng['$lte'] = to_date + 'T23:59:59'
         q['created_at'] = rng
     return await db.audit_logs.find(q, {'_id': 0}).sort('created_at', -1).limit(limit).to_list(limit)
+
+
+# ---------------- Notifications (Web Push) ----------------
+try:
+    from pywebpush import webpush, WebPushException
+    WEBPUSH_AVAILABLE = True
+except ImportError:
+    WEBPUSH_AVAILABLE = False
+    logger.warning('pywebpush not installed — push notifications disabled. Run: pip install pywebpush')
+
+import asyncio
+import json as _json
+
+
+async def _send_push_to_subs(subs: list, title: str, body: str, url: str = '/'):
+    if not WEBPUSH_AVAILABLE or not VAPID_PRIVATE_KEY:
+        return
+    payload = _json.dumps({'title': title, 'body': body, 'url': url})
+    for sub in subs:
+        def _do_send(s=sub):
+            webpush(
+                subscription_info={'endpoint': s['endpoint'], 'keys': s['keys']},
+                data=payload,
+                vapid_private_key=VAPID_PRIVATE_KEY,
+                vapid_claims={'sub': VAPID_SUBJECT},
+            )
+        try:
+            await asyncio.to_thread(_do_send)
+        except WebPushException as e:
+            status = getattr(getattr(e, 'response', None), 'status_code', None)
+            if status in (404, 410):
+                await db.push_subscriptions.delete_one({'id': sub['id']})
+            else:
+                logger.warning(f'push send failed: {e}')
+        except Exception as e:
+            logger.warning(f'push send failed: {e}')
+
+
+async def notify_user(user_id: str, title: str, body: str, url: str = '/'):
+    try:
+        subs = await db.push_subscriptions.find({'user_id': user_id}, {'_id': 0}).to_list(20)
+        await _send_push_to_subs(subs, title, body, url)
+    except Exception as e:
+        logger.warning(f'notify_user failed: {e}')
+
+
+async def notify_roles(roles: list, title: str, body: str, url: str = '/'):
+    try:
+        subs = await db.push_subscriptions.find({'role': {'$in': roles}}, {'_id': 0}).to_list(200)
+        await _send_push_to_subs(subs, title, body, url)
+    except Exception as e:
+        logger.warning(f'notify_roles failed: {e}')
+
+
+@api.get('/notifications/vapid-public-key')
+async def notifications_vapid_key():
+    return {'publicKey': VAPID_PUBLIC_KEY, 'enabled': bool(WEBPUSH_AVAILABLE and VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY)}
+
+
+@api.post('/notifications/subscribe')
+async def notifications_subscribe(body: PushSubscriptionIn, user=Depends(get_current)):
+    existing = await db.push_subscriptions.find_one({'endpoint': body.endpoint}, {'_id': 0})
+    doc = {
+        'id': existing['id'] if existing else str(uuid.uuid4()),
+        'user_id': user['id'], 'role': user.get('role'), 'endpoint': body.endpoint,
+        'keys': body.keys, 'created_at': now_utc().isoformat(),
+    }
+    await db.push_subscriptions.update_one({'endpoint': body.endpoint}, {'$set': doc}, upsert=True)
+    return {'ok': True}
+
+
+@api.post('/notifications/unsubscribe')
+async def notifications_unsubscribe(body: dict, user=Depends(get_current)):
+    endpoint = body.get('endpoint')
+    if endpoint:
+        await db.push_subscriptions.delete_one({'endpoint': endpoint, 'user_id': user['id']})
+    return {'ok': True}
+
+
+@api.get('/notifications/status')
+async def notifications_status(user=Depends(get_current)):
+    count = await db.push_subscriptions.count_documents({'user_id': user['id']})
+    return {'subscribed': count > 0}
 
 
 # ---------------- Reports (PDF) ----------------

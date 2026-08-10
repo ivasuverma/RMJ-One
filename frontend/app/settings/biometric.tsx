@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { api } from '@/src/api/client';
+import { confirmAction } from '@/src/utils/confirm';
 import { colors, spacing, radius, fonts } from '@/src/theme';
 
 type Device = { id: string; serial: string; label: string; last_seen: string | null; status: string };
@@ -56,10 +57,10 @@ export default function BiometricScreen() {
   };
 
   const remove = (d: Device) => {
-    Alert.alert('Delete device', `Remove ${d.label} (${d.serial})?`, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: async () => { try { await api.del(`/biometric/devices/${d.id}`); await load(); } catch (_e) {} } },
-    ]);
+    confirmAction('Delete device', `Remove ${d.label} (${d.serial})?`, 'Delete', async () => {
+      try { await api.del(`/biometric/devices/${d.id}`); await load(); }
+      catch (e: any) { Alert.alert('Failed', e?.detail || 'Could not delete this device. Please try again.'); }
+    });
   };
 
   const pushUrl = `${process.env.EXPO_PUBLIC_BACKEND_URL || ''}/api/biometric/push`;

@@ -5,7 +5,7 @@ export type User = {
   id: string;
   username: string;
   name: string;
-  role: 'owner' | 'employee';
+  role: 'owner' | 'admin' | 'accountant' | 'employee';
   employee_code?: string;
   designation?: string;
   department?: string;

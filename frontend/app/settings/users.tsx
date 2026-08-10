@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { api } from '@/src/api/client';
+import { confirmAction } from '@/src/utils/confirm';
 import { colors, spacing, radius, fonts } from '@/src/theme';
 
 type U = { id: string; username: string; name: string; role: 'owner' | 'admin' | 'accountant' };
@@ -44,16 +45,10 @@ export default function UsersScreen() {
   };
 
   const remove = (u: U) => {
-    Alert.alert('Delete user', `Remove ${u.name}?`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete', style: 'destructive',
-        onPress: async () => {
-          try { await api.del(`/users/${u.id}`); await load(); }
-          catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
-        },
-      },
-    ]);
+    confirmAction('Delete user', `Remove ${u.name}?`, 'Delete', async () => {
+      try { await api.del(`/users/${u.id}`); await load(); }
+      catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+    });
   };
 
   return (
