@@ -1,4 +1,5 @@
-from fastapi import FastAPI, APIRouter, Depends, HTTPException, Header, Query
+from fastapi import FastAPI, APIRouter, Depends, HTTPException, Header, Query, Request
+from fastapi.responses import PlainTextResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -2089,37 +2090,27 @@ async def biometric_logs(limit: int = 100, _: dict = Depends(require_staff)):
     return await db.biometric_logs.find({}, {'_id': 0}).sort('created_at', -1).limit(limit).to_list(limit)
 
 
-@api.post('/biometric/push')
-async def biometric_push(body: BiometricPushIn):
-    # This endpoint is called by the eSSL device — no bearer JWT; validated via device serial + secret
-    device = await db.biometric_devices.find_one({'serial': body.serial}, {'_id': 0})
+async def _ingest_biometric_punch(serial: str, user_id: str, ts: datetime, event_type: str = 'auto', verify_mode: str = '') -> dict:
+    """Shared logic: turn one (serial, user_id, timestamp) punch into an attendance
+    check-in/check-out, however it arrived (custom JSON push or real ADMS/iClock
+    upload). Returns a dict describing what happened; also writes a biometric_logs row."""
     log_doc = {
-        'id': str(uuid.uuid4()), 'serial': body.serial, 'user_id': body.user_id,
-        'timestamp': body.timestamp or now_utc().isoformat(),
-        'event_type': body.event_type or 'auto', 'verify_mode': body.verify_mode or '',
-        'created_at': now_utc().isoformat(),
+        'id': str(uuid.uuid4()), 'serial': serial, 'user_id': user_id,
+        'timestamp': ts.isoformat(), 'event_type': event_type or 'auto',
+        'verify_mode': verify_mode or '', 'created_at': now_utc().isoformat(),
     }
-    if not device or device.get('secret') != body.secret:
-        log_doc['result'] = 'rejected'; log_doc['reason'] = 'invalid_device_credentials'
-        await db.biometric_logs.insert_one(dict(log_doc))
-        raise HTTPException(status_code=401, detail='Invalid device credentials')
 
-    emp = await db.employees.find_one({'employee_code': body.user_id.upper()}, {'_id': 0, 'pin_hash': 0})
+    emp = await db.employees.find_one({'employee_code': user_id.upper()}, {'_id': 0, 'pin_hash': 0})
     if not emp:
         log_doc['result'] = 'rejected'; log_doc['reason'] = 'unknown_employee'
         await db.biometric_logs.insert_one(dict(log_doc))
-        raise HTTPException(status_code=404, detail=f'Unknown employee {body.user_id}')
+        return {'ok': False, 'reason': 'unknown_employee', 'user_id': user_id}
 
-    # Compute the day (IST)
-    try:
-        ts = datetime.fromisoformat(log_doc['timestamp'])
-    except Exception:
-        ts = now_utc()
     ist = ts.astimezone(timezone(timedelta(hours=5, minutes=30)))
     d = ist.date().isoformat()
 
     existing = await db.attendance.find_one({'employee_id': emp['id'], 'date': d}, {'_id': 0})
-    kind = body.event_type
+    kind = event_type
     if kind == 'auto':
         kind = 'check_out' if (existing and existing.get('check_in') and not existing.get('check_out')) else 'check_in'
 
@@ -2136,7 +2127,7 @@ async def biometric_push(body: BiometricPushIn):
         except Exception: is_late = False
         payload = {
             'timestamp': iso, 'latitude': 0, 'longitude': 0, 'selfie': '',
-            'distance_m': 0, 'is_late': is_late, 'source': 'biometric', 'device_serial': body.serial,
+            'distance_m': 0, 'is_late': is_late, 'source': 'biometric', 'device_serial': serial,
         }
         if existing and existing.get('check_in'):
             log_doc['result'] = 'skipped'; log_doc['reason'] = 'already_checked_in'
@@ -2156,7 +2147,7 @@ async def biometric_push(body: BiometricPushIn):
         if not existing or not existing.get('check_in'):
             log_doc['result'] = 'rejected'; log_doc['reason'] = 'no_check_in'
             await db.biometric_logs.insert_one(dict(log_doc))
-            raise HTTPException(status_code=400, detail='No check-in yet today')
+            return {'ok': False, 'reason': 'no_check_in', 'user_id': user_id}
         if existing.get('check_out'):
             log_doc['result'] = 'skipped'; log_doc['reason'] = 'already_checked_out'
             await db.biometric_logs.insert_one(dict(log_doc))
@@ -2168,23 +2159,132 @@ async def biometric_push(body: BiometricPushIn):
             hours = 0
         status = 'half_day' if hours < 4 else 'present'
         payload = {'timestamp': iso, 'latitude': 0, 'longitude': 0, 'selfie': '',
-                   'distance_m': 0, 'source': 'biometric', 'device_serial': body.serial}
+                   'distance_m': 0, 'source': 'biometric', 'device_serial': serial}
         await db.attendance.update_one({'id': existing['id']}, {'$set': {'check_out': payload, 'working_hours': hours, 'status': status}})
         att_id = existing['id']
 
     # Update device last_seen
-    await db.biometric_devices.update_one({'serial': body.serial},
+    await db.biometric_devices.update_one({'serial': serial},
                                           {'$set': {'last_seen': iso, 'status': 'online'}})
     # Attendance event feed
     await db.attendance_events.insert_one({
         'id': str(uuid.uuid4()), 'employee_id': emp['id'], 'employee_name': emp['name'],
         'type': kind, 'timestamp': iso, 'is_late': is_late if kind == 'check_in' else False,
-        'created_at': iso, 'source': 'biometric', 'device_serial': body.serial,
+        'created_at': iso, 'source': 'biometric', 'device_serial': serial,
     })
     log_doc['result'] = 'accepted'; log_doc['action'] = kind; log_doc['attendance_id'] = att_id
     log_doc['employee_id'] = emp['id']; log_doc['employee_name'] = emp['name']
     await db.biometric_logs.insert_one(dict(log_doc))
     return {'ok': True, 'action': kind, 'employee': emp['name'], 'attendance_id': att_id}
+
+
+@api.post('/biometric/push')
+async def biometric_push(body: BiometricPushIn):
+    # Called by a bridge script (e.g. biometric_bridge.py) — no bearer JWT;
+    # validated via device serial + secret since it's not an ADMS-capable flow.
+    device = await db.biometric_devices.find_one({'serial': body.serial}, {'_id': 0})
+    if not device or device.get('secret') != body.secret:
+        await db.biometric_logs.insert_one({
+            'id': str(uuid.uuid4()), 'serial': body.serial, 'user_id': body.user_id,
+            'timestamp': body.timestamp or now_utc().isoformat(), 'event_type': body.event_type or 'auto',
+            'verify_mode': body.verify_mode or '', 'created_at': now_utc().isoformat(),
+            'result': 'rejected', 'reason': 'invalid_device_credentials',
+        })
+        raise HTTPException(status_code=401, detail='Invalid device credentials')
+
+    try:
+        ts = datetime.fromisoformat(body.timestamp) if body.timestamp else now_utc()
+    except Exception:
+        ts = now_utc()
+    result = await _ingest_biometric_punch(body.serial, body.user_id, ts, body.event_type or 'auto', body.verify_mode or '')
+    if not result['ok'] and result.get('reason') == 'unknown_employee':
+        raise HTTPException(status_code=404, detail=f'Unknown employee {body.user_id}')
+    if not result['ok'] and result.get('reason') == 'no_check_in':
+        raise HTTPException(status_code=400, detail='No check-in yet today')
+    return result
+
+
+# ---------------- Biometric (real eSSL/ZKTeco ADMS / iClock push protocol) ----------------
+# This is the protocol the device itself speaks natively when you set
+# Comm > Cloud Server Settings > Server Address/Port to point at this backend
+# (Server Mode stays "ADMS" — that field usually can't be changed, and doesn't
+# need to be). These routes are intentionally at the app root (not under /api)
+# because the device hard-codes the /iclock/... paths — they're not configurable.
+# No shared secret is used here (the protocol has no field for one); trust is
+# "the device is on your LAN and its serial is registered" — same as any other
+# local network appliance.
+
+@app.get('/iclock/cdata')
+async def iclock_handshake(SN: str = Query(...)):
+    """Device 'hello' on boot / periodic re-handshake. Tells it how often to
+    push and what tables we want. A plain 200 with this shape is enough for
+    it to start sending ATTLOG data."""
+    await db.biometric_devices.update_one(
+        {'serial': SN}, {'$set': {'last_seen': now_utc().isoformat(), 'status': 'online'}}
+    )
+    body = (
+        "GET OPTION FROM: {sn}\r\n"
+        "Stamp=9999\r\n"
+        "OpStamp=9999\r\n"
+        "ErrorDelay=30\r\n"
+        "Delay=10\r\n"
+        "TransFlag=TransData AttLog\r\n"
+        "TransInterval=1\r\n"
+        "Realtime=1\r\n"
+        "Encrypt=None\r\n"
+    ).format(sn=SN)
+    return PlainTextResponse(body)
+
+
+@app.post('/iclock/cdata')
+async def iclock_upload(request: Request, SN: str = Query(...), table: str = Query('ATTLOG')):
+    """Device pushes punch data here. Body is plain text, one record per line,
+    tab-separated: PIN<TAB>Time<TAB>Status<TAB>Verify<TAB>WorkCode..."""
+    device = await db.biometric_devices.find_one({'serial': SN}, {'_id': 0})
+    raw = (await request.body()).decode('utf-8', errors='ignore')
+    if not device:
+        # Log it anyway so it shows up in Settings > Biometric > Logs — makes it
+        # obvious the device is reachable but just isn't registered yet.
+        await db.biometric_logs.insert_one({
+            'id': str(uuid.uuid4()), 'serial': SN, 'user_id': '', 'timestamp': now_utc().isoformat(),
+            'event_type': 'auto', 'verify_mode': '', 'created_at': now_utc().isoformat(),
+            'result': 'rejected', 'reason': 'unregistered_device',
+        })
+        return PlainTextResponse('OK')  # ack anyway — device will just keep retrying otherwise
+
+    n = 0
+    if table.upper() == 'ATTLOG':
+        for line in raw.splitlines():
+            parts = line.strip().split('\t')
+            if len(parts) < 2:
+                continue
+            pin, time_str = parts[0].strip(), parts[1].strip()
+            if not pin or not time_str:
+                continue
+            try:
+                ts = datetime.strptime(time_str, '%Y-%m-%d %H:%M:%S').replace(
+                    tzinfo=timezone(timedelta(hours=5, minutes=30))
+                )
+            except Exception:
+                continue
+            await _ingest_biometric_punch(SN, pin, ts, 'auto')
+            n += 1
+    return PlainTextResponse(f'OK: {n}')
+
+
+@app.get('/iclock/getrequest')
+async def iclock_getrequest(SN: str = Query(...)):
+    """Device polls this periodically asking 'any commands for me?'. We never
+    queue commands, so always say no."""
+    return PlainTextResponse('OK')
+
+
+@app.post('/iclock/devicecmd')
+async def iclock_devicecmd(request: Request):
+    """Device posts the result of a command we supposedly sent. We don't send
+    any, but must still 200 or the device logs errors."""
+    await request.body()
+    return PlainTextResponse('OK')
 
 
 # ---------------- AI Assistant (Gemini 3 Flash) ----------------
