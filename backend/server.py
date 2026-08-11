@@ -141,6 +141,8 @@ class SetPinIn(BaseModel):
 class EmployeeIn(BaseModel):
     name: str
     employee_code: Optional[str] = None
+    biometric_id: Optional[str] = ''  # device-side user/person ID, e.g. "1" — set this when the
+                                       # biometric device's enrolled IDs don't match employee_code
     department: Optional[str] = ''
     designation: Optional[str] = ''
     shift: Optional[str] = 'General'
@@ -292,6 +294,7 @@ class CalendarCorrectionIn(BaseModel):
 async def seed():
     await db.users.create_index('username', unique=True)
     await db.employees.create_index('employee_code')
+    await db.employees.create_index('biometric_id')
     await db.attendance.create_index([('employee_id', 1), ('date', 1)], unique=True)
     await db.attendance_events.create_index('created_at')
 
@@ -2100,7 +2103,12 @@ async def _ingest_biometric_punch(serial: str, user_id: str, ts: datetime, event
         'verify_mode': verify_mode or '', 'created_at': now_utc().isoformat(),
     }
 
-    emp = await db.employees.find_one({'employee_code': user_id.upper()}, {'_id': 0, 'pin_hash': 0})
+    # Match by biometric_id first (the device's own numeric/short ID, set per-employee
+    # in the app when it doesn't line up with employee_code), then fall back to
+    # employee_code directly (for setups where they were deliberately enrolled to match).
+    emp = await db.employees.find_one({'biometric_id': user_id}, {'_id': 0, 'pin_hash': 0})
+    if not emp:
+        emp = await db.employees.find_one({'employee_code': user_id.upper()}, {'_id': 0, 'pin_hash': 0})
     if not emp:
         log_doc['result'] = 'rejected'; log_doc['reason'] = 'unknown_employee'
         await db.biometric_logs.insert_one(dict(log_doc))

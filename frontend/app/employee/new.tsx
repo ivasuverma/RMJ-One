@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TextInput, ScrollView, Pressable,
   KeyboardAvoidingView, Platform, ActivityIndicator, Alert,
@@ -8,19 +8,20 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { api } from '@/src/api/client';
-import { colors, spacing, radius, fonts } from '@/src/theme';
+import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
+import { useTheme } from '@/src/theme/ThemeContext';
 
 type Shift = { id: string; name: string; start: string; end: string };
 
 type EmployeeForm = {
-  name: string; employee_code: string; department: string; designation: string;
+  name: string; employee_code: string; biometric_id: string; department: string; designation: string;
   shift: string; salary: string; joining_date: string; mobile: string; address: string;
   aadhaar: string; pan: string; bank_account: string; bank_ifsc: string; bank_name: string;
   status: 'active' | 'inactive' | 'on_leave'; notes: string;
 };
 
 const EMPTY: EmployeeForm = {
-  name: '', employee_code: '', department: '', designation: '', shift: 'General', salary: '',
+  name: '', employee_code: '', biometric_id: '', department: '', designation: '', shift: 'General', salary: '',
   joining_date: new Date().toISOString().slice(0, 10), mobile: '', address: '',
   aadhaar: '', pan: '', bank_account: '', bank_ifsc: '', bank_name: '', status: 'active', notes: '',
 };
@@ -29,6 +30,8 @@ const STATUSES: EmployeeForm['status'][] = ['active', 'on_leave', 'inactive'];
 
 export default function EmployeeForm() {
   const router = useRouter();
+  const { colors, scheme } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const params = useLocalSearchParams<{ id?: string; edit?: string }>();
   // Route can be /employee/new or /employee/edit/[id] — see edit route
   const id = params.id;
@@ -52,7 +55,7 @@ export default function EmployeeForm() {
         const res = await api.get<{ employee: any }>(`/employees/${id}`);
         const e = res.employee;
         setForm({
-          name: e.name || '', employee_code: e.employee_code || '', department: e.department || '',
+          name: e.name || '', employee_code: e.employee_code || '', biometric_id: e.biometric_id || '', department: e.department || '',
           designation: e.designation || '', shift: e.shift || 'General',
           salary: String(e.salary ?? ''), joining_date: e.joining_date || '',
           mobile: e.mobile || '', address: e.address || '', aadhaar: e.aadhaar || '',
@@ -134,6 +137,7 @@ export default function EmployeeForm() {
 
           <SectionTitle text="Job" />
           <Field label="Employee Code" value={form.employee_code} onChangeText={(v) => setField('employee_code', v.toUpperCase())} placeholder="Auto if blank" autoCapitalize="characters" testID="field-code" />
+          <Field label="Biometric Device ID" value={form.biometric_id} onChangeText={(v) => setField('biometric_id', v)} placeholder="Only if it differs from the code above, e.g. 1" testID="field-biometric-id" />
 
           <Text style={styles.label}>Shift</Text>
           {shifts.length === 0 ? (
@@ -214,7 +218,7 @@ export default function EmployeeForm() {
 
       {/* Sticky save */}
       <LinearGradient
-        colors={['rgba(13,13,13,0)', 'rgba(13,13,13,0.95)']}
+        colors={scheme === 'light' ? ['rgba(247,241,230,0)', 'rgba(247,241,230,0.95)'] : ['rgba(13,13,13,0)', 'rgba(13,13,13,0.95)']}
         style={[styles.saveBarBg, { pointerEvents: 'none' as const }]}
       />
       <View style={styles.saveBar}>
@@ -232,6 +236,8 @@ export default function EmployeeForm() {
 }
 
 function SectionTitle({ text }: { text: string }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   return <Text style={styles.section}>{text}</Text>;
 }
 
@@ -241,6 +247,8 @@ function Field({
   label: string; value: string; onChangeText: (v: string) => void;
   keyboardType?: any; multiline?: boolean; autoCapitalize?: any; placeholder?: string; error?: string; testID?: string;
 }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <View style={{ marginBottom: spacing.md }}>
       <Text style={styles.label}>{label}</Text>
@@ -261,7 +269,7 @@ function Field({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   centered: { flex: 1, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
 
@@ -291,8 +299,8 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: colors.border,
     color: colors.onSurface, paddingHorizontal: spacing.md, paddingVertical: 12, fontSize: 14,
   },
-  inputErr: { borderColor: colors.error },
-  errText: { color: '#F1A9A9', fontSize: 12, marginTop: 4 },
+  inputErr: { borderColor: colors.onError },
+  errText: { color: colors.onError, fontSize: 12, marginTop: 4 },
   row2: { flexDirection: 'row', gap: spacing.md },
 
   statusRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.md },
