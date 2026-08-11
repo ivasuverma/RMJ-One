@@ -6,7 +6,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
 import { api } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthContext';
-import { colors, spacing, radius, fonts } from '@/src/theme';
+import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
+import { useTheme } from '@/src/theme/ThemeContext';
 
 type Day = {
   date: string; weekday: number; status: string; is_sunday: boolean;
@@ -17,10 +18,21 @@ type Day = {
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const WEEK_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
-const STATUS_COLORS: Record<string, string> = {
-  present: '#B7EFC5', absent: '#F1A9A9', late: '#F1D890', half_day: '#F1D890',
-  leave: '#8AB6D6', holiday: '#C2C2C2', missing_punch: '#F1A9A9', weekly_off: '#9AD1C7',
-};
+// Status dot colors derived from theme semantic tokens so they stay legible
+// against both the light and dark card backgrounds instead of being fixed
+// pastel hex values tuned for one background only.
+function makeStatusColors(colors: ThemeColors): Record<string, string> {
+  return {
+    present: colors.onSuccess,
+    absent: colors.onError,
+    late: colors.onWarning,
+    half_day: colors.onWarning,
+    leave: colors.onInfo,
+    holiday: colors.mutedText,
+    missing_punch: colors.onError,
+    weekly_off: colors.brandSecondary,
+  };
+}
 
 type Shift = { id: string; name: string; start: string; end: string; grace_min: number; late_half_day_after_min?: number | null };
 
@@ -34,6 +46,9 @@ export default function AttendanceCalendarView({ empId, onBack, title = 'Calenda
   empId: string; onBack?: () => void; title?: string;
 }) {
   const { user } = useAuth();
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+  const statusColors = useMemo(() => makeStatusColors(colors), [colors]);
   const canEdit = user?.role === 'owner' || user?.role === 'admin';
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
@@ -100,14 +115,14 @@ export default function AttendanceCalendarView({ empId, onBack, title = 'Calenda
         <ScrollView contentContainerStyle={{ padding: spacing.lg }} showsVerticalScrollIndicator={false}>
           <View style={styles.weekRow}>
             {WEEK_LABELS.map((w, i) => (
-              <Text key={i} style={[styles.weekLabel, i === 6 && { color: '#F1A9A9' }]}>{w}</Text>
+              <Text key={i} style={[styles.weekLabel, i === 6 && { color: colors.onError }]}>{w}</Text>
             ))}
           </View>
 
           <View style={styles.grid}>
             {cells.map((c, idx) => {
               if (!c) return <View key={`e${idx}`} style={styles.cell} />;
-              const color = STATUS_COLORS[c.is_late ? 'late' : c.status] || colors.mutedText;
+              const color = statusColors[c.is_late ? 'late' : c.status] || colors.mutedText;
               return (
                 <Pressable
                   key={c.date}
@@ -132,7 +147,7 @@ export default function AttendanceCalendarView({ empId, onBack, title = 'Calenda
               { k: 'weekly_off', label: 'Paid Off' },
             ].map((l) => (
               <View key={l.k} style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: STATUS_COLORS[l.k] }]} />
+                <View style={[styles.legendDot, { backgroundColor: statusColors[l.k] }]} />
                 <Text style={styles.legendText}>{l.label}</Text>
               </View>
             ))}
@@ -166,6 +181,8 @@ function DayDetail({ day, empId, canEdit, shifts, onClose, onSaved }: {
   day: Day; empId: string; canEdit: boolean; shifts: Shift[];
   onClose: () => void; onSaved: () => void;
 }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [inTime, setInTime] = useState(day.check_in ? new Date(day.check_in).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false }) : '');
   const [outTime, setOutTime] = useState(day.check_out ? new Date(day.check_out).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false }) : '');
   const initialOff = OFF_STATUSES.includes(day.status as any) ? (day.status as typeof OFF_STATUSES[number]) : null;
@@ -339,7 +356,7 @@ function DayDetail({ day, empId, canEdit, shifts, onClose, onSaved }: {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   header: {
     flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg,

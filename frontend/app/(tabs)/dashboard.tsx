@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -16,7 +16,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthContext';
-import { colors, spacing, radius, images, fonts } from '@/src/theme';
+import { spacing, radius, images, fonts, ThemeColors } from '@/src/theme';
+import { useTheme } from '@/src/theme/ThemeContext';
 
 type DashboardData = {
   todays_attendance: {
@@ -37,6 +38,11 @@ const fmtINR = (n: number) => `₹${(n || 0).toLocaleString('en-IN')}`;
 
 export default function DashboardScreen() {
   const { user } = useAuth();
+  const { colors, scheme } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+  const heroGradient = scheme === 'light'
+    ? ['rgba(247,241,230,0.6)', 'rgba(247,241,230,0.92)'] as const
+    : ['rgba(13,13,13,0.65)', 'rgba(13,13,13,0.92)'] as const;
   const router = useRouter();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -107,7 +113,7 @@ export default function DashboardScreen() {
             >
               <Image source={images.goldTexture} style={StyleSheet.absoluteFill} contentFit="cover" />
               <LinearGradient
-                colors={['rgba(13,13,13,0.65)', 'rgba(13,13,13,0.92)']}
+                colors={heroGradient}
                 style={StyleSheet.absoluteFill}
               />
               <View style={styles.heroInner}>
@@ -125,10 +131,10 @@ export default function DashboardScreen() {
 
                 <View style={styles.attGrid}>
                   <AttTile label="Present" value={data.todays_attendance.present} accent={colors.brandPrimary} testID="tile-present" onPress={() => router.push('/(tabs)/attendance')} />
-                  <AttTile label="Absent" value={data.todays_attendance.absent} accent="#F1A9A9" testID="tile-absent" onPress={() => router.push('/(tabs)/attendance')} />
+                  <AttTile label="Absent" value={data.todays_attendance.absent} accent={colors.onError} testID="tile-absent" onPress={() => router.push('/(tabs)/attendance')} />
                   <AttTile label="Late" value={data.todays_attendance.late} accent={colors.brandSecondary} testID="tile-late" onPress={() => router.push('/(tabs)/attendance')} />
-                  <AttTile label="Half Day" value={data.todays_attendance.half_day} accent="#E9C46A" testID="tile-half-day" onPress={() => router.push('/(tabs)/attendance')} />
-                  <AttTile label="Missing Punch" value={data.todays_attendance.missing_punch} accent="#F1A9A9" testID="tile-missing" onPress={() => router.push('/(tabs)/attendance')} />
+                  <AttTile label="Half Day" value={data.todays_attendance.half_day} accent={colors.onWarning} testID="tile-half-day" onPress={() => router.push('/(tabs)/attendance')} />
+                  <AttTile label="Missing Punch" value={data.todays_attendance.missing_punch} accent={colors.onError} testID="tile-missing" onPress={() => router.push('/(tabs)/attendance')} />
                   <AttTile label="On Leave" value={data.todays_attendance.leave} accent={colors.onSurfaceTertiary} testID="tile-leave" onPress={() => router.push('/(tabs)/attendance')} />
                 </View>
               </View>
@@ -174,6 +180,8 @@ export default function DashboardScreen() {
 }
 
 function AttTile({ label, value, accent, testID, onPress }: { label: string; value: number; accent: string; testID?: string; onPress?: () => void }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <Pressable style={({ pressed }) => [styles.attTile, pressed && { opacity: 0.7 }]} testID={testID} onPress={onPress}>
       <Text style={[styles.attValue, { color: accent }]}>{value}</Text>
@@ -183,6 +191,8 @@ function AttTile({ label, value, accent, testID, onPress }: { label: string; val
 }
 
 function SectionHeader({ title, testID }: { title: string; testID?: string }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <View style={styles.sectionHeader} testID={testID}>
       <Text style={styles.sectionTitle}>{title}</Text>
@@ -191,6 +201,8 @@ function SectionHeader({ title, testID }: { title: string; testID?: string }) {
 }
 
 function ApprovalRow({ icon, label, count, testID, onPress }: { icon: any; label: string; count: number; testID?: string; onPress?: () => void }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <Pressable style={({ pressed }) => [styles.appRow, pressed && { opacity: 0.7 }]} testID={testID} onPress={onPress}>
       <View style={styles.appIconWrap}>
@@ -205,9 +217,15 @@ function ApprovalRow({ icon, label, count, testID, onPress }: { icon: any; label
   );
 }
 
-function Divider() { return <View style={styles.divider} />; }
+function Divider() {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+  return <View style={styles.divider} />;
+}
 
 function PayrollTile({ label, value, big, testID, onPress }: { label: string; value: string; big?: boolean; testID?: string; onPress?: () => void }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <Pressable style={({ pressed }) => [styles.payrollTile, big && styles.payrollTileBig, pressed && { opacity: 0.75 }]} testID={testID} onPress={onPress}>
       <Text style={styles.payrollLabel}>{label}</Text>
@@ -216,7 +234,7 @@ function PayrollTile({ label, value, big, testID, onPress }: { label: string; va
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   scroll: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.xxl },
   header: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.lg },
@@ -251,16 +269,16 @@ const styles = StyleSheet.create({
   heroSub: { color: colors.onSurfaceTertiary, fontSize: 12, marginTop: 2 },
   heroChip: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: 'rgba(45,90,64,0.35)', borderColor: colors.success, borderWidth: 1,
+    backgroundColor: colors.success, borderColor: colors.onSuccess, borderWidth: 1,
     borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 5,
   },
-  heroChipDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#8FE0A6' },
-  heroChipText: { color: '#B7EFC5', fontSize: 11, fontWeight: '700' },
+  heroChipDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.onSuccess },
+  heroChipText: { color: colors.onSuccess, fontSize: 11, fontWeight: '700' },
 
   attGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   attTile: {
     flexBasis: '31%', flexGrow: 1,
-    backgroundColor: 'rgba(38,38,38,0.75)', borderRadius: radius.md,
+    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md,
     borderWidth: 1, borderColor: colors.border,
     paddingVertical: spacing.md, paddingHorizontal: spacing.md,
   },

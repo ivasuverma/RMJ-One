@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable, RefreshControl,
   ActivityIndicator, Platform, Alert,
@@ -10,7 +10,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthContext';
-import { colors, spacing, radius, images, fonts } from '@/src/theme';
+import { spacing, radius, images, fonts, ThemeColors } from '@/src/theme';
+import { useTheme } from '@/src/theme/ThemeContext';
 import { PunchCaptureModal, PunchResult } from '@/src/components/PunchCaptureModal';
 
 type Att = {
@@ -32,6 +33,11 @@ const fmtTime = (iso?: string) => {
 
 export default function EmployeeHome() {
   const { user, logout } = useAuth();
+  const { colors, scheme } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+  const heroGradient = scheme === 'light'
+    ? ['rgba(247,241,230,0.4)', 'rgba(247,241,230,0.98)'] as const
+    : ['rgba(13,13,13,0.5)', 'rgba(13,13,13,0.98)'] as const;
   const router = useRouter();
   const [att, setAtt] = useState<Att | null>(null);
   const [store, setStore] = useState<Store>({});
@@ -86,7 +92,7 @@ export default function EmployeeHome() {
         {/* Hero header */}
         <View style={styles.hero}>
           <Image source={images.goldTexture} style={StyleSheet.absoluteFill} contentFit="cover" />
-          <LinearGradient colors={['rgba(13,13,13,0.5)', 'rgba(13,13,13,0.98)']} style={StyleSheet.absoluteFill} />
+          <LinearGradient colors={heroGradient} style={StyleSheet.absoluteFill} />
           <View style={styles.heroInner}>
             <View style={styles.heroTopRow}>
               <View style={styles.avatar}><Text style={styles.avatarText}>{(user?.name || 'E')[0]?.toUpperCase()}</Text></View>
@@ -142,7 +148,7 @@ export default function EmployeeHome() {
                 <PunchSlot label="Check Out" time={fmtTime(att?.check_out?.timestamp)} icon="log-out-outline" done={hasCheckOut} testID="slot-check-out" />
               </View>
 
-              {!!att?.is_late && <View style={styles.lateBadge}><Ionicons name="warning-outline" size={12} color="#F1D890" /><Text style={styles.lateText}>Marked late today</Text></View>}
+              {!!att?.is_late && <View style={styles.lateBadge}><Ionicons name="warning-outline" size={12} color={colors.onWarning} /><Text style={styles.lateText}>Marked late today</Text></View>}
               {!!att?.working_hours && <Text style={styles.hoursText}>{att.working_hours} hours worked today</Text>}
 
               {!hasCheckIn && (
@@ -207,6 +213,8 @@ function ReminderBanner({ icon, color, title, subtitle, actions, testID }: {
   actions: { label: string; onPress: () => void; primary?: boolean; testID?: string }[];
   testID?: string;
 }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <View style={[styles.banner, { borderColor: color }]} testID={testID}>
       <View style={styles.bannerTop}>
@@ -235,6 +243,8 @@ function ReminderBanner({ icon, color, title, subtitle, actions, testID }: {
 }
 
 function PunchSlot({ label, time, icon, done, testID }: { label: string; time: string; icon: any; done: boolean; testID?: string }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <View style={[styles.slot, done && styles.slotDone]} testID={testID}>
       <View style={styles.slotIconWrap}>
@@ -247,6 +257,8 @@ function PunchSlot({ label, time, icon, done, testID }: { label: string; time: s
 }
 
 function ActionCard({ icon, label, onPress, testID }: { icon: any; label: string; onPress: () => void; testID?: string }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <Pressable onPress={onPress} style={styles.actionCard} testID={testID}>
       <View style={styles.actionIcon}><Ionicons name={icon} size={20} color={colors.brandSecondary} /></View>
@@ -255,7 +267,7 @@ function ActionCard({ icon, label, onPress, testID }: { icon: any; label: string
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   hero: { height: 180, position: 'relative' },
   heroInner: { flex: 1, paddingHorizontal: spacing.lg, paddingTop: spacing.md, gap: spacing.md, justifyContent: 'space-between', paddingBottom: spacing.lg },
@@ -272,7 +284,7 @@ const styles = StyleSheet.create({
   },
   heroCode: { color: colors.onSurfaceTertiary, fontSize: 12, marginTop: 2 },
   iconBtn: {
-    width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(38,38,38,0.85)',
+    width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surfaceSecondary,
     alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border,
   },
   dateText: { color: colors.onSurfaceTertiary, fontSize: 12, letterSpacing: 0.6, textTransform: 'uppercase' },
@@ -305,16 +317,16 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: colors.border, padding: spacing.md, alignItems: 'center',
   },
   slotDone: { borderColor: colors.brandPrimary, backgroundColor: colors.brandTertiary },
-  slotIconWrap: { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.05)', alignItems: 'center', justifyContent: 'center', marginBottom: 6 },
+  slotIconWrap: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', marginBottom: 6 },
   slotLabel: { color: colors.mutedText, fontSize: 11 },
   slotTime: { color: colors.mutedText, fontSize: 18, fontWeight: '700', marginTop: 2 },
 
   lateBadge: {
     flexDirection: 'row', gap: 4, alignItems: 'center', alignSelf: 'flex-start',
-    backgroundColor: 'rgba(163,125,30,0.25)', borderColor: colors.warning, borderWidth: 1,
+    backgroundColor: colors.warning, borderColor: colors.onWarning, borderWidth: 1,
     paddingHorizontal: 10, paddingVertical: 4, borderRadius: radius.pill, marginBottom: spacing.sm,
   },
-  lateText: { color: '#F1D890', fontSize: 11, fontWeight: '700' },
+  lateText: { color: colors.onWarning, fontSize: 11, fontWeight: '700' },
   hoursText: { color: colors.onSurfaceTertiary, fontSize: 12, marginBottom: spacing.md },
 
   punchBtn: {

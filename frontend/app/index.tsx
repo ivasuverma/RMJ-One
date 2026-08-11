@@ -1,11 +1,12 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, ScrollView, Pressable } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/src/auth/AuthContext';
-import { colors, spacing, radius, fonts, images } from '@/src/theme';
+import { spacing, radius, fonts, images, ThemeColors } from '@/src/theme';
+import { useTheme } from '@/src/theme/ThemeContext';
 
 type Module = {
   key: string;
@@ -33,6 +34,8 @@ const MODULES: Module[] = [
 
 export default function Index() {
   const { user, loading, logout } = useAuth();
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const router = useRouter();
 
   useEffect(() => {
@@ -69,7 +72,7 @@ export default function Index() {
             <Text style={styles.profileRole}>{user.role.charAt(0).toUpperCase() + user.role.slice(1)}</Text>
           </View>
           <Pressable onPress={onLogout} style={styles.logoutBtn} testID="hub-logout-btn" hitSlop={10}>
-            <Ionicons name="log-out-outline" size={20} color="#F1A9A9" />
+            <Ionicons name="log-out-outline" size={20} color={colors.onError} />
           </Pressable>
         </View>
 
@@ -102,7 +105,7 @@ export default function Index() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   loaderRoot: { flex: 1, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
   root: { flex: 1, backgroundColor: colors.surface },
   scroll: { padding: spacing.lg, paddingBottom: spacing.xxxl },
@@ -126,7 +129,7 @@ const styles = StyleSheet.create({
   profileRole: { color: colors.brandSecondary, fontSize: 12, marginTop: 2 },
   logoutBtn: {
     width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: 'rgba(122,40,40,0.15)', borderColor: colors.error, borderWidth: 1,
+    backgroundColor: colors.error, borderColor: colors.onError, borderWidth: 1,
   },
 
   sectionLabel: {

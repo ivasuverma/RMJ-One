@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, Platform, KeyboardAvoidingView, RefreshControl,
 } from 'react-native';
@@ -7,7 +7,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { api } from '@/src/api/client';
 import { confirmAction } from '@/src/utils/confirm';
-import { colors, spacing, radius, fonts } from '@/src/theme';
+import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
+import { useTheme } from '@/src/theme/ThemeContext';
 
 type Shift = {
   id: string; name: string; start: string; end: string; grace_min: number;
@@ -18,6 +19,8 @@ const EMPTY = { name: '', start: '10:00', end: '19:30', grace: '15', lateHalfDay
 
 export default function ShiftsScreen() {
   const router = useRouter();
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [items, setItems] = useState<Shift[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState(EMPTY.name);
@@ -156,7 +159,7 @@ export default function ShiftsScreen() {
                 <Ionicons name="create-outline" size={16} color={colors.brandSecondary} />
               </Pressable>
               <Pressable onPress={() => remove(s)} style={styles.delBtn} hitSlop={10} disabled={deletingId === s.id} testID={`del-shift-${s.id}`}>
-                {deletingId === s.id ? <ActivityIndicator size="small" color="#F1A9A9" /> : <Ionicons name="trash-outline" size={16} color="#F1A9A9" />}
+                {deletingId === s.id ? <ActivityIndicator size="small" color={colors.onError} /> : <Ionicons name="trash-outline" size={16} color={colors.onError} />}
               </Pressable>
             </View>
           ))}
@@ -166,7 +169,7 @@ export default function ShiftsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   header: {
     flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg,
@@ -208,13 +211,13 @@ const styles = StyleSheet.create({
   cardEditing: { borderColor: colors.brandPrimary },
   cName: { color: colors.onSurface, fontWeight: '700', fontSize: 14 },
   cMeta: { color: colors.onSurfaceTertiary, fontSize: 12, marginTop: 2 },
-  cMetaWarn: { color: colors.warning, fontSize: 11, marginTop: 2, fontWeight: '600' },
+  cMetaWarn: { color: colors.onWarning, fontSize: 11, marginTop: 2, fontWeight: '600' },
   editBtn: {
     width: 34, height: 34, borderRadius: 17, backgroundColor: colors.brandTertiary,
     borderColor: colors.brand, borderWidth: 1, alignItems: 'center', justifyContent: 'center',
   },
   delBtn: {
-    width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(122,40,40,0.15)',
-    borderColor: colors.error, borderWidth: 1, alignItems: 'center', justifyContent: 'center',
+    width: 34, height: 34, borderRadius: 17, backgroundColor: colors.error,
+    borderColor: colors.onError, borderWidth: 1, alignItems: 'center', justifyContent: 'center',
   },
 });

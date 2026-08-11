@@ -9,7 +9,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useIconFonts } from '@/src/hooks/use-icon-fonts';
 import { useTextFonts } from '@/src/hooks/use-text-fonts';
 import { AuthProvider } from '@/src/auth/AuthContext';
-import { colors } from '@/src/theme';
+import { ThemeProvider, useTheme } from '@/src/theme/ThemeContext';
 
 // Disable logbox errors etc so that users can see the app and agent works as expected.
 LogBox.ignoreAllLogs(true);
@@ -37,21 +37,30 @@ export default function RootLayout() {
   if (!loaded && !error) return null;
 
   return (
-    <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.surface }}>
+    <ThemeProvider>
       <SafeAreaProvider>
         <AuthProvider>
-          <StatusBar style="light" />
-          <View style={{ flex: 1, backgroundColor: colors.surface }}>
-            <Stack
-              screenOptions={{
-                headerShown: false,
-                contentStyle: { backgroundColor: colors.surface },
-                animation: 'fade',
-              }}
-            />
-          </View>
+          <AppShell />
         </AuthProvider>
       </SafeAreaProvider>
+    </ThemeProvider>
+  );
+}
+
+function AppShell() {
+  const { colors, scheme } = useTheme();
+  return (
+    <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.surface }}>
+      <StatusBar style={scheme === 'light' ? 'dark' : 'light'} />
+      <View style={{ flex: 1, backgroundColor: colors.surface }}>
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            contentStyle: { backgroundColor: colors.surface },
+            animation: 'fade',
+          }}
+        />
+      </View>
     </GestureHandlerRootView>
   );
 }

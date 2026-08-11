@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TextInput, Pressable, KeyboardAvoidingView,
   Platform, ActivityIndicator, ScrollView, Keyboard,
@@ -8,11 +8,19 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/src/auth/AuthContext';
-import { colors, spacing, radius, images, fonts } from '@/src/theme';
+import { spacing, radius, images, fonts, ThemeColors } from '@/src/theme';
+import { useTheme } from '@/src/theme/ThemeContext';
 
 type Mode = 'owner' | 'employee';
 
 export default function LoginScreen() {
+  const { colors, scheme } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+  // Dark, translucent scrim over the hero photo in dark mode; a light ivory
+  // scrim in light mode so the card still reads as "Ivory boutique".
+  const gradientColors = scheme === 'light'
+    ? ['rgba(247,241,230,0.15)', 'rgba(247,241,230,0.75)', 'rgba(247,241,230,0.98)'] as const
+    : ['rgba(13,13,13,0.15)', 'rgba(13,13,13,0.7)', 'rgba(13,13,13,0.98)'] as const;
   const [mode, setMode] = useState<Mode>('owner');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -62,7 +70,7 @@ export default function LoginScreen() {
     <View style={styles.root} testID="login-screen">
       <Image source={images.loginHero} style={StyleSheet.absoluteFill} contentFit="cover" transition={400} />
       <LinearGradient
-        colors={['rgba(13,13,13,0.15)', 'rgba(13,13,13,0.7)', 'rgba(13,13,13,0.98)']}
+        colors={gradientColors}
         locations={[0, 0.45, 0.9]}
         style={StyleSheet.absoluteFill}
       />
@@ -195,7 +203,7 @@ export default function LoginScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   scroll: { flexGrow: 1, justifyContent: 'space-between', padding: spacing.xl, paddingTop: 60, paddingBottom: 40 },
   brand: { alignItems: 'flex-start' },
@@ -206,7 +214,7 @@ const styles = StyleSheet.create({
   brandTag: { color: colors.brandSecondary, marginTop: spacing.xs, fontSize: 14, letterSpacing: 0.3 },
 
   formCard: {
-    backgroundColor: 'rgba(28,28,28,0.92)', borderColor: colors.border, borderWidth: 1,
+    backgroundColor: colors.surfaceSecondary, borderColor: colors.border, borderWidth: 1,
     borderRadius: radius.lg, padding: spacing.xl, marginTop: spacing.xxl,
   },
   modeRow: {
@@ -236,7 +244,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceTertiary, borderRadius: radius.md,
     borderWidth: 1, borderColor: colors.border,
   },
-  errorText: { color: '#F1A9A9', marginTop: spacing.md, fontSize: 13 },
+  errorText: { color: colors.onError, marginTop: spacing.md, fontSize: 13 },
   cta: {
     marginTop: spacing.lg, backgroundColor: colors.brandPrimary, borderRadius: radius.md,
     paddingVertical: 16, alignItems: 'center', justifyContent: 'center',

@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, Platform, KeyboardAvoidingView, RefreshControl,
 } from 'react-native';
@@ -7,7 +7,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { api } from '@/src/api/client';
 import { confirmAction } from '@/src/utils/confirm';
-import { colors, spacing, radius, fonts } from '@/src/theme';
+import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
+import { useTheme } from '@/src/theme/ThemeContext';
 
 type H = { id: string; date: string; name: string; type: 'public' | 'festival' | 'store_closed' };
 
@@ -20,6 +21,8 @@ const fmtDate = (s: string) => {
 
 export default function HolidaysScreen() {
   const router = useRouter();
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [items, setItems] = useState<H[]>([]);
   const [date, setDate] = useState('');
   const [name, setName] = useState('');
@@ -98,7 +101,7 @@ export default function HolidaysScreen() {
                 <Text style={styles.cMeta}>{fmtDate(h.date)} · {h.type.replace('_', ' ').toUpperCase()}</Text>
               </View>
               <Pressable onPress={() => remove(h)} style={styles.delBtn} hitSlop={10} testID={`del-hol-${h.id}`}>
-                <Ionicons name="trash-outline" size={16} color="#F1A9A9" />
+                <Ionicons name="trash-outline" size={16} color={colors.onError} />
               </Pressable>
             </View>
           ))}
@@ -108,7 +111,7 @@ export default function HolidaysScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   header: {
     flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg,
@@ -154,7 +157,7 @@ const styles = StyleSheet.create({
   cName: { color: colors.onSurface, fontWeight: '700', fontSize: 14 },
   cMeta: { color: colors.onSurfaceTertiary, fontSize: 12, marginTop: 2 },
   delBtn: {
-    width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(122,40,40,0.15)',
-    borderColor: colors.error, borderWidth: 1, alignItems: 'center', justifyContent: 'center',
+    width: 34, height: 34, borderRadius: 17, backgroundColor: colors.error,
+    borderColor: colors.onError, borderWidth: 1, alignItems: 'center', justifyContent: 'center',
   },
 });

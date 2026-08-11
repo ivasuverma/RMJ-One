@@ -1,32 +1,10 @@
-// RMJ One design tokens (Glass / Luxe DARK)
-export const colors = {
-  surface: '#0D0D0D',
-  onSurface: '#F7F7F7',
-  surfaceSecondary: '#1C1C1C',
-  onSurfaceSecondary: '#E0E0E0',
-  surfaceTertiary: '#262626',
-  onSurfaceTertiary: '#C2C2C2',
-  surfaceInverse: '#F2F2F2',
-  onSurfaceInverse: '#0D0D0D',
-  brand: '#C5A059',
-  brandPrimary: '#D4AF37',
-  onBrandPrimary: '#0D0D0D',
-  brandSecondary: '#E5D3B3',
-  brandTertiary: '#4A3B18',
-  onBrandTertiary: '#E5D3B3',
-  success: '#2D5A40',
-  onSuccess: '#E0F2E9',
-  warning: '#A37D1E',
-  onWarning: '#FCF4E3',
-  error: '#7A2828',
-  onError: '#FCE8E8',
-  info: '#2B4A5F',
-  onInfo: '#E6F0F7',
-  border: '#262626',
-  borderStrong: '#3D3D3D',
-  divider: '#1F1F1F',
-  mutedText: '#8A8A8A',
-};
+// RMJ One design tokens.
+// `colors` used to be a single static (dark) palette exported from here.
+// It's now resolved at runtime via useTheme() (src/theme/ThemeContext.tsx) so
+// the app can switch between the "Ivory boutique" light palette and the
+// "Emerald vault" dark palette (src/theme/palettes.ts) — following the
+// system's light/dark setting, with an optional manual override in Settings.
+export type { ThemeColors } from './theme/palettes';
 
 export const spacing = {
   xs: 4,
