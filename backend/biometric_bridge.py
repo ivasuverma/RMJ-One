@@ -68,14 +68,15 @@ def save_state(state: dict):
         json.dump(state, f, indent=2)
 
 
-def connect(ip: str, port: int, password: int, timeout: int = 10):
-    zk = ZK(ip, port=port, timeout=timeout, password=password, force_udp=False, ommit_ping=False)
+def connect(ip: str, port: int, password: int, timeout: int = 10, force_udp: bool = False, ommit_ping: bool = False):
+    zk = ZK(ip, port=port, timeout=timeout, password=password, force_udp=force_udp, ommit_ping=ommit_ping)
     return zk.connect()
 
 
 def test_connection(args):
-    print(f"Connecting to {args.ip}:{args.port} ...")
-    conn = connect(args.ip, args.port, args.password)
+    proto = 'UDP' if args.udp else 'TCP'
+    print(f"Connecting to {args.ip}:{args.port} ({proto}, password={args.password}) ...")
+    conn = connect(args.ip, args.port, args.password, force_udp=args.udp, ommit_ping=args.ommit_ping)
     try:
         print("Connected.\n")
         try:
@@ -131,7 +132,7 @@ def push_punch(base_url: str, serial: str, secret: str, user_id: str, timestamp:
 
 
 def sync_once(args, state: dict) -> int:
-    conn = connect(args.ip, args.port, args.password)
+    conn = connect(args.ip, args.port, args.password, force_udp=args.udp, ommit_ping=args.ommit_ping)
     sent = 0
     try:
         att = conn.get_attendance() or []
@@ -170,6 +171,8 @@ def main():
     p.add_argument('--ip', required=True, help='Device IP address, e.g. 192.168.1.50')
     p.add_argument('--port', type=int, default=4370)
     p.add_argument('--password', type=int, default=0, help='Device comm password (default 0)')
+    p.add_argument('--udp', action='store_true', help='Use UDP instead of TCP (try this if TCP gets "Can\'t connect")')
+    p.add_argument('--ommit-ping', dest='ommit_ping', action='store_true', help='Skip the initial ping check (try this if the device blocks ICMP)')
     p.add_argument('--test', action='store_true', help='Connect, print device info + users, then exit (no push)')
     p.add_argument('--serial', help='Device serial as registered in RMJ One (Settings > Biometric Devices)')
     p.add_argument('--secret', help='Shared secret as registered in RMJ One')
