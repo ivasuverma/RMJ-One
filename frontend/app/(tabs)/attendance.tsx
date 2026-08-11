@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, Platform, ActivityIndicator,
 } from 'react-native';
@@ -6,8 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
-import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
-import { useTheme } from '@/src/theme/ThemeContext';
+import { colors, spacing, radius, fonts } from '@/src/theme';
 
 type Row = {
   employee_id: string; employee_code: string; name: string;
@@ -30,8 +29,6 @@ const fmtTime = (iso?: string | null) => {
 
 export default function OwnerAttendance() {
   const router = useRouter();
-  const { colors } = useTheme();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [tab, setTab] = useState<typeof TABS[number]>('Today');
   const [rows, setRows] = useState<Row[]>([]);
   const [events, setEvents] = useState<Ev[]>([]);
@@ -150,13 +147,11 @@ export default function OwnerAttendance() {
 const initials = (n: string) => n.trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() || '').join('');
 
 function StatusPill({ row }: { row: Row }) {
-  const { colors } = useTheme();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
-  let label = 'Absent', bg = colors.error, bd = colors.onError, fg = colors.onError;
-  if (row.employee_status === 'on_leave') { label = 'Leave'; bg = colors.warning; bd = colors.onWarning; fg = colors.onWarning; }
-  else if (row.status === 'present') { label = row.is_late ? 'Late' : 'Present'; bg = colors.success; bd = colors.onSuccess; fg = colors.onSuccess; if (row.is_late) { bg = colors.warning; bd = colors.onWarning; fg = colors.onWarning; } }
-  else if (row.status === 'half_day') { label = 'Half Day'; bg = colors.warning; bd = colors.onWarning; fg = colors.onWarning; }
-  if (row.missing_punch) { label = 'Missing'; bg = colors.error; bd = colors.onError; fg = colors.onError; }
+  let label = 'Absent', bg = 'rgba(122,40,40,0.25)', bd = colors.error, fg = '#F1A9A9';
+  if (row.employee_status === 'on_leave') { label = 'Leave'; bg = 'rgba(163,125,30,0.25)'; bd = colors.warning; fg = '#F1D890'; }
+  else if (row.status === 'present') { label = row.is_late ? 'Late' : 'Present'; bg = 'rgba(45,90,64,0.35)'; bd = colors.success; fg = '#B7EFC5'; if (row.is_late) { bg = 'rgba(163,125,30,0.25)'; bd = colors.warning; fg = '#F1D890'; } }
+  else if (row.status === 'half_day') { label = 'Half Day'; bg = 'rgba(163,125,30,0.25)'; bd = colors.warning; fg = '#F1D890'; }
+  if (row.missing_punch) { label = 'Missing'; bg = 'rgba(122,40,40,0.25)'; bd = colors.error; fg = '#F1A9A9'; }
   return (
     <View style={[styles.pill, { backgroundColor: bg, borderColor: bd }]}>
       <Text style={[styles.pillText, { color: fg }]}>{label}</Text>
@@ -165,8 +160,6 @@ function StatusPill({ row }: { row: Row }) {
 }
 
 function EmptyBox({ icon, title, subtitle }: { icon: any; title: string; subtitle: string }) {
-  const { colors } = useTheme();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <View style={styles.emptyBox}>
       <Ionicons name={icon} size={44} color={colors.mutedText} />
@@ -176,7 +169,7 @@ function EmptyBox({ icon, title, subtitle }: { icon: any; title: string; subtitl
   );
 }
 
-const makeStyles = (colors: ThemeColors) => StyleSheet.create({
+const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   header: {
     flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg,
@@ -233,7 +226,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   dot: { width: 8, height: 8, borderRadius: 4 },
   eventText: { color: colors.onSurface, fontSize: 13 },
   eventMeta: { color: colors.brandSecondary, fontSize: 11, marginTop: 2 },
-  lateMeta: { color: colors.onWarning, fontSize: 11, marginTop: 2 },
+  lateMeta: { color: '#F1D890', fontSize: 11, marginTop: 2 },
   eventTime: { color: colors.mutedText, fontSize: 11 },
 
   emptyBox: { alignItems: 'center', paddingVertical: 60, gap: spacing.sm },

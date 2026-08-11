@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, Platform, KeyboardAvoidingView, RefreshControl,
 } from 'react-native';
@@ -7,8 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { api } from '@/src/api/client';
 import { confirmAction } from '@/src/utils/confirm';
-import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
-import { useTheme } from '@/src/theme/ThemeContext';
+import { colors, spacing, radius, fonts } from '@/src/theme';
 
 type Device = { id: string; serial: string; label: string; last_seen: string | null; status: string };
 type Log = { id: string; serial: string; user_id: string; timestamp: string; event_type: string; result: string; reason?: string; employee_name?: string; action?: string };
@@ -21,8 +20,6 @@ const fmtWhen = (iso?: string | null) => {
 
 export default function BiometricScreen() {
   const router = useRouter();
-  const { colors } = useTheme();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [devices, setDevices] = useState<Device[]>([]);
   const [logs, setLogs] = useState<Log[]>([]);
   const [serial, setSerial] = useState('');
@@ -122,7 +119,7 @@ export default function BiometricScreen() {
                     <Text style={styles.cMeta}>Last seen: {fmtWhen(d.last_seen)}</Text>
                   </View>
                   <Pressable onPress={() => remove(d)} style={styles.delBtn} hitSlop={10} testID={`del-device-${d.id}`}>
-                    <Ionicons name="trash-outline" size={16} color={colors.onError} />
+                    <Ionicons name="trash-outline" size={16} color="#F1A9A9" />
                   </Pressable>
                 </View>
               ))}
@@ -132,7 +129,7 @@ export default function BiometricScreen() {
               <View style={styles.empty}><Ionicons name="pulse-outline" size={40} color={colors.mutedText} /><Text style={styles.emptyText}>No sync logs yet</Text></View>
             ) : logs.map((l) => (
               <View key={l.id} style={styles.logRow} testID={`bio-log-${l.id}`}>
-                <View style={[styles.logDot, { backgroundColor: l.result === 'accepted' ? colors.onSuccess : l.result === 'skipped' ? colors.onWarning : colors.onError }]} />
+                <View style={[styles.logDot, { backgroundColor: l.result === 'accepted' ? '#B7EFC5' : l.result === 'skipped' ? '#F1D890' : '#F1A9A9' }]} />
                 <View style={{ flex: 1 }}>
                   <Text style={styles.logText}>
                     <Text style={{ color: colors.onSurface, fontWeight: '700' }}>{l.employee_name || l.user_id}</Text>
@@ -150,7 +147,7 @@ export default function BiometricScreen() {
   );
 }
 
-const makeStyles = (colors: ThemeColors) => StyleSheet.create({
+const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   header: {
     flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg,
@@ -201,8 +198,8 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   cName: { color: colors.onSurface, fontWeight: '700', fontSize: 14 },
   cMeta: { color: colors.onSurfaceTertiary, fontSize: 11, marginTop: 2 },
   delBtn: {
-    width: 34, height: 34, borderRadius: 17, backgroundColor: colors.error,
-    borderColor: colors.onError, borderWidth: 1, alignItems: 'center', justifyContent: 'center',
+    width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(122,40,40,0.15)',
+    borderColor: colors.error, borderWidth: 1, alignItems: 'center', justifyContent: 'center',
   },
   logRow: {
     flexDirection: 'row', gap: spacing.md, alignItems: 'center',

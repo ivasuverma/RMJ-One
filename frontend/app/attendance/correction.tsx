@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput, Pressable, Alert,
   ActivityIndicator, Platform, KeyboardAvoidingView,
@@ -7,8 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
-import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
-import { useTheme } from '@/src/theme/ThemeContext';
+import { colors, spacing, radius, fonts } from '@/src/theme';
 
 const OPTIONS = [
   { key: 'forgot_check_in', label: 'Forgot Check-In', icon: 'log-in-outline' },
@@ -19,8 +18,6 @@ const OPTIONS = [
 
 export default function CorrectionForm() {
   const router = useRouter();
-  const { colors } = useTheme();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [type, setType] = useState<typeof OPTIONS[number]['key']>('forgot_check_in');
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
@@ -91,7 +88,7 @@ export default function CorrectionForm() {
   );
 }
 
-const makeStyles = (colors: ThemeColors) => StyleSheet.create({
+const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   header: {
     flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg,

@@ -1,12 +1,11 @@
 import { View, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@/src/auth/AuthContext';
-import { useTheme } from '@/src/theme/ThemeContext';
+import { colors } from '@/src/theme';
 import AttendanceCalendarView from '@/src/components/AttendanceCalendarView';
 
 export default function EmployeeCalendarTab() {
   const { user } = useAuth();
-  const { colors } = useTheme();
 
   if (!user?.id) {
     return (

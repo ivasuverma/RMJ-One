@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Platform, Alert, Linking, TextInput,
 } from 'react-native';
@@ -7,8 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { api } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthContext';
-import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
-import { useTheme } from '@/src/theme/ThemeContext';
+import { colors, spacing, radius, fonts } from '@/src/theme';
 
 const fmtINR = (n: number) => `₹${(n || 0).toLocaleString('en-IN')}`;
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -17,8 +16,6 @@ export default function PayrollDetail() {
   const { emp, year, month } = useLocalSearchParams<{ emp: string; year: string; month: string }>();
   const y = parseInt(year || '0', 10), m = parseInt(month || '0', 10);
   const router = useRouter();
-  const { colors } = useTheme();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
   const { user } = useAuth();
   const canWrite = user?.role === 'owner' || user?.role === 'accountant';
   const [row, setRow] = useState<any>(null);
@@ -179,9 +176,6 @@ export default function PayrollDetail() {
 }
 
 function OverridesEditor({ row, onSaved }: { row: any; onSaved: () => void }) {
-  const { colors } = useTheme();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
-  const stylesOv = useMemo(() => makeStylesOv(colors), [colors]);
   const [bonus, setBonus] = useState(String(row.bonus || ''));
   const [fine, setFine] = useState(String(row.fine || ''));
   const [ded, setDed] = useState(String(row.manual_deduction || ''));
@@ -242,8 +236,6 @@ function OverridesEditor({ row, onSaved }: { row: any; onSaved: () => void }) {
 }
 
 function NumField({ label, v, onC, testID }: { label: string; v: string; onC: (s: string) => void; testID?: string }) {
-  const { colors } = useTheme();
-  const stylesOv = useMemo(() => makeStylesOv(colors), [colors]);
   return (
     <View style={{ flex: 1 }}>
       <Text style={stylesOv.numLabel}>{label}</Text>
@@ -252,7 +244,7 @@ function NumField({ label, v, onC, testID }: { label: string; v: string; onC: (s
   );
 }
 
-const makeStylesOv = (colors: ThemeColors) => StyleSheet.create({
+const stylesOv = StyleSheet.create({
   numLabel: { color: colors.mutedText, fontSize: 11, marginBottom: 4 },
   numInput: {
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1,
@@ -275,8 +267,6 @@ const makeStylesOv = (colors: ThemeColors) => StyleSheet.create({
 });
 
 function Header({ title, onBack }: { title: string; onBack: () => void }) {
-  const { colors } = useTheme();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <View style={styles.header}>
       <Pressable onPress={onBack} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
@@ -288,15 +278,9 @@ function Header({ title, onBack }: { title: string; onBack: () => void }) {
   );
 }
 
-function SectionTitle({ text }: { text: string }) {
-  const { colors } = useTheme();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
-  return <Text style={styles.section}>{text}</Text>;
-}
+function SectionTitle({ text }: { text: string }) { return <Text style={styles.section}>{text}</Text>; }
 function Line({ label, value, pos, neg, accent }: { label: string; value: string; pos?: boolean; neg?: boolean; accent?: boolean }) {
-  const { colors } = useTheme();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
-  const c = pos ? colors.onSuccess : neg ? colors.onError : accent ? colors.brandPrimary : colors.onSurface;
+  const c = pos ? '#B7EFC5' : neg ? '#F1A9A9' : accent ? colors.brandPrimary : colors.onSurface;
   return (
     <View style={styles.line}>
       <Text style={styles.lineLabel}>{label}</Text>
@@ -307,7 +291,7 @@ function Line({ label, value, pos, neg, accent }: { label: string; value: string
 
 const initials = (n: string) => n.trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() || '').join('');
 
-const makeStyles = (colors: ThemeColors) => StyleSheet.create({
+const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   centered: { flex: 1, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
   header: {

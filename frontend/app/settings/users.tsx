@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, Platform, KeyboardAvoidingView, RefreshControl,
 } from 'react-native';
@@ -7,15 +7,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { api } from '@/src/api/client';
 import { confirmAction } from '@/src/utils/confirm';
-import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
-import { useTheme } from '@/src/theme/ThemeContext';
+import { colors, spacing, radius, fonts } from '@/src/theme';
 
 type U = { id: string; username: string; name: string; role: 'owner' | 'admin' | 'accountant' };
 
 export default function UsersScreen() {
   const router = useRouter();
-  const { colors } = useTheme();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [items, setItems] = useState<U[]>([]);
   const [name, setName] = useState('');
   const [username, setUsername] = useState('');
@@ -150,7 +147,7 @@ export default function UsersScreen() {
                     <Ionicons name="create-outline" size={16} color={colors.brandSecondary} />
                   </Pressable>
                   <Pressable onPress={() => remove(u)} style={styles.delBtn} hitSlop={10} testID={`del-user-${u.id}`}>
-                    <Ionicons name="trash-outline" size={16} color={colors.onError} />
+                    <Ionicons name="trash-outline" size={16} color="#F1A9A9" />
                   </Pressable>
                 </>
               )}
@@ -162,7 +159,7 @@ export default function UsersScreen() {
   );
 }
 
-const makeStyles = (colors: ThemeColors) => StyleSheet.create({
+const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   header: {
     flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg,
@@ -216,7 +213,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   userName: { color: colors.onSurface, fontSize: 14, fontWeight: '600' },
   userMeta: { color: colors.onSurfaceTertiary, fontSize: 11, marginTop: 2 },
   delBtn: {
-    width: 34, height: 34, borderRadius: 17, backgroundColor: colors.error,
-    borderColor: colors.onError, borderWidth: 1, alignItems: 'center', justifyContent: 'center',
+    width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(122,40,40,0.15)',
+    borderColor: colors.error, borderWidth: 1, alignItems: 'center', justifyContent: 'center',
   },
 });

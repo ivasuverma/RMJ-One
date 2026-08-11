@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Platform, KeyboardAvoidingView, Alert,
 } from 'react-native';
@@ -6,8 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { api } from '@/src/api/client';
-import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
-import { useTheme } from '@/src/theme/ThemeContext';
+import { colors, spacing, radius, fonts } from '@/src/theme';
 
 type Msg = { id: string; role: 'user' | 'assistant'; text: string };
 
@@ -20,8 +19,6 @@ const SUGGESTIONS = [
 
 export default function AssistantScreen() {
   const router = useRouter();
-  const { colors } = useTheme();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [question, setQuestion] = useState('');
   const [messages, setMessages] = useState<Msg[]>([]);
   const [thinking, setThinking] = useState(false);
@@ -102,7 +99,7 @@ export default function AssistantScreen() {
               {m.role === 'assistant' && (
                 <View style={styles.aiBadge}><Ionicons name="sparkles" size={12} color={colors.onBrandPrimary} /></View>
               )}
-              <Text style={[styles.msgText, m.role === 'user' && { color: colors.onBrandPrimary }]}>{m.text}</Text>
+              <Text style={styles.msgText}>{m.text}</Text>
             </View>
           ))}
 
@@ -141,7 +138,7 @@ export default function AssistantScreen() {
   );
 }
 
-const makeStyles = (colors: ThemeColors) => StyleSheet.create({
+const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   header: {
     flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg,

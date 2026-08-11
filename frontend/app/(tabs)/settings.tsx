@@ -1,14 +1,11 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, Pressable, Platform, ScrollView, ActivityIndicator, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useAuth } from '@/src/auth/AuthContext';
-import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
-import { useTheme, ThemePreference } from '@/src/theme/ThemeContext';
+import { colors, spacing, radius, fonts } from '@/src/theme';
 import { isPushSupported, isSubscribed, subscribeToPush, unsubscribeFromPush } from '@/src/utils/push';
-
-const THEME_LABEL: Record<ThemePreference, string> = { system: 'System', light: 'Light', dark: 'Dark' };
 
 const ROLE_LABEL: Record<string, string> = {
   owner: 'Owner', admin: 'Admin', accountant: 'Accountant', employee: 'Employee',
@@ -16,12 +13,9 @@ const ROLE_LABEL: Record<string, string> = {
 
 export default function SettingsScreen() {
   const { user, logout } = useAuth();
-  const { colors, preference, setPreference } = useTheme();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
   const router = useRouter();
   const [pushOn, setPushOn] = useState(false);
   const [pushBusy, setPushBusy] = useState(false);
-  const [themePickerOpen, setThemePickerOpen] = useState(false);
   const isOwner = user?.role === 'owner';
   const isAdmin = user?.role === 'admin';
   const isAccountant = user?.role === 'accountant';
@@ -142,29 +136,14 @@ export default function SettingsScreen() {
               </View>
               <Text style={styles.rowLabel}>Notifications</Text>
               {pushBusy ? <ActivityIndicator size="small" color={colors.brandSecondary} /> : (
-                <Text style={[styles.rowTrail, pushOn && { color: colors.onSuccess }]}>{pushOn ? 'On' : 'Off'}</Text>
+                <Text style={[styles.rowTrail, pushOn && { color: colors.success }]}>{pushOn ? 'On' : 'Off'}</Text>
               )}
             </View>
           </Pressable>
           <Divider />
           <Row icon="language-outline" label="Language" trailing="English" />
           <Divider />
-          <Pressable testID="settings-appearance-btn" onPress={() => setThemePickerOpen((v) => !v)}>
-            <Row icon="moon-outline" label="Appearance" trailing={THEME_LABEL[preference]} />
-          </Pressable>
-          {themePickerOpen && (
-            <View style={styles.themeRow} testID="settings-appearance-options">
-              {(['system', 'light', 'dark'] as const).map((opt) => (
-                <Pressable
-                  key={opt} testID={`appearance-${opt}`}
-                  onPress={() => { setPreference(opt); setThemePickerOpen(false); }}
-                  style={[styles.themeOpt, preference === opt && styles.themeOptActive]}
-                >
-                  <Text style={[styles.themeOptText, preference === opt && styles.themeOptTextActive]}>{THEME_LABEL[opt]}</Text>
-                </Pressable>
-              ))}
-            </View>
-          )}
+          <Row icon="moon-outline" label="Theme" trailing="Dark" />
         </View>
 
         <SectionLabel text="About" />
@@ -175,7 +154,7 @@ export default function SettingsScreen() {
         </View>
 
         <Pressable testID="logout-btn" style={styles.logout} onPress={onLogout}>
-          <Ionicons name="log-out-outline" size={20} color={colors.onError} />
+          <Ionicons name="log-out-outline" size={20} color="#F1A9A9" />
           <Text style={styles.logoutText}>Sign out</Text>
         </Pressable>
 
@@ -186,14 +165,10 @@ export default function SettingsScreen() {
 }
 
 function SectionLabel({ text }: { text: string }) {
-  const { colors } = useTheme();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
   return <Text style={styles.sectionLabel}>{text}</Text>;
 }
 
 function Row({ icon, label, trailing }: { icon: any; label: string; trailing?: string }) {
-  const { colors } = useTheme();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <View style={styles.row}>
       <View style={styles.rowIcon}>
@@ -205,13 +180,9 @@ function Row({ icon, label, trailing }: { icon: any; label: string; trailing?: s
   );
 }
 
-function Divider() {
-  const { colors } = useTheme();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
-  return <View style={styles.divider} />;
-}
+function Divider() { return <View style={styles.divider} />; }
 
-const makeStyles = (colors: ThemeColors) => StyleSheet.create({
+const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   scroll: { padding: spacing.lg, paddingBottom: 120 },
   title: {
@@ -263,18 +234,6 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     borderRadius: radius.md, borderWidth: 1, borderColor: colors.error,
     paddingVertical: 14,
   },
-  logoutText: { color: colors.onError, fontWeight: '700', fontSize: 15 },
+  logoutText: { color: '#F1A9A9', fontWeight: '700', fontSize: 15 },
   footer: { color: colors.mutedText, fontSize: 11, textAlign: 'center', marginTop: spacing.xl },
-
-  themeRow: {
-    flexDirection: 'row', gap: spacing.sm, paddingHorizontal: spacing.lg, paddingBottom: spacing.md,
-    backgroundColor: colors.surfaceTertiary,
-  },
-  themeOpt: {
-    flex: 1, paddingVertical: 10, borderRadius: radius.md, alignItems: 'center',
-    backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border,
-  },
-  themeOptActive: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
-  themeOptText: { color: colors.onSurfaceTertiary, fontSize: 12, fontWeight: '700' },
-  themeOptTextActive: { color: colors.onBrandPrimary },
 });

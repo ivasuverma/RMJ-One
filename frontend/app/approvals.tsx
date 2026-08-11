@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, Alert, Platform, ActivityIndicator,
 } from 'react-native';
@@ -6,8 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
-import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
-import { useTheme } from '@/src/theme/ThemeContext';
+import { colors, spacing, radius, fonts } from '@/src/theme';
 
 type Correction = {
   id: string; employee_name: string; employee_code: string; date: string;
@@ -31,8 +30,6 @@ const fmtDate = (s?: string) => s ? new Date(s).toLocaleDateString('en-IN', { da
 
 export default function Approvals() {
   const router = useRouter();
-  const { colors } = useTheme();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
   const params = useLocalSearchParams<{ tab?: string }>();
   const initialTab = (TABS as readonly string[]).includes(params.tab || '') ? (params.tab as typeof TABS[number]) : 'Corrections';
   const [tab, setTab] = useState<typeof TABS[number]>(initialTab);
@@ -154,13 +151,11 @@ export default function Approvals() {
 }
 
 function DecideRow({ onApprove, onReject, testIDPrefix }: { onApprove: () => void; onReject: () => void; testIDPrefix: string }) {
-  const { colors } = useTheme();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <View style={styles.actions}>
       <Pressable style={[styles.actionBtn, styles.rejectBtn]} onPress={onReject} testID={`${testIDPrefix}-reject`}>
-        <Ionicons name="close" size={16} color={colors.onError} />
-        <Text style={[styles.actionText, { color: colors.onError }]}>Reject</Text>
+        <Ionicons name="close" size={16} color="#F1A9A9" />
+        <Text style={[styles.actionText, { color: '#F1A9A9' }]}>Reject</Text>
       </Pressable>
       <Pressable style={[styles.actionBtn, styles.approveBtn]} onPress={onApprove} testID={`${testIDPrefix}-approve`}>
         <Ionicons name="checkmark" size={16} color={colors.onBrandPrimary} />
@@ -171,12 +166,10 @@ function DecideRow({ onApprove, onReject, testIDPrefix }: { onApprove: () => voi
 }
 
 function StatusChip({ s }: { s: 'pending' | 'approved' | 'rejected' }) {
-  const { colors } = useTheme();
-  const chip = useMemo(() => makeChipStyles(colors), [colors]);
   const map = {
-    pending: { label: 'Pending', bg: colors.warning, bd: colors.onWarning, fg: colors.onWarning },
-    approved: { label: 'Approved', bg: colors.success, bd: colors.onSuccess, fg: colors.onSuccess },
-    rejected: { label: 'Rejected', bg: colors.error, bd: colors.onError, fg: colors.onError },
+    pending: { label: 'Pending', bg: 'rgba(163,125,30,0.25)', bd: colors.warning, fg: '#F1D890' },
+    approved: { label: 'Approved', bg: 'rgba(45,90,64,0.35)', bd: colors.success, fg: '#B7EFC5' },
+    rejected: { label: 'Rejected', bg: 'rgba(122,40,40,0.25)', bd: colors.error, fg: '#F1A9A9' },
   }[s];
   return (
     <View style={[chip.wrap, { backgroundColor: map.bg, borderColor: map.bd }]}>
@@ -186,8 +179,6 @@ function StatusChip({ s }: { s: 'pending' | 'approved' | 'rejected' }) {
 }
 
 function EmptyBox({ icon, text }: { icon: any; text: string }) {
-  const { colors } = useTheme();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <View style={styles.empty}>
       <Ionicons name={icon} size={44} color={colors.mutedText} />
@@ -196,12 +187,12 @@ function EmptyBox({ icon, text }: { icon: any; text: string }) {
   );
 }
 
-const makeChipStyles = (colors: ThemeColors) => StyleSheet.create({
+const chip = StyleSheet.create({
   wrap: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: radius.pill, borderWidth: 1 },
   text: { fontSize: 11, fontWeight: '700' },
 });
 
-const makeStyles = (colors: ThemeColors) => StyleSheet.create({
+const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   header: {
     flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg,
@@ -239,7 +230,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     borderRadius: radius.md, paddingVertical: 10, borderWidth: 1,
   },
   approveBtn: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
-  rejectBtn: { backgroundColor: colors.error, borderColor: colors.onError },
+  rejectBtn: { backgroundColor: 'rgba(122,40,40,0.15)', borderColor: colors.error },
   actionText: { fontSize: 13, fontWeight: '700' },
 
   empty: { alignItems: 'center', paddingVertical: 60, gap: spacing.sm },

@@ -15,8 +15,7 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '@/src/api/client';
-import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
-import { useTheme } from '@/src/theme/ThemeContext';
+import { colors, spacing, radius, fonts } from '@/src/theme';
 
 type Emp = {
   id: string; name: string; employee_code: string; department: string;
@@ -33,8 +32,6 @@ const CHIPS: { key: string; label: string; status?: string }[] = [
 
 export default function EmployeesScreen() {
   const router = useRouter();
-  const { colors } = useTheme();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [items, setItems] = useState<Emp[]>([]);
   const [q, setQ] = useState('');
   const [filter, setFilter] = useState<string>('all');
@@ -172,12 +169,10 @@ export default function EmployeesScreen() {
 }
 
 function StatusChip({ status }: { status: 'active' | 'inactive' | 'on_leave' }) {
-  const { colors } = useTheme();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
   const map = {
-    active: { label: 'Active', bg: colors.success, bd: colors.onSuccess, fg: colors.onSuccess },
-    on_leave: { label: 'On Leave', bg: colors.warning, bd: colors.onWarning, fg: colors.onWarning },
-    inactive: { label: 'Inactive', bg: colors.error, bd: colors.onError, fg: colors.onError },
+    active: { label: 'Active', bg: 'rgba(45,90,64,0.35)', bd: colors.success, fg: '#B7EFC5' },
+    on_leave: { label: 'On Leave', bg: 'rgba(163,125,30,0.25)', bd: colors.warning, fg: '#F1D890' },
+    inactive: { label: 'Inactive', bg: 'rgba(122,40,40,0.25)', bd: colors.error, fg: '#F1A9A9' },
   } as const;
   const s = map[status] || map.active;
   return (
@@ -187,7 +182,7 @@ function StatusChip({ status }: { status: 'active' | 'inactive' | 'on_leave' }) 
   );
 }
 
-const makeStyles = (colors: ThemeColors) => StyleSheet.create({
+const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   header: {
     paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.md,

@@ -92,6 +92,7 @@ python-dotenv==1.2.2
 python-jose==3.5.0
 python-multipart==0.0.32
 pytokens==0.4.1
+pyzk==0.9
 PyYAML==6.0.3
 pywebpush==2.0.3
 referencing==0.37.0

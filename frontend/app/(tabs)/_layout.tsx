@@ -2,12 +2,11 @@ import { Tabs, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { View, ActivityIndicator } from 'react-native';
 import { useEffect } from 'react';
-import { useTheme } from '@/src/theme/ThemeContext';
+import { colors } from '@/src/theme';
 import { useAuth } from '@/src/auth/AuthContext';
 
 export default function OwnerTabsLayout() {
   const { user, loading } = useAuth();
-  const { colors } = useTheme();
   const router = useRouter();
 
   useEffect(() => {

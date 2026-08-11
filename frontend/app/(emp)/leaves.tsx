@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, Platform,
 } from 'react-native';
@@ -6,8 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
-import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
-import { useTheme } from '@/src/theme/ThemeContext';
+import { colors, spacing, radius, fonts } from '@/src/theme';
 
 type Leave = {
   id: string; from_date: string; to_date: string; leave_type: string;
@@ -21,8 +20,6 @@ const fmtDate = (s: string) => {
 };
 
 export default function EmployeeLeaves() {
-  const { colors } = useTheme();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
   const router = useRouter();
   const [items, setItems] = useState<Leave[]>([]);
   const [refreshing, setRefreshing] = useState(false);
@@ -81,11 +78,10 @@ export default function EmployeeLeaves() {
 }
 
 function StatusChip({ status }: { status: Leave['status'] }) {
-  const { colors } = useTheme();
   const map = {
-    pending: { label: 'Pending', bg: colors.warning, bd: colors.onWarning, fg: colors.onWarning },
-    approved: { label: 'Approved', bg: colors.success, bd: colors.onSuccess, fg: colors.onSuccess },
-    rejected: { label: 'Rejected', bg: colors.error, bd: colors.onError, fg: colors.onError },
+    pending: { label: 'Pending', bg: 'rgba(163,125,30,0.25)', bd: colors.warning, fg: '#F1D890' },
+    approved: { label: 'Approved', bg: 'rgba(45,90,64,0.35)', bd: colors.success, fg: '#B7EFC5' },
+    rejected: { label: 'Rejected', bg: 'rgba(122,40,40,0.25)', bd: colors.error, fg: '#F1A9A9' },
   } as const;
   const s = map[status] || map.pending;
   return (
@@ -100,7 +96,7 @@ const chip = StyleSheet.create({
   text: { fontSize: 11, fontWeight: '700' },
 });
 
-const makeStyles = (colors: ThemeColors) => StyleSheet.create({
+const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   header: {
     flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg,
