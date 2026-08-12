@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -16,13 +16,13 @@ type Item = {
 
 type FilterKey = 'all' | RepairItemStatus | 'overdue';
 
-const FILTERS: { key: FilterKey; label: string }[] = [
-  { key: 'all', label: 'All' },
-  { key: 'received', label: 'Received' },
-  { key: 'with_karigar', label: 'With Karigar' },
-  { key: 'ready', label: 'Pending to Bill' },
-  { key: 'overdue', label: 'Overdue' },
-  { key: 'delivered', label: 'Delivered' },
+const FILTERS: { key: FilterKey; label: string; icon: any }[] = [
+  { key: 'all', label: 'All', icon: 'apps-outline' },
+  { key: 'received', label: 'Received', icon: 'cube-outline' },
+  { key: 'with_karigar', label: 'With Karigar', icon: 'hammer-outline' },
+  { key: 'ready', label: 'Pending to Bill', icon: 'pricetag-outline' },
+  { key: 'overdue', label: 'Overdue', icon: 'alert-circle-outline' },
+  { key: 'delivered', label: 'Delivered', icon: 'checkmark-done-outline' },
 ];
 
 export default function RepairOrdersScreen() {
@@ -42,6 +42,7 @@ export default function RepairOrdersScreen() {
   useFocusEffect(useCallback(() => { load(filter); }, [load, filter]));
 
   const todayISO = new Date().toISOString().slice(0, 10);
+  const activeFilter = FILTERS.find((f) => f.key === filter)!;
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="repairs-screen">
@@ -49,7 +50,10 @@ export default function RepairOrdersScreen() {
         <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
-        <Text style={styles.title}>In/Out Repairs</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.title}>In/Out Repairs</Text>
+          {!loading && <Text style={styles.subtitle}>{items.length} tag{items.length === 1 ? '' : 's'} · {activeFilter.label}</Text>}
+        </View>
         <Pressable onPress={() => router.push('/repairs/new' as any)} style={[styles.iconBtn, styles.addBtn]} testID="new-repair-btn" hitSlop={12}>
           <Ionicons name="add" size={22} color={colors.onBrandPrimary} />
         </Pressable>
@@ -63,6 +67,7 @@ export default function RepairOrdersScreen() {
             style={[styles.filterChip, filter === f.key && styles.filterChipActive]}
             testID={`filter-${f.key}`}
           >
+            <Ionicons name={f.icon} size={13} color={filter === f.key ? colors.onBrandPrimary : colors.onSurfaceSecondary} />
             <Text style={[styles.filterText, filter === f.key && styles.filterTextActive]}>{f.label}</Text>
           </Pressable>
         ))}
@@ -72,21 +77,42 @@ export default function RepairOrdersScreen() {
         contentContainerStyle={{ padding: spacing.lg, paddingTop: spacing.sm }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(filter); }} tintColor={colors.brandPrimary} />}
       >
-        {!loading && items.length === 0 ? (
+        {loading ? (
+          <ActivityIndicator color={colors.brandPrimary} style={{ marginTop: 40 }} />
+        ) : items.length === 0 ? (
           <View style={styles.empty}><Ionicons name="construct-outline" size={36} color={colors.mutedText} /><Text style={styles.emptyText}>No repairs found for this filter</Text></View>
         ) : items.map((i) => {
           const isOverdue = !!i.due_date && i.due_date < todayISO && i.status !== 'delivered';
           const sc = repairStatusColors(i.status, colors);
           return (
             <Pressable key={i.id} onPress={() => router.push(`/repairs/item/${i.id}` as any)} style={styles.card} testID={`item-${i.id}`}>
-              <View style={styles.iconBox}><Ionicons name="pricetag-outline" size={18} color={colors.brandSecondary} /></View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.cName}>{i.item_code} · {i.customer_name}</Text>
-                <Text style={styles.cMeta}>{i.description} · {i.gross_weight.toFixed(3)}g{i.karigar_name ? ` · ${i.karigar_name}` : ''}</Text>
-                {i.due_date && <Text style={[styles.cMeta, isOverdue && { color: colors.onError, fontWeight: '700' }]}>Due {i.due_date}{isOverdue ? ' · overdue' : ''}</Text>}
+              <View style={styles.cardTopRow}>
+                <View style={styles.iconBox}><Ionicons name="pricetag-outline" size={16} color={colors.brandSecondary} /></View>
+                <Text style={styles.cName} numberOfLines={1}>{i.item_code} · {i.customer_name}</Text>
+                <View style={[styles.statusBadge, isOverdue ? { backgroundColor: colors.error, borderColor: colors.onError } : { backgroundColor: sc.bg, borderColor: sc.border }]}>
+                  <Text style={[styles.statusText, isOverdue ? { color: colors.onError } : { color: sc.fg }]}>{isOverdue ? 'Overdue' : REPAIR_STATUS_LABEL[i.status]}</Text>
+                </View>
               </View>
-              <View style={[styles.statusBadge, isOverdue ? { backgroundColor: colors.error, borderColor: colors.onError } : { backgroundColor: sc.bg, borderColor: sc.border }]}>
-                <Text style={[styles.statusText, isOverdue ? { color: colors.onError } : { color: sc.fg }]}>{isOverdue ? 'Overdue' : REPAIR_STATUS_LABEL[i.status]}</Text>
+
+              <Text style={styles.cDesc} numberOfLines={1}>{i.description}</Text>
+
+              <View style={styles.pillRow}>
+                <View style={styles.pill}>
+                  <Ionicons name="scale-outline" size={11} color={colors.onSurfaceTertiary} />
+                  <Text style={styles.pillText}>{i.gross_weight.toFixed(3)}g</Text>
+                </View>
+                {!!i.karigar_name && (
+                  <View style={styles.pill}>
+                    <Ionicons name="hammer-outline" size={11} color={colors.onSurfaceTertiary} />
+                    <Text style={styles.pillText}>{i.karigar_name}</Text>
+                  </View>
+                )}
+                {!!i.due_date && (
+                  <View style={[styles.pill, isOverdue && styles.pillDanger]}>
+                    <Ionicons name="calendar-outline" size={11} color={isOverdue ? colors.onError : colors.onSurfaceTertiary} />
+                    <Text style={[styles.pillText, isOverdue && { color: colors.onError, fontWeight: '700' }]}>Due {i.due_date}</Text>
+                  </View>
+                )}
               </View>
             </Pressable>
           );
@@ -107,10 +133,15 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border,
   },
   addBtn: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
-  title: { flex: 1, color: colors.onSurface, fontSize: 20, fontWeight: '600', fontFamily: fonts.display },
+  title: { color: colors.onSurface, fontSize: 20, fontWeight: '600', fontFamily: fonts.display },
+  subtitle: { color: colors.mutedText, fontSize: 11, marginTop: 2 },
 
-  filterRow: { flexDirection: 'row', gap: spacing.sm, paddingHorizontal: spacing.lg, paddingTop: spacing.md },
-  filterChip: { paddingHorizontal: spacing.md, paddingVertical: 8, borderRadius: radius.pill, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border },
+  filterRow: { flexDirection: 'row', gap: spacing.sm, paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: 2 },
+  filterChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: spacing.md, paddingVertical: 8, borderRadius: radius.pill,
+    backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border,
+  },
   filterChipActive: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
   filterText: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '700' },
   filterTextActive: { color: colors.onBrandPrimary },
@@ -118,16 +149,24 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   empty: { alignItems: 'center', paddingVertical: 40, gap: spacing.sm },
   emptyText: { color: colors.onSurfaceTertiary },
   card: {
-    flexDirection: 'row', alignItems: 'center', gap: spacing.md,
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md,
     borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.sm,
   },
+  cardTopRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   iconBox: {
-    width: 36, height: 36, borderRadius: 18, backgroundColor: colors.brandTertiary,
+    width: 30, height: 30, borderRadius: 15, backgroundColor: colors.brandTertiary,
     alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.brand,
   },
-  cName: { color: colors.onSurface, fontWeight: '700', fontSize: 14 },
-  cMeta: { color: colors.onSurfaceTertiary, fontSize: 12, marginTop: 2 },
+  cName: { flex: 1, color: colors.onSurface, fontWeight: '700', fontSize: 14 },
+  cDesc: { color: colors.onSurfaceTertiary, fontSize: 12, marginTop: 6, marginLeft: 38 },
   statusBadge: { borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1 },
   statusText: { fontSize: 10, fontWeight: '700', textTransform: 'uppercase' },
+
+  pillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, marginTop: spacing.sm, marginLeft: 38 },
+  pill: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: colors.surfaceTertiary, borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 4,
+  },
+  pillDanger: { backgroundColor: colors.error },
+  pillText: { color: colors.onSurfaceTertiary, fontSize: 11 },
 });

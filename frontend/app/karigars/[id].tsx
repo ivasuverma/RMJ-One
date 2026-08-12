@@ -6,13 +6,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
+import { confirmAction } from '@/src/utils/confirm';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
 type Karigar = { id: string; name: string; mobile: string; is_employee: boolean };
 type Entry = {
   id: string; type: 'gold_out' | 'gold_in' | 'wastage' | 'labour_payable' | 'payment';
-  weight: number | null; amount: number | null; item_code: string | null; note: string; created_at: string; created_by: string;
+  weight: number | null; amount: number | null; item_id?: string | null; item_code: string | null; note: string; created_at: string; created_by: string;
 };
 
 const ENTRY_LABEL: Record<Entry['type'], string> = {
@@ -36,6 +37,7 @@ export default function KarigarLedgerScreen() {
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState('');
   const submittingRef = useRef(false);
 
   const load = useCallback(async () => {
@@ -59,6 +61,20 @@ export default function KarigarLedgerScreen() {
       await load();
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
     finally { setSaving(false); submittingRef.current = false; }
+  };
+
+  const removeEntry = (e: Entry) => {
+    confirmAction(
+      'Delete entry?',
+      `Remove this ${ENTRY_LABEL[e.type].toLowerCase()} entry? This cannot be undone.`,
+      'Delete',
+      async () => {
+        setDeletingId(e.id);
+        try { await api.del(`/karigars/${id}/ledger/${e.id}`); await load(); }
+        catch (err: any) { Alert.alert('Failed', err?.detail || 'Could not delete this entry.'); }
+        finally { setDeletingId(''); }
+      },
+    );
   };
 
   if (loading || !karigar) {
@@ -133,6 +149,11 @@ export default function KarigarLedgerScreen() {
               <Text style={styles.entryValue}>
                 {e.weight != null ? `${e.weight.toFixed(3)}g` : e.amount != null ? `₹${Math.abs(e.amount).toFixed(0)}` : ''}
               </Text>
+              {!e.item_id && (
+                <Pressable onPress={() => removeEntry(e)} disabled={deletingId === e.id} style={styles.entryDelBtn} hitSlop={8} testID={`del-entry-${e.id}`}>
+                  {deletingId === e.id ? <ActivityIndicator size="small" color={colors.onError} /> : <Ionicons name="trash-outline" size={14} color={colors.onError} />}
+                </Pressable>
+              )}
             </View>
           ))}
         </ScrollView>
@@ -189,4 +210,8 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   entryTitle: { color: colors.onSurface, fontSize: 13, fontWeight: '700' },
   entryMeta: { color: colors.mutedText, fontSize: 11, marginTop: 2 },
   entryValue: { color: colors.onSurface, fontSize: 13, fontWeight: '700' },
+  entryDelBtn: {
+    width: 26, height: 26, borderRadius: 13, backgroundColor: colors.error,
+    alignItems: 'center', justifyContent: 'center', marginLeft: spacing.xs,
+  },
 });

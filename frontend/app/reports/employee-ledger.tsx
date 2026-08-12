@@ -22,7 +22,7 @@ export default function EmployeeLedgerPickerScreen() {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [employees, setEmployees] = useState<Employee[]>([]);
-  const [onlyBalance, setOnlyBalance] = useState(false);
+  const [onlyBalance, setOnlyBalance] = useState(true);
 
   const load = useCallback(async () => {
     try { setEmployees(await api.get<Employee[]>('/employees')); }

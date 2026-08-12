@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { api, TOKEN_KEY } from '@/src/api/client';
 import { storage } from '@/src/utils/storage';
+import { confirmAction } from '@/src/utils/confirm';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
@@ -14,6 +15,7 @@ type Item = {
   id: string; item_code: string; customer_name: string; description: string;
   status: 'received' | 'with_karigar' | 'ready' | 'delivered';
   labour_charge: number; customer_adjustment?: number;
+  fine_weight_diff?: number | null; weight_diff?: number | null;
   billed_amount: number | null; payment_mode: string | null; delivered_at?: string;
 };
 
@@ -31,6 +33,7 @@ export default function RepairBillScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [printingId, setPrintingId] = useState('');
+  const [deletingId, setDeletingId] = useState('');
   const [busy, setBusy] = useState(false);
   const submittingRef = useRef(false);
 
@@ -40,6 +43,7 @@ export default function RepairBillScreen() {
   const [billExtra, setBillExtra] = useState('');
   const [billExtraNote, setBillExtraNote] = useState('');
   const [paymentMode, setPaymentMode] = useState('cash');
+  const [weightRate, setWeightRate] = useState('');
 
   const loadBills = useCallback(async () => {
     try { setBills(await api.get<Item[]>('/repair-items?status=delivered')); }
@@ -60,9 +64,15 @@ export default function RepairBillScreen() {
     setPicked(item);
     setBillLabour(String(item.labour_charge || 0));
     setBillMaterial(String(item.customer_adjustment || 0));
-    setBillExtra(''); setBillExtraNote(''); setPaymentMode('cash');
+    setBillExtra(''); setBillExtraNote(''); setPaymentMode('cash'); setWeightRate('');
     setMode('form');
   };
+
+  const fineWeightChange = picked?.fine_weight_diff || 0;
+  const rateNum = parseFloat(weightRate) || 0;
+  const weightCharge = Math.round(fineWeightChange * rateNum * 100) / 100;
+
+  const applyWeightCharge = () => setBillMaterial(String(weightCharge));
 
   const billTotal = (parseFloat(billLabour) || 0) + (parseFloat(billMaterial) || 0) + (parseFloat(billExtra) || 0);
 
@@ -80,6 +90,24 @@ export default function RepairBillScreen() {
       await loadBills();
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
     finally { setBusy(false); submittingRef.current = false; }
+  };
+
+  const confirmDeleteBill = (item: Item) => {
+    confirmAction(
+      'Delete bill?',
+      `This undoes the bill for ${item.item_code} (₹${(item.billed_amount || 0).toFixed(0)}) and puts the tag back to Pending to Bill. This cannot be undone.`,
+      'Delete',
+      () => doDeleteBill(item),
+    );
+  };
+
+  const doDeleteBill = async (item: Item) => {
+    setDeletingId(item.id);
+    try {
+      await api.del(`/repair-items/${item.id}/bill`);
+      await loadBills();
+    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+    finally { setDeletingId(''); }
   };
 
   const printBill = async (item: Item) => {
@@ -145,6 +173,9 @@ export default function RepairBillScreen() {
               <Pressable onPress={() => printBill(b)} disabled={printingId === b.id} style={styles.printBtn} testID={`print-bill-${b.id}`}>
                 {printingId === b.id ? <ActivityIndicator size="small" color={colors.onBrandPrimary} /> : <Ionicons name="print-outline" size={16} color={colors.onBrandPrimary} />}
               </Pressable>
+              <Pressable onPress={() => confirmDeleteBill(b)} disabled={deletingId === b.id} style={styles.deleteBtn} testID={`delete-bill-${b.id}`}>
+                {deletingId === b.id ? <ActivityIndicator size="small" color={colors.onError} /> : <Ionicons name="trash-outline" size={16} color={colors.onError} />}
+              </Pressable>
             </View>
           ))}
         </ScrollView>
@@ -183,6 +214,23 @@ export default function RepairBillScreen() {
 
             <Text style={styles.label}>Labour Charge (₹)</Text>
             <TextInput testID="bill-labour" value={billLabour} onChangeText={(v) => setBillLabour(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />
+
+            {!!fineWeightChange && (
+              <View style={styles.weightChangeCard} testID="weight-change-card">
+                <View style={styles.weightChangeRow}>
+                  <Ionicons name={fineWeightChange >= 0 ? 'trending-up-outline' : 'trending-down-outline'} size={14} color={fineWeightChange >= 0 ? colors.onWarning : colors.onSuccess} />
+                  <Text style={styles.weightChangeText}>Weight change from karigar: {fineWeightChange >= 0 ? '+' : ''}{fineWeightChange.toFixed(3)}g fine</Text>
+                </View>
+                <Text style={styles.label}>Rate (₹ / gram)</Text>
+                <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+                  <TextInput testID="weight-rate" value={weightRate} onChangeText={(v) => setWeightRate(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={[styles.input, { flex: 1 }]} />
+                  <Pressable onPress={applyWeightCharge} disabled={!rateNum} style={[styles.applyBtn, !rateNum && { opacity: 0.5 }]} testID="apply-weight-charge">
+                    <Text style={styles.applyBtnText}>Apply ₹{weightCharge.toFixed(0)}</Text>
+                  </Pressable>
+                </View>
+              </View>
+            )}
+
             <Text style={styles.label}>Material / Wastage Adjustment (₹)</Text>
             <TextInput testID="bill-material" value={billMaterial} onChangeText={(v) => setBillMaterial(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />
             <Text style={styles.label}>Extra Charges (₹)</Text>
@@ -246,8 +294,20 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center',
     backgroundColor: colors.brandPrimary,
   },
+  deleteBtn: {
+    width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.error,
+  },
 
   pickedCard: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.lg },
+  weightChangeCard: {
+    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    padding: spacing.md, marginTop: spacing.sm,
+  },
+  weightChangeRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
+  weightChangeText: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '600' },
+  applyBtn: { backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingHorizontal: spacing.md, alignItems: 'center', justifyContent: 'center' },
+  applyBtnText: { color: colors.onBrandPrimary, fontWeight: '700', fontSize: 12 },
   label: { color: colors.onSurfaceSecondary, fontSize: 12, marginBottom: 6, marginTop: spacing.sm },
   input: {
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,

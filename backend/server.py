@@ -456,18 +456,24 @@ class RepairItemUpdateIn(BaseModel):
 
 class IssueToKarigarIn(BaseModel):
     karigar_id: str
-    weight: float
+    # No weight field — the whole tag goes out, so weight issued always equals
+    # the item's own gross_weight. Server derives it; never trust client input here.
     note: Optional[str] = ''
 
 
 class ReceiveFromKarigarIn(BaseModel):
     weight: float
     note: Optional[str] = ''
-    # Manual wastage/adjustment decision, entered by the owner after seeing the
-    # weight difference — never auto-calculated (per explicit choice).
-    adjustment_amount: Optional[float] = 0
-    adjustment_note: Optional[str] = ''
-    charge_to: Optional[Literal['customer', 'karigar', 'none']] = 'none'
+    # Expected/acceptable loss during the repair process (filing, polishing, etc.) —
+    # logged for the record, not held against the karigar's gold balance.
+    process_loss: Optional[float] = 0
+    # Optional on-the-spot settlement of what the shop owes the karigar for this
+    # job — split across cash and metal (gold handed over, valued in ₹ manually
+    # since there's no live rate feed). Posts straight to the Karigar Ledger.
+    labour_amount: Optional[float] = 0
+    pay_cash: Optional[float] = 0
+    pay_metal_weight: Optional[float] = 0
+    pay_metal_value: Optional[float] = 0
 
 
 class KarigarTransactionEditIn(BaseModel):
@@ -1853,28 +1859,31 @@ async def issue_to_karigar(item_id: str, body: IssueToKarigarIn, user=Depends(re
     karigar = await db.karigars.find_one({'id': body.karigar_id}, {'_id': 0})
     if not karigar: raise HTTPException(status_code=404, detail='Karigar not found')
 
+    # Weight issued always equals the tag's own gross weight — the whole piece
+    # goes out, so this is never a manual entry.
+    weight = item.get('gross_weight') or 0
     purity = item.get('purity') or 100.0
-    fine_weight = round(body.weight * purity / 100, 3)
+    fine_weight = round(weight * purity / 100, 3)
     iso = now_utc().isoformat()
     txn_id = str(uuid.uuid4())
     challan_no = f"IC-{item['item_code']}-{await db.karigar_transactions.count_documents({'item_id': item_id, 'direction': 'issue'}) + 1}"
     txn = {
         'id': txn_id, 'item_id': item_id, 'item_code': item['item_code'], 'karigar_id': karigar['id'],
-        'karigar_name': karigar['name'], 'direction': 'issue', 'weight': body.weight, 'fine_weight': fine_weight,
+        'karigar_name': karigar['name'], 'direction': 'issue', 'weight': weight, 'fine_weight': fine_weight,
         'note': body.note or '', 'challan_no': challan_no, 'created_at': iso, 'created_by': user['name'],
     }
     await db.karigar_transactions.insert_one(dict(txn))
     await db.karigar_ledger.insert_one({
-        'id': str(uuid.uuid4()), 'karigar_id': karigar['id'], 'type': 'gold_out', 'weight': body.weight,
+        'id': str(uuid.uuid4()), 'karigar_id': karigar['id'], 'type': 'gold_out', 'weight': weight,
         'fine_weight': fine_weight, 'amount': None, 'item_id': item_id, 'item_code': item['item_code'],
         'txn_id': txn_id, 'note': f"Issued: {item['description']}",
         'created_at': iso, 'created_by': user['name'],
     })
     await db.repair_items.update_one({'id': item_id}, {'$set': {
         'status': 'with_karigar', 'karigar_id': karigar['id'], 'karigar_name': karigar['name'],
-        'current_issue_weight': body.weight, 'current_issue_fine_weight': fine_weight, 'updated_by': user['name'],
+        'current_issue_weight': weight, 'current_issue_fine_weight': fine_weight, 'updated_by': user['name'],
     }})
-    await log_audit(user, 'repair_item.issue', 'repair_item', item_id, item['item_code'], {'karigar': karigar['name'], 'weight': body.weight})
+    await log_audit(user, 'repair_item.issue', 'repair_item', item_id, item['item_code'], {'karigar': karigar['name'], 'weight': weight})
     if karigar.get('is_employee') and karigar.get('employee_id'):
         await notify_user(karigar['employee_id'], 'Repair item issued to you', f"{item['item_code']} — {item['description']}", '/(emp)/tasks')
     return await db.repair_items.find_one({'id': item_id}, {'_id': 0})
@@ -1890,9 +1899,14 @@ async def receive_from_karigar(item_id: str, body: ReceiveFromKarigarIn, user=De
     purity = item.get('purity') or 100.0
     weight_issued = item.get('current_issue_weight') or 0
     fine_issued = item.get('current_issue_fine_weight') or round(weight_issued * purity / 100, 3)
+    process_loss = body.process_loss or 0
+    fine_process_loss = round(process_loss * purity / 100, 3)
     diff = round(body.weight - weight_issued, 3)
     fine_weight = round(body.weight * purity / 100, 3)
     fine_diff = round(fine_weight - fine_issued, 3)
+    # What's left unaccounted for after allowing the declared process loss —
+    # positive means the karigar still owes this much fine gold.
+    balance_fine_weight = round(fine_issued - fine_process_loss - fine_weight, 3)
 
     iso = now_utc().isoformat()
     txn_id = str(uuid.uuid4())
@@ -1901,6 +1915,7 @@ async def receive_from_karigar(item_id: str, body: ReceiveFromKarigarIn, user=De
         'id': txn_id, 'item_id': item_id, 'item_code': item['item_code'], 'karigar_id': karigar_id,
         'karigar_name': item.get('karigar_name'), 'direction': 'receive', 'weight': body.weight,
         'fine_weight': fine_weight, 'weight_diff': diff, 'fine_weight_diff': fine_diff,
+        'process_loss': process_loss, 'balance_fine_weight': balance_fine_weight,
         'note': body.note or '', 'challan_no': challan_no, 'created_at': iso,
         'created_by': user['name'],
     }
@@ -1908,22 +1923,39 @@ async def receive_from_karigar(item_id: str, body: ReceiveFromKarigarIn, user=De
     # The weight difference itself is always logged as an explicit ledger line —
     # this is what actually leaves (or clears) a gold balance on the karigar,
     # on top of the gold_in "goods returned" entry below.
+    loss_note = f", process loss {process_loss:.3f}g" if process_loss else ''
     await db.karigar_ledger.insert_one({
         'id': str(uuid.uuid4()), 'karigar_id': karigar_id, 'type': 'gold_in', 'weight': body.weight,
         'fine_weight': fine_weight, 'amount': None, 'item_id': item_id, 'item_code': item['item_code'],
-        'txn_id': txn_id, 'note': f"Received back: {item['description']} (diff {diff:+.3f}g / fine {fine_diff:+.3f}g)",
+        'txn_id': txn_id, 'note': f"Received back: {item['description']} (diff {diff:+.3f}g / fine {fine_diff:+.3f}g{loss_note})",
         'created_at': iso, 'created_by': user['name'],
     })
-    if body.adjustment_amount and body.charge_to == 'karigar':
+
+    # Optional on-the-spot settlement of what's owed to the karigar for this job.
+    labour_amount = body.labour_amount or 0
+    pay_cash = body.pay_cash or 0
+    pay_metal_weight = body.pay_metal_weight or 0
+    pay_metal_value = body.pay_metal_value or 0
+    if labour_amount:
         await db.karigar_ledger.insert_one({
-            'id': str(uuid.uuid4()), 'karigar_id': karigar_id, 'type': 'wastage', 'weight': None,
-            'amount': -abs(body.adjustment_amount), 'item_id': item_id, 'item_code': item['item_code'],
-            'txn_id': txn_id, 'note': body.adjustment_note or f'Wastage on {item["item_code"]}',
+            'id': str(uuid.uuid4()), 'karigar_id': karigar_id, 'type': 'labour_payable', 'weight': None,
+            'amount': labour_amount, 'item_id': item_id, 'item_code': item['item_code'],
+            'txn_id': txn_id, 'note': f"Labour due: {item['description']}",
             'created_at': iso, 'created_by': user['name'],
         })
+    paid_total = pay_cash + pay_metal_value
+    if paid_total:
+        metal_note = f", incl. {pay_metal_weight:.3f}g metal worth ₹{pay_metal_value:.0f}" if pay_metal_weight else ''
+        await db.karigar_ledger.insert_one({
+            'id': str(uuid.uuid4()), 'karigar_id': karigar_id, 'type': 'payment', 'weight': None,
+            'amount': paid_total, 'item_id': item_id, 'item_code': item['item_code'],
+            'txn_id': txn_id, 'note': f"Paid on the spot for {item['item_code']}{metal_note}",
+            'created_at': iso, 'created_by': user['name'],
+        })
+
     await db.repair_items.update_one({'id': item_id}, {'$set': {
-        'status': 'ready', 'weight_diff': diff, 'fine_weight_diff': fine_diff, 'updated_by': user['name'],
-        'customer_adjustment': body.adjustment_amount if body.charge_to == 'customer' else 0,
+        'status': 'ready', 'weight_diff': diff, 'fine_weight_diff': fine_diff,
+        'process_loss': process_loss, 'balance_fine_weight': balance_fine_weight, 'updated_by': user['name'],
     }})
     await log_audit(user, 'repair_item.receive', 'repair_item', item_id, item['item_code'], {'weight_diff': diff, 'fine_weight_diff': fine_diff})
     return await db.repair_items.find_one({'id': item_id}, {'_id': 0})
@@ -2008,6 +2040,7 @@ async def delete_karigar_transaction(item_id: str, txn_id: str, user=Depends(req
     else:
         await db.repair_items.update_one({'id': item_id}, {'$set': {
             'status': 'with_karigar', 'weight_diff': None, 'fine_weight_diff': None,
+            'process_loss': None, 'balance_fine_weight': None,
             'customer_adjustment': 0, 'updated_by': user['name'],
         }})
     await log_audit(user, 'repair_item.transaction_delete', 'repair_item', item_id, item['item_code'], {'txn_id': txn_id, 'direction': txn['direction']})
@@ -2035,6 +2068,25 @@ async def deliver_item(item_id: str, body: DeliverIn, user=Depends(require_admin
     }})
     await log_audit(user, 'repair_item.deliver', 'repair_item', item_id, item['item_code'], {'billed_amount': billed_amount})
     return await db.repair_items.find_one({'id': item_id}, {'_id': 0})
+
+
+@api.delete('/repair-items/{item_id}/bill')
+async def delete_bill(item_id: str, user=Depends(require_admin), _mod=Depends(require_module('repairs'))):
+    # Undoes a bill — puts the tag back to "ready" so it can be re-billed
+    # correctly. Does not touch the tag/intake record itself.
+    item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
+    if not item: raise HTTPException(status_code=404, detail='Item not found')
+    if item['status'] != 'delivered':
+        raise HTTPException(status_code=400, detail='This item has not been billed')
+    await db.repair_items.update_one({'id': item_id}, {'$set': {
+        'status': 'ready', 'delivered_at': None,
+        'bill_labour_charge': None, 'bill_material_adjustment': None,
+        'bill_extra_charges': None, 'bill_extra_charges_note': '',
+        'billed_amount': None, 'payment_mode': None, 'delivery_note': '',
+        'updated_by': user['name'],
+    }})
+    await log_audit(user, 'repair_item.bill_delete', 'repair_item', item_id, item['item_code'], {'billed_amount': item.get('billed_amount')})
+    return {'ok': True}
 
 
 @api.get('/repair-items/{item_id}/bill/pdf')
@@ -2142,6 +2194,17 @@ async def add_karigar_ledger_entry(kid: str, body: KarigarLedgerEntryIn, user=De
     await db.karigar_ledger.insert_one(dict(doc))
     await log_audit(user, f'karigar_ledger.{body.type}', 'karigar', kid, karigar['name'], {'amount': body.amount, 'weight': body.weight})
     return {k: v for k, v in doc.items() if k != '_id'}
+
+
+@api.delete('/karigars/{kid}/ledger/{entry_id}')
+async def delete_karigar_ledger_entry(kid: str, entry_id: str, user=Depends(require_admin), _mod=Depends(require_module('repairs'))):
+    entry = await db.karigar_ledger.find_one({'id': entry_id, 'karigar_id': kid}, {'_id': 0})
+    if not entry: raise HTTPException(status_code=404, detail='Ledger entry not found')
+    if entry.get('item_id'):
+        raise HTTPException(status_code=400, detail='This entry is tied to a repair tag — delete the issue/receive from that tag\'s history instead')
+    await db.karigar_ledger.delete_one({'id': entry_id})
+    await log_audit(user, 'karigar_ledger.delete', 'karigar', kid, '', {'entry_id': entry_id, 'type': entry.get('type')})
+    return {'ok': True}
 
 
 # ---------------- Dashboard ----------------

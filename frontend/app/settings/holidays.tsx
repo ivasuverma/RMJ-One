@@ -30,6 +30,7 @@ export default function HolidaysScreen() {
   const [type, setType] = useState<H['type']>('public');
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [showForm, setShowForm] = useState(false);
 
   const load = useCallback(async () => {
     try { setItems(await api.get<H[]>('/holidays')); }
@@ -49,7 +50,7 @@ export default function HolidaysScreen() {
     setSaving(true);
     try {
       await api.post('/holidays', { date, name: name.trim(), type });
-      setDate(''); setName(''); setType('public'); await load();
+      setDate(''); setName(''); setType('public'); setShowForm(false); await load();
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
     finally { setSaving(false); submittingRef.current = false; }
   };
@@ -68,7 +69,9 @@ export default function HolidaysScreen() {
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
         <Text style={styles.title}>Holidays</Text>
-        <View style={{ width: 40 }} />
+        <Pressable onPress={() => setShowForm((v) => !v)} style={[styles.iconBtn, styles.addTopBtn]} testID="show-add-hol-btn" hitSlop={12}>
+          <Ionicons name={showForm ? 'close' : 'add'} size={22} color={colors.onBrandPrimary} />
+        </Pressable>
       </View>
 
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
@@ -76,23 +79,29 @@ export default function HolidaysScreen() {
           contentContainerStyle={{ padding: spacing.lg }} keyboardShouldPersistTaps="handled"
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}
         >
-          <Text style={styles.section}>Add Holiday</Text>
-          <DateField label="Date" value={date} onChange={setDate} testID="hol-date" />
-          <Text style={styles.label}>Name</Text>
-          <TextInput testID="hol-name" value={name} onChangeText={setName} placeholder="Independence Day" placeholderTextColor={colors.mutedText} style={styles.input} />
-          <Text style={styles.label}>Type</Text>
-          <View style={styles.typeRow}>
-            {TYPES.map((t) => (
-              <Pressable key={t} testID={`hol-type-${t}`} onPress={() => setType(t)} style={[styles.typeBtn, type === t && styles.typeBtnActive]}>
-                <Text style={[styles.typeText, type === t && styles.typeTextActive]}>{t.replace('_', ' ').toUpperCase()}</Text>
-              </Pressable>
-            ))}
-          </View>
-          <Pressable style={[styles.addBtn, saving && { opacity: 0.6 }]} disabled={saving} onPress={add} testID="add-hol-btn">
-            {saving ? <ActivityIndicator color={colors.onBrandPrimary} /> : <><Ionicons name="add" size={16} color={colors.onBrandPrimary} /><Text style={styles.addBtnText}>Add Holiday</Text></>}
-          </Pressable>
+          {!showForm && <Text style={styles.hint}>Mark public holidays, festivals, and store closures so attendance and payroll account for them.</Text>}
 
-          <Text style={[styles.section, { marginTop: spacing.xl }]}>Upcoming</Text>
+          {showForm && (
+            <View style={styles.formCard} testID="add-hol-form">
+              <Text style={styles.section}>Add Holiday</Text>
+              <DateField label="Date" value={date} onChange={setDate} testID="hol-date" />
+              <Text style={styles.label}>Name</Text>
+              <TextInput testID="hol-name" value={name} onChangeText={setName} placeholder="Independence Day" placeholderTextColor={colors.mutedText} style={styles.input} />
+              <Text style={styles.label}>Type</Text>
+              <View style={styles.typeRow}>
+                {TYPES.map((t) => (
+                  <Pressable key={t} testID={`hol-type-${t}`} onPress={() => setType(t)} style={[styles.typeBtn, type === t && styles.typeBtnActive]}>
+                    <Text style={[styles.typeText, type === t && styles.typeTextActive]}>{t.replace('_', ' ').toUpperCase()}</Text>
+                  </Pressable>
+                ))}
+              </View>
+              <Pressable style={[styles.addBtn, saving && { opacity: 0.6 }]} disabled={saving} onPress={add} testID="add-hol-btn">
+                {saving ? <ActivityIndicator color={colors.onBrandPrimary} /> : <><Ionicons name="add" size={16} color={colors.onBrandPrimary} /><Text style={styles.addBtnText}>Add Holiday</Text></>}
+              </Pressable>
+            </View>
+          )}
+
+          <Text style={[styles.section, { marginTop: showForm ? spacing.lg : spacing.sm }]}>Upcoming · {items.length}</Text>
           {items.map((h) => (
             <View key={h.id} style={styles.card} testID={`hol-${h.id}`}>
               <View style={styles.iconBox}><Ionicons name="calendar-outline" size={18} color={colors.brandSecondary} /></View>
@@ -125,6 +134,9 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     flex: 1, color: colors.onSurface, fontSize: 22, fontWeight: '600',
     fontFamily: fonts.display,
   },
+  addTopBtn: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
+  formCard: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.lg, marginBottom: spacing.lg },
+  hint: { color: colors.mutedText, fontSize: 12, marginBottom: spacing.lg, lineHeight: 17 },
   section: { color: colors.brandSecondary, fontSize: 11, letterSpacing: 1, textTransform: 'uppercase', marginBottom: spacing.sm },
   label: { color: colors.onSurfaceSecondary, fontSize: 12, marginBottom: 4, marginTop: 6 },
   input: {

@@ -188,22 +188,29 @@ export default function DashboardScreen() {
                     <AttTile label="Missing Punch" value={data.todays_attendance.missing_punch} accent={colors.onError} testID="tile-missing" onPress={() => router.push('/(tabs)/attendance')} />
                     <AttTile label="On Leave" value={data.todays_attendance.leave} accent={colors.onSurfaceTertiary} testID="tile-leave" onPress={() => router.push('/(tabs)/attendance')} />
                   </View>
+
+                  {hasModule('approvals') && (data.pending_approvals.attendance_corrections > 0 || data.pending_approvals.leave_requests > 0) && (
+                    <View style={styles.approvalRow}>
+                      {data.pending_approvals.attendance_corrections > 0 && (
+                        <Pressable style={styles.approvalPill} testID="approval-corrections" onPress={() => router.push('/approvals?tab=Corrections')}>
+                          <Ionicons name="time-outline" size={12} color={colors.onWarning} />
+                          <Text style={styles.approvalPillText}>{data.pending_approvals.attendance_corrections} correction{data.pending_approvals.attendance_corrections === 1 ? '' : 's'}</Text>
+                        </Pressable>
+                      )}
+                      {data.pending_approvals.leave_requests > 0 && (
+                        <Pressable style={styles.approvalPill} testID="approval-leaves" onPress={() => router.push('/approvals?tab=Leaves')}>
+                          <Ionicons name="calendar-outline" size={12} color={colors.onWarning} />
+                          <Text style={styles.approvalPillText}>{data.pending_approvals.leave_requests} leave request{data.pending_approvals.leave_requests === 1 ? '' : 's'}</Text>
+                        </Pressable>
+                      )}
+                    </View>
+                  )}
                 </View>
               </Pressable>
             )}
 
-            {/* Responsive section grid: Approvals / Repairs / Tasks sit side-by-side on wide screens */}
+            {/* Responsive section grid: Repairs / Tasks sit side-by-side on wide screens */}
             <View style={styles.sectionGrid}>
-              {hasModule('approvals') && (
-                <View style={{ flexBasis: sectionBasis, flexGrow: 1 }}>
-                  <SectionHeader title="Pending Approvals" icon="checkmark-done-outline" testID="section-approvals" />
-                  <View style={styles.tileGrid}>
-                    <StatCard basis={isTablet ? '48%' : tileBasis} icon="time-outline" label="Attendance Corrections" value={String(data.pending_approvals.attendance_corrections)} accent={colors.brandSecondary} danger={data.pending_approvals.attendance_corrections > 0} testID="approval-corrections" onPress={() => router.push('/approvals?tab=Corrections')} />
-                    <StatCard basis={isTablet ? '48%' : tileBasis} icon="calendar-outline" label="Leave Requests" value={String(data.pending_approvals.leave_requests)} accent={colors.brandSecondary} danger={data.pending_approvals.leave_requests > 0} testID="approval-leaves" onPress={() => router.push('/approvals?tab=Leaves')} />
-                  </View>
-                </View>
-              )}
-
               {hasModule('repairs') && (
                 <View style={{ flexBasis: sectionBasis, flexGrow: 1 }}>
                   <SectionHeader title="Repairs" icon="construct-outline" testID="section-repairs" />
@@ -215,10 +222,6 @@ export default function DashboardScreen() {
                     <StatCard basis={isTablet ? '48%' : tileBasis} icon="checkmark-circle-outline" label="Delivered Today" value={String(data.repairs_summary.delivered_today)} accent={colors.onSuccess} testID="repairs-delivered-today" onPress={() => router.push('/repairs' as any)} />
                     <StatCard basis={isTablet ? '48%' : tileBasis} icon="layers-outline" label="Total Open Tags" value={String(data.repairs_summary.total_open)} accent={colors.brandSecondary} testID="repairs-total-open" onPress={() => router.push('/repairs' as any)} />
                   </View>
-                  <Pressable style={styles.miniCta} testID="repairs-new" onPress={() => router.push('/repairs/new' as any)}>
-                    <Ionicons name="add" size={16} color={colors.onBrandPrimary} />
-                    <Text style={styles.miniCtaText}>New Intake</Text>
-                  </Pressable>
                 </View>
               )}
 
@@ -233,17 +236,6 @@ export default function DashboardScreen() {
                 </View>
               )}
             </View>
-
-            {hasModule('team') && (
-              <Pressable
-                testID="quick-add-employee"
-                onPress={() => router.push('/employee/new')}
-                style={styles.cta}
-              >
-                <Ionicons name="add" size={20} color={colors.onBrandPrimary} />
-                <Text style={styles.ctaText}>Add Employee</Text>
-              </Pressable>
-            )}
 
             <View style={{ height: spacing.xxl }} />
           </>
@@ -348,41 +340,49 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   heroChipDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.onSuccess },
   heroChipText: { color: colors.onSuccess, fontSize: 11, fontWeight: '700' },
 
-  attGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  attGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
   attTile: {
     flexBasis: '31%', flexGrow: 1,
-    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md,
+    backgroundColor: colors.surfaceSecondary, borderRadius: radius.sm,
     borderWidth: 1, borderColor: colors.border,
-    paddingVertical: spacing.md, paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm, paddingHorizontal: spacing.sm,
   },
-  attValue: { fontSize: 22, fontWeight: '700', color: colors.brandPrimary },
-  attLabel: { color: colors.onSurfaceTertiary, fontSize: 11, marginTop: 2 },
+  attValue: { fontSize: 17, fontWeight: '700', color: colors.brandPrimary },
+  attLabel: { color: colors.onSurfaceTertiary, fontSize: 10, marginTop: 1 },
 
-  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginBottom: spacing.md, marginTop: spacing.sm },
+  approvalRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, marginTop: spacing.sm },
+  approvalPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    backgroundColor: colors.warning, borderColor: colors.onWarning, borderWidth: 1,
+    borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 5,
+  },
+  approvalPillText: { color: colors.onWarning, fontSize: 11, fontWeight: '700' },
+
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginBottom: spacing.sm, marginTop: spacing.xs },
   sectionIcon: {
-    width: 22, height: 22, borderRadius: 11, backgroundColor: colors.brandTertiary,
+    width: 20, height: 20, borderRadius: 10, backgroundColor: colors.brandTertiary,
     alignItems: 'center', justifyContent: 'center',
   },
   sectionTitle: {
-    color: colors.onSurface, fontSize: 18, fontWeight: '600',
+    color: colors.onSurface, fontSize: 16, fontWeight: '600',
     fontFamily: fonts.display,
   },
 
-  sectionGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xl },
+  sectionGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.lg },
 
-  tileGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  tileGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
   statCard: {
-    flexGrow: 1, minWidth: 110,
-    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md,
-    borderWidth: 1, borderColor: colors.border, padding: spacing.md,
+    flexGrow: 1, minWidth: 92,
+    backgroundColor: colors.surfaceSecondary, borderRadius: radius.sm,
+    borderWidth: 1, borderColor: colors.border, padding: spacing.sm,
   },
   statCardDanger: { borderColor: colors.error },
   statIconWrap: {
-    width: 28, height: 28, borderRadius: 14, backgroundColor: colors.brandTertiary,
-    alignItems: 'center', justifyContent: 'center', marginBottom: spacing.sm,
+    width: 22, height: 22, borderRadius: 11, backgroundColor: colors.brandTertiary,
+    alignItems: 'center', justifyContent: 'center', marginBottom: spacing.xs,
   },
-  statValue: { color: colors.onSurface, fontSize: 18, fontWeight: '700', fontFamily: fonts.display },
-  statLabel: { color: colors.onSurfaceTertiary, fontSize: 11, marginTop: 2 },
+  statValue: { color: colors.onSurface, fontSize: 15, fontWeight: '700', fontFamily: fonts.display },
+  statLabel: { color: colors.onSurfaceTertiary, fontSize: 10, marginTop: 1 },
 
   miniCta: {
     flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center', alignSelf: 'flex-start',

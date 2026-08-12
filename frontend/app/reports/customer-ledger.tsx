@@ -17,7 +17,7 @@ export default function CustomerLedgerScreen() {
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [query, setQuery] = useState('');
-  const [onlyBalance, setOnlyBalance] = useState(false);
+  const [onlyBalance, setOnlyBalance] = useState(true);
 
   const load = useCallback(async (q?: string) => {
     try { setCustomers(await api.get<Customer[]>(`/customers${q ? `?q=${encodeURIComponent(q)}` : ''}`)); }

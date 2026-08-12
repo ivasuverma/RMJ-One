@@ -41,14 +41,15 @@ export default function OwnerAttendance() {
 
   const load = useCallback(async () => {
     try {
-      const [r, e, corr] = await Promise.all([
+      const [r, e, corr, leaves] = await Promise.all([
         api.get<Row[]>('/attendance/today').catch(() => []),
         api.get<Ev[]>('/attendance/live').catch(() => []),
         api.get<any[]>('/attendance/corrections?status=pending').catch(() => []),
+        api.get<any[]>('/leaves?status=pending').catch(() => []),
       ]);
       setRows(r);
       setEvents(e);
-      setPendingCount(corr.length);
+      setPendingCount(corr.length + leaves.length);
     } finally {
       setLoading(false); setRefreshing(false);
     }

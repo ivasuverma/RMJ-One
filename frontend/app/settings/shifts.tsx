@@ -31,6 +31,7 @@ export default function ShiftsScreen() {
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [showForm, setShowForm] = useState(false);
 
   const load = useCallback(async () => {
     try { setItems(await api.get<Shift[]>('/shifts')); }
@@ -45,9 +46,12 @@ export default function ShiftsScreen() {
     setGrace(EMPTY.grace); setLateHalfDay(EMPTY.lateHalfDay);
   };
 
+  const closeForm = () => { resetForm(); setShowForm(false); };
+
   const startEdit = (s: Shift) => {
     setEditingId(s.id); setName(s.name); setStart(s.start); setEnd(s.end); setGrace(String(s.grace_min));
     setLateHalfDay(s.late_half_day_after_min ? String(s.late_half_day_after_min) : '');
+    setShowForm(true);
   };
 
   const submittingRef = useRef(false);
@@ -64,7 +68,7 @@ export default function ShiftsScreen() {
       };
       if (editingId) await api.put(`/shifts/${editingId}`, payload);
       else await api.post('/shifts', payload);
-      resetForm();
+      closeForm();
       await load();
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
     finally { setSaving(false); submittingRef.current = false; }
@@ -75,7 +79,7 @@ export default function ShiftsScreen() {
       setDeletingId(s.id);
       try {
         await api.del(`/shifts/${s.id}`);
-        if (editingId === s.id) resetForm();
+        if (editingId === s.id) closeForm();
         await load();
       } catch (e: any) {
         Alert.alert('Failed', e?.detail || 'Could not delete this shift. Please try again.');
@@ -92,7 +96,9 @@ export default function ShiftsScreen() {
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
         <Text style={styles.title}>Shifts</Text>
-        <View style={{ width: 40 }} />
+        <Pressable onPress={() => (showForm ? closeForm() : setShowForm(true))} style={[styles.iconBtn, styles.addTopBtn]} testID="show-add-shift-btn" hitSlop={12}>
+          <Ionicons name={showForm ? 'close' : 'add'} size={22} color={colors.onBrandPrimary} />
+        </Pressable>
       </View>
 
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
@@ -100,52 +106,58 @@ export default function ShiftsScreen() {
           contentContainerStyle={{ padding: spacing.lg }} keyboardShouldPersistTaps="handled"
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}
         >
-          <Text style={styles.section}>{editingId ? 'Edit Shift' : 'Add Shift'}</Text>
-          <TextInput testID="shift-name" value={name} onChangeText={setName} placeholder="Shift name" placeholderTextColor={colors.mutedText} style={styles.input} />
-          <View style={styles.row2}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.label}>Start</Text>
-              <TextInput testID="shift-start" value={start} onChangeText={setStart} placeholder="10:00" placeholderTextColor={colors.mutedText} style={styles.input} autoCapitalize="none" />
+          {!showForm && <Text style={styles.hint}>Define working hours, grace period, and half-day cutoffs for each shift.</Text>}
+
+          {showForm && (
+            <View style={styles.formCard} testID="add-shift-form">
+              <Text style={styles.section}>{editingId ? 'Edit Shift' : 'Add Shift'}</Text>
+              <TextInput testID="shift-name" value={name} onChangeText={setName} placeholder="Shift name" placeholderTextColor={colors.mutedText} style={styles.input} />
+              <View style={styles.row2}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.label}>Start</Text>
+                  <TextInput testID="shift-start" value={start} onChangeText={setStart} placeholder="10:00" placeholderTextColor={colors.mutedText} style={styles.input} autoCapitalize="none" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.label}>End</Text>
+                  <TextInput testID="shift-end" value={end} onChangeText={setEnd} placeholder="19:30" placeholderTextColor={colors.mutedText} style={styles.input} autoCapitalize="none" />
+                </View>
+              </View>
+              <Text style={styles.label}>Grace (min)</Text>
+              <TextInput testID="shift-grace" value={grace} onChangeText={(v) => setGrace(v.replace(/[^0-9]/g, ''))} keyboardType="numeric" style={styles.input} />
+
+              <Text style={styles.label}>Late master — mark half-day if late by (min)</Text>
+              <TextInput
+                testID="shift-late-half-day"
+                value={lateHalfDay}
+                onChangeText={(v) => setLateHalfDay(v.replace(/[^0-9]/g, ''))}
+                keyboardType="numeric"
+                placeholder="Leave blank to disable"
+                placeholderTextColor={colors.mutedText}
+                style={styles.input}
+              />
+              <Text style={styles.hint}>
+                If someone checks in this many minutes past start + grace, that day counts as a half-day for payroll — even if they end up working full hours.
+              </Text>
+
+              <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+                {editingId && (
+                  <Pressable style={styles.cancelEditBtn} onPress={resetForm} testID="cancel-edit-shift-btn">
+                    <Text style={styles.cancelEditText}>Cancel</Text>
+                  </Pressable>
+                )}
+                <Pressable style={[styles.addBtn, { flex: 1 }, saving && { opacity: 0.6 }]} disabled={saving} onPress={save} testID="save-shift-btn">
+                  {saving ? <ActivityIndicator color={colors.onBrandPrimary} /> : (
+                    <>
+                      <Ionicons name={editingId ? 'checkmark' : 'add'} size={16} color={colors.onBrandPrimary} />
+                      <Text style={styles.addBtnText}>{editingId ? 'Update Shift' : 'Add Shift'}</Text>
+                    </>
+                  )}
+                </Pressable>
+              </View>
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.label}>End</Text>
-              <TextInput testID="shift-end" value={end} onChangeText={setEnd} placeholder="19:30" placeholderTextColor={colors.mutedText} style={styles.input} autoCapitalize="none" />
-            </View>
-          </View>
-          <Text style={styles.label}>Grace (min)</Text>
-          <TextInput testID="shift-grace" value={grace} onChangeText={(v) => setGrace(v.replace(/[^0-9]/g, ''))} keyboardType="numeric" style={styles.input} />
+          )}
 
-          <Text style={styles.label}>Late master — mark half-day if late by (min)</Text>
-          <TextInput
-            testID="shift-late-half-day"
-            value={lateHalfDay}
-            onChangeText={(v) => setLateHalfDay(v.replace(/[^0-9]/g, ''))}
-            keyboardType="numeric"
-            placeholder="Leave blank to disable"
-            placeholderTextColor={colors.mutedText}
-            style={styles.input}
-          />
-          <Text style={styles.hint}>
-            If someone checks in this many minutes past start + grace, that day counts as a half-day for payroll — even if they end up working full hours.
-          </Text>
-
-          <View style={{ flexDirection: 'row', gap: spacing.sm }}>
-            {editingId && (
-              <Pressable style={styles.cancelEditBtn} onPress={resetForm} testID="cancel-edit-shift-btn">
-                <Text style={styles.cancelEditText}>Cancel</Text>
-              </Pressable>
-            )}
-            <Pressable style={[styles.addBtn, { flex: 1 }, saving && { opacity: 0.6 }]} disabled={saving} onPress={save} testID="save-shift-btn">
-              {saving ? <ActivityIndicator color={colors.onBrandPrimary} /> : (
-                <>
-                  <Ionicons name={editingId ? 'checkmark' : 'add'} size={16} color={colors.onBrandPrimary} />
-                  <Text style={styles.addBtnText}>{editingId ? 'Update Shift' : 'Add Shift'}</Text>
-                </>
-              )}
-            </Pressable>
-          </View>
-
-          <Text style={[styles.section, { marginTop: spacing.xl }]}>Existing Shifts</Text>
+          <Text style={[styles.section, { marginTop: showForm ? spacing.lg : spacing.sm }]}>Existing Shifts · {items.length}</Text>
           {items.map((s) => (
             <View key={s.id} style={[styles.card, editingId === s.id && styles.cardEditing]} testID={`shift-${s.id}`}>
               <Pressable style={{ flex: 1 }} onPress={() => startEdit(s)} testID={`edit-shift-${s.id}`}>
@@ -183,6 +195,8 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     flex: 1, color: colors.onSurface, fontSize: 22, fontWeight: '600',
     fontFamily: fonts.display,
   },
+  addTopBtn: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
+  formCard: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.lg, marginBottom: spacing.lg },
   section: { color: colors.brandSecondary, fontSize: 11, letterSpacing: 1, textTransform: 'uppercase', marginBottom: spacing.sm },
   label: { color: colors.onSurfaceSecondary, fontSize: 12, marginBottom: 4, marginTop: 6 },
   hint: { color: colors.mutedText, fontSize: 11, marginTop: 6, marginBottom: spacing.sm, lineHeight: 15 },

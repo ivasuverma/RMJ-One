@@ -19,7 +19,7 @@ export default function KarigarLedgerPickerScreen() {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [karigars, setKarigars] = useState<Karigar[]>([]);
-  const [onlyBalance, setOnlyBalance] = useState(false);
+  const [onlyBalance, setOnlyBalance] = useState(true);
 
   const load = useCallback(async () => {
     try { setKarigars(await api.get<Karigar[]>('/karigars')); }
