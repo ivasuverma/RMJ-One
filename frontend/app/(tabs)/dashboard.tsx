@@ -7,7 +7,7 @@ import {
   RefreshControl,
   ActivityIndicator,
   Pressable,
-  Platform,
+  useWindowDimensions,
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Image } from 'expo-image';
@@ -34,11 +34,28 @@ type DashboardData = {
   tasks_summary: {
     due_today: number; overdue: number; done_today: number; open_total: number;
   };
+  business_summary: {
+    revenue_today: number; revenue_month: number; intake_today: number;
+    active_employees: number; customers_open: number; karigars_open: number;
+  };
 };
+
+const AUTO_REFRESH_MS = 45000;
+const fmtINR = (n: number) => `₹${Math.round(n || 0).toLocaleString('en-IN')}`;
+
+function timeAgo(d: Date | null) {
+  if (!d) return '';
+  const s = Math.max(0, Math.round((Date.now() - d.getTime()) / 1000));
+  if (s < 5) return 'just now';
+  if (s < 60) return `${s}s ago`;
+  const m = Math.round(s / 60);
+  return `${m}m ago`;
+}
 
 export default function DashboardScreen() {
   const { user, hasModule } = useAuth();
   const { colors, scheme } = useTheme();
+  const { width } = useWindowDimensions();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const heroGradient = scheme === 'light'
     ? ['rgba(247,241,230,0.6)', 'rgba(247,241,230,0.92)'] as const
@@ -48,21 +65,39 @@ export default function DashboardScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+  const [unread, setUnread] = useState(0);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [, forceTick] = useState(0);
 
-  const load = useCallback(async () => {
+  // Responsive breakpoints: phones stay single-column, tablets/kiosk/web widen.
+  const isWide = width >= 900;
+  const isTablet = width >= 640;
+  const gridCols = width >= 1100 ? 6 : width >= 820 ? 4 : width >= 520 ? 3 : 2;
+  const tileBasis = `${100 / gridCols - 1.5}%`;
+  const sectionBasis = isWide ? '48.5%' : '100%';
+
+  const load = useCallback(async (silent?: boolean) => {
     try {
       setError('');
       const res = await api.get<DashboardData>('/dashboard');
       setData(res);
+      setLastUpdated(new Date());
     } catch (e: any) {
-      setError(e?.detail || 'Failed to load dashboard');
+      if (!silent) setError(e?.detail || 'Failed to load dashboard');
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   }, []);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useFocusEffect(useCallback(() => {
+    load();
+    api.get<{ count: number }>('/notifications/unread-count').then((r) => setUnread(r.count)).catch(() => {});
+    // Live-refresh: quietly re-pull dashboard numbers while this screen is focused.
+    const poll = setInterval(() => load(true), AUTO_REFRESH_MS);
+    const clock = setInterval(() => forceTick((t) => t + 1), 15000);
+    return () => { clearInterval(poll); clearInterval(clock); };
+  }, [load]));
 
   const onRefresh = () => { setRefreshing(true); load(); };
 
@@ -71,7 +106,7 @@ export default function DashboardScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="dashboard-screen">
       <ScrollView
-        contentContainerStyle={styles.scroll}
+        contentContainerStyle={[styles.scroll, isWide && styles.scrollWide]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.brandPrimary} />}
         showsVerticalScrollIndicator={false}
       >
@@ -81,10 +116,16 @@ export default function DashboardScreen() {
             <Text style={styles.dateText}>{today}</Text>
             <Text style={styles.greeting}>Good day,</Text>
             <Text style={styles.owner} numberOfLines={1}>{user?.name || 'Owner'}</Text>
+            {!!lastUpdated && (
+              <View style={styles.liveRow}>
+                <View style={styles.liveDot} />
+                <Text style={styles.liveText}>Updated {timeAgo(lastUpdated)}</Text>
+              </View>
+            )}
           </View>
-          <Pressable onPress={() => router.push('/assistant')} style={styles.aiBtn} testID="ai-assistant-btn">
-            <Ionicons name="sparkles" size={16} color={colors.onBrandPrimary} />
-            <Text style={styles.aiBtnText}>Ask AI</Text>
+          <Pressable onPress={() => router.push('/notifications' as any)} style={styles.bellBtn} testID="notifications-btn" hitSlop={12}>
+            <Ionicons name="notifications-outline" size={20} color={colors.onSurface} />
+            {unread > 0 && <View style={styles.bellDot} />}
           </Pressable>
           <Image source={images.logo} style={styles.headerBadge} contentFit="contain" testID="dashboard-logo" />
         </View>
@@ -97,12 +138,23 @@ export default function DashboardScreen() {
           <View style={styles.errorCard} testID="dashboard-error">
             <Ionicons name="warning-outline" size={22} color={colors.brandSecondary} />
             <Text style={styles.errorText}>{error}</Text>
-            <Pressable onPress={load} style={styles.retryBtn} testID="dashboard-retry">
+            <Pressable onPress={() => load()} style={styles.retryBtn} testID="dashboard-retry">
               <Text style={styles.retryText}>Retry</Text>
             </Pressable>
           </View>
         ) : data ? (
           <>
+            {/* Business Snapshot */}
+            <SectionHeader title="Business Snapshot" icon="stats-chart-outline" testID="section-business" />
+            <View style={[styles.tileGrid, { marginBottom: spacing.xl }]}>
+              <StatCard basis={tileBasis} icon="cash-outline" label="Revenue Today" value={fmtINR(data.business_summary.revenue_today)} accent={colors.brandPrimary} testID="biz-revenue-today" onPress={() => router.push('/reports' as any)} />
+              <StatCard basis={tileBasis} icon="trending-up-outline" label="Revenue This Month" value={fmtINR(data.business_summary.revenue_month)} accent={colors.brandPrimary} testID="biz-revenue-month" onPress={() => router.push('/reports' as any)} />
+              <StatCard basis={tileBasis} icon="diamond-outline" label="New Intake Today" value={String(data.business_summary.intake_today)} accent={colors.brandSecondary} testID="biz-intake-today" onPress={() => router.push('/repairs' as any)} />
+              <StatCard basis={tileBasis} icon="people-outline" label="Active Employees" value={String(data.business_summary.active_employees)} accent={colors.brandSecondary} testID="biz-active-employees" onPress={() => router.push('/(tabs)/employees')} />
+              <StatCard basis={tileBasis} icon="person-outline" label="Customers with Balance" value={String(data.business_summary.customers_open)} accent={colors.onWarning} testID="biz-customers-open" onPress={() => router.push('/reports/customer-ledger' as any)} />
+              <StatCard basis={tileBasis} icon="hammer-outline" label="Karigars with Balance" value={String(data.business_summary.karigars_open)} accent={colors.onWarning} testID="biz-karigars-open" onPress={() => router.push('/reports/karigar-ledger' as any)} />
+            </View>
+
             {/* Today's Attendance hero */}
             {hasModule('attendance') && (
               <Pressable
@@ -140,52 +192,47 @@ export default function DashboardScreen() {
               </Pressable>
             )}
 
-            {/* Pending Approvals */}
-            {hasModule('approvals') && (
-              <>
-                <SectionHeader title="Pending Approvals" testID="section-approvals" />
-                <View style={styles.listCard}>
-                  <ApprovalRow icon="time-outline" label="Attendance Corrections" count={data.pending_approvals.attendance_corrections} testID="approval-corrections" onPress={() => router.push('/approvals?tab=Corrections')} />
-                  <Divider />
-                  <ApprovalRow icon="calendar-outline" label="Leave Requests" count={data.pending_approvals.leave_requests} testID="approval-leaves" onPress={() => router.push('/approvals?tab=Leaves')} />
+            {/* Responsive section grid: Approvals / Repairs / Tasks sit side-by-side on wide screens */}
+            <View style={styles.sectionGrid}>
+              {hasModule('approvals') && (
+                <View style={{ flexBasis: sectionBasis, flexGrow: 1 }}>
+                  <SectionHeader title="Pending Approvals" icon="checkmark-done-outline" testID="section-approvals" />
+                  <View style={styles.tileGrid}>
+                    <StatCard basis={isTablet ? '48%' : tileBasis} icon="time-outline" label="Attendance Corrections" value={String(data.pending_approvals.attendance_corrections)} accent={colors.brandSecondary} danger={data.pending_approvals.attendance_corrections > 0} testID="approval-corrections" onPress={() => router.push('/approvals?tab=Corrections')} />
+                    <StatCard basis={isTablet ? '48%' : tileBasis} icon="calendar-outline" label="Leave Requests" value={String(data.pending_approvals.leave_requests)} accent={colors.brandSecondary} danger={data.pending_approvals.leave_requests > 0} testID="approval-leaves" onPress={() => router.push('/approvals?tab=Leaves')} />
+                  </View>
                 </View>
-              </>
-            )}
+              )}
 
-            {/* Repairs at a glance */}
-            {hasModule('repairs') && (
-              <>
-                <SectionHeader title="Repairs" testID="section-repairs" />
-                <View style={styles.listCard}>
-                  <ApprovalRow icon="cube-outline" label="Received · awaiting action" count={data.repairs_summary.received} testID="repairs-received" onPress={() => router.push('/repairs/outstanding' as any)} />
-                  <Divider />
-                  <ApprovalRow icon="hammer-outline" label="With Karigar" count={data.repairs_summary.with_karigar} testID="repairs-with-karigar" onPress={() => router.push('/repairs/outstanding' as any)} />
-                  <Divider />
-                  <ApprovalRow icon="pricetag-outline" label="Pending to Bill" count={data.repairs_summary.ready} testID="repairs-ready" onPress={() => router.push('/repairs/outstanding' as any)} />
-                  <Divider />
-                  <ApprovalRow icon="alert-circle-outline" label="Overdue" count={data.repairs_summary.overdue} testID="repairs-overdue" danger onPress={() => router.push('/repairs/outstanding' as any)} />
+              {hasModule('repairs') && (
+                <View style={{ flexBasis: sectionBasis, flexGrow: 1 }}>
+                  <SectionHeader title="Repairs" icon="construct-outline" testID="section-repairs" />
+                  <View style={styles.tileGrid}>
+                    <StatCard basis={isTablet ? '48%' : tileBasis} icon="cube-outline" label="Received · awaiting action" value={String(data.repairs_summary.received)} accent={colors.brandSecondary} testID="repairs-received" onPress={() => router.push('/repairs/outstanding' as any)} />
+                    <StatCard basis={isTablet ? '48%' : tileBasis} icon="hammer-outline" label="With Karigar" value={String(data.repairs_summary.with_karigar)} accent={colors.brandSecondary} testID="repairs-with-karigar" onPress={() => router.push('/repairs/outstanding' as any)} />
+                    <StatCard basis={isTablet ? '48%' : tileBasis} icon="pricetag-outline" label="Pending to Bill" value={String(data.repairs_summary.ready)} accent={colors.brandSecondary} testID="repairs-ready" onPress={() => router.push('/repairs/outstanding' as any)} />
+                    <StatCard basis={isTablet ? '48%' : tileBasis} icon="alert-circle-outline" label="Overdue" value={String(data.repairs_summary.overdue)} accent={colors.onError} danger={data.repairs_summary.overdue > 0} testID="repairs-overdue" onPress={() => router.push('/repairs/outstanding' as any)} />
+                    <StatCard basis={isTablet ? '48%' : tileBasis} icon="checkmark-circle-outline" label="Delivered Today" value={String(data.repairs_summary.delivered_today)} accent={colors.onSuccess} testID="repairs-delivered-today" onPress={() => router.push('/repairs' as any)} />
+                    <StatCard basis={isTablet ? '48%' : tileBasis} icon="layers-outline" label="Total Open Tags" value={String(data.repairs_summary.total_open)} accent={colors.brandSecondary} testID="repairs-total-open" onPress={() => router.push('/repairs' as any)} />
+                  </View>
+                  <Pressable style={styles.miniCta} testID="repairs-new" onPress={() => router.push('/repairs/new' as any)}>
+                    <Ionicons name="add" size={16} color={colors.onBrandPrimary} />
+                    <Text style={styles.miniCtaText}>New Intake</Text>
+                  </Pressable>
                 </View>
-                <View style={styles.miniStatsRow}>
-                  <MiniStat label="Delivered Today" value={data.repairs_summary.delivered_today} testID="repairs-delivered-today" onPress={() => router.push('/repairs' as any)} />
-                  <MiniStat label="Total Open Tags" value={data.repairs_summary.total_open} testID="repairs-total-open" onPress={() => router.push('/repairs' as any)} />
-                  <MiniStat label="New Intake" icon="add" accent testID="repairs-new" onPress={() => router.push('/repairs/new' as any)} />
-                </View>
-              </>
-            )}
+              )}
 
-            {/* Tasks at a glance */}
-            {hasModule('tasks') && (
-              <>
-                <SectionHeader title="Tasks" testID="section-tasks" />
-                <View style={styles.listCard}>
-                  <ApprovalRow icon="today-outline" label="Due Today" count={data.tasks_summary.due_today} testID="tasks-due-today" onPress={() => router.push('/tasks' as any)} />
-                  <Divider />
-                  <ApprovalRow icon="alert-circle-outline" label="Overdue" count={data.tasks_summary.overdue} testID="tasks-overdue" danger onPress={() => router.push('/tasks' as any)} />
-                  <Divider />
-                  <ApprovalRow icon="checkmark-done-outline" label="Completed Today" count={data.tasks_summary.done_today} testID="tasks-done-today" onPress={() => router.push('/tasks' as any)} />
+              {hasModule('tasks') && (
+                <View style={{ flexBasis: sectionBasis, flexGrow: 1 }}>
+                  <SectionHeader title="Tasks" icon="checkbox-outline" testID="section-tasks" />
+                  <View style={styles.tileGrid}>
+                    <StatCard basis={isTablet ? '31%' : tileBasis} icon="today-outline" label="Due Today" value={String(data.tasks_summary.due_today)} accent={colors.brandSecondary} testID="tasks-due-today" onPress={() => router.push('/tasks' as any)} />
+                    <StatCard basis={isTablet ? '31%' : tileBasis} icon="alert-circle-outline" label="Overdue" value={String(data.tasks_summary.overdue)} accent={colors.onError} danger={data.tasks_summary.overdue > 0} testID="tasks-overdue" onPress={() => router.push('/tasks' as any)} />
+                    <StatCard basis={isTablet ? '31%' : tileBasis} icon="checkmark-done-outline" label="Completed Today" value={String(data.tasks_summary.done_today)} accent={colors.onSuccess} testID="tasks-done-today" onPress={() => router.push('/tasks' as any)} />
+                  </View>
                 </View>
-              </>
-            )}
+              )}
+            </View>
 
             {hasModule('team') && (
               <Pressable
@@ -217,58 +264,46 @@ function AttTile({ label, value, accent, testID, onPress }: { label: string; val
   );
 }
 
-function SectionHeader({ title, testID }: { title: string; testID?: string }) {
+function SectionHeader({ title, icon, testID }: { title: string; icon?: any; testID?: string }) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <View style={styles.sectionHeader} testID={testID}>
+      {!!icon && (
+        <View style={styles.sectionIcon}><Ionicons name={icon} size={14} color={colors.brandSecondary} /></View>
+      )}
       <Text style={styles.sectionTitle}>{title}</Text>
     </View>
   );
 }
 
-function ApprovalRow({ icon, label, count, testID, onPress, danger }: { icon: any; label: string; count: number; testID?: string; onPress?: () => void; danger?: boolean }) {
-  const { colors } = useTheme();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
-  const highlight = danger && count > 0;
-  return (
-    <Pressable style={({ pressed }) => [styles.appRow, pressed && { opacity: 0.7 }]} testID={testID} onPress={onPress}>
-      <View style={[styles.appIconWrap, highlight && { backgroundColor: colors.error }]}>
-        <Ionicons name={icon} size={18} color={highlight ? colors.onError : colors.brandSecondary} />
-      </View>
-      <Text style={styles.appLabel}>{label}</Text>
-      <View style={[styles.countPill, count === 0 && styles.countPillEmpty, highlight && { backgroundColor: colors.error }]}>
-        <Text style={[styles.countPillText, count === 0 && styles.countPillTextEmpty, highlight && { color: colors.onError }]}>{count}</Text>
-      </View>
-      <Ionicons name="chevron-forward" size={16} color={colors.mutedText} style={{ marginLeft: 4 }} />
-    </Pressable>
-  );
-}
-
-function MiniStat({ label, value, icon, accent, testID, onPress }: { label?: string; value?: number; icon?: any; accent?: boolean; testID?: string; onPress?: () => void }) {
+function StatCard({
+  icon, label, value, accent, danger, testID, onPress, basis,
+}: {
+  icon: any; label: string; value: string; accent: string; danger?: boolean;
+  testID?: string; onPress?: () => void; basis: string;
+}) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
-    <Pressable style={({ pressed }) => [styles.miniStat, accent && styles.miniStatAccent, pressed && { opacity: 0.75 }]} testID={testID} onPress={onPress}>
-      {icon ? (
-        <Ionicons name={icon} size={20} color={accent ? colors.onBrandPrimary : colors.brandSecondary} />
-      ) : (
-        <Text style={styles.miniStatValue}>{value}</Text>
-      )}
-      {label ? <Text style={[styles.miniStatLabel, accent && { color: colors.onBrandPrimary }]}>{label}</Text> : null}
+    <Pressable
+      style={({ pressed }) => [styles.statCard, { flexBasis: basis } as any, danger && styles.statCardDanger, pressed && { opacity: 0.75 }]}
+      testID={testID}
+      onPress={onPress}
+    >
+      <View style={[styles.statIconWrap, danger && { backgroundColor: colors.error }]}>
+        <Ionicons name={icon} size={16} color={danger ? colors.onError : accent} />
+      </View>
+      <Text style={[styles.statValue, danger && { color: colors.onError }]} numberOfLines={1}>{value}</Text>
+      <Text style={styles.statLabel} numberOfLines={2}>{label}</Text>
     </Pressable>
   );
-}
-
-function Divider() {
-  const { colors } = useTheme();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
-  return <View style={styles.divider} />;
 }
 
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   scroll: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.xxl },
+  scrollWide: { maxWidth: 1200, width: '100%', alignSelf: 'center' },
   header: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.lg },
   dateText: { color: colors.brandSecondary, fontSize: 12, letterSpacing: 0.6, textTransform: 'uppercase' },
   greeting: { color: colors.onSurfaceTertiary, fontSize: 14, marginTop: spacing.xs },
@@ -276,15 +311,21 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     color: colors.onSurface, fontSize: 26, fontWeight: '600',
     fontFamily: fonts.display,
   },
+  liveRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 6 },
+  liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.onSuccess },
+  liveText: { color: colors.mutedText, fontSize: 11 },
   headerBadge: {
     width: 40, height: 40, borderRadius: radius.md,
   },
-  aiBtn: {
-    flexDirection: 'row', gap: 6, alignItems: 'center', backgroundColor: colors.brandTertiary,
-    borderColor: colors.brandPrimary, borderWidth: 1,
-    paddingHorizontal: 12, paddingVertical: 8, borderRadius: radius.pill, marginRight: spacing.sm,
+  bellBtn: {
+    width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surfaceSecondary,
+    alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border,
+    marginRight: spacing.sm,
   },
-  aiBtnText: { color: colors.brandSecondary, fontWeight: '700', fontSize: 12 },
+  bellDot: {
+    position: 'absolute', top: 8, right: 9, width: 8, height: 8, borderRadius: 4,
+    backgroundColor: colors.error, borderWidth: 1, borderColor: colors.surface,
+  },
   loadingWrap: { paddingVertical: 80, alignItems: 'center' },
 
   heroCard: {
@@ -317,42 +358,42 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   attValue: { fontSize: 22, fontWeight: '700', color: colors.brandPrimary },
   attLabel: { color: colors.onSurfaceTertiary, fontSize: 11, marginTop: 2 },
 
-  sectionHeader: { marginBottom: spacing.md, marginTop: spacing.sm },
-  sectionTitle: {
-    color: colors.onSurface, fontSize: 20, fontWeight: '600',
-    fontFamily: fonts.display,
-  },
-  listCard: {
-    backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg,
-    borderWidth: 1, borderColor: colors.border, marginBottom: spacing.xl,
-    overflow: 'hidden',
-  },
-  appRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.md, paddingHorizontal: spacing.lg, gap: spacing.md },
-  appIconWrap: {
-    width: 36, height: 36, borderRadius: radius.md,
-    backgroundColor: colors.brandTertiary,
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginBottom: spacing.md, marginTop: spacing.sm },
+  sectionIcon: {
+    width: 22, height: 22, borderRadius: 11, backgroundColor: colors.brandTertiary,
     alignItems: 'center', justifyContent: 'center',
   },
-  appLabel: { flex: 1, color: colors.onSurfaceSecondary, fontSize: 14 },
-  countPill: { minWidth: 30, height: 26, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10, backgroundColor: colors.brandPrimary },
-  countPillEmpty: { backgroundColor: colors.surfaceTertiary },
-  countPillText: { color: colors.onBrandPrimary, fontWeight: '700', fontSize: 12 },
-  countPillTextEmpty: { color: colors.onSurfaceTertiary },
-  divider: { height: 1, backgroundColor: colors.divider, marginHorizontal: spacing.lg },
-
-  miniStatsRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.xl },
-  miniStat: {
-    flex: 1, alignItems: 'center', justifyContent: 'center', gap: 4,
-    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md,
-    borderWidth: 1, borderColor: colors.border, paddingVertical: spacing.md,
+  sectionTitle: {
+    color: colors.onSurface, fontSize: 18, fontWeight: '600',
+    fontFamily: fonts.display,
   },
-  miniStatAccent: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
-  miniStatValue: { color: colors.onSurface, fontSize: 18, fontWeight: '700' },
-  miniStatLabel: { color: colors.onSurfaceTertiary, fontSize: 10, textAlign: 'center' },
+
+  sectionGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xl },
+
+  tileGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  statCard: {
+    flexGrow: 1, minWidth: 110,
+    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md,
+    borderWidth: 1, borderColor: colors.border, padding: spacing.md,
+  },
+  statCardDanger: { borderColor: colors.error },
+  statIconWrap: {
+    width: 28, height: 28, borderRadius: 14, backgroundColor: colors.brandTertiary,
+    alignItems: 'center', justifyContent: 'center', marginBottom: spacing.sm,
+  },
+  statValue: { color: colors.onSurface, fontSize: 18, fontWeight: '700', fontFamily: fonts.display },
+  statLabel: { color: colors.onSurfaceTertiary, fontSize: 11, marginTop: 2 },
+
+  miniCta: {
+    flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center', alignSelf: 'flex-start',
+    backgroundColor: colors.brandPrimary, borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: 8,
+    marginTop: spacing.sm,
+  },
+  miniCtaText: { color: colors.onBrandPrimary, fontWeight: '700', fontSize: 12 },
 
   cta: {
     flexDirection: 'row', gap: spacing.sm, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: 14, marginTop: spacing.md,
+    backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: 14, marginTop: spacing.xl,
   },
   ctaText: { color: colors.onBrandPrimary, fontWeight: '700', fontSize: 15, letterSpacing: 0.3 },
 

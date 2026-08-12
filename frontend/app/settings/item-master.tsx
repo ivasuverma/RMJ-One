@@ -29,6 +29,7 @@ export default function ItemMasterScreen() {
   const [category, setCategory] = useState('');
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [showForm, setShowForm] = useState(false);
 
   const load = useCallback(async () => {
     try { setItems(await api.get<ItemMaster[]>('/item-master')); }
@@ -39,16 +40,17 @@ export default function ItemMasterScreen() {
 
   const submittingRef = useRef(false);
   const add = async () => {
-    if (submittingRef.current) return;
-    if (!name.trim()) { Alert.alert('Missing', 'Enter a name for this item'); return; }
+    if (submittingRef.current) return false;
+    if (!name.trim()) { Alert.alert('Missing', 'Enter a name for this item'); return false; }
     const p = parseFloat(purity);
-    if (!p || p <= 0 || p > 100) { Alert.alert('Invalid', 'Purity must be between 0 and 100'); return; }
+    if (!p || p <= 0 || p > 100) { Alert.alert('Invalid', 'Purity must be between 0 and 100'); return false; }
     submittingRef.current = true;
     setSaving(true);
     try {
       await api.post('/item-master', { name: name.trim(), purity: p, category: category.trim(), active: true });
       setName(''); setCategory(''); await load();
-    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+      return true;
+    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); return false; }
     finally { setSaving(false); submittingRef.current = false; }
   };
 
@@ -71,7 +73,9 @@ export default function ItemMasterScreen() {
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
         <Text style={styles.title}>Items & Purity</Text>
-        <View style={{ width: 40 }} />
+        <Pressable onPress={() => setShowForm((v) => !v)} style={[styles.iconBtn, styles.addTopBtn]} testID="show-add-item-btn" hitSlop={12}>
+          <Ionicons name={showForm ? 'close' : 'add'} size={22} color={colors.onBrandPrimary} />
+        </Pressable>
       </View>
 
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
@@ -79,28 +83,32 @@ export default function ItemMasterScreen() {
           contentContainerStyle={{ padding: spacing.lg }} keyboardShouldPersistTaps="handled"
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}
         >
-          <Text style={styles.hint}>Predefine item types with their gold purity (e.g. 22K = 91.6%). Picking one on a repair item lets the karigar's gold ledger track fine-gold-equivalent weight instead of raw gross grams.</Text>
+          {!showForm && <Text style={styles.hint}>Predefine item types with their gold purity (e.g. 22K = 91.6%). Picking one on a repair item lets the karigar's gold ledger track fine-gold-equivalent weight instead of raw gross grams.</Text>}
 
-          <Text style={styles.section}>Add Item</Text>
-          <Text style={styles.label}>Name</Text>
-          <TextInput testID="item-name" value={name} onChangeText={setName} placeholder="e.g. 22K Ring, 18K Chain" placeholderTextColor={colors.mutedText} style={styles.input} />
-          <Text style={styles.label}>Category (optional)</Text>
-          <TextInput testID="item-category" value={category} onChangeText={setCategory} placeholder="e.g. Ring, Chain, Bangle" placeholderTextColor={colors.mutedText} style={styles.input} />
-          <Text style={styles.label}>Purity (%)</Text>
-          <View style={styles.chipRow}>
-            {COMMON_PURITIES.map((p) => (
-              <Pressable key={p.value} onPress={() => setPurity(p.value)} style={[styles.chip, purity === p.value && styles.chipActive]} testID={`purity-${p.value}`}>
-                <Text style={[styles.chipText, purity === p.value && styles.chipTextActive]}>{p.label}</Text>
+          {showForm && (
+            <View style={styles.formCard} testID="add-item-form">
+              <Text style={styles.section}>Add Item</Text>
+              <Text style={styles.label}>Name</Text>
+              <TextInput testID="item-name" value={name} onChangeText={setName} placeholder="e.g. 22K Ring, 18K Chain" placeholderTextColor={colors.mutedText} style={styles.input} />
+              <Text style={styles.label}>Category (optional)</Text>
+              <TextInput testID="item-category" value={category} onChangeText={setCategory} placeholder="e.g. Ring, Chain, Bangle" placeholderTextColor={colors.mutedText} style={styles.input} />
+              <Text style={styles.label}>Purity (%)</Text>
+              <View style={styles.chipRow}>
+                {COMMON_PURITIES.map((p) => (
+                  <Pressable key={p.value} onPress={() => setPurity(p.value)} style={[styles.chip, purity === p.value && styles.chipActive]} testID={`purity-${p.value}`}>
+                    <Text style={[styles.chipText, purity === p.value && styles.chipTextActive]}>{p.label}</Text>
+                  </Pressable>
+                ))}
+              </View>
+              <TextInput testID="item-purity" value={purity} onChangeText={(v) => setPurity(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="91.6" placeholderTextColor={colors.mutedText} style={styles.input} />
+
+              <Pressable style={[styles.addBtn, saving && { opacity: 0.6 }]} disabled={saving} onPress={async () => { if (await add()) setShowForm(false); }} testID="add-item-btn">
+                {saving ? <ActivityIndicator color={colors.onBrandPrimary} /> : <><Ionicons name="add" size={16} color={colors.onBrandPrimary} /><Text style={styles.addBtnText}>Add Item</Text></>}
               </Pressable>
-            ))}
-          </View>
-          <TextInput testID="item-purity" value={purity} onChangeText={(v) => setPurity(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="91.6" placeholderTextColor={colors.mutedText} style={styles.input} />
+            </View>
+          )}
 
-          <Pressable style={[styles.addBtn, saving && { opacity: 0.6 }]} disabled={saving} onPress={add} testID="add-item-btn">
-            {saving ? <ActivityIndicator color={colors.onBrandPrimary} /> : <><Ionicons name="add" size={16} color={colors.onBrandPrimary} /><Text style={styles.addBtnText}>Add Item</Text></>}
-          </Pressable>
-
-          <Text style={[styles.section, { marginTop: spacing.xl }]}>All Items</Text>
+          <Text style={[styles.section, { marginTop: showForm ? spacing.lg : spacing.sm }]}>All Items · {items.length}</Text>
           {items.map((it) => (
             <View key={it.id} style={[styles.card, !it.active && { opacity: 0.55 }]} testID={`item-${it.id}`}>
               <View style={styles.iconBox}><Ionicons name="diamond-outline" size={18} color={colors.brandSecondary} /></View>
@@ -133,6 +141,8 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border,
   },
   title: { flex: 1, color: colors.onSurface, fontSize: 20, fontWeight: '600', fontFamily: fonts.display },
+  addTopBtn: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
+  formCard: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.lg, marginBottom: spacing.lg },
   hint: { color: colors.mutedText, fontSize: 12, marginBottom: spacing.lg, lineHeight: 17 },
   section: { color: colors.brandSecondary, fontSize: 11, letterSpacing: 1, textTransform: 'uppercase', marginBottom: spacing.sm },
   label: { color: colors.onSurfaceSecondary, fontSize: 12, marginBottom: 4, marginTop: 6 },

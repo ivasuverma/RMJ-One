@@ -94,6 +94,11 @@ export default function OwnerPayroll() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="payroll-screen">
       <View style={styles.header}>
+        {router.canGoBack() && (
+          <Pressable onPress={() => router.back()} style={styles.backBtn} testID="back-btn" hitSlop={12}>
+            <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
+          </Pressable>
+        )}
         <Text style={styles.title}>Payroll</Text>
         {data?.locked ? (
           <View style={styles.lockedChip}><Ionicons name="lock-closed" size={12} color={colors.onWarning} /><Text style={styles.lockedText}>Locked</Text></View>
@@ -223,6 +228,10 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   title: {
     flex: 1, color: colors.onSurface, fontSize: 30, fontWeight: '600',
     fontFamily: fonts.display,
+  },
+  backBtn: {
+    width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surfaceSecondary,
+    alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border,
   },
   lockedChip: {
     flexDirection: 'row', gap: 4, alignItems: 'center',

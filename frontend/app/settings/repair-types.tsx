@@ -22,6 +22,7 @@ export default function RepairTypesScreen() {
   const [needsKarigar, setNeedsKarigar] = useState(false);
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [showForm, setShowForm] = useState(false);
 
   const load = useCallback(async () => {
     try { setItems(await api.get<RT[]>('/repair-types')); }
@@ -32,14 +33,15 @@ export default function RepairTypesScreen() {
 
   const submittingRef = useRef(false);
   const add = async () => {
-    if (submittingRef.current) return;
-    if (!name.trim()) { Alert.alert('Missing', 'Enter a name for this repair type'); return; }
+    if (submittingRef.current) return false;
+    if (!name.trim()) { Alert.alert('Missing', 'Enter a name for this repair type'); return false; }
     submittingRef.current = true;
     setSaving(true);
     try {
       await api.post('/repair-types', { name: name.trim(), default_labour: parseFloat(labour) || 0, requires_karigar_default: needsKarigar, active: true });
       setName(''); setLabour(''); setNeedsKarigar(false); await load();
-    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+      return true;
+    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); return false; }
     finally { setSaving(false); submittingRef.current = false; }
   };
 
@@ -62,7 +64,9 @@ export default function RepairTypesScreen() {
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
         <Text style={styles.title}>Repair Types</Text>
-        <View style={{ width: 40 }} />
+        <Pressable onPress={() => setShowForm((v) => !v)} style={[styles.iconBtn, styles.addTopBtn]} testID="show-add-rt-btn" hitSlop={12}>
+          <Ionicons name={showForm ? 'close' : 'add'} size={22} color={colors.onBrandPrimary} />
+        </Pressable>
       </View>
 
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
@@ -70,22 +74,26 @@ export default function RepairTypesScreen() {
           contentContainerStyle={{ padding: spacing.lg }} keyboardShouldPersistTaps="handled"
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}
         >
-          <Text style={styles.hint}>Predefine the repair jobs you do often — picking one on a repair item prefills its labour charge and whether it usually needs a karigar.</Text>
+          {!showForm && <Text style={styles.hint}>Predefine the repair jobs you do often — picking one on a repair item prefills its labour charge and whether it usually needs a karigar.</Text>}
 
-          <Text style={styles.section}>Add Repair Type</Text>
-          <Text style={styles.label}>Name</Text>
-          <TextInput testID="rt-name" value={name} onChangeText={setName} placeholder="e.g. Sizing, Polish, Stone Setting" placeholderTextColor={colors.mutedText} style={styles.input} />
-          <Text style={styles.label}>Default labour charge (₹)</Text>
-          <TextInput testID="rt-labour" value={labour} onChangeText={(v) => setLabour(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />
-          <Pressable onPress={() => setNeedsKarigar((v) => !v)} style={styles.checkRow} testID="rt-needs-karigar">
-            <View style={[styles.checkbox, needsKarigar && styles.checkboxOn]}>{needsKarigar && <Ionicons name="checkmark" size={13} color={colors.onBrandPrimary} />}</View>
-            <Text style={styles.checkLabel}>Usually needs a karigar</Text>
-          </Pressable>
-          <Pressable style={[styles.addBtn, saving && { opacity: 0.6 }]} disabled={saving} onPress={add} testID="add-rt-btn">
-            {saving ? <ActivityIndicator color={colors.onBrandPrimary} /> : <><Ionicons name="add" size={16} color={colors.onBrandPrimary} /><Text style={styles.addBtnText}>Add Repair Type</Text></>}
-          </Pressable>
+          {showForm && (
+            <View style={styles.formCard} testID="add-rt-form">
+              <Text style={styles.section}>Add Repair Type</Text>
+              <Text style={styles.label}>Name</Text>
+              <TextInput testID="rt-name" value={name} onChangeText={setName} placeholder="e.g. Sizing, Polish, Stone Setting" placeholderTextColor={colors.mutedText} style={styles.input} />
+              <Text style={styles.label}>Default labour charge (₹)</Text>
+              <TextInput testID="rt-labour" value={labour} onChangeText={(v) => setLabour(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />
+              <Pressable onPress={() => setNeedsKarigar((v) => !v)} style={styles.checkRow} testID="rt-needs-karigar">
+                <View style={[styles.checkbox, needsKarigar && styles.checkboxOn]}>{needsKarigar && <Ionicons name="checkmark" size={13} color={colors.onBrandPrimary} />}</View>
+                <Text style={styles.checkLabel}>Usually needs a karigar</Text>
+              </Pressable>
+              <Pressable style={[styles.addBtn, saving && { opacity: 0.6 }]} disabled={saving} onPress={async () => { if (await add()) setShowForm(false); }} testID="add-rt-btn">
+                {saving ? <ActivityIndicator color={colors.onBrandPrimary} /> : <><Ionicons name="add" size={16} color={colors.onBrandPrimary} /><Text style={styles.addBtnText}>Add Repair Type</Text></>}
+              </Pressable>
+            </View>
+          )}
 
-          <Text style={[styles.section, { marginTop: spacing.xl }]}>All Types</Text>
+          <Text style={[styles.section, { marginTop: showForm ? spacing.lg : spacing.sm }]}>All Types · {items.length}</Text>
           {items.map((rt) => (
             <View key={rt.id} style={[styles.card, !rt.active && { opacity: 0.55 }]} testID={`rt-${rt.id}`}>
               <View style={styles.iconBox}><Ionicons name="construct-outline" size={18} color={colors.brandSecondary} /></View>
@@ -118,6 +126,8 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border,
   },
   title: { flex: 1, color: colors.onSurface, fontSize: 22, fontWeight: '600', fontFamily: fonts.display },
+  addTopBtn: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
+  formCard: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.lg, marginBottom: spacing.lg },
   hint: { color: colors.mutedText, fontSize: 12, marginBottom: spacing.lg, lineHeight: 17 },
   section: { color: colors.brandSecondary, fontSize: 11, letterSpacing: 1, textTransform: 'uppercase', marginBottom: spacing.sm },
   label: { color: colors.onSurfaceSecondary, fontSize: 12, marginBottom: 4, marginTop: 6 },

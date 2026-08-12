@@ -19,12 +19,19 @@ export default function KarigarLedgerPickerScreen() {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [karigars, setKarigars] = useState<Karigar[]>([]);
+  const [onlyBalance, setOnlyBalance] = useState(false);
 
   const load = useCallback(async () => {
     try { setKarigars(await api.get<Karigar[]>('/karigars')); }
     catch (_e) { setKarigars([]); }
   }, []);
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  const hasBalance = (k: Karigar) => !!k.fine_weight_balance || !!k.amount_due;
+  const withBalanceCount = karigars.filter(hasBalance).length;
+  const visible = (onlyBalance ? karigars.filter(hasBalance) : karigars)
+    .slice()
+    .sort((a, b) => Math.abs(b.fine_weight_balance || 0) - Math.abs(a.fine_weight_balance || 0));
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="karigar-ledger-picker-screen">
@@ -36,10 +43,19 @@ export default function KarigarLedgerPickerScreen() {
         <View style={{ width: 40 }} />
       </View>
 
+      <View style={styles.filterRow}>
+        <Pressable onPress={() => setOnlyBalance(false)} style={[styles.filterChip, !onlyBalance && styles.filterChipActive]} testID="filter-all">
+          <Text style={[styles.filterText, !onlyBalance && styles.filterTextActive]}>All · {karigars.length}</Text>
+        </Pressable>
+        <Pressable onPress={() => setOnlyBalance(true)} style={[styles.filterChip, onlyBalance && styles.filterChipActive]} testID="filter-with-balance">
+          <Text style={[styles.filterText, onlyBalance && styles.filterTextActive]}>With Balance · {withBalanceCount}</Text>
+        </Pressable>
+      </View>
+
       <ScrollView contentContainerStyle={{ padding: spacing.lg }}>
-        {karigars.length === 0 ? (
-          <View style={styles.empty}><Ionicons name="hammer-outline" size={36} color={colors.mutedText} /><Text style={styles.emptyText}>No karigars yet</Text></View>
-        ) : karigars.map((k) => {
+        {visible.length === 0 ? (
+          <View style={styles.empty}><Ionicons name="hammer-outline" size={36} color={colors.mutedText} /><Text style={styles.emptyText}>{onlyBalance ? 'No one has an open balance right now' : 'No karigars yet'}</Text></View>
+        ) : visible.map((k) => {
           const fineBal = k.fine_weight_balance || 0;
           const amtDue = k.amount_due || 0;
           return (
@@ -75,6 +91,12 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border,
   },
   title: { flex: 1, color: colors.onSurface, fontSize: 18, fontWeight: '600', fontFamily: fonts.display },
+
+  filterRow: { flexDirection: 'row', gap: spacing.sm, paddingHorizontal: spacing.lg, paddingTop: spacing.md },
+  filterChip: { paddingHorizontal: spacing.md, paddingVertical: 8, borderRadius: radius.pill, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border },
+  filterChipActive: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
+  filterText: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '700' },
+  filterTextActive: { color: colors.onBrandPrimary },
 
   empty: { alignItems: 'center', paddingVertical: 40, gap: spacing.sm },
   emptyText: { color: colors.onSurfaceTertiary },

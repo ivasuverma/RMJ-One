@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
+import { confirmAction } from '@/src/utils/confirm';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
@@ -36,7 +37,7 @@ export default function UserRolesScreen() {
         api.get<Account[]>('/access/accounts'),
       ]);
       setModules(m);
-      setAccounts(a.filter((x) => x.role !== 'owner'));
+      setAccounts(a);
     } catch (_e) { /* owner-only endpoint; non-owners just see nothing */ }
     finally { setLoading(false); setRefreshing(false); }
   }, []);
@@ -44,9 +45,29 @@ export default function UserRolesScreen() {
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const toggleExpand = (acc: Account) => {
+    if (acc.role === 'owner') return; // owner always has full access — nothing to customize
     if (expandedId === acc.id) { setExpandedId(null); return; }
     setExpandedId(acc.id);
     setSelection((prev) => ({ ...prev, [acc.id]: new Set(acc.resolved_modules) }));
+  };
+
+  const [resettingAll, setResettingAll] = useState(false);
+  const resetAll = () => {
+    const customizable = accounts.filter((a) => a.role !== 'owner' && a.module_access !== null);
+    if (customizable.length === 0) { Alert.alert('Nothing to reset', 'Every account is already on its role default.'); return; }
+    confirmAction(
+      'Reset all to default',
+      `Clear custom permissions for ${customizable.length} account${customizable.length === 1 ? '' : 's'} and fall back to their role's defaults?`,
+      'Reset All',
+      async () => {
+        setResettingAll(true);
+        try {
+          await Promise.all(customizable.map((a) => api.put(`/access/accounts/${a.id}`, { module_access: null })));
+          await load();
+        } catch (e: any) { Alert.alert('Failed', e?.detail || 'Some accounts could not be reset.'); }
+        finally { setResettingAll(false); }
+      },
+    );
   };
 
   const toggleModule = (accId: string, key: string) => {
@@ -84,7 +105,9 @@ export default function UserRolesScreen() {
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
         <Text style={styles.title}>User Roles</Text>
-        <View style={{ width: 40 }} />
+        <Pressable onPress={resetAll} disabled={resettingAll} style={styles.resetAllBtn} testID="reset-all-btn">
+          {resettingAll ? <ActivityIndicator size="small" color={colors.onSurfaceSecondary} /> : <Text style={styles.resetAllText}>Reset All</Text>}
+        </Pressable>
       </View>
 
       {loading ? (
@@ -100,24 +123,25 @@ export default function UserRolesScreen() {
           </Text>
 
           {accounts.length === 0 ? (
-            <View style={styles.empty}><Text style={styles.emptyText}>No other accounts yet</Text></View>
+            <View style={styles.empty}><Text style={styles.emptyText}>No accounts yet</Text></View>
           ) : accounts.map((acc) => {
+            const isOwner = acc.role === 'owner';
             const isExpanded = expandedId === acc.id;
             const isCustom = acc.module_access !== null;
             const sel = selection[acc.id] || new Set(acc.resolved_modules);
             return (
               <View key={acc.id} style={styles.card} testID={`role-account-${acc.id}`}>
-                <Pressable onPress={() => toggleExpand(acc)} style={styles.accRow}>
+                <Pressable onPress={() => toggleExpand(acc)} style={styles.accRow} disabled={isOwner}>
                   <View style={styles.iconBox}>
-                    <Ionicons name={acc.account_type === 'employee' ? 'person-outline' : 'people-outline'} size={18} color={colors.brandSecondary} />
+                    <Ionicons name={isOwner ? 'star' : acc.account_type === 'employee' ? 'person-outline' : 'people-outline'} size={18} color={colors.brandSecondary} />
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.accName}>{acc.name}</Text>
                     <Text style={styles.accMeta}>
-                      {ROLE_LABEL[acc.role] || acc.role}{acc.designation ? ` · ${acc.designation}` : ''} · {acc.resolved_modules.length} module{acc.resolved_modules.length === 1 ? '' : 's'}{isCustom ? ' · custom' : ''}
+                      {ROLE_LABEL[acc.role] || acc.role}{acc.designation ? ` · ${acc.designation}` : ''} · {isOwner ? 'full access' : `${acc.resolved_modules.length} module${acc.resolved_modules.length === 1 ? '' : 's'}${isCustom ? ' · custom' : ''}`}
                     </Text>
                   </View>
-                  <Ionicons name={isExpanded ? 'chevron-up' : 'chevron-down'} size={18} color={colors.mutedText} />
+                  {!isOwner && <Ionicons name={isExpanded ? 'chevron-up' : 'chevron-down'} size={18} color={colors.mutedText} />}
                 </Pressable>
 
                 {isExpanded && (
@@ -173,6 +197,11 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border,
   },
   title: { flex: 1, color: colors.onSurface, fontSize: 20, fontWeight: '600', fontFamily: fonts.display },
+  resetAllBtn: {
+    height: 40, paddingHorizontal: 14, borderRadius: 20, backgroundColor: colors.surfaceSecondary,
+    alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border,
+  },
+  resetAllText: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '700' },
   loader: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   hint: { color: colors.mutedText, fontSize: 12, marginBottom: spacing.lg, lineHeight: 17 },
   empty: { alignItems: 'center', paddingVertical: 40 },

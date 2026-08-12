@@ -71,6 +71,11 @@ export default function EmployeesScreen() {
       {/* Sticky Header */}
       <View style={styles.header}>
         <View style={styles.headerTop}>
+          {router.canGoBack() && (
+            <Pressable onPress={() => router.back()} style={styles.backBtn} testID="back-btn" hitSlop={12}>
+              <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
+            </Pressable>
+          )}
           <Text style={styles.title}>Employees</Text>
           <View style={styles.countBadge}>
             <Text style={styles.countBadgeText}>{items.length}</Text>
@@ -197,6 +202,10 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   title: {
     color: colors.onSurface, fontSize: 30, fontWeight: '600', flex: 1,
     fontFamily: fonts.display,
+  },
+  backBtn: {
+    width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surfaceSecondary,
+    alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border,
   },
   countBadge: {
     minWidth: 34, height: 26, paddingHorizontal: 10, borderRadius: radius.pill,

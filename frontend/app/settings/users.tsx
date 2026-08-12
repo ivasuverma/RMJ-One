@@ -7,20 +7,23 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { api } from '@/src/api/client';
 import { confirmAction } from '@/src/utils/confirm';
+import { useAuth } from '@/src/auth/AuthContext';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
 type U = { id: string; username: string; name: string; role: 'owner' | 'admin' | 'accountant' };
+const ROLES = ['owner', 'admin', 'accountant'] as const;
 
 export default function UsersScreen() {
   const router = useRouter();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+  const { user: me } = useAuth();
   const [items, setItems] = useState<U[]>([]);
   const [name, setName] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState<'admin' | 'accountant'>('admin');
+  const [role, setRole] = useState<'owner' | 'admin' | 'accountant'>('admin');
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -37,7 +40,7 @@ export default function UsersScreen() {
 
   const startEdit = (u: U) => {
     setEditingId(u.id); setName(u.name); setUsername(u.username); setPassword('');
-    setRole(u.role === 'accountant' ? 'accountant' : 'admin');
+    setRole(u.role);
   };
 
   const submittingRef = useRef(false);
@@ -114,7 +117,7 @@ export default function UsersScreen() {
             placeholderTextColor={colors.mutedText} secureTextEntry style={styles.input}
           />
           <View style={styles.roleRow}>
-            {(['admin', 'accountant'] as const).map((r) => (
+            {ROLES.map((r) => (
               <Pressable
                 key={r} testID={`role-${r}`}
                 onPress={() => setRole(r)}
@@ -144,15 +147,13 @@ export default function UsersScreen() {
                 <Text style={styles.userName}>{u.name}</Text>
                 <Text style={styles.userMeta}>@{u.username} · {u.role.toUpperCase()}</Text>
               </View>
-              {u.role !== 'owner' && (
-                <>
-                  <Pressable onPress={() => startEdit(u)} style={styles.editBtn} hitSlop={10} testID={`edit-user-${u.id}`}>
-                    <Ionicons name="create-outline" size={16} color={colors.brandSecondary} />
-                  </Pressable>
-                  <Pressable onPress={() => remove(u)} style={styles.delBtn} hitSlop={10} testID={`del-user-${u.id}`}>
-                    <Ionicons name="trash-outline" size={16} color={colors.onError} />
-                  </Pressable>
-                </>
+              <Pressable onPress={() => startEdit(u)} style={styles.editBtn} hitSlop={10} testID={`edit-user-${u.id}`}>
+                <Ionicons name="create-outline" size={16} color={colors.brandSecondary} />
+              </Pressable>
+              {u.id !== me?.id && (
+                <Pressable onPress={() => remove(u)} style={styles.delBtn} hitSlop={10} testID={`del-user-${u.id}`}>
+                  <Ionicons name="trash-outline" size={16} color={colors.onError} />
+                </Pressable>
               )}
             </View>
           ))}

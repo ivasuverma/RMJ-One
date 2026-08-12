@@ -59,6 +59,11 @@ export default function OwnerAttendance() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="attendance-screen">
       <View style={styles.header}>
+        {router.canGoBack() && (
+          <Pressable onPress={() => router.back()} style={styles.backBtn} testID="back-btn" hitSlop={12}>
+            <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
+          </Pressable>
+        )}
         <Text style={styles.title}>Attendance</Text>
         <Pressable
           testID="approvals-btn"
@@ -185,6 +190,10 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   title: {
     flex: 1, color: colors.onSurface, fontSize: 30, fontWeight: '600',
     fontFamily: fonts.display,
+  },
+  backBtn: {
+    width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surfaceSecondary,
+    alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border,
   },
   approvalsBtn: {
     flexDirection: 'row', gap: 6, alignItems: 'center', backgroundColor: colors.brandPrimary,

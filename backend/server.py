@@ -268,14 +268,14 @@ class UserCreateIn(BaseModel):
     username: str
     name: str
     password: str
-    role: Literal['admin', 'accountant']
+    role: Literal['owner', 'admin', 'accountant']
 
 
 class UserUpdateIn(BaseModel):
     username: Optional[str] = None
     name: Optional[str] = None
     password: Optional[str] = None
-    role: Optional[Literal['admin', 'accountant']] = None
+    role: Optional[Literal['owner', 'admin', 'accountant']] = None
 
 
 class SelfAccountUpdateIn(BaseModel):
@@ -733,6 +733,20 @@ async def list_employees(
     if department: query['department'] = department
     if status_: query['status'] = status_
     docs = await db.employees.find(query, {'_id': 0, 'password_hash': 0, 'id_proofs': 0}).sort('name', 1).to_list(1000)
+    events = await db.timeline.find(
+        {'type': {'$in': ['advance', 'bonus', 'fine', 'deduction', 'salary']}},
+        {'_id': 0, 'employee_id': 1, 'type': 1, 'amount': 1, 'sign': 1},
+    ).to_list(20000)
+    balances: dict = {}
+    for e in events:
+        eid = e.get('employee_id')
+        if not eid: continue
+        amount = float(e.get('amount') or 0)
+        sign = e.get('sign', _ledger_sign(e.get('type', 'other')))
+        delta = amount if e.get('type') == 'salary' else sign * abs(amount)
+        balances[eid] = balances.get(eid, 0) + delta
+    for d in docs:
+        d['closing_balance'] = round(balances.get(d['id'], 0), 2)
     return docs
 
 
@@ -2163,6 +2177,38 @@ async def dashboard(_: dict = Depends(get_current)):
     tasks_overdue = sum(1 for t in open_tasks if t.get('due_date') and t['due_date'] < d)
     tasks_done_today = await db.tasks.count_documents({'status': 'done', 'completed_at': {'$regex': f'^{d}'}})
 
+    # Business snapshot — revenue, intake, and who's carrying an open balance.
+    month_prefix = d[:7]
+    delivered_billed = await db.repair_items.find(
+        {'status': 'delivered', 'delivered_at': {'$regex': f'^{month_prefix}'}},
+        {'_id': 0, 'delivered_at': 1, 'billed_amount': 1},
+    ).to_list(5000)
+    revenue_today = sum(i.get('billed_amount') or 0 for i in delivered_billed if (i.get('delivered_at') or '').startswith(d))
+    revenue_month = sum(i.get('billed_amount') or 0 for i in delivered_billed)
+    intake_today = await db.repair_items.count_documents({'created_at': {'$regex': f'^{d}'}})
+    active_employees = await db.employees.count_documents({'status': {'$ne': 'inactive'}})
+
+    orders = await db.repair_orders.find({}, {'_id': 0, 'id': 1, 'customer_id': 1}).to_list(10000)
+    order_to_customer = {o['id']: o['customer_id'] for o in orders}
+    open_items_all = await db.repair_items.find({'status': {'$ne': 'delivered'}}, {'_id': 0, 'order_id': 1}).to_list(10000)
+    customers_open = len({order_to_customer[i['order_id']] for i in open_items_all if order_to_customer.get(i.get('order_id'))})
+
+    karigar_entries = await db.karigar_ledger.find({}, {'_id': 0, 'karigar_id': 1, 'type': 1, 'weight': 1, 'fine_weight': 1, 'amount': 1}).to_list(20000)
+    k_fine: dict = {}
+    k_amt: dict = {}
+    for e in karigar_entries:
+        kid = e.get('karigar_id')
+        if not kid: continue
+        if e['type'] == 'gold_out':
+            k_fine[kid] = k_fine.get(kid, 0) + (e.get('fine_weight') if e.get('fine_weight') is not None else (e.get('weight') or 0))
+        elif e['type'] == 'gold_in':
+            k_fine[kid] = k_fine.get(kid, 0) - (e.get('fine_weight') if e.get('fine_weight') is not None else (e.get('weight') or 0))
+        elif e['type'] in ('labour_payable', 'wastage'):
+            k_amt[kid] = k_amt.get(kid, 0) + (e.get('amount') or 0)
+        elif e['type'] == 'payment':
+            k_amt[kid] = k_amt.get(kid, 0) - (e.get('amount') or 0)
+    karigars_open = sum(1 for kid in set(list(k_fine.keys()) + list(k_amt.keys())) if round(k_fine.get(kid, 0), 3) or round(k_amt.get(kid, 0), 2))
+
     return {
         'todays_attendance': {
             'present': present, 'absent': absent, 'late': late, 'half_day': half_day,
@@ -2181,6 +2227,11 @@ async def dashboard(_: dict = Depends(get_current)):
         'tasks_summary': {
             'due_today': tasks_due_today, 'overdue': tasks_overdue,
             'done_today': tasks_done_today, 'open_total': len(open_tasks),
+        },
+        'business_summary': {
+            'revenue_today': round(revenue_today, 2), 'revenue_month': round(revenue_month, 2),
+            'intake_today': intake_today, 'active_employees': active_employees,
+            'customers_open': customers_open, 'karigars_open': karigars_open,
         },
     }
 
@@ -2210,7 +2261,10 @@ async def create_user(body: UserCreateIn, user: dict = Depends(require_owner), _
 async def update_user(uid: str, body: UserUpdateIn, user: dict = Depends(require_owner), _mod=Depends(require_module('users'))):
     u = await db.users.find_one({'id': uid}, {'_id': 0})
     if not u: raise HTTPException(status_code=404, detail='User not found')
-    if u.get('role') == 'owner': raise HTTPException(status_code=400, detail='Cannot modify the owner')
+    if u.get('role') == 'owner' and body.role and body.role != 'owner':
+        owner_count = await db.users.count_documents({'role': 'owner'})
+        if owner_count <= 1:
+            raise HTTPException(status_code=400, detail='Cannot demote the last remaining owner')
     upd: dict = {}
     if body.username:
         uname = body.username.strip().lower()
@@ -2278,7 +2332,12 @@ async def update_my_account(body: SelfAccountUpdateIn, user=Depends(get_current)
 async def delete_user(uid: str, user=Depends(require_owner), _mod=Depends(require_module('users'))):
     u = await db.users.find_one({'id': uid}, {'_id': 0})
     if not u: raise HTTPException(status_code=404, detail='User not found')
-    if u.get('role') == 'owner': raise HTTPException(status_code=400, detail='Cannot delete the owner')
+    if u.get('role') == 'owner':
+        owner_count = await db.users.count_documents({'role': 'owner'})
+        if owner_count <= 1:
+            raise HTTPException(status_code=400, detail='Cannot delete the last remaining owner')
+    if uid == user['id']:
+        raise HTTPException(status_code=400, detail='You cannot delete your own account while logged in as it')
     await db.users.delete_one({'id': uid})
     await log_audit(user, 'user.delete', 'user', uid, u.get('username', ''))
     return {'ok': True}
@@ -3091,8 +3150,16 @@ async def _send_push_to_subs(subs: list, title: str, body: str, url: str = '/'):
             logger.warning(f'push send failed: {e}')
 
 
+async def _store_notification(user_id: str, title: str, body: str, url: str):
+    await db.notifications.insert_one({
+        'id': str(uuid.uuid4()), 'user_id': user_id, 'title': title, 'body': body,
+        'url': url or '/', 'read': False, 'created_at': now_utc().isoformat(),
+    })
+
+
 async def notify_user(user_id: str, title: str, body: str, url: str = '/'):
     try:
+        await _store_notification(user_id, title, body, url)
         subs = await db.push_subscriptions.find({'user_id': user_id}, {'_id': 0}).to_list(20)
         await _send_push_to_subs(subs, title, body, url)
     except Exception as e:
@@ -3101,6 +3168,17 @@ async def notify_user(user_id: str, title: str, body: str, url: str = '/'):
 
 async def notify_roles(roles: list, title: str, body: str, url: str = '/'):
     try:
+        # In-app notification history — resolve which actual accounts match
+        # these roles so each one gets a durable, listable record, not just
+        # a fire-and-forget browser push.
+        recipient_ids = set()
+        async for u in db.users.find({'role': {'$in': roles}}, {'_id': 0, 'id': 1}):
+            recipient_ids.add(u['id'])
+        if 'employee' in roles:
+            async for e in db.employees.find({'status': {'$ne': 'inactive'}}, {'_id': 0, 'id': 1}):
+                recipient_ids.add(e['id'])
+        for uid in recipient_ids:
+            await _store_notification(uid, title, body, url)
         subs = await db.push_subscriptions.find({'role': {'$in': roles}}, {'_id': 0}).to_list(200)
         await _send_push_to_subs(subs, title, body, url)
     except Exception as e:
@@ -3334,6 +3412,29 @@ async def notifications_unsubscribe(body: dict, user=Depends(get_current)):
 async def notifications_status(user=Depends(get_current)):
     count = await db.push_subscriptions.count_documents({'user_id': user['id']})
     return {'subscribed': count > 0}
+
+
+@api.get('/notifications')
+async def list_notifications(user=Depends(get_current), limit: int = 100):
+    return await db.notifications.find({'user_id': user['id']}, {'_id': 0}).sort('created_at', -1).to_list(limit)
+
+
+@api.get('/notifications/unread-count')
+async def notifications_unread_count(user=Depends(get_current)):
+    count = await db.notifications.count_documents({'user_id': user['id'], 'read': False})
+    return {'count': count}
+
+
+@api.post('/notifications/{nid}/read')
+async def mark_notification_read(nid: str, user=Depends(get_current)):
+    await db.notifications.update_one({'id': nid, 'user_id': user['id']}, {'$set': {'read': True}})
+    return {'ok': True}
+
+
+@api.post('/notifications/read-all')
+async def mark_all_notifications_read(user=Depends(get_current)):
+    await db.notifications.update_many({'user_id': user['id'], 'read': False}, {'$set': {'read': True}})
+    return {'ok': True}
 
 
 # ---------------- Reports (PDF) ----------------

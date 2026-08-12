@@ -32,8 +32,6 @@ type Txn = {
   weight_diff?: number; fine_weight_diff?: number;
   note: string; challan_no: string; created_at: string; created_by: string; edited_at?: string; edited_by?: string;
 };
-type Karigar = { id: string; name: string; mobile: string; is_employee: boolean };
-
 export default function RepairItemDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -42,38 +40,21 @@ export default function RepairItemDetailScreen() {
 
   const [item, setItem] = useState<Item | null>(null);
   const [history, setHistory] = useState<Txn[]>([]);
-  const [karigars, setKarigars] = useState<Karigar[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const submittingRef = useRef(false);
 
   const load = useCallback(async () => {
     try {
-      const [res, ks] = await Promise.all([
-        api.get<{ item: Item; history: Txn[] }>(`/repair-items/${id}`),
-        api.get<Karigar[]>('/karigars'),
-      ]);
-      setItem(res.item); setHistory(res.history); setKarigars(ks);
+      const res = await api.get<{ item: Item; history: Txn[] }>(`/repair-items/${id}`);
+      setItem(res.item); setHistory(res.history);
     } catch (_e) { /* ignore */ }
     finally { setLoading(false); }
   }, [id]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   // Which inline form is open
-  const [form, setForm] = useState<null | 'issue' | 'receive' | 'deliver'>(null);
-
-  // Issue
-  const [kPickerOpen, setKPickerOpen] = useState(false);
-  const [pickedKarigar, setPickedKarigar] = useState<Karigar | null>(null);
-  const [issueWeight, setIssueWeight] = useState('');
-  const [issueNote, setIssueNote] = useState('');
-
-  // Receive
-  const [recvWeight, setRecvWeight] = useState('');
-  const [recvNote, setRecvNote] = useState('');
-  const [adjAmount, setAdjAmount] = useState('');
-  const [adjNote, setAdjNote] = useState('');
-  const [chargeTo, setChargeTo] = useState<'customer' | 'karigar' | 'none'>('none');
+  const [form, setForm] = useState<null | 'deliver'>(null);
 
   // Bill / Deliver
   const [billLabour, setBillLabour] = useState('');
@@ -90,8 +71,7 @@ export default function RepairItemDetailScreen() {
   const [editNote, setEditNote] = useState('');
 
   const resetForms = () => {
-    setForm(null); setPickedKarigar(null); setIssueWeight(''); setIssueNote('');
-    setRecvWeight(''); setRecvNote(''); setAdjAmount(''); setAdjNote(''); setChargeTo('none');
+    setForm(null);
     setBillLabour(''); setBillMaterial(''); setBillExtra(''); setBillExtraNote(''); setPaymentMode('cash'); setFinalPhoto('');
   };
 
@@ -100,34 +80,6 @@ export default function RepairItemDetailScreen() {
     setBillLabour(String(item.labour_charge || 0));
     setBillMaterial(String(item.customer_adjustment || 0));
     setForm(form === 'deliver' ? null : 'deliver');
-  };
-
-  const doIssue = async () => {
-    if (submittingRef.current || !item) return;
-    if (!pickedKarigar) { Alert.alert('Missing', 'Pick a karigar'); return; }
-    const w = parseFloat(issueWeight);
-    if (!w || w <= 0) { Alert.alert('Invalid', 'Enter the weight being issued'); return; }
-    submittingRef.current = true; setBusy(true);
-    try {
-      await api.post(`/repair-items/${id}/issue`, { karigar_id: pickedKarigar.id, weight: w, note: issueNote });
-      resetForms(); await load();
-    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
-    finally { setBusy(false); submittingRef.current = false; }
-  };
-
-  const doReceive = async () => {
-    if (submittingRef.current || !item) return;
-    const w = parseFloat(recvWeight);
-    if (!w || w <= 0) { Alert.alert('Invalid', 'Enter the weight received back'); return; }
-    submittingRef.current = true; setBusy(true);
-    try {
-      await api.post(`/repair-items/${id}/receive`, {
-        weight: w, note: recvNote, adjustment_amount: parseFloat(adjAmount) || 0,
-        adjustment_note: adjNote, charge_to: chargeTo,
-      });
-      resetForms(); await load();
-    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
-    finally { setBusy(false); submittingRef.current = false; }
   };
 
   const doReady = async () => {
@@ -232,11 +184,7 @@ export default function RepairItemDetailScreen() {
   }
 
   const sc = repairStatusColors(item.status, colors);
-  const recvWeightNum = parseFloat(recvWeight) || 0;
-  const issuedWeight = item.current_issue_weight || 0;
-  const liveDiff = recvWeight ? round3(recvWeightNum - issuedWeight) : null;
   const purity = item.purity ?? 100;
-  const liveFineDiff = recvWeight ? round3(recvWeightNum * purity / 100 - (item.current_issue_fine_weight ?? issuedWeight * purity / 100)) : null;
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="repair-item-screen">
@@ -295,7 +243,7 @@ export default function RepairItemDetailScreen() {
           {item.status === 'received' && (
             <>
               <View style={styles.actionsRow}>
-                <Pressable onPress={() => setForm(form === 'issue' ? null : 'issue')} style={styles.actionBtn} testID="show-issue-form">
+                <Pressable onPress={() => router.push({ pathname: '/repairs/item/issue', params: { itemId: id } } as any)} style={styles.actionBtn} testID="show-issue-form">
                   <Ionicons name="arrow-redo-outline" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>Issue to Karigar</Text>
                 </Pressable>
                 <Pressable onPress={doReady} disabled={busy} style={[styles.actionBtn, styles.actionBtnPrimary]} testID="mark-ready-btn">
@@ -316,7 +264,7 @@ export default function RepairItemDetailScreen() {
           )}
           {item.status === 'with_karigar' && (
             <View style={styles.actionsRow}>
-              <Pressable onPress={() => setForm(form === 'receive' ? null : 'receive')} style={[styles.actionBtn, styles.actionBtnPrimary, { flex: 1 }]} testID="show-receive-form">
+              <Pressable onPress={() => router.push({ pathname: '/repairs/item/receive', params: { itemId: id } } as any)} style={[styles.actionBtn, styles.actionBtnPrimary, { flex: 1 }]} testID="show-receive-form">
                 <Ionicons name="arrow-undo-outline" size={16} color={colors.onBrandPrimary} /><Text style={styles.actionBtnPrimaryText}>Receive from Karigar</Text>
               </Pressable>
             </View>
@@ -325,71 +273,6 @@ export default function RepairItemDetailScreen() {
             <Pressable onPress={() => printPdf('bill')} disabled={printing} style={[styles.actionBtn, styles.actionBtnPrimary, { marginBottom: spacing.lg }]} testID="view-bill-btn">
               {printing ? <ActivityIndicator color={colors.onBrandPrimary} /> : <><Ionicons name="print-outline" size={16} color={colors.onBrandPrimary} /><Text style={styles.actionBtnPrimaryText}>View Repair Bill</Text></>}
             </Pressable>
-          )}
-
-          {form === 'issue' && (
-            <View style={styles.formCard} testID="issue-form">
-              <Text style={styles.label}>Karigar</Text>
-              <Pressable onPress={() => setKPickerOpen((v) => !v)} style={styles.picker} testID="issue-karigar-toggle">
-                <Text style={pickedKarigar ? styles.pickerValue : styles.pickerPlaceholder}>{pickedKarigar ? pickedKarigar.name : 'Choose a karigar'}</Text>
-                <Ionicons name={kPickerOpen ? 'chevron-up' : 'chevron-down'} size={16} color={colors.mutedText} />
-              </Pressable>
-              {kPickerOpen && (
-                <View style={styles.pickerList}>
-                  {karigars.map((k) => (
-                    <Pressable key={k.id} onPress={() => { setPickedKarigar(k); setKPickerOpen(false); }} style={styles.pickerRow} testID={`issue-karigar-${k.id}`}>
-                      <Text style={styles.pickerRowName}>{k.name}</Text>
-                      <Text style={styles.pickerRowMeta}>{k.is_employee ? 'In-house' : 'Outside'}</Text>
-                    </Pressable>
-                  ))}
-                </View>
-              )}
-              <Text style={styles.label}>Weight issued (g)</Text>
-              <TextInput testID="issue-weight" value={issueWeight} onChangeText={(v) => setIssueWeight(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0.000" placeholderTextColor={colors.mutedText} style={styles.input} />
-              <Text style={styles.label}>Note (optional)</Text>
-              <TextInput testID="issue-note" value={issueNote} onChangeText={setIssueNote} placeholder="Instructions for the karigar" placeholderTextColor={colors.mutedText} style={styles.input} />
-              <Pressable onPress={doIssue} disabled={busy} style={[styles.saveBtn, busy && { opacity: 0.6 }]} testID="issue-save-btn">
-                {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.saveBtnText}>Issue</Text>}
-              </Pressable>
-            </View>
-          )}
-
-          {form === 'receive' && (
-            <View style={styles.formCard} testID="receive-form">
-              <Text style={styles.hint}>Issued weight was {issuedWeight.toFixed(3)}g. Enter what came back — you decide any wastage or charge manually.</Text>
-              <Text style={styles.label}>Weight received (g)</Text>
-              <TextInput testID="receive-weight" value={recvWeight} onChangeText={(v) => setRecvWeight(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0.000" placeholderTextColor={colors.mutedText} style={styles.input} />
-              {liveDiff != null && (
-                <View style={[styles.balancePreview, liveDiff < 0 && styles.balancePreviewNegative]} testID="receive-balance-preview">
-                  <Ionicons name={liveDiff >= 0 ? 'trending-up-outline' : 'trending-down-outline'} size={14} color={liveDiff >= 0 ? colors.onSuccess : colors.onError} />
-                  <Text style={[styles.balancePreviewText, { color: liveDiff >= 0 ? colors.onSuccess : colors.onError }]}>
-                    Balance vs issued: {liveDiff >= 0 ? '+' : ''}{liveDiff.toFixed(3)}g (fine {liveFineDiff != null && liveFineDiff >= 0 ? '+' : ''}{liveFineDiff?.toFixed(3)}g)
-                  </Text>
-                </View>
-              )}
-              <Text style={styles.label}>Note (optional)</Text>
-              <TextInput testID="receive-note" value={recvNote} onChangeText={setRecvNote} placeholder="Notes" placeholderTextColor={colors.mutedText} style={styles.input} />
-
-              <Text style={[styles.label, { marginTop: spacing.md }]}>Charge any wastage/adjustment to</Text>
-              <View style={styles.chipRow}>
-                {(['none', 'customer', 'karigar'] as const).map((c) => (
-                  <Pressable key={c} onPress={() => setChargeTo(c)} style={[styles.chip, chargeTo === c && styles.chipActive]} testID={`charge-${c}`}>
-                    <Text style={[styles.chipText, chargeTo === c && styles.chipTextActive]}>{c[0].toUpperCase() + c.slice(1)}</Text>
-                  </Pressable>
-                ))}
-              </View>
-              {chargeTo !== 'none' && (
-                <>
-                  <Text style={styles.label}>Adjustment amount (₹)</Text>
-                  <TextInput testID="adj-amount" value={adjAmount} onChangeText={(v) => setAdjAmount(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />
-                  <Text style={styles.label}>Reason (optional)</Text>
-                  <TextInput testID="adj-note" value={adjNote} onChangeText={setAdjNote} placeholder="e.g. melting loss" placeholderTextColor={colors.mutedText} style={styles.input} />
-                </>
-              )}
-              <Pressable onPress={doReceive} disabled={busy} style={[styles.saveBtn, busy && { opacity: 0.6 }]} testID="receive-save-btn">
-                {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.saveBtnText}>Receive</Text>}
-              </Pressable>
-            </View>
           )}
 
           {form === 'deliver' && (

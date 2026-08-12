@@ -1,8 +1,10 @@
-import { useRef, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, Platform } from 'react-native';
+import { useCallback, useMemo, useRef, useState } from 'react';
+import {
+  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, Platform, KeyboardAvoidingView, RefreshControl,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { api, TOKEN_KEY } from '@/src/api/client';
 import { storage } from '@/src/utils/storage';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
@@ -10,36 +12,77 @@ import { useTheme } from '@/src/theme/ThemeContext';
 
 type Item = {
   id: string; item_code: string; customer_name: string; description: string;
-  status: 'received' | 'with_karigar' | 'ready' | 'delivered'; billed_amount: number | null;
-  payment_mode: string | null; delivered_at?: string;
+  status: 'received' | 'with_karigar' | 'ready' | 'delivered';
+  labour_charge: number; customer_adjustment?: number;
+  billed_amount: number | null; payment_mode: string | null; delivered_at?: string;
 };
 
-export default function RepairBillLookupScreen() {
+type Mode = 'list' | 'pick' | 'form';
+
+export default function RepairBillScreen() {
   const router = useRouter();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
-  const [query, setQuery] = useState('');
-  const [results, setResults] = useState<Item[]>([]);
-  const [searched, setSearched] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [printingId, setPrintingId] = useState('');
 
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const search = (q: string) => {
-    setQuery(q);
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    if (!q.trim()) { setResults([]); setSearched(false); return; }
-    debounceRef.current = setTimeout(async () => {
-      setLoading(true);
-      try {
-        const all = await api.get<Item[]>(`/repair-items?q=${encodeURIComponent(q)}`);
-        setResults(all.filter((i) => i.status === 'delivered'));
-      } catch (_e) { setResults([]); }
-      finally { setLoading(false); setSearched(true); }
-    }, 300);
+  const [mode, setMode] = useState<Mode>('list');
+  const [bills, setBills] = useState<Item[]>([]);
+  const [readyItems, setReadyItems] = useState<Item[]>([]);
+  const [picked, setPicked] = useState<Item | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [printingId, setPrintingId] = useState('');
+  const [busy, setBusy] = useState(false);
+  const submittingRef = useRef(false);
+
+  // Bill form fields
+  const [billLabour, setBillLabour] = useState('');
+  const [billMaterial, setBillMaterial] = useState('');
+  const [billExtra, setBillExtra] = useState('');
+  const [billExtraNote, setBillExtraNote] = useState('');
+  const [paymentMode, setPaymentMode] = useState('cash');
+
+  const loadBills = useCallback(async () => {
+    try { setBills(await api.get<Item[]>('/repair-items?status=delivered')); }
+    catch (_e) { setBills([]); }
+    finally { setLoading(false); setRefreshing(false); }
+  }, []);
+  useFocusEffect(useCallback(() => { if (mode === 'list') loadBills(); }, [loadBills, mode]));
+
+  const openPicker = async () => {
+    setMode('pick');
+    setLoading(true);
+    try { setReadyItems(await api.get<Item[]>('/repair-items?status=ready')); }
+    catch (_e) { setReadyItems([]); }
+    finally { setLoading(false); }
   };
 
-  const viewBill = async (item: Item) => {
+  const pickItem = (item: Item) => {
+    setPicked(item);
+    setBillLabour(String(item.labour_charge || 0));
+    setBillMaterial(String(item.customer_adjustment || 0));
+    setBillExtra(''); setBillExtraNote(''); setPaymentMode('cash');
+    setMode('form');
+  };
+
+  const billTotal = (parseFloat(billLabour) || 0) + (parseFloat(billMaterial) || 0) + (parseFloat(billExtra) || 0);
+
+  const createBill = async () => {
+    if (submittingRef.current || !picked) return;
+    if (billTotal <= 0) { Alert.alert('Invalid', 'The billed total must be greater than 0'); return; }
+    submittingRef.current = true; setBusy(true);
+    try {
+      await api.post(`/repair-items/${picked.id}/deliver`, {
+        labour_charge: parseFloat(billLabour) || 0, material_adjustment: parseFloat(billMaterial) || 0,
+        extra_charges: parseFloat(billExtra) || 0, extra_charges_note: billExtraNote,
+        payment_mode: paymentMode, note: '',
+      });
+      setPicked(null); setMode('list'); setLoading(true);
+      await loadBills();
+    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+    finally { setBusy(false); submittingRef.current = false; }
+  };
+
+  const printBill = async (item: Item) => {
     setPrintingId(item.id);
     try {
       const base = process.env.EXPO_PUBLIC_BACKEND_URL || '';
@@ -57,46 +100,117 @@ export default function RepairBillLookupScreen() {
     finally { setPrintingId(''); }
   };
 
+  const headerTitle = mode === 'list' ? 'Repair Bills' : mode === 'pick' ? 'Select Item to Bill' : 'Create Bill';
+  const onBack = () => {
+    if (mode === 'form') { setMode('pick'); return; }
+    if (mode === 'pick') { setMode('list'); return; }
+    router.back();
+  };
+
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="repair-bill-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
+        <Pressable onPress={onBack} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
-        <Text style={styles.title}>Repair Bill</Text>
-        <View style={{ width: 40 }} />
+        <Text style={styles.title}>{headerTitle}</Text>
+        {mode === 'list' ? (
+          <Pressable onPress={openPicker} style={[styles.iconBtn, styles.addBtn]} testID="new-bill-btn" hitSlop={12}>
+            <Ionicons name="add" size={22} color={colors.onBrandPrimary} />
+          </Pressable>
+        ) : <View style={{ width: 40 }} />}
       </View>
 
-      <View style={styles.searchRow}>
-        <Ionicons name="search-outline" size={16} color={colors.mutedText} />
-        <TextInput
-          testID="bill-search-input" value={query} onChangeText={search} autoFocus
-          placeholder="Search by Tag code, item, or customer" placeholderTextColor={colors.mutedText}
-          style={styles.searchInput}
-        />
-        {loading && <ActivityIndicator size="small" color={colors.brandPrimary} />}
-      </View>
+      {mode === 'list' && (
+        <ScrollView
+          contentContainerStyle={{ padding: spacing.lg }}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadBills(); }} tintColor={colors.brandPrimary} />}
+        >
+          {loading ? (
+            <ActivityIndicator color={colors.brandPrimary} style={{ marginTop: 40 }} />
+          ) : bills.length === 0 ? (
+            <View style={styles.empty}>
+              <Ionicons name="receipt-outline" size={36} color={colors.mutedText} />
+              <Text style={styles.emptyText}>No bills yet — tap + to bill a ready item</Text>
+            </View>
+          ) : bills.map((b) => (
+            <View key={b.id} style={styles.itemRow} testID={`bill-${b.id}`}>
+              <View style={styles.iconBox}><Ionicons name="receipt-outline" size={18} color={colors.brandSecondary} /></View>
+              <Pressable style={{ flex: 1 }} onPress={() => router.push(`/repairs/item/${b.id}` as any)}>
+                <Text style={styles.cName}>{b.item_code} · {b.customer_name}</Text>
+                <Text style={styles.cMeta}>
+                  {b.description}{b.billed_amount != null ? ` · ₹${b.billed_amount.toFixed(0)}` : ''}{b.payment_mode ? ` · ${b.payment_mode}` : ''}{b.delivered_at ? ` · ${b.delivered_at.slice(0, 10)}` : ''}
+                </Text>
+              </Pressable>
+              <Pressable onPress={() => printBill(b)} disabled={printingId === b.id} style={styles.printBtn} testID={`print-bill-${b.id}`}>
+                {printingId === b.id ? <ActivityIndicator size="small" color={colors.onBrandPrimary} /> : <Ionicons name="print-outline" size={16} color={colors.onBrandPrimary} />}
+              </Pressable>
+            </View>
+          ))}
+        </ScrollView>
+      )}
 
-      <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingTop: spacing.sm }} keyboardShouldPersistTaps="handled">
-        {!searched && !loading && (
-          <View style={styles.empty}><Ionicons name="receipt-outline" size={36} color={colors.mutedText} /><Text style={styles.emptyText}>Look up a delivered repair to view or print its bill</Text></View>
-        )}
-        {searched && results.length === 0 && (
-          <View style={styles.empty}><Text style={styles.emptyText}>No delivered repairs match — check the item hasn't just been billed yet</Text></View>
-        )}
-        {results.map((i) => (
-          <View key={i.id} style={styles.itemRow} testID={`bill-result-${i.id}`}>
-            <View style={styles.iconBox}><Ionicons name="pricetag-outline" size={18} color={colors.brandSecondary} /></View>
-            <Pressable style={{ flex: 1 }} onPress={() => router.push(`/repairs/item/${i.id}` as any)}>
-              <Text style={styles.cName}>{i.item_code} · {i.customer_name}</Text>
-              <Text style={styles.cMeta}>{i.description}{i.billed_amount != null ? ` · ₹${i.billed_amount.toFixed(0)}` : ''}{i.payment_mode ? ` · ${i.payment_mode}` : ''}</Text>
+      {mode === 'pick' && (
+        <ScrollView contentContainerStyle={{ padding: spacing.lg }}>
+          <Text style={styles.hint}>Pick an item that's pending to bill.</Text>
+          {loading ? (
+            <ActivityIndicator color={colors.brandPrimary} style={{ marginTop: 40 }} />
+          ) : readyItems.length === 0 ? (
+            <View style={styles.empty}>
+              <Ionicons name="checkmark-done-outline" size={36} color={colors.mutedText} />
+              <Text style={styles.emptyText}>Nothing is pending to bill right now</Text>
+            </View>
+          ) : readyItems.map((it) => (
+            <Pressable key={it.id} onPress={() => pickItem(it)} style={styles.itemRow} testID={`pick-${it.id}`}>
+              <View style={styles.iconBox}><Ionicons name="pricetag-outline" size={18} color={colors.brandSecondary} /></View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.cName}>{it.item_code} · {it.customer_name}</Text>
+                <Text style={styles.cMeta}>{it.description} · Labour ₹{it.labour_charge.toFixed(0)}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={colors.mutedText} />
             </Pressable>
-            <Pressable onPress={() => viewBill(i)} disabled={printingId === i.id} style={styles.printBtn} testID={`print-bill-${i.id}`}>
-              {printingId === i.id ? <ActivityIndicator size="small" color={colors.onBrandPrimary} /> : <Ionicons name="print-outline" size={16} color={colors.onBrandPrimary} />}
+          ))}
+        </ScrollView>
+      )}
+
+      {mode === 'form' && picked && (
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+          <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 60 }} keyboardShouldPersistTaps="handled">
+            <View style={styles.pickedCard}>
+              <Text style={styles.cName}>{picked.item_code} · {picked.customer_name}</Text>
+              <Text style={styles.cMeta}>{picked.description}</Text>
+            </View>
+
+            <Text style={styles.label}>Labour Charge (₹)</Text>
+            <TextInput testID="bill-labour" value={billLabour} onChangeText={(v) => setBillLabour(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />
+            <Text style={styles.label}>Material / Wastage Adjustment (₹)</Text>
+            <TextInput testID="bill-material" value={billMaterial} onChangeText={(v) => setBillMaterial(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />
+            <Text style={styles.label}>Extra Charges (₹)</Text>
+            <TextInput testID="bill-extra" value={billExtra} onChangeText={(v) => setBillExtra(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />
+            {(parseFloat(billExtra) || 0) > 0 && (
+              <TextInput testID="bill-extra-note" value={billExtraNote} onChangeText={setBillExtraNote} placeholder="What's this extra charge for?" placeholderTextColor={colors.mutedText} style={styles.input} />
+            )}
+
+            <View style={styles.totalRow} testID="bill-total">
+              <Text style={styles.totalLabel}>Total</Text>
+              <Text style={styles.totalValue}>₹{billTotal.toFixed(0)}</Text>
+            </View>
+
+            <Text style={styles.label}>Payment mode</Text>
+            <View style={styles.chipRow}>
+              {(['cash', 'upi', 'card'] as const).map((m) => (
+                <Pressable key={m} onPress={() => setPaymentMode(m)} style={[styles.chip, paymentMode === m && styles.chipActive]} testID={`payment-${m}`}>
+                  <Text style={[styles.chipText, paymentMode === m && styles.chipTextActive]}>{m.toUpperCase()}</Text>
+                </Pressable>
+              ))}
+            </View>
+
+            <Pressable onPress={createBill} disabled={busy} style={[styles.saveBtn, busy && { opacity: 0.6 }]} testID="create-bill-btn">
+              {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.saveBtnText}>Create Bill</Text>}
             </Pressable>
-          </View>
-        ))}
-      </ScrollView>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      )}
     </SafeAreaView>
   );
 }
@@ -111,15 +225,10 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surfaceSecondary,
     alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border,
   },
+  addBtn: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
   title: { flex: 1, color: colors.onSurface, fontSize: 18, fontWeight: '600', fontFamily: fonts.display },
 
-  searchRow: {
-    flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.surfaceSecondary,
-    borderRadius: radius.pill, borderWidth: 1, borderColor: colors.border, paddingHorizontal: spacing.md,
-    marginHorizontal: spacing.lg, marginTop: spacing.md,
-  },
-  searchInput: { flex: 1, color: colors.onSurface, paddingVertical: 12, fontSize: 14 },
-
+  hint: { color: colors.mutedText, fontSize: 12, marginBottom: spacing.md },
   empty: { alignItems: 'center', paddingVertical: 40, gap: spacing.sm },
   emptyText: { color: colors.onSurfaceTertiary, textAlign: 'center', paddingHorizontal: spacing.xl },
   itemRow: {
@@ -137,4 +246,24 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center',
     backgroundColor: colors.brandPrimary,
   },
+
+  pickedCard: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.lg },
+  label: { color: colors.onSurfaceSecondary, fontSize: 12, marginBottom: 6, marginTop: spacing.sm },
+  input: {
+    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    color: colors.onSurface, paddingHorizontal: spacing.md, paddingVertical: 12, fontSize: 14,
+  },
+  totalRow: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: 10, marginTop: spacing.sm, marginBottom: spacing.sm,
+  },
+  totalLabel: { color: colors.onSurfaceSecondary, fontSize: 13, fontWeight: '700' },
+  totalValue: { color: colors.onSurface, fontSize: 16, fontWeight: '800' },
+  chipRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.sm },
+  chip: { flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: radius.md, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border },
+  chipActive: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
+  chipText: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '700' },
+  chipTextActive: { color: colors.onBrandPrimary },
+  saveBtn: { backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: 14, alignItems: 'center', marginTop: spacing.md },
+  saveBtnText: { color: colors.onBrandPrimary, fontWeight: '700' },
 });
