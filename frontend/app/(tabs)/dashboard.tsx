@@ -86,9 +86,7 @@ export default function DashboardScreen() {
             <Ionicons name="sparkles" size={16} color={colors.onBrandPrimary} />
             <Text style={styles.aiBtnText}>Ask AI</Text>
           </Pressable>
-          <Pressable onPress={() => router.push('/')} testID="dashboard-logo-btn" hitSlop={8}>
-            <Image source={images.logo} style={styles.headerBadge} contentFit="contain" testID="dashboard-logo" />
-          </Pressable>
+          <Image source={images.logo} style={styles.headerBadge} contentFit="contain" testID="dashboard-logo" />
         </View>
 
         {loading && !data ? (

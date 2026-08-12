@@ -39,24 +39,30 @@ export default function OwnerTabsLayout() {
     >
       <Tabs.Screen
         name="dashboard"
-        options={{ title: 'Dashboard', tabBarIcon: ({ color, size }) => <Ionicons name="grid-outline" color={color} size={size} /> }}
+        options={{ title: 'Home', tabBarIcon: ({ color, size }) => <Ionicons name="home-outline" color={color} size={size} /> }}
       />
       <Tabs.Screen
-        name="attendance"
-        options={{ title: 'Attendance', tabBarIcon: ({ color, size }) => <Ionicons name="time-outline" color={color} size={size} /> }}
+        name="masters"
+        options={{ title: 'Masters', tabBarIcon: ({ color, size }) => <Ionicons name="cube-outline" color={color} size={size} /> }}
       />
       <Tabs.Screen
-        name="employees"
-        options={{ title: 'Team', tabBarIcon: ({ color, size }) => <Ionicons name="people-outline" color={color} size={size} /> }}
+        name="transactions"
+        options={{ title: 'Transactions', tabBarIcon: ({ color, size }) => <Ionicons name="swap-horizontal-outline" color={color} size={size} /> }}
       />
       <Tabs.Screen
-        name="payroll"
-        options={{ title: 'Payroll', tabBarIcon: ({ color, size }) => <Ionicons name="cash-outline" color={color} size={size} /> }}
+        name="reports"
+        options={{ title: 'Reports', tabBarIcon: ({ color, size }) => <Ionicons name="bar-chart-outline" color={color} size={size} /> }}
       />
       <Tabs.Screen
-        name="settings"
-        options={{ title: 'Settings', tabBarIcon: ({ color, size }) => <Ionicons name="settings-outline" color={color} size={size} /> }}
+        name="utility"
+        options={{ title: 'Utility', tabBarIcon: ({ color, size }) => <Ionicons name="build-outline" color={color} size={size} /> }}
       />
+      {/* Still routable (tiles above link into these) but no longer their own bottom
+          tab — the reference IA groups by action type, not by module. */}
+      <Tabs.Screen name="attendance" options={{ href: null }} />
+      <Tabs.Screen name="employees" options={{ href: null }} />
+      <Tabs.Screen name="payroll" options={{ href: null }} />
+      <Tabs.Screen name="settings" options={{ href: null }} />
     </Tabs>
   );
 }

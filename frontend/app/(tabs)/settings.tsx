@@ -76,9 +76,9 @@ export default function SettingsScreen() {
           <Ionicons name="chevron-forward" size={18} color={colors.mutedText} />
         </Pressable>
 
-        <Pressable testID="settings-all-modules-btn" onPress={() => router.push('/')} style={styles.modulesBtn}>
+        <Pressable testID="settings-all-modules-btn" onPress={() => router.push('/(tabs)/utility' as any)} style={styles.modulesBtn}>
           <Ionicons name="grid-outline" size={16} color={colors.brandPrimary} />
-          <Text style={styles.modulesBtnText}>All Modules</Text>
+          <Text style={styles.modulesBtnText}>Go to Utility</Text>
           <Ionicons name="chevron-forward" size={16} color={colors.mutedText} />
         </Pressable>
 
