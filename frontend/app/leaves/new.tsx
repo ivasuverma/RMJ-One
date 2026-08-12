@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
+import { DateField } from '@/src/components/DateField';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
@@ -63,12 +64,10 @@ export default function NewLeave() {
 
           <View style={styles.rowFields}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.label}>From</Text>
-              <TextInput testID="leave-from" style={styles.input} value={from} onChangeText={setFrom} placeholder="YYYY-MM-DD" placeholderTextColor={colors.mutedText} autoCapitalize="none" />
+              <DateField label="From" value={from} onChange={setFrom} testID="leave-from" />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.label}>To</Text>
-              <TextInput testID="leave-to" style={styles.input} value={to} onChangeText={setTo} placeholder="YYYY-MM-DD" placeholderTextColor={colors.mutedText} autoCapitalize="none" />
+              <DateField label="To" value={to} onChange={setTo} testID="leave-to" />
             </View>
           </View>
 

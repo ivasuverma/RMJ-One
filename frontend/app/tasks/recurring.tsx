@@ -15,7 +15,7 @@ type Emp = { id: string; name: string; employee_code: string };
 type Priority = 'low' | 'normal' | 'urgent';
 type Template = {
   id: string; title: string; description: string; assigned_to: string; assigned_to_name: string;
-  priority: Priority; freq: 'daily' | 'weekly'; weekday: number | null; active: boolean;
+  priority: Priority; freq: 'daily' | 'weekly' | 'hourly'; weekday: number | null; interval_hours: number | null; active: boolean;
 };
 
 const PRIORITIES: Priority[] = ['low', 'normal', 'urgent'];
@@ -34,8 +34,9 @@ export default function RecurringTasksScreen() {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState<Priority>('normal');
-  const [freq, setFreq] = useState<'daily' | 'weekly'>('daily');
+  const [freq, setFreq] = useState<'daily' | 'weekly' | 'hourly'>('daily');
   const [weekday, setWeekday] = useState(0);
+  const [intervalHours, setIntervalHours] = useState('2');
   const [assignedTo, setAssignedTo] = useState<Emp | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -53,18 +54,23 @@ export default function RecurringTasksScreen() {
   }, []);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const resetForm = () => { setTitle(''); setDescription(''); setPriority('normal'); setFreq('daily'); setWeekday(0); setAssignedTo(null); setShowForm(false); };
+  const resetForm = () => { setTitle(''); setDescription(''); setPriority('normal'); setFreq('daily'); setWeekday(0); setIntervalHours('2'); setAssignedTo(null); setShowForm(false); };
 
   const create = async () => {
     if (submittingRef.current) return;
     if (!title.trim()) { Alert.alert('Missing', 'Title is required'); return; }
     if (!assignedTo) { Alert.alert('Missing', 'Pick who this repeats for'); return; }
+    if (freq === 'hourly' && (!parseInt(intervalHours, 10) || parseInt(intervalHours, 10) < 1)) {
+      Alert.alert('Invalid', 'Enter an interval of at least 1 hour'); return;
+    }
     submittingRef.current = true;
     setSaving(true);
     try {
       await api.post('/tasks/templates', {
         title: title.trim(), description, assigned_to: assignedTo.id, priority, freq,
-        weekday: freq === 'weekly' ? weekday : null, active: true,
+        weekday: freq === 'weekly' ? weekday : null,
+        interval_hours: freq === 'hourly' ? (parseInt(intervalHours, 10) || 1) : null,
+        active: true,
       });
       resetForm();
       await load();
@@ -76,7 +82,7 @@ export default function RecurringTasksScreen() {
     try {
       await api.put(`/tasks/templates/${tpl.id}`, {
         title: tpl.title, description: tpl.description, assigned_to: tpl.assigned_to,
-        priority: tpl.priority, freq: tpl.freq, weekday: tpl.weekday, active: !tpl.active,
+        priority: tpl.priority, freq: tpl.freq, weekday: tpl.weekday, interval_hours: tpl.interval_hours, active: !tpl.active,
       });
       await load();
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
@@ -137,12 +143,24 @@ export default function RecurringTasksScreen() {
 
               <Text style={styles.label}>Repeats</Text>
               <View style={styles.chipRow}>
-                {(['daily', 'weekly'] as const).map((f) => (
+                {(['hourly', 'daily', 'weekly'] as const).map((f) => (
                   <Pressable key={f} onPress={() => setFreq(f)} style={[styles.chip, freq === f && styles.chipActive]} testID={`template-freq-${f}`}>
-                    <Text style={[styles.chipText, freq === f && styles.chipTextActive]}>{f === 'daily' ? 'Every day' : 'Every week'}</Text>
+                    <Text style={[styles.chipText, freq === f && styles.chipTextActive]}>{f === 'hourly' ? 'Every X hrs' : f === 'daily' ? 'Every day' : 'Every week'}</Text>
                   </Pressable>
                 ))}
               </View>
+
+              {freq === 'hourly' && (
+                <>
+                  <Text style={styles.label}>Every how many hours</Text>
+                  <TextInput
+                    testID="template-interval-hours" value={intervalHours}
+                    onChangeText={(v) => setIntervalHours(v.replace(/[^0-9]/g, ''))}
+                    keyboardType="number-pad" placeholder="2" placeholderTextColor={colors.mutedText}
+                    style={styles.input}
+                  />
+                </>
+              )}
 
               {freq === 'weekly' && (
                 <>
@@ -172,7 +190,7 @@ export default function RecurringTasksScreen() {
               <View style={{ flex: 1 }}>
                 <Text style={styles.cardTitle}>{t.title}</Text>
                 <Text style={styles.cardMeta}>
-                  {t.assigned_to_name} · {t.freq === 'daily' ? 'Every day' : `Every ${WEEKDAYS[t.weekday ?? 0]}`} · {t.priority}
+                  {t.assigned_to_name} · {t.freq === 'hourly' ? `Every ${t.interval_hours || 1}h` : t.freq === 'daily' ? 'Every day' : `Every ${WEEKDAYS[t.weekday ?? 0]}`} · {t.priority}
                 </Text>
               </View>
               <Pressable onPress={() => toggleActive(t)} style={styles.smallBtn} testID={`toggle-${t.id}`}>

@@ -34,6 +34,7 @@ const SECTIONS: { title: string; tiles: TileDef[] }[] = [
     title: 'Repairs',
     tiles: [
       { key: 'repair-types', label: 'Repair Types', icon: 'construct-outline', route: '/settings/repair-types', ownerOnly: true },
+      { key: 'item-master', label: 'Items & Purity', icon: 'diamond-outline', route: '/settings/item-master', ownerOnly: true },
     ],
   },
 ];
@@ -187,7 +188,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   tile: {
-    flexBasis: '30%', flexGrow: 1, minWidth: 96,
+    flexBasis: '31%', flexGrow: 0, maxWidth: '31%', minWidth: 96,
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg,
     borderWidth: 1, borderColor: colors.border, padding: spacing.md, alignItems: 'center',
   },

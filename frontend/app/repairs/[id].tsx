@@ -5,18 +5,16 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { api, TOKEN_KEY } from '@/src/api/client';
 import { storage } from '@/src/utils/storage';
+import { REPAIR_STATUS_LABEL, repairStatusColors } from '@/src/utils/repairStatus';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
 type Order = { id: string; order_no: string; customer_name: string; customer_mobile: string; created_at: string; created_by: string; status: string };
 type Item = {
-  id: string; item_code: string; description: string; repair_type: string; material: string;
+  id: string; item_code: string; description: string; repair_type: string;
   gross_weight: number; pc_count: number; labour_charge: number; needs_karigar: boolean;
   due_date: string | null; status: 'received' | 'with_karigar' | 'ready' | 'delivered'; karigar_name: string | null;
-};
-
-const STATUS_LABEL: Record<Item['status'], string> = {
-  received: 'Received', with_karigar: 'With Karigar', ready: 'Ready', delivered: 'Delivered',
+  created_by?: string; updated_by?: string;
 };
 
 export default function RepairOrderDetailScreen() {
@@ -83,19 +81,23 @@ export default function RepairOrderDetailScreen() {
         </Pressable>
 
         <Text style={styles.section}>Items · {items.length}</Text>
-        {items.map((i) => (
-          <Pressable key={i.id} onPress={() => router.push(`/repairs/item/${i.id}` as any)} style={styles.itemRow} testID={`item-${i.id}`}>
-            <View style={styles.iconBox}><Ionicons name="pricetag-outline" size={18} color={colors.brandSecondary} /></View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.cName}>{i.item_code} · {i.description}</Text>
-              <Text style={styles.cMeta}>{i.gross_weight.toFixed(3)}g · {i.pc_count} pc{i.pc_count === 1 ? '' : 's'}{i.karigar_name ? ` · ${i.karigar_name}` : ''}</Text>
-            </View>
-            <View style={[styles.statusBadge, badgeStyle(i.status, colors)]}>
-              <Text style={styles.statusText}>{STATUS_LABEL[i.status]}</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={16} color={colors.mutedText} />
-          </Pressable>
-        ))}
+        {items.map((i) => {
+          const sc = repairStatusColors(i.status, colors);
+          return (
+            <Pressable key={i.id} onPress={() => router.push(`/repairs/item/${i.id}` as any)} style={styles.itemRow} testID={`item-${i.id}`}>
+              <View style={styles.iconBox}><Ionicons name="pricetag-outline" size={18} color={colors.brandSecondary} /></View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.cName}>{i.item_code} · {i.description}</Text>
+                <Text style={styles.cMeta}>{i.gross_weight.toFixed(3)}g · {i.pc_count} pc{i.pc_count === 1 ? '' : 's'}{i.karigar_name ? ` · ${i.karigar_name}` : ''}</Text>
+                {i.created_by && <Text style={styles.cMeta}>By {i.created_by}</Text>}
+              </View>
+              <View style={[styles.statusBadge, { backgroundColor: sc.bg, borderColor: sc.border }]}>
+                <Text style={[styles.statusText, { color: sc.fg }]}>{REPAIR_STATUS_LABEL[i.status]}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={colors.mutedText} />
+            </Pressable>
+          );
+        })}
       </ScrollView>
     </SafeAreaView>
   );
@@ -110,13 +112,6 @@ function MetaRow({ icon, label, value, colors }: { icon: any; label: string; val
       <Text style={styles.metaValue}>{value}</Text>
     </View>
   );
-}
-
-function badgeStyle(status: Item['status'], colors: ThemeColors) {
-  if (status === 'delivered') return { backgroundColor: colors.success, borderColor: colors.onSuccess };
-  if (status === 'ready') return { backgroundColor: colors.brandTertiary, borderColor: colors.brand };
-  if (status === 'with_karigar') return { backgroundColor: colors.surfaceTertiary, borderColor: colors.border };
-  return { backgroundColor: colors.surfaceTertiary, borderColor: colors.border };
 }
 
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({

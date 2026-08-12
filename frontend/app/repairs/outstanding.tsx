@@ -5,16 +5,15 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { api, TOKEN_KEY } from '@/src/api/client';
 import { storage } from '@/src/utils/storage';
+import { REPAIR_STATUS_LABEL, repairStatusColors } from '@/src/utils/repairStatus';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
 type Item = {
   id: string; item_code: string; customer_name: string; description: string;
   status: 'received' | 'with_karigar' | 'ready'; karigar_name: string | null;
-  gross_weight: number; due_date: string | null; created_at: string;
+  gross_weight: number; due_date: string | null; created_at: string; created_by?: string;
 };
-
-const STATUS_LABEL: Record<string, string> = { received: 'Received', with_karigar: 'With Karigar', ready: 'Ready' };
 
 function daysPending(createdAt: string) {
   const start = new Date(createdAt?.slice(0, 10));
@@ -91,15 +90,16 @@ export default function OutstandingRepairsScreen() {
         ) : items.map((i) => {
           const dp = daysPending(i.created_at);
           const isOverdue = !!i.due_date && i.due_date < new Date().toISOString().slice(0, 10);
+          const sc = repairStatusColors(i.status as any, colors);
           return (
             <Pressable key={i.id} onPress={() => router.push(`/repairs/item/${i.id}` as any)} style={styles.itemRow} testID={`outstanding-${i.id}`}>
               <View style={styles.iconBox}><Ionicons name="pricetag-outline" size={18} color={colors.brandSecondary} /></View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.cName}>{i.item_code} · {i.customer_name}</Text>
-                <Text style={styles.cMeta}>{i.description} · {i.gross_weight.toFixed(3)}g{i.karigar_name ? ` · ${i.karigar_name}` : ''} · {dp}d pending</Text>
+                <Text style={styles.cMeta}>{i.description} · {i.gross_weight.toFixed(3)}g{i.karigar_name ? ` · ${i.karigar_name}` : ''} · {dp}d pending{i.created_by ? ` · by ${i.created_by}` : ''}</Text>
               </View>
-              <View style={[styles.statusBadge, isOverdue ? styles.statusOverdue : styles.statusOpen]}>
-                <Text style={styles.statusText}>{isOverdue ? 'Overdue' : STATUS_LABEL[i.status] || i.status}</Text>
+              <View style={[styles.statusBadge, isOverdue ? styles.statusOverdue : { backgroundColor: sc.bg, borderColor: sc.border }]}>
+                <Text style={[styles.statusText, !isOverdue && { color: sc.fg }]}>{isOverdue ? 'Overdue' : REPAIR_STATUS_LABEL[i.status] || i.status}</Text>
               </View>
             </Pressable>
           );

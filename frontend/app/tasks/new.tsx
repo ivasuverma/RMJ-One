@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
+import { DateField } from '@/src/components/DateField';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
@@ -92,8 +93,7 @@ export default function NewTaskScreen() {
             ))}
           </View>
 
-          <Text style={styles.label}>Due date (YYYY-MM-DD, optional)</Text>
-          <TextInput testID="task-due" value={dueDate} onChangeText={setDueDate} placeholder="2026-08-20" placeholderTextColor={colors.mutedText} style={styles.input} />
+          <DateField label="Due date (optional)" value={dueDate} onChange={setDueDate} testID="task-due" />
 
           <View style={styles.info}>
             <Ionicons name="information-circle-outline" size={16} color={colors.brandSecondary} />

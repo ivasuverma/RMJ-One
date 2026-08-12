@@ -259,7 +259,7 @@ function EditEntrySheet({ entry, onClose, onSaved }: { entry: any; onClose: () =
           <TextInput
             testID="ledger-edit-amount"
             value={amount} onChangeText={(v) => setAmount(v.replace(/[^0-9.]/g, ''))}
-            keyboardType="numeric" placeholder="0" placeholderTextColor={colors.mutedText}
+            keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText}
             style={[styles.input, { fontSize: 20, textAlign: 'right' }]}
           />
 

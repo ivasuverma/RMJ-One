@@ -280,6 +280,7 @@ class UserUpdateIn(BaseModel):
 
 class SelfAccountUpdateIn(BaseModel):
     current_password: str
+    new_name: Optional[str] = None
     new_username: Optional[str] = None
     new_password: Optional[str] = None
 
@@ -384,8 +385,9 @@ class TaskTemplateIn(BaseModel):
     description: Optional[str] = ''
     assigned_to: str
     priority: Literal['low', 'normal', 'urgent'] = 'normal'
-    freq: Literal['daily', 'weekly'] = 'daily'
+    freq: Literal['daily', 'weekly', 'hourly'] = 'daily'
     weekday: Optional[int] = None  # 0=Monday..6=Sunday, required when freq='weekly'
+    interval_hours: Optional[int] = 1  # required when freq='hourly' — spawn a fresh instance every N hours
     active: bool = True
 
 
@@ -412,10 +414,20 @@ class RepairTypeIn(BaseModel):
     active: bool = True
 
 
+class ItemMasterIn(BaseModel):
+    # Predefined item/purity master — e.g. "22K Ring" @ 91.6%, "18K Chain" @ 75%.
+    # Picking one on a repair item snapshots its purity onto the item so the
+    # karigar's gold ledger can be tracked in fine-gold-equivalent terms.
+    name: str
+    purity: float = 100.0  # % fine gold, e.g. 91.6 for 22K, 75 for 18K, 100 for fine/pure gold
+    category: Optional[str] = ''
+    active: bool = True
+
+
 class RepairItemSpec(BaseModel):
+    item_master_id: Optional[str] = None  # Items Master reference; purity snapshotted at creation
     description: str
     repair_type: Optional[str] = ''  # RepairType name, prefills labour/needs_karigar client-side
-    material: Literal['gold', 'diamond', 'mixed'] = 'gold'
     gross_weight: float = 0
     pc_count: int = 1
     labour_charge: float = 0
@@ -458,16 +470,27 @@ class ReceiveFromKarigarIn(BaseModel):
     charge_to: Optional[Literal['customer', 'karigar', 'none']] = 'none'
 
 
+class KarigarTransactionEditIn(BaseModel):
+    weight: float
+    note: Optional[str] = ''
+
+
 class DeliverIn(BaseModel):
-    billed_amount: float
+    # Itemized billing: each line is optional and defaults sensibly so old
+    # clients / quick deliveries still work with just a payment mode.
+    labour_charge: Optional[float] = None  # defaults to the item's own labour_charge
+    material_adjustment: Optional[float] = None  # defaults to any customer-charged adjustment set at receive time
+    extra_charges: Optional[float] = 0
+    extra_charges_note: Optional[str] = ''
     payment_mode: Optional[str] = 'cash'
     note: Optional[str] = ''
     final_photo: Optional[str] = ''
 
 
 class KarigarLedgerEntryIn(BaseModel):
-    type: Literal['labour_payable', 'payment', 'adjustment']
-    amount: float
+    type: Literal['labour_payable', 'payment', 'adjustment', 'gold_out', 'gold_in']
+    amount: Optional[float] = 0   # ₹ types (labour_payable/payment/adjustment)
+    weight: Optional[float] = 0   # gold types (gold_out/gold_in) — entered directly in fine-gold grams
     note: Optional[str] = ''
 
 
@@ -640,6 +663,40 @@ async def employee_login(body: EmployeeLoginIn):
             'modules': resolve_modules({**emp, 'role': 'employee'}),
         },
     }
+
+
+@api.post('/auth/login-unified')
+async def login_unified(body: LoginIn):
+    # Single sign-in for the whole business — owner/admin/accountant accounts
+    # live in db.users, employees live in db.employees. Try both silently so
+    # the app never has to ask "which kind of user are you?"
+    uname = body.username.strip().lower()
+    user = await db.users.find_one({'username': uname})
+    if user and verify_secret(body.password, user.get('password_hash', '')):
+        tok = create_token({'sub': user['id'], 'role': user.get('role', 'owner'), 'username': user['username']})
+        return {
+            'access_token': tok, 'token_type': 'bearer',
+            'user': {
+                'id': user['id'], 'username': user['username'], 'name': user['name'], 'role': user.get('role', 'owner'),
+                'modules': resolve_modules(user),
+            },
+        }
+    emp = await db.employees.find_one({'username': uname})
+    if emp and emp.get('password_hash') and verify_secret(body.password, emp['password_hash']):
+        if emp.get('status') == 'inactive':
+            raise HTTPException(status_code=403, detail='This employee account is inactive')
+        code = emp.get('employee_code')
+        tok = create_token({'sub': emp['id'], 'role': 'employee', 'employee_code': code})
+        return {
+            'access_token': tok, 'token_type': 'bearer',
+            'user': {
+                'id': emp['id'], 'username': emp.get('username', uname), 'name': emp['name'], 'role': 'employee',
+                'employee_code': code, 'designation': emp.get('designation'),
+                'department': emp.get('department'), 'photo': emp.get('photo', ''),
+                'modules': resolve_modules({**emp, 'role': 'employee'}),
+            },
+        }
+    raise HTTPException(status_code=401, detail='Invalid username or password')
 
 
 @api.get('/auth/me')
@@ -1439,7 +1496,24 @@ async def list_customers(q: Optional[str] = None, _: dict = Depends(require_staf
             {'name': {'$regex': q, '$options': 'i'}},
             {'mobile': {'$regex': q, '$options': 'i'}},
         ]
-    return await db.customers.find(query, {'_id': 0}).sort('name', 1).to_list(1000)
+    customers = await db.customers.find(query, {'_id': 0}).sort('name', 1).to_list(1000)
+    # Attach a quick "balance" glance: how many items and how much gold weight
+    # of this customer's are still sitting with the shop (not yet delivered).
+    orders = await db.repair_orders.find({}, {'_id': 0, 'id': 1, 'customer_id': 1}).to_list(10000)
+    order_to_customer = {o['id']: o['customer_id'] for o in orders}
+    open_items = await db.repair_items.find({'status': {'$ne': 'delivered'}}, {'_id': 0, 'order_id': 1, 'gross_weight': 1}).to_list(10000)
+    balances: dict = {}
+    for it in open_items:
+        cid = order_to_customer.get(it.get('order_id'))
+        if not cid: continue
+        b = balances.setdefault(cid, {'open_items': 0, 'open_weight': 0.0})
+        b['open_items'] += 1
+        b['open_weight'] += it.get('gross_weight') or 0
+    for c in customers:
+        b = balances.get(c['id'], {'open_items': 0, 'open_weight': 0.0})
+        c['open_items'] = b['open_items']
+        c['open_weight'] = round(b['open_weight'], 3)
+    return customers
 
 
 @api.get('/customers/{cid}')
@@ -1474,7 +1548,27 @@ async def update_customer(cid: str, body: CustomerIn, user=Depends(require_admin
 # ---------------- Repairs: Karigars ----------------
 @api.get('/karigars')
 async def list_karigars(_: dict = Depends(require_staff)):
-    return await db.karigars.find({}, {'_id': 0}).sort('name', 1).to_list(500)
+    karigars = await db.karigars.find({}, {'_id': 0}).sort('name', 1).to_list(500)
+    entries = await db.karigar_ledger.find({}, {'_id': 0, 'karigar_id': 1, 'type': 1, 'weight': 1, 'fine_weight': 1, 'amount': 1}).to_list(20000)
+    fine_bal: dict = {}
+    amt_due: dict = {}
+    for e in entries:
+        kid = e.get('karigar_id')
+        if not kid: continue
+        if e['type'] == 'gold_out':
+            fine_bal[kid] = fine_bal.get(kid, 0) + (e.get('fine_weight') if e.get('fine_weight') is not None else (e.get('weight') or 0))
+        elif e['type'] == 'gold_in':
+            fine_bal[kid] = fine_bal.get(kid, 0) - (e.get('fine_weight') if e.get('fine_weight') is not None else (e.get('weight') or 0))
+        elif e['type'] == 'labour_payable':
+            amt_due[kid] = amt_due.get(kid, 0) + (e.get('amount') or 0)
+        elif e['type'] == 'payment':
+            amt_due[kid] = amt_due.get(kid, 0) - (e.get('amount') or 0)
+        elif e['type'] == 'wastage':
+            amt_due[kid] = amt_due.get(kid, 0) + (e.get('amount') or 0)
+    for k in karigars:
+        k['fine_weight_balance'] = round(fine_bal.get(k['id'], 0), 3)
+        k['amount_due'] = round(amt_due.get(k['id'], 0), 2)
+    return karigars
 
 
 @api.post('/karigars')
@@ -1542,6 +1636,38 @@ async def delete_repair_type(rtid: str, user=Depends(require_owner), _mod=Depend
     return {'ok': True}
 
 
+# ---------------- Repairs: Items Master (name + purity) ----------------
+@api.get('/item-master')
+async def list_item_master(_: dict = Depends(require_staff)):
+    return await db.item_master.find({}, {'_id': 0}).sort('name', 1).to_list(500)
+
+
+@api.post('/item-master')
+async def create_item_master(body: ItemMasterIn, user=Depends(require_owner), _mod=Depends(require_module('repairs'))):
+    doc = {'id': str(uuid.uuid4()), **body.model_dump(), 'created_at': now_utc().isoformat()}
+    await db.item_master.insert_one(dict(doc))
+    await log_audit(user, 'item_master.create', 'item_master', doc['id'], body.name)
+    return {k: v for k, v in doc.items() if k != '_id'}
+
+
+@api.put('/item-master/{iid}')
+async def update_item_master(iid: str, body: ItemMasterIn, user=Depends(require_owner), _mod=Depends(require_module('repairs'))):
+    if not await db.item_master.find_one({'id': iid}):
+        raise HTTPException(status_code=404, detail='Item not found')
+    await db.item_master.update_one({'id': iid}, {'$set': body.model_dump()})
+    await log_audit(user, 'item_master.update', 'item_master', iid, body.name)
+    return await db.item_master.find_one({'id': iid}, {'_id': 0})
+
+
+@api.delete('/item-master/{iid}')
+async def delete_item_master(iid: str, user=Depends(require_owner), _mod=Depends(require_module('repairs'))):
+    it = await db.item_master.find_one({'id': iid}, {'_id': 0})
+    r = await db.item_master.delete_one({'id': iid})
+    if r.deleted_count == 0: raise HTTPException(status_code=404, detail='Item not found')
+    await log_audit(user, 'item_master.delete', 'item_master', iid, (it or {}).get('name', ''))
+    return {'ok': True}
+
+
 # ---------------- Repairs: Orders & Items ----------------
 async def _next_order_no() -> str:
     count = await db.repair_orders.count_documents({})
@@ -1584,17 +1710,24 @@ async def create_repair_order(body: RepairOrderIn, user=Depends(require_admin), 
     items_out = []
     for spec in body.items:
         item_code = await _next_item_code()
+        item_master = None
+        if spec.item_master_id:
+            item_master = await db.item_master.find_one({'id': spec.item_master_id}, {'_id': 0})
+        purity = item_master['purity'] if item_master else 100.0
         item = {
             'id': str(uuid.uuid4()), 'item_code': item_code, 'order_id': order_id,
             'order_no': order_no, 'customer_name': customer['name'],
+            'item_master_id': spec.item_master_id, 'item_type_name': (item_master or {}).get('name', ''),
+            'purity': purity,
             'description': spec.description, 'repair_type': spec.repair_type or '',
-            'material': spec.material, 'gross_weight': spec.gross_weight, 'pc_count': spec.pc_count,
+            'gross_weight': spec.gross_weight, 'fine_weight': round(spec.gross_weight * purity / 100, 3),
+            'pc_count': spec.pc_count,
             'labour_charge': spec.labour_charge, 'needs_karigar': spec.needs_karigar,
             'due_date': spec.due_date, 'stone_notes': spec.stone_notes or '', 'notes': spec.notes or '',
             'intake_photo': spec.intake_photo or '', 'final_photo': '',
             'status': 'received', 'karigar_id': None, 'karigar_name': None,
             'current_issue_weight': None, 'billed_amount': None, 'payment_mode': None,
-            'created_at': iso, 'delivered_at': None,
+            'created_at': iso, 'created_by': user['name'], 'updated_by': user['name'], 'delivered_at': None,
         }
         await db.repair_items.insert_one(dict(item))
         items_out.append({k: v for k, v in item.items() if k != '_id'})
@@ -1684,27 +1817,33 @@ async def update_repair_item(item_id: str, body: RepairItemUpdateIn, user=Depend
 async def issue_to_karigar(item_id: str, body: IssueToKarigarIn, user=Depends(require_admin), _mod=Depends(require_module('repairs'))):
     item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
     if not item: raise HTTPException(status_code=404, detail='Item not found')
-    if item['status'] not in ('received', 'ready'):
+    # Once an item has completed a karigar cycle (received back), it cannot be
+    # reissued — only a freshly received item (never yet sent out) can be issued.
+    if item['status'] != 'received':
         raise HTTPException(status_code=400, detail=f"Cannot issue an item that is {item['status']}")
     karigar = await db.karigars.find_one({'id': body.karigar_id}, {'_id': 0})
     if not karigar: raise HTTPException(status_code=404, detail='Karigar not found')
 
+    purity = item.get('purity') or 100.0
+    fine_weight = round(body.weight * purity / 100, 3)
     iso = now_utc().isoformat()
+    txn_id = str(uuid.uuid4())
     challan_no = f"IC-{item['item_code']}-{await db.karigar_transactions.count_documents({'item_id': item_id, 'direction': 'issue'}) + 1}"
     txn = {
-        'id': str(uuid.uuid4()), 'item_id': item_id, 'item_code': item['item_code'], 'karigar_id': karigar['id'],
-        'karigar_name': karigar['name'], 'direction': 'issue', 'weight': body.weight, 'note': body.note or '',
-        'challan_no': challan_no, 'created_at': iso, 'created_by': user['name'],
+        'id': txn_id, 'item_id': item_id, 'item_code': item['item_code'], 'karigar_id': karigar['id'],
+        'karigar_name': karigar['name'], 'direction': 'issue', 'weight': body.weight, 'fine_weight': fine_weight,
+        'note': body.note or '', 'challan_no': challan_no, 'created_at': iso, 'created_by': user['name'],
     }
     await db.karigar_transactions.insert_one(dict(txn))
     await db.karigar_ledger.insert_one({
         'id': str(uuid.uuid4()), 'karigar_id': karigar['id'], 'type': 'gold_out', 'weight': body.weight,
-        'amount': None, 'item_id': item_id, 'item_code': item['item_code'], 'note': f"Issued: {item['description']}",
+        'fine_weight': fine_weight, 'amount': None, 'item_id': item_id, 'item_code': item['item_code'],
+        'txn_id': txn_id, 'note': f"Issued: {item['description']}",
         'created_at': iso, 'created_by': user['name'],
     })
     await db.repair_items.update_one({'id': item_id}, {'$set': {
         'status': 'with_karigar', 'karigar_id': karigar['id'], 'karigar_name': karigar['name'],
-        'current_issue_weight': body.weight,
+        'current_issue_weight': body.weight, 'current_issue_fine_weight': fine_weight, 'updated_by': user['name'],
     }})
     await log_audit(user, 'repair_item.issue', 'repair_item', item_id, item['item_code'], {'karigar': karigar['name'], 'weight': body.weight})
     if karigar.get('is_employee') and karigar.get('employee_id'):
@@ -1719,34 +1858,45 @@ async def receive_from_karigar(item_id: str, body: ReceiveFromKarigarIn, user=De
     if item['status'] != 'with_karigar':
         raise HTTPException(status_code=400, detail='This item is not currently with a karigar')
     karigar_id = item['karigar_id']
+    purity = item.get('purity') or 100.0
     weight_issued = item.get('current_issue_weight') or 0
+    fine_issued = item.get('current_issue_fine_weight') or round(weight_issued * purity / 100, 3)
     diff = round(body.weight - weight_issued, 3)
+    fine_weight = round(body.weight * purity / 100, 3)
+    fine_diff = round(fine_weight - fine_issued, 3)
 
     iso = now_utc().isoformat()
+    txn_id = str(uuid.uuid4())
     challan_no = f"RC-{item['item_code']}-{await db.karigar_transactions.count_documents({'item_id': item_id, 'direction': 'receive'}) + 1}"
     txn = {
-        'id': str(uuid.uuid4()), 'item_id': item_id, 'item_code': item['item_code'], 'karigar_id': karigar_id,
+        'id': txn_id, 'item_id': item_id, 'item_code': item['item_code'], 'karigar_id': karigar_id,
         'karigar_name': item.get('karigar_name'), 'direction': 'receive', 'weight': body.weight,
-        'weight_diff': diff, 'note': body.note or '', 'challan_no': challan_no, 'created_at': iso,
+        'fine_weight': fine_weight, 'weight_diff': diff, 'fine_weight_diff': fine_diff,
+        'note': body.note or '', 'challan_no': challan_no, 'created_at': iso,
         'created_by': user['name'],
     }
     await db.karigar_transactions.insert_one(dict(txn))
+    # The weight difference itself is always logged as an explicit ledger line —
+    # this is what actually leaves (or clears) a gold balance on the karigar,
+    # on top of the gold_in "goods returned" entry below.
     await db.karigar_ledger.insert_one({
         'id': str(uuid.uuid4()), 'karigar_id': karigar_id, 'type': 'gold_in', 'weight': body.weight,
-        'amount': None, 'item_id': item_id, 'item_code': item['item_code'],
-        'note': f"Received back: {item['description']} (diff {diff:+.3f}g)", 'created_at': iso, 'created_by': user['name'],
+        'fine_weight': fine_weight, 'amount': None, 'item_id': item_id, 'item_code': item['item_code'],
+        'txn_id': txn_id, 'note': f"Received back: {item['description']} (diff {diff:+.3f}g / fine {fine_diff:+.3f}g)",
+        'created_at': iso, 'created_by': user['name'],
     })
     if body.adjustment_amount and body.charge_to == 'karigar':
         await db.karigar_ledger.insert_one({
             'id': str(uuid.uuid4()), 'karigar_id': karigar_id, 'type': 'wastage', 'weight': None,
             'amount': -abs(body.adjustment_amount), 'item_id': item_id, 'item_code': item['item_code'],
-            'note': body.adjustment_note or f'Wastage on {item["item_code"]}', 'created_at': iso, 'created_by': user['name'],
+            'txn_id': txn_id, 'note': body.adjustment_note or f'Wastage on {item["item_code"]}',
+            'created_at': iso, 'created_by': user['name'],
         })
     await db.repair_items.update_one({'id': item_id}, {'$set': {
-        'status': 'ready', 'weight_diff': diff,
+        'status': 'ready', 'weight_diff': diff, 'fine_weight_diff': fine_diff, 'updated_by': user['name'],
         'customer_adjustment': body.adjustment_amount if body.charge_to == 'customer' else 0,
     }})
-    await log_audit(user, 'repair_item.receive', 'repair_item', item_id, item['item_code'], {'weight_diff': diff})
+    await log_audit(user, 'repair_item.receive', 'repair_item', item_id, item['item_code'], {'weight_diff': diff, 'fine_weight_diff': fine_diff})
     return await db.repair_items.find_one({'id': item_id}, {'_id': 0})
 
 
@@ -1756,8 +1906,82 @@ async def mark_item_ready(item_id: str, user=Depends(require_admin), _mod=Depend
     if not item: raise HTTPException(status_code=404, detail='Item not found')
     if item['status'] != 'received':
         raise HTTPException(status_code=400, detail='Only a freshly received item can bypass the karigar step')
-    await db.repair_items.update_one({'id': item_id}, {'$set': {'status': 'ready'}})
+    await db.repair_items.update_one({'id': item_id}, {'$set': {'status': 'ready', 'updated_by': user['name']}})
     await log_audit(user, 'repair_item.ready', 'repair_item', item_id, item['item_code'])
+    return await db.repair_items.find_one({'id': item_id}, {'_id': 0})
+
+
+@api.put('/repair-items/{item_id}/transactions/{txn_id}')
+async def edit_karigar_transaction(item_id: str, txn_id: str, body: KarigarTransactionEditIn, user=Depends(require_admin), _mod=Depends(require_module('repairs'))):
+    item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
+    if not item: raise HTTPException(status_code=404, detail='Item not found')
+    txn = await db.karigar_transactions.find_one({'id': txn_id, 'item_id': item_id}, {'_id': 0})
+    if not txn: raise HTTPException(status_code=404, detail='Transaction not found')
+    if item['status'] == 'delivered':
+        raise HTTPException(status_code=400, detail='This item has already been delivered and billed — its history is locked')
+    if txn['direction'] == 'issue' and item['status'] != 'with_karigar':
+        raise HTTPException(status_code=400, detail='Only the current, unresolved issue can be edited — receive it back first if you need to correct an older one')
+    if txn['direction'] == 'receive' and item['status'] != 'ready':
+        raise HTTPException(status_code=400, detail='Only the most recent receive can be edited')
+
+    purity = item.get('purity') or 100.0
+    fine_weight = round(body.weight * purity / 100, 3)
+    iso = now_utc().isoformat()
+
+    if txn['direction'] == 'issue':
+        await db.karigar_transactions.update_one({'id': txn_id}, {'$set': {
+            'weight': body.weight, 'fine_weight': fine_weight, 'note': body.note or '', 'edited_at': iso, 'edited_by': user['name'],
+        }})
+        await db.karigar_ledger.update_many({'txn_id': txn_id}, {'$set': {'weight': body.weight, 'fine_weight': fine_weight}})
+        await db.repair_items.update_one({'id': item_id}, {'$set': {
+            'current_issue_weight': body.weight, 'current_issue_fine_weight': fine_weight, 'updated_by': user['name'],
+        }})
+    else:
+        weight_issued = item.get('current_issue_weight') or 0
+        fine_issued = item.get('current_issue_fine_weight') or round(weight_issued * purity / 100, 3)
+        diff = round(body.weight - weight_issued, 3)
+        fine_diff = round(fine_weight - fine_issued, 3)
+        await db.karigar_transactions.update_one({'id': txn_id}, {'$set': {
+            'weight': body.weight, 'fine_weight': fine_weight, 'weight_diff': diff, 'fine_weight_diff': fine_diff,
+            'note': body.note or '', 'edited_at': iso, 'edited_by': user['name'],
+        }})
+        await db.karigar_ledger.update_many(
+            {'txn_id': txn_id, 'type': 'gold_in'},
+            {'$set': {'weight': body.weight, 'fine_weight': fine_weight, 'note': f"Received back: {item['description']} (diff {diff:+.3f}g / fine {fine_diff:+.3f}g)"}},
+        )
+        await db.repair_items.update_one({'id': item_id}, {'$set': {
+            'weight_diff': diff, 'fine_weight_diff': fine_diff, 'updated_by': user['name'],
+        }})
+    await log_audit(user, 'repair_item.transaction_edit', 'repair_item', item_id, item['item_code'], {'txn_id': txn_id, 'weight': body.weight})
+    return await db.repair_items.find_one({'id': item_id}, {'_id': 0})
+
+
+@api.delete('/repair-items/{item_id}/transactions/{txn_id}')
+async def delete_karigar_transaction(item_id: str, txn_id: str, user=Depends(require_admin), _mod=Depends(require_module('repairs'))):
+    item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
+    if not item: raise HTTPException(status_code=404, detail='Item not found')
+    txn = await db.karigar_transactions.find_one({'id': txn_id, 'item_id': item_id}, {'_id': 0})
+    if not txn: raise HTTPException(status_code=404, detail='Transaction not found')
+    if item['status'] == 'delivered':
+        raise HTTPException(status_code=400, detail='This item has already been delivered and billed — its history is locked')
+    if txn['direction'] == 'issue' and item['status'] != 'with_karigar':
+        raise HTTPException(status_code=400, detail='Only the current, unresolved issue can be deleted — receive it back first if you need to undo an older one')
+    if txn['direction'] == 'receive' and item['status'] != 'ready':
+        raise HTTPException(status_code=400, detail='Only the most recent receive can be deleted')
+
+    await db.karigar_transactions.delete_one({'id': txn_id})
+    await db.karigar_ledger.delete_many({'txn_id': txn_id})
+    if txn['direction'] == 'issue':
+        await db.repair_items.update_one({'id': item_id}, {'$set': {
+            'status': 'received', 'karigar_id': None, 'karigar_name': None,
+            'current_issue_weight': None, 'current_issue_fine_weight': None, 'updated_by': user['name'],
+        }})
+    else:
+        await db.repair_items.update_one({'id': item_id}, {'$set': {
+            'status': 'with_karigar', 'weight_diff': None, 'fine_weight_diff': None,
+            'customer_adjustment': 0, 'updated_by': user['name'],
+        }})
+    await log_audit(user, 'repair_item.transaction_delete', 'repair_item', item_id, item['item_code'], {'txn_id': txn_id, 'direction': txn['direction']})
     return await db.repair_items.find_one({'id': item_id}, {'_id': 0})
 
 
@@ -1768,12 +1992,19 @@ async def deliver_item(item_id: str, body: DeliverIn, user=Depends(require_admin
     if item['status'] != 'ready':
         raise HTTPException(status_code=400, detail='Item must be ready before delivery')
     iso = now_utc().isoformat()
+    labour = body.labour_charge if body.labour_charge is not None else item.get('labour_charge', 0)
+    material_adj = body.material_adjustment if body.material_adjustment is not None else item.get('customer_adjustment', 0) or 0
+    extra = body.extra_charges or 0
+    billed_amount = round(labour + material_adj + extra, 2)
     await db.repair_items.update_one({'id': item_id}, {'$set': {
-        'status': 'delivered', 'delivered_at': iso, 'billed_amount': body.billed_amount,
-        'payment_mode': body.payment_mode, 'delivery_note': body.note or '',
+        'status': 'delivered', 'delivered_at': iso,
+        'bill_labour_charge': labour, 'bill_material_adjustment': material_adj,
+        'bill_extra_charges': extra, 'bill_extra_charges_note': body.extra_charges_note or '',
+        'billed_amount': billed_amount,
+        'payment_mode': body.payment_mode, 'delivery_note': body.note or '', 'updated_by': user['name'],
         'final_photo': body.final_photo or item.get('final_photo', ''),
     }})
-    await log_audit(user, 'repair_item.deliver', 'repair_item', item_id, item['item_code'], {'billed_amount': body.billed_amount})
+    await log_audit(user, 'repair_item.deliver', 'repair_item', item_id, item['item_code'], {'billed_amount': billed_amount})
     return await db.repair_items.find_one({'id': item_id}, {'_id': 0})
 
 
@@ -1783,15 +2014,46 @@ async def repair_item_bill_pdf(item_id: str, _: dict = Depends(require_staff)):
     if not item: raise HTTPException(status_code=404, detail='Item not found')
     rows = [
         ['Item', item['description']], ['Tag', item['item_code']], ['Repair Type', item['repair_type'] or '—'],
-        ['Weight', f"{item['gross_weight']:.3f}g"], ['Labour Charge', f"₹{item['labour_charge']:.0f}"],
+        ['Weight', f"{item['gross_weight']:.3f}g"],
+        ['Labour Charge', f"₹{(item.get('bill_labour_charge') if item.get('bill_labour_charge') is not None else item.get('labour_charge', 0)):.0f}"],
     ]
-    if item.get('customer_adjustment'):
-        rows.append(['Material Adjustment', f"₹{item['customer_adjustment']:.0f}"])
+    if item.get('bill_material_adjustment'):
+        rows.append(['Material Adjustment', f"₹{item['bill_material_adjustment']:.0f}"])
+    if item.get('bill_extra_charges'):
+        rows.append([item.get('bill_extra_charges_note') or 'Extra Charges', f"₹{item['bill_extra_charges']:.0f}"])
     rows.append(['Total Billed', f"₹{(item.get('billed_amount') or 0):.0f}"])
     rows.append(['Payment Mode', (item.get('payment_mode') or '—').title()])
     pdf = _report_pdf(f"Repair Bill — {item['item_code']}", f"{item.get('customer_name', '')} · {item.get('order_no', '')}",
                        ['Field', 'Value'], rows)
     return _pdf_response(pdf, f'repair-bill-{item["item_code"]}.pdf')
+
+
+@api.get('/repair-items/{item_id}/issue-slip/pdf')
+async def repair_item_issue_slip_pdf(item_id: str, _: dict = Depends(require_staff)):
+    """Narrow thermal-printer-friendly challan for the item's current (or most
+    recent) karigar issue — separate from the A4 intake slip."""
+    item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
+    if not item: raise HTTPException(status_code=404, detail='Item not found')
+    txn = await db.karigar_transactions.find_one({'item_id': item_id, 'direction': 'issue'}, {'_id': 0}, sort=[('created_at', -1)])
+    if not txn: raise HTTPException(status_code=404, detail='This item has not been issued to a karigar yet')
+    store = await db.settings.find_one({}, {'_id': 0, 'name': 1}) or {}
+    lines = [
+        ('Challan No', txn['challan_no']),
+        ('Date', txn['created_at'][:10]),
+        ('Karigar', txn['karigar_name']),
+        ('Tag', item['item_code']),
+        ('Item', item['description']),
+        ('Weight Issued', f"{txn['weight']:.3f}g"),
+        ('Purity', f"{item.get('purity', 100):.1f}%"),
+        ('Fine Weight', f"{(txn.get('fine_weight') or txn['weight']):.3f}g"),
+        ('Issued By', txn['created_by']),
+    ]
+    if txn.get('note'):
+        lines.append(('Note', txn['note']))
+    lines.append('')
+    lines.append('Karigar Signature: _____________________')
+    pdf = _thermal_slip_pdf(store.get('name') or 'Ram Murti Jewellers', 'Karigar Issue Challan', lines)
+    return _pdf_response(pdf, f'issue-slip-{item["item_code"]}.pdf')
 
 
 # ---------------- Repairs: Karigar Ledger ----------------
@@ -1800,8 +2062,18 @@ async def get_karigar_ledger(kid: str, _: dict = Depends(require_staff)):
     karigar = await db.karigars.find_one({'id': kid}, {'_id': 0})
     if not karigar: raise HTTPException(status_code=404, detail='Karigar not found')
     entries = await db.karigar_ledger.find({'karigar_id': kid}, {'_id': 0}).sort('created_at', -1).to_list(1000)
+    # Raw gross-gram balance, kept for reference.
     weight_balance = sum((e['weight'] or 0) if e['type'] == 'gold_out' else -(e['weight'] or 0)
                           for e in entries if e['type'] in ('gold_out', 'gold_in'))
+    # Fine-gold-equivalent balance (gross weight × item purity) — this is the
+    # authoritative "how much gold does this karigar owe" figure, since it
+    # nets out correctly across items of different karats.
+    fine_weight_balance = sum(
+        (e.get('fine_weight') if e.get('fine_weight') is not None else (e['weight'] or 0)) if e['type'] == 'gold_out'
+        else -(e.get('fine_weight') if e.get('fine_weight') is not None else (e['weight'] or 0)) if e['type'] == 'gold_in'
+        else 0
+        for e in entries
+    )
     amount_due = sum(
         (e['amount'] or 0) if e['type'] == 'labour_payable'
         else -(e['amount'] or 0) if e['type'] == 'payment'
@@ -1809,21 +2081,37 @@ async def get_karigar_ledger(kid: str, _: dict = Depends(require_staff)):
         else 0
         for e in entries
     )
-    return {'karigar': karigar, 'entries': entries, 'weight_balance': round(weight_balance, 3), 'amount_due': round(amount_due, 2)}
+    return {
+        'karigar': karigar, 'entries': entries,
+        'weight_balance': round(weight_balance, 3), 'fine_weight_balance': round(fine_weight_balance, 3),
+        'amount_due': round(amount_due, 2),
+    }
 
 
 @api.post('/karigars/{kid}/ledger')
 async def add_karigar_ledger_entry(kid: str, body: KarigarLedgerEntryIn, user=Depends(require_admin), _mod=Depends(require_module('repairs'))):
     karigar = await db.karigars.find_one({'id': kid}, {'_id': 0})
     if not karigar: raise HTTPException(status_code=404, detail='Karigar not found')
-    signed = body.amount if body.type == 'labour_payable' else -abs(body.amount) if body.type == 'payment' else body.amount
-    doc = {
-        'id': str(uuid.uuid4()), 'karigar_id': kid, 'type': body.type, 'weight': None,
-        'amount': signed, 'item_id': None, 'item_code': None, 'note': body.note or '',
-        'created_at': now_utc().isoformat(), 'created_by': user['name'],
-    }
+    if body.type in ('gold_out', 'gold_in'):
+        # A manual/general gold adjustment not tied to a specific repair item —
+        # e.g. settling a leftover balance. Entered directly in fine-gold grams.
+        w = abs(body.weight or 0)
+        if not w:
+            raise HTTPException(status_code=400, detail='Enter a gold weight greater than 0')
+        doc = {
+            'id': str(uuid.uuid4()), 'karigar_id': kid, 'type': body.type, 'weight': w, 'fine_weight': w,
+            'amount': None, 'item_id': None, 'item_code': None, 'note': body.note or '',
+            'created_at': now_utc().isoformat(), 'created_by': user['name'],
+        }
+    else:
+        signed = body.amount if body.type == 'labour_payable' else -abs(body.amount or 0) if body.type == 'payment' else body.amount
+        doc = {
+            'id': str(uuid.uuid4()), 'karigar_id': kid, 'type': body.type, 'weight': None, 'fine_weight': None,
+            'amount': signed, 'item_id': None, 'item_code': None, 'note': body.note or '',
+            'created_at': now_utc().isoformat(), 'created_by': user['name'],
+        }
     await db.karigar_ledger.insert_one(dict(doc))
-    await log_audit(user, f'karigar_ledger.{body.type}', 'karigar', kid, karigar['name'], {'amount': body.amount})
+    await log_audit(user, f'karigar_ledger.{body.type}', 'karigar', kid, karigar['name'], {'amount': body.amount, 'weight': body.weight})
     return {k: v for k, v in doc.items() if k != '_id'}
 
 
@@ -1856,6 +2144,20 @@ async def dashboard(_: dict = Depends(get_current)):
     async for t in db.timeline.find({'type': 'bonus'}, {'_id': 0, 'amount': 1}):
         bonus_total += float(t.get('amount') or 0)
 
+    # Repairs at-a-glance — counts by status plus how many are past their due date.
+    repair_items = await db.repair_items.find({'status': {'$ne': 'delivered'}}, {'_id': 0, 'status': 1, 'due_date': 1}).to_list(5000)
+    repairs_received = sum(1 for i in repair_items if i['status'] == 'received')
+    repairs_with_karigar = sum(1 for i in repair_items if i['status'] == 'with_karigar')
+    repairs_ready = sum(1 for i in repair_items if i['status'] == 'ready')
+    repairs_overdue = sum(1 for i in repair_items if i.get('due_date') and i['due_date'] < d)
+    delivered_today = await db.repair_items.count_documents({'status': 'delivered', 'delivered_at': {'$regex': f'^{d}'}})
+
+    # Tasks at-a-glance — across the whole team (owner/admin view).
+    open_tasks = await db.tasks.find({'status': 'open'}, {'_id': 0, 'due_date': 1}).to_list(5000)
+    tasks_due_today = sum(1 for t in open_tasks if t.get('due_date') == d)
+    tasks_overdue = sum(1 for t in open_tasks if t.get('due_date') and t['due_date'] < d)
+    tasks_done_today = await db.tasks.count_documents({'status': 'done', 'completed_at': {'$regex': f'^{d}'}})
+
     return {
         'todays_attendance': {
             'present': present, 'absent': absent, 'late': late, 'half_day': half_day,
@@ -1874,6 +2176,15 @@ async def dashboard(_: dict = Depends(get_current)):
             'advances_outstanding': adv_total,
             'loans_outstanding': 0,
             'bonuses': bonus_total,
+        },
+        'repairs_summary': {
+            'received': repairs_received, 'with_karigar': repairs_with_karigar, 'ready': repairs_ready,
+            'overdue': repairs_overdue, 'delivered_today': delivered_today,
+            'total_open': len(repair_items),
+        },
+        'tasks_summary': {
+            'due_today': tasks_due_today, 'overdue': tasks_overdue,
+            'done_today': tasks_done_today, 'open_total': len(open_tasks),
         },
     }
 
@@ -1935,6 +2246,8 @@ async def update_my_account(body: SelfAccountUpdateIn, user=Depends(get_current)
     if not verify_secret(body.current_password, full.get('password_hash', '')):
         raise HTTPException(status_code=401, detail='Current password is incorrect')
     upd: dict = {}
+    if body.new_name and body.new_name.strip():
+        upd['name'] = body.new_name.strip()
     if body.new_username:
         uname = body.new_username.strip().lower()
         if uname != full.get('username'):
@@ -2925,10 +3238,12 @@ async def _check_auto_advances():
 
 
 async def _check_recurring_tasks():
-    """Once per day, spawns today's (or this week's) task instance from each
-    active recurring template. Idempotent via `db.task_generations` (keyed by
-    template + date) so the 15-minute poll can safely re-check. A missed or
-    completed instance never blocks the next one — each day/week is its own
+    """Spawns task instances from each active recurring template. Daily/weekly
+    templates get one instance per day (or matching weekday); hourly templates
+    get a fresh instance every `interval_hours` hours. Idempotent via
+    `db.task_generations` (keyed by template + date, plus an hour-bucket for
+    hourly templates) so the 15-minute poll can safely re-check. A missed or
+    completed instance never blocks the next one — each cycle is its own
     independent task, not a chain."""
     now_ist = now_utc().astimezone(timezone(timedelta(hours=5, minutes=30)))
     today = now_ist.date()
@@ -2937,27 +3252,34 @@ async def _check_recurring_tasks():
     async for tpl in db.task_templates.find({'active': True}, {'_id': 0}):
         if tpl['freq'] == 'weekly' and tpl.get('weekday') is not None and today.weekday() != int(tpl['weekday']):
             continue
-        if await db.task_generations.find_one({'template_id': tpl['id'], 'date': today_iso}, {'_id': 0, 'id': 1}):
-            continue  # already generated for this day
+
+        if tpl['freq'] == 'hourly':
+            interval = max(1, int(tpl.get('interval_hours') or 1))
+            hour_bucket = (now_ist.hour // interval) * interval
+            gen_key = {'template_id': tpl['id'], 'date': today_iso, 'hour_bucket': hour_bucket}
+        else:
+            gen_key = {'template_id': tpl['id'], 'date': today_iso, 'hour_bucket': None}
+
+        if await db.task_generations.find_one(gen_key, {'_id': 0, 'id': 1}):
+            continue  # already generated for this cycle
 
         emp = await db.employees.find_one({'id': tpl['assigned_to'], 'status': 'active'}, {'_id': 0})
         await db.task_generations.update_one(
-            {'template_id': tpl['id'], 'date': today_iso},
-            {'$set': {'template_id': tpl['id'], 'date': today_iso, 'created_at': now_utc().isoformat()}},
-            upsert=True,
+            gen_key, {'$set': {**gen_key, 'created_at': now_utc().isoformat()}}, upsert=True,
         )
         if not emp:
             continue  # employee inactive/removed — mark generated, but skip creating a task for them
         iso = now_utc().isoformat()
         task_id = str(uuid.uuid4())
+        title = tpl['title'] if tpl['freq'] != 'hourly' else f"{tpl['title']} ({hour_bucket:02d}:00)"
         await db.tasks.insert_one({
-            'id': task_id, 'title': tpl['title'], 'description': tpl.get('description', ''),
+            'id': task_id, 'title': title, 'description': tpl.get('description', ''),
             'assigned_to': tpl['assigned_to'], 'assigned_to_name': emp['name'], 'assigned_by': 'Recurring',
             'priority': tpl.get('priority', 'normal'), 'due_date': today_iso, 'status': 'open',
             'comments': [], 'recurring_template_id': tpl['id'], 'overdue_notified_at': None,
             'created_at': iso, 'completed_at': None,
         })
-        await notify_user(tpl['assigned_to'], 'New task assigned', tpl['title'], '/(emp)/tasks')
+        await notify_user(tpl['assigned_to'], 'New task assigned', title, '/(emp)/tasks')
 
 
 async def _check_overdue_tasks():
@@ -3066,6 +3388,42 @@ def _pdf_response(pdf: bytes, filename: str):
     from starlette.responses import Response as SR
     return SR(content=pdf, media_type='application/pdf',
               headers={'Content-Disposition': f'inline; filename="{filename}"'})
+
+
+def _thermal_slip_pdf(shop_name: str, heading: str, lines: list) -> bytes:
+    """Narrow (80mm) receipt-style PDF meant to be printed on a thermal
+    receipt printer via the browser's print dialog. `lines` is a list of
+    (label, value) tuples, or a plain string for a divider/free line."""
+    from io import BytesIO
+    from reportlab.lib import colors as rlcolors
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import mm
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable
+    buf = BytesIO()
+    width = 80 * mm
+    doc = SimpleDocTemplate(buf, pagesize=(width, 200 * mm), leftMargin=4*mm, rightMargin=4*mm, topMargin=4*mm, bottomMargin=4*mm)
+    styles = getSampleStyleSheet()
+    dark = rlcolors.HexColor('#0D0D0D')
+    els = [
+        Paragraph(f"<b>{shop_name}</b>", ParagraphStyle('shop', parent=styles['Normal'], alignment=1, fontSize=13, textColor=dark)),
+        Paragraph(heading, ParagraphStyle('head', parent=styles['Normal'], alignment=1, fontSize=10, textColor=rlcolors.HexColor('#555'))),
+        Spacer(1, 3*mm), HRFlowable(width='100%', color=rlcolors.HexColor('#999')), Spacer(1, 2*mm),
+    ]
+    for item in lines:
+        if isinstance(item, tuple):
+            label, value = item
+            els.append(Paragraph(f"<b>{label}:</b> {value}", ParagraphStyle('l', parent=styles['Normal'], fontSize=10, textColor=dark, spaceAfter=3)))
+        else:
+            els.append(Spacer(1, 2*mm))
+            els.append(HRFlowable(width='100%', color=rlcolors.HexColor('#ccc')))
+            els.append(Spacer(1, 2*mm))
+            if item:
+                els.append(Paragraph(item, ParagraphStyle('n', parent=styles['Normal'], fontSize=9, textColor=rlcolors.HexColor('#555'))))
+    els.append(Spacer(1, 6*mm))
+    els.append(Paragraph(f"Generated {now_utc().strftime('%d %b %Y %H:%M')}", ParagraphStyle('f', parent=styles['Normal'], fontSize=7, alignment=1, textColor=rlcolors.HexColor('#999'))))
+    doc.build(els)
+    pdf = buf.getvalue(); buf.close()
+    return pdf
 
 
 @api.get('/reports/{kind}/pdf')

@@ -311,7 +311,7 @@ function RecordPaymentForm({ remaining, onCancel, onConfirm }: {
       <TextInput
         testID="pay-amount-input"
         value={amount} onChangeText={(v) => setAmount(v.replace(/[^0-9.]/g, ''))}
-        keyboardType="numeric" placeholder="0" placeholderTextColor={colors.mutedText}
+        keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText}
         style={[styles.numInput, { textAlign: 'left', fontSize: 16 }]}
       />
 
@@ -396,7 +396,7 @@ function NumField({ label, v, onC, testID }: { label: string; v: string; onC: (s
   return (
     <View style={{ flex: 1 }}>
       <Text style={stylesOv.numLabel}>{label}</Text>
-      <TextInput testID={testID} value={v} onChangeText={(x) => onC(x.replace(/[^0-9.]/g, ''))} keyboardType="numeric" placeholder="0" placeholderTextColor={colors.mutedText} style={stylesOv.numInput} />
+      <TextInput testID={testID} value={v} onChangeText={(x) => onC(x.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={stylesOv.numInput} />
     </View>
   );
 }

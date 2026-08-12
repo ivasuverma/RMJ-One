@@ -7,7 +7,7 @@ import { api } from '@/src/api/client';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
-type Customer = { id: string; name: string; mobile: string };
+type Customer = { id: string; name: string; mobile: string; open_items?: number; open_weight?: number };
 
 // Read-only lookup into a customer's repair history/ledger (customers/[id].tsx).
 // Adding/editing customer accounts lives in Masters — this is reporting only.
@@ -54,6 +54,12 @@ export default function CustomerLedgerScreen() {
               <Text style={styles.cName}>{c.name}</Text>
               <Text style={styles.cMeta}>{c.mobile || 'No mobile on file'}</Text>
             </View>
+            {!!c.open_items && (
+              <View style={styles.balanceBadge}>
+                <Text style={styles.balanceValue}>{c.open_weight?.toFixed(3)}g</Text>
+                <Text style={styles.balanceLabel}>{c.open_items} pending</Text>
+              </View>
+            )}
             <Ionicons name="chevron-forward" size={16} color={colors.mutedText} />
           </Pressable>
         ))}
@@ -94,4 +100,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   cName: { color: colors.onSurface, fontWeight: '700', fontSize: 14 },
   cMeta: { color: colors.onSurfaceTertiary, fontSize: 12, marginTop: 2 },
+  balanceBadge: { alignItems: 'flex-end', marginRight: spacing.xs },
+  balanceValue: { color: colors.onWarning, fontWeight: '700', fontSize: 13 },
+  balanceLabel: { color: colors.mutedText, fontSize: 10, marginTop: 1 },
 });

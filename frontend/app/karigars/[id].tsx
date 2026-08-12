@@ -100,7 +100,7 @@ export default function KarigarLedgerScreen() {
           {showForm && (
             <View style={styles.formCard} testID="ledger-entry-form">
               <Text style={styles.label}>{showForm === 'labour_payable' ? 'Amount owed for labour (₹)' : 'Amount paid (₹)'}</Text>
-              <TextInput testID="ledger-amount" value={amount} onChangeText={(v) => setAmount(v.replace(/[^0-9.]/g, ''))} keyboardType="numeric" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />
+              <TextInput testID="ledger-amount" value={amount} onChangeText={(v) => setAmount(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />
               <Text style={styles.label}>Note (optional)</Text>
               <TextInput testID="ledger-note" value={note} onChangeText={setNote} placeholder="Reference or reason" placeholderTextColor={colors.mutedText} style={styles.input} />
               <Pressable onPress={submit} disabled={saving} style={[styles.saveBtn, saving && { opacity: 0.6 }]} testID="ledger-save-btn">

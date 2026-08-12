@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { api } from '@/src/api/client';
+import { DateField } from '@/src/components/DateField';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
@@ -189,10 +190,10 @@ export default function EmployeeForm() {
           </View>
           <View style={styles.row2}>
             <View style={{ flex: 1 }}>
-              <Field label="Salary (₹/mo)" value={form.salary} onChangeText={(v) => setField('salary', v.replace(/[^0-9.]/g, ''))} keyboardType="numeric" error={errors.salary} testID="field-salary" />
+              <Field label="Salary (₹/mo)" value={form.salary} onChangeText={(v) => setField('salary', v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" error={errors.salary} testID="field-salary" />
             </View>
             <View style={{ flex: 1 }}>
-              <Field label="Joining Date" value={form.joining_date} onChangeText={(v) => setField('joining_date', v)} placeholder="YYYY-MM-DD" testID="field-joining" />
+              <DateField label="Joining Date" value={form.joining_date} onChange={(v) => setField('joining_date', v)} testID="field-joining" />
             </View>
           </View>
 
@@ -232,7 +233,7 @@ export default function EmployeeForm() {
               <Field
                 label="Amount (₹/mo)" value={form.auto_advance_amount}
                 onChangeText={(v) => setField('auto_advance_amount', v.replace(/[^0-9.]/g, ''))}
-                keyboardType="numeric" placeholder="Off" error={errors.auto_advance_amount} testID="field-auto-advance-amount"
+                keyboardType="decimal-pad" placeholder="Off" error={errors.auto_advance_amount} testID="field-auto-advance-amount"
               />
             </View>
             <View style={{ flex: 1 }}>

@@ -7,23 +7,32 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
 import { PhotoCaptureModal } from '@/src/components/PhotoCaptureModal';
+import { DateField } from '@/src/components/DateField';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
 type Customer = { id: string; name: string; mobile: string; address: string };
 type RepairType = { id: string; name: string; default_labour: number; requires_karigar_default: boolean; active: boolean };
-type Material = 'gold' | 'diamond' | 'mixed';
+type ItemMaster = { id: string; name: string; purity: number; category: string; active: boolean };
 
 type DraftItem = {
-  key: string; description: string; repair_type: string; material: Material;
+  key: string; item_master_id: string; item_type_name: string;
+  description: string; repair_type: string;
   gross_weight: string; pc_count: string; labour_charge: string; needs_karigar: boolean;
   due_date: string; notes: string; intake_photo: string;
 };
 
 const blankItem = (): DraftItem => ({
-  key: String(Date.now() + Math.random()), description: '', repair_type: '', material: 'gold',
+  key: String(Date.now() + Math.random()), item_master_id: '', item_type_name: '',
+  description: '', repair_type: '',
   gross_weight: '', pc_count: '1', labour_charge: '', needs_karigar: false, due_date: '', notes: '', intake_photo: '',
 });
+
+const addDays = (n: number) => {
+  const d = new Date();
+  d.setDate(d.getDate() + n);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
 
 export default function NewRepairOrderScreen() {
   const router = useRouter();
@@ -31,8 +40,12 @@ export default function NewRepairOrderScreen() {
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const [repairTypes, setRepairTypes] = useState<RepairType[]>([]);
+  const [itemMasters, setItemMasters] = useState<ItemMaster[]>([]);
   const load = useCallback(async () => {
-    try { setRepairTypes(await api.get<RepairType[]>('/repair-types')); } catch (_e) { setRepairTypes([]); }
+    try {
+      const [rt, im] = await Promise.all([api.get<RepairType[]>('/repair-types'), api.get<ItemMaster[]>('/item-master')]);
+      setRepairTypes(rt); setItemMasters(im);
+    } catch (_e) { setRepairTypes([]); setItemMasters([]); }
   }, []);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
@@ -55,6 +68,7 @@ export default function NewRepairOrderScreen() {
   const [items, setItems] = useState<DraftItem[]>([]);
   const [draft, setDraft] = useState<DraftItem>(blankItem());
   const [rtPickerOpen, setRtPickerOpen] = useState(false);
+  const [imPickerOpen, setImPickerOpen] = useState(false);
 
   const pickRepairType = (rt: RepairType) => {
     setDraft((d) => ({
@@ -63,6 +77,11 @@ export default function NewRepairOrderScreen() {
       needs_karigar: rt.requires_karigar_default,
     }));
     setRtPickerOpen(false);
+  };
+
+  const pickItemMaster = (im: ItemMaster) => {
+    setDraft((d) => ({ ...d, item_master_id: im.id, item_type_name: `${im.name} (${im.purity}%)` }));
+    setImPickerOpen(false);
   };
 
   const addItem = () => {
@@ -87,7 +106,8 @@ export default function NewRepairOrderScreen() {
     try {
       const body: any = {
         items: items.map((i) => ({
-          description: i.description.trim(), repair_type: i.repair_type, material: i.material,
+          item_master_id: i.item_master_id || null,
+          description: i.description.trim(), repair_type: i.repair_type,
           gross_weight: parseFloat(i.gross_weight) || 0, pc_count: parseInt(i.pc_count, 10) || 1,
           labour_charge: parseFloat(i.labour_charge) || 0, needs_karigar: i.needs_karigar,
           due_date: i.due_date || null, notes: i.notes, intake_photo: i.intake_photo,
@@ -166,6 +186,23 @@ export default function NewRepairOrderScreen() {
 
           <Text style={[styles.section, { marginTop: spacing.xl }]}>Add Item</Text>
           <View style={styles.formCard} testID="item-draft-form">
+            <Text style={styles.label}>Item</Text>
+            <Pressable onPress={() => setImPickerOpen((v) => !v)} style={styles.picker} testID="item-im-toggle">
+              <Text style={draft.item_type_name ? styles.pickerValue : styles.pickerPlaceholder}>{draft.item_type_name || 'Choose an item type (optional)'}</Text>
+              <Ionicons name={imPickerOpen ? 'chevron-up' : 'chevron-down'} size={16} color={colors.mutedText} />
+            </Pressable>
+            {imPickerOpen && (
+              <View style={styles.pickerList}>
+                {itemMasters.filter((im) => im.active).map((im) => (
+                  <Pressable key={im.id} onPress={() => pickItemMaster(im)} style={styles.pickerRow} testID={`item-im-${im.id}`}>
+                    <Text style={styles.pickerRowName}>{im.name}</Text>
+                    <Text style={styles.pickerRowMeta}>{im.purity}%</Text>
+                  </Pressable>
+                ))}
+                {itemMasters.length === 0 && <Text style={[styles.pickerRowMeta, { padding: spacing.md }]}>No items set up yet — set purity for one in Utility &gt; Items &amp; Purity</Text>}
+              </View>
+            )}
+
             <Text style={styles.label}>Description</Text>
             <TextInput testID="item-description" value={draft.description} onChangeText={(v) => setDraft((d) => ({ ...d, description: v }))} placeholder="e.g. Gold chain, broken clasp" placeholderTextColor={colors.mutedText} style={styles.input} />
 
@@ -186,35 +223,27 @@ export default function NewRepairOrderScreen() {
               </View>
             )}
 
-            <Text style={styles.label}>Material</Text>
-            <View style={styles.chipRow}>
-              {(['gold', 'diamond', 'mixed'] as Material[]).map((m) => (
-                <Pressable key={m} onPress={() => setDraft((d) => ({ ...d, material: m }))} style={[styles.chip, draft.material === m && styles.chipActive]} testID={`item-material-${m}`}>
-                  <Text style={[styles.chipText, draft.material === m && styles.chipTextActive]}>{m[0].toUpperCase() + m.slice(1)}</Text>
-                </Pressable>
-              ))}
-            </View>
-
             <View style={styles.row2}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.label}>Gross Weight (g)</Text>
-                <TextInput testID="item-weight" value={draft.gross_weight} onChangeText={(v) => setDraft((d) => ({ ...d, gross_weight: v.replace(/[^0-9.]/g, '') }))} keyboardType="numeric" placeholder="0.000" placeholderTextColor={colors.mutedText} style={styles.input} />
+                <TextInput testID="item-weight" value={draft.gross_weight} onChangeText={(v) => setDraft((d) => ({ ...d, gross_weight: v.replace(/[^0-9.]/g, '') }))} keyboardType="decimal-pad" placeholder="0.000" placeholderTextColor={colors.mutedText} style={styles.input} />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.label}>Pieces</Text>
-                <TextInput testID="item-pcs" value={draft.pc_count} onChangeText={(v) => setDraft((d) => ({ ...d, pc_count: v.replace(/[^0-9]/g, '') }))} keyboardType="numeric" placeholder="1" placeholderTextColor={colors.mutedText} style={styles.input} />
+                <TextInput testID="item-pcs" value={draft.pc_count} onChangeText={(v) => setDraft((d) => ({ ...d, pc_count: v.replace(/[^0-9]/g, '') }))} keyboardType="number-pad" placeholder="1" placeholderTextColor={colors.mutedText} style={styles.input} />
               </View>
             </View>
 
-            <View style={styles.row2}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.label}>Labour Charge (₹)</Text>
-                <TextInput testID="item-labour" value={draft.labour_charge} onChangeText={(v) => setDraft((d) => ({ ...d, labour_charge: v.replace(/[^0-9.]/g, '') }))} keyboardType="numeric" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.label}>Due Date</Text>
-                <TextInput testID="item-due" value={draft.due_date} onChangeText={(v) => setDraft((d) => ({ ...d, due_date: v }))} placeholder="YYYY-MM-DD" placeholderTextColor={colors.mutedText} style={styles.input} />
-              </View>
+            <Text style={styles.label}>Labour Charge (₹)</Text>
+            <TextInput testID="item-labour" value={draft.labour_charge} onChangeText={(v) => setDraft((d) => ({ ...d, labour_charge: v.replace(/[^0-9.]/g, '') }))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />
+
+            <DateField label="Due Date" value={draft.due_date} onChange={(v) => setDraft((d) => ({ ...d, due_date: v }))} testID="item-due" />
+            <View style={styles.chipRow}>
+              {[3, 7, 15, 30].map((n) => (
+                <Pressable key={n} onPress={() => setDraft((d) => ({ ...d, due_date: addDays(n) }))} style={styles.dayChip} testID={`due-in-${n}`}>
+                  <Text style={styles.dayChipText}>+{n}d</Text>
+                </Pressable>
+              ))}
             </View>
 
             <Pressable onPress={() => setDraft((d) => ({ ...d, needs_karigar: !d.needs_karigar }))} style={styles.checkRow} testID="item-needs-karigar">
@@ -256,7 +285,7 @@ export default function NewRepairOrderScreen() {
                 <View key={i.key} style={styles.itemRow} testID={`draft-item-${i.key}`}>
                   {i.intake_photo ? <Image source={{ uri: i.intake_photo }} style={styles.itemThumb} /> : null}
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.cName}>{i.description}</Text>
+                    <Text style={styles.cName}>{i.item_type_name ? `${i.item_type_name} · ` : ''}{i.description}</Text>
                     <Text style={styles.cMeta}>{i.repair_type || 'No type'} · {i.gross_weight || '0'}g · {i.pc_count} pc{i.pc_count === '1' ? '' : 's'} · ₹{i.labour_charge || '0'}{i.needs_karigar ? ' · karigar' : ''}</Text>
                   </View>
                   <Pressable onPress={() => removeItem(i.key)} style={styles.delBtn} hitSlop={10} testID={`remove-item-${i.key}`}>
@@ -301,6 +330,8 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   chipActive: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
   chipText: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '700' },
   chipTextActive: { color: colors.onBrandPrimary },
+  dayChip: { paddingVertical: 6, paddingHorizontal: spacing.sm, borderRadius: radius.pill, backgroundColor: colors.surfaceTertiary, borderWidth: 1, borderColor: colors.border },
+  dayChipText: { color: colors.onSurfaceSecondary, fontSize: 11, fontWeight: '700' },
 
   searchRow: {
     flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.surfaceSecondary,

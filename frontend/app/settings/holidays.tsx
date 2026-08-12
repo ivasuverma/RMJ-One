@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { api } from '@/src/api/client';
 import { confirmAction } from '@/src/utils/confirm';
+import { DateField } from '@/src/components/DateField';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
@@ -76,8 +77,7 @@ export default function HolidaysScreen() {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}
         >
           <Text style={styles.section}>Add Holiday</Text>
-          <Text style={styles.label}>Date (YYYY-MM-DD)</Text>
-          <TextInput testID="hol-date" value={date} onChangeText={setDate} placeholder="2026-08-15" placeholderTextColor={colors.mutedText} style={styles.input} autoCapitalize="none" />
+          <DateField label="Date" value={date} onChange={setDate} testID="hol-date" />
           <Text style={styles.label}>Name</Text>
           <TextInput testID="hol-name" value={name} onChangeText={setName} placeholder="Independence Day" placeholderTextColor={colors.mutedText} style={styles.input} />
           <Text style={styles.label}>Type</Text>

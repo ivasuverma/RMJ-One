@@ -4,17 +4,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
+import { REPAIR_STATUS_LABEL, repairStatusColors } from '@/src/utils/repairStatus';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
 type Item = {
   id: string; item_code: string; customer_name: string; description: string;
   status: 'received' | 'with_karigar' | 'ready' | 'delivered'; karigar_name: string | null;
-  gross_weight: number; created_at: string;
-};
-
-const STATUS_LABEL: Record<Item['status'], string> = {
-  received: 'Received', with_karigar: 'With Karigar', ready: 'Ready', delivered: 'Delivered',
+  gross_weight: number; created_at: string; created_by?: string;
 };
 
 export default function TagHistorySearchScreen() {
@@ -66,18 +63,21 @@ export default function TagHistorySearchScreen() {
         {searched && results.length === 0 && (
           <View style={styles.empty}><Text style={styles.emptyText}>No matching Tags found</Text></View>
         )}
-        {results.map((i) => (
-          <Pressable key={i.id} onPress={() => router.push(`/repairs/item/${i.id}` as any)} style={styles.itemRow} testID={`tag-result-${i.id}`}>
-            <View style={styles.iconBox}><Ionicons name="pricetag-outline" size={18} color={colors.brandSecondary} /></View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.cName}>{i.item_code} · {i.customer_name}</Text>
-              <Text style={styles.cMeta}>{i.description} · {i.gross_weight.toFixed(3)}g{i.karigar_name ? ` · ${i.karigar_name}` : ''}</Text>
-            </View>
-            <View style={[styles.statusBadge, i.status === 'delivered' ? styles.statusDone : styles.statusOpen]}>
-              <Text style={styles.statusText}>{STATUS_LABEL[i.status]}</Text>
-            </View>
-          </Pressable>
-        ))}
+        {results.map((i) => {
+          const sc = repairStatusColors(i.status, colors);
+          return (
+            <Pressable key={i.id} onPress={() => router.push(`/repairs/item/${i.id}` as any)} style={styles.itemRow} testID={`tag-result-${i.id}`}>
+              <View style={styles.iconBox}><Ionicons name="pricetag-outline" size={18} color={colors.brandSecondary} /></View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.cName}>{i.item_code} · {i.customer_name}</Text>
+                <Text style={styles.cMeta}>{i.description} · {i.gross_weight.toFixed(3)}g{i.karigar_name ? ` · ${i.karigar_name}` : ''}{i.created_by ? ` · by ${i.created_by}` : ''}</Text>
+              </View>
+              <View style={[styles.statusBadge, { backgroundColor: sc.bg, borderColor: sc.border }]}>
+                <Text style={[styles.statusText, { color: sc.fg }]}>{REPAIR_STATUS_LABEL[i.status]}</Text>
+              </View>
+            </Pressable>
+          );
+        })}
       </ScrollView>
     </SafeAreaView>
   );

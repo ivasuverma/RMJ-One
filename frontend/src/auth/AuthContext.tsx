@@ -16,11 +16,12 @@ export type User = {
 type AuthState = {
   user: User | null;
   loading: boolean;
+  login: (username: string, password: string, remember?: boolean) => Promise<void>;
   loginOwner: (username: string, password: string, remember?: boolean) => Promise<void>;
   loginEmployee: (username: string, password: string, remember?: boolean) => Promise<void>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
-  updateMyAccount: (currentPassword: string, newUsername?: string, newPassword?: string) => Promise<void>;
+  updateMyAccount: (currentPassword: string, newUsername?: string, newPassword?: string, newName?: string) => Promise<void>;
   hasModule: (key: string) => boolean;
 };
 
@@ -46,6 +47,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     (async () => { await refresh(); setLoading(false); })();
   }, [refresh]);
 
+  const login = useCallback(async (username: string, password: string, remember: boolean = true) => {
+    // One sign-in for everyone — owner, admin, accountant, or employee.
+    // The backend checks both account stores and returns whichever matches.
+    const res = await api.post<{ access_token: string; user: User }>(
+      '/auth/login-unified', { username, password }, false,
+    );
+    await saveToken(res.access_token, remember);
+    setUser(res.user);
+  }, []);
+
   const loginOwner = useCallback(async (username: string, password: string, remember: boolean = true) => {
     const res = await api.post<{ access_token: string; user: User }>(
       '/auth/login', { username, password }, false,
@@ -67,7 +78,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
   }, []);
 
-  const updateMyAccount = useCallback(async (currentPassword: string, newUsername?: string, newPassword?: string) => {
+  const updateMyAccount = useCallback(async (currentPassword: string, newUsername?: string, newPassword?: string, newName?: string) => {
     // Re-save the fresh token the same way the current one is stored — a
     // session-only ("don't remember me") login shouldn't silently become
     // persistent just because the password changed.
@@ -76,6 +87,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       current_password: currentPassword,
       new_username: newUsername || undefined,
       new_password: newPassword || undefined,
+      new_name: newName || undefined,
     });
     await saveToken(res.access_token, remember);
     setUser(res.user);
@@ -84,7 +96,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const hasModule = useCallback((key: string) => !!user?.modules?.includes(key), [user]);
 
   return (
-    <AuthCtx.Provider value={{ user, loading, loginOwner, loginEmployee, logout, refresh, updateMyAccount, hasModule }}>
+    <AuthCtx.Provider value={{ user, loading, login, loginOwner, loginEmployee, logout, refresh, updateMyAccount, hasModule }}>
       {children}
     </AuthCtx.Provider>
   );

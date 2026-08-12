@@ -11,8 +11,6 @@ import { useAuth } from '@/src/auth/AuthContext';
 import { spacing, radius, images, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
-type Mode = 'owner' | 'employee';
-
 export default function LoginScreen() {
   const { colors, scheme } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
@@ -21,30 +19,28 @@ export default function LoginScreen() {
   const gradientColors = scheme === 'light'
     ? ['rgba(247,241,230,0.15)', 'rgba(247,241,230,0.75)', 'rgba(247,241,230,0.98)'] as const
     : ['rgba(13,13,13,0.15)', 'rgba(13,13,13,0.7)', 'rgba(13,13,13,0.98)'] as const;
-  const [mode, setMode] = useState<Mode>('employee');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [remember, setRemember] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [secure, setSecure] = useState(true);
-  const { loginOwner, loginEmployee } = useAuth();
+  const { login } = useAuth();
   const router = useRouter();
   const submittingRef = useRef(false);
 
   const onSubmit = async () => {
     if (submittingRef.current) return; // guards rapid double/triple taps
+    if (!username.trim() || !password) { setError('Enter your username and password'); return; }
     submittingRef.current = true;
     Keyboard.dismiss();
     setError('');
     setLoading(true);
     try {
-      if (mode === 'owner') {
-        await loginOwner(username.trim(), password, remember);
-      } else {
-        await loginEmployee(username.trim(), password, remember);
-      }
-      // Let the root layout / index router pick the right destination based on the actual role
+      // One sign-in for everyone — the server figures out whether this is
+      // the owner, an admin/accountant, or an employee and sends back a
+      // token scoped to that role. The root layout routes accordingly.
+      await login(username.trim(), password, remember);
       router.replace('/');
     } catch (e: any) {
       setError(e?.detail || 'Login failed');
@@ -72,43 +68,21 @@ export default function LoginScreen() {
           </View>
 
           <View style={styles.formCard} testID="login-form">
-            {/* Mode switcher */}
-            <View style={styles.modeRow} testID="login-mode-row">
-              <Pressable
-                testID="mode-employee"
-                onPress={() => { setMode('employee'); setError(''); setUsername(''); setPassword(''); }}
-                style={[styles.modeBtn, mode === 'employee' && styles.modeBtnActive]}
-              >
-                <Ionicons name="people-outline" size={16} color={mode === 'employee' ? colors.onBrandPrimary : colors.onSurfaceTertiary} />
-                <Text style={[styles.modeText, mode === 'employee' && styles.modeTextActive]}>Employee</Text>
-              </Pressable>
-              <Pressable
-                testID="mode-owner"
-                onPress={() => { setMode('owner'); setError(''); setUsername(''); setPassword(''); }}
-                style={[styles.modeBtn, mode === 'owner' && styles.modeBtnActive]}
-              >
-                <Ionicons name="key-outline" size={16} color={mode === 'owner' ? colors.onBrandPrimary : colors.onSurfaceTertiary} />
-                <Text style={[styles.modeText, mode === 'owner' && styles.modeTextActive]}>Owner</Text>
-              </Pressable>
-            </View>
-
-            <Text style={styles.formTitle}>{mode === 'owner' ? 'Welcome back' : 'Punch in'}</Text>
-            <Text style={styles.formSubtitle}>
-              {mode === 'owner' ? 'Sign in to your workspace' : 'Sign in with your username and password'}
-            </Text>
+            <Text style={styles.formTitle}>Welcome back</Text>
+            <Text style={styles.formSubtitle}>Sign in with your username and password</Text>
 
             <Text style={styles.label}>Username</Text>
             <TextInput
-              testID={mode === 'owner' ? 'login-username' : 'emp-username-input'}
+              testID="login-username"
               value={username} onChangeText={setUsername}
               autoCapitalize="none" autoCorrect={false}
-              placeholder={mode === 'owner' ? 'owner' : 'rmj001'} placeholderTextColor={colors.mutedText}
+              placeholder="your username" placeholderTextColor={colors.mutedText}
               style={styles.input}
             />
             <Text style={styles.label}>Password</Text>
             <View style={styles.passwordRow}>
               <TextInput
-                testID={mode === 'owner' ? 'login-password' : 'emp-password-input'}
+                testID="login-password"
                 value={password} onChangeText={setPassword}
                 secureTextEntry={secure} placeholder="••••••••" placeholderTextColor={colors.mutedText}
                 autoCapitalize="none" autoCorrect={false}
@@ -142,9 +116,7 @@ export default function LoginScreen() {
               {loading ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.ctaText}>Sign in</Text>}
             </Pressable>
 
-            <Text style={styles.hint}>
-              {mode === 'employee' ? 'Ask your manager if you’ve forgotten your login.' : 'Contact your admin if you’ve lost access.'}
-            </Text>
+            <Text style={styles.hint}>Contact your admin if you've lost access.</Text>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -166,19 +138,6 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     backgroundColor: colors.surfaceSecondary, borderColor: colors.border, borderWidth: 1,
     borderRadius: radius.lg, padding: spacing.xl, marginTop: spacing.xxl,
   },
-  modeRow: {
-    flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.lg,
-    backgroundColor: colors.surfaceTertiary, padding: 4, borderRadius: radius.pill,
-    borderWidth: 1, borderColor: colors.border,
-  },
-  modeBtn: {
-    flex: 1, flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center',
-    paddingVertical: 8, borderRadius: radius.pill,
-  },
-  modeBtnActive: { backgroundColor: colors.brandPrimary },
-  modeText: { color: colors.onSurfaceTertiary, fontSize: 12, fontWeight: '600' },
-  modeTextActive: { color: colors.onBrandPrimary },
-
   formTitle: { color: colors.onSurface, fontSize: 22, fontWeight: '600', marginBottom: spacing.xs },
   formSubtitle: { color: colors.onSurfaceTertiary, fontSize: 12, marginBottom: spacing.lg },
   label: { color: colors.onSurfaceSecondary, fontSize: 12, letterSpacing: 0.6, textTransform: 'uppercase', marginBottom: spacing.xs, marginTop: spacing.md },

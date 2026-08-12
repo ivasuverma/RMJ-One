@@ -25,7 +25,7 @@ const SECTIONS: { title: string; tiles: TileDef[] }[] = [
     title: 'Repairs',
     tiles: [
       { key: 'repair-intake', label: 'Repair Intake', icon: 'diamond-outline', route: '/repairs/new' },
-      { key: 'repair-orders', label: 'All Repairs', icon: 'construct-outline', route: '/repairs' },
+      { key: 'repair-orders', label: 'In/Out Repairs', icon: 'construct-outline', route: '/repairs' },
     ],
   },
   {
@@ -85,7 +85,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   tile: {
-    flexBasis: '30%', flexGrow: 1, minWidth: 96,
+    flexBasis: '31%', flexGrow: 0, maxWidth: '31%', minWidth: 96,
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg,
     borderWidth: 1, borderColor: colors.border, padding: spacing.md, alignItems: 'center',
   },

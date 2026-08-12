@@ -32,12 +32,19 @@ type DashboardData = {
     current_month_payroll: number; pending_salary: number;
     advances_outstanding: number; loans_outstanding: number; bonuses: number;
   };
+  repairs_summary: {
+    received: number; with_karigar: number; ready: number;
+    overdue: number; delivered_today: number; total_open: number;
+  };
+  tasks_summary: {
+    due_today: number; overdue: number; done_today: number; open_total: number;
+  };
 };
 
 const fmtINR = (n: number) => `₹${(n || 0).toLocaleString('en-IN')}`;
 
 export default function DashboardScreen() {
-  const { user } = useAuth();
+  const { user, hasModule } = useAuth();
   const { colors, scheme } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const heroGradient = scheme === 'light'
@@ -150,6 +157,41 @@ export default function DashboardScreen() {
               <ApprovalRow icon="document-text-outline" label="Payroll Approval" count={data.pending_approvals.payroll_approval} testID="approval-payroll" onPress={() => router.push('/(tabs)/payroll')} />
             </View>
 
+            {/* Repairs at a glance */}
+            {hasModule('repairs') && (
+              <>
+                <SectionHeader title="Repairs" testID="section-repairs" />
+                <View style={styles.listCard}>
+                  <ApprovalRow icon="cube-outline" label="Received · awaiting action" count={data.repairs_summary.received} testID="repairs-received" onPress={() => router.push('/repairs/outstanding' as any)} />
+                  <Divider />
+                  <ApprovalRow icon="hammer-outline" label="With Karigar" count={data.repairs_summary.with_karigar} testID="repairs-with-karigar" onPress={() => router.push('/repairs/outstanding' as any)} />
+                  <Divider />
+                  <ApprovalRow icon="pricetag-outline" label="Pending to Bill" count={data.repairs_summary.ready} testID="repairs-ready" onPress={() => router.push('/repairs/outstanding' as any)} />
+                  <Divider />
+                  <ApprovalRow icon="alert-circle-outline" label="Overdue" count={data.repairs_summary.overdue} testID="repairs-overdue" danger onPress={() => router.push('/repairs/outstanding' as any)} />
+                </View>
+                <View style={styles.miniStatsRow}>
+                  <MiniStat label="Delivered Today" value={data.repairs_summary.delivered_today} testID="repairs-delivered-today" onPress={() => router.push('/repairs' as any)} />
+                  <MiniStat label="Total Open Tags" value={data.repairs_summary.total_open} testID="repairs-total-open" onPress={() => router.push('/repairs' as any)} />
+                  <MiniStat label="New Intake" icon="add" accent testID="repairs-new" onPress={() => router.push('/repairs/new' as any)} />
+                </View>
+              </>
+            )}
+
+            {/* Tasks at a glance */}
+            {hasModule('tasks') && (
+              <>
+                <SectionHeader title="Tasks" testID="section-tasks" />
+                <View style={styles.listCard}>
+                  <ApprovalRow icon="today-outline" label="Due Today" count={data.tasks_summary.due_today} testID="tasks-due-today" onPress={() => router.push('/tasks' as any)} />
+                  <Divider />
+                  <ApprovalRow icon="alert-circle-outline" label="Overdue" count={data.tasks_summary.overdue} testID="tasks-overdue" danger onPress={() => router.push('/tasks' as any)} />
+                  <Divider />
+                  <ApprovalRow icon="checkmark-done-outline" label="Completed Today" count={data.tasks_summary.done_today} testID="tasks-done-today" onPress={() => router.push('/tasks' as any)} />
+                </View>
+              </>
+            )}
+
             {/* Payroll Summary */}
             <SectionHeader title="Payroll Summary" testID="section-payroll" />
             <View style={styles.bento}>
@@ -198,19 +240,35 @@ function SectionHeader({ title, testID }: { title: string; testID?: string }) {
   );
 }
 
-function ApprovalRow({ icon, label, count, testID, onPress }: { icon: any; label: string; count: number; testID?: string; onPress?: () => void }) {
+function ApprovalRow({ icon, label, count, testID, onPress, danger }: { icon: any; label: string; count: number; testID?: string; onPress?: () => void; danger?: boolean }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+  const highlight = danger && count > 0;
+  return (
+    <Pressable style={({ pressed }) => [styles.appRow, pressed && { opacity: 0.7 }]} testID={testID} onPress={onPress}>
+      <View style={[styles.appIconWrap, highlight && { backgroundColor: colors.error }]}>
+        <Ionicons name={icon} size={18} color={highlight ? colors.onError : colors.brandSecondary} />
+      </View>
+      <Text style={styles.appLabel}>{label}</Text>
+      <View style={[styles.countPill, count === 0 && styles.countPillEmpty, highlight && { backgroundColor: colors.error }]}>
+        <Text style={[styles.countPillText, count === 0 && styles.countPillTextEmpty, highlight && { color: colors.onError }]}>{count}</Text>
+      </View>
+      <Ionicons name="chevron-forward" size={16} color={colors.mutedText} style={{ marginLeft: 4 }} />
+    </Pressable>
+  );
+}
+
+function MiniStat({ label, value, icon, accent, testID, onPress }: { label?: string; value?: number; icon?: any; accent?: boolean; testID?: string; onPress?: () => void }) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
-    <Pressable style={({ pressed }) => [styles.appRow, pressed && { opacity: 0.7 }]} testID={testID} onPress={onPress}>
-      <View style={styles.appIconWrap}>
-        <Ionicons name={icon} size={18} color={colors.brandSecondary} />
-      </View>
-      <Text style={styles.appLabel}>{label}</Text>
-      <View style={[styles.countPill, count === 0 && styles.countPillEmpty]}>
-        <Text style={[styles.countPillText, count === 0 && styles.countPillTextEmpty]}>{count}</Text>
-      </View>
-      <Ionicons name="chevron-forward" size={16} color={colors.mutedText} style={{ marginLeft: 4 }} />
+    <Pressable style={({ pressed }) => [styles.miniStat, accent && styles.miniStatAccent, pressed && { opacity: 0.75 }]} testID={testID} onPress={onPress}>
+      {icon ? (
+        <Ionicons name={icon} size={20} color={accent ? colors.onBrandPrimary : colors.brandSecondary} />
+      ) : (
+        <Text style={styles.miniStatValue}>{value}</Text>
+      )}
+      {label ? <Text style={[styles.miniStatLabel, accent && { color: colors.onBrandPrimary }]}>{label}</Text> : null}
     </Pressable>
   );
 }
@@ -305,6 +363,16 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   countPillText: { color: colors.onBrandPrimary, fontWeight: '700', fontSize: 12 },
   countPillTextEmpty: { color: colors.onSurfaceTertiary },
   divider: { height: 1, backgroundColor: colors.divider, marginHorizontal: spacing.lg },
+
+  miniStatsRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.xl },
+  miniStat: {
+    flex: 1, alignItems: 'center', justifyContent: 'center', gap: 4,
+    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md,
+    borderWidth: 1, borderColor: colors.border, paddingVertical: spacing.md,
+  },
+  miniStatAccent: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
+  miniStatValue: { color: colors.onSurface, fontSize: 18, fontWeight: '700' },
+  miniStatLabel: { color: colors.onSurfaceTertiary, fontSize: 10, textAlign: 'center' },
 
   bento: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md, marginBottom: spacing.lg },
   payrollTile: {

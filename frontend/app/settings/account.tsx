@@ -15,6 +15,7 @@ export default function MyAccountScreen() {
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const { user, updateMyAccount } = useAuth();
   const [currentPassword, setCurrentPassword] = useState('');
+  const [newName, setNewName] = useState(user?.name || '');
   const [newUsername, setNewUsername] = useState(user?.username || '');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -27,10 +28,11 @@ export default function MyAccountScreen() {
     if (!currentPassword) {
       Alert.alert('Missing', 'Enter your current password to confirm changes.'); return;
     }
+    const nameChanged = newName.trim() !== (user?.name || '') && newName.trim().length > 0;
     const usernameChanged = newUsername.trim().toLowerCase() !== (user?.username || '');
     const passwordChanged = newPassword.length > 0;
-    if (!usernameChanged && !passwordChanged) {
-      Alert.alert('No changes', 'Enter a new username or new password to update.'); return;
+    if (!nameChanged && !usernameChanged && !passwordChanged) {
+      Alert.alert('No changes', 'Enter a new name, username, or password to update.'); return;
     }
     if (passwordChanged) {
       if (newPassword.length < 4) { Alert.alert('Too short', 'New password must be 4+ characters.'); return; }
@@ -39,7 +41,12 @@ export default function MyAccountScreen() {
     submittingRef.current = true;
     setSaving(true);
     try {
-      await updateMyAccount(currentPassword, usernameChanged ? newUsername.trim() : undefined, passwordChanged ? newPassword : undefined);
+      await updateMyAccount(
+        currentPassword,
+        usernameChanged ? newUsername.trim() : undefined,
+        passwordChanged ? newPassword : undefined,
+        nameChanged ? newName.trim() : undefined,
+      );
       router.back();
     } catch (e: any) {
       Alert.alert('Failed', e?.detail || 'Please try again');
@@ -60,8 +67,14 @@ export default function MyAccountScreen() {
         <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 120 }} keyboardShouldPersistTaps="handled">
           <View style={styles.infoBox}>
             <Ionicons name="information-circle-outline" size={16} color={colors.brandSecondary} />
-            <Text style={styles.infoText}>Change your own login username and/or password. Your current password is required to confirm.</Text>
+            <Text style={styles.infoText}>Change your own display name, login username, and/or password. Your current password is required to confirm.</Text>
           </View>
+
+          <Text style={styles.label}>Name</Text>
+          <TextInput
+            testID="acc-name" value={newName} onChangeText={setNewName}
+            placeholder="Your name" placeholderTextColor={colors.mutedText} style={styles.input}
+          />
 
           <Text style={styles.label}>Username</Text>
           <TextInput

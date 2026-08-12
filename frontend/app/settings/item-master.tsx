@@ -10,21 +10,28 @@ import { confirmAction } from '@/src/utils/confirm';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
-type RT = { id: string; name: string; default_labour: number; requires_karigar_default: boolean; active: boolean };
+type ItemMaster = { id: string; name: string; purity: number; category: string; active: boolean };
 
-export default function RepairTypesScreen() {
+const COMMON_PURITIES = [
+  { label: '24K (99.9%)', value: '99.9' },
+  { label: '22K (91.6%)', value: '91.6' },
+  { label: '18K (75%)', value: '75' },
+  { label: '14K (58.5%)', value: '58.5' },
+];
+
+export default function ItemMasterScreen() {
   const router = useRouter();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
-  const [items, setItems] = useState<RT[]>([]);
+  const [items, setItems] = useState<ItemMaster[]>([]);
   const [name, setName] = useState('');
-  const [labour, setLabour] = useState('');
-  const [needsKarigar, setNeedsKarigar] = useState(false);
+  const [purity, setPurity] = useState('91.6');
+  const [category, setCategory] = useState('');
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
-    try { setItems(await api.get<RT[]>('/repair-types')); }
+    try { setItems(await api.get<ItemMaster[]>('/item-master')); }
     catch (_e) { setItems([]); }
     finally { setRefreshing(false); }
   }, []);
@@ -33,35 +40,37 @@ export default function RepairTypesScreen() {
   const submittingRef = useRef(false);
   const add = async () => {
     if (submittingRef.current) return;
-    if (!name.trim()) { Alert.alert('Missing', 'Enter a name for this repair type'); return; }
+    if (!name.trim()) { Alert.alert('Missing', 'Enter a name for this item'); return; }
+    const p = parseFloat(purity);
+    if (!p || p <= 0 || p > 100) { Alert.alert('Invalid', 'Purity must be between 0 and 100'); return; }
     submittingRef.current = true;
     setSaving(true);
     try {
-      await api.post('/repair-types', { name: name.trim(), default_labour: parseFloat(labour) || 0, requires_karigar_default: needsKarigar, active: true });
-      setName(''); setLabour(''); setNeedsKarigar(false); await load();
+      await api.post('/item-master', { name: name.trim(), purity: p, category: category.trim(), active: true });
+      setName(''); setCategory(''); await load();
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
     finally { setSaving(false); submittingRef.current = false; }
   };
 
-  const toggleActive = async (rt: RT) => {
-    try { await api.put(`/repair-types/${rt.id}`, { ...rt, active: !rt.active }); await load(); }
+  const toggleActive = async (it: ItemMaster) => {
+    try { await api.put(`/item-master/${it.id}`, { ...it, active: !it.active }); await load(); }
     catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
   };
 
-  const remove = (rt: RT) => {
-    confirmAction('Delete repair type', `Remove "${rt.name}"?`, 'Delete', async () => {
-      try { await api.del(`/repair-types/${rt.id}`); await load(); }
-      catch (e: any) { Alert.alert('Failed', e?.detail || 'Could not delete this repair type.'); }
+  const remove = (it: ItemMaster) => {
+    confirmAction('Delete item', `Remove "${it.name}"?`, 'Delete', async () => {
+      try { await api.del(`/item-master/${it.id}`); await load(); }
+      catch (e: any) { Alert.alert('Failed', e?.detail || 'Could not delete this item.'); }
     });
   };
 
   return (
-    <SafeAreaView style={styles.root} edges={['top']} testID="repair-types-screen">
+    <SafeAreaView style={styles.root} edges={['top']} testID="item-master-screen">
       <View style={styles.header}>
         <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
-        <Text style={styles.title}>Repair Types</Text>
+        <Text style={styles.title}>Items & Purity</Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -70,33 +79,39 @@ export default function RepairTypesScreen() {
           contentContainerStyle={{ padding: spacing.lg }} keyboardShouldPersistTaps="handled"
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}
         >
-          <Text style={styles.hint}>Predefine the repair jobs you do often — picking one on a repair item prefills its labour charge and whether it usually needs a karigar.</Text>
+          <Text style={styles.hint}>Predefine item types with their gold purity (e.g. 22K = 91.6%). Picking one on a repair item lets the karigar's gold ledger track fine-gold-equivalent weight instead of raw gross grams.</Text>
 
-          <Text style={styles.section}>Add Repair Type</Text>
+          <Text style={styles.section}>Add Item</Text>
           <Text style={styles.label}>Name</Text>
-          <TextInput testID="rt-name" value={name} onChangeText={setName} placeholder="e.g. Sizing, Polish, Stone Setting" placeholderTextColor={colors.mutedText} style={styles.input} />
-          <Text style={styles.label}>Default labour charge (₹)</Text>
-          <TextInput testID="rt-labour" value={labour} onChangeText={(v) => setLabour(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />
-          <Pressable onPress={() => setNeedsKarigar((v) => !v)} style={styles.checkRow} testID="rt-needs-karigar">
-            <View style={[styles.checkbox, needsKarigar && styles.checkboxOn]}>{needsKarigar && <Ionicons name="checkmark" size={13} color={colors.onBrandPrimary} />}</View>
-            <Text style={styles.checkLabel}>Usually needs a karigar</Text>
-          </Pressable>
-          <Pressable style={[styles.addBtn, saving && { opacity: 0.6 }]} disabled={saving} onPress={add} testID="add-rt-btn">
-            {saving ? <ActivityIndicator color={colors.onBrandPrimary} /> : <><Ionicons name="add" size={16} color={colors.onBrandPrimary} /><Text style={styles.addBtnText}>Add Repair Type</Text></>}
+          <TextInput testID="item-name" value={name} onChangeText={setName} placeholder="e.g. 22K Ring, 18K Chain" placeholderTextColor={colors.mutedText} style={styles.input} />
+          <Text style={styles.label}>Category (optional)</Text>
+          <TextInput testID="item-category" value={category} onChangeText={setCategory} placeholder="e.g. Ring, Chain, Bangle" placeholderTextColor={colors.mutedText} style={styles.input} />
+          <Text style={styles.label}>Purity (%)</Text>
+          <View style={styles.chipRow}>
+            {COMMON_PURITIES.map((p) => (
+              <Pressable key={p.value} onPress={() => setPurity(p.value)} style={[styles.chip, purity === p.value && styles.chipActive]} testID={`purity-${p.value}`}>
+                <Text style={[styles.chipText, purity === p.value && styles.chipTextActive]}>{p.label}</Text>
+              </Pressable>
+            ))}
+          </View>
+          <TextInput testID="item-purity" value={purity} onChangeText={(v) => setPurity(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="91.6" placeholderTextColor={colors.mutedText} style={styles.input} />
+
+          <Pressable style={[styles.addBtn, saving && { opacity: 0.6 }]} disabled={saving} onPress={add} testID="add-item-btn">
+            {saving ? <ActivityIndicator color={colors.onBrandPrimary} /> : <><Ionicons name="add" size={16} color={colors.onBrandPrimary} /><Text style={styles.addBtnText}>Add Item</Text></>}
           </Pressable>
 
-          <Text style={[styles.section, { marginTop: spacing.xl }]}>All Types</Text>
-          {items.map((rt) => (
-            <View key={rt.id} style={[styles.card, !rt.active && { opacity: 0.55 }]} testID={`rt-${rt.id}`}>
-              <View style={styles.iconBox}><Ionicons name="construct-outline" size={18} color={colors.brandSecondary} /></View>
+          <Text style={[styles.section, { marginTop: spacing.xl }]}>All Items</Text>
+          {items.map((it) => (
+            <View key={it.id} style={[styles.card, !it.active && { opacity: 0.55 }]} testID={`item-${it.id}`}>
+              <View style={styles.iconBox}><Ionicons name="diamond-outline" size={18} color={colors.brandSecondary} /></View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.cName}>{rt.name}</Text>
-                <Text style={styles.cMeta}>₹{rt.default_labour.toFixed(0)} labour{rt.requires_karigar_default ? ' · needs karigar' : ''}</Text>
+                <Text style={styles.cName}>{it.name}</Text>
+                <Text style={styles.cMeta}>{it.purity}% purity{it.category ? ` · ${it.category}` : ''}</Text>
               </View>
-              <Pressable onPress={() => toggleActive(rt)} style={styles.smallBtn} testID={`toggle-rt-${rt.id}`}>
-                <Text style={styles.smallBtnText}>{rt.active ? 'Pause' : 'Resume'}</Text>
+              <Pressable onPress={() => toggleActive(it)} style={styles.smallBtn} testID={`toggle-item-${it.id}`}>
+                <Text style={styles.smallBtnText}>{it.active ? 'Pause' : 'Resume'}</Text>
               </Pressable>
-              <Pressable onPress={() => remove(rt)} style={styles.delBtn} hitSlop={10} testID={`del-rt-${rt.id}`}>
+              <Pressable onPress={() => remove(it)} style={styles.delBtn} hitSlop={10} testID={`del-item-${it.id}`}>
                 <Ionicons name="trash-outline" size={16} color={colors.onError} />
               </Pressable>
             </View>
@@ -117,7 +132,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surfaceSecondary,
     alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border,
   },
-  title: { flex: 1, color: colors.onSurface, fontSize: 22, fontWeight: '600', fontFamily: fonts.display },
+  title: { flex: 1, color: colors.onSurface, fontSize: 20, fontWeight: '600', fontFamily: fonts.display },
   hint: { color: colors.mutedText, fontSize: 12, marginBottom: spacing.lg, lineHeight: 17 },
   section: { color: colors.brandSecondary, fontSize: 11, letterSpacing: 1, textTransform: 'uppercase', marginBottom: spacing.sm },
   label: { color: colors.onSurfaceSecondary, fontSize: 12, marginBottom: 4, marginTop: 6 },
@@ -126,10 +141,11 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     borderColor: colors.border, color: colors.onSurface, paddingHorizontal: spacing.md,
     paddingVertical: 12, fontSize: 14, marginBottom: spacing.sm,
   },
-  checkRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.md },
-  checkbox: { width: 20, height: 20, borderRadius: 5, borderWidth: 1.5, borderColor: colors.border, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceSecondary },
-  checkboxOn: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
-  checkLabel: { color: colors.onSurfaceSecondary, fontSize: 13 },
+  chipRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.sm, flexWrap: 'wrap' },
+  chip: { paddingVertical: 8, paddingHorizontal: spacing.sm, borderRadius: radius.md, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border },
+  chipActive: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
+  chipText: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '700' },
+  chipTextActive: { color: colors.onBrandPrimary },
   addBtn: {
     flexDirection: 'row', gap: spacing.sm, alignItems: 'center', justifyContent: 'center',
     backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: 14, marginTop: spacing.sm,

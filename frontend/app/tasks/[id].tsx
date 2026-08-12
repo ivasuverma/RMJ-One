@@ -9,6 +9,7 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthContext';
 import { confirmAction } from '@/src/utils/confirm';
+import { DateField } from '@/src/components/DateField';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
@@ -154,8 +155,7 @@ export default function TaskDetailScreen() {
                   </Pressable>
                 ))}
               </View>
-              <Text style={styles.label}>Due date (YYYY-MM-DD, optional)</Text>
-              <TextInput testID="edit-due" value={eDue} onChangeText={setEDue} placeholder="2026-08-20" placeholderTextColor={colors.mutedText} style={styles.input} />
+              <DateField label="Due date (optional)" value={eDue} onChange={setEDue} testID="edit-due" />
 
               <View style={styles.editActions}>
                 <Pressable onPress={() => { setEditing(false); load(); }} style={styles.cancelBtn} testID="edit-cancel"><Text style={styles.cancelBtnText}>Cancel</Text></Pressable>

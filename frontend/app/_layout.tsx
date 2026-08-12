@@ -1,7 +1,7 @@
-import { Stack } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
-import { LogBox, View } from 'react-native';
+import { BackHandler, LogBox, Platform, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -49,6 +49,25 @@ export default function RootLayout() {
 
 function AppShell() {
   const { colors, scheme } = useTheme();
+  const router = useRouter();
+
+  // Every screen renders its own in-app back arrow (headerShown is off
+  // everywhere), but that doesn't wire up the Android hardware/gesture back
+  // button — without this, it falls through to the OS default and minimizes
+  // or closes the app instead of popping the screen stack. This makes the
+  // hardware button behave the same as tapping the in-app arrow.
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (router.canGoBack()) {
+        router.back();
+        return true;
+      }
+      return false; // let the OS handle it (minimize) once we're at the root
+    });
+    return () => sub.remove();
+  }, [router]);
+
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.surface }}>
       <StatusBar style={scheme === 'light' ? 'dark' : 'light'} />
