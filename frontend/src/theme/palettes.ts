@@ -1,7 +1,10 @@
-// RMJ One design tokens — two named palettes, chosen by Vasu after comparing
-// mockups: "Ivory boutique" for light mode, "Emerald vault" for dark mode.
-// Both share the exact same key shape so any screen can swap between them
-// without needing per-key fallbacks.
+// RMJ One design tokens — two named palettes. Originally "Ivory boutique"
+// (light) and "Emerald vault" (dark), both warm gold-tinted throughout;
+// restyled to a neutral, Claude.ai-like look per Vasu's request — mostly
+// white/gray/black surfaces, with the gold brand color pulled back to just
+// primary actions and active states instead of tinting every card, border,
+// and icon fill. Both palettes share the exact same key shape so any screen
+// can swap between them without needing per-key fallbacks.
 
 export type ThemeColors = {
   surface: string;
@@ -32,52 +35,54 @@ export type ThemeColors = {
   mutedText: string;
 };
 
-// "Ivory boutique" — warm, light. Easy to read in bright showroom lighting.
+// Light — near-white, neutral gray surfaces. Gold shows up only on primary
+// buttons, active tab state, and key highlights, not as a background tint.
 export const lightColors: ThemeColors = {
-  surface: '#F7F1E6',
-  onSurface: '#2B2118',
+  surface: '#FAFAF9',
+  onSurface: '#1C1C1A',
   surfaceSecondary: '#FFFFFF',
-  onSurfaceSecondary: '#3A2E1F',
-  surfaceTertiary: '#EFE4CC',
-  onSurfaceTertiary: '#6B5230',
-  surfaceInverse: '#2B2118',
-  onSurfaceInverse: '#F7F1E6',
+  onSurfaceSecondary: '#2E2E2B',
+  surfaceTertiary: '#F1F0EC',
+  onSurfaceTertiary: '#6E6D66',
+  surfaceInverse: '#1C1C1A',
+  onSurfaceInverse: '#FAFAF9',
   brand: '#B8863B',
   brandPrimary: '#B8863B',
   onBrandPrimary: '#FFFFFF',
   brandSecondary: '#8A6526',
-  brandTertiary: '#F0E2C0',
-  onBrandTertiary: '#6B5230',
+  brandTertiary: '#EFEEE9',
+  onBrandTertiary: '#57564F',
   success: '#EAF6EA',
   onSuccess: '#1F6B33',
-  warning: '#FBF0D9',
+  warning: '#FBF3E4',
   onWarning: '#8A5A0B',
   error: '#FBEAEA',
   onError: '#8A2323',
   info: '#E7F0F7',
   onInfo: '#1E4E70',
-  border: '#E6D9BE',
-  borderStrong: '#D8C6A0',
-  divider: '#EDE2C8',
-  mutedText: '#9C8A63',
+  border: '#E6E5E0',
+  borderStrong: '#D6D5CE',
+  divider: '#EDECE7',
+  mutedText: '#8B8A82',
 };
 
-// "Emerald vault" — deep green + gold, gemstone-inspired. Dark luxury feel.
+// Dark — near-black, neutral gray surfaces. Same restraint as light: gold is
+// reserved for primary actions and active state, not a background tint.
 export const darkColors: ThemeColors = {
-  surface: '#0E211A',
-  onSurface: '#EDF3EF',
-  surfaceSecondary: '#153428',
-  onSurfaceSecondary: '#DCEAE1',
-  surfaceTertiary: '#1B4433',
-  onSurfaceTertiary: '#9FD6BB',
-  surfaceInverse: '#EDF3EF',
-  onSurfaceInverse: '#0E211A',
+  surface: '#161615',
+  onSurface: '#EDEDEA',
+  surfaceSecondary: '#1E1E1C',
+  onSurfaceSecondary: '#DEDEDA',
+  surfaceTertiary: '#282825',
+  onSurfaceTertiary: '#9E9D97',
+  surfaceInverse: '#EDEDEA',
+  onSurfaceInverse: '#161615',
   brand: '#C9A24B',
   brandPrimary: '#C9A24B',
-  onBrandPrimary: '#0E211A',
+  onBrandPrimary: '#161615',
   brandSecondary: '#E3C989',
-  brandTertiary: '#22503D',
-  onBrandTertiary: '#C9A24B',
+  brandTertiary: '#2A2A27',
+  onBrandTertiary: '#B8B7B0',
   success: '#1F4A34',
   onSuccess: '#B7EFC5',
   warning: '#5C4212',
@@ -86,8 +91,8 @@ export const darkColors: ThemeColors = {
   onError: '#F1A9A9',
   info: '#173A4C',
   onInfo: '#AFD9F0',
-  border: '#22503D',
-  borderStrong: '#2E6349',
-  divider: '#1B4433',
-  mutedText: '#7FA895',
+  border: '#2E2E2B',
+  borderStrong: '#3A3A36',
+  divider: '#242422',
+  mutedText: '#8B8A82',
 };

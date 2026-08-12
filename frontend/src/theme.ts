@@ -18,23 +18,25 @@ export const spacing = {
 
 export const radius = { sm: 6, md: 12, lg: 20, pill: 999 };
 
-// "Jost" (a free, Century-Gothic-alike geometric sans) is loaded at runtime
-// from a CDN under Expo Go — see src/hooks/use-text-fonts.ts. We don't ship a
-// @expo-google-fonts/* npm package, so native/prod builds and web won't have
-// it registered; referencing an unregistered family name is a silent no-op
-// in React Native, so these safely fall back to the closest built-in system
-// font rather than crashing.
+// "Inter" — clean neutral grotesque-sans, the closest widely-available match
+// to Claude.ai's own UI typeface (which is proprietary and can't be bundled
+// here) — is loaded at runtime from a CDN under Expo Go — see
+// src/hooks/use-text-fonts.ts. We don't ship a @expo-google-fonts/* npm
+// package, so native/prod builds and web won't have it registered;
+// referencing an unregistered family name is a silent no-op in React Native,
+// so these safely fall back to the closest built-in system font rather than
+// crashing.
 import { Platform } from 'react-native';
 
 export const fonts = {
-  display: 'Jost-SemiBold',
-  displayMedium: 'Jost-Medium',
-  text: 'Jost-Regular',
-  textMedium: 'Jost-Medium',
-  textBold: 'Jost-Bold',
-  // Used as an explicit fallback anywhere Jost definitely isn't registered
+  display: 'Inter-SemiBold',
+  displayMedium: 'Inter-Medium',
+  text: 'Inter-Regular',
+  textMedium: 'Inter-Medium',
+  textBold: 'Inter-Bold',
+  // Used as an explicit fallback anywhere Inter definitely isn't registered
   // (e.g. native/EAS builds without the CDN load path).
-  systemFallback: Platform.select({ ios: 'Futura', android: 'sans-serif-medium', default: 'System' }) as string,
+  systemFallback: Platform.select({ ios: 'Helvetica Neue', android: 'sans-serif-medium', default: 'System' }) as string,
 };
 
 export const images = {
