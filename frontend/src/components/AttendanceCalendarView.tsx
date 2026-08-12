@@ -12,7 +12,7 @@ import { useTheme } from '@/src/theme/ThemeContext';
 type Day = {
   date: string; weekday: number; status: string; is_sunday: boolean;
   holiday_name: string | null; check_in: string | null; check_out: string | null;
-  is_late: boolean; working_hours: number; via_correction: boolean;
+  is_late: boolean; working_hours: number; via_correction: boolean; has_record: boolean;
 };
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -189,6 +189,7 @@ function DayDetail({ day, empId, canEdit, shifts, onClose, onSaved }: {
   const [offStatus, setOffStatus] = useState<typeof OFF_STATUSES[number] | null>(initialOff);
   const [selectedShift, setSelectedShift] = useState<Shift | null>(null);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const submittingRef = useRef(false);
 
   // Live preview of what the times will resolve to — mirrors the backend's auto-calc
@@ -236,6 +237,28 @@ function DayDetail({ day, empId, canEdit, shifts, onClose, onSaved }: {
     finally { setSaving(false); submittingRef.current = false; }
   };
 
+  const confirmDelete = () => {
+    Alert.alert(
+      'Delete entry?',
+      `This removes the attendance record for ${new Date(day.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}. This cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: doDelete },
+      ],
+    );
+  };
+
+  const doDelete = async () => {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    setDeleting(true);
+    try {
+      await api.del(`/attendance/day/${empId}/${day.date}`);
+      onSaved();
+    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+    finally { setDeleting(false); submittingRef.current = false; }
+  };
+
   const requestChange = async () => {
     if (submittingRef.current) return;
     submittingRef.current = true;
@@ -256,7 +279,20 @@ function DayDetail({ day, empId, canEdit, shifts, onClose, onSaved }: {
         <Pressable style={{ flex: 1 }} onPress={onClose} />
         <ScrollView style={styles.sheet} contentContainerStyle={{ paddingBottom: 36 }} testID="day-detail-sheet" keyboardShouldPersistTaps="handled">
           <View style={styles.sheetGrip} />
-          <Text style={styles.sheetTitle}>{new Date(day.date).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}</Text>
+          <View style={styles.sheetTitleRow}>
+            <Text style={styles.sheetTitle}>{new Date(day.date).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}</Text>
+            {canEdit && day.has_record && (
+              <Pressable
+                onPress={confirmDelete}
+                disabled={deleting}
+                style={[styles.deleteIconBtn, deleting && { opacity: 0.5 }]}
+                testID="day-delete-btn"
+                hitSlop={10}
+              >
+                {deleting ? <ActivityIndicator size="small" color={colors.onError} /> : <Ionicons name="trash-outline" size={18} color={colors.onError} />}
+              </Pressable>
+            )}
+          </View>
           {day.holiday_name && <Text style={styles.sheetSub}>Holiday: {day.holiday_name}</Text>}
           {day.is_sunday && <Text style={styles.sheetSub}>Sunday</Text>}
 
@@ -424,7 +460,12 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   previewText: { color: colors.brandSecondary, fontSize: 11, fontWeight: '700' },
   hintText: { color: colors.mutedText, fontSize: 10, marginTop: 6 },
   sheetGrip: { width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: spacing.md },
-  sheetTitle: { color: colors.onSurface, fontSize: 18, fontWeight: '700' },
+  sheetTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  sheetTitle: { color: colors.onSurface, fontSize: 18, fontWeight: '700', flex: 1 },
+  deleteIconBtn: {
+    width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.error, borderWidth: 1, borderColor: colors.border,
+  },
   sheetSub: { color: colors.brandSecondary, fontSize: 12, marginTop: 2 },
   timeRow: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.lg },
   timeLabel: { color: colors.onSurfaceSecondary, fontSize: 12, marginBottom: 6, marginTop: spacing.sm },

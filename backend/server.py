@@ -805,6 +805,7 @@ async def attendance_calendar(emp_id: str, year: int, month: int, user=Depends(g
             'is_late': a.get('is_late', False) if a else False,
             'working_hours': a.get('working_hours', 0) if a else 0,
             'via_correction': a.get('via_correction', False) if a else False,
+            'has_record': bool(a),
         })
     return {'year': year, 'month': month, 'days': days_out}
 
@@ -894,6 +895,28 @@ async def edit_day(emp_id: str, d: str, body: AttendanceDayIn, user=Depends(requ
     await log_audit(user, 'attendance.edit', 'attendance', att_id, f'{emp_id} · {d}',
                     {'status': body.status, 'check_in': check_in_ts, 'check_out': check_out_ts})
     return {'ok': True, 'attendance_id': att_id}
+
+
+@api.delete('/attendance/day/{emp_id}/{d}')
+async def delete_day(emp_id: str, d: str, user=Depends(require_admin)):
+    existing = await db.attendance.find_one({'employee_id': emp_id, 'date': d}, {'_id': 0})
+    if not existing:
+        raise HTTPException(status_code=404, detail='No attendance record for this day')
+    await db.attendance.delete_one({'id': existing['id']})
+    # Also clear any raw punch events logged for this employee within that IST day,
+    # so a deleted entry doesn't linger in the "Live" feed.
+    try:
+        day_start_ist = datetime.fromisoformat(d).replace(tzinfo=timezone(timedelta(hours=5, minutes=30)))
+        day_start_utc = day_start_ist.astimezone(timezone.utc)
+        day_end_utc = day_start_utc + timedelta(days=1)
+        await db.attendance_events.delete_many({
+            'employee_id': emp_id,
+            'timestamp': {'$gte': day_start_utc.isoformat(), '$lt': day_end_utc.isoformat()},
+        })
+    except Exception:
+        pass
+    await log_audit(user, 'attendance.delete', 'attendance', existing['id'], f'{emp_id} · {d}', {})
+    return {'ok': True}
 
 
 # Extend corrections to accept desired times when raised from calendar
