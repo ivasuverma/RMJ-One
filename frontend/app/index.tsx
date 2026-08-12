@@ -71,6 +71,11 @@ export default function Index() {
             <Text style={styles.profileName} numberOfLines={1}>{user.name}</Text>
             <Text style={styles.profileRole}>{user.role.charAt(0).toUpperCase() + user.role.slice(1)}</Text>
           </View>
+          {user.role === 'owner' && (
+            <Pressable onPress={() => router.push('/universal-settings' as any)} style={styles.settingsBtn} testID="hub-universal-settings-btn" hitSlop={10}>
+              <Ionicons name="settings-outline" size={20} color={colors.brandPrimary} />
+            </Pressable>
+          )}
           <Pressable onPress={onLogout} style={styles.logoutBtn} testID="hub-logout-btn" hitSlop={10}>
             <Ionicons name="log-out-outline" size={20} color={colors.onError} />
           </Pressable>
@@ -130,6 +135,10 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   logoutBtn: {
     width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center',
     backgroundColor: colors.error, borderColor: colors.onError, borderWidth: 1,
+  },
+  settingsBtn: {
+    width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.brandTertiary, borderColor: colors.brandPrimary, borderWidth: 1,
   },
 
   sectionLabel: {

@@ -10,6 +10,7 @@ export type User = {
   designation?: string;
   department?: string;
   photo?: string;
+  modules?: string[];
 };
 
 type AuthState = {
@@ -20,6 +21,7 @@ type AuthState = {
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
   updateMyAccount: (currentPassword: string, newUsername?: string, newPassword?: string) => Promise<void>;
+  hasModule: (key: string) => boolean;
 };
 
 const AuthCtx = createContext<AuthState>({} as AuthState);
@@ -79,8 +81,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(res.user);
   }, []);
 
+  const hasModule = useCallback((key: string) => !!user?.modules?.includes(key), [user]);
+
   return (
-    <AuthCtx.Provider value={{ user, loading, loginOwner, loginEmployee, logout, refresh, updateMyAccount }}>
+    <AuthCtx.Provider value={{ user, loading, loginOwner, loginEmployee, logout, refresh, updateMyAccount, hasModule }}>
       {children}
     </AuthCtx.Provider>
   );

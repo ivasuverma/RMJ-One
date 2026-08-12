@@ -123,6 +123,56 @@ def require_employee(user=Depends(get_current)):
     return user
 
 
+# ---------------- Module Access (User Roles) ----------------
+# The app used to gate everything purely by role (owner/admin/accountant/employee).
+# This adds a finer-grained layer on top: every account can be granted an explicit
+# list of modules it's allowed to see, overriding its role's default set. Owner
+# always gets every module — it can't lock itself out of its own app.
+MODULE_DEFS = [
+    {'key': 'dashboard', 'label': 'Dashboard', 'default_roles': ['owner', 'admin', 'accountant']},
+    {'key': 'attendance', 'label': 'Attendance', 'default_roles': ['owner', 'admin']},
+    {'key': 'team', 'label': 'Team', 'default_roles': ['owner', 'admin']},
+    {'key': 'payroll', 'label': 'Payroll', 'default_roles': ['owner', 'admin', 'accountant']},
+    {'key': 'approvals', 'label': 'Approvals', 'default_roles': ['owner', 'admin']},
+    {'key': 'reports', 'label': 'Reports', 'default_roles': ['owner', 'admin', 'accountant']},
+    {'key': 'biometric', 'label': 'Biometric Devices', 'default_roles': ['owner']},
+    {'key': 'audit', 'label': 'Audit Log', 'default_roles': ['owner']},
+    {'key': 'user_roles', 'label': 'User Roles', 'default_roles': ['owner']},
+    {'key': 'shifts', 'label': 'Shifts', 'default_roles': ['owner']},
+    {'key': 'holidays', 'label': 'Holidays', 'default_roles': ['owner']},
+    {'key': 'store_settings', 'label': 'Store Settings', 'default_roles': ['owner']},
+    {'key': 'users', 'label': 'Staff Accounts', 'default_roles': ['owner']},
+    {'key': 'tasks', 'label': 'Tasks', 'default_roles': ['owner', 'admin']},
+    {'key': 'repairs', 'label': 'Gold & Diamond Repairs', 'default_roles': ['owner', 'admin']},
+]
+MODULE_KEYS = {m['key'] for m in MODULE_DEFS}
+MODULE_DEFAULT_ROLES = {m['key']: set(m['default_roles']) for m in MODULE_DEFS}
+
+
+def _default_modules_for_role(role: str) -> list:
+    return sorted(k for k, roles in MODULE_DEFAULT_ROLES.items() if role in roles)
+
+
+def resolve_modules(user: dict) -> list:
+    """Owner always has every module. Otherwise an explicit `module_access` list
+    (which may be set to []) overrides the role's default set; module_access being
+    absent/None means 'use whatever this role normally gets'."""
+    if user.get('role') == 'owner':
+        return sorted(MODULE_KEYS)
+    override = user.get('module_access')
+    if override is not None:
+        return sorted(set(override) & MODULE_KEYS)
+    return _default_modules_for_role(user.get('role', ''))
+
+
+def require_module(key: str):
+    def _check(user=Depends(get_current)):
+        if key not in resolve_modules(user):
+            raise HTTPException(status_code=403, detail=f'No access to "{key}"')
+        return user
+    return _check
+
+
 # ---------------- Models ----------------
 class LoginIn(BaseModel):
     username: str
@@ -232,6 +282,12 @@ class SelfAccountUpdateIn(BaseModel):
     current_password: str
     new_username: Optional[str] = None
     new_password: Optional[str] = None
+
+
+class ModuleAccessUpdateIn(BaseModel):
+    # None = "use this account's role default"; [] = "explicitly no modules";
+    # a list = "exactly these modules", regardless of role default.
+    module_access: Optional[List[str]] = None
 
 
 class ShiftIn(BaseModel):
@@ -445,7 +501,10 @@ async def login(body: LoginIn):
     tok = create_token({'sub': user['id'], 'role': user.get('role', 'owner'), 'username': user['username']})
     return {
         'access_token': tok, 'token_type': 'bearer',
-        'user': {'id': user['id'], 'username': user['username'], 'name': user['name'], 'role': user.get('role', 'owner')},
+        'user': {
+            'id': user['id'], 'username': user['username'], 'name': user['name'], 'role': user.get('role', 'owner'),
+            'modules': resolve_modules(user),
+        },
     }
 
 
@@ -465,6 +524,7 @@ async def employee_login(body: EmployeeLoginIn):
             'id': emp['id'], 'username': emp.get('username', uname), 'name': emp['name'], 'role': 'employee',
             'employee_code': code, 'designation': emp.get('designation'),
             'department': emp.get('department'), 'photo': emp.get('photo', ''),
+            'modules': resolve_modules({**emp, 'role': 'employee'}),
         },
     }
 
@@ -472,11 +532,15 @@ async def employee_login(body: EmployeeLoginIn):
 @api.get('/auth/me')
 async def me(user=Depends(get_current)):
     if user['role'] in ('owner', 'admin', 'accountant'):
-        return {'id': user['id'], 'username': user['username'], 'name': user['name'], 'role': user['role']}
+        return {
+            'id': user['id'], 'username': user['username'], 'name': user['name'], 'role': user['role'],
+            'modules': resolve_modules(user),
+        }
     return {
         'id': user['id'], 'username': user.get('username') or user.get('employee_code'), 'name': user['name'], 'role': 'employee',
         'employee_code': user['employee_code'], 'designation': user.get('designation'),
         'department': user.get('department'), 'photo': user.get('photo', ''),
+        'modules': resolve_modules(user),
     }
 
 
@@ -511,7 +575,7 @@ async def get_employee(emp_id: str, _: dict = Depends(get_current)):
 
 
 @api.post('/employees')
-async def create_employee(body: EmployeeIn, _: dict = Depends(require_admin)):
+async def create_employee(body: EmployeeIn, user: dict = Depends(require_admin)):
     iso = now_utc().isoformat()
     eid = str(uuid.uuid4())
     data = body.model_dump()
@@ -535,11 +599,12 @@ async def create_employee(body: EmployeeIn, _: dict = Depends(require_admin)):
     out = {k: v for k, v in doc.items() if k not in ('_id', 'password_hash')}
     out['default_username'] = default_username
     out['default_password'] = default_password
+    await log_audit(user, 'employee.create', 'employee', eid, data.get('employee_code', ''), {'name': data.get('name')})
     return out
 
 
 @api.put('/employees/{emp_id}')
-async def update_employee(emp_id: str, body: EmployeeIn, _: dict = Depends(require_admin)):
+async def update_employee(emp_id: str, body: EmployeeIn, user: dict = Depends(require_admin)):
     iso = now_utc().isoformat()
     existing = await db.employees.find_one({'id': emp_id}, {'_id': 0})
     if not existing: raise HTTPException(status_code=404, detail='Employee not found')
@@ -554,14 +619,17 @@ async def update_employee(emp_id: str, body: EmployeeIn, _: dict = Depends(requi
             'amount': float(data.get('salary') or 0) - float(existing.get('salary') or 0),
             'created_at': iso,
         })
+    await log_audit(user, 'employee.update', 'employee', emp_id, data.get('employee_code', existing.get('employee_code', '')))
     return await db.employees.find_one({'id': emp_id}, {'_id': 0, 'password_hash': 0})
 
 
 @api.delete('/employees/{emp_id}')
-async def delete_employee(emp_id: str, _: dict = Depends(require_owner)):
+async def delete_employee(emp_id: str, user: dict = Depends(require_owner)):
+    existing = await db.employees.find_one({'id': emp_id}, {'_id': 0})
     r = await db.employees.delete_one({'id': emp_id})
     if r.deleted_count == 0: raise HTTPException(status_code=404, detail='Employee not found')
     await db.timeline.delete_many({'employee_id': emp_id})
+    await log_audit(user, 'employee.delete', 'employee', emp_id, (existing or {}).get('employee_code', ''), {'name': (existing or {}).get('name')})
     return {'ok': True}
 
 
@@ -613,11 +681,12 @@ async def get_store(_: dict = Depends(get_current)):
 
 
 @api.put('/settings/store')
-async def update_store(body: StoreSettingsIn, _: dict = Depends(require_owner)):
+async def update_store(body: StoreSettingsIn, user: dict = Depends(require_owner)):
     payload = body.model_dump()
     payload['id'] = 'store'
     payload['updated_at'] = now_utc().isoformat()
     await db.settings.update_one({'id': 'store'}, {'$set': payload}, upsert=True)
+    await log_audit(user, 'settings.store.update', 'settings', 'store', body.name)
     return await db.settings.find_one({'id': 'store'}, {'_id': 0})
 
 
@@ -1059,6 +1128,7 @@ async def create_leave(body: LeaveIn, user=Depends(require_employee)):
         'decided_by': None, 'decided_at': None, 'decision_note': '',
     }
     await db.leaves.insert_one(dict(doc))
+    await log_audit(user, 'leave.create', 'leave', doc['id'], user['name'], {'from': doc['from_date'], 'to': doc['to_date']})
     await notify_roles(['owner', 'admin'], 'New leave request',
                         f"{user['name']} requested leave {doc['from_date']} to {doc['to_date']}", '/approvals')
     return {k: v for k, v in doc.items() if k != '_id'}
@@ -1095,6 +1165,7 @@ async def decide_leave(lid: str, body: DecisionIn, user=Depends(require_admin)):
         })
     await notify_user(l['employee_id'], f'Leave {new_status}',
                        f"Your leave request ({l['from_date']} → {l['to_date']}) was {new_status}", '/leaves')
+    await log_audit(user, f'leave.{new_status}', 'leave', lid, l.get('employee_code', ''))
     return await db.leaves.find_one({'id': lid}, {'_id': 0})
 
 
@@ -1156,7 +1227,7 @@ async def list_users(_: dict = Depends(require_owner)):
 
 
 @api.post('/users')
-async def create_user(body: UserCreateIn, _: dict = Depends(require_owner)):
+async def create_user(body: UserCreateIn, user: dict = Depends(require_owner)):
     uname = body.username.strip().lower()
     if await db.users.find_one({'username': uname}):
         raise HTTPException(status_code=400, detail='Username already exists')
@@ -1166,11 +1237,12 @@ async def create_user(body: UserCreateIn, _: dict = Depends(require_owner)):
         'password_hash': hash_secret(body.password), 'created_at': now_utc().isoformat(),
     }
     await db.users.insert_one(dict(doc))
+    await log_audit(user, 'user.create', 'user', uid, uname, {'role': body.role})
     return {k: v for k, v in doc.items() if k not in ('_id', 'password_hash')}
 
 
 @api.put('/users/{uid}')
-async def update_user(uid: str, body: UserUpdateIn, _: dict = Depends(require_owner)):
+async def update_user(uid: str, body: UserUpdateIn, user: dict = Depends(require_owner)):
     u = await db.users.find_one({'id': uid}, {'_id': 0})
     if not u: raise HTTPException(status_code=404, detail='User not found')
     if u.get('role') == 'owner': raise HTTPException(status_code=400, detail='Cannot modify the owner')
@@ -1186,7 +1258,9 @@ async def update_user(uid: str, body: UserUpdateIn, _: dict = Depends(require_ow
         if len(body.password) < 4: raise HTTPException(status_code=400, detail='Password must be 4+ characters')
         upd['password_hash'] = hash_secret(body.password)
     if body.role: upd['role'] = body.role
-    if upd: await db.users.update_one({'id': uid}, {'$set': upd})
+    if upd:
+        await db.users.update_one({'id': uid}, {'$set': upd})
+        await log_audit(user, 'user.update', 'user', uid, upd.get('username', u.get('username', '')), {k: v for k, v in upd.items() if k != 'password_hash'})
     return await db.users.find_one({'id': uid}, {'_id': 0, 'password_hash': 0})
 
 
@@ -1224,10 +1298,12 @@ async def update_my_account(body: SelfAccountUpdateIn, user=Depends(get_current)
             'id': updated['id'], 'username': updated.get('username'), 'name': updated['name'], 'role': 'employee',
             'employee_code': updated.get('employee_code'), 'designation': updated.get('designation'),
             'department': updated.get('department'), 'photo': updated.get('photo', ''),
+            'modules': resolve_modules({**updated, 'role': 'employee'}),
         }
     else:
         tok = create_token({'sub': updated['id'], 'role': updated.get('role', 'owner'), 'username': updated['username']})
-        user_out = updated
+        user_out = {**updated, 'modules': resolve_modules(updated)}
+    await log_audit(user, 'account.self_update', 'user' if not is_employee else 'employee', user['id'], updated.get('name', ''))
     return {'access_token': tok, 'token_type': 'bearer', 'user': user_out}
 
 
@@ -1241,6 +1317,51 @@ async def delete_user(uid: str, user=Depends(require_owner)):
     return {'ok': True}
 
 
+# ---------------- User Roles / Module Access ----------------
+@api.get('/access/modules')
+async def list_modules(_: dict = Depends(require_owner)):
+    return MODULE_DEFS
+
+
+@api.get('/access/accounts')
+async def list_access_accounts(_: dict = Depends(require_owner)):
+    out = []
+    async for u in db.users.find({}, {'_id': 0, 'password_hash': 0}):
+        out.append({
+            'id': u['id'], 'name': u['name'], 'username': u.get('username'), 'role': u.get('role'),
+            'account_type': 'user', 'module_access': u.get('module_access'),
+            'resolved_modules': resolve_modules(u),
+        })
+    async for e in db.employees.find({}, {'_id': 0, 'password_hash': 0}):
+        out.append({
+            'id': e['id'], 'name': e['name'], 'username': e.get('username'), 'role': 'employee',
+            'account_type': 'employee', 'designation': e.get('designation'), 'status': e.get('status'),
+            'module_access': e.get('module_access'),
+            'resolved_modules': resolve_modules({'role': 'employee', 'module_access': e.get('module_access')}),
+        })
+    return out
+
+
+@api.put('/access/accounts/{account_id}')
+async def update_access(account_id: str, body: ModuleAccessUpdateIn, user=Depends(require_owner)):
+    bad = set(body.module_access or []) - MODULE_KEYS
+    if bad:
+        raise HTTPException(status_code=400, detail=f'Unknown module(s): {", ".join(sorted(bad))}')
+    u = await db.users.find_one({'id': account_id}, {'_id': 0})
+    if u:
+        if u.get('role') == 'owner':
+            raise HTTPException(status_code=400, detail='Owner always has full access')
+        await db.users.update_one({'id': account_id}, {'$set': {'module_access': body.module_access}})
+        await log_audit(user, 'access.update', 'user', account_id, u.get('username', ''), {'module_access': body.module_access})
+        return {'ok': True}
+    e = await db.employees.find_one({'id': account_id}, {'_id': 0})
+    if e:
+        await db.employees.update_one({'id': account_id}, {'$set': {'module_access': body.module_access}})
+        await log_audit(user, 'access.update', 'employee', account_id, e.get('name', ''), {'module_access': body.module_access})
+        return {'ok': True}
+    raise HTTPException(status_code=404, detail='Account not found')
+
+
 # ---------------- Shifts ----------------
 @api.get('/shifts')
 async def list_shifts(_: dict = Depends(get_current)):
@@ -1248,24 +1369,28 @@ async def list_shifts(_: dict = Depends(get_current)):
 
 
 @api.post('/shifts')
-async def create_shift(body: ShiftIn, _: dict = Depends(require_owner)):
+async def create_shift(body: ShiftIn, user: dict = Depends(require_owner)):
     doc = {'id': str(uuid.uuid4()), **body.model_dump(), 'created_at': now_utc().isoformat()}
     await db.shifts.insert_one(dict(doc))
+    await log_audit(user, 'shift.create', 'shift', doc['id'], body.name)
     return {k: v for k, v in doc.items() if k != '_id'}
 
 
 @api.put('/shifts/{sid}')
-async def update_shift(sid: str, body: ShiftIn, _: dict = Depends(require_owner)):
+async def update_shift(sid: str, body: ShiftIn, user: dict = Depends(require_owner)):
     if not await db.shifts.find_one({'id': sid}):
         raise HTTPException(status_code=404, detail='Shift not found')
     await db.shifts.update_one({'id': sid}, {'$set': body.model_dump()})
+    await log_audit(user, 'shift.update', 'shift', sid, body.name)
     return await db.shifts.find_one({'id': sid}, {'_id': 0})
 
 
 @api.delete('/shifts/{sid}')
-async def delete_shift(sid: str, _: dict = Depends(require_owner)):
+async def delete_shift(sid: str, user: dict = Depends(require_owner)):
+    existing = await db.shifts.find_one({'id': sid}, {'_id': 0})
     r = await db.shifts.delete_one({'id': sid})
     if r.deleted_count == 0: raise HTTPException(status_code=404, detail='Shift not found')
+    await log_audit(user, 'shift.delete', 'shift', sid, (existing or {}).get('name', ''))
     return {'ok': True}
 
 
@@ -1276,16 +1401,19 @@ async def list_holidays(_: dict = Depends(get_current)):
 
 
 @api.post('/holidays')
-async def create_holiday(body: HolidayIn, _: dict = Depends(require_owner)):
+async def create_holiday(body: HolidayIn, user: dict = Depends(require_owner)):
     doc = {'id': str(uuid.uuid4()), **body.model_dump(), 'created_at': now_utc().isoformat()}
     await db.holidays.insert_one(dict(doc))
+    await log_audit(user, 'holiday.create', 'holiday', doc['id'], body.name)
     return {k: v for k, v in doc.items() if k != '_id'}
 
 
 @api.delete('/holidays/{hid}')
-async def delete_holiday(hid: str, _: dict = Depends(require_owner)):
+async def delete_holiday(hid: str, user: dict = Depends(require_owner)):
+    existing = await db.holidays.find_one({'id': hid}, {'_id': 0})
     r = await db.holidays.delete_one({'id': hid})
     if r.deleted_count == 0: raise HTTPException(status_code=404, detail='Holiday not found')
+    await log_audit(user, 'holiday.delete', 'holiday', hid, (existing or {}).get('name', ''))
     return {'ok': True}
 
 
@@ -1311,6 +1439,8 @@ async def add_ledger_entry(body: LedgerEntryIn, user=Depends(require_staff)):
         'sign': _ledger_sign(body.entry_type), 'created_at': when, 'added_by': user['name'],
     }
     await db.timeline.insert_one(dict(doc))
+    await log_audit(user, 'ledger.create', 'ledger', doc['id'], emp.get('employee_code', ''),
+                     {'type': body.entry_type, 'amount': body.amount})
     return {k: v for k, v in doc.items() if k != '_id'}
 
 

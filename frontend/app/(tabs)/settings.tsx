@@ -84,12 +84,8 @@ export default function SettingsScreen() {
 
         {isOwner && (
           <>
-            <SectionLabel text="Business" />
+            <SectionLabel text="Employee Management Settings" />
             <View style={styles.card}>
-              <Pressable testID="settings-store-btn" onPress={() => router.push('/store-settings')}>
-                <Row icon="storefront-outline" label="Store Settings" trailing="Configure" />
-              </Pressable>
-              <Divider />
               <Pressable testID="settings-shifts-btn" onPress={() => router.push('/settings/shifts')}>
                 <Row icon="time-outline" label="Shifts" trailing="Manage" />
               </Pressable>
@@ -98,18 +94,13 @@ export default function SettingsScreen() {
                 <Row icon="calendar-outline" label="Holidays" trailing="Calendar" />
               </Pressable>
               <Divider />
-              <Pressable testID="settings-users-btn" onPress={() => router.push('/settings/users')}>
-                <Row icon="people-circle-outline" label="Users & Roles" trailing="Manage" />
-              </Pressable>
-              <Divider />
               <Pressable testID="settings-biometric-btn" onPress={() => router.push('/settings/biometric')}>
                 <Row icon="hardware-chip-outline" label="Biometric Devices" trailing="eSSL" />
               </Pressable>
-              <Divider />
-              <Pressable testID="settings-audit-btn" onPress={() => router.push('/settings/audit')}>
-                <Row icon="shield-checkmark-outline" label="Audit Logs" trailing="Owner" />
-              </Pressable>
             </View>
+            <Text style={styles.moduleSettingsHint}>
+              Store info, User Roles, Staff Accounts, and the Audit Log now live on the hub screen (tap the gear icon next to your name there) — they apply to every module, not just Employee Management.
+            </Text>
           </>
         )}
 
@@ -249,6 +240,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     color: colors.mutedText, fontSize: 11, letterSpacing: 1, textTransform: 'uppercase',
     marginTop: spacing.xl, marginBottom: spacing.sm, paddingHorizontal: spacing.xs,
   },
+  moduleSettingsHint: { color: colors.mutedText, fontSize: 11, marginTop: spacing.sm, paddingHorizontal: spacing.xs, lineHeight: 16 },
   card: {
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg,
     borderWidth: 1, borderColor: colors.border, overflow: 'hidden',
