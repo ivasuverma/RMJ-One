@@ -32,8 +32,8 @@ jobs:
 
           Write-Host '--- rebuild frontend web export ---'
           nssm stop RMJOneWeb
-          if (Test-Path "$repo\frontend\dist") {
-            Remove-Item -Recurse -Force "$repo\frontend\dist"
+          if (Test-Path -LiteralPath "$repo\frontend\dist") {
+            Remove-Item -LiteralPath "$repo\frontend\dist" -Recurse -Force
           }
           cd "$repo\frontend"
           npx expo export --platform web
