@@ -21,22 +21,25 @@ const WEEK_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
 type StatusStyle = { bg: string; fg: string };
 
-// Full-cell fill + accent color per attendance status, derived from theme
-// semantic tokens so they stay legible against both light and dark cards.
-// "weekly_off" (Paid Off) gets its own teal accent rather than reusing the
-// warning/gold tokens — in this gold-branded app, brand gold and warning
-// amber read as nearly identical, which made "Late" and "Paid Off" cells
-// indistinguishable at a glance.
+// Full-cell fill + accent color per attendance status. Every status gets its
+// own genuinely distinct hue — they used to double up (half_day reused the
+// same amber as late, missing_punch reused the same red as absent, and
+// weekly_off's gold nearly matched warning-amber), which made cells that mean
+// very different things for payroll look identical at a glance. Custom hex
+// pairs (not theme semantic tokens) are used for the statuses beyond the
+// core 4 (success/warning/error/info) since this palette only has those four
+// plus neutral/brand to work with.
 function makeStatusStyles(colors: ThemeColors, scheme: 'light' | 'dark'): Record<string, StatusStyle> {
+  const light = scheme === 'light';
   return {
-    present: { bg: colors.success, fg: colors.onSuccess },
-    late: { bg: colors.warning, fg: colors.onWarning },
-    half_day: { bg: colors.warning, fg: colors.onWarning },
-    absent: { bg: colors.error, fg: colors.onError },
-    missing_punch: { bg: colors.error, fg: colors.onError },
-    leave: { bg: colors.info, fg: colors.onInfo },
-    holiday: { bg: colors.surfaceTertiary, fg: colors.mutedText },
-    weekly_off: scheme === 'light' ? { bg: '#E1EFEA', fg: '#2F7A62' } : { bg: '#163A32', fg: '#7FD9BC' },
+    present: { bg: colors.success, fg: colors.onSuccess },                                   // green
+    late: { bg: colors.warning, fg: colors.onWarning },                                       // amber/gold
+    half_day: light ? { bg: '#F0E4F7', fg: '#7A3E96' } : { bg: '#3A1F45', fg: '#D9A8E8' },     // purple
+    absent: { bg: colors.error, fg: colors.onError },                                          // red
+    missing_punch: light ? { bg: '#FCE4EF', fg: '#A32468' } : { bg: '#4A1330', fg: '#F2A0C7' }, // pink/magenta
+    leave: { bg: colors.info, fg: colors.onInfo },                                              // blue
+    holiday: { bg: colors.surfaceTertiary, fg: colors.mutedText },                              // neutral grey
+    weekly_off: light ? { bg: '#E1EFEA', fg: '#2F7A62' } : { bg: '#163A32', fg: '#7FD9BC' },     // teal
   };
 }
 
@@ -128,7 +131,13 @@ export default function AttendanceCalendarView({ empId, onBack, title = 'Calenda
           <View style={styles.grid}>
             {cells.map((c, idx) => {
               if (!c) return <View key={`e${idx}`} style={styles.cell} />;
-              const st = statusStyles[c.is_late ? 'late' : c.status] || { bg: colors.surfaceSecondary, fg: colors.mutedText };
+              // Only fall back to the "late" swatch when the day is otherwise a plain
+              // present day — half_day/absent/leave/etc. all carry more specific meaning
+              // than lateness and should win. Previously `is_late` short-circuited this
+              // for every status (half_day days are almost always also is_late), so a
+              // late-triggered half-day always rendered as plain "Late", never "Half Day".
+              const statusKey = (c.status === 'present' && c.is_late) ? 'late' : c.status;
+              const st = statusStyles[statusKey] || { bg: colors.surfaceSecondary, fg: colors.mutedText };
               return (
                 <Pressable
                   key={c.date}
@@ -147,8 +156,10 @@ export default function AttendanceCalendarView({ empId, onBack, title = 'Calenda
           <View style={styles.legend}>
             {[
               { k: 'present', label: 'Present' },
-              { k: 'late', label: 'Late/Half' },
+              { k: 'late', label: 'Late' },
+              { k: 'half_day', label: 'Half Day' },
               { k: 'absent', label: 'Absent' },
+              { k: 'missing_punch', label: 'Missing Punch' },
               { k: 'leave', label: 'Leave' },
               { k: 'holiday', label: 'Holiday' },
               { k: 'weekly_off', label: 'Paid Off' },

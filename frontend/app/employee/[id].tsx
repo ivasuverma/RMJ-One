@@ -21,6 +21,7 @@ type Emp = {
   bank_account: string; bank_ifsc: string; bank_name: string;
   status: 'active' | 'inactive' | 'on_leave'; notes: string; photo?: string;
   id_proofs?: IdProof[];
+  auto_advance_amount?: number | null; auto_advance_day?: number | null;
 };
 
 function pickIdProofFile(): Promise<{ name: string; dataUri: string } | null> {
@@ -402,6 +403,12 @@ function PayrollCard({ emp }: { emp: Emp }) {
       <View style={{ height: spacing.md }} />
       <DetailRow label="Shift" value={emp.shift || 'General'} />
       <DetailRow label="Joined" value={fmtDate(emp.joining_date)} />
+      {!!emp.auto_advance_amount && !!emp.auto_advance_day && (
+        <DetailRow
+          label="Auto Advance"
+          value={`${fmtINR(emp.auto_advance_amount)} on day ${emp.auto_advance_day}`}
+        />
+      )}
 
       <View style={payrollCardStyles.monthRow}>
         <Pressable onPress={() => stepMonth(-1)} style={payrollCardStyles.monthNav} testID="emp-payroll-prev" hitSlop={8}>

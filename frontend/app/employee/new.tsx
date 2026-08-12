@@ -18,12 +18,14 @@ type EmployeeForm = {
   shift: string; salary: string; joining_date: string; mobile: string; address: string;
   aadhaar: string; pan: string; bank_account: string; bank_ifsc: string; bank_name: string;
   status: 'active' | 'inactive' | 'on_leave'; notes: string;
+  auto_advance_amount: string; auto_advance_day: string;
 };
 
 const EMPTY: EmployeeForm = {
   name: '', employee_code: '', biometric_id: '', department: '', designation: '', shift: 'General', salary: '',
   joining_date: new Date().toISOString().slice(0, 10), mobile: '', address: '',
   aadhaar: '', pan: '', bank_account: '', bank_ifsc: '', bank_name: '', status: 'active', notes: '',
+  auto_advance_amount: '', auto_advance_day: '',
 };
 
 const STATUSES: EmployeeForm['status'][] = ['active', 'on_leave', 'inactive'];
@@ -61,6 +63,8 @@ export default function EmployeeForm() {
           mobile: e.mobile || '', address: e.address || '', aadhaar: e.aadhaar || '',
           pan: e.pan || '', bank_account: e.bank_account || '', bank_ifsc: e.bank_ifsc || '',
           bank_name: e.bank_name || '', status: e.status || 'active', notes: e.notes || '',
+          auto_advance_amount: e.auto_advance_amount ? String(e.auto_advance_amount) : '',
+          auto_advance_day: e.auto_advance_day ? String(e.auto_advance_day) : '',
         });
       } catch (_e) {
         Alert.alert('Failed to load employee');
@@ -77,6 +81,14 @@ export default function EmployeeForm() {
     const e: Record<string, string> = {};
     if (!form.name.trim()) e.name = 'Name is required';
     if (form.salary && isNaN(Number(form.salary))) e.salary = 'Must be a number';
+    if (form.auto_advance_amount && isNaN(Number(form.auto_advance_amount))) e.auto_advance_amount = 'Must be a number';
+    if (form.auto_advance_day) {
+      const d = Number(form.auto_advance_day);
+      if (isNaN(d) || d < 1 || d > 31) e.auto_advance_day = '1–31';
+    }
+    if (!!form.auto_advance_amount !== !!form.auto_advance_day) {
+      e.auto_advance_day = 'Set both amount and day, or leave both blank';
+    }
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -90,6 +102,8 @@ export default function EmployeeForm() {
       const payload = {
         ...form,
         salary: form.salary ? Number(form.salary) : 0,
+        auto_advance_amount: form.auto_advance_amount ? Number(form.auto_advance_amount) : null,
+        auto_advance_day: form.auto_advance_day ? Number(form.auto_advance_day) : null,
       };
       if (isEdit) await api.put(`/employees/${id}`, payload);
       else await api.post('/employees', payload);
@@ -209,6 +223,27 @@ export default function EmployeeForm() {
             </View>
           </View>
 
+          <SectionTitle text="Auto Advance" />
+          <Text style={styles.hint}>
+            Optional — auto-record a fixed advance every month on a set day (e.g. ₹5,000 on the 5th). It's deducted from that month's payroll like any manual advance; pay the rest by cash.
+          </Text>
+          <View style={styles.row2}>
+            <View style={{ flex: 1 }}>
+              <Field
+                label="Amount (₹/mo)" value={form.auto_advance_amount}
+                onChangeText={(v) => setField('auto_advance_amount', v.replace(/[^0-9.]/g, ''))}
+                keyboardType="numeric" placeholder="Off" error={errors.auto_advance_amount} testID="field-auto-advance-amount"
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Field
+                label="Day of month" value={form.auto_advance_day}
+                onChangeText={(v) => setField('auto_advance_day', v.replace(/[^0-9]/g, '').slice(0, 2))}
+                keyboardType="numeric" placeholder="1–31" error={errors.auto_advance_day} testID="field-auto-advance-day"
+              />
+            </View>
+          </View>
+
           <SectionTitle text="Notes" />
           <Field label="Additional notes" value={form.notes} onChangeText={(v) => setField('notes', v)} multiline testID="field-notes" />
 
@@ -294,6 +329,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     marginTop: spacing.lg, marginBottom: spacing.sm,
   },
   label: { color: colors.onSurfaceSecondary, fontSize: 12, marginBottom: 6 },
+  hint: { color: colors.mutedText, fontSize: 11, marginBottom: spacing.sm, lineHeight: 15 },
   input: {
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md,
     borderWidth: 1, borderColor: colors.border,

@@ -159,6 +159,12 @@ class EmployeeIn(BaseModel):
     photo: Optional[str] = ''
     status: Literal['active', 'inactive', 'on_leave'] = 'active'
     notes: Optional[str] = ''
+    # Recurring monthly advance — e.g. a fixed ₹5,000 auto-recorded as a salary
+    # advance every 5th of the month. Flows into the existing 'advance' ledger
+    # type, so it's automatically deducted by payroll like any manual advance;
+    # the rest of that month's salary gets paid normally (e.g. by cash).
+    auto_advance_amount: Optional[float] = None
+    auto_advance_day: Optional[int] = None  # 1-31; clamped to the month's last day
 
 
 class StoreSettingsIn(BaseModel):
@@ -2066,12 +2072,54 @@ async def _check_daily_absentee_summary():
         )
 
 
+async def _check_auto_advances():
+    """Fires each employee's recurring monthly advance on their configured day.
+    Idempotent via `db.auto_advances` (keyed by employee + year-month) so the
+    15-minute poll can safely re-check without double-crediting. A day beyond
+    the current month's length (e.g. 31 in February) clamps to the last day."""
+    from calendar import monthrange
+    now_ist = now_utc().astimezone(timezone(timedelta(hours=5, minutes=30)))
+    today = now_ist.date()
+    ym = f'{today.year:04d}-{today.month:02d}'
+    last_day = monthrange(today.year, today.month)[1]
+
+    async for emp in db.employees.find(
+        {'status': 'active', 'auto_advance_amount': {'$gt': 0}, 'auto_advance_day': {'$ne': None}},
+        {'_id': 0, 'password_hash': 0},
+    ):
+        day = int(emp.get('auto_advance_day') or 0)
+        if day <= 0:
+            continue
+        if today.day != min(day, last_day):
+            continue
+        if await db.auto_advances.find_one({'employee_id': emp['id'], 'month': ym}, {'_id': 0, 'id': 1}):
+            continue  # already fired this month
+
+        amount = float(emp['auto_advance_amount'])
+        iso = now_utc().isoformat()
+        await db.timeline.insert_one({
+            'id': str(uuid.uuid4()), 'employee_id': emp['id'], 'type': 'advance',
+            'title': 'Auto Advance', 'description': f'Automatic monthly advance ({ym})',
+            'amount': amount, 'sign': _ledger_sign('advance'), 'created_at': iso,
+        })
+        await db.auto_advances.update_one(
+            {'employee_id': emp['id'], 'month': ym},
+            {'$set': {'employee_id': emp['id'], 'month': ym, 'amount': amount, 'created_at': iso}},
+            upsert=True,
+        )
+        await notify_user(emp['id'], 'Advance credited',
+                           f"₹{amount:.0f} advance has been recorded for you this month.", '/')
+        await notify_roles(['owner', 'admin'], 'Auto advance recorded',
+                            f"₹{amount:.0f} auto-advance recorded for {emp['name']}", '/(tabs)/payroll')
+
+
 async def _attendance_reminder_loop():
     while True:
         try:
             await asyncio.sleep(15 * 60)
             await _check_missed_attendance()
             await _check_daily_absentee_summary()
+            await _check_auto_advances()
         except Exception as e:
             logger.warning(f'attendance reminder loop error: {e}')
 
