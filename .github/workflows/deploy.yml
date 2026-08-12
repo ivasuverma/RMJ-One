@@ -1,0 +1,47 @@
+name: Deploy to RMJ Server
+
+# Runs on the self-hosted runner installed directly on the Windows Server at
+# the shop. The runner already lives on the same machine as the live app, so
+# this workflow doesn't use actions/checkout — it just tells git (already
+# cloned at E:\Rmj-One) to fast-forward to what was just pushed, rebuilds the
+# frontend web export, and restarts both NSSM services.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    steps:
+      - name: Pull latest and redeploy
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $repo = 'E:\Rmj-One'
+          cd $repo
+
+          Write-Host '--- git pull ---'
+          git fetch origin main
+          git reset --hard origin/main
+
+          Write-Host '--- restart backend ---'
+          nssm restart RMJOneBackend
+          Start-Sleep -Seconds 3
+          nssm status RMJOneBackend
+
+          Write-Host '--- rebuild frontend web export ---'
+          nssm stop RMJOneWeb
+          if (Test-Path "$repo\frontend\dist") {
+            Remove-Item -Recurse -Force "$repo\frontend\dist"
+          }
+          cd "$repo\frontend"
+          npx expo export --platform web
+          cd $repo
+
+          Write-Host '--- restart web ---'
+          nssm start RMJOneWeb
+          Start-Sleep -Seconds 2
+          nssm status RMJOneWeb
+
+          Write-Host '--- done ---'
