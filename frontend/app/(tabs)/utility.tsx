@@ -25,6 +25,8 @@ const SECTIONS: { title: string; tiles: TileDef[] }[] = [
   {
     title: 'Employee Management',
     tiles: [
+      { key: 'shifts', label: 'Shifts', icon: 'time-outline', route: '/settings/shifts', ownerOnly: true },
+      { key: 'holidays', label: 'Holidays', icon: 'calendar-outline', route: '/settings/holidays', ownerOnly: true },
       { key: 'biometric', label: 'Biometric Devices', icon: 'hardware-chip-outline', route: '/settings/biometric', ownerOnly: true },
     ],
   },

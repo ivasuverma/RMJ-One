@@ -20,22 +20,23 @@ export const radius = { sm: 6, md: 12, lg: 20, pill: 999 };
 
 // "Inter" — clean neutral grotesque-sans, the closest widely-available match
 // to Claude.ai's own UI typeface (which is proprietary and can't be bundled
-// here) — is loaded at runtime from a CDN under Expo Go — see
-// src/hooks/use-text-fonts.ts. We don't ship a @expo-google-fonts/* npm
-// package, so native/prod builds and web won't have it registered;
-// referencing an unregistered family name is a silent no-op in React Native,
-// so these safely fall back to the closest built-in system font rather than
-// crashing.
+// here). RMJ-One's real deployment is a web export (see app/+html.tsx, which
+// loads Inter from Google Fonts) — not a native/EAS build — so the family
+// name below is the plain CSS name, one family shared across weights, paired
+// with each component's own `fontWeight` style (400/500/600/700/800 are all
+// loaded). The CDN loader in src/hooks/use-text-fonts.ts is a secondary path
+// that only registers fonts inside the Expo Go client for local dev preview
+// on a phone; it's harmless to leave running but isn't what production uses.
 import { Platform } from 'react-native';
 
 export const fonts = {
-  display: 'Inter-SemiBold',
-  displayMedium: 'Inter-Medium',
-  text: 'Inter-Regular',
-  textMedium: 'Inter-Medium',
-  textBold: 'Inter-Bold',
-  // Used as an explicit fallback anywhere Inter definitely isn't registered
-  // (e.g. native/EAS builds without the CDN load path).
+  display: 'Inter',
+  displayMedium: 'Inter',
+  text: 'Inter',
+  textMedium: 'Inter',
+  textBold: 'Inter',
+  // Used as an explicit fallback anywhere Inter definitely isn't loaded
+  // (e.g. a native/EAS build, which wouldn't have the web <link> either).
   systemFallback: Platform.select({ ios: 'Helvetica Neue', android: 'sans-serif-medium', default: 'System' }) as string,
 };
 

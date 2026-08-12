@@ -20,13 +20,6 @@ const SECTIONS: { title: string; tiles: TileDef[] }[] = [
       { key: 'customers', label: 'Customers', icon: 'person-add-outline', comingSoon: true },
     ],
   },
-  {
-    title: 'Configuration',
-    tiles: [
-      { key: 'shifts', label: 'Shifts', icon: 'time-outline', route: '/settings/shifts' },
-      { key: 'holidays', label: 'Holidays', icon: 'calendar-outline', route: '/settings/holidays' },
-    ],
-  },
 ];
 
 export default function MastersScreen() {

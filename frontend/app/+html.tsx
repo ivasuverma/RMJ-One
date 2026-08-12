@@ -25,10 +25,25 @@ export default function Root({ children }: { children: React.ReactNode }) {
 
         {/* Android / other browsers that support the web app manifest */}
         <meta name="mobile-web-app-capable" content="yes" />
-        <meta name="theme-color" content="#0E211A" media="(prefers-color-scheme: dark)" />
-        <meta name="theme-color" content="#F7F1E6" media="(prefers-color-scheme: light)" />
+        <meta name="theme-color" content="#161615" media="(prefers-color-scheme: dark)" />
+        <meta name="theme-color" content="#FAFAF9" media="(prefers-color-scheme: light)" />
         <link rel="manifest" href="/manifest.json" />
         <link rel="icon" href="/favicon.ico" />
+
+        {/* Inter — this is the actual production path for custom type. The
+            expo-font/useFonts CDN loader in src/hooks/use-text-fonts.ts only
+            registers fonts inside the Expo Go client (see its comment); the
+            real deployment is a web export, which never went through that
+            path, so the app has silently been rendering system fonts this
+            whole time. This <link> is what actually gets Inter onto the
+            live site. One family, multiple weights — matches how the
+            `fonts` tokens in src/theme.ts pair fontFamily with fontWeight. */}
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+        <style dangerouslySetInnerHTML={{ __html: `
+          html, body, #root { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+        ` }} />
 
         <ScrollViewStyleReset />
       </head>
