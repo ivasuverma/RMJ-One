@@ -16,8 +16,8 @@ const SECTIONS: { title: string; tiles: TileDef[] }[] = [
     title: 'People',
     tiles: [
       { key: 'team', label: 'Team', icon: 'people-outline', route: '/(tabs)/employees' },
-      { key: 'karigars', label: 'Karigars', icon: 'hammer-outline', comingSoon: true },
-      { key: 'customers', label: 'Customers', icon: 'person-add-outline', comingSoon: true },
+      { key: 'karigars', label: 'Karigars', icon: 'hammer-outline', route: '/karigars' },
+      { key: 'customers', label: 'Customers', icon: 'person-add-outline', route: '/customers' },
     ],
   },
 ];

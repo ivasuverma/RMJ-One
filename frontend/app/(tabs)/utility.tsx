@@ -33,7 +33,7 @@ const SECTIONS: { title: string; tiles: TileDef[] }[] = [
   {
     title: 'Repairs',
     tiles: [
-      { key: 'repair-types', label: 'Repair Types', icon: 'construct-outline', comingSoon: true },
+      { key: 'repair-types', label: 'Repair Types', icon: 'construct-outline', route: '/settings/repair-types', ownerOnly: true },
     ],
   },
 ];

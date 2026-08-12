@@ -24,9 +24,8 @@ const SECTIONS: { title: string; tiles: TileDef[] }[] = [
   {
     title: 'Repairs',
     tiles: [
-      { key: 'repair-intake', label: 'Repair Intake', icon: 'diamond-outline', comingSoon: true },
-      { key: 'karigar-issue', label: 'Karigar Issue', icon: 'arrow-redo-outline', comingSoon: true },
-      { key: 'karigar-receive', label: 'Karigar Receive', icon: 'arrow-undo-outline', comingSoon: true },
+      { key: 'repair-intake', label: 'Repair Intake', icon: 'diamond-outline', route: '/repairs/new' },
+      { key: 'repair-orders', label: 'All Repairs', icon: 'construct-outline', route: '/repairs' },
     ],
   },
   {

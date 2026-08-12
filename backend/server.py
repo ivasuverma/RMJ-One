@@ -389,6 +389,88 @@ class TaskTemplateIn(BaseModel):
     active: bool = True
 
 
+# ---------------- Repairs ----------------
+class CustomerIn(BaseModel):
+    name: str
+    mobile: Optional[str] = ''
+    address: Optional[str] = ''
+    notes: Optional[str] = ''
+
+
+class KarigarIn(BaseModel):
+    name: str
+    mobile: Optional[str] = ''
+    is_employee: bool = False
+    employee_id: Optional[str] = None  # required when is_employee is True
+    active: bool = True
+
+
+class RepairTypeIn(BaseModel):
+    name: str
+    default_labour: float = 0
+    requires_karigar_default: bool = False
+    active: bool = True
+
+
+class RepairItemSpec(BaseModel):
+    description: str
+    repair_type: Optional[str] = ''  # RepairType name, prefills labour/needs_karigar client-side
+    material: Literal['gold', 'diamond', 'mixed'] = 'gold'
+    gross_weight: float = 0
+    pc_count: int = 1
+    labour_charge: float = 0
+    needs_karigar: bool = False
+    due_date: Optional[str] = None
+    stone_notes: Optional[str] = ''
+    notes: Optional[str] = ''
+    intake_photo: Optional[str] = ''  # base64 data URI
+
+
+class RepairOrderIn(BaseModel):
+    customer_id: Optional[str] = None  # existing customer, or...
+    new_customer: Optional[CustomerIn] = None  # ...create one inline
+    items: List[RepairItemSpec]
+
+
+class RepairItemUpdateIn(BaseModel):
+    description: Optional[str] = None
+    repair_type: Optional[str] = None
+    gross_weight: Optional[float] = None
+    pc_count: Optional[int] = None
+    labour_charge: Optional[float] = None
+    due_date: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class IssueToKarigarIn(BaseModel):
+    karigar_id: str
+    weight: float
+    note: Optional[str] = ''
+
+
+class ReceiveFromKarigarIn(BaseModel):
+    weight: float
+    note: Optional[str] = ''
+    # Manual wastage/adjustment decision, entered by the owner after seeing the
+    # weight difference — never auto-calculated (per explicit choice).
+    adjustment_amount: Optional[float] = 0
+    adjustment_note: Optional[str] = ''
+    charge_to: Optional[Literal['customer', 'karigar', 'none']] = 'none'
+
+
+class DeliverIn(BaseModel):
+    billed_amount: float
+    payment_mode: Optional[str] = 'cash'
+    note: Optional[str] = ''
+    final_photo: Optional[str] = ''
+
+
+class KarigarLedgerEntryIn(BaseModel):
+    type: Literal['labour_payable', 'payment', 'adjustment']
+    amount: float
+    note: Optional[str] = ''
+
+
 # ---------------- Seed ----------------
 async def seed():
     await db.users.create_index('username', unique=True)
@@ -1346,6 +1428,382 @@ async def delete_task_template(template_id: str, user=Depends(require_admin)):
     if r.deleted_count == 0: raise HTTPException(status_code=404, detail='Template not found')
     await log_audit(user, 'task_template.delete', 'task_template', template_id, (t or {}).get('title', ''))
     return {'ok': True}
+
+
+# ---------------- Repairs: Customers ----------------
+@api.get('/customers')
+async def list_customers(q: Optional[str] = None, _: dict = Depends(require_staff)):
+    query: dict = {}
+    if q:
+        query['$or'] = [
+            {'name': {'$regex': q, '$options': 'i'}},
+            {'mobile': {'$regex': q, '$options': 'i'}},
+        ]
+    return await db.customers.find(query, {'_id': 0}).sort('name', 1).to_list(1000)
+
+
+@api.get('/customers/{cid}')
+async def get_customer(cid: str, _: dict = Depends(require_staff)):
+    c = await db.customers.find_one({'id': cid}, {'_id': 0})
+    if not c: raise HTTPException(status_code=404, detail='Customer not found')
+    orders = await db.repair_orders.find({'customer_id': cid}, {'_id': 0}).sort('created_at', -1).to_list(200)
+    out = []
+    for o in orders:
+        items = await db.repair_items.find({'order_id': o['id']}, {'_id': 0}).to_list(200)
+        out.append({**o, 'item_count': len(items), 'status': _order_status(items)})
+    return {'customer': c, 'orders': out}
+
+
+@api.post('/customers')
+async def create_customer(body: CustomerIn, user=Depends(require_admin)):
+    doc = {'id': str(uuid.uuid4()), **body.model_dump(), 'created_at': now_utc().isoformat()}
+    await db.customers.insert_one(dict(doc))
+    await log_audit(user, 'customer.create', 'customer', doc['id'], body.name)
+    return {k: v for k, v in doc.items() if k != '_id'}
+
+
+@api.put('/customers/{cid}')
+async def update_customer(cid: str, body: CustomerIn, user=Depends(require_admin)):
+    if not await db.customers.find_one({'id': cid}):
+        raise HTTPException(status_code=404, detail='Customer not found')
+    await db.customers.update_one({'id': cid}, {'$set': body.model_dump()})
+    await log_audit(user, 'customer.update', 'customer', cid, body.name)
+    return await db.customers.find_one({'id': cid}, {'_id': 0})
+
+
+# ---------------- Repairs: Karigars ----------------
+@api.get('/karigars')
+async def list_karigars(_: dict = Depends(require_staff)):
+    return await db.karigars.find({}, {'_id': 0}).sort('name', 1).to_list(500)
+
+
+@api.post('/karigars')
+async def create_karigar(body: KarigarIn, user=Depends(require_admin)):
+    name = body.name
+    if body.is_employee:
+        if not body.employee_id:
+            raise HTTPException(status_code=400, detail='employee_id is required for an in-house karigar')
+        emp = await db.employees.find_one({'id': body.employee_id}, {'_id': 0})
+        if not emp: raise HTTPException(status_code=404, detail='Employee not found')
+        name = emp['name']
+    doc = {'id': str(uuid.uuid4()), **{**body.model_dump(), 'name': name}, 'created_at': now_utc().isoformat()}
+    await db.karigars.insert_one(dict(doc))
+    await log_audit(user, 'karigar.create', 'karigar', doc['id'], name)
+    return {k: v for k, v in doc.items() if k != '_id'}
+
+
+@api.put('/karigars/{kid}')
+async def update_karigar(kid: str, body: KarigarIn, user=Depends(require_admin)):
+    if not await db.karigars.find_one({'id': kid}):
+        raise HTTPException(status_code=404, detail='Karigar not found')
+    await db.karigars.update_one({'id': kid}, {'$set': body.model_dump()})
+    await log_audit(user, 'karigar.update', 'karigar', kid, body.name)
+    return await db.karigars.find_one({'id': kid}, {'_id': 0})
+
+
+@api.delete('/karigars/{kid}')
+async def delete_karigar(kid: str, user=Depends(require_owner)):
+    k = await db.karigars.find_one({'id': kid}, {'_id': 0})
+    r = await db.karigars.delete_one({'id': kid})
+    if r.deleted_count == 0: raise HTTPException(status_code=404, detail='Karigar not found')
+    await log_audit(user, 'karigar.delete', 'karigar', kid, (k or {}).get('name', ''))
+    return {'ok': True}
+
+
+# ---------------- Repairs: Repair Types (master) ----------------
+@api.get('/repair-types')
+async def list_repair_types(_: dict = Depends(require_staff)):
+    return await db.repair_types.find({}, {'_id': 0}).sort('name', 1).to_list(200)
+
+
+@api.post('/repair-types')
+async def create_repair_type(body: RepairTypeIn, user=Depends(require_owner)):
+    doc = {'id': str(uuid.uuid4()), **body.model_dump(), 'created_at': now_utc().isoformat()}
+    await db.repair_types.insert_one(dict(doc))
+    await log_audit(user, 'repair_type.create', 'repair_type', doc['id'], body.name)
+    return {k: v for k, v in doc.items() if k != '_id'}
+
+
+@api.put('/repair-types/{rtid}')
+async def update_repair_type(rtid: str, body: RepairTypeIn, user=Depends(require_owner)):
+    if not await db.repair_types.find_one({'id': rtid}):
+        raise HTTPException(status_code=404, detail='Repair type not found')
+    await db.repair_types.update_one({'id': rtid}, {'$set': body.model_dump()})
+    await log_audit(user, 'repair_type.update', 'repair_type', rtid, body.name)
+    return await db.repair_types.find_one({'id': rtid}, {'_id': 0})
+
+
+@api.delete('/repair-types/{rtid}')
+async def delete_repair_type(rtid: str, user=Depends(require_owner)):
+    rt = await db.repair_types.find_one({'id': rtid}, {'_id': 0})
+    r = await db.repair_types.delete_one({'id': rtid})
+    if r.deleted_count == 0: raise HTTPException(status_code=404, detail='Repair type not found')
+    await log_audit(user, 'repair_type.delete', 'repair_type', rtid, (rt or {}).get('name', ''))
+    return {'ok': True}
+
+
+# ---------------- Repairs: Orders & Items ----------------
+async def _next_order_no() -> str:
+    count = await db.repair_orders.count_documents({})
+    return f'RO-{count + 1:04d}'
+
+
+async def _next_item_code() -> str:
+    count = await db.repair_items.count_documents({})
+    return f'R-{count + 1:06d}'
+
+
+def _order_status(items: list) -> str:
+    return 'completed' if items and all(i['status'] == 'delivered' for i in items) else 'open'
+
+
+@api.post('/repair-orders')
+async def create_repair_order(body: RepairOrderIn, user=Depends(require_admin)):
+    if not body.items:
+        raise HTTPException(status_code=400, detail='At least one item is required')
+    customer = None
+    if body.customer_id:
+        customer = await db.customers.find_one({'id': body.customer_id}, {'_id': 0})
+        if not customer: raise HTTPException(status_code=404, detail='Customer not found')
+    elif body.new_customer:
+        customer = {'id': str(uuid.uuid4()), **body.new_customer.model_dump(), 'created_at': now_utc().isoformat()}
+        await db.customers.insert_one(dict(customer))
+        await log_audit(user, 'customer.create', 'customer', customer['id'], customer['name'])
+    else:
+        raise HTTPException(status_code=400, detail='customer_id or new_customer is required')
+
+    iso = now_utc().isoformat()
+    order_id = str(uuid.uuid4())
+    order_no = await _next_order_no()
+    order = {
+        'id': order_id, 'order_no': order_no, 'customer_id': customer['id'], 'customer_name': customer['name'],
+        'customer_mobile': customer.get('mobile', ''), 'created_at': iso, 'created_by': user['name'],
+    }
+    await db.repair_orders.insert_one(dict(order))
+
+    items_out = []
+    for spec in body.items:
+        item_code = await _next_item_code()
+        item = {
+            'id': str(uuid.uuid4()), 'item_code': item_code, 'order_id': order_id,
+            'order_no': order_no, 'customer_name': customer['name'],
+            'description': spec.description, 'repair_type': spec.repair_type or '',
+            'material': spec.material, 'gross_weight': spec.gross_weight, 'pc_count': spec.pc_count,
+            'labour_charge': spec.labour_charge, 'needs_karigar': spec.needs_karigar,
+            'due_date': spec.due_date, 'stone_notes': spec.stone_notes or '', 'notes': spec.notes or '',
+            'intake_photo': spec.intake_photo or '', 'final_photo': '',
+            'status': 'received', 'karigar_id': None, 'karigar_name': None,
+            'current_issue_weight': None, 'billed_amount': None, 'payment_mode': None,
+            'created_at': iso, 'delivered_at': None,
+        }
+        await db.repair_items.insert_one(dict(item))
+        items_out.append({k: v for k, v in item.items() if k != '_id'})
+
+    await log_audit(user, 'repair_order.create', 'repair_order', order_id, order_no,
+                     {'customer': customer['name'], 'items': len(items_out)})
+    return {'order': {k: v for k, v in order.items() if k != '_id'}, 'items': items_out}
+
+
+@api.get('/repair-orders')
+async def list_repair_orders(status_: Optional[str] = Query(default=None, alias='status'), _: dict = Depends(require_staff)):
+    orders = await db.repair_orders.find({}, {'_id': 0}).sort('created_at', -1).to_list(1000)
+    out = []
+    for o in orders:
+        items = await db.repair_items.find({'order_id': o['id']}, {'_id': 0}).to_list(200)
+        st = _order_status(items)
+        if status_ and st != status_:
+            continue
+        out.append({**o, 'item_count': len(items), 'status': st})
+    return out
+
+
+@api.get('/repair-orders/{order_id}')
+async def get_repair_order(order_id: str, _: dict = Depends(require_staff)):
+    order = await db.repair_orders.find_one({'id': order_id}, {'_id': 0})
+    if not order: raise HTTPException(status_code=404, detail='Order not found')
+    items = await db.repair_items.find({'order_id': order_id}, {'_id': 0}).sort('created_at', 1).to_list(200)
+    return {'order': {**order, 'status': _order_status(items)}, 'items': items}
+
+
+@api.get('/repair-orders/{order_id}/slip/pdf')
+async def repair_order_slip_pdf(order_id: str, _: dict = Depends(require_staff)):
+    order = await db.repair_orders.find_one({'id': order_id}, {'_id': 0})
+    if not order: raise HTTPException(status_code=404, detail='Order not found')
+    items = await db.repair_items.find({'order_id': order_id}, {'_id': 0}).sort('created_at', 1).to_list(200)
+    rows = [[i['item_code'], i['description'], i['repair_type'] or '—', f"{i['gross_weight']:.3f}g",
+             i['pc_count'], i['due_date'] or '—'] for i in items]
+    pdf = _report_pdf(
+        f"Repair Intake — {order['order_no']}",
+        f"{order['customer_name']} · {order.get('customer_mobile', '')} · Received {order['created_at'][:10]}",
+        ['Tag', 'Item', 'Repair Type', 'Weight', 'Pcs', 'Due Date'], rows,
+    )
+    return _pdf_response(pdf, f'repair-slip-{order["order_no"]}.pdf')
+
+
+@api.get('/repair-items/{item_id}')
+async def get_repair_item(item_id: str, _: dict = Depends(require_staff)):
+    item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
+    if not item: raise HTTPException(status_code=404, detail='Item not found')
+    history = await db.karigar_transactions.find({'item_id': item_id}, {'_id': 0}).sort('created_at', 1).to_list(100)
+    return {'item': item, 'history': history}
+
+
+@api.put('/repair-items/{item_id}')
+async def update_repair_item(item_id: str, body: RepairItemUpdateIn, user=Depends(require_admin)):
+    item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
+    if not item: raise HTTPException(status_code=404, detail='Item not found')
+    upd = {k: v for k, v in body.model_dump().items() if v is not None}
+    if upd:
+        await db.repair_items.update_one({'id': item_id}, {'$set': upd})
+        await log_audit(user, 'repair_item.update', 'repair_item', item_id, item['item_code'])
+    return await db.repair_items.find_one({'id': item_id}, {'_id': 0})
+
+
+@api.post('/repair-items/{item_id}/issue')
+async def issue_to_karigar(item_id: str, body: IssueToKarigarIn, user=Depends(require_admin)):
+    item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
+    if not item: raise HTTPException(status_code=404, detail='Item not found')
+    if item['status'] not in ('received', 'ready'):
+        raise HTTPException(status_code=400, detail=f"Cannot issue an item that is {item['status']}")
+    karigar = await db.karigars.find_one({'id': body.karigar_id}, {'_id': 0})
+    if not karigar: raise HTTPException(status_code=404, detail='Karigar not found')
+
+    iso = now_utc().isoformat()
+    challan_no = f"IC-{item['item_code']}-{await db.karigar_transactions.count_documents({'item_id': item_id, 'direction': 'issue'}) + 1}"
+    txn = {
+        'id': str(uuid.uuid4()), 'item_id': item_id, 'item_code': item['item_code'], 'karigar_id': karigar['id'],
+        'karigar_name': karigar['name'], 'direction': 'issue', 'weight': body.weight, 'note': body.note or '',
+        'challan_no': challan_no, 'created_at': iso, 'created_by': user['name'],
+    }
+    await db.karigar_transactions.insert_one(dict(txn))
+    await db.karigar_ledger.insert_one({
+        'id': str(uuid.uuid4()), 'karigar_id': karigar['id'], 'type': 'gold_out', 'weight': body.weight,
+        'amount': None, 'item_id': item_id, 'item_code': item['item_code'], 'note': f"Issued: {item['description']}",
+        'created_at': iso, 'created_by': user['name'],
+    })
+    await db.repair_items.update_one({'id': item_id}, {'$set': {
+        'status': 'with_karigar', 'karigar_id': karigar['id'], 'karigar_name': karigar['name'],
+        'current_issue_weight': body.weight,
+    }})
+    await log_audit(user, 'repair_item.issue', 'repair_item', item_id, item['item_code'], {'karigar': karigar['name'], 'weight': body.weight})
+    if karigar.get('is_employee') and karigar.get('employee_id'):
+        await notify_user(karigar['employee_id'], 'Repair item issued to you', f"{item['item_code']} — {item['description']}", '/(emp)/tasks')
+    return await db.repair_items.find_one({'id': item_id}, {'_id': 0})
+
+
+@api.post('/repair-items/{item_id}/receive')
+async def receive_from_karigar(item_id: str, body: ReceiveFromKarigarIn, user=Depends(require_admin)):
+    item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
+    if not item: raise HTTPException(status_code=404, detail='Item not found')
+    if item['status'] != 'with_karigar':
+        raise HTTPException(status_code=400, detail='This item is not currently with a karigar')
+    karigar_id = item['karigar_id']
+    weight_issued = item.get('current_issue_weight') or 0
+    diff = round(body.weight - weight_issued, 3)
+
+    iso = now_utc().isoformat()
+    challan_no = f"RC-{item['item_code']}-{await db.karigar_transactions.count_documents({'item_id': item_id, 'direction': 'receive'}) + 1}"
+    txn = {
+        'id': str(uuid.uuid4()), 'item_id': item_id, 'item_code': item['item_code'], 'karigar_id': karigar_id,
+        'karigar_name': item.get('karigar_name'), 'direction': 'receive', 'weight': body.weight,
+        'weight_diff': diff, 'note': body.note or '', 'challan_no': challan_no, 'created_at': iso,
+        'created_by': user['name'],
+    }
+    await db.karigar_transactions.insert_one(dict(txn))
+    await db.karigar_ledger.insert_one({
+        'id': str(uuid.uuid4()), 'karigar_id': karigar_id, 'type': 'gold_in', 'weight': body.weight,
+        'amount': None, 'item_id': item_id, 'item_code': item['item_code'],
+        'note': f"Received back: {item['description']} (diff {diff:+.3f}g)", 'created_at': iso, 'created_by': user['name'],
+    })
+    if body.adjustment_amount and body.charge_to == 'karigar':
+        await db.karigar_ledger.insert_one({
+            'id': str(uuid.uuid4()), 'karigar_id': karigar_id, 'type': 'wastage', 'weight': None,
+            'amount': -abs(body.adjustment_amount), 'item_id': item_id, 'item_code': item['item_code'],
+            'note': body.adjustment_note or f'Wastage on {item["item_code"]}', 'created_at': iso, 'created_by': user['name'],
+        })
+    await db.repair_items.update_one({'id': item_id}, {'$set': {
+        'status': 'ready', 'weight_diff': diff,
+        'customer_adjustment': body.adjustment_amount if body.charge_to == 'customer' else 0,
+    }})
+    await log_audit(user, 'repair_item.receive', 'repair_item', item_id, item['item_code'], {'weight_diff': diff})
+    return await db.repair_items.find_one({'id': item_id}, {'_id': 0})
+
+
+@api.post('/repair-items/{item_id}/ready')
+async def mark_item_ready(item_id: str, user=Depends(require_admin)):
+    item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
+    if not item: raise HTTPException(status_code=404, detail='Item not found')
+    if item['status'] != 'received':
+        raise HTTPException(status_code=400, detail='Only a freshly received item can bypass the karigar step')
+    await db.repair_items.update_one({'id': item_id}, {'$set': {'status': 'ready'}})
+    await log_audit(user, 'repair_item.ready', 'repair_item', item_id, item['item_code'])
+    return await db.repair_items.find_one({'id': item_id}, {'_id': 0})
+
+
+@api.post('/repair-items/{item_id}/deliver')
+async def deliver_item(item_id: str, body: DeliverIn, user=Depends(require_admin)):
+    item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
+    if not item: raise HTTPException(status_code=404, detail='Item not found')
+    if item['status'] != 'ready':
+        raise HTTPException(status_code=400, detail='Item must be ready before delivery')
+    iso = now_utc().isoformat()
+    await db.repair_items.update_one({'id': item_id}, {'$set': {
+        'status': 'delivered', 'delivered_at': iso, 'billed_amount': body.billed_amount,
+        'payment_mode': body.payment_mode, 'delivery_note': body.note or '',
+        'final_photo': body.final_photo or item.get('final_photo', ''),
+    }})
+    await log_audit(user, 'repair_item.deliver', 'repair_item', item_id, item['item_code'], {'billed_amount': body.billed_amount})
+    return await db.repair_items.find_one({'id': item_id}, {'_id': 0})
+
+
+@api.get('/repair-items/{item_id}/bill/pdf')
+async def repair_item_bill_pdf(item_id: str, _: dict = Depends(require_staff)):
+    item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
+    if not item: raise HTTPException(status_code=404, detail='Item not found')
+    rows = [
+        ['Item', item['description']], ['Tag', item['item_code']], ['Repair Type', item['repair_type'] or '—'],
+        ['Weight', f"{item['gross_weight']:.3f}g"], ['Labour Charge', f"₹{item['labour_charge']:.0f}"],
+    ]
+    if item.get('customer_adjustment'):
+        rows.append(['Material Adjustment', f"₹{item['customer_adjustment']:.0f}"])
+    rows.append(['Total Billed', f"₹{(item.get('billed_amount') or 0):.0f}"])
+    rows.append(['Payment Mode', (item.get('payment_mode') or '—').title()])
+    pdf = _report_pdf(f"Repair Bill — {item['item_code']}", f"{item.get('customer_name', '')} · {item.get('order_no', '')}",
+                       ['Field', 'Value'], rows)
+    return _pdf_response(pdf, f'repair-bill-{item["item_code"]}.pdf')
+
+
+# ---------------- Repairs: Karigar Ledger ----------------
+@api.get('/karigars/{kid}/ledger')
+async def get_karigar_ledger(kid: str, _: dict = Depends(require_staff)):
+    karigar = await db.karigars.find_one({'id': kid}, {'_id': 0})
+    if not karigar: raise HTTPException(status_code=404, detail='Karigar not found')
+    entries = await db.karigar_ledger.find({'karigar_id': kid}, {'_id': 0}).sort('created_at', -1).to_list(1000)
+    weight_balance = sum((e['weight'] or 0) if e['type'] == 'gold_out' else -(e['weight'] or 0)
+                          for e in entries if e['type'] in ('gold_out', 'gold_in'))
+    amount_due = sum(
+        (e['amount'] or 0) if e['type'] == 'labour_payable'
+        else -(e['amount'] or 0) if e['type'] == 'payment'
+        else (e['amount'] or 0) if e['type'] == 'wastage'
+        else 0
+        for e in entries
+    )
+    return {'karigar': karigar, 'entries': entries, 'weight_balance': round(weight_balance, 3), 'amount_due': round(amount_due, 2)}
+
+
+@api.post('/karigars/{kid}/ledger')
+async def add_karigar_ledger_entry(kid: str, body: KarigarLedgerEntryIn, user=Depends(require_admin)):
+    karigar = await db.karigars.find_one({'id': kid}, {'_id': 0})
+    if not karigar: raise HTTPException(status_code=404, detail='Karigar not found')
+    signed = body.amount if body.type == 'labour_payable' else -abs(body.amount) if body.type == 'payment' else body.amount
+    doc = {
+        'id': str(uuid.uuid4()), 'karigar_id': kid, 'type': body.type, 'weight': None,
+        'amount': signed, 'item_id': None, 'item_code': None, 'note': body.note or '',
+        'created_at': now_utc().isoformat(), 'created_by': user['name'],
+    }
+    await db.karigar_ledger.insert_one(dict(doc))
+    await log_audit(user, f'karigar_ledger.{body.type}', 'karigar', kid, karigar['name'], {'amount': body.amount})
+    return {k: v for k, v in doc.items() if k != '_id'}
 
 
 # ---------------- Dashboard ----------------
