@@ -1,12 +1,13 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, Platform, KeyboardAvoidingView,
+  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, Platform, KeyboardAvoidingView, Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { api, TOKEN_KEY } from '@/src/api/client';
 import { storage } from '@/src/utils/storage';
+import { PhotoCaptureModal } from '@/src/components/PhotoCaptureModal';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
@@ -17,6 +18,7 @@ type Item = {
   status: 'received' | 'with_karigar' | 'ready' | 'delivered';
   karigar_id: string | null; karigar_name: string | null; current_issue_weight: number | null;
   weight_diff?: number; customer_adjustment?: number; billed_amount: number | null; payment_mode: string | null;
+  intake_photo?: string; final_photo?: string;
 };
 type Txn = {
   id: string; direction: 'issue' | 'receive'; karigar_name: string; weight: number; weight_diff?: number;
@@ -72,11 +74,13 @@ export default function RepairItemDetailScreen() {
   // Deliver
   const [billedAmount, setBilledAmount] = useState('');
   const [paymentMode, setPaymentMode] = useState('cash');
+  const [finalPhoto, setFinalPhoto] = useState('');
+  const [cameraOpen, setCameraOpen] = useState(false);
 
   const resetForms = () => {
     setForm(null); setPickedKarigar(null); setIssueWeight(''); setIssueNote('');
     setRecvWeight(''); setRecvNote(''); setAdjAmount(''); setAdjNote(''); setChargeTo('none');
-    setBilledAmount(''); setPaymentMode('cash');
+    setBilledAmount(''); setPaymentMode('cash'); setFinalPhoto('');
   };
 
   const doIssue = async () => {
@@ -121,7 +125,7 @@ export default function RepairItemDetailScreen() {
     if (!amt || amt <= 0) { Alert.alert('Invalid', 'Enter the billed amount'); return; }
     submittingRef.current = true; setBusy(true);
     try {
-      await api.post(`/repair-items/${id}/deliver`, { billed_amount: amt, payment_mode: paymentMode, note: '' });
+      await api.post(`/repair-items/${id}/deliver`, { billed_amount: amt, payment_mode: paymentMode, note: '', final_photo: finalPhoto });
       resetForms(); await load();
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
     finally { setBusy(false); submittingRef.current = false; }
@@ -175,6 +179,23 @@ export default function RepairItemDetailScreen() {
             {item.weight_diff != null && <MetaRow icon="swap-vertical-outline" label="Weight diff" value={`${item.weight_diff >= 0 ? '+' : ''}${item.weight_diff.toFixed(3)}g`} colors={colors} />}
             {item.billed_amount != null && <MetaRow icon="receipt-outline" label="Billed" value={`₹${item.billed_amount.toFixed(0)} · ${item.payment_mode}`} colors={colors} />}
           </View>
+
+          {(item.intake_photo || item.final_photo) && (
+            <View style={styles.photosRow}>
+              {item.intake_photo && (
+                <View style={{ alignItems: 'center' }}>
+                  <Image source={{ uri: item.intake_photo }} style={styles.photoLarge} />
+                  <Text style={styles.photoCaption}>Intake</Text>
+                </View>
+              )}
+              {item.final_photo && (
+                <View style={{ alignItems: 'center' }}>
+                  <Image source={{ uri: item.final_photo }} style={styles.photoLarge} />
+                  <Text style={styles.photoCaption}>Delivery</Text>
+                </View>
+              )}
+            </View>
+          )}
 
           {/* Actions */}
           {item.status === 'received' && (
@@ -279,6 +300,25 @@ export default function RepairItemDetailScreen() {
                   </Pressable>
                 ))}
               </View>
+
+              <Text style={styles.label}>Final Photo (optional)</Text>
+              {finalPhoto ? (
+                <View style={styles.photoRow}>
+                  <Image source={{ uri: finalPhoto }} style={styles.photoThumb} />
+                  <Pressable onPress={() => setCameraOpen(true)} style={styles.smallBtn} testID="deliver-retake-photo">
+                    <Text style={styles.smallBtnText}>Retake</Text>
+                  </Pressable>
+                  <Pressable onPress={() => setFinalPhoto('')} style={styles.delBtn} hitSlop={10} testID="deliver-remove-photo">
+                    <Ionicons name="close" size={16} color={colors.onError} />
+                  </Pressable>
+                </View>
+              ) : (
+                <Pressable onPress={() => setCameraOpen(true)} style={styles.photoBtn} testID="deliver-add-photo">
+                  <Ionicons name="camera-outline" size={16} color={colors.onSurfaceSecondary} />
+                  <Text style={styles.actionBtnText}>Add Photo</Text>
+                </Pressable>
+              )}
+
               <Pressable onPress={doDeliver} disabled={busy} style={[styles.saveBtn, busy && { opacity: 0.6 }]} testID="deliver-save-btn">
                 {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.saveBtnText}>Deliver & Bill</Text>}
               </Pressable>
@@ -301,6 +341,13 @@ export default function RepairItemDetailScreen() {
           ))}
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <PhotoCaptureModal
+        visible={cameraOpen}
+        title="Final Photo"
+        onClose={() => setCameraOpen(false)}
+        onCapture={async (photo) => { setFinalPhoto(photo); setCameraOpen(false); }}
+      />
     </SafeAreaView>
   );
 }
@@ -339,6 +386,22 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.divider },
   metaLabel: { color: colors.mutedText, fontSize: 12, width: 80 },
   metaValue: { flex: 1, color: colors.onSurface, fontSize: 13, fontWeight: '600' },
+
+  photosRow: { flexDirection: 'row', gap: spacing.lg, marginBottom: spacing.lg },
+  photoLarge: { width: 96, height: 96, borderRadius: radius.lg, backgroundColor: colors.surfaceTertiary },
+  photoCaption: { color: colors.mutedText, fontSize: 10, marginTop: 4, textTransform: 'uppercase', letterSpacing: 0.5 },
+  photoBtn: {
+    flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, paddingVertical: 12, marginTop: 4,
+  },
+  photoRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: 4 },
+  photoThumb: { width: 52, height: 52, borderRadius: radius.md, backgroundColor: colors.surfaceTertiary },
+  smallBtn: { backgroundColor: colors.surfaceTertiary, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, borderColor: colors.border },
+  smallBtnText: { color: colors.onSurfaceSecondary, fontSize: 11, fontWeight: '700' },
+  delBtn: {
+    width: 30, height: 30, borderRadius: 15, backgroundColor: colors.error,
+    borderColor: colors.onError, borderWidth: 1, alignItems: 'center', justifyContent: 'center',
+  },
 
   actionsRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md },
   actionBtn: {

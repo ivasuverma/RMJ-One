@@ -688,7 +688,7 @@ async def get_employee(emp_id: str, _: dict = Depends(get_current)):
 
 
 @api.post('/employees')
-async def create_employee(body: EmployeeIn, user: dict = Depends(require_admin)):
+async def create_employee(body: EmployeeIn, user: dict = Depends(require_admin), _mod=Depends(require_module('team'))):
     iso = now_utc().isoformat()
     eid = str(uuid.uuid4())
     data = body.model_dump()
@@ -717,7 +717,7 @@ async def create_employee(body: EmployeeIn, user: dict = Depends(require_admin))
 
 
 @api.put('/employees/{emp_id}')
-async def update_employee(emp_id: str, body: EmployeeIn, user: dict = Depends(require_admin)):
+async def update_employee(emp_id: str, body: EmployeeIn, user: dict = Depends(require_admin), _mod=Depends(require_module('team'))):
     iso = now_utc().isoformat()
     existing = await db.employees.find_one({'id': emp_id}, {'_id': 0})
     if not existing: raise HTTPException(status_code=404, detail='Employee not found')
@@ -737,7 +737,7 @@ async def update_employee(emp_id: str, body: EmployeeIn, user: dict = Depends(re
 
 
 @api.delete('/employees/{emp_id}')
-async def delete_employee(emp_id: str, user: dict = Depends(require_owner)):
+async def delete_employee(emp_id: str, user: dict = Depends(require_owner), _mod=Depends(require_module('team'))):
     existing = await db.employees.find_one({'id': emp_id}, {'_id': 0})
     r = await db.employees.delete_one({'id': emp_id})
     if r.deleted_count == 0: raise HTTPException(status_code=404, detail='Employee not found')
@@ -747,7 +747,7 @@ async def delete_employee(emp_id: str, user: dict = Depends(require_owner)):
 
 
 @api.post('/employees/{emp_id}/id-proofs')
-async def add_id_proof(emp_id: str, body: IdProofIn, user=Depends(require_admin)):
+async def add_id_proof(emp_id: str, body: IdProofIn, user=Depends(require_admin), _mod=Depends(require_module('team'))):
     existing = await db.employees.find_one({'id': emp_id}, {'_id': 0})
     if not existing: raise HTTPException(status_code=404, detail='Employee not found')
     proof = {
@@ -760,14 +760,14 @@ async def add_id_proof(emp_id: str, body: IdProofIn, user=Depends(require_admin)
 
 
 @api.delete('/employees/{emp_id}/id-proofs/{proof_id}')
-async def delete_id_proof(emp_id: str, proof_id: str, user=Depends(require_admin)):
+async def delete_id_proof(emp_id: str, proof_id: str, user=Depends(require_admin), _mod=Depends(require_module('team'))):
     await db.employees.update_one({'id': emp_id}, {'$pull': {'id_proofs': {'id': proof_id}}})
     await log_audit(user, 'employee.id_proof.delete', 'employee', emp_id, '', {'proof_id': proof_id})
     return {'ok': True}
 
 
 @api.post('/employees/{emp_id}/set-credentials')
-async def set_employee_credentials(emp_id: str, body: SetEmployeeCredentialsIn, user=Depends(require_admin)):
+async def set_employee_credentials(emp_id: str, body: SetEmployeeCredentialsIn, user=Depends(require_admin), _mod=Depends(require_module('team'))):
     uname = body.username.strip().lower()
     if not uname:
         raise HTTPException(status_code=400, detail='Username is required')
@@ -794,7 +794,7 @@ async def get_store(_: dict = Depends(get_current)):
 
 
 @api.put('/settings/store')
-async def update_store(body: StoreSettingsIn, user: dict = Depends(require_owner)):
+async def update_store(body: StoreSettingsIn, user: dict = Depends(require_owner), _mod=Depends(require_module('store_settings'))):
     payload = body.model_dump()
     payload['id'] = 'store'
     payload['updated_at'] = now_utc().isoformat()
@@ -1041,7 +1041,7 @@ def _combine_dt(date_str: str, hhmm: Optional[str]) -> Optional[str]:
 
 
 @api.put('/attendance/day/{emp_id}/{d}')
-async def edit_day(emp_id: str, d: str, body: AttendanceDayIn, user=Depends(require_admin)):
+async def edit_day(emp_id: str, d: str, body: AttendanceDayIn, user=Depends(require_admin), _mod=Depends(require_module('attendance'))):
     emp = await db.employees.find_one({'id': emp_id}, {'_id': 0})
     if not emp:
         raise HTTPException(status_code=404, detail='Employee not found')
@@ -1116,7 +1116,7 @@ async def edit_day(emp_id: str, d: str, body: AttendanceDayIn, user=Depends(requ
 
 
 @api.delete('/attendance/day/{emp_id}/{d}')
-async def delete_day(emp_id: str, d: str, user=Depends(require_admin)):
+async def delete_day(emp_id: str, d: str, user=Depends(require_admin), _mod=Depends(require_module('attendance'))):
     existing = await db.attendance.find_one({'employee_id': emp_id, 'date': d}, {'_id': 0})
     if not existing:
         raise HTTPException(status_code=404, detail='No attendance record for this day')
@@ -1181,7 +1181,7 @@ async def list_corrections(
 
 
 @api.post('/attendance/corrections/{cid}/decide')
-async def decide_correction(cid: str, body: DecisionIn, user=Depends(require_admin)):
+async def decide_correction(cid: str, body: DecisionIn, user=Depends(require_admin), _mod=Depends(require_module('approvals'))):
     r = await db.corrections.find_one({'id': cid}, {'_id': 0})
     if not r: raise HTTPException(status_code=404, detail='Correction not found')
     if r['status'] != 'pending': raise HTTPException(status_code=400, detail='Already decided')
@@ -1259,7 +1259,7 @@ async def list_leaves(
 
 
 @api.post('/leaves/{lid}/decide')
-async def decide_leave(lid: str, body: DecisionIn, user=Depends(require_admin)):
+async def decide_leave(lid: str, body: DecisionIn, user=Depends(require_admin), _mod=Depends(require_module('approvals'))):
     l = await db.leaves.find_one({'id': lid}, {'_id': 0})
     if not l: raise HTTPException(status_code=404, detail='Leave not found')
     if l['status'] != 'pending': raise HTTPException(status_code=400, detail='Already decided')
@@ -1284,7 +1284,7 @@ async def decide_leave(lid: str, body: DecisionIn, user=Depends(require_admin)):
 
 # ---------------- Tasks ----------------
 @api.post('/tasks')
-async def create_task(body: TaskIn, user=Depends(require_admin)):
+async def create_task(body: TaskIn, user=Depends(require_admin), _mod=Depends(require_module('tasks'))):
     emp = await db.employees.find_one({'id': body.assigned_to}, {'_id': 0})
     if not emp: raise HTTPException(status_code=404, detail='Employee not found')
     iso = now_utc().isoformat()
@@ -1325,7 +1325,7 @@ async def get_task(task_id: str, user=Depends(get_current)):
 
 
 @api.put('/tasks/{task_id}')
-async def update_task(task_id: str, body: TaskUpdateIn, user=Depends(require_admin)):
+async def update_task(task_id: str, body: TaskUpdateIn, user=Depends(require_admin), _mod=Depends(require_module('tasks'))):
     t = await db.tasks.find_one({'id': task_id}, {'_id': 0})
     if not t: raise HTTPException(status_code=404, detail='Task not found')
     upd = {k: v for k, v in body.model_dump().items() if v is not None}
@@ -1342,7 +1342,7 @@ async def update_task(task_id: str, body: TaskUpdateIn, user=Depends(require_adm
 
 
 @api.delete('/tasks/{task_id}')
-async def delete_task(task_id: str, user=Depends(require_admin)):
+async def delete_task(task_id: str, user=Depends(require_admin), _mod=Depends(require_module('tasks'))):
     t = await db.tasks.find_one({'id': task_id}, {'_id': 0})
     r = await db.tasks.delete_one({'id': task_id})
     if r.deleted_count == 0: raise HTTPException(status_code=404, detail='Task not found')
@@ -1365,7 +1365,7 @@ async def complete_task(task_id: str, user=Depends(get_current)):
 
 
 @api.post('/tasks/{task_id}/reopen')
-async def reopen_task(task_id: str, user=Depends(require_admin)):
+async def reopen_task(task_id: str, user=Depends(require_admin), _mod=Depends(require_module('tasks'))):
     t = await db.tasks.find_one({'id': task_id}, {'_id': 0})
     if not t: raise HTTPException(status_code=404, detail='Task not found')
     await db.tasks.update_one({'id': task_id}, {'$set': {'status': 'open', 'completed_at': None, 'overdue_notified_at': None}})
@@ -1394,7 +1394,7 @@ async def add_task_comment(task_id: str, body: TaskCommentIn, user=Depends(get_c
 
 # ---------------- Task Templates (recurring) ----------------
 @api.post('/tasks/templates')
-async def create_task_template(body: TaskTemplateIn, user=Depends(require_admin)):
+async def create_task_template(body: TaskTemplateIn, user=Depends(require_admin), _mod=Depends(require_module('tasks'))):
     emp = await db.employees.find_one({'id': body.assigned_to}, {'_id': 0})
     if not emp: raise HTTPException(status_code=404, detail='Employee not found')
     if body.freq == 'weekly' and body.weekday is None:
@@ -1406,12 +1406,12 @@ async def create_task_template(body: TaskTemplateIn, user=Depends(require_admin)
 
 
 @api.get('/tasks/templates')
-async def list_task_templates(_: dict = Depends(require_admin)):
+async def list_task_templates(_: dict = Depends(require_admin), _mod=Depends(require_module('tasks'))):
     return await db.task_templates.find({}, {'_id': 0}).sort('created_at', -1).to_list(500)
 
 
 @api.put('/tasks/templates/{template_id}')
-async def update_task_template(template_id: str, body: TaskTemplateIn, user=Depends(require_admin)):
+async def update_task_template(template_id: str, body: TaskTemplateIn, user=Depends(require_admin), _mod=Depends(require_module('tasks'))):
     if not await db.task_templates.find_one({'id': template_id}):
         raise HTTPException(status_code=404, detail='Template not found')
     emp = await db.employees.find_one({'id': body.assigned_to}, {'_id': 0})
@@ -1422,7 +1422,7 @@ async def update_task_template(template_id: str, body: TaskTemplateIn, user=Depe
 
 
 @api.delete('/tasks/templates/{template_id}')
-async def delete_task_template(template_id: str, user=Depends(require_admin)):
+async def delete_task_template(template_id: str, user=Depends(require_admin), _mod=Depends(require_module('tasks'))):
     t = await db.task_templates.find_one({'id': template_id}, {'_id': 0})
     r = await db.task_templates.delete_one({'id': template_id})
     if r.deleted_count == 0: raise HTTPException(status_code=404, detail='Template not found')
@@ -1455,7 +1455,7 @@ async def get_customer(cid: str, _: dict = Depends(require_staff)):
 
 
 @api.post('/customers')
-async def create_customer(body: CustomerIn, user=Depends(require_admin)):
+async def create_customer(body: CustomerIn, user=Depends(require_admin), _mod=Depends(require_module('repairs'))):
     doc = {'id': str(uuid.uuid4()), **body.model_dump(), 'created_at': now_utc().isoformat()}
     await db.customers.insert_one(dict(doc))
     await log_audit(user, 'customer.create', 'customer', doc['id'], body.name)
@@ -1463,7 +1463,7 @@ async def create_customer(body: CustomerIn, user=Depends(require_admin)):
 
 
 @api.put('/customers/{cid}')
-async def update_customer(cid: str, body: CustomerIn, user=Depends(require_admin)):
+async def update_customer(cid: str, body: CustomerIn, user=Depends(require_admin), _mod=Depends(require_module('repairs'))):
     if not await db.customers.find_one({'id': cid}):
         raise HTTPException(status_code=404, detail='Customer not found')
     await db.customers.update_one({'id': cid}, {'$set': body.model_dump()})
@@ -1478,7 +1478,7 @@ async def list_karigars(_: dict = Depends(require_staff)):
 
 
 @api.post('/karigars')
-async def create_karigar(body: KarigarIn, user=Depends(require_admin)):
+async def create_karigar(body: KarigarIn, user=Depends(require_admin), _mod=Depends(require_module('repairs'))):
     name = body.name
     if body.is_employee:
         if not body.employee_id:
@@ -1493,7 +1493,7 @@ async def create_karigar(body: KarigarIn, user=Depends(require_admin)):
 
 
 @api.put('/karigars/{kid}')
-async def update_karigar(kid: str, body: KarigarIn, user=Depends(require_admin)):
+async def update_karigar(kid: str, body: KarigarIn, user=Depends(require_admin), _mod=Depends(require_module('repairs'))):
     if not await db.karigars.find_one({'id': kid}):
         raise HTTPException(status_code=404, detail='Karigar not found')
     await db.karigars.update_one({'id': kid}, {'$set': body.model_dump()})
@@ -1502,7 +1502,7 @@ async def update_karigar(kid: str, body: KarigarIn, user=Depends(require_admin))
 
 
 @api.delete('/karigars/{kid}')
-async def delete_karigar(kid: str, user=Depends(require_owner)):
+async def delete_karigar(kid: str, user=Depends(require_owner), _mod=Depends(require_module('repairs'))):
     k = await db.karigars.find_one({'id': kid}, {'_id': 0})
     r = await db.karigars.delete_one({'id': kid})
     if r.deleted_count == 0: raise HTTPException(status_code=404, detail='Karigar not found')
@@ -1517,7 +1517,7 @@ async def list_repair_types(_: dict = Depends(require_staff)):
 
 
 @api.post('/repair-types')
-async def create_repair_type(body: RepairTypeIn, user=Depends(require_owner)):
+async def create_repair_type(body: RepairTypeIn, user=Depends(require_owner), _mod=Depends(require_module('repairs'))):
     doc = {'id': str(uuid.uuid4()), **body.model_dump(), 'created_at': now_utc().isoformat()}
     await db.repair_types.insert_one(dict(doc))
     await log_audit(user, 'repair_type.create', 'repair_type', doc['id'], body.name)
@@ -1525,7 +1525,7 @@ async def create_repair_type(body: RepairTypeIn, user=Depends(require_owner)):
 
 
 @api.put('/repair-types/{rtid}')
-async def update_repair_type(rtid: str, body: RepairTypeIn, user=Depends(require_owner)):
+async def update_repair_type(rtid: str, body: RepairTypeIn, user=Depends(require_owner), _mod=Depends(require_module('repairs'))):
     if not await db.repair_types.find_one({'id': rtid}):
         raise HTTPException(status_code=404, detail='Repair type not found')
     await db.repair_types.update_one({'id': rtid}, {'$set': body.model_dump()})
@@ -1534,7 +1534,7 @@ async def update_repair_type(rtid: str, body: RepairTypeIn, user=Depends(require
 
 
 @api.delete('/repair-types/{rtid}')
-async def delete_repair_type(rtid: str, user=Depends(require_owner)):
+async def delete_repair_type(rtid: str, user=Depends(require_owner), _mod=Depends(require_module('repairs'))):
     rt = await db.repair_types.find_one({'id': rtid}, {'_id': 0})
     r = await db.repair_types.delete_one({'id': rtid})
     if r.deleted_count == 0: raise HTTPException(status_code=404, detail='Repair type not found')
@@ -1558,7 +1558,7 @@ def _order_status(items: list) -> str:
 
 
 @api.post('/repair-orders')
-async def create_repair_order(body: RepairOrderIn, user=Depends(require_admin)):
+async def create_repair_order(body: RepairOrderIn, user=Depends(require_admin), _mod=Depends(require_module('repairs'))):
     if not body.items:
         raise HTTPException(status_code=400, detail='At least one item is required')
     customer = None
@@ -1640,6 +1640,27 @@ async def repair_order_slip_pdf(order_id: str, _: dict = Depends(require_staff))
     return _pdf_response(pdf, f'repair-slip-{order["order_no"]}.pdf')
 
 
+@api.get('/repair-items')
+async def list_repair_items(
+    status_: Optional[str] = Query(default=None, alias='status'),
+    q: Optional[str] = None,
+    _: dict = Depends(require_staff),
+):
+    query: dict = {}
+    if status_:
+        query['status'] = status_
+    elif not q:
+        # Default view (no filters at all) is the outstanding worklist.
+        query['status'] = {'$ne': 'delivered'}
+    if q:
+        query['$or'] = [
+            {'item_code': {'$regex': q, '$options': 'i'}},
+            {'description': {'$regex': q, '$options': 'i'}},
+            {'customer_name': {'$regex': q, '$options': 'i'}},
+        ]
+    return await db.repair_items.find(query, {'_id': 0}).sort('created_at', -1).to_list(1000)
+
+
 @api.get('/repair-items/{item_id}')
 async def get_repair_item(item_id: str, _: dict = Depends(require_staff)):
     item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
@@ -1649,7 +1670,7 @@ async def get_repair_item(item_id: str, _: dict = Depends(require_staff)):
 
 
 @api.put('/repair-items/{item_id}')
-async def update_repair_item(item_id: str, body: RepairItemUpdateIn, user=Depends(require_admin)):
+async def update_repair_item(item_id: str, body: RepairItemUpdateIn, user=Depends(require_admin), _mod=Depends(require_module('repairs'))):
     item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
     if not item: raise HTTPException(status_code=404, detail='Item not found')
     upd = {k: v for k, v in body.model_dump().items() if v is not None}
@@ -1660,7 +1681,7 @@ async def update_repair_item(item_id: str, body: RepairItemUpdateIn, user=Depend
 
 
 @api.post('/repair-items/{item_id}/issue')
-async def issue_to_karigar(item_id: str, body: IssueToKarigarIn, user=Depends(require_admin)):
+async def issue_to_karigar(item_id: str, body: IssueToKarigarIn, user=Depends(require_admin), _mod=Depends(require_module('repairs'))):
     item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
     if not item: raise HTTPException(status_code=404, detail='Item not found')
     if item['status'] not in ('received', 'ready'):
@@ -1692,7 +1713,7 @@ async def issue_to_karigar(item_id: str, body: IssueToKarigarIn, user=Depends(re
 
 
 @api.post('/repair-items/{item_id}/receive')
-async def receive_from_karigar(item_id: str, body: ReceiveFromKarigarIn, user=Depends(require_admin)):
+async def receive_from_karigar(item_id: str, body: ReceiveFromKarigarIn, user=Depends(require_admin), _mod=Depends(require_module('repairs'))):
     item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
     if not item: raise HTTPException(status_code=404, detail='Item not found')
     if item['status'] != 'with_karigar':
@@ -1730,7 +1751,7 @@ async def receive_from_karigar(item_id: str, body: ReceiveFromKarigarIn, user=De
 
 
 @api.post('/repair-items/{item_id}/ready')
-async def mark_item_ready(item_id: str, user=Depends(require_admin)):
+async def mark_item_ready(item_id: str, user=Depends(require_admin), _mod=Depends(require_module('repairs'))):
     item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
     if not item: raise HTTPException(status_code=404, detail='Item not found')
     if item['status'] != 'received':
@@ -1741,7 +1762,7 @@ async def mark_item_ready(item_id: str, user=Depends(require_admin)):
 
 
 @api.post('/repair-items/{item_id}/deliver')
-async def deliver_item(item_id: str, body: DeliverIn, user=Depends(require_admin)):
+async def deliver_item(item_id: str, body: DeliverIn, user=Depends(require_admin), _mod=Depends(require_module('repairs'))):
     item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
     if not item: raise HTTPException(status_code=404, detail='Item not found')
     if item['status'] != 'ready':
@@ -1792,7 +1813,7 @@ async def get_karigar_ledger(kid: str, _: dict = Depends(require_staff)):
 
 
 @api.post('/karigars/{kid}/ledger')
-async def add_karigar_ledger_entry(kid: str, body: KarigarLedgerEntryIn, user=Depends(require_admin)):
+async def add_karigar_ledger_entry(kid: str, body: KarigarLedgerEntryIn, user=Depends(require_admin), _mod=Depends(require_module('repairs'))):
     karigar = await db.karigars.find_one({'id': kid}, {'_id': 0})
     if not karigar: raise HTTPException(status_code=404, detail='Karigar not found')
     signed = body.amount if body.type == 'labour_payable' else -abs(body.amount) if body.type == 'payment' else body.amount
@@ -1859,12 +1880,12 @@ async def dashboard(_: dict = Depends(get_current)):
 
 # ---------------- Users (Admin/Accountant) ----------------
 @api.get('/users')
-async def list_users(_: dict = Depends(require_owner)):
+async def list_users(_: dict = Depends(require_owner), _mod=Depends(require_module('users'))):
     return await db.users.find({}, {'_id': 0, 'password_hash': 0}).sort('created_at', 1).to_list(200)
 
 
 @api.post('/users')
-async def create_user(body: UserCreateIn, user: dict = Depends(require_owner)):
+async def create_user(body: UserCreateIn, user: dict = Depends(require_owner), _mod=Depends(require_module('users'))):
     uname = body.username.strip().lower()
     if await db.users.find_one({'username': uname}):
         raise HTTPException(status_code=400, detail='Username already exists')
@@ -1879,7 +1900,7 @@ async def create_user(body: UserCreateIn, user: dict = Depends(require_owner)):
 
 
 @api.put('/users/{uid}')
-async def update_user(uid: str, body: UserUpdateIn, user: dict = Depends(require_owner)):
+async def update_user(uid: str, body: UserUpdateIn, user: dict = Depends(require_owner), _mod=Depends(require_module('users'))):
     u = await db.users.find_one({'id': uid}, {'_id': 0})
     if not u: raise HTTPException(status_code=404, detail='User not found')
     if u.get('role') == 'owner': raise HTTPException(status_code=400, detail='Cannot modify the owner')
@@ -1945,7 +1966,7 @@ async def update_my_account(body: SelfAccountUpdateIn, user=Depends(get_current)
 
 
 @api.delete('/users/{uid}')
-async def delete_user(uid: str, user=Depends(require_owner)):
+async def delete_user(uid: str, user=Depends(require_owner), _mod=Depends(require_module('users'))):
     u = await db.users.find_one({'id': uid}, {'_id': 0})
     if not u: raise HTTPException(status_code=404, detail='User not found')
     if u.get('role') == 'owner': raise HTTPException(status_code=400, detail='Cannot delete the owner')
@@ -1956,12 +1977,12 @@ async def delete_user(uid: str, user=Depends(require_owner)):
 
 # ---------------- User Roles / Module Access ----------------
 @api.get('/access/modules')
-async def list_modules(_: dict = Depends(require_owner)):
+async def list_modules(_: dict = Depends(require_owner), _mod=Depends(require_module('user_roles'))):
     return MODULE_DEFS
 
 
 @api.get('/access/accounts')
-async def list_access_accounts(_: dict = Depends(require_owner)):
+async def list_access_accounts(_: dict = Depends(require_owner), _mod=Depends(require_module('user_roles'))):
     out = []
     async for u in db.users.find({}, {'_id': 0, 'password_hash': 0}):
         out.append({
@@ -1980,7 +2001,7 @@ async def list_access_accounts(_: dict = Depends(require_owner)):
 
 
 @api.put('/access/accounts/{account_id}')
-async def update_access(account_id: str, body: ModuleAccessUpdateIn, user=Depends(require_owner)):
+async def update_access(account_id: str, body: ModuleAccessUpdateIn, user=Depends(require_owner), _mod=Depends(require_module('user_roles'))):
     bad = set(body.module_access or []) - MODULE_KEYS
     if bad:
         raise HTTPException(status_code=400, detail=f'Unknown module(s): {", ".join(sorted(bad))}')
@@ -2006,7 +2027,7 @@ async def list_shifts(_: dict = Depends(get_current)):
 
 
 @api.post('/shifts')
-async def create_shift(body: ShiftIn, user: dict = Depends(require_owner)):
+async def create_shift(body: ShiftIn, user: dict = Depends(require_owner), _mod=Depends(require_module('shifts'))):
     doc = {'id': str(uuid.uuid4()), **body.model_dump(), 'created_at': now_utc().isoformat()}
     await db.shifts.insert_one(dict(doc))
     await log_audit(user, 'shift.create', 'shift', doc['id'], body.name)
@@ -2014,7 +2035,7 @@ async def create_shift(body: ShiftIn, user: dict = Depends(require_owner)):
 
 
 @api.put('/shifts/{sid}')
-async def update_shift(sid: str, body: ShiftIn, user: dict = Depends(require_owner)):
+async def update_shift(sid: str, body: ShiftIn, user: dict = Depends(require_owner), _mod=Depends(require_module('shifts'))):
     if not await db.shifts.find_one({'id': sid}):
         raise HTTPException(status_code=404, detail='Shift not found')
     await db.shifts.update_one({'id': sid}, {'$set': body.model_dump()})
@@ -2023,7 +2044,7 @@ async def update_shift(sid: str, body: ShiftIn, user: dict = Depends(require_own
 
 
 @api.delete('/shifts/{sid}')
-async def delete_shift(sid: str, user: dict = Depends(require_owner)):
+async def delete_shift(sid: str, user: dict = Depends(require_owner), _mod=Depends(require_module('shifts'))):
     existing = await db.shifts.find_one({'id': sid}, {'_id': 0})
     r = await db.shifts.delete_one({'id': sid})
     if r.deleted_count == 0: raise HTTPException(status_code=404, detail='Shift not found')
@@ -2038,7 +2059,7 @@ async def list_holidays(_: dict = Depends(get_current)):
 
 
 @api.post('/holidays')
-async def create_holiday(body: HolidayIn, user: dict = Depends(require_owner)):
+async def create_holiday(body: HolidayIn, user: dict = Depends(require_owner), _mod=Depends(require_module('holidays'))):
     doc = {'id': str(uuid.uuid4()), **body.model_dump(), 'created_at': now_utc().isoformat()}
     await db.holidays.insert_one(dict(doc))
     await log_audit(user, 'holiday.create', 'holiday', doc['id'], body.name)
@@ -2046,7 +2067,7 @@ async def create_holiday(body: HolidayIn, user: dict = Depends(require_owner)):
 
 
 @api.delete('/holidays/{hid}')
-async def delete_holiday(hid: str, user: dict = Depends(require_owner)):
+async def delete_holiday(hid: str, user: dict = Depends(require_owner), _mod=Depends(require_module('holidays'))):
     existing = await db.holidays.find_one({'id': hid}, {'_id': 0})
     r = await db.holidays.delete_one({'id': hid})
     if r.deleted_count == 0: raise HTTPException(status_code=404, detail='Holiday not found')
@@ -2061,7 +2082,7 @@ def _ledger_sign(entry_type: str) -> int:
 
 
 @api.post('/ledger/entries')
-async def add_ledger_entry(body: LedgerEntryIn, user=Depends(require_staff)):
+async def add_ledger_entry(body: LedgerEntryIn, user=Depends(require_staff), _mod=Depends(require_module('payroll'))):
     emp = await db.employees.find_one({'id': body.employee_id}, {'_id': 0})
     if not emp: raise HTTPException(status_code=404, detail='Employee not found')
     iso = now_utc().isoformat()
@@ -2138,7 +2159,7 @@ _LEDGER_TITLE_MAP = {'advance': 'Salary Advance', 'bonus': 'Bonus', 'fine': 'Fin
 
 
 @api.put('/ledger/entries/{entry_id}')
-async def edit_ledger_entry(entry_id: str, body: LedgerEntryEdit, user=Depends(require_admin)):
+async def edit_ledger_entry(entry_id: str, body: LedgerEntryEdit, user=Depends(require_admin), _mod=Depends(require_module('payroll'))):
     existing = await db.timeline.find_one({'id': entry_id}, {'_id': 0})
     if not existing:
         raise HTTPException(status_code=404, detail='Ledger entry not found')
@@ -2158,7 +2179,7 @@ async def edit_ledger_entry(entry_id: str, body: LedgerEntryEdit, user=Depends(r
 
 
 @api.delete('/ledger/entries/{entry_id}')
-async def delete_ledger_entry(entry_id: str, user=Depends(require_admin)):
+async def delete_ledger_entry(entry_id: str, user=Depends(require_admin), _mod=Depends(require_module('payroll'))):
     existing = await db.timeline.find_one({'id': entry_id}, {'_id': 0})
     if not existing:
         raise HTTPException(status_code=404, detail='Ledger entry not found')
@@ -2312,7 +2333,7 @@ async def _compute_payroll(year: int, month: int) -> list:
 
 
 @api.post('/payroll/compute')
-async def payroll_compute(body: PayrollGenerateIn, _: dict = Depends(require_payroll_writer)):
+async def payroll_compute(body: PayrollGenerateIn, _: dict = Depends(require_payroll_writer), _mod=Depends(require_module('payroll'))):
     rows = await _compute_payroll(body.year, body.month)
     lock = await db.payroll_locks.find_one({'year': body.year, 'month': body.month}, {'_id': 0})
     return {
@@ -2324,7 +2345,7 @@ async def payroll_compute(body: PayrollGenerateIn, _: dict = Depends(require_pay
 
 
 @api.post('/payroll/save')
-async def payroll_save(body: PayrollGenerateIn, user=Depends(require_payroll_writer)):
+async def payroll_save(body: PayrollGenerateIn, user=Depends(require_payroll_writer), _mod=Depends(require_module('payroll'))):
     lock = await db.payroll_locks.find_one({'year': body.year, 'month': body.month}, {'_id': 0})
     if lock and lock.get('locked'):
         raise HTTPException(status_code=400, detail='Payroll is locked for this month')
@@ -2378,7 +2399,7 @@ async def payroll_save(body: PayrollGenerateIn, user=Depends(require_payroll_wri
 
 
 @api.get('/payroll/{year}/{month}')
-async def payroll_get(year: int, month: int, _: dict = Depends(require_staff)):
+async def payroll_get(year: int, month: int, _: dict = Depends(require_staff), _mod=Depends(require_module('payroll'))):
     rows = await db.payroll_entries.find({'year': year, 'month': month}, {'_id': 0}).sort('name', 1).to_list(1000)
     lock = await db.payroll_locks.find_one({'year': year, 'month': month}, {'_id': 0})
     if not rows:
@@ -2394,7 +2415,7 @@ async def payroll_get(year: int, month: int, _: dict = Depends(require_staff)):
 
 
 @api.post('/payroll/{year}/{month}/lock')
-async def payroll_lock(year: int, month: int, user=Depends(require_payroll_writer)):
+async def payroll_lock(year: int, month: int, user=Depends(require_payroll_writer), _mod=Depends(require_module('payroll'))):
     lock = await db.payroll_locks.find_one({'year': year, 'month': month}, {'_id': 0})
     if not lock: raise HTTPException(status_code=400, detail='Save payroll before locking')
     await db.payroll_locks.update_one(
@@ -2406,7 +2427,7 @@ async def payroll_lock(year: int, month: int, user=Depends(require_payroll_write
 
 
 @api.post('/payroll/{year}/{month}/unlock')
-async def payroll_unlock(year: int, month: int, user=Depends(require_owner)):
+async def payroll_unlock(year: int, month: int, user=Depends(require_owner), _mod=Depends(require_module('payroll'))):
     await db.payroll_locks.update_one({'year': year, 'month': month},
                                        {'$set': {'locked': False}})
     await log_audit(user, 'payroll.unlock', 'payroll', f'{year}-{month:02d}')
@@ -2414,7 +2435,7 @@ async def payroll_unlock(year: int, month: int, user=Depends(require_owner)):
 
 
 @api.put('/payroll/entry/{entry_id}')
-async def payroll_entry_update(entry_id: str, body: PayrollEntryUpdateIn, user=Depends(require_payroll_writer)):
+async def payroll_entry_update(entry_id: str, body: PayrollEntryUpdateIn, user=Depends(require_payroll_writer), _mod=Depends(require_module('payroll'))):
     entry = await db.payroll_entries.find_one({'id': entry_id}, {'_id': 0})
     if not entry: raise HTTPException(status_code=404, detail='Entry not found')
     lock = await db.payroll_locks.find_one({'year': entry['year'], 'month': entry['month']}, {'_id': 0})
@@ -2461,12 +2482,12 @@ def _payroll_modes_label(modes: set) -> Optional[str]:
 
 
 @api.get('/payroll/entry/{entry_id}/payments')
-async def list_payroll_payments(entry_id: str, _: dict = Depends(require_staff)):
+async def list_payroll_payments(entry_id: str, _: dict = Depends(require_staff), _mod=Depends(require_module('payroll'))):
     return await db.payroll_payments.find({'entry_id': entry_id}, {'_id': 0}).sort('paid_at', 1).to_list(50)
 
 
 @api.post('/payroll/entry/{entry_id}/payments')
-async def add_payroll_payment(entry_id: str, body: PayrollPaymentIn, user=Depends(require_payroll_writer)):
+async def add_payroll_payment(entry_id: str, body: PayrollPaymentIn, user=Depends(require_payroll_writer), _mod=Depends(require_module('payroll'))):
     """Record one payment against a payroll entry. An employee's salary can be
     split across several payments in different modes (e.g. part cash, part bank
     transfer) — each call here adds one; the entry is only marked `paid` once
@@ -2513,7 +2534,7 @@ async def add_payroll_payment(entry_id: str, body: PayrollPaymentIn, user=Depend
 
 
 @api.delete('/payroll/entry/{entry_id}/payments/{payment_id}')
-async def delete_payroll_payment(entry_id: str, payment_id: str, user=Depends(require_payroll_writer)):
+async def delete_payroll_payment(entry_id: str, payment_id: str, user=Depends(require_payroll_writer), _mod=Depends(require_module('payroll'))):
     """Undo a single recorded payment (e.g. it was logged in the wrong mode) —
     recomputes the entry's paid/amount_paid/payment_mode from what's left."""
     p = await db.payroll_payments.find_one({'id': payment_id, 'entry_id': entry_id}, {'_id': 0})
@@ -2537,7 +2558,7 @@ async def delete_payroll_payment(entry_id: str, payment_id: str, user=Depends(re
 
 
 @api.get('/payroll/entry/{entry_id}/pdf')
-async def payroll_pdf(entry_id: str, _: dict = Depends(require_staff)):
+async def payroll_pdf(entry_id: str, _: dict = Depends(require_staff), _mod=Depends(require_module('payroll'))):
     from io import BytesIO
     from reportlab.lib.pagesizes import A4
     from reportlab.lib import colors as rlcolors
@@ -2712,6 +2733,7 @@ async def audit_list(
     actor: Optional[str] = None, entity_type: Optional[str] = None,
     from_date: Optional[str] = None, to_date: Optional[str] = None,
     limit: int = 200, _: dict = Depends(require_owner),
+    _mod: dict = Depends(require_module('audit')),
 ):
     q: dict = {}
     if actor: q['actor_id'] = actor
@@ -3053,6 +3075,7 @@ async def report_pdf(
     year: Optional[int] = None, month: Optional[int] = None,
     employee_id: Optional[str] = None,
     user=Depends(require_staff),
+    _mod: dict = Depends(require_module('reports')),
 ):
     kind = kind.lower()
     today = today_str()
@@ -3167,6 +3190,25 @@ async def report_pdf(
                          ['Date', 'Type', 'Description', 'Delta', 'Balance'], out),
             f'ledger-{emp.get("employee_code", "emp")}.pdf')
 
+    if kind == 'repairs_outstanding':
+        items = await db.repair_items.find({'status': {'$ne': 'delivered'}}, {'_id': 0}).sort('created_at', 1).to_list(2000)
+        today_d = today_str()
+        today_date = date.fromisoformat(today_d)
+        rows = []
+        for i in items:
+            try:
+                days = (today_date - date.fromisoformat(i.get('created_at', today_d)[:10])).days
+            except ValueError:
+                days = '—'
+            rows.append([i['item_code'], i.get('customer_name', '—'), i['description'],
+                         (i.get('status') or '').replace('_', ' ').title(),
+                         i.get('karigar_name') or '—', f"{i['gross_weight']:.3f}g",
+                         i.get('due_date') or '—', days])
+        return _pdf_response(
+            _report_pdf('Outstanding Repairs', f"{len(rows)} item(s) not yet delivered · as of {today_d}",
+                         ['Tag', 'Customer', 'Item', 'Status', 'Karigar', 'Weight', 'Due Date', 'Days Pending'], rows),
+            f'repairs-outstanding-{today_d}.pdf')
+
     raise HTTPException(status_code=400, detail=f'Unknown report kind: {kind}')
 
 
@@ -3193,7 +3235,7 @@ async def list_devices(_: dict = Depends(require_staff)):
 
 
 @api.post('/biometric/devices')
-async def create_device(body: DeviceIn, user=Depends(require_owner)):
+async def create_device(body: DeviceIn, user=Depends(require_owner), _mod=Depends(require_module('biometric'))):
     if await db.biometric_devices.find_one({'serial': body.serial}):
         raise HTTPException(status_code=400, detail='Device serial already registered')
     doc = {
@@ -3207,7 +3249,7 @@ async def create_device(body: DeviceIn, user=Depends(require_owner)):
 
 
 @api.delete('/biometric/devices/{did}')
-async def delete_device(did: str, user=Depends(require_owner)):
+async def delete_device(did: str, user=Depends(require_owner), _mod=Depends(require_module('biometric'))):
     d = await db.biometric_devices.find_one({'id': did}, {'_id': 0})
     if not d: raise HTTPException(status_code=404, detail='Device not found')
     await db.biometric_devices.delete_one({'id': did})

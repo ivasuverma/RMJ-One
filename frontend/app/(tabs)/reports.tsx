@@ -16,14 +16,15 @@ const SECTIONS: { title: string; tiles: TileDef[] }[] = [
     title: 'Employee Management',
     tiles: [
       { key: 'reports', label: 'Reports', icon: 'document-text-outline', route: '/reports' },
-      { key: 'audit', label: 'Audit Log', icon: 'shield-checkmark-outline', route: '/settings/audit' },
     ],
   },
   {
     title: 'Repairs',
     tiles: [
-      { key: 'outstanding', label: 'Outstanding Report', icon: 'alert-circle-outline', comingSoon: true },
-      { key: 'tag-history', label: 'Tag History', icon: 'pricetag-outline', comingSoon: true },
+      { key: 'outstanding', label: 'Outstanding Report', icon: 'alert-circle-outline', route: '/repairs/outstanding' },
+      { key: 'tag-history', label: 'Tag History', icon: 'pricetag-outline', route: '/repairs/search' },
+      { key: 'customer-ledger', label: 'Customer Ledger', icon: 'person-outline', route: '/reports/customer-ledger' },
+      { key: 'karigar-ledger', label: 'Karigar Ledger', icon: 'hammer-outline', route: '/reports/karigar-ledger' },
     ],
   },
 ];

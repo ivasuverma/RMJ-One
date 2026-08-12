@@ -12,6 +12,8 @@ import { useTheme } from '@/src/theme/ThemeContext';
 type Karigar = { id: string; name: string; mobile: string; is_employee: boolean; employee_id: string | null; active: boolean };
 type Emp = { id: string; name: string; employee_code: string; designation?: string };
 
+// Masters is for managing karigar *accounts* only (add/edit). Gold/₹ ledger
+// lookups live under Reports > Karigar Ledger.
 export default function KarigarsScreen() {
   const router = useRouter();
   const { colors } = useTheme();
@@ -19,9 +21,11 @@ export default function KarigarsScreen() {
   const [karigars, setKarigars] = useState<Karigar[]>([]);
   const [employees, setEmployees] = useState<Emp[]>([]);
   const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [isEmployee, setIsEmployee] = useState(true);
   const [name, setName] = useState('');
   const [mobile, setMobile] = useState('');
+  const [active, setActive] = useState(true);
   const [pickedEmp, setPickedEmp] = useState<Emp | null>(null);
   const [empPickerOpen, setEmpPickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -37,18 +41,36 @@ export default function KarigarsScreen() {
   }, []);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const add = async () => {
+  const resetForm = () => {
+    setEditingId(null); setIsEmployee(true); setName(''); setMobile(''); setActive(true);
+    setPickedEmp(null); setEmpPickerOpen(false); setShowForm(false);
+  };
+
+  const openAdd = () => {
+    if (showForm && !editingId) { resetForm(); return; }
+    resetForm(); setShowForm(true);
+  };
+
+  const openEdit = (k: Karigar) => {
+    setEditingId(k.id); setIsEmployee(k.is_employee); setName(k.name); setMobile(k.mobile || ''); setActive(k.active);
+    setPickedEmp(k.is_employee ? (employees.find((e) => e.id === k.employee_id) || { id: k.employee_id || '', name: k.name, employee_code: '' }) : null);
+    setShowForm(true);
+  };
+
+  const save = async () => {
     if (submittingRef.current) return;
     if (isEmployee && !pickedEmp) { Alert.alert('Missing', 'Pick which employee is this karigar'); return; }
     if (!isEmployee && !name.trim()) { Alert.alert('Missing', 'Enter a name'); return; }
     submittingRef.current = true;
     setSaving(true);
     try {
-      await api.post('/karigars', {
+      const body = {
         name: isEmployee ? (pickedEmp?.name || '') : name.trim(), mobile,
-        is_employee: isEmployee, employee_id: isEmployee ? pickedEmp?.id : null, active: true,
-      });
-      setName(''); setMobile(''); setPickedEmp(null); setShowForm(false); await load();
+        is_employee: isEmployee, employee_id: isEmployee ? pickedEmp?.id : null, active,
+      };
+      if (editingId) await api.put(`/karigars/${editingId}`, body);
+      else await api.post('/karigars', body);
+      resetForm(); await load();
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
     finally { setSaving(false); submittingRef.current = false; }
   };
@@ -60,8 +82,8 @@ export default function KarigarsScreen() {
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
         <Text style={styles.title}>Karigars</Text>
-        <Pressable onPress={() => setShowForm((v) => !v)} style={[styles.iconBtn, styles.addBtn]} testID="new-karigar-btn" hitSlop={12}>
-          <Ionicons name={showForm ? 'close' : 'add'} size={22} color={colors.onBrandPrimary} />
+        <Pressable onPress={openAdd} style={[styles.iconBtn, styles.addBtn]} testID="new-karigar-btn" hitSlop={12}>
+          <Ionicons name={showForm && !editingId ? 'close' : 'add'} size={22} color={colors.onBrandPrimary} />
         </Pressable>
       </View>
 
@@ -72,6 +94,12 @@ export default function KarigarsScreen() {
         >
           {showForm && (
             <View style={styles.formCard} testID="karigar-form">
+              <View style={styles.formHeaderRow}>
+                <Text style={styles.formHeaderText}>{editingId ? 'Edit Karigar' : 'Add Karigar'}</Text>
+                <Pressable onPress={resetForm} hitSlop={10} testID="cancel-karigar-form">
+                  <Ionicons name="close" size={18} color={colors.mutedText} />
+                </Pressable>
+              </View>
               <View style={styles.chipRow}>
                 <Pressable onPress={() => setIsEmployee(true)} style={[styles.chip, isEmployee && styles.chipActive]} testID="karigar-inhouse">
                   <Text style={[styles.chipText, isEmployee && styles.chipTextActive]}>In-house employee</Text>
@@ -108,8 +136,15 @@ export default function KarigarsScreen() {
               <Text style={styles.label}>Mobile (optional)</Text>
               <TextInput testID="karigar-mobile" value={mobile} onChangeText={setMobile} keyboardType="phone-pad" placeholder="98xxxxxxxx" placeholderTextColor={colors.mutedText} style={styles.input} />
 
-              <Pressable style={[styles.saveBtn, saving && { opacity: 0.6 }]} disabled={saving} onPress={add} testID="save-karigar-btn">
-                {saving ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.saveBtnText}>Add Karigar</Text>}
+              {editingId && (
+                <Pressable onPress={() => setActive((v) => !v)} style={styles.checkRow} testID="karigar-active-toggle">
+                  <View style={[styles.checkbox, active && styles.checkboxOn]}>{active && <Ionicons name="checkmark" size={13} color={colors.onBrandPrimary} />}</View>
+                  <Text style={styles.checkLabel}>Active</Text>
+                </Pressable>
+              )}
+
+              <Pressable style={[styles.saveBtn, saving && { opacity: 0.6 }]} disabled={saving} onPress={save} testID="save-karigar-btn">
+                {saving ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.saveBtnText}>{editingId ? 'Save Changes' : 'Add Karigar'}</Text>}
               </Pressable>
             </View>
           )}
@@ -117,13 +152,13 @@ export default function KarigarsScreen() {
           {karigars.length === 0 ? (
             <View style={styles.empty}><Ionicons name="hammer-outline" size={36} color={colors.mutedText} /><Text style={styles.emptyText}>No karigars yet</Text></View>
           ) : karigars.map((k) => (
-            <Pressable key={k.id} onPress={() => router.push(`/karigars/${k.id}` as any)} style={styles.card} testID={`karigar-${k.id}`}>
+            <Pressable key={k.id} onPress={() => openEdit(k)} style={[styles.card, !k.active && { opacity: 0.55 }]} testID={`karigar-${k.id}`}>
               <View style={styles.iconBox}><Ionicons name="hammer-outline" size={18} color={colors.brandSecondary} /></View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.cName}>{k.name}</Text>
-                <Text style={styles.cMeta}>{k.is_employee ? 'In-house' : 'Outside'}{k.mobile ? ` · ${k.mobile}` : ''}</Text>
+                <Text style={styles.cMeta}>{k.is_employee ? 'In-house' : 'Outside'}{k.mobile ? ` · ${k.mobile}` : ''}{!k.active ? ' · Inactive' : ''}</Text>
               </View>
-              <Ionicons name="chevron-forward" size={16} color={colors.mutedText} />
+              <Ionicons name="pencil-outline" size={16} color={colors.mutedText} />
             </Pressable>
           ))}
         </ScrollView>
@@ -146,7 +181,9 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   title: { flex: 1, color: colors.onSurface, fontSize: 20, fontWeight: '600', fontFamily: fonts.display },
 
   formCard: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.lg, marginBottom: spacing.lg },
-  chipRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.sm },
+  formHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  formHeaderText: { color: colors.onSurface, fontSize: 13, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
+  chipRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md, marginBottom: spacing.sm },
   chip: { flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: radius.md, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
   chipActive: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
   chipText: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '700' },
@@ -167,6 +204,10 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   pickerRow: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: spacing.md, paddingVertical: 10 },
   pickerRowName: { color: colors.onSurface, fontSize: 13, fontWeight: '600' },
   pickerRowMeta: { color: colors.mutedText, fontSize: 12 },
+  checkRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.md },
+  checkbox: { width: 20, height: 20, borderRadius: 5, borderWidth: 1.5, borderColor: colors.border, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface },
+  checkboxOn: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
+  checkLabel: { color: colors.onSurfaceSecondary, fontSize: 13 },
   saveBtn: { backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: 14, alignItems: 'center', marginTop: spacing.lg },
   saveBtnText: { color: colors.onBrandPrimary, fontWeight: '800', fontSize: 14 },
 

@@ -1,11 +1,12 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, Platform, KeyboardAvoidingView,
+  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, Platform, KeyboardAvoidingView, Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
+import { PhotoCaptureModal } from '@/src/components/PhotoCaptureModal';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
@@ -16,12 +17,12 @@ type Material = 'gold' | 'diamond' | 'mixed';
 type DraftItem = {
   key: string; description: string; repair_type: string; material: Material;
   gross_weight: string; pc_count: string; labour_charge: string; needs_karigar: boolean;
-  due_date: string; notes: string;
+  due_date: string; notes: string; intake_photo: string;
 };
 
 const blankItem = (): DraftItem => ({
   key: String(Date.now() + Math.random()), description: '', repair_type: '', material: 'gold',
-  gross_weight: '', pc_count: '1', labour_charge: '', needs_karigar: false, due_date: '', notes: '',
+  gross_weight: '', pc_count: '1', labour_charge: '', needs_karigar: false, due_date: '', notes: '', intake_photo: '',
 });
 
 export default function NewRepairOrderScreen() {
@@ -71,6 +72,8 @@ export default function NewRepairOrderScreen() {
   };
   const removeItem = (key: string) => setItems((prev) => prev.filter((i) => i.key !== key));
 
+  const [cameraOpen, setCameraOpen] = useState(false);
+
   const [saving, setSaving] = useState(false);
   const submittingRef = useRef(false);
 
@@ -87,7 +90,7 @@ export default function NewRepairOrderScreen() {
           description: i.description.trim(), repair_type: i.repair_type, material: i.material,
           gross_weight: parseFloat(i.gross_weight) || 0, pc_count: parseInt(i.pc_count, 10) || 1,
           labour_charge: parseFloat(i.labour_charge) || 0, needs_karigar: i.needs_karigar,
-          due_date: i.due_date || null, notes: i.notes,
+          due_date: i.due_date || null, notes: i.notes, intake_photo: i.intake_photo,
         })),
       };
       if (mode === 'existing') body.customer_id = selected!.id;
@@ -222,6 +225,24 @@ export default function NewRepairOrderScreen() {
             <Text style={styles.label}>Notes (optional)</Text>
             <TextInput testID="item-notes" value={draft.notes} onChangeText={(v) => setDraft((d) => ({ ...d, notes: v }))} placeholder="Stone details, special instructions…" placeholderTextColor={colors.mutedText} style={styles.input} />
 
+            <Text style={styles.label}>Reference Photo (optional)</Text>
+            {draft.intake_photo ? (
+              <View style={styles.photoRow}>
+                <Image source={{ uri: draft.intake_photo }} style={styles.photoThumb} />
+                <Pressable onPress={() => setCameraOpen(true)} style={styles.smallBtn} testID="item-retake-photo">
+                  <Text style={styles.smallBtnText}>Retake</Text>
+                </Pressable>
+                <Pressable onPress={() => setDraft((d) => ({ ...d, intake_photo: '' }))} style={styles.delBtn} hitSlop={10} testID="item-remove-photo">
+                  <Ionicons name="close" size={16} color={colors.onError} />
+                </Pressable>
+              </View>
+            ) : (
+              <Pressable onPress={() => setCameraOpen(true)} style={styles.photoBtn} testID="item-add-photo">
+                <Ionicons name="camera-outline" size={16} color={colors.onSurfaceSecondary} />
+                <Text style={styles.actionBtnText}>Add Photo</Text>
+              </Pressable>
+            )}
+
             <Pressable onPress={addItem} style={styles.addItemBtn} testID="add-item-btn">
               <Ionicons name="add" size={16} color={colors.onBrandPrimary} />
               <Text style={styles.addItemBtnText}>Add Item to Order</Text>
@@ -233,6 +254,7 @@ export default function NewRepairOrderScreen() {
               <Text style={[styles.section, { marginTop: spacing.xl }]}>Items in this Order · {items.length}</Text>
               {items.map((i) => (
                 <View key={i.key} style={styles.itemRow} testID={`draft-item-${i.key}`}>
+                  {i.intake_photo ? <Image source={{ uri: i.intake_photo }} style={styles.itemThumb} /> : null}
                   <View style={{ flex: 1 }}>
                     <Text style={styles.cName}>{i.description}</Text>
                     <Text style={styles.cMeta}>{i.repair_type || 'No type'} · {i.gross_weight || '0'}g · {i.pc_count} pc{i.pc_count === '1' ? '' : 's'} · ₹{i.labour_charge || '0'}{i.needs_karigar ? ' · karigar' : ''}</Text>
@@ -250,6 +272,13 @@ export default function NewRepairOrderScreen() {
           </Pressable>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <PhotoCaptureModal
+        visible={cameraOpen}
+        title="Item Photo"
+        onClose={() => setCameraOpen(false)}
+        onCapture={async (photo) => { setDraft((d) => ({ ...d, intake_photo: photo })); setCameraOpen(false); }}
+      />
     </SafeAreaView>
   );
 }
@@ -310,6 +339,15 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   checkbox: { width: 20, height: 20, borderRadius: 5, borderWidth: 1.5, borderColor: colors.border, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface },
   checkboxOn: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
   checkLabel: { color: colors.onSurfaceSecondary, fontSize: 13 },
+
+  photoBtn: {
+    flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, paddingVertical: 12, marginTop: 4,
+  },
+  actionBtnText: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '700' },
+  photoRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: 4 },
+  photoThumb: { width: 52, height: 52, borderRadius: radius.md, backgroundColor: colors.surfaceTertiary },
+  itemThumb: { width: 40, height: 40, borderRadius: radius.md, backgroundColor: colors.surfaceTertiary },
 
   addItemBtn: {
     flexDirection: 'row', gap: spacing.sm, alignItems: 'center', justifyContent: 'center',

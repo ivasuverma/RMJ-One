@@ -135,6 +135,18 @@ export default function UtilityScreen() {
               ))}
             </View>
           )}
+          {isOwner && (
+            <>
+              <Divider />
+              <Pressable testID="utility-audit-btn" onPress={() => router.push('/settings/audit' as any)}>
+                <View style={styles.row}>
+                  <View style={styles.rowIcon}><Ionicons name="shield-checkmark-outline" size={18} color={colors.brandSecondary} /></View>
+                  <Text style={styles.rowLabel}>Audit Log</Text>
+                  <Ionicons name="chevron-forward" size={16} color={colors.mutedText} />
+                </View>
+              </Pressable>
+            </>
+          )}
         </View>
 
         <Pressable testID="logout-btn" style={styles.logout} onPress={onLogout}>
