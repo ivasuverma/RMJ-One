@@ -105,16 +105,21 @@ export default function RepairItemDetailScreen() {
     setForm('edit');
   };
 
+  const weightLocked = item ? item.status !== 'received' : false;
+  const labourLocked = item?.status === 'delivered';
+
   const saveEdit = async () => {
     if (submittingRef.current || !item) return;
     if (!editDescription.trim()) { Alert.alert('Missing', 'Enter a description'); return; }
     submittingRef.current = true; setBusy(true);
     try {
-      await api.put(`/repair-items/${id}`, {
+      const body: any = {
         description: editDescription.trim(), repair_type: editRepairType,
-        gross_weight: parseFloat(editGrossWeight) || 0, pc_count: parseInt(editPcCount, 10) || 1,
-        labour_charge: parseFloat(editLabourCharge) || 0, due_date: editDueDate || null, notes: editNotes,
-      });
+        pc_count: parseInt(editPcCount, 10) || 1, due_date: editDueDate || null, notes: editNotes,
+      };
+      if (!weightLocked) body.gross_weight = parseFloat(editGrossWeight) || 0;
+      if (!labourLocked) body.labour_charge = parseFloat(editLabourCharge) || 0;
+      await api.put(`/repair-items/${id}`, body);
       setForm(null); await load();
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
     finally { setBusy(false); submittingRef.current = false; }
@@ -247,7 +252,7 @@ export default function RepairItemDetailScreen() {
             <MetaRow icon="construct-outline" label="Type" value={item.repair_type || '—'} colors={colors} />
             <MetaRow icon="scale-outline" label="Weight" value={`${item.gross_weight.toFixed(3)}g · ${item.pc_count} pc${item.pc_count === 1 ? '' : 's'}`} colors={colors} />
             {item.fine_weight != null && <MetaRow icon="water-outline" label="Fine Weight" value={`${item.fine_weight.toFixed(3)}g`} colors={colors} />}
-            <MetaRow icon="cash-outline" label="Labour" value={`₹${item.labour_charge.toFixed(0)}`} colors={colors} />
+            <MetaRow icon="cash-outline" label="Labour" value={`₹${(item.status === 'delivered' ? (item.bill_labour_charge ?? item.labour_charge) : item.labour_charge).toFixed(0)}`} colors={colors} />
             <MetaRow icon="calendar-outline" label="Due" value={item.due_date || '—'} colors={colors} />
             <MetaRow icon="person-outline" label="Customer" value={`${item.customer_name} · ${item.order_no}`} colors={colors} />
             {item.karigar_name && <MetaRow icon="hammer-outline" label="Karigar" value={item.karigar_name} colors={colors} />}
@@ -269,16 +274,17 @@ export default function RepairItemDetailScreen() {
               <TextInput testID="edit-repair-type" value={editRepairType} onChangeText={setEditRepairType} placeholderTextColor={colors.mutedText} style={styles.input} />
               <View style={{ flexDirection: 'row', gap: spacing.sm }}>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.label}>Gross Weight (g)</Text>
-                  <TextInput testID="edit-weight" value={editGrossWeight} onChangeText={(v) => setEditGrossWeight(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholderTextColor={colors.mutedText} style={styles.input} />
+                  <Text style={styles.label}>Gross Weight (g){weightLocked ? ' — locked' : ''}</Text>
+                  <TextInput testID="edit-weight" editable={!weightLocked} value={editGrossWeight} onChangeText={(v) => setEditGrossWeight(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholderTextColor={colors.mutedText} style={[styles.input, weightLocked && styles.inputLocked]} />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.label}>Pieces</Text>
                   <TextInput testID="edit-pcs" value={editPcCount} onChangeText={(v) => setEditPcCount(v.replace(/[^0-9]/g, ''))} keyboardType="number-pad" placeholderTextColor={colors.mutedText} style={styles.input} />
                 </View>
               </View>
-              <Text style={styles.label}>Labour Charge (₹)</Text>
-              <TextInput testID="edit-labour" value={editLabourCharge} onChangeText={(v) => setEditLabourCharge(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholderTextColor={colors.mutedText} style={styles.input} />
+              {weightLocked && <Text style={styles.hint}>Weight is locked once a tag has been issued to a karigar, to keep the karigar ledger accurate.</Text>}
+              <Text style={styles.label}>Labour Charge (₹){labourLocked ? ' — locked' : ''}</Text>
+              <TextInput testID="edit-labour" editable={!labourLocked} value={editLabourCharge} onChangeText={(v) => setEditLabourCharge(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholderTextColor={colors.mutedText} style={[styles.input, labourLocked && styles.inputLocked]} />
               <DateField label="Due Date" value={editDueDate} onChange={setEditDueDate} testID="edit-due" />
               <Text style={styles.label}>Notes</Text>
               <TextInput testID="edit-notes" value={editNotes} onChangeText={setEditNotes} placeholderTextColor={colors.mutedText} style={styles.input} />
@@ -527,6 +533,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
     color: colors.onSurface, paddingHorizontal: spacing.md, paddingVertical: 12, fontSize: 14,
   },
+  inputLocked: { opacity: 0.5 },
   picker: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,

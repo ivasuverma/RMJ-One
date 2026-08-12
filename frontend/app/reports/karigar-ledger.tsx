@@ -13,7 +13,7 @@ type Karigar = {
 };
 
 // Read-only lookup into a karigar's gold/₹ ledger (karigars/[id].tsx).
-// Adding/editing karigar accounts lives in Masters — this is reporting only.
+// Adding/editing karigar accounts lives in Settings — this is reporting only.
 export default function KarigarLedgerPickerScreen() {
   const router = useRouter();
   const { colors } = useTheme();

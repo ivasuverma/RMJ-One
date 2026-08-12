@@ -1589,30 +1589,50 @@ async def delete_customer(cid: str, user=Depends(require_owner), _mod=Depends(re
 
 
 # ---------------- Repairs: Karigars ----------------
+def _karigar_ledger_balances(entries: list) -> dict:
+    """Single source of truth for aggregating karigar_ledger entries into
+    per-karigar running balances. Used by list_karigars, get_karigar_ledger,
+    and the dashboard snapshot — previously each of these re-implemented this
+    math separately and had drifted out of sync on which entry types count
+    (e.g. the dashboard silently ignored 'receipt' entries). Fix in one place.
+
+    Sign convention: amt_due positive = shop owes the karigar money;
+    negative = karigar owes the shop. fine_bal positive = karigar is still
+    holding that much fine gold.
+    """
+    bal: dict = {}
+    for e in entries:
+        kid = e.get('karigar_id')
+        if not kid: continue
+        b = bal.setdefault(kid, {'weight_bal': 0.0, 'fine_bal': 0.0, 'amt_due': 0.0})
+        t = e.get('type')
+        if t == 'gold_out':
+            b['weight_bal'] += e.get('weight') or 0
+            b['fine_bal'] += e.get('fine_weight') if e.get('fine_weight') is not None else (e.get('weight') or 0)
+        elif t == 'gold_in':
+            b['weight_bal'] -= e.get('weight') or 0
+            b['fine_bal'] -= e.get('fine_weight') if e.get('fine_weight') is not None else (e.get('weight') or 0)
+        elif t == 'labour_payable':
+            b['amt_due'] += e.get('amount') or 0
+        elif t == 'payment':
+            b['amt_due'] -= e.get('amount') or 0
+        elif t == 'receipt':
+            b['amt_due'] += e.get('amount') or 0
+        elif t in ('wastage', 'adjustment'):
+            # Free-form ± adjustment — sign is baked into the stored amount.
+            b['amt_due'] += e.get('amount') or 0
+    return bal
+
+
 @api.get('/karigars')
 async def list_karigars(_: dict = Depends(require_staff)):
     karigars = await db.karigars.find({}, {'_id': 0}).sort('name', 1).to_list(500)
     entries = await db.karigar_ledger.find({}, {'_id': 0, 'karigar_id': 1, 'type': 1, 'weight': 1, 'fine_weight': 1, 'amount': 1}).to_list(20000)
-    fine_bal: dict = {}
-    amt_due: dict = {}
-    for e in entries:
-        kid = e.get('karigar_id')
-        if not kid: continue
-        if e['type'] == 'gold_out':
-            fine_bal[kid] = fine_bal.get(kid, 0) + (e.get('fine_weight') if e.get('fine_weight') is not None else (e.get('weight') or 0))
-        elif e['type'] == 'gold_in':
-            fine_bal[kid] = fine_bal.get(kid, 0) - (e.get('fine_weight') if e.get('fine_weight') is not None else (e.get('weight') or 0))
-        elif e['type'] == 'labour_payable':
-            amt_due[kid] = amt_due.get(kid, 0) + (e.get('amount') or 0)
-        elif e['type'] == 'payment':
-            amt_due[kid] = amt_due.get(kid, 0) - (e.get('amount') or 0)
-        elif e['type'] == 'receipt':
-            amt_due[kid] = amt_due.get(kid, 0) + (e.get('amount') or 0)
-        elif e['type'] == 'wastage':
-            amt_due[kid] = amt_due.get(kid, 0) + (e.get('amount') or 0)
+    bal = _karigar_ledger_balances(entries)
     for k in karigars:
-        k['fine_weight_balance'] = round(fine_bal.get(k['id'], 0), 3)
-        k['amount_due'] = round(amt_due.get(k['id'], 0), 2)
+        b = bal.get(k['id'], {})
+        k['fine_weight_balance'] = round(b.get('fine_bal', 0), 3)
+        k['amount_due'] = round(b.get('amt_due', 0), 2)
     return karigars
 
 
@@ -1860,6 +1880,19 @@ async def update_repair_item(item_id: str, body: RepairItemUpdateIn, user=Depend
     item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
     if not item: raise HTTPException(status_code=404, detail='Item not found')
     upd = {k: v for k, v in body.model_dump().items() if v is not None}
+    # Once a tag has been issued to a karigar, its weight is what the karigar
+    # ledger's gold_out entry was locked to at issue time — changing it here
+    # afterward would silently desync the tag from its own ledger history.
+    if 'gross_weight' in upd and item['status'] != 'received':
+        raise HTTPException(status_code=400, detail='Weight is locked once a tag has been issued — it must match what was recorded when issued to keep the karigar ledger accurate')
+    if 'gross_weight' in upd:
+        purity = item.get('purity') or 100.0
+        upd['fine_weight'] = round(upd['gross_weight'] * purity / 100, 3)
+    # Labour charge is frozen into bill_labour_charge at delivery time, so
+    # editing the live field afterward would just be confusing, not harmful —
+    # block it anyway so the displayed value can't drift from what was billed.
+    if 'labour_charge' in upd and item['status'] == 'delivered':
+        raise HTTPException(status_code=400, detail='This tag has already been billed — labour charge is locked. Delete the bill first if it needs correcting.')
     if upd:
         await db.repair_items.update_one({'id': item_id}, {'$set': upd})
         await log_audit(user, 'repair_item.update', 'repair_item', item_id, item['item_code'])
@@ -1985,6 +2018,16 @@ async def receive_from_karigar(item_id: str, body: ReceiveFromKarigarIn, user=De
             'txn_id': txn_id, 'note': f"Labour due: {item['description']}",
             'created_at': iso, 'created_by': user['name'],
         })
+    if pay_metal_weight:
+        # The actual metal handed to the karigar — a real gold_out movement,
+        # tracked independently of whatever ₹ value staff estimate for it below.
+        pay_metal_fine = round(pay_metal_weight * purity / 100, 3)
+        await db.karigar_ledger.insert_one({
+            'id': str(uuid.uuid4()), 'karigar_id': karigar_id, 'type': 'gold_out', 'weight': pay_metal_weight,
+            'fine_weight': pay_metal_fine, 'amount': None, 'item_id': item_id, 'item_code': item['item_code'],
+            'txn_id': txn_id, 'note': f"Metal paid on the spot for {item['item_code']}",
+            'created_at': iso, 'created_by': user['name'],
+        })
     paid_total = pay_cash + pay_metal_value
     if paid_total:
         metal_note = f", incl. {pay_metal_weight:.3f}g metal worth ₹{pay_metal_value:.0f}" if pay_metal_weight else ''
@@ -2064,8 +2107,16 @@ async def edit_karigar_transaction(item_id: str, txn_id: str, body: KarigarTrans
         fine_issued = item.get('current_issue_fine_weight') or round(weight_issued * purity / 100, 3)
         diff = round(body.weight - weight_issued, 3)
         fine_diff = round(fine_weight - fine_issued, 3)
+        # Process loss itself isn't editable through this form, so keep whatever
+        # was declared at receive time and recompute the outstanding balance
+        # against the corrected weight — otherwise balance_fine_weight goes
+        # stale the moment a receive is corrected.
+        process_loss = item.get('process_loss') or 0
+        fine_process_loss = round(process_loss * purity / 100, 3)
+        balance_fine_weight = round(fine_issued - fine_process_loss - fine_weight, 3)
         await db.karigar_transactions.update_one({'id': txn_id}, {'$set': {
             'weight': body.weight, 'fine_weight': fine_weight, 'weight_diff': diff, 'fine_weight_diff': fine_diff,
+            'balance_fine_weight': balance_fine_weight,
             'note': body.note or '', 'edited_at': iso, 'edited_by': user['name'],
         }})
         await db.karigar_ledger.update_many(
@@ -2073,7 +2124,7 @@ async def edit_karigar_transaction(item_id: str, txn_id: str, body: KarigarTrans
             {'$set': {'weight': body.weight, 'fine_weight': fine_weight, 'note': f"Received back: {item['description']} (diff {diff:+.3f}g / fine {fine_diff:+.3f}g)"}},
         )
         await db.repair_items.update_one({'id': item_id}, {'$set': {
-            'weight_diff': diff, 'fine_weight_diff': fine_diff, 'updated_by': user['name'],
+            'weight_diff': diff, 'fine_weight_diff': fine_diff, 'balance_fine_weight': balance_fine_weight, 'updated_by': user['name'],
         }})
     await log_audit(user, 'repair_item.transaction_edit', 'repair_item', item_id, item['item_code'], {'txn_id': txn_id, 'weight': body.weight})
     return await db.repair_items.find_one({'id': item_id}, {'_id': 0})
@@ -2207,30 +2258,11 @@ async def get_karigar_ledger(kid: str, _: dict = Depends(require_staff)):
     karigar = await db.karigars.find_one({'id': kid}, {'_id': 0})
     if not karigar: raise HTTPException(status_code=404, detail='Karigar not found')
     entries = await db.karigar_ledger.find({'karigar_id': kid}, {'_id': 0}).sort('created_at', -1).to_list(1000)
-    # Raw gross-gram balance, kept for reference.
-    weight_balance = sum((e['weight'] or 0) if e['type'] == 'gold_out' else -(e['weight'] or 0)
-                          for e in entries if e['type'] in ('gold_out', 'gold_in'))
-    # Fine-gold-equivalent balance (gross weight × item purity) — this is the
-    # authoritative "how much gold does this karigar owe" figure, since it
-    # nets out correctly across items of different karats.
-    fine_weight_balance = sum(
-        (e.get('fine_weight') if e.get('fine_weight') is not None else (e['weight'] or 0)) if e['type'] == 'gold_out'
-        else -(e.get('fine_weight') if e.get('fine_weight') is not None else (e['weight'] or 0)) if e['type'] == 'gold_in'
-        else 0
-        for e in entries
-    )
-    amount_due = sum(
-        (e['amount'] or 0) if e['type'] == 'labour_payable'
-        else -(e['amount'] or 0) if e['type'] == 'payment'
-        else (e['amount'] or 0) if e['type'] == 'receipt'
-        else (e['amount'] or 0) if e['type'] == 'wastage'
-        else 0
-        for e in entries
-    )
+    bal = _karigar_ledger_balances(entries).get(kid, {})
     return {
         'karigar': karigar, 'entries': entries,
-        'weight_balance': round(weight_balance, 3), 'fine_weight_balance': round(fine_weight_balance, 3),
-        'amount_due': round(amount_due, 2),
+        'weight_balance': round(bal.get('weight_bal', 0), 3), 'fine_weight_balance': round(bal.get('fine_bal', 0), 3),
+        'amount_due': round(bal.get('amt_due', 0), 2),
     }
 
 
@@ -2250,7 +2282,10 @@ async def add_karigar_ledger_entry(kid: str, body: KarigarLedgerEntryIn, user=De
             'created_at': now_utc().isoformat(), 'created_by': user['name'],
         }
     else:
-        signed = body.amount if body.type == 'labour_payable' else -abs(body.amount or 0) if body.type == 'payment' else body.amount
+        # Amount is always stored positive — direction is decided by `type` at
+        # aggregation time (see _karigar_ledger_balances), matching how the
+        # auto-generated entries from issue/receive are stored.
+        signed = abs(body.amount or 0)
         doc = {
             'id': str(uuid.uuid4()), 'karigar_id': kid, 'type': body.type, 'weight': None, 'fine_weight': None,
             'amount': signed, 'item_id': None, 'item_code': None, 'note': body.note or '',
@@ -2322,20 +2357,8 @@ async def dashboard(_: dict = Depends(get_current)):
     customers_open = len({order_to_customer[i['order_id']] for i in open_items_all if order_to_customer.get(i.get('order_id'))})
 
     karigar_entries = await db.karigar_ledger.find({}, {'_id': 0, 'karigar_id': 1, 'type': 1, 'weight': 1, 'fine_weight': 1, 'amount': 1}).to_list(20000)
-    k_fine: dict = {}
-    k_amt: dict = {}
-    for e in karigar_entries:
-        kid = e.get('karigar_id')
-        if not kid: continue
-        if e['type'] == 'gold_out':
-            k_fine[kid] = k_fine.get(kid, 0) + (e.get('fine_weight') if e.get('fine_weight') is not None else (e.get('weight') or 0))
-        elif e['type'] == 'gold_in':
-            k_fine[kid] = k_fine.get(kid, 0) - (e.get('fine_weight') if e.get('fine_weight') is not None else (e.get('weight') or 0))
-        elif e['type'] in ('labour_payable', 'wastage'):
-            k_amt[kid] = k_amt.get(kid, 0) + (e.get('amount') or 0)
-        elif e['type'] == 'payment':
-            k_amt[kid] = k_amt.get(kid, 0) - (e.get('amount') or 0)
-    karigars_open = sum(1 for kid in set(list(k_fine.keys()) + list(k_amt.keys())) if round(k_fine.get(kid, 0), 3) or round(k_amt.get(kid, 0), 2))
+    karigar_bal = _karigar_ledger_balances(karigar_entries)
+    karigars_open = sum(1 for b in karigar_bal.values() if round(b.get('fine_bal', 0), 3) or round(b.get('amt_due', 0), 2))
 
     return {
         'todays_attendance': {

@@ -10,7 +10,7 @@ import { useTheme } from '@/src/theme/ThemeContext';
 type Customer = { id: string; name: string; mobile: string; open_items?: number; open_weight?: number };
 
 // Read-only lookup into a customer's repair history/ledger (customers/[id].tsx).
-// Adding/editing customer accounts lives in Masters — this is reporting only.
+// Adding/editing customer accounts lives in Settings — this is reporting only.
 export default function CustomerLedgerScreen() {
   const router = useRouter();
   const { colors } = useTheme();

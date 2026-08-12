@@ -83,7 +83,13 @@ export default function ReceiveFromKarigarScreen() {
   }, [routeItemId, loadBalance, bulkIds]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const pickItem = (it: Item) => { setItem(it); setMode('form'); loadBalance(it.karigar_id); };
+  const resetFormFields = () => {
+    setWeight(''); setProcessLoss(''); setNote('');
+    setLabourAmount(''); setPayCash(''); setPayMetalWeight(''); setPayMetalValue('');
+    setRecvCash(''); setRecvMetalWeight(''); setPrevBalance(0);
+  };
+
+  const pickItem = (it: Item) => { resetFormFields(); setItem(it); setMode('form'); loadBalance(it.karigar_id); };
 
   const setBulkRow = (itemId: string, patch: Partial<BulkRow>) => {
     setBulkRows((prev) => ({ ...prev, [itemId]: { ...prev[itemId], ...patch } }));
@@ -137,7 +143,7 @@ export default function ReceiveFromKarigarScreen() {
   };
 
   const onBack = () => {
-    if (mode === 'form' && !routeItemId) { setItem(null); setMode('pick'); return; }
+    if (mode === 'form' && !routeItemId) { resetFormFields(); setItem(null); setMode('pick'); return; }
     router.back();
   };
 
@@ -170,7 +176,10 @@ export default function ReceiveFromKarigarScreen() {
   const cashNum = parseFloat(payCash) || 0;
   const metalValueNum = parseFloat(payMetalValue) || 0;
   const recvCashNum = parseFloat(recvCash) || 0;
-  const remainingDue = round3(prevBalance + labourNum - cashNum - metalValueNum - recvCashNum);
+  // Cash the karigar hands to the shop moves the balance the same direction
+  // as the backend's 'receipt' entry (amt_due += amount) — it settles what
+  // the karigar owes, it does not reduce what the shop owes the karigar.
+  const remainingDue = round3(prevBalance + labourNum - cashNum - metalValueNum + recvCashNum);
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="receive-screen">

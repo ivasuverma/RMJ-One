@@ -58,7 +58,7 @@ export default function IssueToKarigarScreen() {
   }, [routeItemId, bulkIds]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const pickItem = (it: Item) => { setItem(it); setMode('form'); };
+  const pickItem = (it: Item) => { setPickedKarigar(null); setNote(''); setItem(it); setMode('form'); };
 
   const submit = async () => {
     if (submittingRef.current || !item) return;
@@ -92,7 +92,7 @@ export default function IssueToKarigarScreen() {
   };
 
   const onBack = () => {
-    if (mode === 'form' && !routeItemId) { setItem(null); setPickedKarigar(null); setMode('pick'); return; }
+    if (mode === 'form' && !routeItemId) { setItem(null); setPickedKarigar(null); setNote(''); setMode('pick'); return; }
     router.back();
   };
 

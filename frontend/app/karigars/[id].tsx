@@ -12,15 +12,15 @@ import { useTheme } from '@/src/theme/ThemeContext';
 
 type Karigar = { id: string; name: string; mobile: string; is_employee: boolean };
 type Entry = {
-  id: string; type: 'gold_out' | 'gold_in' | 'wastage' | 'labour_payable' | 'payment' | 'receipt';
+  id: string; type: 'gold_out' | 'gold_in' | 'wastage' | 'adjustment' | 'labour_payable' | 'payment' | 'receipt';
   weight: number | null; amount: number | null; item_id?: string | null; item_code: string | null; note: string; created_at: string; created_by: string;
 };
 
 const ENTRY_LABEL: Record<Entry['type'], string> = {
-  gold_out: 'Gold issued', gold_in: 'Gold received', wastage: 'Wastage adjustment', labour_payable: 'Labour payable', payment: 'Payment made', receipt: 'Cash received',
+  gold_out: 'Gold issued', gold_in: 'Gold received', wastage: 'Wastage adjustment', adjustment: 'Adjustment', labour_payable: 'Labour payable', payment: 'Payment made', receipt: 'Cash received',
 };
 const ENTRY_ICON: Record<Entry['type'], any> = {
-  gold_out: 'arrow-redo-outline', gold_in: 'arrow-undo-outline', wastage: 'trending-down-outline', labour_payable: 'cash-outline', payment: 'checkmark-circle-outline', receipt: 'download-outline',
+  gold_out: 'arrow-redo-outline', gold_in: 'arrow-undo-outline', wastage: 'trending-down-outline', adjustment: 'swap-vertical-outline', labour_payable: 'cash-outline', payment: 'checkmark-circle-outline', receipt: 'download-outline',
 };
 
 export default function KarigarLedgerScreen() {
