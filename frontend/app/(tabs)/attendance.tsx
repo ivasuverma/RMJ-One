@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, Platform, ActivityIndicator,
+  View, Text, StyleSheet, ScrollView, TextInput, Pressable, RefreshControl, Platform, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -22,6 +22,26 @@ type Ev = {
 
 const TABS = ['Today', 'Live'] as const;
 
+type StatusKey = 'all' | 'present' | 'late' | 'half_day' | 'absent' | 'missing' | 'leave';
+
+const STATUS_FILTERS: { key: StatusKey; label: string; icon: any }[] = [
+  { key: 'all', label: 'All', icon: 'apps-outline' },
+  { key: 'present', label: 'Present', icon: 'checkmark-circle-outline' },
+  { key: 'late', label: 'Late', icon: 'alarm-outline' },
+  { key: 'half_day', label: 'Half Day', icon: 'time-outline' },
+  { key: 'absent', label: 'Absent', icon: 'close-circle-outline' },
+  { key: 'missing', label: 'Missing Punch', icon: 'alert-circle-outline' },
+  { key: 'leave', label: 'On Leave', icon: 'airplane-outline' },
+];
+
+function statusKeyOf(row: Row): StatusKey {
+  if (row.missing_punch) return 'missing';
+  if (row.employee_status === 'on_leave') return 'leave';
+  if (row.status === 'present') return row.is_late ? 'late' : 'present';
+  if (row.status === 'half_day') return 'half_day';
+  return 'absent';
+}
+
 const fmtTime = (iso?: string | null) => {
   if (!iso) return '—:—';
   try { return new Date(iso).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }); }
@@ -40,6 +60,9 @@ export default function OwnerAttendance() {
   const [pendingCount, setPendingCount] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [statusFilter, setStatusFilter] = useState<StatusKey>('all');
+  const [deptFilter, setDeptFilter] = useState('all');
+  const [query, setQuery] = useState('');
 
   const load = useCallback(async () => {
     try {
@@ -58,6 +81,21 @@ export default function OwnerAttendance() {
   }, []);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  const departments = useMemo(
+    () => Array.from(new Set(rows.map((r) => r.department).filter(Boolean))).sort(),
+    [rows],
+  );
+
+  const filteredRows = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return rows.filter((r) => {
+      if (statusFilter !== 'all' && statusKeyOf(r) !== statusFilter) return false;
+      if (deptFilter !== 'all' && r.department !== deptFilter) return false;
+      if (q && !r.name.toLowerCase().includes(q) && !r.employee_code.toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [rows, statusFilter, deptFilter, query]);
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="attendance-screen">
@@ -95,6 +133,46 @@ export default function OwnerAttendance() {
         ))}
       </View>
 
+      {tab === 'Today' && !loading && (
+        <>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll} contentContainerStyle={styles.filterRow}>
+            {STATUS_FILTERS.map((f) => (
+              <Pressable
+                key={f.key}
+                onPress={() => setStatusFilter(f.key)}
+                style={[styles.filterChip, statusFilter === f.key && styles.filterChipActive]}
+                testID={`att-filter-${f.key}`}
+              >
+                <Ionicons name={f.icon} size={13} color={statusFilter === f.key ? colors.onBrandPrimary : colors.onSurfaceSecondary} />
+                <Text style={[styles.filterText, statusFilter === f.key && styles.filterTextActive]}>{f.label}</Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+
+          {departments.length > 1 && (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll} contentContainerStyle={styles.filterRow}>
+              <Pressable onPress={() => setDeptFilter('all')} style={[styles.filterChip, deptFilter === 'all' && styles.filterChipActive]} testID="att-dept-all">
+                <Text style={[styles.filterText, deptFilter === 'all' && styles.filterTextActive]}>All Departments</Text>
+              </Pressable>
+              {departments.map((d) => (
+                <Pressable key={d} onPress={() => setDeptFilter(d)} style={[styles.filterChip, deptFilter === d && styles.filterChipActive]} testID={`att-dept-${d}`}>
+                  <Text style={[styles.filterText, deptFilter === d && styles.filterTextActive]}>{d}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+          )}
+
+          <View style={styles.searchRow}>
+            <Ionicons name="search-outline" size={16} color={colors.mutedText} />
+            <TextInput
+              testID="att-search" value={query} onChangeText={setQuery}
+              placeholder="Search by name or code" placeholderTextColor={colors.mutedText}
+              style={styles.searchInput}
+            />
+          </View>
+        </>
+      )}
+
       {loading ? (
         <View style={styles.centered}>
           <ActivityIndicator color={colors.brandPrimary} size="large" />
@@ -106,9 +184,9 @@ export default function OwnerAttendance() {
           showsVerticalScrollIndicator={false}
         >
           {tab === 'Today' ? (
-            rows.length === 0 ? (
-              <EmptyBox icon="people-outline" title="No employees" subtitle="Add employees first" />
-            ) : rows.map((r) => (
+            filteredRows.length === 0 ? (
+              <EmptyBox icon="people-outline" title="No matches" subtitle={rows.length === 0 ? 'Add employees first' : 'Try a different filter'} />
+            ) : filteredRows.map((r) => (
               <Pressable
                 key={r.employee_id}
                 style={styles.row}
@@ -216,6 +294,24 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   segTextActive: { color: colors.onBrandPrimary },
 
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+
+  filterScroll: { flexGrow: 0, flexShrink: 0 },
+  filterRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: 2 },
+  filterChip: {
+    flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 5,
+    paddingHorizontal: spacing.md, paddingVertical: 8, borderRadius: radius.pill,
+    backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border,
+  },
+  filterChipActive: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
+  filterText: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '700' },
+  filterTextActive: { color: colors.onBrandPrimary },
+
+  searchRow: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.surfaceSecondary,
+    borderRadius: radius.pill, borderWidth: 1, borderColor: colors.border, paddingHorizontal: spacing.md,
+    marginHorizontal: spacing.lg, marginTop: spacing.sm,
+  },
+  searchInput: { flex: 1, color: colors.onSurface, paddingVertical: 10, fontSize: 13 },
 
   row: {
     flexDirection: 'row', alignItems: 'center', gap: spacing.md, backgroundColor: colors.surfaceSecondary,

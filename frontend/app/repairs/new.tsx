@@ -41,28 +41,35 @@ export default function NewRepairOrderScreen() {
 
   const [repairTypes, setRepairTypes] = useState<RepairType[]>([]);
   const [itemMasters, setItemMasters] = useState<ItemMaster[]>([]);
+  const [allCustomers, setAllCustomers] = useState<Customer[]>([]);
   const load = useCallback(async () => {
     try {
-      const [rt, im] = await Promise.all([api.get<RepairType[]>('/repair-types'), api.get<ItemMaster[]>('/item-master')]);
-      setRepairTypes(rt); setItemMasters(im);
-    } catch (_e) { setRepairTypes([]); setItemMasters([]); }
+      const [rt, im, cu] = await Promise.all([
+        api.get<RepairType[]>('/repair-types'), api.get<ItemMaster[]>('/item-master'), api.get<Customer[]>('/customers'),
+      ]);
+      setRepairTypes(rt); setItemMasters(im); setAllCustomers(cu);
+    } catch (_e) { setRepairTypes([]); setItemMasters([]); setAllCustomers([]); }
   }, []);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   // Customer
   const [mode, setMode] = useState<'existing' | 'new'>('existing');
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<Customer[]>([]);
+  const [custPickerOpen, setCustPickerOpen] = useState(false);
   const [selected, setSelected] = useState<Customer | null>(null);
   const [newName, setNewName] = useState('');
   const [newMobile, setNewMobile] = useState('');
   const [newAddress, setNewAddress] = useState('');
 
-  const search = async (q: string) => {
-    setQuery(q);
-    if (!q.trim()) { setResults([]); return; }
-    try { setResults(await api.get<Customer[]>(`/customers?q=${encodeURIComponent(q)}`)); } catch (_e) { setResults([]); }
-  };
+  const filteredCustomers = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const list = q
+      ? allCustomers.filter((c) => c.name.toLowerCase().includes(q) || (c.mobile || '').includes(q))
+      : allCustomers;
+    return list.slice(0, 100);
+  }, [allCustomers, query]);
+
+  const pickCustomer = (c: Customer) => { setSelected(c); setCustPickerOpen(false); setQuery(''); };
 
   // Items
   const [items, setItems] = useState<DraftItem[]>([]);
@@ -157,20 +164,32 @@ export default function NewRepairOrderScreen() {
               </View>
             ) : (
               <>
-                <View style={styles.searchRow}>
-                  <Ionicons name="search-outline" size={16} color={colors.mutedText} />
-                  <TextInput
-                    testID="customer-search" value={query} onChangeText={search}
-                    placeholder="Search by name or mobile" placeholderTextColor={colors.mutedText}
-                    style={styles.searchInput}
-                  />
-                </View>
-                {results.map((c) => (
-                  <Pressable key={c.id} onPress={() => { setSelected(c); setResults([]); setQuery(''); }} style={styles.resultRow} testID={`customer-result-${c.id}`}>
-                    <Text style={styles.cName}>{c.name}</Text>
-                    <Text style={styles.cMeta}>{c.mobile || '—'}</Text>
-                  </Pressable>
-                ))}
+                <Pressable onPress={() => setCustPickerOpen((v) => !v)} style={styles.picker} testID="customer-picker-toggle">
+                  <Text style={styles.pickerPlaceholder}>Choose a customer</Text>
+                  <Ionicons name={custPickerOpen ? 'chevron-up' : 'chevron-down'} size={16} color={colors.mutedText} />
+                </Pressable>
+                {custPickerOpen && (
+                  <View style={styles.pickerList} testID="customer-picker-list">
+                    <View style={[styles.searchRow, { marginHorizontal: spacing.sm, marginTop: spacing.sm }]}>
+                      <Ionicons name="search-outline" size={16} color={colors.mutedText} />
+                      <TextInput
+                        testID="customer-search" value={query} onChangeText={setQuery} autoFocus
+                        placeholder="Search by name or mobile" placeholderTextColor={colors.mutedText}
+                        style={styles.searchInput}
+                      />
+                    </View>
+                    <ScrollView style={{ maxHeight: 260 }} keyboardShouldPersistTaps="handled">
+                      {filteredCustomers.length === 0 ? (
+                        <Text style={[styles.pickerRowMeta, { padding: spacing.md }]}>No customers found</Text>
+                      ) : filteredCustomers.map((c) => (
+                        <Pressable key={c.id} onPress={() => pickCustomer(c)} style={styles.pickerRow} testID={`customer-result-${c.id}`}>
+                          <Text style={styles.pickerRowName}>{c.name}</Text>
+                          <Text style={styles.pickerRowMeta}>{c.mobile || '—'}</Text>
+                        </Pressable>
+                      ))}
+                    </ScrollView>
+                  </View>
+                )}
               </>
             )
           ) : (
