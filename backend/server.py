@@ -252,6 +252,12 @@ class LedgerEntryIn(BaseModel):
     note: Optional[str] = ''
 
 
+class LedgerEntryEdit(BaseModel):
+    entry_type: Literal['advance', 'bonus', 'fine', 'deduction', 'other']
+    amount: float
+    note: Optional[str] = ''
+
+
 class PayrollGenerateIn(BaseModel):
     month: int  # 1-12
     year: int
@@ -1285,6 +1291,44 @@ async def get_ledger(emp_id: str, _: dict = Depends(require_staff)):
     # Newest first for display
     entries.sort(key=lambda x: x.get('created_at') or '', reverse=True)
     return {'entries': entries, 'closing_balance': round(running, 2)}
+
+
+_LEDGER_EDITABLE_TYPES = ('advance', 'bonus', 'fine', 'deduction', 'other')
+_LEDGER_TITLE_MAP = {'advance': 'Salary Advance', 'bonus': 'Bonus', 'fine': 'Fine',
+                      'deduction': 'Deduction', 'other': 'Other'}
+
+
+@api.put('/ledger/entries/{entry_id}')
+async def edit_ledger_entry(entry_id: str, body: LedgerEntryEdit, user=Depends(require_admin)):
+    existing = await db.timeline.find_one({'id': entry_id}, {'_id': 0})
+    if not existing:
+        raise HTTPException(status_code=404, detail='Ledger entry not found')
+    if existing.get('type') not in _LEDGER_EDITABLE_TYPES:
+        raise HTTPException(status_code=400, detail='This entry cannot be edited')
+    update = {
+        'type': body.entry_type,
+        'title': _LEDGER_TITLE_MAP.get(body.entry_type, 'Ledger Entry'),
+        'description': body.note or '',
+        'amount': float(body.amount),
+        'sign': _ledger_sign(body.entry_type),
+    }
+    await db.timeline.update_one({'id': entry_id}, {'$set': update})
+    await log_audit(user, 'ledger.edit', 'ledger', entry_id,
+                     f"{existing.get('employee_id')} · {update['title']} · {update['amount']}", {})
+    return {**existing, **update}
+
+
+@api.delete('/ledger/entries/{entry_id}')
+async def delete_ledger_entry(entry_id: str, user=Depends(require_admin)):
+    existing = await db.timeline.find_one({'id': entry_id}, {'_id': 0})
+    if not existing:
+        raise HTTPException(status_code=404, detail='Ledger entry not found')
+    if existing.get('type') not in _LEDGER_EDITABLE_TYPES:
+        raise HTTPException(status_code=400, detail='This entry cannot be deleted')
+    await db.timeline.delete_one({'id': entry_id})
+    await log_audit(user, 'ledger.delete', 'ledger', entry_id,
+                     f"{existing.get('employee_id')} · {existing.get('title')} · {existing.get('amount')}", {})
+    return {'ok': True}
 
 
 # ---------------- Payroll ----------------
