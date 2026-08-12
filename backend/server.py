@@ -358,6 +358,37 @@ class CalendarCorrectionIn(BaseModel):
     note: Optional[str] = ''
 
 
+# ---------------- Tasks ----------------
+class TaskIn(BaseModel):
+    title: str
+    description: Optional[str] = ''
+    assigned_to: str  # employee_id
+    priority: Literal['low', 'normal', 'urgent'] = 'normal'
+    due_date: Optional[str] = None  # YYYY-MM-DD
+
+
+class TaskUpdateIn(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    assigned_to: Optional[str] = None
+    priority: Optional[Literal['low', 'normal', 'urgent']] = None
+    due_date: Optional[str] = None
+
+
+class TaskCommentIn(BaseModel):
+    text: str
+
+
+class TaskTemplateIn(BaseModel):
+    title: str
+    description: Optional[str] = ''
+    assigned_to: str
+    priority: Literal['low', 'normal', 'urgent'] = 'normal'
+    freq: Literal['daily', 'weekly'] = 'daily'
+    weekday: Optional[int] = None  # 0=Monday..6=Sunday, required when freq='weekly'
+    active: bool = True
+
+
 # ---------------- Seed ----------------
 async def seed():
     await db.users.create_index('username', unique=True)
@@ -1167,6 +1198,154 @@ async def decide_leave(lid: str, body: DecisionIn, user=Depends(require_admin)):
                        f"Your leave request ({l['from_date']} → {l['to_date']}) was {new_status}", '/leaves')
     await log_audit(user, f'leave.{new_status}', 'leave', lid, l.get('employee_code', ''))
     return await db.leaves.find_one({'id': lid}, {'_id': 0})
+
+
+# ---------------- Tasks ----------------
+@api.post('/tasks')
+async def create_task(body: TaskIn, user=Depends(require_admin)):
+    emp = await db.employees.find_one({'id': body.assigned_to}, {'_id': 0})
+    if not emp: raise HTTPException(status_code=404, detail='Employee not found')
+    iso = now_utc().isoformat()
+    doc = {
+        'id': str(uuid.uuid4()), 'title': body.title.strip(), 'description': body.description or '',
+        'assigned_to': body.assigned_to, 'assigned_to_name': emp['name'], 'assigned_by': user['name'],
+        'priority': body.priority, 'due_date': body.due_date, 'status': 'open',
+        'comments': [], 'recurring_template_id': None, 'overdue_notified_at': None,
+        'created_at': iso, 'completed_at': None,
+    }
+    await db.tasks.insert_one(dict(doc))
+    await log_audit(user, 'task.create', 'task', doc['id'], body.title, {'assigned_to': emp['name']})
+    await notify_user(body.assigned_to, 'New task assigned', body.title, '/(emp)/tasks')
+    return {k: v for k, v in doc.items() if k != '_id'}
+
+
+@api.get('/tasks')
+async def list_tasks(
+    employee_id: Optional[str] = None, status_: Optional[str] = Query(default=None, alias='status'),
+    user=Depends(get_current),
+):
+    query: dict = {}
+    if user.get('role') == 'employee':
+        query['assigned_to'] = user['id']
+    elif employee_id:
+        query['assigned_to'] = employee_id
+    if status_: query['status'] = status_
+    return await db.tasks.find(query, {'_id': 0}).sort('created_at', -1).to_list(1000)
+
+
+@api.get('/tasks/{task_id}')
+async def get_task(task_id: str, user=Depends(get_current)):
+    t = await db.tasks.find_one({'id': task_id}, {'_id': 0})
+    if not t: raise HTTPException(status_code=404, detail='Task not found')
+    if user.get('role') == 'employee' and t['assigned_to'] != user['id']:
+        raise HTTPException(status_code=403, detail='Not your task')
+    return t
+
+
+@api.put('/tasks/{task_id}')
+async def update_task(task_id: str, body: TaskUpdateIn, user=Depends(require_admin)):
+    t = await db.tasks.find_one({'id': task_id}, {'_id': 0})
+    if not t: raise HTTPException(status_code=404, detail='Task not found')
+    upd = {k: v for k, v in body.model_dump().items() if v is not None}
+    if 'assigned_to' in upd:
+        emp = await db.employees.find_one({'id': upd['assigned_to']}, {'_id': 0})
+        if not emp: raise HTTPException(status_code=404, detail='Employee not found')
+        upd['assigned_to_name'] = emp['name']
+        if upd['assigned_to'] != t['assigned_to']:
+            await notify_user(upd['assigned_to'], 'Task assigned to you', t['title'], '/(emp)/tasks')
+    if upd:
+        await db.tasks.update_one({'id': task_id}, {'$set': upd})
+        await log_audit(user, 'task.update', 'task', task_id, upd.get('title', t.get('title', '')))
+    return await db.tasks.find_one({'id': task_id}, {'_id': 0})
+
+
+@api.delete('/tasks/{task_id}')
+async def delete_task(task_id: str, user=Depends(require_admin)):
+    t = await db.tasks.find_one({'id': task_id}, {'_id': 0})
+    r = await db.tasks.delete_one({'id': task_id})
+    if r.deleted_count == 0: raise HTTPException(status_code=404, detail='Task not found')
+    await log_audit(user, 'task.delete', 'task', task_id, (t or {}).get('title', ''))
+    return {'ok': True}
+
+
+@api.post('/tasks/{task_id}/complete')
+async def complete_task(task_id: str, user=Depends(get_current)):
+    t = await db.tasks.find_one({'id': task_id}, {'_id': 0})
+    if not t: raise HTTPException(status_code=404, detail='Task not found')
+    if user.get('role') == 'employee' and t['assigned_to'] != user['id']:
+        raise HTTPException(status_code=403, detail='Not your task')
+    if t['status'] == 'done':
+        return t
+    iso = now_utc().isoformat()
+    await db.tasks.update_one({'id': task_id}, {'$set': {'status': 'done', 'completed_at': iso}})
+    await log_audit(user, 'task.complete', 'task', task_id, t.get('title', ''))
+    return await db.tasks.find_one({'id': task_id}, {'_id': 0})
+
+
+@api.post('/tasks/{task_id}/reopen')
+async def reopen_task(task_id: str, user=Depends(require_admin)):
+    t = await db.tasks.find_one({'id': task_id}, {'_id': 0})
+    if not t: raise HTTPException(status_code=404, detail='Task not found')
+    await db.tasks.update_one({'id': task_id}, {'$set': {'status': 'open', 'completed_at': None, 'overdue_notified_at': None}})
+    await log_audit(user, 'task.reopen', 'task', task_id, t.get('title', ''))
+    return await db.tasks.find_one({'id': task_id}, {'_id': 0})
+
+
+@api.post('/tasks/{task_id}/comments')
+async def add_task_comment(task_id: str, body: TaskCommentIn, user=Depends(get_current)):
+    t = await db.tasks.find_one({'id': task_id}, {'_id': 0})
+    if not t: raise HTTPException(status_code=404, detail='Task not found')
+    if user.get('role') == 'employee' and t['assigned_to'] != user['id']:
+        raise HTTPException(status_code=403, detail='Not your task')
+    comment = {
+        'id': str(uuid.uuid4()), 'author_name': user['name'], 'author_role': user.get('role', ''),
+        'text': body.text.strip(), 'created_at': now_utc().isoformat(),
+    }
+    await db.tasks.update_one({'id': task_id}, {'$push': {'comments': comment}})
+    # Notify the other side of the conversation, not the commenter themselves.
+    if user.get('role') == 'employee':
+        await notify_roles(['owner', 'admin'], f"Comment on: {t['title']}", f"{user['name']}: {comment['text']}", '/tasks')
+    else:
+        await notify_user(t['assigned_to'], f"Comment on: {t['title']}", f"{user['name']}: {comment['text']}", '/(emp)/tasks')
+    return comment
+
+
+# ---------------- Task Templates (recurring) ----------------
+@api.post('/tasks/templates')
+async def create_task_template(body: TaskTemplateIn, user=Depends(require_admin)):
+    emp = await db.employees.find_one({'id': body.assigned_to}, {'_id': 0})
+    if not emp: raise HTTPException(status_code=404, detail='Employee not found')
+    if body.freq == 'weekly' and body.weekday is None:
+        raise HTTPException(status_code=400, detail='weekday is required for a weekly template')
+    doc = {'id': str(uuid.uuid4()), **body.model_dump(), 'assigned_to_name': emp['name'], 'created_at': now_utc().isoformat()}
+    await db.task_templates.insert_one(dict(doc))
+    await log_audit(user, 'task_template.create', 'task_template', doc['id'], body.title)
+    return {k: v for k, v in doc.items() if k != '_id'}
+
+
+@api.get('/tasks/templates')
+async def list_task_templates(_: dict = Depends(require_admin)):
+    return await db.task_templates.find({}, {'_id': 0}).sort('created_at', -1).to_list(500)
+
+
+@api.put('/tasks/templates/{template_id}')
+async def update_task_template(template_id: str, body: TaskTemplateIn, user=Depends(require_admin)):
+    if not await db.task_templates.find_one({'id': template_id}):
+        raise HTTPException(status_code=404, detail='Template not found')
+    emp = await db.employees.find_one({'id': body.assigned_to}, {'_id': 0})
+    if not emp: raise HTTPException(status_code=404, detail='Employee not found')
+    await db.task_templates.update_one({'id': template_id}, {'$set': {**body.model_dump(), 'assigned_to_name': emp['name']}})
+    await log_audit(user, 'task_template.update', 'task_template', template_id, body.title)
+    return await db.task_templates.find_one({'id': template_id}, {'_id': 0})
+
+
+@api.delete('/tasks/templates/{template_id}')
+async def delete_task_template(template_id: str, user=Depends(require_admin)):
+    t = await db.task_templates.find_one({'id': template_id}, {'_id': 0})
+    r = await db.task_templates.delete_one({'id': template_id})
+    if r.deleted_count == 0: raise HTTPException(status_code=404, detail='Template not found')
+    await log_audit(user, 'task_template.delete', 'task_template', template_id, (t or {}).get('title', ''))
+    return {'ok': True}
 
 
 # ---------------- Dashboard ----------------
@@ -2265,6 +2444,56 @@ async def _check_auto_advances():
                             f"₹{amount:.0f} auto-advance recorded for {emp['name']}", '/(tabs)/payroll')
 
 
+async def _check_recurring_tasks():
+    """Once per day, spawns today's (or this week's) task instance from each
+    active recurring template. Idempotent via `db.task_generations` (keyed by
+    template + date) so the 15-minute poll can safely re-check. A missed or
+    completed instance never blocks the next one — each day/week is its own
+    independent task, not a chain."""
+    now_ist = now_utc().astimezone(timezone(timedelta(hours=5, minutes=30)))
+    today = now_ist.date()
+    today_iso = today.isoformat()
+
+    async for tpl in db.task_templates.find({'active': True}, {'_id': 0}):
+        if tpl['freq'] == 'weekly' and tpl.get('weekday') is not None and today.weekday() != int(tpl['weekday']):
+            continue
+        if await db.task_generations.find_one({'template_id': tpl['id'], 'date': today_iso}, {'_id': 0, 'id': 1}):
+            continue  # already generated for this day
+
+        emp = await db.employees.find_one({'id': tpl['assigned_to'], 'status': 'active'}, {'_id': 0})
+        await db.task_generations.update_one(
+            {'template_id': tpl['id'], 'date': today_iso},
+            {'$set': {'template_id': tpl['id'], 'date': today_iso, 'created_at': now_utc().isoformat()}},
+            upsert=True,
+        )
+        if not emp:
+            continue  # employee inactive/removed — mark generated, but skip creating a task for them
+        iso = now_utc().isoformat()
+        task_id = str(uuid.uuid4())
+        await db.tasks.insert_one({
+            'id': task_id, 'title': tpl['title'], 'description': tpl.get('description', ''),
+            'assigned_to': tpl['assigned_to'], 'assigned_to_name': emp['name'], 'assigned_by': 'Recurring',
+            'priority': tpl.get('priority', 'normal'), 'due_date': today_iso, 'status': 'open',
+            'comments': [], 'recurring_template_id': tpl['id'], 'overdue_notified_at': None,
+            'created_at': iso, 'completed_at': None,
+        })
+        await notify_user(tpl['assigned_to'], 'New task assigned', tpl['title'], '/(emp)/tasks')
+
+
+async def _check_overdue_tasks():
+    """Pushes owner/admin once per task that's past its due date and still
+    open — guarded by `overdue_notified_at` so it fires exactly once, not
+    every 15-minute poll cycle."""
+    today_iso = now_utc().astimezone(timezone(timedelta(hours=5, minutes=30))).date().isoformat()
+    async for t in db.tasks.find(
+        {'status': 'open', 'due_date': {'$ne': None, '$lt': today_iso}, 'overdue_notified_at': None},
+        {'_id': 0},
+    ):
+        await db.tasks.update_one({'id': t['id']}, {'$set': {'overdue_notified_at': now_utc().isoformat()}})
+        await notify_roles(['owner', 'admin'], 'Task overdue',
+                            f"{t.get('assigned_to_name', 'Someone')}: {t['title']} was due {t['due_date']}", '/tasks')
+
+
 async def _attendance_reminder_loop():
     while True:
         try:
@@ -2272,6 +2501,8 @@ async def _attendance_reminder_loop():
             await _check_missed_attendance()
             await _check_daily_absentee_summary()
             await _check_auto_advances()
+            await _check_recurring_tasks()
+            await _check_overdue_tasks()
         except Exception as e:
             logger.warning(f'attendance reminder loop error: {e}')
 

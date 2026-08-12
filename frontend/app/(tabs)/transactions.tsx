@@ -32,7 +32,7 @@ const SECTIONS: { title: string; tiles: TileDef[] }[] = [
   {
     title: 'Tasks',
     tiles: [
-      { key: 'tasks', label: 'Tasks', icon: 'checkbox-outline', comingSoon: true },
+      { key: 'tasks', label: 'Tasks', icon: 'checkbox-outline', route: '/tasks' },
     ],
   },
 ];
