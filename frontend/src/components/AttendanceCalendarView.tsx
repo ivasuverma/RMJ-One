@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
 import { api } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthContext';
+import { confirmAction } from '@/src/utils/confirm';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
@@ -18,19 +19,24 @@ type Day = {
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const WEEK_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
-// Status dot colors derived from theme semantic tokens so they stay legible
-// against both the light and dark card backgrounds instead of being fixed
-// pastel hex values tuned for one background only.
-function makeStatusColors(colors: ThemeColors): Record<string, string> {
+type StatusStyle = { bg: string; fg: string };
+
+// Full-cell fill + accent color per attendance status, derived from theme
+// semantic tokens so they stay legible against both light and dark cards.
+// "weekly_off" (Paid Off) gets its own teal accent rather than reusing the
+// warning/gold tokens — in this gold-branded app, brand gold and warning
+// amber read as nearly identical, which made "Late" and "Paid Off" cells
+// indistinguishable at a glance.
+function makeStatusStyles(colors: ThemeColors, scheme: 'light' | 'dark'): Record<string, StatusStyle> {
   return {
-    present: colors.onSuccess,
-    absent: colors.onError,
-    late: colors.onWarning,
-    half_day: colors.onWarning,
-    leave: colors.onInfo,
-    holiday: colors.mutedText,
-    missing_punch: colors.onError,
-    weekly_off: colors.brandSecondary,
+    present: { bg: colors.success, fg: colors.onSuccess },
+    late: { bg: colors.warning, fg: colors.onWarning },
+    half_day: { bg: colors.warning, fg: colors.onWarning },
+    absent: { bg: colors.error, fg: colors.onError },
+    missing_punch: { bg: colors.error, fg: colors.onError },
+    leave: { bg: colors.info, fg: colors.onInfo },
+    holiday: { bg: colors.surfaceTertiary, fg: colors.mutedText },
+    weekly_off: scheme === 'light' ? { bg: '#E1EFEA', fg: '#2F7A62' } : { bg: '#163A32', fg: '#7FD9BC' },
   };
 }
 
@@ -46,9 +52,9 @@ export default function AttendanceCalendarView({ empId, onBack, title = 'Calenda
   empId: string; onBack?: () => void; title?: string;
 }) {
   const { user } = useAuth();
-  const { colors } = useTheme();
+  const { colors, scheme } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
-  const statusColors = useMemo(() => makeStatusColors(colors), [colors]);
+  const statusStyles = useMemo(() => makeStatusStyles(colors, scheme), [colors, scheme]);
   const canEdit = user?.role === 'owner' || user?.role === 'admin';
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
@@ -122,7 +128,7 @@ export default function AttendanceCalendarView({ empId, onBack, title = 'Calenda
           <View style={styles.grid}>
             {cells.map((c, idx) => {
               if (!c) return <View key={`e${idx}`} style={styles.cell} />;
-              const color = statusColors[c.is_late ? 'late' : c.status] || colors.mutedText;
+              const st = statusStyles[c.is_late ? 'late' : c.status] || { bg: colors.surfaceSecondary, fg: colors.mutedText };
               return (
                 <Pressable
                   key={c.date}
@@ -130,8 +136,9 @@ export default function AttendanceCalendarView({ empId, onBack, title = 'Calenda
                   onPress={() => setSelected(c)}
                   testID={`cal-day-${c.date}`}
                 >
-                  <Text style={styles.dayNum}>{parseInt(c.date.slice(-2), 10)}</Text>
-                  <View style={[styles.statusDot, { backgroundColor: color }]} />
+                  <View style={[styles.dayCell, { backgroundColor: st.bg, borderColor: st.fg }]}>
+                    <Text style={[styles.dayNum, { color: st.fg }]}>{parseInt(c.date.slice(-2), 10)}</Text>
+                  </View>
                 </Pressable>
               );
             })}
@@ -147,7 +154,7 @@ export default function AttendanceCalendarView({ empId, onBack, title = 'Calenda
               { k: 'weekly_off', label: 'Paid Off' },
             ].map((l) => (
               <View key={l.k} style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: statusColors[l.k] }]} />
+                <View style={[styles.legendDot, { backgroundColor: statusStyles[l.k].bg, borderColor: statusStyles[l.k].fg }]} />
                 <Text style={styles.legendText}>{l.label}</Text>
               </View>
             ))}
@@ -238,13 +245,11 @@ function DayDetail({ day, empId, canEdit, shifts, onClose, onSaved }: {
   };
 
   const confirmDelete = () => {
-    Alert.alert(
+    confirmAction(
       'Delete entry?',
       `This removes the attendance record for ${new Date(day.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}. This cannot be undone.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Delete', style: 'destructive', onPress: doDelete },
-      ],
+      'Delete',
+      doDelete,
     );
   };
 
@@ -425,16 +430,15 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   cellFilled: {
     justifyContent: 'flex-start', alignItems: 'center',
   },
-  dayNum: {
-    color: colors.onSurface, fontSize: 13, fontWeight: '600',
-    backgroundColor: colors.surfaceSecondary, borderColor: colors.border, borderWidth: 1,
-    width: '100%', height: '75%', borderRadius: radius.sm, textAlign: 'center', textAlignVertical: 'center', paddingTop: 8,
+  dayCell: {
+    width: '100%', height: '100%', borderRadius: radius.sm, borderWidth: 1.5,
+    alignItems: 'center', justifyContent: 'center',
   },
-  statusDot: { width: 8, height: 8, borderRadius: 4, marginTop: 3 },
+  dayNum: { fontSize: 13, fontWeight: '700' },
 
   legend: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md, marginTop: spacing.lg },
   legendItem: { flexDirection: 'row', gap: 4, alignItems: 'center' },
-  legendDot: { width: 8, height: 8, borderRadius: 4 },
+  legendDot: { width: 10, height: 10, borderRadius: 3, borderWidth: 1.5 },
   legendText: { color: colors.onSurfaceTertiary, fontSize: 11 },
 
   modalBg: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)' },

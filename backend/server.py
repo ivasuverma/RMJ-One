@@ -83,7 +83,7 @@ async def get_current(authorization: str = Header(default='')) -> dict:
     if role in ('owner', 'admin', 'accountant'):
         u = await db.users.find_one({'id': payload.get('sub')}, {'_id': 0, 'password_hash': 0})
     else:
-        u = await db.employees.find_one({'id': payload.get('sub')}, {'_id': 0, 'pin_hash': 0})
+        u = await db.employees.find_one({'id': payload.get('sub')}, {'_id': 0, 'password_hash': 0})
     if not u:
         raise HTTPException(status_code=401, detail='User not found')
     u['role'] = role
@@ -130,12 +130,13 @@ class LoginIn(BaseModel):
 
 
 class EmployeeLoginIn(BaseModel):
-    employee_code: str
-    pin: str
+    username: str
+    password: str
 
 
-class SetPinIn(BaseModel):
-    pin: str  # 4-digit
+class SetEmployeeCredentialsIn(BaseModel):
+    username: str
+    password: str
 
 
 class EmployeeIn(BaseModel):
@@ -277,7 +278,6 @@ class PayrollEntryUpdateIn(BaseModel):
     manual_deduction_override: Optional[float] = None
     paid_days_override: Optional[float] = None
     note: Optional[str] = None
-    payment_mode: Optional[Literal['cash', 'bank', 'upi', 'cheque']] = None
 
 
 class AttendanceDayIn(BaseModel):
@@ -373,7 +373,7 @@ async def seed():
                 'mobile': mob, 'address': 'Delhi', 'aadhaar': '', 'pan': '',
                 'bank_account': '', 'bank_ifsc': '', 'bank_name': '', 'photo': '',
                 'status': 'on_leave' if code == 'RMJ004' else 'active',
-                'notes': '', 'pin_hash': hash_secret(pin),
+                'notes': '', 'username': code.lower(), 'password_hash': hash_secret(pin),
                 'created_at': iso, 'updated_at': iso,
             })
             events.append({
@@ -392,16 +392,27 @@ async def seed():
             'id': str(uuid.uuid4()), 'employee_id': docs[1]['id'], 'type': 'advance',
             'title': 'Salary Advance', 'description': 'Approved advance', 'amount': 3000, 'created_at': iso,
         })
-        logger.info(f'Seeded {len(docs)} employees. PINs: RMJ001=1234, RMJ002=2345, RMJ003=3456, RMJ004=4567, RMJ005=5678')
+        logger.info(f'Seeded {len(docs)} employees. Passwords: rmj001=1234, rmj002=2345, rmj003=3456, rmj004=4567, rmj005=5678')
 
-    # Backfill: ensure every employee has a pin_hash
-    async for emp in db.employees.find({}, {'_id': 0, 'id': 1, 'employee_code': 1, 'pin_hash': 1}):
-        if not emp.get('pin_hash'):
-            code = emp.get('employee_code') or ''
+    # Backfill: ensure every employee has login credentials (username + password).
+    # Employees used to log in with employee_code + a 4-digit PIN; that was replaced
+    # by username + password, so any pre-existing employee record without one gets a
+    # default username (their employee_code, lowercased) and a default password
+    # (last 4 digits of their code) — same pattern the old PIN backfill used, just
+    # renamed, so nobody's locked out after the upgrade. They can change it from
+    # Settings once logged in.
+    async for emp in db.employees.find({}, {'_id': 0, 'id': 1, 'employee_code': 1, 'username': 1, 'password_hash': 1}):
+        upd: dict = {}
+        code = emp.get('employee_code') or ''
+        if not emp.get('username'):
+            upd['username'] = (code or emp['id'][:8]).lower()
+        if not emp.get('password_hash'):
             digits = ''.join(ch for ch in code if ch.isdigit())[-4:]
-            default_pin = digits.zfill(4) if digits else '0000'
-            await db.employees.update_one({'id': emp['id']}, {'$set': {'pin_hash': hash_secret(default_pin)}})
-            logger.info(f"Backfilled PIN for {code} → {default_pin}")
+            default_password = digits.zfill(4) if digits else '0000'
+            upd['password_hash'] = hash_secret(default_password)
+            logger.info(f"Backfilled login password for {code} → {default_password}")
+        if upd:
+            await db.employees.update_one({'id': emp['id']}, {'$set': upd})
 
 
 @app.on_event('startup')
@@ -434,17 +445,18 @@ async def login(body: LoginIn):
 
 @api.post('/auth/employee-login')
 async def employee_login(body: EmployeeLoginIn):
-    code = body.employee_code.strip().upper()
-    emp = await db.employees.find_one({'employee_code': code})
-    if not emp or not emp.get('pin_hash') or not verify_secret(body.pin, emp['pin_hash']):
-        raise HTTPException(status_code=401, detail='Invalid employee code or PIN')
+    uname = body.username.strip().lower()
+    emp = await db.employees.find_one({'username': uname})
+    if not emp or not emp.get('password_hash') or not verify_secret(body.password, emp['password_hash']):
+        raise HTTPException(status_code=401, detail='Invalid username or password')
     if emp.get('status') == 'inactive':
         raise HTTPException(status_code=403, detail='This employee account is inactive')
+    code = emp.get('employee_code')
     tok = create_token({'sub': emp['id'], 'role': 'employee', 'employee_code': code})
     return {
         'access_token': tok, 'token_type': 'bearer',
         'user': {
-            'id': emp['id'], 'username': code, 'name': emp['name'], 'role': 'employee',
+            'id': emp['id'], 'username': emp.get('username', uname), 'name': emp['name'], 'role': 'employee',
             'employee_code': code, 'designation': emp.get('designation'),
             'department': emp.get('department'), 'photo': emp.get('photo', ''),
         },
@@ -456,7 +468,7 @@ async def me(user=Depends(get_current)):
     if user['role'] in ('owner', 'admin', 'accountant'):
         return {'id': user['id'], 'username': user['username'], 'name': user['name'], 'role': user['role']}
     return {
-        'id': user['id'], 'username': user['employee_code'], 'name': user['name'], 'role': 'employee',
+        'id': user['id'], 'username': user.get('username') or user.get('employee_code'), 'name': user['name'], 'role': 'employee',
         'employee_code': user['employee_code'], 'designation': user.get('designation'),
         'department': user.get('department'), 'photo': user.get('photo', ''),
     }
@@ -480,13 +492,13 @@ async def list_employees(
         ]
     if department: query['department'] = department
     if status_: query['status'] = status_
-    docs = await db.employees.find(query, {'_id': 0, 'pin_hash': 0, 'id_proofs': 0}).sort('name', 1).to_list(1000)
+    docs = await db.employees.find(query, {'_id': 0, 'password_hash': 0, 'id_proofs': 0}).sort('name', 1).to_list(1000)
     return docs
 
 
 @api.get('/employees/{emp_id}')
 async def get_employee(emp_id: str, _: dict = Depends(get_current)):
-    doc = await db.employees.find_one({'id': emp_id}, {'_id': 0, 'pin_hash': 0})
+    doc = await db.employees.find_one({'id': emp_id}, {'_id': 0, 'password_hash': 0})
     if not doc: raise HTTPException(status_code=404, detail='Employee not found')
     timeline = await db.timeline.find({'employee_id': emp_id}, {'_id': 0}).sort('created_at', -1).to_list(1000)
     return {'employee': doc, 'timeline': timeline}
@@ -502,18 +514,21 @@ async def create_employee(body: EmployeeIn, _: dict = Depends(require_admin)):
         data['employee_code'] = f'RMJ{(count + 1):03d}'
     else:
         data['employee_code'] = data['employee_code'].upper()
-    # default PIN = last 4 of employee_code, else 0000
-    default_pin = (''.join(ch for ch in data['employee_code'] if ch.isdigit())[-4:] or '0000').zfill(4)
+    # default login username = employee_code (lowercased); default password = last 4
+    # digits of employee_code, else 0000 — same pattern as the old default-PIN scheme.
+    default_username = data['employee_code'].lower()
+    default_password = (''.join(ch for ch in data['employee_code'] if ch.isdigit())[-4:] or '0000').zfill(4)
     doc = {'id': eid, 'created_at': iso, 'updated_at': iso,
-           'pin_hash': hash_secret(default_pin), **data}
+           'username': default_username, 'password_hash': hash_secret(default_password), **data}
     await db.employees.insert_one(dict(doc))
     await db.timeline.insert_one({
         'id': str(uuid.uuid4()), 'employee_id': eid, 'type': 'joined',
         'title': 'Joined RMJ', 'description': f"Joined as {data.get('designation') or 'Employee'}",
         'amount': 0, 'created_at': data.get('joining_date') or iso,
     })
-    out = {k: v for k, v in doc.items() if k not in ('_id', 'pin_hash')}
-    out['default_pin'] = default_pin
+    out = {k: v for k, v in doc.items() if k not in ('_id', 'password_hash')}
+    out['default_username'] = default_username
+    out['default_password'] = default_password
     return out
 
 
@@ -533,7 +548,7 @@ async def update_employee(emp_id: str, body: EmployeeIn, _: dict = Depends(requi
             'amount': float(data.get('salary') or 0) - float(existing.get('salary') or 0),
             'created_at': iso,
         })
-    return await db.employees.find_one({'id': emp_id}, {'_id': 0, 'pin_hash': 0})
+    return await db.employees.find_one({'id': emp_id}, {'_id': 0, 'password_hash': 0})
 
 
 @api.delete('/employees/{emp_id}')
@@ -564,14 +579,23 @@ async def delete_id_proof(emp_id: str, proof_id: str, user=Depends(require_admin
     return {'ok': True}
 
 
-@api.post('/employees/{emp_id}/set-pin')
-async def set_pin(emp_id: str, body: SetPinIn, _: dict = Depends(require_owner)):
-    pin = body.pin.strip()
-    if not (pin.isdigit() and len(pin) == 4):
-        raise HTTPException(status_code=400, detail='PIN must be exactly 4 digits')
+@api.post('/employees/{emp_id}/set-credentials')
+async def set_employee_credentials(emp_id: str, body: SetEmployeeCredentialsIn, user=Depends(require_admin)):
+    uname = body.username.strip().lower()
+    if not uname:
+        raise HTTPException(status_code=400, detail='Username is required')
+    if len(body.password) < 4:
+        raise HTTPException(status_code=400, detail='Password must be 4+ characters')
     emp = await db.employees.find_one({'id': emp_id}, {'_id': 0})
     if not emp: raise HTTPException(status_code=404, detail='Employee not found')
-    await db.employees.update_one({'id': emp_id}, {'$set': {'pin_hash': hash_secret(pin), 'updated_at': now_utc().isoformat()}})
+    if uname != emp.get('username'):
+        if await db.employees.find_one({'username': uname, 'id': {'$ne': emp_id}}):
+            raise HTTPException(status_code=400, detail='Username already in use')
+    await db.employees.update_one(
+        {'id': emp_id},
+        {'$set': {'username': uname, 'password_hash': hash_secret(body.password), 'updated_at': now_utc().isoformat()}},
+    )
+    await log_audit(user, 'employee.credentials.set', 'employee', emp_id, emp.get('name', ''), {})
     return {'ok': True}
 
 
@@ -717,7 +741,7 @@ async def my_today(user=Depends(require_employee)):
 @api.get('/attendance/today')
 async def attendance_today(_: dict = Depends(require_staff)):
     d = today_str()
-    employees = await db.employees.find({}, {'_id': 0, 'pin_hash': 0, 'photo': 0}).sort('name', 1).to_list(1000)
+    employees = await db.employees.find({}, {'_id': 0, 'password_hash': 0, 'photo': 0}).sort('name', 1).to_list(1000)
     att_map = {}
     async for a in db.attendance.find({'date': d}, {'_id': 0, 'check_in.selfie': 0, 'check_out.selfie': 0}):
         att_map[a['employee_id']] = a
@@ -1161,11 +1185,14 @@ async def update_user(uid: str, body: UserUpdateIn, _: dict = Depends(require_ow
 
 
 @api.put('/auth/me')
-async def update_my_account(body: SelfAccountUpdateIn, user=Depends(require_staff)):
-    """Self-service username/password change for owner/admin/accountant — requires
-    the current password so a logged-in-but-unattended session can't be hijacked
-    into a full account takeover."""
-    full = await db.users.find_one({'id': user['id']}, {'_id': 0})
+async def update_my_account(body: SelfAccountUpdateIn, user=Depends(get_current)):
+    """Self-service username/password change — requires the current password so a
+    logged-in-but-unattended session can't be hijacked into a full account takeover.
+    Works for owner/admin/accountant (db.users) and, since employees got their own
+    username+password login, for employees too (db.employees)."""
+    is_employee = user.get('role') == 'employee'
+    coll = db.employees if is_employee else db.users
+    full = await coll.find_one({'id': user['id']}, {'_id': 0})
     if not full: raise HTTPException(status_code=404, detail='User not found')
     if not verify_secret(body.current_password, full.get('password_hash', '')):
         raise HTTPException(status_code=401, detail='Current password is incorrect')
@@ -1173,7 +1200,7 @@ async def update_my_account(body: SelfAccountUpdateIn, user=Depends(require_staf
     if body.new_username:
         uname = body.new_username.strip().lower()
         if uname != full.get('username'):
-            if await db.users.find_one({'username': uname, 'id': {'$ne': user['id']}}):
+            if await coll.find_one({'username': uname, 'id': {'$ne': user['id']}}):
                 raise HTTPException(status_code=400, detail='Username already exists')
             upd['username'] = uname
     if body.new_password:
@@ -1181,11 +1208,21 @@ async def update_my_account(body: SelfAccountUpdateIn, user=Depends(require_staf
         upd['password_hash'] = hash_secret(body.new_password)
     if not upd:
         raise HTTPException(status_code=400, detail='Nothing to update')
-    await db.users.update_one({'id': user['id']}, {'$set': upd})
-    updated = await db.users.find_one({'id': user['id']}, {'_id': 0, 'password_hash': 0})
+    upd['updated_at'] = now_utc().isoformat()
+    await coll.update_one({'id': user['id']}, {'$set': upd})
+    updated = await coll.find_one({'id': user['id']}, {'_id': 0, 'password_hash': 0})
     # Issue a fresh token since the username embedded in the old token may now be stale
-    tok = create_token({'sub': updated['id'], 'role': updated.get('role', 'owner'), 'username': updated['username']})
-    return {'access_token': tok, 'token_type': 'bearer', 'user': updated}
+    if is_employee:
+        tok = create_token({'sub': updated['id'], 'role': 'employee', 'employee_code': updated.get('employee_code')})
+        user_out = {
+            'id': updated['id'], 'username': updated.get('username'), 'name': updated['name'], 'role': 'employee',
+            'employee_code': updated.get('employee_code'), 'designation': updated.get('designation'),
+            'department': updated.get('department'), 'photo': updated.get('photo', ''),
+        }
+    else:
+        tok = create_token({'sub': updated['id'], 'role': updated.get('role', 'owner'), 'username': updated['username']})
+        user_out = updated
+    return {'access_token': tok, 'token_type': 'bearer', 'user': user_out}
 
 
 @api.delete('/users/{uid}')
@@ -1272,7 +1309,14 @@ async def add_ledger_entry(body: LedgerEntryIn, user=Depends(require_staff)):
 
 
 @api.get('/ledger/{emp_id}')
-async def get_ledger(emp_id: str, _: dict = Depends(require_staff)):
+async def get_ledger(emp_id: str, user: dict = Depends(get_current)):
+    # Staff can view anyone's ledger; an employee can only view their own (read-only
+    # on the frontend — the edit/delete endpoints below stay require_admin).
+    if user.get('role') == 'employee':
+        if user['id'] != emp_id:
+            raise HTTPException(status_code=403, detail='Staff access required')
+    elif user.get('role') not in ('owner', 'admin', 'accountant'):
+        raise HTTPException(status_code=403, detail='Staff access required')
     if not await db.employees.find_one({'id': emp_id}):
         raise HTTPException(status_code=404, detail='Employee not found')
     events = await db.timeline.find({'employee_id': emp_id}, {'_id': 0}).sort('created_at', 1).to_list(2000)
@@ -1381,7 +1425,7 @@ async def _compute_payroll(year: int, month: int) -> list:
         ledger_by_emp.setdefault(t['employee_id'], []).append(t)
 
     rows = []
-    async for e in db.employees.find({}, {'_id': 0, 'pin_hash': 0}):
+    async for e in db.employees.find({}, {'_id': 0, 'password_hash': 0}):
         atts = att_by_emp.get(e['id'], [])
         present = sum(1 for a in atts if a.get('status') == 'present')
         half = sum(1 for a in atts if a.get('status') == 'half_day')
@@ -1587,7 +1631,9 @@ async def payroll_entry_update(entry_id: str, body: PayrollEntryUpdateIn, user=D
     if body.manual_deduction_override is not None: upd['manual_deduction'] = float(body.manual_deduction_override)
     if body.paid_days_override is not None: upd['effective_days'] = float(body.paid_days_override)
     if body.note is not None: upd['note'] = body.note
-    if body.payment_mode is not None: upd['payment_mode'] = body.payment_mode
+    # payment_mode is intentionally not settable here — it's derived from actual
+    # recorded payments (see POST /payroll/entry/{id}/payments) so it can't drift
+    # out of sync with what was really paid.
     # Recompute net using new numbers (keep the Sunday-work half-day bonus, which sits
     # outside the capped effective-days figure, intact when only bonus/fine/etc. change)
     merged = {**entry, **upd}
@@ -1608,24 +1654,91 @@ async def payroll_entry_update(entry_id: str, body: PayrollEntryUpdateIn, user=D
     return await db.payroll_entries.find_one({'id': entry_id}, {'_id': 0})
 
 
-@api.post('/payroll/entry/{entry_id}/pay')
-async def payroll_mark_paid(entry_id: str, user=Depends(require_payroll_writer)):
+class PayrollPaymentIn(BaseModel):
+    payment_mode: Literal['cash', 'bank', 'upi', 'cheque']
+    amount: float
+    note: Optional[str] = ''
+
+
+def _payroll_modes_label(modes: set) -> Optional[str]:
+    if not modes: return None
+    return next(iter(modes)) if len(modes) == 1 else 'split'
+
+
+@api.get('/payroll/entry/{entry_id}/payments')
+async def list_payroll_payments(entry_id: str, _: dict = Depends(require_staff)):
+    return await db.payroll_payments.find({'entry_id': entry_id}, {'_id': 0}).sort('paid_at', 1).to_list(50)
+
+
+@api.post('/payroll/entry/{entry_id}/payments')
+async def add_payroll_payment(entry_id: str, body: PayrollPaymentIn, user=Depends(require_payroll_writer)):
+    """Record one payment against a payroll entry. An employee's salary can be
+    split across several payments in different modes (e.g. part cash, part bank
+    transfer) — each call here adds one; the entry is only marked `paid` once
+    the total recorded meets the net salary."""
     entry = await db.payroll_entries.find_one({'id': entry_id}, {'_id': 0})
     if not entry: raise HTTPException(status_code=404, detail='Entry not found')
-    if entry.get('paid'): return entry
+    if entry.get('paid'): raise HTTPException(status_code=400, detail='This entry is already fully paid')
+    if body.amount <= 0: raise HTTPException(status_code=400, detail='Amount must be greater than 0')
+
+    existing = await db.payroll_payments.find({'entry_id': entry_id}, {'_id': 0}).to_list(50)
+    already_paid = round(sum(float(p['amount']) for p in existing), 2)
+    net = float(entry['net_salary'])
+    remaining = round(net - already_paid, 2)
+    if body.amount > remaining + 0.5:  # small rounding tolerance
+        raise HTTPException(status_code=400, detail=f'Amount exceeds the remaining balance of ₹{remaining:.0f}')
+
     iso = now_utc().isoformat()
-    await db.payroll_entries.update_one({'id': entry_id}, {'$set': {'paid': True, 'paid_at': iso, 'paid_by': user['name']}})
-    # Add salary event to timeline
-    await db.timeline.insert_one({
-        'id': str(uuid.uuid4()), 'employee_id': entry['employee_id'], 'type': 'salary',
-        'title': f"Salary {entry['year']}-{entry['month']:02d}",
-        'description': f"Net paid ₹{entry['net_salary']:.0f}", 'amount': float(entry['net_salary']),
-        'sign': 1, 'created_at': iso,
-    })
-    await log_audit(user, 'payroll.paid', 'payroll_entry', entry_id, entry.get('employee_code', ''), {'net': entry['net_salary']})
-    await notify_user(entry['employee_id'], 'Salary paid',
-                       f"Your salary for {entry['year']}-{entry['month']:02d} (₹{entry['net_salary']:.0f}) has been paid", '/profile')
-    return await db.payroll_entries.find_one({'id': entry_id}, {'_id': 0})
+    payment_doc = {
+        'id': str(uuid.uuid4()), 'entry_id': entry_id, 'employee_id': entry['employee_id'],
+        'payment_mode': body.payment_mode, 'amount': float(body.amount), 'note': body.note or '',
+        'paid_by': user['name'], 'paid_at': iso,
+    }
+    await db.payroll_payments.insert_one(dict(payment_doc))
+
+    new_total = round(already_paid + body.amount, 2)
+    fully_paid = (net - new_total) <= 0.5
+    modes_used = {p['payment_mode'] for p in existing} | {body.payment_mode}
+    upd: dict = {'amount_paid': new_total, 'payment_mode': _payroll_modes_label(modes_used)}
+    if fully_paid:
+        upd.update({'paid': True, 'paid_at': iso, 'paid_by': user['name']})
+    await db.payroll_entries.update_one({'id': entry_id}, {'$set': upd})
+
+    if fully_paid:
+        await db.timeline.insert_one({
+            'id': str(uuid.uuid4()), 'employee_id': entry['employee_id'], 'type': 'salary',
+            'title': f"Salary {entry['year']}-{entry['month']:02d}",
+            'description': f"Net paid ₹{net:.0f}", 'amount': net, 'sign': 1, 'created_at': iso,
+        })
+        await notify_user(entry['employee_id'], 'Salary paid',
+                           f"Your salary for {entry['year']}-{entry['month']:02d} (₹{net:.0f}) has been paid", '/profile')
+    await log_audit(user, 'payroll.payment.add', 'payroll_entry', entry_id, entry.get('employee_code', ''),
+                     {'mode': body.payment_mode, 'amount': body.amount, 'fully_paid': fully_paid})
+    return {'ok': True, 'fully_paid': fully_paid, 'amount_paid': new_total, 'remaining': round(net - new_total, 2)}
+
+
+@api.delete('/payroll/entry/{entry_id}/payments/{payment_id}')
+async def delete_payroll_payment(entry_id: str, payment_id: str, user=Depends(require_payroll_writer)):
+    """Undo a single recorded payment (e.g. it was logged in the wrong mode) —
+    recomputes the entry's paid/amount_paid/payment_mode from what's left."""
+    p = await db.payroll_payments.find_one({'id': payment_id, 'entry_id': entry_id}, {'_id': 0})
+    if not p: raise HTTPException(status_code=404, detail='Payment not found')
+    await db.payroll_payments.delete_one({'id': payment_id})
+
+    remaining = await db.payroll_payments.find({'entry_id': entry_id}, {'_id': 0}).to_list(50)
+    total = round(sum(float(x['amount']) for x in remaining), 2)
+    entry = await db.payroll_entries.find_one({'id': entry_id}, {'_id': 0})
+    net = float(entry['net_salary']) if entry else 0.0
+    fully_paid = total > 0 and (net - total) <= 0.5
+    modes_used = {x['payment_mode'] for x in remaining}
+    upd = {'amount_paid': total, 'paid': fully_paid, 'payment_mode': _payroll_modes_label(modes_used)}
+    if not fully_paid:
+        upd['paid_at'] = None
+        upd['paid_by'] = None
+    await db.payroll_entries.update_one({'id': entry_id}, {'$set': upd})
+    await log_audit(user, 'payroll.payment.delete', 'payroll_entry', entry_id, (entry or {}).get('employee_code', ''),
+                     {'mode': p['payment_mode'], 'amount': p['amount']})
+    return {'ok': True, 'fully_paid': fully_paid, 'amount_paid': total, 'remaining': round(net - total, 2)}
 
 
 @api.get('/payroll/entry/{entry_id}/pdf')
@@ -1641,7 +1754,7 @@ async def payroll_pdf(entry_id: str, _: dict = Depends(require_staff)):
     entry = await db.payroll_entries.find_one({'id': entry_id}, {'_id': 0})
     if not entry: raise HTTPException(status_code=404, detail='Entry not found')
     store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
-    emp = await db.employees.find_one({'id': entry['employee_id']}, {'_id': 0, 'pin_hash': 0}) or {}
+    emp = await db.employees.find_one({'id': entry['employee_id']}, {'_id': 0, 'password_hash': 0}) or {}
 
     buf = BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=18*mm, rightMargin=18*mm, topMargin=18*mm, bottomMargin=18*mm)
@@ -1745,9 +1858,20 @@ async def payroll_pdf(entry_id: str, _: dict = Depends(require_staff)):
     elements.append(t3)
     elements.append(Spacer(1, 4*mm))
 
-    # Payment mode + note
-    pay_mode = (entry.get('payment_mode') or '—').upper()
-    elements.append(Paragraph(f"Payment mode: <b>{pay_mode}</b>", label_style))
+    # Payment mode + note — if the salary was split across multiple modes
+    # (part cash, part bank, etc.), list each recorded payment individually.
+    if entry.get('payment_mode') == 'split':
+        payments = await db.payroll_payments.find({'entry_id': entry_id}, {'_id': 0}).sort('paid_at', 1).to_list(50)
+        elements.append(Paragraph('Payment mode: <b>SPLIT</b>', label_style))
+        for p in payments:
+            elements.append(Paragraph(
+                f"&nbsp;&nbsp;• {p['payment_mode'].upper()} — ₹{float(p['amount']):.0f}"
+                + (f" ({p['note']})" if p.get('note') else ''),
+                label_style,
+            ))
+    else:
+        pay_mode = (entry.get('payment_mode') or '—').upper()
+        elements.append(Paragraph(f"Payment mode: <b>{pay_mode}</b>", label_style))
     if entry.get('note'):
         elements.append(Spacer(1, 2*mm))
         elements.append(Paragraph(f"Note: {entry.get('note')}", label_style))
@@ -1867,7 +1991,7 @@ async def _check_missed_attendance():
     store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
     minutes_now = now_ist.hour * 60 + now_ist.minute
 
-    async for emp in db.employees.find({'status': 'active'}, {'_id': 0, 'pin_hash': 0}):
+    async for emp in db.employees.find({'status': 'active'}, {'_id': 0, 'password_hash': 0}):
         shift = await db.shifts.find_one({'name': emp.get('shift')}, {'_id': 0})
         start = (shift.get('start') if shift else None) or store.get('work_start', '10:00')
         if minutes_now < _minutes(start) + 60:
@@ -1896,11 +2020,58 @@ async def _check_missed_attendance():
         )
 
 
+async def _check_daily_absentee_summary():
+    """Once per day, at/after 9:00 PM IST, push the owner/admin a summary of who
+    never checked in today (no check-in, and not on approved leave/holiday/paid
+    off). Guarded by `db.absentee_summaries` so it only fires once even though
+    the loop polls every 15 minutes."""
+    now_ist = now_utc().astimezone(timezone(timedelta(hours=5, minutes=30)))
+    today = now_ist.date().isoformat()
+    minutes_now = now_ist.hour * 60 + now_ist.minute
+    if minutes_now < 21 * 60:
+        return  # only fire at/after 9:00 PM IST
+    if now_ist.weekday() == 6:
+        return  # Sunday — normally a day off
+    if await db.holidays.find_one({'date': today}, {'_id': 0, 'id': 1}):
+        return
+    if await db.absentee_summaries.find_one({'date': today}, {'_id': 0, 'id': 1}):
+        return  # already sent today
+
+    absent_names = []
+    async for emp in db.employees.find({'status': 'active'}, {'_id': 0, 'password_hash': 0}):
+        att = await db.attendance.find_one({'employee_id': emp['id'], 'date': today}, {'_id': 0})
+        if att and (att.get('check_in') or att.get('status') in ('leave', 'holiday', 'weekly_off')):
+            continue
+        leave = await db.leaves.find_one({
+            'employee_id': emp['id'], 'status': 'approved',
+            'from_date': {'$lte': today}, 'to_date': {'$gte': today},
+        }, {'_id': 0, 'id': 1})
+        if leave:
+            continue
+        absent_names.append(emp['name'])
+
+    await db.absentee_summaries.update_one(
+        {'date': today},
+        {'$set': {'date': today, 'sent_at': now_utc().isoformat(), 'count': len(absent_names)}},
+        upsert=True,
+    )
+    if absent_names:
+        shown = ', '.join(absent_names[:10])
+        if len(absent_names) > 10:
+            shown += f' +{len(absent_names) - 10} more'
+        await notify_roles(
+            ['owner', 'admin'],
+            f"{len(absent_names)} absent today",
+            shown, '/(tabs)/attendance',
+        )
+
+
 async def _attendance_reminder_loop():
     while True:
         try:
             await asyncio.sleep(15 * 60)
             await _check_missed_attendance()
+            await _check_daily_absentee_summary()
         except Exception as e:
             logger.warning(f'attendance reminder loop error: {e}')
 
@@ -2003,7 +2174,7 @@ async def report_pdf(
         q: dict = {'date': {'$gte': frm, '$lte': to}}
         if employee_id: q['employee_id'] = employee_id
         rows = []
-        emp_map = {e['id']: e async for e in db.employees.find({}, {'_id': 0, 'pin_hash': 0, 'photo': 0})}
+        emp_map = {e['id']: e async for e in db.employees.find({}, {'_id': 0, 'password_hash': 0, 'photo': 0})}
         async for a in db.attendance.find(q, {'_id': 0, 'check_in.selfie': 0, 'check_out.selfie': 0}).sort('date', 1):
             e = emp_map.get(a['employee_id'], {})
             rows.append([a['date'], e.get('employee_code', '—'), e.get('name', '—'),
@@ -2021,7 +2192,7 @@ async def report_pdf(
         q = {'date': {'$gte': frm, '$lte': to}, 'is_late': True}
         if employee_id: q['employee_id'] = employee_id
         rows = []
-        emp_map = {e['id']: e async for e in db.employees.find({}, {'_id': 0, 'pin_hash': 0, 'photo': 0})}
+        emp_map = {e['id']: e async for e in db.employees.find({}, {'_id': 0, 'password_hash': 0, 'photo': 0})}
         async for a in db.attendance.find(q, {'_id': 0, 'check_in.selfie': 0, 'check_out.selfie': 0}).sort('date', 1):
             e = emp_map.get(a['employee_id'], {})
             rows.append([a['date'], e.get('employee_code', '—'), e.get('name', '—'),
@@ -2036,7 +2207,7 @@ async def report_pdf(
         q = {'date': {'$gte': frm, '$lte': to}, 'check_in': {'$ne': None}, 'check_out': None}
         if employee_id: q['employee_id'] = employee_id
         rows = []
-        emp_map = {e['id']: e async for e in db.employees.find({}, {'_id': 0, 'pin_hash': 0, 'photo': 0})}
+        emp_map = {e['id']: e async for e in db.employees.find({}, {'_id': 0, 'password_hash': 0, 'photo': 0})}
         async for a in db.attendance.find(q, {'_id': 0, 'check_in.selfie': 0}).sort('date', 1):
             e = emp_map.get(a['employee_id'], {})
             rows.append([a['date'], e.get('employee_code', '—'), e.get('name', '—'),
@@ -2083,7 +2254,7 @@ async def report_pdf(
     if kind == 'ledger':
         if not employee_id:
             raise HTTPException(status_code=400, detail='employee_id required for ledger report')
-        emp = await db.employees.find_one({'id': employee_id}, {'_id': 0, 'pin_hash': 0})
+        emp = await db.employees.find_one({'id': employee_id}, {'_id': 0, 'password_hash': 0})
         if not emp: raise HTTPException(status_code=404, detail='Employee not found')
         entries = await db.timeline.find({'employee_id': employee_id}, {'_id': 0}).sort('created_at', 1).to_list(2000)
         running = 0.0; out = []
@@ -2173,9 +2344,9 @@ async def _ingest_biometric_punch(serial: str, user_id: str, ts: datetime, event
     # Match by biometric_id first (the device's own numeric/short ID, set per-employee
     # in the app when it doesn't line up with employee_code), then fall back to
     # employee_code directly (for setups where they were deliberately enrolled to match).
-    emp = await db.employees.find_one({'biometric_id': user_id}, {'_id': 0, 'pin_hash': 0})
+    emp = await db.employees.find_one({'biometric_id': user_id}, {'_id': 0, 'password_hash': 0})
     if not emp:
-        emp = await db.employees.find_one({'employee_code': user_id.upper()}, {'_id': 0, 'pin_hash': 0})
+        emp = await db.employees.find_one({'employee_code': user_id.upper()}, {'_id': 0, 'password_hash': 0})
     if not emp:
         log_doc['result'] = 'rejected'; log_doc['reason'] = 'unknown_employee'
         await db.biometric_logs.insert_one(dict(log_doc))
@@ -2191,18 +2362,28 @@ async def _ingest_biometric_punch(serial: str, user_id: str, ts: datetime, event
 
     iso = ts.astimezone(timezone.utc).isoformat()
     store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
+    # Use the employee's assigned shift (falling back to store defaults) — same
+    # source of truth the app's own check-in/check-out endpoints use — so a
+    # biometric-device punch and an app punch produce identical late/half-day
+    # results instead of the device path silently ignoring Shift Master.
+    shift = await db.shifts.find_one({'name': emp.get('shift')}, {'_id': 0})
+    work_start_str = (shift.get('start') if shift else None) or store.get('work_start', '10:00')
+    grace = int(shift.get('grace_min', 15)) if shift else int(store.get('grace_min', 15))
+    late_half_day_after = int(shift.get('late_half_day_after_min') or 0) if shift else 0
     is_late = False
     if kind == 'check_in':
+        late_by_min = 0
         try:
-            wsh, wsm = (store.get('work_start') or '10:00').split(':')
+            wsh, wsm = work_start_str.split(':')
             work_start_min = int(wsh) * 60 + int(wsm)
-            grace = int(store.get('grace_min', 15))
             minutes_now = ist.hour * 60 + ist.minute
-            is_late = minutes_now > work_start_min + grace
+            late_by_min = minutes_now - (work_start_min + grace)
+            is_late = late_by_min > 0
         except Exception: is_late = False
         payload = {
             'timestamp': iso, 'latitude': 0, 'longitude': 0, 'selfie': '',
-            'distance_m': 0, 'is_late': is_late, 'source': 'biometric', 'device_serial': serial,
+            'distance_m': 0, 'is_late': is_late, 'late_by_min': max(late_by_min, 0),
+            'source': 'biometric', 'device_serial': serial,
         }
         if existing and existing.get('check_in'):
             log_doc['result'] = 'skipped'; log_doc['reason'] = 'already_checked_in'
@@ -2232,10 +2413,18 @@ async def _ingest_biometric_punch(serial: str, user_id: str, ts: datetime, event
             hours = round((ts - ci_ts).total_seconds() / 3600, 2)
         except Exception:
             hours = 0
-        status = 'half_day' if hours < 4 else 'present'
+        late_by_min = int(existing['check_in'].get('late_by_min') or 0)
+        half_day_for_lateness = bool(late_half_day_after) and late_by_min >= late_half_day_after
+        status = 'half_day' if (hours < 4 or half_day_for_lateness) else 'present'
+        half_day_reason = None
+        if status == 'half_day':
+            half_day_reason = 'short_hours' if hours < 4 else 'late'
         payload = {'timestamp': iso, 'latitude': 0, 'longitude': 0, 'selfie': '',
                    'distance_m': 0, 'source': 'biometric', 'device_serial': serial}
-        await db.attendance.update_one({'id': existing['id']}, {'$set': {'check_out': payload, 'working_hours': hours, 'status': status}})
+        await db.attendance.update_one(
+            {'id': existing['id']},
+            {'$set': {'check_out': payload, 'working_hours': hours, 'status': status, 'half_day_reason': half_day_reason}},
+        )
         att_id = existing['id']
 
     # Update device last_seen
@@ -2371,7 +2560,7 @@ async def _build_context() -> str:
     """Compact snapshot for the assistant prompt (read-only)."""
     d = today_str()
     lines: list = []
-    employees = await db.employees.find({}, {'_id': 0, 'pin_hash': 0, 'photo': 0}).to_list(500)
+    employees = await db.employees.find({}, {'_id': 0, 'password_hash': 0, 'photo': 0}).to_list(500)
     lines.append(f"TODAY: {d}")
     lines.append(f"TOTAL EMPLOYEES: {len(employees)}")
     lines.append("EMPLOYEES:")

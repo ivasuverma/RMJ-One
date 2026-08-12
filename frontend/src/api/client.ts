@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import { storage } from '@/src/utils/storage';
 
 const BASE = process.env.EXPO_PUBLIC_BACKEND_URL || '';
@@ -15,7 +16,7 @@ if (!BASE && __DEV__) {
 }
 
 async function authHeaders(): Promise<Record<string, string>> {
-  const token = await storage.secureGet<string>(TOKEN_KEY, '');
+  const token = await getToken();
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
@@ -78,6 +79,47 @@ export const api = {
   },
 };
 
-export async function saveToken(t: string) { await storage.secureSet(TOKEN_KEY, t); }
-export async function clearToken() { await storage.secureRemove(TOKEN_KEY); }
-export async function getToken() { return storage.secureGet<string>(TOKEN_KEY, ''); }
+// `remember=false` (web only) keeps the session in sessionStorage instead of the
+// persistent store, so closing the tab/browser logs the user out — useful on a
+// shared shop device. Default is persistent ("stay logged in"), matching prior
+// behavior. Native builds have no meaningful non-persistent option, so `remember`
+// is ignored there.
+export async function saveToken(t: string, remember: boolean = true) {
+  if (Platform.OS === 'web' && !remember) {
+    try { window.sessionStorage.setItem(TOKEN_KEY, t); } catch { /* ignore */ }
+    await storage.secureRemove(TOKEN_KEY);
+    return;
+  }
+  if (Platform.OS === 'web') {
+    try { window.sessionStorage.removeItem(TOKEN_KEY); } catch { /* ignore */ }
+  }
+  await storage.secureSet(TOKEN_KEY, t);
+}
+
+// Whether the current session is session-only (i.e. the user did NOT check
+// "keep me signed in"). Used when a screen needs to re-save a fresh token
+// (e.g. after a password change) without silently upgrading a session-only
+// login into a persistent one.
+export async function isSessionOnly(): Promise<boolean> {
+  if (Platform.OS === 'web') {
+    try { return !!window.sessionStorage.getItem(TOKEN_KEY); } catch { /* ignore */ }
+  }
+  return false;
+}
+
+export async function clearToken() {
+  await storage.secureRemove(TOKEN_KEY);
+  if (Platform.OS === 'web') {
+    try { window.sessionStorage.removeItem(TOKEN_KEY); } catch { /* ignore */ }
+  }
+}
+
+export async function getToken() {
+  if (Platform.OS === 'web') {
+    try {
+      const s = window.sessionStorage.getItem(TOKEN_KEY);
+      if (s) return s;
+    } catch { /* ignore */ }
+  }
+  return storage.secureGet<string>(TOKEN_KEY, '');
+}

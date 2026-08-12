@@ -113,11 +113,11 @@ def main():
         payload = {'shift': SHIFT['name'], 'status': 'active', **emp}
         result = call('POST', '/employees', token=token, body=payload)
         created.append(result)
-        print(f"  {result['employee_code']}  {result['name']:<22} PIN: {result['default_pin']}")
+        print(f"  {result['employee_code']}  {result['name']:<22} user: {result['default_username']}  pass: {result['default_password']}")
 
     print(f'\nDone — {len(created)} employees created.')
-    print('Share each person their Employee Code + PIN above so they can log in')
-    print('(Employee Login tab on the sign-in screen, not username/password).')
+    print('Share each person their username + password above so they can log in')
+    print('(Employee tab on the sign-in screen) — they can change it later from Settings.')
 
 
 if __name__ == '__main__':

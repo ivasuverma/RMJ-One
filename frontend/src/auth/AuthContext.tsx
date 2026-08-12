@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import { api, saveToken, clearToken, getToken } from '@/src/api/client';
+import { api, saveToken, clearToken, getToken, isSessionOnly } from '@/src/api/client';
 
 export type User = {
   id: string;
@@ -15,8 +15,8 @@ export type User = {
 type AuthState = {
   user: User | null;
   loading: boolean;
-  loginOwner: (username: string, password: string) => Promise<void>;
-  loginEmployee: (employee_code: string, pin: string) => Promise<void>;
+  loginOwner: (username: string, password: string, remember?: boolean) => Promise<void>;
+  loginEmployee: (username: string, password: string, remember?: boolean) => Promise<void>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
   updateMyAccount: (currentPassword: string, newUsername?: string, newPassword?: string) => Promise<void>;
@@ -44,19 +44,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     (async () => { await refresh(); setLoading(false); })();
   }, [refresh]);
 
-  const loginOwner = useCallback(async (username: string, password: string) => {
+  const loginOwner = useCallback(async (username: string, password: string, remember: boolean = true) => {
     const res = await api.post<{ access_token: string; user: User }>(
       '/auth/login', { username, password }, false,
     );
-    await saveToken(res.access_token);
+    await saveToken(res.access_token, remember);
     setUser(res.user);
   }, []);
 
-  const loginEmployee = useCallback(async (employee_code: string, pin: string) => {
+  const loginEmployee = useCallback(async (username: string, password: string, remember: boolean = true) => {
     const res = await api.post<{ access_token: string; user: User }>(
-      '/auth/employee-login', { employee_code, pin }, false,
+      '/auth/employee-login', { username, password }, false,
     );
-    await saveToken(res.access_token);
+    await saveToken(res.access_token, remember);
     setUser(res.user);
   }, []);
 
@@ -66,12 +66,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const updateMyAccount = useCallback(async (currentPassword: string, newUsername?: string, newPassword?: string) => {
+    // Re-save the fresh token the same way the current one is stored — a
+    // session-only ("don't remember me") login shouldn't silently become
+    // persistent just because the password changed.
+    const remember = !(await isSessionOnly());
     const res = await api.put<{ access_token: string; user: User }>('/auth/me', {
       current_password: currentPassword,
       new_username: newUsername || undefined,
       new_password: newPassword || undefined,
     });
-    await saveToken(res.access_token);
+    await saveToken(res.access_token, remember);
     setUser(res.user);
   }, []);
 

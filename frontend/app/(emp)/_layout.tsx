@@ -47,7 +47,7 @@ export default function EmployeeTabsLayout() {
       />
       <Tabs.Screen
         name="leaves"
-        options={{ title: 'Leaves', tabBarIcon: ({ color, size }) => <Ionicons name="airplane-outline" color={color} size={size} /> }}
+        options={{ href: null }}
       />
       <Tabs.Screen
         name="profile"

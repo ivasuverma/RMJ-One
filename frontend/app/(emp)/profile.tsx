@@ -59,12 +59,16 @@ export default function EmployeeProfile() {
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 60 }} showsVerticalScrollIndicator={false}>
         <Text style={styles.title}>Profile</Text>
 
-        <View style={styles.card}>
+        <Pressable style={styles.card} onPress={() => router.push('/settings/account' as any)} testID="emp-profile-card">
           <View style={styles.avatar}><Text style={styles.avatarText}>{(user?.name || 'E')[0]?.toUpperCase()}</Text></View>
           <Text style={styles.name}>{user?.name}</Text>
           <Text style={styles.subtitle}>{user?.employee_code} · {user?.designation || '—'}</Text>
           <Text style={styles.dept}>{user?.department || '—'}</Text>
-        </View>
+          <View style={styles.editHint}>
+            <Ionicons name="key-outline" size={13} color={colors.brandSecondary} />
+            <Text style={styles.editHintText}>Tap to change username / password</Text>
+          </View>
+        </Pressable>
 
         {details && (
           <>
@@ -197,6 +201,8 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   subtitle: { color: colors.brandSecondary, fontSize: 13, marginTop: 4 },
   dept: { color: colors.onSurfaceTertiary, fontSize: 12, marginTop: 2 },
+  editHint: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: spacing.sm },
+  editHintText: { color: colors.brandSecondary, fontSize: 11 },
 
   sectionLabel: {
     color: colors.mutedText, fontSize: 11, letterSpacing: 1, textTransform: 'uppercase',

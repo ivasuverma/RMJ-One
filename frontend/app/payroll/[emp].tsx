@@ -22,7 +22,9 @@ export default function PayrollDetail() {
   const { user } = useAuth();
   const canWrite = user?.role === 'owner' || user?.role === 'accountant';
   const [row, setRow] = useState<any>(null);
+  const [payments, setPayments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [addPaymentOpen, setAddPaymentOpen] = useState(false);
   const payGuard = useRef(false);
 
   const load = useCallback(async () => {
@@ -30,19 +32,39 @@ export default function PayrollDetail() {
       const res = await api.get<any>(`/payroll/${y}/${m}`);
       const found = (res.rows || []).find((r: any) => r.employee_id === emp);
       setRow(found ? { ...found, _saved: res.saved, _locked: res.locked } : null);
+      if (found?.id) {
+        try { setPayments(await api.get<any[]>(`/payroll/entry/${found.id}/payments`)); }
+        catch (_e) { setPayments([]); }
+      } else setPayments([]);
     } finally { setLoading(false); }
   }, [emp, y, m]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const markPaid = async () => {
+  const amountPaid = useMemo(() => payments.reduce((s, p) => s + (p.amount || 0), 0), [payments]);
+  const remaining = Math.max(0, Math.round(((row?.net_salary || 0) - amountPaid) * 100) / 100);
+
+  const addPayment = async (mode: 'cash' | 'bank' | 'upi' | 'cheque', amount: number, note: string) => {
     if (payGuard.current) return; // stop rapid double/triple taps from double-firing
-    if (!row?.id) { Alert.alert('Generate payroll first', 'Save the payroll for this month before marking paid.'); return; }
+    if (!row?.id) { Alert.alert('Generate payroll first', 'Save the payroll for this month before recording a payment.'); return; }
     payGuard.current = true;
     try {
-      await api.post(`/payroll/entry/${row.id}/pay`);
+      const res = await api.post<any>(`/payroll/entry/${row.id}/payments`, { payment_mode: mode, amount, note });
+      setAddPaymentOpen(false);
       await load();
-      Alert.alert('Marked paid', 'Salary receipt is ready to download.');
+      Alert.alert(res.fully_paid ? 'Marked paid' : 'Payment recorded', res.fully_paid
+        ? 'Salary receipt is ready to download.'
+        : `₹${res.remaining.toLocaleString('en-IN')} still remaining.`);
+    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+    finally { payGuard.current = false; }
+  };
+
+  const removePayment = async (paymentId: string) => {
+    if (payGuard.current) return;
+    payGuard.current = true;
+    try {
+      await api.del(`/payroll/entry/${row.id}/payments/${paymentId}`);
+      await load();
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
     finally { payGuard.current = false; }
   };
@@ -147,12 +169,48 @@ export default function PayrollDetail() {
           <Text style={styles.netVal}>{fmtINR(row.net_salary)}</Text>
         </View>
 
+        {row._saved && payments.length > 0 && (
+          <>
+            <SectionTitle text="Payments Recorded" />
+            {payments.map((p) => (
+              <View key={p.id} style={styles.paymentRow} testID={`payment-${p.id}`}>
+                <View style={styles.paymentIcon}>
+                  <Ionicons name={PAY_ICON[p.payment_mode] || 'cash-outline'} size={15} color={colors.brandSecondary} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.paymentMode}>{p.payment_mode.toUpperCase()}</Text>
+                  {!!p.note && <Text style={styles.paymentNote}>{p.note}</Text>}
+                </View>
+                <Text style={styles.paymentAmount}>{fmtINR(p.amount)}</Text>
+                {canWrite && !row.paid && (
+                  <Pressable onPress={() => removePayment(p.id)} style={styles.paymentDelete} testID={`payment-${p.id}-delete`} hitSlop={8}>
+                    <Ionicons name="close-circle" size={18} color={colors.onError} />
+                  </Pressable>
+                )}
+              </View>
+            ))}
+            {!row.paid && (
+              <View style={styles.remainingRow}>
+                <Text style={styles.remainingLabel}>Remaining</Text>
+                <Text style={styles.remainingValue}>{fmtINR(remaining)}</Text>
+              </View>
+            )}
+          </>
+        )}
+
         <View style={styles.actions}>
-          {row._saved && !row.paid && canWrite && (
-            <Pressable style={styles.payBtn} onPress={markPaid} testID="mark-paid-btn">
+          {row._saved && !row.paid && canWrite && !addPaymentOpen && (
+            <Pressable style={styles.payBtn} onPress={() => setAddPaymentOpen(true)} testID="mark-paid-btn">
               <Ionicons name="wallet-outline" size={18} color={colors.onBrandPrimary} />
-              <Text style={styles.payText}>Mark Paid</Text>
+              <Text style={styles.payText}>{payments.length > 0 ? 'Record Another Payment' : 'Record Payment'}</Text>
             </Pressable>
+          )}
+          {row._saved && !row.paid && canWrite && addPaymentOpen && (
+            <RecordPaymentForm
+              remaining={remaining}
+              onCancel={() => setAddPaymentOpen(false)}
+              onConfirm={addPayment}
+            />
           )}
           {row._saved && (
             <Pressable style={styles.pdfBtn} onPress={downloadPdf} testID="download-pdf-btn">
@@ -178,6 +236,91 @@ export default function PayrollDetail() {
   );
 }
 
+const PAY_MODES = [
+  { key: 'cash', label: 'Cash', icon: 'cash-outline' },
+  { key: 'bank', label: 'Bank', icon: 'business-outline' },
+  { key: 'upi', label: 'UPI', icon: 'phone-portrait-outline' },
+  { key: 'cheque', label: 'Cheque', icon: 'document-text-outline' },
+] as const;
+
+const PAY_ICON: Record<string, any> = {
+  cash: 'cash-outline', bank: 'business-outline', upi: 'phone-portrait-outline', cheque: 'document-text-outline',
+};
+
+// Records ONE payment toward an employee's net salary. A salary doesn't have to
+// be paid in a single mode — e.g. part cash now, part bank transfer next week —
+// so this form defaults the amount to whatever's still remaining but lets the
+// admin split it, and the parent screen lists every payment made so far.
+function RecordPaymentForm({ remaining, onCancel, onConfirm }: {
+  remaining: number;
+  onCancel: () => void;
+  onConfirm: (mode: 'cash' | 'bank' | 'upi' | 'cheque', amount: number, note: string) => void;
+}) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStylesOv(colors), [colors]);
+  const [mode, setMode] = useState<'cash' | 'bank' | 'upi' | 'cheque' | null>(null);
+  const [amount, setAmount] = useState(String(remaining || ''));
+  const [note, setNote] = useState('');
+  const [confirming, setConfirming] = useState(false);
+
+  const confirm = () => {
+    const amt = parseFloat(amount);
+    if (!mode) { Alert.alert('Select a mode', 'Choose how this payment was made.'); return; }
+    if (!amt || amt <= 0) { Alert.alert('Invalid amount', 'Enter an amount greater than 0.'); return; }
+    if (amt > remaining + 0.5) { Alert.alert('Too much', `That's more than the ₹${remaining.toLocaleString('en-IN')} remaining.`); return; }
+    setConfirming(true);
+    onConfirm(mode, amt, note);
+  };
+
+  return (
+    <View style={styles.payPicker} testID="pay-mode-picker">
+      <Text style={styles.payPickerTitle}>Record a payment · ₹{remaining.toLocaleString('en-IN')} remaining</Text>
+      <View style={{ flexDirection: 'row', gap: 6, marginTop: 8 }}>
+        {PAY_MODES.map((m) => (
+          <Pressable
+            key={m.key} testID={`pay-confirm-mode-${m.key}`}
+            onPress={() => setMode(m.key)}
+            style={[styles.mode, mode === m.key && styles.modeActive]}
+          >
+            <Ionicons name={m.icon as any} size={16} color={mode === m.key ? colors.onBrandPrimary : colors.onSurfaceTertiary} />
+            <Text style={[styles.modeText, mode === m.key && { color: colors.onBrandPrimary }]}>{m.label}</Text>
+          </Pressable>
+        ))}
+      </View>
+
+      <Text style={styles.numLabel}>Amount (₹)</Text>
+      <TextInput
+        testID="pay-amount-input"
+        value={amount} onChangeText={(v) => setAmount(v.replace(/[^0-9.]/g, ''))}
+        keyboardType="numeric" placeholder="0" placeholderTextColor={colors.mutedText}
+        style={[styles.numInput, { textAlign: 'left', fontSize: 16 }]}
+      />
+
+      <Text style={styles.numLabel}>Note (optional)</Text>
+      <TextInput
+        testID="pay-note-input"
+        value={note} onChangeText={setNote}
+        placeholder="e.g. UTR / cheque number" placeholderTextColor={colors.mutedText}
+        style={styles.numInput}
+      />
+
+      <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md }}>
+        <Pressable style={styles.payCancelBtn} onPress={onCancel} testID="pay-mode-cancel-btn">
+          <Text style={styles.payCancelText}>Cancel</Text>
+        </Pressable>
+        <Pressable
+          style={[styles.payConfirmBtn, confirming && { opacity: 0.5 }]}
+          onPress={confirm}
+          disabled={confirming}
+          testID="pay-mode-confirm-btn"
+        >
+          {confirming ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.payConfirmText}>Record Payment</Text>}
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
 function OverridesEditor({ row, onSaved }: { row: any; onSaved: () => void }) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
@@ -186,7 +329,6 @@ function OverridesEditor({ row, onSaved }: { row: any; onSaved: () => void }) {
   const [fine, setFine] = useState(String(row.fine || ''));
   const [ded, setDed] = useState(String(row.manual_deduction || ''));
   const [note, setNote] = useState(row.note || '');
-  const [pay, setPay] = useState<'cash' | 'bank' | 'upi' | 'cheque'>(row.payment_mode || 'cash');
   const [saving, setSaving] = useState(false);
   const submittingRef = useRef(false);
 
@@ -199,7 +341,7 @@ function OverridesEditor({ row, onSaved }: { row: any; onSaved: () => void }) {
         bonus_override: parseFloat(bonus || '0'),
         fine_override: parseFloat(fine || '0'),
         manual_deduction_override: parseFloat(ded || '0'),
-        note, payment_mode: pay,
+        note,
       });
       onSaved();
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
@@ -213,18 +355,6 @@ function OverridesEditor({ row, onSaved }: { row: any; onSaved: () => void }) {
         <NumField label="Bonus" v={bonus} onC={setBonus} testID="ov-bonus" />
         <NumField label="Fine" v={fine} onC={setFine} testID="ov-fine" />
         <NumField label="Deduction" v={ded} onC={setDed} testID="ov-ded" />
-      </View>
-      <Text style={styles.section}>Payment Mode</Text>
-      <View style={{ flexDirection: 'row', gap: 6 }}>
-        {(['cash', 'bank', 'upi', 'cheque'] as const).map((m) => (
-          <Pressable
-            key={m} testID={`pay-mode-${m}`}
-            onPress={() => setPay(m)}
-            style={[stylesOv.mode, pay === m && stylesOv.modeActive]}
-          >
-            <Text style={[stylesOv.modeText, pay === m && { color: colors.onBrandPrimary }]}>{m.toUpperCase()}</Text>
-          </Pressable>
-        ))}
       </View>
       <Text style={styles.section}>Note (shows on PDF)</Text>
       <TextInput
@@ -272,6 +402,19 @@ const makeStylesOv = (colors: ThemeColors) => StyleSheet.create({
   },
   saveBtn: { marginTop: spacing.md, backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: 12, alignItems: 'center' },
   saveText: { color: colors.onBrandPrimary, fontWeight: '800', fontSize: 14 },
+
+  payPicker: {
+    width: '100%', backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg,
+    borderWidth: 1, borderColor: colors.brand, padding: spacing.md,
+  },
+  payPickerTitle: { color: colors.onSurface, fontSize: 13, fontWeight: '700' },
+  payCancelBtn: {
+    flex: 1, paddingVertical: 12, borderRadius: radius.md, alignItems: 'center',
+    backgroundColor: colors.surfaceTertiary, borderWidth: 1, borderColor: colors.border,
+  },
+  payCancelText: { color: colors.onSurfaceSecondary, fontWeight: '700', fontSize: 13 },
+  payConfirmBtn: { flex: 2, backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: 12, alignItems: 'center' },
+  payConfirmText: { color: colors.onBrandPrimary, fontWeight: '800', fontSize: 13 },
 });
 
 function Header({ title, onBack }: { title: string; onBack: () => void }) {
@@ -391,4 +534,24 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     borderColor: colors.border, padding: spacing.md,
   },
   hintText: { color: colors.onSurfaceTertiary, fontSize: 12, flex: 1 },
+
+  paymentRow: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1,
+    borderColor: colors.border, padding: spacing.sm, marginBottom: spacing.xs,
+  },
+  paymentIcon: {
+    width: 28, height: 28, borderRadius: 14, backgroundColor: colors.brandTertiary,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  paymentMode: { color: colors.onSurface, fontSize: 12, fontWeight: '700' },
+  paymentNote: { color: colors.mutedText, fontSize: 11, marginTop: 1 },
+  paymentAmount: { color: colors.onSurface, fontSize: 13, fontWeight: '700' },
+  paymentDelete: { padding: 2 },
+  remainingRow: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: spacing.sm, paddingVertical: spacing.xs,
+  },
+  remainingLabel: { color: colors.onSurfaceTertiary, fontSize: 12 },
+  remainingValue: { color: colors.onWarning, fontSize: 13, fontWeight: '800' },
 });

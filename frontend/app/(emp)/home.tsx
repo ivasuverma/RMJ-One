@@ -121,10 +121,9 @@ export default function EmployeeHome() {
                 testID="reminder-checkin"
                 icon="alarm-outline" color={colors.warning}
                 title="Check-In Reminder"
-                subtitle="You haven't punched in today. Punch in now or request a correction."
+                subtitle="You haven't punched in today. Punch in now, or tap a day on your Calendar to request a correction."
                 actions={[
                   { label: 'Punch In', onPress: () => setShowPunch('check_in'), primary: true, testID: 'reminder-checkin-btn' },
-                  { label: 'Request Correction', onPress: () => router.push('/attendance/correction'), testID: 'reminder-correction-btn' },
                 ]}
               />
             )}
@@ -174,8 +173,8 @@ export default function EmployeeHome() {
             {/* Quick actions */}
             <Text style={styles.section}>Quick actions</Text>
             <View style={styles.actionsRow}>
-              <ActionCard icon="create-outline" label="Correction" onPress={() => router.push('/attendance/correction')} testID="action-correction" />
-              <ActionCard icon="airplane-outline" label="Apply Leave" onPress={() => router.push('/leaves/new')} testID="action-leave" />
+              <ActionCard icon="airplane-outline" label="Leaves" onPress={() => router.push('/leaves')} testID="action-leave" />
+              <ActionCard icon="book-outline" label="My Ledger" onPress={() => router.push(`/ledger/${user?.id}`)} testID="action-ledger" />
             </View>
           </View>
         )}

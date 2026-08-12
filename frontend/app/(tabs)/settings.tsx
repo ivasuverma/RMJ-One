@@ -60,7 +60,11 @@ export default function SettingsScreen() {
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         <Text style={styles.title}>Settings</Text>
 
-        <View style={styles.profileCard}>
+        <Pressable
+          testID="settings-profile-card"
+          onPress={() => router.push('/settings/account' as any)}
+          style={styles.profileCard}
+        >
           <View style={styles.avatar}>
             <Text style={styles.avatarText}>{(user?.name || 'O')[0]?.toUpperCase()}</Text>
           </View>
@@ -69,7 +73,8 @@ export default function SettingsScreen() {
             <Text style={styles.role}>{ROLE_LABEL[user?.role || 'employee']}</Text>
             <Text style={styles.username}>@{user?.username}</Text>
           </View>
-        </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.mutedText} />
+        </Pressable>
 
         <Pressable testID="settings-all-modules-btn" onPress={() => router.push('/')} style={styles.modulesBtn}>
           <Ionicons name="grid-outline" size={16} color={colors.brandPrimary} />

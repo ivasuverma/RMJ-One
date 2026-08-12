@@ -12,7 +12,7 @@ import { useTheme } from '@/src/theme/ThemeContext';
 type Correction = {
   id: string; employee_name: string; employee_code: string; date: string;
   reason_type: string; note: string; status: 'pending' | 'approved' | 'rejected';
-  created_at: string;
+  created_at: string; desired_check_in?: string | null; desired_check_out?: string | null;
 };
 type Leave = {
   id: string; employee_name: string; employee_code: string;
@@ -111,6 +111,18 @@ export default function Approvals() {
                   <View style={{ flex: 1 }}>
                     <Text style={styles.name}>{c.employee_name}</Text>
                     <Text style={styles.meta}>{c.employee_code} · {reasonLabel(c.reason_type)} · {fmtDate(c.date)}</Text>
+                    {(!!c.desired_check_in || !!c.desired_check_out) && (
+                      <View style={styles.desiredRow}>
+                        <View style={styles.desiredPill}>
+                          <Ionicons name="log-in-outline" size={12} color={colors.brandSecondary} />
+                          <Text style={styles.desiredText}>In {c.desired_check_in || '—'}</Text>
+                        </View>
+                        <View style={styles.desiredPill}>
+                          <Ionicons name="log-out-outline" size={12} color={colors.brandSecondary} />
+                          <Text style={styles.desiredText}>Out {c.desired_check_out || '—'}</Text>
+                        </View>
+                      </View>
+                    )}
                     {!!c.note && <Text style={styles.note}>{c.note}</Text>}
                   </View>
                   <StatusChip s={c.status} />
@@ -232,6 +244,12 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   name: { color: colors.onSurface, fontSize: 14, fontWeight: '700' },
   meta: { color: colors.onSurfaceTertiary, fontSize: 12, marginTop: 2 },
   note: { color: colors.mutedText, fontSize: 12, marginTop: 4, fontStyle: 'italic' },
+  desiredRow: { flexDirection: 'row', gap: spacing.sm, marginTop: 6 },
+  desiredPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.brandTertiary,
+    borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 3,
+  },
+  desiredText: { color: colors.brandSecondary, fontSize: 11, fontWeight: '700' },
 
   actions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
   actionBtn: {

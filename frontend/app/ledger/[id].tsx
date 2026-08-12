@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { api } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthContext';
+import { confirmAction } from '@/src/utils/confirm';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
@@ -44,6 +45,7 @@ export default function EmployeeLedger() {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const canEdit = user?.role === 'owner' || user?.role === 'admin';
+  const canAdd = user?.role === 'owner' || user?.role === 'admin' || user?.role === 'accountant';
   const [data, setData] = useState<{ entries: any[]; closing_balance: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -63,14 +65,16 @@ export default function EmployeeLedger() {
         <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
-        <Text style={styles.title}>Employee Ledger</Text>
-        <Pressable
-          onPress={() => router.push({ pathname: '/ledger/new', params: { emp: id } })}
-          style={styles.addBtn}
-          testID="add-ledger-entry-btn"
-        >
-          <Ionicons name="add" size={18} color={colors.onBrandPrimary} />
-        </Pressable>
+        <Text style={styles.title}>{canAdd ? 'Employee Ledger' : 'My Ledger'}</Text>
+        {canAdd ? (
+          <Pressable
+            onPress={() => router.push({ pathname: '/ledger/new', params: { emp: id } })}
+            style={styles.addBtn}
+            testID="add-ledger-entry-btn"
+          >
+            <Ionicons name="add" size={18} color={colors.onBrandPrimary} />
+          </Pressable>
+        ) : <View style={{ width: 40 }} />}
       </View>
 
       {loading ? (
@@ -167,13 +171,11 @@ function EditEntrySheet({ entry, onClose, onSaved }: { entry: any; onClose: () =
   };
 
   const confirmDelete = () => {
-    Alert.alert(
+    confirmAction(
       'Delete entry?',
       `This removes "${entry.title}" (${fmtINR(entry.amount)}) from the ledger. This cannot be undone.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Delete', style: 'destructive', onPress: doDelete },
-      ],
+      'Delete',
+      doDelete,
     );
   };
 
