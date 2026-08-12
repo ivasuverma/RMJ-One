@@ -15,6 +15,14 @@ type TileDef = {
 
 const SECTIONS: { title: string; tiles: TileDef[] }[] = [
   {
+    title: 'People',
+    tiles: [
+      { key: 'team', label: 'Team', icon: 'people-outline', route: '/(tabs)/employees' },
+      { key: 'karigars', label: 'Karigars', icon: 'hammer-outline', route: '/karigars' },
+      { key: 'customers', label: 'Customers', icon: 'person-add-outline', route: '/customers' },
+    ],
+  },
+  {
     title: 'Universal',
     tiles: [
       { key: 'store', label: 'Store Settings', icon: 'storefront-outline', route: '/store-settings', ownerOnly: true },
@@ -73,8 +81,8 @@ export default function UtilityScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="utility-screen">
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        <Text style={styles.title}>Utility</Text>
-        <Text style={styles.subtitle}>Settings and tools that apply across the whole business.</Text>
+        <Text style={styles.title}>Settings</Text>
+        <Text style={styles.subtitle}>People, settings, and tools that apply across the whole business.</Text>
 
         <Pressable testID="utility-account-card" onPress={() => router.push('/settings/account' as any)} style={styles.profileCard}>
           <View style={styles.avatar}><Text style={styles.avatarText}>{(user?.name || 'O')[0]?.toUpperCase()}</Text></View>

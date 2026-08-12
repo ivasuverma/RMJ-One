@@ -12,7 +12,7 @@ import { useTheme } from '@/src/theme/ThemeContext';
 
 type Customer = { id: string; name: string; mobile: string; address: string };
 
-// Masters is for managing customer *accounts* only (add/edit). Repair history
+// This screen is for managing customer *accounts* only (add/edit). Repair history
 // and ledger lookups live under Reports > Customer Ledger.
 export default function CustomersScreen() {
   const router = useRouter();
@@ -65,7 +65,7 @@ export default function CustomersScreen() {
     if (!editingId) return;
     confirmAction(
       'Delete customer?',
-      `Remove ${name || 'this customer'} from Masters? Only allowed if they have no repair history. This cannot be undone.`,
+      `Remove ${name || 'this customer'}? Only allowed if they have no repair history. This cannot be undone.`,
       'Delete',
       async () => {
         setDeleting(true);

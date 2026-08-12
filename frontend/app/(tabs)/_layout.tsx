@@ -42,10 +42,6 @@ export default function OwnerTabsLayout() {
         options={{ title: 'Home', tabBarIcon: ({ color, size }) => <Ionicons name="home-outline" color={color} size={size} /> }}
       />
       <Tabs.Screen
-        name="masters"
-        options={{ title: 'Masters', tabBarIcon: ({ color, size }) => <Ionicons name="cube-outline" color={color} size={size} /> }}
-      />
-      <Tabs.Screen
         name="transactions"
         options={{ title: 'Transactions', tabBarIcon: ({ color, size }) => <Ionicons name="swap-horizontal-outline" color={color} size={size} /> }}
       />
@@ -55,7 +51,7 @@ export default function OwnerTabsLayout() {
       />
       <Tabs.Screen
         name="utility"
-        options={{ title: 'Utility', tabBarIcon: ({ color, size }) => <Ionicons name="build-outline" color={color} size={size} /> }}
+        options={{ title: 'Settings', tabBarIcon: ({ color, size }) => <Ionicons name="settings-outline" color={color} size={size} /> }}
       />
       {/* Still routable (tiles above link into these) but no longer their own bottom
           tab — the reference IA groups by action type, not by module. */}
@@ -63,6 +59,7 @@ export default function OwnerTabsLayout() {
       <Tabs.Screen name="employees" options={{ href: null }} />
       <Tabs.Screen name="payroll" options={{ href: null }} />
       <Tabs.Screen name="settings" options={{ href: null }} />
+      <Tabs.Screen name="masters" options={{ href: null }} />
     </Tabs>
   );
 }

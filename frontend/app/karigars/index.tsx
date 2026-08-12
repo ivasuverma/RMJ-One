@@ -13,7 +13,7 @@ import { useTheme } from '@/src/theme/ThemeContext';
 type Karigar = { id: string; name: string; mobile: string; is_employee: boolean; employee_id: string | null; active: boolean };
 type Emp = { id: string; name: string; employee_code: string; designation?: string };
 
-// Masters is for managing karigar *accounts* only (add/edit). Gold/₹ ledger
+// This screen is for managing karigar *accounts* only (add/edit). Gold/₹ ledger
 // lookups live under Reports > Karigar Ledger.
 export default function KarigarsScreen() {
   const router = useRouter();
@@ -81,7 +81,7 @@ export default function KarigarsScreen() {
     if (!editingId) return;
     confirmAction(
       'Delete karigar?',
-      `Remove ${name || 'this karigar'} from Masters? Only allowed if their ledger has no entries. This cannot be undone.`,
+      `Remove ${name || 'this karigar'}? Only allowed if their ledger has no entries. This cannot be undone.`,
       'Delete',
       async () => {
         setDeleting(true);
