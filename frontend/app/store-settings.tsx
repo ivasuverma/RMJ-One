@@ -89,7 +89,18 @@ export default function StoreSettings() {
   };
 
   if (loading) {
-    return <View style={styles.centered}><ActivityIndicator color={colors.brandPrimary} size="large" /></View>;
+    return (
+      <SafeAreaView style={styles.root} edges={['top']}>
+        <View style={styles.header}>
+          <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
+            <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
+          </Pressable>
+          <View style={{ flex: 1 }} />
+          <View style={{ width: 40 }} />
+        </View>
+        <View style={styles.centered}><ActivityIndicator color={colors.brandPrimary} size="large" /></View>
+      </SafeAreaView>
+    );
   }
 
   return (

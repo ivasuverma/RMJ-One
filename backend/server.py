@@ -1780,9 +1780,13 @@ async def list_repair_items(
     _: dict = Depends(require_staff),
 ):
     query: dict = {}
-    if status_:
+    if status_ == 'overdue':
+        today = today_str()
+        query['due_date'] = {'$ne': None, '$lt': today}
+        query['status'] = {'$ne': 'delivered'}
+    elif status_ and status_ != 'all':
         query['status'] = status_
-    elif not q:
+    elif not q and status_ != 'all':
         # Default view (no filters at all) is the outstanding worklist.
         query['status'] = {'$ne': 'delivered'}
     if q:
@@ -1811,6 +1815,17 @@ async def update_repair_item(item_id: str, body: RepairItemUpdateIn, user=Depend
         await db.repair_items.update_one({'id': item_id}, {'$set': upd})
         await log_audit(user, 'repair_item.update', 'repair_item', item_id, item['item_code'])
     return await db.repair_items.find_one({'id': item_id}, {'_id': 0})
+
+
+@api.delete('/repair-items/{item_id}')
+async def delete_repair_item(item_id: str, user=Depends(require_admin), _mod=Depends(require_module('repairs'))):
+    item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
+    if not item: raise HTTPException(status_code=404, detail='Item not found')
+    if item['status'] != 'received':
+        raise HTTPException(status_code=400, detail='Only an item that has not been issued yet can be deleted — receive it back first if it is with a karigar')
+    await db.repair_items.delete_one({'id': item_id})
+    await log_audit(user, 'repair_item.delete', 'repair_item', item_id, item['item_code'])
+    return {'ok': True}
 
 
 @api.post('/repair-items/{item_id}/issue')
@@ -2134,16 +2149,6 @@ async def dashboard(_: dict = Depends(get_current)):
     pending_corrections = await db.corrections.count_documents({'status': 'pending'})
     pending_leaves = await db.leaves.count_documents({'status': 'pending'})
 
-    total_salary = 0.0
-    async for e in db.employees.find({'status': 'active'}, {'_id': 0, 'salary': 1}):
-        total_salary += float(e.get('salary') or 0)
-    adv_total = 0.0
-    bonus_total = 0.0
-    async for t in db.timeline.find({'type': 'advance'}, {'_id': 0, 'amount': 1}):
-        adv_total += float(t.get('amount') or 0)
-    async for t in db.timeline.find({'type': 'bonus'}, {'_id': 0, 'amount': 1}):
-        bonus_total += float(t.get('amount') or 0)
-
     # Repairs at-a-glance — counts by status plus how many are past their due date.
     repair_items = await db.repair_items.find({'status': {'$ne': 'delivered'}}, {'_id': 0, 'status': 1, 'due_date': 1}).to_list(5000)
     repairs_received = sum(1 for i in repair_items if i['status'] == 'received')
@@ -2167,15 +2172,6 @@ async def dashboard(_: dict = Depends(get_current)):
         'pending_approvals': {
             'attendance_corrections': pending_corrections,
             'leave_requests': pending_leaves,
-            'salary_advances': 0,
-            'payroll_approval': 0,
-        },
-        'payroll_summary': {
-            'current_month_payroll': total_salary,
-            'pending_salary': total_salary,
-            'advances_outstanding': adv_total,
-            'loans_outstanding': 0,
-            'bonuses': bonus_total,
         },
         'repairs_summary': {
             'received': repairs_received, 'with_karigar': repairs_with_karigar, 'ready': repairs_ready,

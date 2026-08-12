@@ -84,7 +84,12 @@ export default function PayrollDetail() {
     router.push({ pathname: '/ledger/[id]', params: { id: emp, year: String(y), month: String(m), type, label } });
   };
 
-  if (loading) return <View style={styles.centered}><ActivityIndicator color={colors.brandPrimary} size="large" /></View>;
+  if (loading) return (
+    <SafeAreaView style={styles.root} edges={['top']}>
+      <Header title="Payroll" onBack={() => router.back()} />
+      <View style={styles.centered}><ActivityIndicator color={colors.brandPrimary} size="large" /></View>
+    </SafeAreaView>
+  );
   if (!row) return (
     <SafeAreaView style={styles.root} edges={['top']}>
       <Header title="Payroll" onBack={() => router.back()} />

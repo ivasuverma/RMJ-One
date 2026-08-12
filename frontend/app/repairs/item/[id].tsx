@@ -138,6 +138,21 @@ export default function RepairItemDetailScreen() {
     finally { setBusy(false); submittingRef.current = false; }
   };
 
+  const doDeleteItem = () => {
+    if (!item) return;
+    confirmAction(
+      'Delete this tag',
+      `Delete ${item.item_code} · ${item.description}? This cannot be undone.`,
+      'Delete',
+      async () => {
+        try {
+          await api.del(`/repair-items/${id}`);
+          router.back();
+        } catch (e: any) { Alert.alert('Failed', e?.detail || 'Could not delete this tag.'); }
+      },
+    );
+  };
+
   const billTotal = (parseFloat(billLabour) || 0) + (parseFloat(billMaterial) || 0) + (parseFloat(billExtra) || 0);
 
   const doDeliver = async () => {
@@ -203,7 +218,17 @@ export default function RepairItemDetailScreen() {
   };
 
   if (loading || !item) {
-    return <SafeAreaView style={styles.root} edges={['top']}><View style={styles.loader}><ActivityIndicator color={colors.brandPrimary} /></View></SafeAreaView>;
+    return (
+      <SafeAreaView style={styles.root} edges={['top']}>
+        <View style={styles.header}>
+          <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
+            <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
+          </Pressable>
+          <View style={{ flex: 1 }} />
+        </View>
+        <View style={styles.loader}><ActivityIndicator color={colors.brandPrimary} /></View>
+      </SafeAreaView>
+    );
   }
 
   const sc = repairStatusColors(item.status, colors);
@@ -268,14 +293,19 @@ export default function RepairItemDetailScreen() {
 
           {/* Actions */}
           {item.status === 'received' && (
-            <View style={styles.actionsRow}>
-              <Pressable onPress={() => setForm(form === 'issue' ? null : 'issue')} style={styles.actionBtn} testID="show-issue-form">
-                <Ionicons name="arrow-redo-outline" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>Issue to Karigar</Text>
+            <>
+              <View style={styles.actionsRow}>
+                <Pressable onPress={() => setForm(form === 'issue' ? null : 'issue')} style={styles.actionBtn} testID="show-issue-form">
+                  <Ionicons name="arrow-redo-outline" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>Issue to Karigar</Text>
+                </Pressable>
+                <Pressable onPress={doReady} disabled={busy} style={[styles.actionBtn, styles.actionBtnPrimary]} testID="mark-ready-btn">
+                  {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <><Ionicons name="checkmark" size={16} color={colors.onBrandPrimary} /><Text style={styles.actionBtnPrimaryText}>Mark Ready</Text></>}
+                </Pressable>
+              </View>
+              <Pressable onPress={doDeleteItem} disabled={busy} style={[styles.actionBtn, styles.deleteWideBtn, { marginBottom: spacing.md }]} testID="delete-item-btn">
+                <Ionicons name="trash-outline" size={16} color={colors.onError} /><Text style={[styles.actionBtnText, { color: colors.onError }]}>Delete This Tag</Text>
               </Pressable>
-              <Pressable onPress={doReady} disabled={busy} style={[styles.actionBtn, styles.actionBtnPrimary]} testID="mark-ready-btn">
-                {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <><Ionicons name="checkmark" size={16} color={colors.onBrandPrimary} /><Text style={styles.actionBtnPrimaryText}>Mark Ready</Text></>}
-              </Pressable>
-            </View>
+            </>
           )}
           {item.status === 'ready' && (
             <View style={styles.actionsRow}>
@@ -529,6 +559,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   actionBtnText: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '700' },
   actionBtnPrimary: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
   actionBtnPrimaryText: { color: colors.onBrandPrimary, fontSize: 12, fontWeight: '700' },
+  deleteWideBtn: { flex: 0, backgroundColor: colors.error, borderColor: colors.onError },
 
   formCard: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.lg, marginBottom: spacing.lg },
   hint: { color: colors.mutedText, fontSize: 12, marginBottom: spacing.sm, lineHeight: 17 },

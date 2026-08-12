@@ -102,9 +102,16 @@ export default function EmployeeProfile() {
 
   if (loading) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator color={colors.brandPrimary} size="large" />
-      </View>
+      <SafeAreaView style={styles.root} edges={['top']}>
+        <View style={styles.loadingHeader}>
+          <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
+            <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
+          </Pressable>
+        </View>
+        <View style={styles.centered}>
+          <ActivityIndicator color={colors.brandPrimary} size="large" />
+        </View>
+      </SafeAreaView>
     );
   }
   if (!data) {
@@ -517,6 +524,7 @@ function DetailRow({ label, value }: { label: string; value: string }) {
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   centered: { flex: 1, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', gap: spacing.md },
+  loadingHeader: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
   backBtnBig: { marginTop: spacing.md, backgroundColor: colors.brandPrimary, paddingHorizontal: spacing.xl, paddingVertical: 12, borderRadius: radius.md },
 
   cover: { height: 220, backgroundColor: colors.surfaceSecondary, position: 'relative' },

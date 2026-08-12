@@ -4,36 +4,44 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { api } from '@/src/api/client';
+import { REPAIR_STATUS_LABEL, repairStatusColors, RepairItemStatus } from '@/src/utils/repairStatus';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
-type Order = {
-  id: string; order_no: string; customer_name: string; customer_mobile: string;
-  created_at: string; item_count: number; status: 'open' | 'completed';
+type Item = {
+  id: string; item_code: string; customer_name: string; description: string;
+  status: RepairItemStatus; karigar_name: string | null;
+  gross_weight: number; due_date: string | null; created_at: string; created_by?: string;
 };
 
-const FILTERS: { key: string; label: string }[] = [
+type FilterKey = 'all' | RepairItemStatus | 'overdue';
+
+const FILTERS: { key: FilterKey; label: string }[] = [
   { key: 'all', label: 'All' },
-  { key: 'open', label: 'Open' },
-  { key: 'completed', label: 'Completed' },
+  { key: 'received', label: 'Received' },
+  { key: 'with_karigar', label: 'With Karigar' },
+  { key: 'ready', label: 'Pending to Bill' },
+  { key: 'overdue', label: 'Overdue' },
+  { key: 'delivered', label: 'Delivered' },
 ];
 
 export default function RepairOrdersScreen() {
   const router = useRouter();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [filter, setFilter] = useState('all');
+  const [items, setItems] = useState<Item[]>([]);
+  const [filter, setFilter] = useState<FilterKey>('all');
   const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-  const load = useCallback(async () => {
-    try { setOrders(await api.get<Order[]>('/repair-orders')); }
-    catch (_e) { setOrders([]); }
-    finally { setRefreshing(false); }
+  const load = useCallback(async (f: FilterKey) => {
+    try { setItems(await api.get<Item[]>(`/repair-items?status=${f}`)); }
+    catch (_e) { setItems([]); }
+    finally { setRefreshing(false); setLoading(false); }
   }, []);
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useFocusEffect(useCallback(() => { load(filter); }, [load, filter]));
 
-  const filtered = filter === 'all' ? orders : orders.filter((o) => o.status === filter);
+  const todayISO = new Date().toISOString().slice(0, 10);
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="repairs-screen">
@@ -41,38 +49,48 @@ export default function RepairOrdersScreen() {
         <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
-        <Text style={styles.title}>Repairs</Text>
+        <Text style={styles.title}>In/Out Repairs</Text>
         <Pressable onPress={() => router.push('/repairs/new' as any)} style={[styles.iconBtn, styles.addBtn]} testID="new-repair-btn" hitSlop={12}>
           <Ionicons name="add" size={22} color={colors.onBrandPrimary} />
         </Pressable>
       </View>
 
-      <View style={styles.filterRow}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
         {FILTERS.map((f) => (
-          <Pressable key={f.key} onPress={() => setFilter(f.key)} style={[styles.filterChip, filter === f.key && styles.filterChipActive]} testID={`filter-${f.key}`}>
+          <Pressable
+            key={f.key}
+            onPress={() => { setLoading(true); setFilter(f.key); }}
+            style={[styles.filterChip, filter === f.key && styles.filterChipActive]}
+            testID={`filter-${f.key}`}
+          >
             <Text style={[styles.filterText, filter === f.key && styles.filterTextActive]}>{f.label}</Text>
           </Pressable>
         ))}
-      </View>
+      </ScrollView>
 
       <ScrollView
         contentContainerStyle={{ padding: spacing.lg, paddingTop: spacing.sm }}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(filter); }} tintColor={colors.brandPrimary} />}
       >
-        {filtered.length === 0 ? (
-          <View style={styles.empty}><Ionicons name="construct-outline" size={36} color={colors.mutedText} /><Text style={styles.emptyText}>No repair orders found</Text></View>
-        ) : filtered.map((o) => (
-          <Pressable key={o.id} onPress={() => router.push(`/repairs/${o.id}` as any)} style={styles.card} testID={`order-${o.id}`}>
-            <View style={styles.iconBox}><Ionicons name="construct-outline" size={18} color={colors.brandSecondary} /></View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.cName}>{o.order_no} · {o.customer_name}</Text>
-              <Text style={styles.cMeta}>{o.created_at?.slice(0, 10)} · {o.item_count} item{o.item_count === 1 ? '' : 's'}</Text>
-            </View>
-            <View style={[styles.statusBadge, o.status === 'completed' ? styles.statusDone : styles.statusOpen]}>
-              <Text style={styles.statusText}>{o.status}</Text>
-            </View>
-          </Pressable>
-        ))}
+        {!loading && items.length === 0 ? (
+          <View style={styles.empty}><Ionicons name="construct-outline" size={36} color={colors.mutedText} /><Text style={styles.emptyText}>No repairs found for this filter</Text></View>
+        ) : items.map((i) => {
+          const isOverdue = !!i.due_date && i.due_date < todayISO && i.status !== 'delivered';
+          const sc = repairStatusColors(i.status, colors);
+          return (
+            <Pressable key={i.id} onPress={() => router.push(`/repairs/item/${i.id}` as any)} style={styles.card} testID={`item-${i.id}`}>
+              <View style={styles.iconBox}><Ionicons name="pricetag-outline" size={18} color={colors.brandSecondary} /></View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.cName}>{i.item_code} · {i.customer_name}</Text>
+                <Text style={styles.cMeta}>{i.description} · {i.gross_weight.toFixed(3)}g{i.karigar_name ? ` · ${i.karigar_name}` : ''}</Text>
+                {i.due_date && <Text style={[styles.cMeta, isOverdue && { color: colors.onError, fontWeight: '700' }]}>Due {i.due_date}{isOverdue ? ' · overdue' : ''}</Text>}
+              </View>
+              <View style={[styles.statusBadge, isOverdue ? { backgroundColor: colors.error, borderColor: colors.onError } : { backgroundColor: sc.bg, borderColor: sc.border }]}>
+                <Text style={[styles.statusText, isOverdue ? { color: colors.onError } : { color: sc.fg }]}>{isOverdue ? 'Overdue' : REPAIR_STATUS_LABEL[i.status]}</Text>
+              </View>
+            </Pressable>
+          );
+        })}
       </ScrollView>
     </SafeAreaView>
   );
@@ -111,7 +129,5 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   cName: { color: colors.onSurface, fontWeight: '700', fontSize: 14 },
   cMeta: { color: colors.onSurfaceTertiary, fontSize: 12, marginTop: 2 },
   statusBadge: { borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1 },
-  statusOpen: { backgroundColor: colors.brandTertiary, borderColor: colors.brand },
-  statusDone: { backgroundColor: colors.success, borderColor: colors.onSuccess },
-  statusText: { fontSize: 10, fontWeight: '700', color: colors.onSurface, textTransform: 'uppercase' },
+  statusText: { fontSize: 10, fontWeight: '700', textTransform: 'uppercase' },
 });

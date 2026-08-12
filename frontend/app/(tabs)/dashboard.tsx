@@ -26,11 +26,6 @@ type DashboardData = {
   };
   pending_approvals: {
     attendance_corrections: number; leave_requests: number;
-    salary_advances: number; payroll_approval: number;
-  };
-  payroll_summary: {
-    current_month_payroll: number; pending_salary: number;
-    advances_outstanding: number; loans_outstanding: number; bonuses: number;
   };
   repairs_summary: {
     received: number; with_karigar: number; ready: number;
@@ -40,8 +35,6 @@ type DashboardData = {
     due_today: number; overdue: number; done_today: number; open_total: number;
   };
 };
-
-const fmtINR = (n: number) => `₹${(n || 0).toLocaleString('en-IN')}`;
 
 export default function DashboardScreen() {
   const { user, hasModule } = useAuth();
@@ -111,51 +104,53 @@ export default function DashboardScreen() {
         ) : data ? (
           <>
             {/* Today's Attendance hero */}
-            <Pressable
-              style={styles.heroCard}
-              testID="attendance-hero-card"
-              onPress={() => router.push('/(tabs)/attendance')}
-            >
-              <Image source={images.goldTexture} style={StyleSheet.absoluteFill} contentFit="cover" />
-              <LinearGradient
-                colors={heroGradient}
-                style={StyleSheet.absoluteFill}
-              />
-              <View style={styles.heroInner}>
-                <View style={styles.heroTop}>
-                  <View>
-                    <Text style={styles.heroLabel}>TODAY&apos;S ATTENDANCE</Text>
-                    <Text style={styles.heroTitle}>{data.todays_attendance.working} Working</Text>
-                    <Text style={styles.heroSub}>of {data.todays_attendance.total} total employees</Text>
+            {hasModule('attendance') && (
+              <Pressable
+                style={styles.heroCard}
+                testID="attendance-hero-card"
+                onPress={() => router.push('/(tabs)/attendance')}
+              >
+                <Image source={images.goldTexture} style={StyleSheet.absoluteFill} contentFit="cover" />
+                <LinearGradient
+                  colors={heroGradient}
+                  style={StyleSheet.absoluteFill}
+                />
+                <View style={styles.heroInner}>
+                  <View style={styles.heroTop}>
+                    <View>
+                      <Text style={styles.heroLabel}>TODAY&apos;S ATTENDANCE</Text>
+                      <Text style={styles.heroTitle}>{data.todays_attendance.working} Working</Text>
+                      <Text style={styles.heroSub}>of {data.todays_attendance.total} total employees</Text>
+                    </View>
+                    <View style={styles.heroChip}>
+                      <View style={styles.heroChipDot} />
+                      <Text style={styles.heroChipText}>Live</Text>
+                    </View>
                   </View>
-                  <View style={styles.heroChip}>
-                    <View style={styles.heroChipDot} />
-                    <Text style={styles.heroChipText}>Live</Text>
-                  </View>
-                </View>
 
-                <View style={styles.attGrid}>
-                  <AttTile label="Present" value={data.todays_attendance.present} accent={colors.brandPrimary} testID="tile-present" onPress={() => router.push('/(tabs)/attendance')} />
-                  <AttTile label="Absent" value={data.todays_attendance.absent} accent={colors.onError} testID="tile-absent" onPress={() => router.push('/(tabs)/attendance')} />
-                  <AttTile label="Late" value={data.todays_attendance.late} accent={colors.brandSecondary} testID="tile-late" onPress={() => router.push('/(tabs)/attendance')} />
-                  <AttTile label="Half Day" value={data.todays_attendance.half_day} accent={colors.onWarning} testID="tile-half-day" onPress={() => router.push('/(tabs)/attendance')} />
-                  <AttTile label="Missing Punch" value={data.todays_attendance.missing_punch} accent={colors.onError} testID="tile-missing" onPress={() => router.push('/(tabs)/attendance')} />
-                  <AttTile label="On Leave" value={data.todays_attendance.leave} accent={colors.onSurfaceTertiary} testID="tile-leave" onPress={() => router.push('/(tabs)/attendance')} />
+                  <View style={styles.attGrid}>
+                    <AttTile label="Present" value={data.todays_attendance.present} accent={colors.brandPrimary} testID="tile-present" onPress={() => router.push('/(tabs)/attendance')} />
+                    <AttTile label="Absent" value={data.todays_attendance.absent} accent={colors.onError} testID="tile-absent" onPress={() => router.push('/(tabs)/attendance')} />
+                    <AttTile label="Late" value={data.todays_attendance.late} accent={colors.brandSecondary} testID="tile-late" onPress={() => router.push('/(tabs)/attendance')} />
+                    <AttTile label="Half Day" value={data.todays_attendance.half_day} accent={colors.onWarning} testID="tile-half-day" onPress={() => router.push('/(tabs)/attendance')} />
+                    <AttTile label="Missing Punch" value={data.todays_attendance.missing_punch} accent={colors.onError} testID="tile-missing" onPress={() => router.push('/(tabs)/attendance')} />
+                    <AttTile label="On Leave" value={data.todays_attendance.leave} accent={colors.onSurfaceTertiary} testID="tile-leave" onPress={() => router.push('/(tabs)/attendance')} />
+                  </View>
                 </View>
-              </View>
-            </Pressable>
+              </Pressable>
+            )}
 
             {/* Pending Approvals */}
-            <SectionHeader title="Pending Approvals" testID="section-approvals" />
-            <View style={styles.listCard}>
-              <ApprovalRow icon="time-outline" label="Attendance Corrections" count={data.pending_approvals.attendance_corrections} testID="approval-corrections" onPress={() => router.push('/approvals?tab=Corrections')} />
-              <Divider />
-              <ApprovalRow icon="calendar-outline" label="Leave Requests" count={data.pending_approvals.leave_requests} testID="approval-leaves" onPress={() => router.push('/approvals?tab=Leaves')} />
-              <Divider />
-              <ApprovalRow icon="cash-outline" label="Salary Advances" count={data.pending_approvals.salary_advances} testID="approval-advances" onPress={() => router.push('/(tabs)/payroll')} />
-              <Divider />
-              <ApprovalRow icon="document-text-outline" label="Payroll Approval" count={data.pending_approvals.payroll_approval} testID="approval-payroll" onPress={() => router.push('/(tabs)/payroll')} />
-            </View>
+            {hasModule('approvals') && (
+              <>
+                <SectionHeader title="Pending Approvals" testID="section-approvals" />
+                <View style={styles.listCard}>
+                  <ApprovalRow icon="time-outline" label="Attendance Corrections" count={data.pending_approvals.attendance_corrections} testID="approval-corrections" onPress={() => router.push('/approvals?tab=Corrections')} />
+                  <Divider />
+                  <ApprovalRow icon="calendar-outline" label="Leave Requests" count={data.pending_approvals.leave_requests} testID="approval-leaves" onPress={() => router.push('/approvals?tab=Leaves')} />
+                </View>
+              </>
+            )}
 
             {/* Repairs at a glance */}
             {hasModule('repairs') && (
@@ -192,24 +187,16 @@ export default function DashboardScreen() {
               </>
             )}
 
-            {/* Payroll Summary */}
-            <SectionHeader title="Payroll Summary" testID="section-payroll" />
-            <View style={styles.bento}>
-              <PayrollTile label="Current Month Payroll" value={fmtINR(data.payroll_summary.current_month_payroll)} big testID="payroll-current" onPress={() => router.push('/(tabs)/payroll')} />
-              <PayrollTile label="Pending Salary" value={fmtINR(data.payroll_summary.pending_salary)} testID="payroll-pending" onPress={() => router.push('/(tabs)/payroll')} />
-              <PayrollTile label="Advances" value={fmtINR(data.payroll_summary.advances_outstanding)} testID="payroll-advances" onPress={() => router.push('/(tabs)/payroll')} />
-              <PayrollTile label="Loans" value={fmtINR(data.payroll_summary.loans_outstanding)} testID="payroll-loans" onPress={() => router.push('/(tabs)/payroll')} />
-              <PayrollTile label="Bonuses" value={fmtINR(data.payroll_summary.bonuses)} testID="payroll-bonuses" onPress={() => router.push('/(tabs)/payroll')} />
-            </View>
-
-            <Pressable
-              testID="quick-add-employee"
-              onPress={() => router.push('/employee/new')}
-              style={styles.cta}
-            >
-              <Ionicons name="add" size={20} color={colors.onBrandPrimary} />
-              <Text style={styles.ctaText}>Add Employee</Text>
-            </Pressable>
+            {hasModule('team') && (
+              <Pressable
+                testID="quick-add-employee"
+                onPress={() => router.push('/employee/new')}
+                style={styles.cta}
+              >
+                <Ionicons name="add" size={20} color={colors.onBrandPrimary} />
+                <Text style={styles.ctaText}>Add Employee</Text>
+              </Pressable>
+            )}
 
             <View style={{ height: spacing.xxl }} />
           </>
@@ -277,17 +264,6 @@ function Divider() {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   return <View style={styles.divider} />;
-}
-
-function PayrollTile({ label, value, big, testID, onPress }: { label: string; value: string; big?: boolean; testID?: string; onPress?: () => void }) {
-  const { colors } = useTheme();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
-  return (
-    <Pressable style={({ pressed }) => [styles.payrollTile, big && styles.payrollTileBig, pressed && { opacity: 0.75 }]} testID={testID} onPress={onPress}>
-      <Text style={styles.payrollLabel}>{label}</Text>
-      <Text style={[styles.payrollValue, big && { fontSize: 26 }]} numberOfLines={1} adjustsFontSizeToFit>{value}</Text>
-    </Pressable>
-  );
 }
 
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
@@ -373,17 +349,6 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   miniStatAccent: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
   miniStatValue: { color: colors.onSurface, fontSize: 18, fontWeight: '700' },
   miniStatLabel: { color: colors.onSurfaceTertiary, fontSize: 10, textAlign: 'center' },
-
-  bento: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md, marginBottom: spacing.lg },
-  payrollTile: {
-    flexBasis: '48%', flexGrow: 1,
-    backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg,
-    borderWidth: 1, borderColor: colors.border,
-    padding: spacing.lg,
-  },
-  payrollTileBig: { flexBasis: '100%', backgroundColor: colors.brandTertiary, borderColor: colors.brandPrimary },
-  payrollLabel: { color: colors.onSurfaceTertiary, fontSize: 12, letterSpacing: 0.4, marginBottom: spacing.xs },
-  payrollValue: { color: colors.onSurface, fontSize: 20, fontWeight: '700' },
 
   cta: {
     flexDirection: 'row', gap: spacing.sm, alignItems: 'center', justifyContent: 'center',

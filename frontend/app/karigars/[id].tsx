@@ -62,7 +62,18 @@ export default function KarigarLedgerScreen() {
   };
 
   if (loading || !karigar) {
-    return <SafeAreaView style={styles.root} edges={['top']}><View style={styles.loader}><ActivityIndicator color={colors.brandPrimary} /></View></SafeAreaView>;
+    return (
+      <SafeAreaView style={styles.root} edges={['top']}>
+        <View style={styles.header}>
+          <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
+            <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
+          </Pressable>
+          <View style={{ flex: 1 }} />
+          <View style={{ width: 40 }} />
+        </View>
+        <View style={styles.loader}><ActivityIndicator color={colors.brandPrimary} /></View>
+      </SafeAreaView>
+    );
   }
 
   return (
