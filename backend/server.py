@@ -1343,6 +1343,28 @@ async def get_ledger(emp_id: str, user: dict = Depends(get_current)):
     return {'entries': entries, 'closing_balance': round(running, 2)}
 
 
+@api.get('/ledger/{emp_id}/month/{year}/{month}')
+async def get_ledger_month(emp_id: str, year: int, month: int, type: Optional[str] = None, user: dict = Depends(get_current)):
+    """Drill-down for one payroll month: just the ledger entries of one type
+    (advance/bonus/fine/deduction) that fed into that month's payroll figure —
+    used by the tappable Advance/Bonus/Fine rows on the payroll breakdown so
+    the owner can see and correct exactly what's behind the number."""
+    if user.get('role') == 'employee':
+        if user['id'] != emp_id:
+            raise HTTPException(status_code=403, detail='Staff access required')
+    elif user.get('role') not in ('owner', 'admin', 'accountant'):
+        raise HTTPException(status_code=403, detail='Staff access required')
+    if not await db.employees.find_one({'id': emp_id}):
+        raise HTTPException(status_code=404, detail='Employee not found')
+    start, end, _ = _month_bounds(year, month)
+    query: dict = {'employee_id': emp_id, 'created_at': {'$gte': start, '$lte': f'{end}T23:59:59'}}
+    if type:
+        query['type'] = type
+    entries = await db.timeline.find(query, {'_id': 0}).sort('created_at', 1).to_list(200)
+    total = round(sum(float(e.get('amount') or 0) for e in entries), 2)
+    return {'entries': entries, 'total': total}
+
+
 _LEDGER_EDITABLE_TYPES = ('advance', 'bonus', 'fine', 'deduction', 'other')
 _LEDGER_TITLE_MAP = {'advance': 'Salary Advance', 'bonus': 'Bonus', 'fine': 'Fine',
                       'deduction': 'Deduction', 'other': 'Other'}

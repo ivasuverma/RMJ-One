@@ -17,12 +17,13 @@ const TYPES = [
 ] as const;
 
 export default function NewLedgerEntry() {
-  const { emp } = useLocalSearchParams<{ emp: string }>();
+  const { emp, type: presetType } = useLocalSearchParams<{ emp: string; type?: string }>();
   const router = useRouter();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const toneColor = { error: colors.onError, success: colors.onSuccess } as const;
-  const [type, setType] = useState<typeof TYPES[number]['key']>('advance');
+  const initialType = (TYPES.find((t) => t.key === presetType)?.key || 'advance') as typeof TYPES[number]['key'];
+  const [type, setType] = useState<typeof TYPES[number]['key']>(initialType);
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);

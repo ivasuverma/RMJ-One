@@ -77,6 +77,13 @@ export default function PayrollDetail() {
     Linking.openURL(url).catch(() => Alert.alert('Preview only', 'Deploy the app to download PDFs on device. Current URL: ' + url));
   };
 
+  // Drill-down from a Breakdown row (Bonus/Advance/Fine/Deduction) into exactly
+  // the ledger entries of that type within this payroll month, so the owner can
+  // see what's behind the number and add/edit/delete right there.
+  const openLedgerMonth = (type: 'advance' | 'bonus' | 'fine' | 'deduction', label: string) => {
+    router.push({ pathname: '/ledger/[id]', params: { id: emp, year: String(y), month: String(m), type, label } });
+  };
+
   if (loading) return <View style={styles.centered}><ActivityIndicator color={colors.brandPrimary} size="large" /></View>;
   if (!row) return (
     <SafeAreaView style={styles.root} edges={['top']}>
@@ -155,10 +162,22 @@ export default function PayrollDetail() {
 
         <SectionTitle text="Breakdown" />
         <Line label="Earned" value={fmtINR(row.earned)} accent />
-        <Line label="Bonus" value={`+ ${fmtINR(row.bonus)}`} pos />
-        <Line label="Advance" value={`− ${fmtINR(row.advance)}`} neg />
-        <Line label="Fine" value={`− ${fmtINR(row.fine)}`} neg />
-        <Line label="Manual Deduction" value={`− ${fmtINR(row.manual_deduction)}`} neg />
+        <Line
+          label="Bonus" value={`+ ${fmtINR(row.bonus)}`} pos
+          onPress={() => openLedgerMonth('bonus', 'Bonus')} testID="breakdown-bonus"
+        />
+        <Line
+          label="Advance" value={`− ${fmtINR(row.advance)}`} neg
+          onPress={() => openLedgerMonth('advance', 'Advance')} testID="breakdown-advance"
+        />
+        <Line
+          label="Fine" value={`− ${fmtINR(row.fine)}`} neg
+          onPress={() => openLedgerMonth('fine', 'Fine')} testID="breakdown-fine"
+        />
+        <Line
+          label="Manual Deduction" value={`− ${fmtINR(row.manual_deduction)}`} neg
+          onPress={() => openLedgerMonth('deduction', 'Manual Deduction')} testID="breakdown-deduction"
+        />
 
         {row._saved && canWrite && !row._locked && !row.paid && (
           <OverridesEditor row={row} onSaved={load} />
@@ -436,15 +455,22 @@ function SectionTitle({ text }: { text: string }) {
   const styles = useMemo(() => makeStyles(colors), [colors]);
   return <Text style={styles.section}>{text}</Text>;
 }
-function Line({ label, value, pos, neg, accent }: { label: string; value: string; pos?: boolean; neg?: boolean; accent?: boolean }) {
+function Line({ label, value, pos, neg, accent, onPress, testID }: {
+  label: string; value: string; pos?: boolean; neg?: boolean; accent?: boolean;
+  onPress?: () => void; testID?: string;
+}) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const c = pos ? colors.onSuccess : neg ? colors.onError : accent ? colors.brandPrimary : colors.onSurface;
+  const Wrap = onPress ? Pressable : View;
   return (
-    <View style={styles.line}>
-      <Text style={styles.lineLabel}>{label}</Text>
+    <Wrap style={styles.line} onPress={onPress} testID={testID}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+        <Text style={styles.lineLabel}>{label}</Text>
+        {!!onPress && <Ionicons name="chevron-forward" size={13} color={colors.mutedText} />}
+      </View>
       <Text style={[styles.lineValue, { color: c }]}>{value}</Text>
-    </View>
+    </Wrap>
   );
 }
 

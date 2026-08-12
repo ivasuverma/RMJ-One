@@ -38,26 +38,44 @@ const EDIT_TYPES = [
   { key: 'other', label: 'Other', icon: 'ellipse-outline', tone: 'error' },
 ] as const;
 
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
 export default function EmployeeLedger() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, year, month, type: scopedType, label: scopedLabel } = useLocalSearchParams<{
+    id: string; year?: string; month?: string; type?: string; label?: string;
+  }>();
   const router = useRouter();
   const { user } = useAuth();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const canEdit = user?.role === 'owner' || user?.role === 'admin';
   const canAdd = user?.role === 'owner' || user?.role === 'admin' || user?.role === 'accountant';
-  const [data, setData] = useState<{ entries: any[]; closing_balance: number } | null>(null);
+  // Scoped mode: viewing just one type (advance/bonus/fine/deduction) within one
+  // payroll month — reached by tapping a Breakdown row on the payroll screen.
+  const isScoped = !!(year && month);
+  const [data, setData] = useState<{ entries: any[]; closing_balance?: number; total?: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [editing, setEditing] = useState<any | null>(null);
 
   const load = useCallback(async () => {
-    try { setData(await api.get<any>(`/ledger/${id}`)); }
-    catch (_e) { setData({ entries: [], closing_balance: 0 }); }
+    try {
+      if (isScoped) {
+        const q = scopedType ? `?type=${scopedType}` : '';
+        setData(await api.get<any>(`/ledger/${id}/month/${year}/${month}${q}`));
+      } else {
+        setData(await api.get<any>(`/ledger/${id}`));
+      }
+    }
+    catch (_e) { setData({ entries: [], closing_balance: 0, total: 0 }); }
     finally { setLoading(false); setRefreshing(false); }
-  }, [id]);
+  }, [id, isScoped, year, month, scopedType]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  const headerTitle = isScoped
+    ? `${scopedLabel || 'Entries'} · ${MONTHS[(parseInt(month!, 10) || 1) - 1]?.slice(0, 3)} ${year}`
+    : (canAdd ? 'Employee Ledger' : 'My Ledger');
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="ledger-screen">
@@ -65,10 +83,13 @@ export default function EmployeeLedger() {
         <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
-        <Text style={styles.title}>{canAdd ? 'Employee Ledger' : 'My Ledger'}</Text>
+        <Text style={styles.title} numberOfLines={1}>{headerTitle}</Text>
         {canAdd ? (
           <Pressable
-            onPress={() => router.push({ pathname: '/ledger/new', params: { emp: id } })}
+            onPress={() => router.push({
+              pathname: '/ledger/new',
+              params: { emp: id, ...(isScoped && scopedType ? { type: scopedType } : {}) },
+            })}
             style={styles.addBtn}
             testID="add-ledger-entry-btn"
           >
@@ -81,13 +102,21 @@ export default function EmployeeLedger() {
         <View style={styles.centered}><ActivityIndicator color={colors.brandPrimary} size="large" /></View>
       ) : (
         <>
-          <View style={styles.balanceCard}>
-            <Text style={styles.balanceLabel}>CLOSING BALANCE</Text>
-            <Text style={[styles.balanceValue, { color: (data?.closing_balance || 0) >= 0 ? colors.brandPrimary : colors.onError }]}>
-              {(data?.closing_balance || 0) >= 0 ? '' : '- '}{fmtINR(data?.closing_balance || 0)}
-            </Text>
-            <Text style={styles.balanceHint}>Positive = employee is owed. Negative = employee owes.</Text>
-          </View>
+          {isScoped ? (
+            <View style={styles.balanceCard}>
+              <Text style={styles.balanceLabel}>TOTAL THIS MONTH</Text>
+              <Text style={[styles.balanceValue, { color: colors.brandPrimary }]}>{fmtINR(data?.total || 0)}</Text>
+              <Text style={styles.balanceHint}>{(data?.entries || []).length} {(data?.entries || []).length === 1 ? 'entry' : 'entries'} feeding this month's payroll figure</Text>
+            </View>
+          ) : (
+            <View style={styles.balanceCard}>
+              <Text style={styles.balanceLabel}>CLOSING BALANCE</Text>
+              <Text style={[styles.balanceValue, { color: (data?.closing_balance || 0) >= 0 ? colors.brandPrimary : colors.onError }]}>
+                {(data?.closing_balance || 0) >= 0 ? '' : '- '}{fmtINR(data?.closing_balance || 0)}
+              </Text>
+              <Text style={styles.balanceHint}>Positive = employee is owed. Negative = employee owes.</Text>
+            </View>
+          )}
 
           <ScrollView
             contentContainerStyle={{ padding: spacing.lg, paddingBottom: 80 }}
@@ -118,12 +147,14 @@ export default function EmployeeLedger() {
                     <Text style={styles.rowDate}>{fmtDate(e.created_at)}</Text>
                   </View>
                   <View style={{ alignItems: 'flex-end' }}>
-                    {e.delta !== 0 ? (
+                    {isScoped ? (
+                      <Text style={styles.delta}>{fmtINR(e.amount)}</Text>
+                    ) : e.delta !== 0 ? (
                       <Text style={[styles.delta, { color: e.delta > 0 ? colors.onSuccess : colors.onError }]}>
                         {e.delta > 0 ? '+' : '−'} {fmtINR(e.delta)}
                       </Text>
                     ) : <Text style={styles.deltaZero}>—</Text>}
-                    <Text style={styles.balance}>{fmtINR(e.balance)}</Text>
+                    {!isScoped && <Text style={styles.balance}>{fmtINR(e.balance)}</Text>}
                   </View>
                   {canModify && <Ionicons name="chevron-forward" size={16} color={colors.mutedText} style={{ marginLeft: spacing.xs }} />}
                 </Row>
