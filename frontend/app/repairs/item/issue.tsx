@@ -15,16 +15,18 @@ type Item = {
 };
 type Karigar = { id: string; name: string; mobile: string; is_employee: boolean };
 
-type Mode = 'pick' | 'form';
+type Mode = 'pick' | 'form' | 'bulk';
 
 export default function IssueToKarigarScreen() {
-  const { itemId: routeItemId } = useLocalSearchParams<{ itemId: string }>();
+  const { itemId: routeItemId, itemIds: routeItemIds } = useLocalSearchParams<{ itemId: string; itemIds?: string }>();
+  const bulkIds = useMemo(() => (routeItemIds ? routeItemIds.split(',').filter(Boolean) : []), [routeItemIds]);
   const router = useRouter();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
-  const [mode, setMode] = useState<Mode>(routeItemId ? 'form' : 'pick');
+  const [mode, setMode] = useState<Mode>(bulkIds.length > 0 ? 'bulk' : routeItemId ? 'form' : 'pick');
   const [item, setItem] = useState<Item | null>(null);
+  const [bulkItems, setBulkItems] = useState<Item[]>([]);
   const [pickList, setPickList] = useState<Item[]>([]);
   const [karigars, setKarigars] = useState<Karigar[]>([]);
   const [loading, setLoading] = useState(true);
@@ -39,7 +41,11 @@ export default function IssueToKarigarScreen() {
     try {
       const ks = await api.get<Karigar[]>('/karigars');
       setKarigars(ks);
-      if (routeItemId) {
+      if (bulkIds.length > 0) {
+        const results = await Promise.all(bulkIds.map((bid) => api.get<{ item: Item }>(`/repair-items/${bid}`).then((r) => r.item).catch(() => null)));
+        setBulkItems(results.filter((x): x is Item => !!x));
+        setMode('bulk');
+      } else if (routeItemId) {
         const res = await api.get<{ item: Item }>(`/repair-items/${routeItemId}`);
         setItem(res.item);
         setMode('form');
@@ -49,7 +55,7 @@ export default function IssueToKarigarScreen() {
       }
     } catch (_e) { /* ignore */ }
     finally { setLoading(false); }
-  }, [routeItemId]);
+  }, [routeItemId, bulkIds]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const pickItem = (it: Item) => { setItem(it); setMode('form'); };
@@ -65,14 +71,34 @@ export default function IssueToKarigarScreen() {
     finally { setBusy(false); submittingRef.current = false; }
   };
 
+  const submitBulk = async () => {
+    if (submittingRef.current || bulkItems.length === 0) return;
+    if (!pickedKarigar) { Alert.alert('Missing', 'Pick a karigar'); return; }
+    submittingRef.current = true; setBusy(true);
+    let okCount = 0;
+    const failed: string[] = [];
+    for (const it of bulkItems) {
+      try { await api.post(`/repair-items/${it.id}/issue`, { karigar_id: pickedKarigar.id, note }); okCount += 1; }
+      catch (_e) { failed.push(it.item_code); }
+    }
+    setBusy(false); submittingRef.current = false;
+    if (failed.length === 0) {
+      Alert.alert('Done', `Issued ${okCount} tag${okCount === 1 ? '' : 's'} to ${pickedKarigar.name}`);
+      router.back();
+    } else {
+      Alert.alert('Partial success', `Issued ${okCount} tag(s). Failed: ${failed.join(', ')}`);
+      await load();
+    }
+  };
+
   const onBack = () => {
     if (mode === 'form' && !routeItemId) { setItem(null); setPickedKarigar(null); setMode('pick'); return; }
     router.back();
   };
 
-  const headerTitle = mode === 'pick' ? 'Select Tag to Issue' : 'Issue to Karigar';
+  const headerTitle = mode === 'bulk' ? `Issue ${bulkItems.length} Tags` : mode === 'pick' ? 'Select Tag to Issue' : 'Issue to Karigar';
 
-  if (loading && mode === 'form' && !item) {
+  if (loading && ((mode === 'form' && !item) || mode === 'bulk')) {
     return (
       <SafeAreaView style={styles.root} edges={['top']}>
         <View style={styles.header}>
@@ -117,6 +143,39 @@ export default function IssueToKarigarScreen() {
             </Pressable>
           ))}
         </ScrollView>
+      ) : mode === 'bulk' ? (
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+          <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 60 }} keyboardShouldPersistTaps="handled">
+            <Text style={styles.label}>Tags ({bulkItems.length})</Text>
+            {bulkItems.map((it) => (
+              <View key={it.id} style={styles.pickedCard}>
+                <Text style={styles.cName}>{it.item_code} · {it.customer_name}</Text>
+                <Text style={styles.cMeta}>{it.description} · {it.gross_weight.toFixed(3)}g</Text>
+              </View>
+            ))}
+
+            <Text style={styles.label}>Karigar</Text>
+            <Pressable onPress={() => setKPickerOpen((v) => !v)} style={styles.picker} testID="issue-karigar-toggle">
+              <Text style={pickedKarigar ? styles.pickerValue : styles.pickerPlaceholder}>{pickedKarigar ? pickedKarigar.name : 'Choose a karigar'}</Text>
+              <Ionicons name={kPickerOpen ? 'chevron-up' : 'chevron-down'} size={16} color={colors.mutedText} />
+            </Pressable>
+            {kPickerOpen && (
+              <View style={styles.pickerList}>
+                {karigars.map((k) => (
+                  <Pressable key={k.id} onPress={() => { setPickedKarigar(k); setKPickerOpen(false); }} style={styles.pickerRow} testID={`issue-karigar-${k.id}`}>
+                    <Text style={styles.pickerRowName}>{k.name}</Text>
+                    <Text style={styles.pickerRowMeta}>{k.is_employee ? 'In-house' : 'Outside'}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            )}
+            <Text style={styles.label}>Note (optional)</Text>
+            <TextInput testID="issue-note" value={note} onChangeText={setNote} placeholder="Instructions for the karigar" placeholderTextColor={colors.mutedText} style={styles.input} />
+            <Pressable onPress={submitBulk} disabled={busy} style={[styles.saveBtn, busy && { opacity: 0.6 }]} testID="issue-bulk-save-btn">
+              {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.saveBtnText}>Issue {bulkItems.length} Tags</Text>}
+            </Pressable>
+          </ScrollView>
+        </KeyboardAvoidingView>
       ) : item ? (
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
           <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 60 }} keyboardShouldPersistTaps="handled">

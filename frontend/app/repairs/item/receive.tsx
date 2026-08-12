@@ -15,19 +15,23 @@ type Item = {
   current_issue_weight: number | null; current_issue_fine_weight?: number | null; purity?: number;
 };
 
-type Mode = 'pick' | 'form';
+type Mode = 'pick' | 'form' | 'bulk';
+type BulkRow = { weight: string; processLoss: string };
 
 function round3(n: number) { return Math.round(n * 1000) / 1000; }
 const fmtINR = (n: number) => `₹${Math.round(n || 0).toLocaleString('en-IN')}`;
 
 export default function ReceiveFromKarigarScreen() {
-  const { itemId: routeItemId } = useLocalSearchParams<{ itemId: string }>();
+  const { itemId: routeItemId, itemIds: routeItemIds } = useLocalSearchParams<{ itemId: string; itemIds?: string }>();
+  const bulkIds = useMemo(() => (routeItemIds ? routeItemIds.split(',').filter(Boolean) : []), [routeItemIds]);
   const router = useRouter();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
-  const [mode, setMode] = useState<Mode>(routeItemId ? 'form' : 'pick');
+  const [mode, setMode] = useState<Mode>(bulkIds.length > 0 ? 'bulk' : routeItemId ? 'form' : 'pick');
   const [item, setItem] = useState<Item | null>(null);
+  const [bulkItems, setBulkItems] = useState<Item[]>([]);
+  const [bulkRows, setBulkRows] = useState<Record<string, BulkRow>>({});
   const [pickList, setPickList] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -55,7 +59,17 @@ export default function ReceiveFromKarigarScreen() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      if (routeItemId) {
+      if (bulkIds.length > 0) {
+        const results = await Promise.all(bulkIds.map((bid) => api.get<{ item: Item }>(`/repair-items/${bid}`).then((r) => r.item).catch(() => null)));
+        const found = results.filter((x): x is Item => !!x);
+        setBulkItems(found);
+        setBulkRows((prev) => {
+          const next = { ...prev };
+          for (const it of found) if (!next[it.id]) next[it.id] = { weight: '', processLoss: '' };
+          return next;
+        });
+        setMode('bulk');
+      } else if (routeItemId) {
         const res = await api.get<{ item: Item }>(`/repair-items/${routeItemId}`);
         setItem(res.item);
         setMode('form');
@@ -66,10 +80,40 @@ export default function ReceiveFromKarigarScreen() {
       }
     } catch (_e) { /* ignore */ }
     finally { setLoading(false); }
-  }, [routeItemId, loadBalance]);
+  }, [routeItemId, loadBalance, bulkIds]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const pickItem = (it: Item) => { setItem(it); setMode('form'); loadBalance(it.karigar_id); };
+
+  const setBulkRow = (itemId: string, patch: Partial<BulkRow>) => {
+    setBulkRows((prev) => ({ ...prev, [itemId]: { ...prev[itemId], ...patch } }));
+  };
+
+  const submitBulk = async () => {
+    if (submittingRef.current || bulkItems.length === 0) return;
+    const rows = bulkItems.map((it) => ({ it, row: bulkRows[it.id] || { weight: '', processLoss: '' } }));
+    const missing = rows.filter(({ row }) => !parseFloat(row.weight));
+    if (missing.length > 0) { Alert.alert('Missing', `Enter the weight received for: ${missing.map((m) => m.it.item_code).join(', ')}`); return; }
+    submittingRef.current = true; setBusy(true);
+    let okCount = 0;
+    const failed: string[] = [];
+    for (const { it, row } of rows) {
+      try {
+        await api.post(`/repair-items/${it.id}/receive`, {
+          weight: parseFloat(row.weight) || 0, process_loss: parseFloat(row.processLoss) || 0, note: '',
+        });
+        okCount += 1;
+      } catch (_e) { failed.push(it.item_code); }
+    }
+    setBusy(false); submittingRef.current = false;
+    if (failed.length === 0) {
+      Alert.alert('Done', `Received ${okCount} tag${okCount === 1 ? '' : 's'} back`);
+      router.back();
+    } else {
+      Alert.alert('Partial success', `Received ${okCount} tag(s). Failed: ${failed.join(', ')}`);
+      await load();
+    }
+  };
 
   const submit = async () => {
     if (submittingRef.current || !item) return;
@@ -97,9 +141,9 @@ export default function ReceiveFromKarigarScreen() {
     router.back();
   };
 
-  const headerTitle = mode === 'pick' ? 'Select Tag to Receive' : 'Receive from Karigar';
+  const headerTitle = mode === 'bulk' ? `Receive ${bulkItems.length} Tags` : mode === 'pick' ? 'Select Tag to Receive' : 'Receive from Karigar';
 
-  if (loading && mode === 'form' && !item) {
+  if (loading && ((mode === 'form' && !item) || mode === 'bulk')) {
     return (
       <SafeAreaView style={styles.root} edges={['top']}>
         <View style={styles.header}>
@@ -159,6 +203,42 @@ export default function ReceiveFromKarigarScreen() {
             </Pressable>
           ))}
         </ScrollView>
+      ) : mode === 'bulk' ? (
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+          <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 60 }} keyboardShouldPersistTaps="handled">
+            <Text style={styles.hint}>Enter what came back for each tag. Process loss, pay/receive settlement, and labour stay per-tag on the individual receive screen.</Text>
+            {bulkItems.map((it) => {
+              const row = bulkRows[it.id] || { weight: '', processLoss: '' };
+              return (
+                <View key={it.id} style={styles.bulkRowCard} testID={`bulk-row-${it.id}`}>
+                  <Text style={styles.cName}>{it.item_code} · {it.customer_name}</Text>
+                  <Text style={styles.cMeta}>{it.description}{it.karigar_name ? ` · with ${it.karigar_name}` : ''} · issued {(it.current_issue_weight || 0).toFixed(3)}g</Text>
+                  <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.label}>Weight received (g)</Text>
+                      <TextInput
+                        testID={`bulk-weight-${it.id}`} value={row.weight}
+                        onChangeText={(v) => setBulkRow(it.id, { weight: v.replace(/[^0-9.]/g, '') })}
+                        keyboardType="decimal-pad" placeholder="0.000" placeholderTextColor={colors.mutedText} style={styles.input}
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.label}>Process loss (g)</Text>
+                      <TextInput
+                        testID={`bulk-loss-${it.id}`} value={row.processLoss}
+                        onChangeText={(v) => setBulkRow(it.id, { processLoss: v.replace(/[^0-9.]/g, '') })}
+                        keyboardType="decimal-pad" placeholder="0.000" placeholderTextColor={colors.mutedText} style={styles.input}
+                      />
+                    </View>
+                  </View>
+                </View>
+              );
+            })}
+            <Pressable onPress={submitBulk} disabled={busy} style={[styles.saveBtn, busy && { opacity: 0.6 }]} testID="receive-bulk-save-btn">
+              {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.saveBtnText}>Receive {bulkItems.length} Tags</Text>}
+            </Pressable>
+          </ScrollView>
+        </KeyboardAvoidingView>
       ) : item ? (
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
           <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 60 }} keyboardShouldPersistTaps="handled">
@@ -202,10 +282,23 @@ export default function ReceiveFromKarigarScreen() {
 
             {balanceFine != null && (
               <View style={[styles.balancePreview, balanceFine > 0 && styles.balancePreviewNegative]} testID="receive-balance-preview">
-                <Ionicons name={balanceFine <= 0 ? 'checkmark-circle-outline' : 'alert-circle-outline'} size={14} color={balanceFine <= 0 ? colors.onSuccess : colors.onError} />
-                <Text style={[styles.balancePreviewText, { color: balanceFine <= 0 ? colors.onSuccess : colors.onError }]}>
-                  {balanceFine > 0 ? `Karigar still owes ${balanceFine.toFixed(3)}g fine gold` : balanceFine < 0 ? `Excess returned: ${Math.abs(balanceFine).toFixed(3)}g fine gold` : 'Fully accounted for'}
-                </Text>
+                <Ionicons name={balanceFine === 0 ? 'checkmark-circle-outline' : 'alert-circle-outline'} size={14} color={balanceFine === 0 ? colors.onSuccess : colors.onError} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.balancePreviewText, { color: balanceFine === 0 ? colors.onSuccess : colors.onError }]}>
+                    {balanceFine > 0 ? `Receivable: ${balanceFine.toFixed(3)}g fine gold — karigar still owes this` : balanceFine < 0 ? `Payable: ${Math.abs(balanceFine).toFixed(3)}g fine gold — owed back to karigar` : 'Fully accounted for'}
+                  </Text>
+                  <Text style={styles.balancePreviewSub}>Tracked automatically on the karigar's ledger — process loss is already accounted for</Text>
+                </View>
+                {balanceFine > 0 && (
+                  <Pressable onPress={() => setRecvMetalWeight(String(balanceFine.toFixed(3)))} style={styles.settleBtn} testID="settle-receive-btn">
+                    <Text style={styles.settleBtnText}>Receive now</Text>
+                  </Pressable>
+                )}
+                {balanceFine < 0 && (
+                  <Pressable onPress={() => setPayMetalWeight(String(Math.abs(balanceFine).toFixed(3)))} style={styles.settleBtn} testID="settle-pay-btn">
+                    <Text style={styles.settleBtnText}>Pay now</Text>
+                  </Pressable>
+                )}
               </View>
             )}
 
@@ -297,6 +390,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   },
 
   pickedCard: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.lg },
+  bulkRowCard: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.md },
   cName: { color: colors.onSurface, fontWeight: '700', fontSize: 13 },
   cMeta: { color: colors.onSurfaceTertiary, fontSize: 11, marginTop: 2 },
 
@@ -317,11 +411,14 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   tableRowLabel: { color: colors.onSurfaceSecondary, fontWeight: '600' },
 
   balancePreview: {
-    flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.success,
-    borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: 8, marginTop: spacing.sm,
+    flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.success,
+    borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: 10, marginTop: spacing.sm,
   },
   balancePreviewNegative: { backgroundColor: colors.error },
-  balancePreviewText: { fontSize: 12, fontWeight: '700', flex: 1 },
+  balancePreviewText: { fontSize: 12, fontWeight: '700' },
+  balancePreviewSub: { fontSize: 10, opacity: 0.8, marginTop: 2, color: colors.onSurface },
+  settleBtn: { backgroundColor: colors.surface, borderRadius: radius.pill, paddingHorizontal: spacing.sm, paddingVertical: 6 },
+  settleBtnText: { color: colors.onSurface, fontSize: 11, fontWeight: '800' },
 
   sectionTitle: { color: colors.onSurface, fontSize: 14, fontWeight: '700', marginTop: spacing.lg, marginBottom: 4, fontFamily: fonts.display },
 

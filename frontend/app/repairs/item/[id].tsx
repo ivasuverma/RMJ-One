@@ -9,6 +9,7 @@ import { api, TOKEN_KEY } from '@/src/api/client';
 import { storage } from '@/src/utils/storage';
 import { confirmAction } from '@/src/utils/confirm';
 import { PhotoCaptureModal } from '@/src/components/PhotoCaptureModal';
+import { DateField } from '@/src/components/DateField';
 import { REPAIR_STATUS_LABEL, repairStatusColors, RepairItemStatus } from '@/src/utils/repairStatus';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
@@ -54,7 +55,16 @@ export default function RepairItemDetailScreen() {
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   // Which inline form is open
-  const [form, setForm] = useState<null | 'deliver'>(null);
+  const [form, setForm] = useState<null | 'deliver' | 'edit'>(null);
+
+  // Edit repair
+  const [editDescription, setEditDescription] = useState('');
+  const [editRepairType, setEditRepairType] = useState('');
+  const [editGrossWeight, setEditGrossWeight] = useState('');
+  const [editPcCount, setEditPcCount] = useState('');
+  const [editLabourCharge, setEditLabourCharge] = useState('');
+  const [editDueDate, setEditDueDate] = useState('');
+  const [editNotes, setEditNotes] = useState('');
 
   // Bill / Deliver
   const [billLabour, setBillLabour] = useState('');
@@ -80,6 +90,34 @@ export default function RepairItemDetailScreen() {
     setBillLabour(String(item.labour_charge || 0));
     setBillMaterial(String(item.customer_adjustment || 0));
     setForm(form === 'deliver' ? null : 'deliver');
+  };
+
+  const openEditForm = () => {
+    if (!item) return;
+    if (form === 'edit') { setForm(null); return; }
+    setEditDescription(item.description || '');
+    setEditRepairType(item.repair_type || '');
+    setEditGrossWeight(String(item.gross_weight ?? ''));
+    setEditPcCount(String(item.pc_count ?? '1'));
+    setEditLabourCharge(String(item.labour_charge ?? ''));
+    setEditDueDate(item.due_date || '');
+    setEditNotes(item.notes || '');
+    setForm('edit');
+  };
+
+  const saveEdit = async () => {
+    if (submittingRef.current || !item) return;
+    if (!editDescription.trim()) { Alert.alert('Missing', 'Enter a description'); return; }
+    submittingRef.current = true; setBusy(true);
+    try {
+      await api.put(`/repair-items/${id}`, {
+        description: editDescription.trim(), repair_type: editRepairType,
+        gross_weight: parseFloat(editGrossWeight) || 0, pc_count: parseInt(editPcCount, 10) || 1,
+        labour_charge: parseFloat(editLabourCharge) || 0, due_date: editDueDate || null, notes: editNotes,
+      });
+      setForm(null); await load();
+    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+    finally { setBusy(false); submittingRef.current = false; }
   };
 
   const doReady = async () => {
@@ -196,6 +234,9 @@ export default function RepairItemDetailScreen() {
         <View style={[styles.statusBadge, { backgroundColor: sc.bg, borderColor: sc.border }]}>
           <Text style={[styles.statusText, { color: sc.fg }]}>{REPAIR_STATUS_LABEL[item.status]}</Text>
         </View>
+        <Pressable onPress={openEditForm} style={styles.editIconBtn} testID="edit-item-btn" hitSlop={12}>
+          <Ionicons name={form === 'edit' ? 'close' : 'pencil-outline'} size={18} color={colors.onSurface} />
+        </Pressable>
       </View>
 
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
@@ -215,6 +256,37 @@ export default function RepairItemDetailScreen() {
             {item.created_by && <MetaRow icon="person-add-outline" label="Intake by" value={item.created_by} colors={colors} />}
             {item.updated_by && <MetaRow icon="pencil-outline" label="Last by" value={item.updated_by} colors={colors} />}
           </View>
+
+          {form === 'edit' && (
+            <View style={styles.formCard} testID="edit-form">
+              <Text style={styles.section}>Edit Repair</Text>
+              {item.status === 'delivered' && (
+                <Text style={styles.hint}>This tag has already been billed — changes here update the record only, not the printed bill.</Text>
+              )}
+              <Text style={styles.label}>Description</Text>
+              <TextInput testID="edit-description" value={editDescription} onChangeText={setEditDescription} placeholderTextColor={colors.mutedText} style={styles.input} />
+              <Text style={styles.label}>Repair Type</Text>
+              <TextInput testID="edit-repair-type" value={editRepairType} onChangeText={setEditRepairType} placeholderTextColor={colors.mutedText} style={styles.input} />
+              <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.label}>Gross Weight (g)</Text>
+                  <TextInput testID="edit-weight" value={editGrossWeight} onChangeText={(v) => setEditGrossWeight(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholderTextColor={colors.mutedText} style={styles.input} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.label}>Pieces</Text>
+                  <TextInput testID="edit-pcs" value={editPcCount} onChangeText={(v) => setEditPcCount(v.replace(/[^0-9]/g, ''))} keyboardType="number-pad" placeholderTextColor={colors.mutedText} style={styles.input} />
+                </View>
+              </View>
+              <Text style={styles.label}>Labour Charge (₹)</Text>
+              <TextInput testID="edit-labour" value={editLabourCharge} onChangeText={(v) => setEditLabourCharge(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholderTextColor={colors.mutedText} style={styles.input} />
+              <DateField label="Due Date" value={editDueDate} onChange={setEditDueDate} testID="edit-due" />
+              <Text style={styles.label}>Notes</Text>
+              <TextInput testID="edit-notes" value={editNotes} onChangeText={setEditNotes} placeholderTextColor={colors.mutedText} style={styles.input} />
+              <Pressable onPress={saveEdit} disabled={busy} style={[styles.saveBtn, busy && { opacity: 0.6 }]} testID="edit-save-btn">
+                {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.saveBtnText}>Save Changes</Text>}
+              </Pressable>
+            </View>
+          )}
 
           {(item.intake_photo || item.final_photo) && (
             <View style={styles.photosRow}>
@@ -410,6 +482,10 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   iconBtn: {
     width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surfaceSecondary,
     alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border,
+  },
+  editIconBtn: {
+    width: 34, height: 34, borderRadius: 17, backgroundColor: colors.surfaceSecondary,
+    alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border, marginLeft: spacing.sm,
   },
   title: { flex: 1, color: colors.onSurface, fontSize: 18, fontWeight: '600', fontFamily: fonts.display },
 

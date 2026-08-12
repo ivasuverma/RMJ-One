@@ -1959,6 +1959,19 @@ async def receive_from_karigar(item_id: str, body: ReceiveFromKarigarIn, user=De
         'txn_id': txn_id, 'note': f"Received back: {item['description']} (diff {diff:+.3f}g / fine {fine_diff:+.3f}g{loss_note})",
         'created_at': iso, 'created_by': user['name'],
     })
+    # Declared process loss (filing, polishing, etc.) is expected/forgiven metal —
+    # it shouldn't sit in the karigar's balance as gold they still owe. Post it as
+    # its own gold_in write-off so what's left outstanding is exactly
+    # balance_fine_weight (the genuine, unexplained shortfall/excess), auto-tracked
+    # without any separate manual entry.
+    if process_loss:
+        await db.karigar_ledger.insert_one({
+            'id': str(uuid.uuid4()), 'karigar_id': karigar_id, 'type': 'gold_in', 'weight': process_loss,
+            'fine_weight': fine_process_loss, 'amount': None, 'item_id': item_id, 'item_code': item['item_code'],
+            'txn_id': txn_id, 'is_adjustment': True,
+            'note': f"Process loss written off (expected): {item['description']}",
+            'created_at': iso, 'created_by': user['name'],
+        })
 
     # Optional on-the-spot settlement of what's owed to the karigar for this job.
     labour_amount = body.labour_amount or 0
@@ -2056,7 +2069,7 @@ async def edit_karigar_transaction(item_id: str, txn_id: str, body: KarigarTrans
             'note': body.note or '', 'edited_at': iso, 'edited_by': user['name'],
         }})
         await db.karigar_ledger.update_many(
-            {'txn_id': txn_id, 'type': 'gold_in'},
+            {'txn_id': txn_id, 'type': 'gold_in', 'is_adjustment': {'$ne': True}},
             {'$set': {'weight': body.weight, 'fine_weight': fine_weight, 'note': f"Received back: {item['description']} (diff {diff:+.3f}g / fine {fine_diff:+.3f}g)"}},
         )
         await db.repair_items.update_one({'id': item_id}, {'$set': {
