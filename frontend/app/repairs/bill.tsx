@@ -44,6 +44,7 @@ export default function RepairBillScreen() {
   const [billExtraNote, setBillExtraNote] = useState('');
   const [paymentMode, setPaymentMode] = useState('cash');
   const [weightRate, setWeightRate] = useState('');
+  const [prevBalance, setPrevBalance] = useState('');
 
   const loadBills = useCallback(async () => {
     try { setBills(await api.get<Item[]>('/repair-items?status=delivered')); }
@@ -64,7 +65,7 @@ export default function RepairBillScreen() {
     setPicked(item);
     setBillLabour(String(item.labour_charge || 0));
     setBillMaterial(String(item.customer_adjustment || 0));
-    setBillExtra(''); setBillExtraNote(''); setPaymentMode('cash'); setWeightRate('');
+    setBillExtra(''); setBillExtraNote(''); setPaymentMode('cash'); setWeightRate(''); setPrevBalance('');
     setMode('form');
   };
 
@@ -74,7 +75,8 @@ export default function RepairBillScreen() {
 
   const applyWeightCharge = () => setBillMaterial(String(weightCharge));
 
-  const billTotal = (parseFloat(billLabour) || 0) + (parseFloat(billMaterial) || 0) + (parseFloat(billExtra) || 0);
+  const prevBalanceNum = parseFloat(prevBalance) || 0;
+  const billTotal = prevBalanceNum + (parseFloat(billLabour) || 0) + (parseFloat(billMaterial) || 0) + (parseFloat(billExtra) || 0);
 
   const createBill = async () => {
     if (submittingRef.current || !picked) return;
@@ -84,6 +86,7 @@ export default function RepairBillScreen() {
       await api.post(`/repair-items/${picked.id}/deliver`, {
         labour_charge: parseFloat(billLabour) || 0, material_adjustment: parseFloat(billMaterial) || 0,
         extra_charges: parseFloat(billExtra) || 0, extra_charges_note: billExtraNote,
+        previous_balance: prevBalanceNum,
         payment_mode: paymentMode, note: '',
       });
       setPicked(null); setMode('list'); setLoading(true);
@@ -211,6 +214,9 @@ export default function RepairBillScreen() {
               <Text style={styles.cName}>{picked.item_code} · {picked.customer_name}</Text>
               <Text style={styles.cMeta}>{picked.description}</Text>
             </View>
+
+            <Text style={styles.label}>Previous Balance, if any (₹)</Text>
+            <TextInput testID="bill-prev-balance" value={prevBalance} onChangeText={(v) => setPrevBalance(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />
 
             <Text style={styles.label}>Labour Charge (₹)</Text>
             <TextInput testID="bill-labour" value={billLabour} onChangeText={(v) => setBillLabour(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />

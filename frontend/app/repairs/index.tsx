@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter, useFocusEffect } from 'expo-router';
+import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { api } from '@/src/api/client';
 import { REPAIR_STATUS_LABEL, repairStatusColors, RepairItemStatus } from '@/src/utils/repairStatus';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
@@ -25,12 +25,16 @@ const FILTERS: { key: FilterKey; label: string; icon: any }[] = [
   { key: 'delivered', label: 'Delivered', icon: 'checkmark-done-outline' },
 ];
 
+const FILTER_KEYS = new Set(FILTERS.map((f) => f.key));
+
 export default function RepairOrdersScreen() {
   const router = useRouter();
+  const { filter: routeFilter } = useLocalSearchParams<{ filter?: string }>();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [items, setItems] = useState<Item[]>([]);
-  const [filter, setFilter] = useState<FilterKey>('all');
+  const initialFilter = (routeFilter && FILTER_KEYS.has(routeFilter as FilterKey) ? routeFilter : 'all') as FilterKey;
+  const [filter, setFilter] = useState<FilterKey>(initialFilter);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
 

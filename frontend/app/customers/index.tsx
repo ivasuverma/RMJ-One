@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { api } from '@/src/api/client';
+import { confirmAction } from '@/src/utils/confirm';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
@@ -26,6 +27,7 @@ export default function CustomersScreen() {
   const [address, setAddress] = useState('');
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const submittingRef = useRef(false);
 
   const load = useCallback(async (q?: string) => {
@@ -57,6 +59,21 @@ export default function CustomersScreen() {
       resetForm(); await load(query);
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
     finally { setSaving(false); submittingRef.current = false; }
+  };
+
+  const remove = () => {
+    if (!editingId) return;
+    confirmAction(
+      'Delete customer?',
+      `Remove ${name || 'this customer'} from Masters? Only allowed if they have no repair history. This cannot be undone.`,
+      'Delete',
+      async () => {
+        setDeleting(true);
+        try { await api.del(`/customers/${editingId}`); resetForm(); await load(query); }
+        catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+        finally { setDeleting(false); }
+      },
+    );
   };
 
   return (
@@ -93,6 +110,11 @@ export default function CustomersScreen() {
               <Pressable style={[styles.saveBtn, saving && { opacity: 0.6 }]} disabled={saving} onPress={save} testID="save-customer-btn">
                 {saving ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.saveBtnText}>{editingId ? 'Save Changes' : 'Add Customer'}</Text>}
               </Pressable>
+              {editingId && (
+                <Pressable style={[styles.deleteBtn, deleting && { opacity: 0.6 }]} disabled={deleting} onPress={remove} testID="delete-customer-btn">
+                  {deleting ? <ActivityIndicator color={colors.onError} /> : <Text style={styles.deleteBtnText}>Delete Customer</Text>}
+                </Pressable>
+              )}
             </View>
           ) : (
             <View style={styles.searchRow}>
@@ -147,6 +169,11 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   saveBtn: { backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: 14, alignItems: 'center', marginTop: spacing.lg },
   saveBtnText: { color: colors.onBrandPrimary, fontWeight: '800', fontSize: 14 },
+  deleteBtn: {
+    borderRadius: radius.md, paddingVertical: 12, alignItems: 'center', marginTop: spacing.sm,
+    borderWidth: 1, borderColor: colors.error,
+  },
+  deleteBtnText: { color: colors.onError, fontWeight: '700', fontSize: 13 },
 
   searchRow: {
     flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.surfaceSecondary,

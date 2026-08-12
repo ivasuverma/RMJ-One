@@ -474,6 +474,10 @@ class ReceiveFromKarigarIn(BaseModel):
     pay_cash: Optional[float] = 0
     pay_metal_weight: Optional[float] = 0
     pay_metal_value: Optional[float] = 0
+    # ...and the reverse: the karigar settling a shortfall by handing the shop
+    # cash and/or extra metal, right here at receive time.
+    recv_cash: Optional[float] = 0
+    recv_metal_weight: Optional[float] = 0
 
 
 class KarigarTransactionEditIn(BaseModel):
@@ -488,13 +492,17 @@ class DeliverIn(BaseModel):
     material_adjustment: Optional[float] = None  # defaults to any customer-charged adjustment set at receive time
     extra_charges: Optional[float] = 0
     extra_charges_note: Optional[str] = ''
+    # Any earlier outstanding balance this customer still owes (manually entered
+    # by staff, since there's no running customer AR ledger) — folded into this
+    # bill's total so it isn't forgotten.
+    previous_balance: Optional[float] = 0
     payment_mode: Optional[str] = 'cash'
     note: Optional[str] = ''
     final_photo: Optional[str] = ''
 
 
 class KarigarLedgerEntryIn(BaseModel):
-    type: Literal['labour_payable', 'payment', 'adjustment', 'gold_out', 'gold_in']
+    type: Literal['labour_payable', 'payment', 'receipt', 'adjustment', 'gold_out', 'gold_in']
     amount: Optional[float] = 0   # ₹ types (labour_payable/payment/adjustment)
     weight: Optional[float] = 0   # gold types (gold_out/gold_in) — entered directly in fine-gold grams
     note: Optional[str] = ''
@@ -1569,6 +1577,17 @@ async def update_customer(cid: str, body: CustomerIn, user=Depends(require_admin
     return await db.customers.find_one({'id': cid}, {'_id': 0})
 
 
+@api.delete('/customers/{cid}')
+async def delete_customer(cid: str, user=Depends(require_owner), _mod=Depends(require_module('repairs'))):
+    c = await db.customers.find_one({'id': cid}, {'_id': 0})
+    if not c: raise HTTPException(status_code=404, detail='Customer not found')
+    if await db.repair_orders.count_documents({'customer_id': cid}) > 0:
+        raise HTTPException(status_code=400, detail='This customer has repair history — their ledger is not empty')
+    await db.customers.delete_one({'id': cid})
+    await log_audit(user, 'customer.delete', 'customer', cid, (c or {}).get('name', ''))
+    return {'ok': True}
+
+
 # ---------------- Repairs: Karigars ----------------
 @api.get('/karigars')
 async def list_karigars(_: dict = Depends(require_staff)):
@@ -1587,6 +1606,8 @@ async def list_karigars(_: dict = Depends(require_staff)):
             amt_due[kid] = amt_due.get(kid, 0) + (e.get('amount') or 0)
         elif e['type'] == 'payment':
             amt_due[kid] = amt_due.get(kid, 0) - (e.get('amount') or 0)
+        elif e['type'] == 'receipt':
+            amt_due[kid] = amt_due.get(kid, 0) + (e.get('amount') or 0)
         elif e['type'] == 'wastage':
             amt_due[kid] = amt_due.get(kid, 0) + (e.get('amount') or 0)
     for k in karigars:
@@ -1622,8 +1643,10 @@ async def update_karigar(kid: str, body: KarigarIn, user=Depends(require_admin),
 @api.delete('/karigars/{kid}')
 async def delete_karigar(kid: str, user=Depends(require_owner), _mod=Depends(require_module('repairs'))):
     k = await db.karigars.find_one({'id': kid}, {'_id': 0})
-    r = await db.karigars.delete_one({'id': kid})
-    if r.deleted_count == 0: raise HTTPException(status_code=404, detail='Karigar not found')
+    if not k: raise HTTPException(status_code=404, detail='Karigar not found')
+    if await db.karigar_ledger.count_documents({'karigar_id': kid}) > 0:
+        raise HTTPException(status_code=400, detail='This karigar has ledger entries — clear/settle their ledger before deleting')
+    await db.karigars.delete_one({'id': kid})
     await log_audit(user, 'karigar.delete', 'karigar', kid, (k or {}).get('name', ''))
     return {'ok': True}
 
@@ -1959,6 +1982,26 @@ async def receive_from_karigar(item_id: str, body: ReceiveFromKarigarIn, user=De
             'created_at': iso, 'created_by': user['name'],
         })
 
+    # ...and the reverse: the karigar settling a shortfall by handing the shop
+    # cash and/or extra metal, right here at receive time.
+    recv_cash = body.recv_cash or 0
+    recv_metal_weight = body.recv_metal_weight or 0
+    if recv_cash:
+        await db.karigar_ledger.insert_one({
+            'id': str(uuid.uuid4()), 'karigar_id': karigar_id, 'type': 'receipt', 'weight': None,
+            'amount': recv_cash, 'item_id': item_id, 'item_code': item['item_code'],
+            'txn_id': txn_id, 'note': f"Cash received from karigar for {item['item_code']}",
+            'created_at': iso, 'created_by': user['name'],
+        })
+    if recv_metal_weight:
+        recv_metal_fine = round(recv_metal_weight * purity / 100, 3)
+        await db.karigar_ledger.insert_one({
+            'id': str(uuid.uuid4()), 'karigar_id': karigar_id, 'type': 'gold_in', 'weight': recv_metal_weight,
+            'fine_weight': recv_metal_fine, 'amount': None, 'item_id': item_id, 'item_code': item['item_code'],
+            'txn_id': txn_id, 'note': f"Extra metal received from karigar to settle shortfall on {item['item_code']}",
+            'created_at': iso, 'created_by': user['name'],
+        })
+
     await db.repair_items.update_one({'id': item_id}, {'$set': {
         'status': 'ready', 'weight_diff': diff, 'fine_weight_diff': fine_diff,
         'process_loss': process_loss, 'balance_fine_weight': balance_fine_weight, 'updated_by': user['name'],
@@ -2063,11 +2106,13 @@ async def deliver_item(item_id: str, body: DeliverIn, user=Depends(require_admin
     labour = body.labour_charge if body.labour_charge is not None else item.get('labour_charge', 0)
     material_adj = body.material_adjustment if body.material_adjustment is not None else item.get('customer_adjustment', 0) or 0
     extra = body.extra_charges or 0
-    billed_amount = round(labour + material_adj + extra, 2)
+    prev_balance = body.previous_balance or 0
+    billed_amount = round(prev_balance + labour + material_adj + extra, 2)
     await db.repair_items.update_one({'id': item_id}, {'$set': {
         'status': 'delivered', 'delivered_at': iso,
         'bill_labour_charge': labour, 'bill_material_adjustment': material_adj,
         'bill_extra_charges': extra, 'bill_extra_charges_note': body.extra_charges_note or '',
+        'bill_previous_balance': prev_balance,
         'billed_amount': billed_amount,
         'payment_mode': body.payment_mode, 'delivery_note': body.note or '', 'updated_by': user['name'],
         'final_photo': body.final_photo or item.get('final_photo', ''),
@@ -2087,7 +2132,7 @@ async def delete_bill(item_id: str, user=Depends(require_admin), _mod=Depends(re
     await db.repair_items.update_one({'id': item_id}, {'$set': {
         'status': 'ready', 'delivered_at': None,
         'bill_labour_charge': None, 'bill_material_adjustment': None,
-        'bill_extra_charges': None, 'bill_extra_charges_note': '',
+        'bill_extra_charges': None, 'bill_extra_charges_note': '', 'bill_previous_balance': None,
         'billed_amount': None, 'payment_mode': None, 'delivery_note': '',
         'updated_by': user['name'],
     }})
@@ -2164,6 +2209,7 @@ async def get_karigar_ledger(kid: str, _: dict = Depends(require_staff)):
     amount_due = sum(
         (e['amount'] or 0) if e['type'] == 'labour_payable'
         else -(e['amount'] or 0) if e['type'] == 'payment'
+        else (e['amount'] or 0) if e['type'] == 'receipt'
         else (e['amount'] or 0) if e['type'] == 'wastage'
         else 0
         for e in entries

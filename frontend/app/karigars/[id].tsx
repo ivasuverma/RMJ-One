@@ -1,6 +1,6 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, Platform, KeyboardAvoidingView,
+  View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -12,15 +12,15 @@ import { useTheme } from '@/src/theme/ThemeContext';
 
 type Karigar = { id: string; name: string; mobile: string; is_employee: boolean };
 type Entry = {
-  id: string; type: 'gold_out' | 'gold_in' | 'wastage' | 'labour_payable' | 'payment';
+  id: string; type: 'gold_out' | 'gold_in' | 'wastage' | 'labour_payable' | 'payment' | 'receipt';
   weight: number | null; amount: number | null; item_id?: string | null; item_code: string | null; note: string; created_at: string; created_by: string;
 };
 
 const ENTRY_LABEL: Record<Entry['type'], string> = {
-  gold_out: 'Gold issued', gold_in: 'Gold received', wastage: 'Wastage adjustment', labour_payable: 'Labour payable', payment: 'Payment made',
+  gold_out: 'Gold issued', gold_in: 'Gold received', wastage: 'Wastage adjustment', labour_payable: 'Labour payable', payment: 'Payment made', receipt: 'Cash received',
 };
 const ENTRY_ICON: Record<Entry['type'], any> = {
-  gold_out: 'arrow-redo-outline', gold_in: 'arrow-undo-outline', wastage: 'trending-down-outline', labour_payable: 'cash-outline', payment: 'checkmark-circle-outline',
+  gold_out: 'arrow-redo-outline', gold_in: 'arrow-undo-outline', wastage: 'trending-down-outline', labour_payable: 'cash-outline', payment: 'checkmark-circle-outline', receipt: 'download-outline',
 };
 
 export default function KarigarLedgerScreen() {
@@ -33,12 +33,7 @@ export default function KarigarLedgerScreen() {
   const [weightBalance, setWeightBalance] = useState(0);
   const [amountDue, setAmountDue] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState<null | 'labour_payable' | 'payment'>(null);
-  const [amount, setAmount] = useState('');
-  const [note, setNote] = useState('');
-  const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState('');
-  const submittingRef = useRef(false);
 
   const load = useCallback(async () => {
     try {
@@ -48,20 +43,6 @@ export default function KarigarLedgerScreen() {
     finally { setLoading(false); }
   }, [id]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
-
-  const submit = async () => {
-    if (submittingRef.current || !showForm) return;
-    const amt = parseFloat(amount);
-    if (!amt || amt <= 0) { Alert.alert('Invalid', 'Amount must be greater than 0'); return; }
-    submittingRef.current = true;
-    setSaving(true);
-    try {
-      await api.post(`/karigars/${id}/ledger`, { type: showForm, amount: amt, note });
-      setAmount(''); setNote(''); setShowForm(null);
-      await load();
-    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
-    finally { setSaving(false); submittingRef.current = false; }
-  };
 
   const removeEntry = (e: Entry) => {
     confirmAction(
@@ -102,9 +83,8 @@ export default function KarigarLedgerScreen() {
         <View style={{ width: 40 }} />
       </View>
 
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 60 }} keyboardShouldPersistTaps="handled">
-          <View style={styles.summaryRow}>
+      <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 60 }}>
+        <View style={styles.summaryRow}>
             <View style={styles.summaryTile}>
               <Text style={styles.summaryValue}>{weightBalance.toFixed(3)}g</Text>
               <Text style={styles.summaryLabel}>Gold with karigar</Text>
@@ -114,27 +94,6 @@ export default function KarigarLedgerScreen() {
               <Text style={styles.summaryLabel}>Amount due</Text>
             </View>
           </View>
-
-          <View style={styles.actionsRow}>
-            <Pressable onPress={() => setShowForm(showForm === 'labour_payable' ? null : 'labour_payable')} style={styles.actionBtn} testID="add-labour-btn">
-              <Ionicons name="cash-outline" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>Add Labour Owed</Text>
-            </Pressable>
-            <Pressable onPress={() => setShowForm(showForm === 'payment' ? null : 'payment')} style={[styles.actionBtn, styles.actionBtnPrimary]} testID="record-payment-btn">
-              <Ionicons name="checkmark" size={16} color={colors.onBrandPrimary} /><Text style={styles.actionBtnPrimaryText}>Record Payment</Text>
-            </Pressable>
-          </View>
-
-          {showForm && (
-            <View style={styles.formCard} testID="ledger-entry-form">
-              <Text style={styles.label}>{showForm === 'labour_payable' ? 'Amount owed for labour (₹)' : 'Amount paid (₹)'}</Text>
-              <TextInput testID="ledger-amount" value={amount} onChangeText={(v) => setAmount(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />
-              <Text style={styles.label}>Note (optional)</Text>
-              <TextInput testID="ledger-note" value={note} onChangeText={setNote} placeholder="Reference or reason" placeholderTextColor={colors.mutedText} style={styles.input} />
-              <Pressable onPress={submit} disabled={saving} style={[styles.saveBtn, saving && { opacity: 0.6 }]} testID="ledger-save-btn">
-                {saving ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.saveBtnText}>Save</Text>}
-              </Pressable>
-            </View>
-          )}
 
           <Text style={styles.section}>History · {entries.length}</Text>
           {entries.length === 0 ? (
@@ -156,8 +115,7 @@ export default function KarigarLedgerScreen() {
               )}
             </View>
           ))}
-        </ScrollView>
-      </KeyboardAvoidingView>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -179,24 +137,6 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   summaryTile: { flex: 1, backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.md, alignItems: 'center' },
   summaryValue: { color: colors.onSurface, fontSize: 20, fontWeight: '700' },
   summaryLabel: { color: colors.mutedText, fontSize: 11, marginTop: 4, textAlign: 'center' },
-
-  actionsRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md },
-  actionBtn: {
-    flex: 1, flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, paddingVertical: 12,
-  },
-  actionBtnText: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '700' },
-  actionBtnPrimary: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
-  actionBtnPrimaryText: { color: colors.onBrandPrimary, fontSize: 12, fontWeight: '700' },
-
-  formCard: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.lg, marginBottom: spacing.lg },
-  label: { color: colors.onSurfaceSecondary, fontSize: 12, marginBottom: 6, marginTop: spacing.sm },
-  input: {
-    backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
-    color: colors.onSurface, paddingHorizontal: spacing.md, paddingVertical: 12, fontSize: 14,
-  },
-  saveBtn: { backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: 13, alignItems: 'center', marginTop: spacing.md },
-  saveBtnText: { color: colors.onBrandPrimary, fontWeight: '700' },
 
   section: { color: colors.brandSecondary, fontSize: 11, letterSpacing: 1, textTransform: 'uppercase', marginBottom: spacing.sm },
   empty: { paddingVertical: 30, alignItems: 'center' },

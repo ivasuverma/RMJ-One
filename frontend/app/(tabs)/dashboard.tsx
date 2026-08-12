@@ -143,9 +143,7 @@ export default function DashboardScreen() {
             <SectionHeader title="Business Snapshot" icon="stats-chart-outline" testID="section-business" />
             <View style={[styles.tileGrid, { marginBottom: spacing.xl }]}>
               <StatCard basis={tileBasis} icon="cash-outline" label="Revenue Today" value={fmtINR(data.business_summary.revenue_today)} accent={colors.brandPrimary} testID="biz-revenue-today" onPress={() => router.push('/reports' as any)} />
-              <StatCard basis={tileBasis} icon="trending-up-outline" label="Revenue This Month" value={fmtINR(data.business_summary.revenue_month)} accent={colors.brandPrimary} testID="biz-revenue-month" onPress={() => router.push('/reports' as any)} />
               <StatCard basis={tileBasis} icon="diamond-outline" label="New Intake Today" value={String(data.business_summary.intake_today)} accent={colors.brandSecondary} testID="biz-intake-today" onPress={() => router.push('/repairs' as any)} />
-              <StatCard basis={tileBasis} icon="people-outline" label="Active Employees" value={String(data.business_summary.active_employees)} accent={colors.brandSecondary} testID="biz-active-employees" onPress={() => router.push('/(tabs)/employees')} />
               <StatCard basis={tileBasis} icon="person-outline" label="Customers with Balance" value={String(data.business_summary.customers_open)} accent={colors.onWarning} testID="biz-customers-open" onPress={() => router.push('/reports/customer-ledger' as any)} />
               <StatCard basis={tileBasis} icon="hammer-outline" label="Karigars with Balance" value={String(data.business_summary.karigars_open)} accent={colors.onWarning} testID="biz-karigars-open" onPress={() => router.push('/reports/karigar-ledger' as any)} />
             </View>
@@ -158,10 +156,7 @@ export default function DashboardScreen() {
                 <View style={[styles.tileGrid, { marginBottom: spacing.sm }]}>
                   <StatCard basis={tileBasis} icon="checkmark-circle-outline" label="Present" value={String(data.todays_attendance.present)} accent={colors.brandPrimary} testID="tile-present" onPress={() => router.push('/(tabs)/attendance')} />
                   <StatCard basis={tileBasis} icon="close-circle-outline" label="Absent" value={String(data.todays_attendance.absent)} accent={colors.onError} testID="tile-absent" onPress={() => router.push('/(tabs)/attendance')} />
-                  <StatCard basis={tileBasis} icon="alarm-outline" label="Late" value={String(data.todays_attendance.late)} accent={colors.brandSecondary} testID="tile-late" onPress={() => router.push('/(tabs)/attendance')} />
-                  <StatCard basis={tileBasis} icon="time-outline" label="Half Day" value={String(data.todays_attendance.half_day)} accent={colors.onWarning} testID="tile-half-day" onPress={() => router.push('/(tabs)/attendance')} />
                   <StatCard basis={tileBasis} icon="alert-circle-outline" label="Missing Punch" value={String(data.todays_attendance.missing_punch)} accent={colors.onError} testID="tile-missing" onPress={() => router.push('/(tabs)/attendance')} />
-                  <StatCard basis={tileBasis} icon="airplane-outline" label="On Leave" value={String(data.todays_attendance.leave)} accent={colors.onSurfaceTertiary} testID="tile-leave" onPress={() => router.push('/(tabs)/attendance')} />
                 </View>
 
                 {hasModule('approvals') && (data.pending_approvals.attendance_corrections > 0 || data.pending_approvals.leave_requests > 0) && (
@@ -189,12 +184,10 @@ export default function DashboardScreen() {
                 <View style={{ flexBasis: sectionBasis, flexGrow: 1 }}>
                   <SectionHeader title="Repairs" icon="construct-outline" testID="section-repairs" />
                   <View style={styles.tileGrid}>
-                    <StatCard basis={tileBasis} icon="cube-outline" label="Received · awaiting action" value={String(data.repairs_summary.received)} accent={colors.brandSecondary} testID="repairs-received" onPress={() => router.push('/repairs/outstanding' as any)} />
-                    <StatCard basis={tileBasis} icon="hammer-outline" label="With Karigar" value={String(data.repairs_summary.with_karigar)} accent={colors.brandSecondary} testID="repairs-with-karigar" onPress={() => router.push('/repairs/outstanding' as any)} />
-                    <StatCard basis={tileBasis} icon="pricetag-outline" label="Pending to Bill" value={String(data.repairs_summary.ready)} accent={colors.brandSecondary} testID="repairs-ready" onPress={() => router.push('/repairs/outstanding' as any)} />
-                    <StatCard basis={tileBasis} icon="alert-circle-outline" label="Overdue" value={String(data.repairs_summary.overdue)} accent={colors.onError} danger={data.repairs_summary.overdue > 0} testID="repairs-overdue" onPress={() => router.push('/repairs/outstanding' as any)} />
-                    <StatCard basis={tileBasis} icon="checkmark-circle-outline" label="Delivered Today" value={String(data.repairs_summary.delivered_today)} accent={colors.onSuccess} testID="repairs-delivered-today" onPress={() => router.push('/repairs' as any)} />
-                    <StatCard basis={tileBasis} icon="layers-outline" label="Total Open Tags" value={String(data.repairs_summary.total_open)} accent={colors.brandSecondary} testID="repairs-total-open" onPress={() => router.push('/repairs' as any)} />
+                    <StatCard basis={tileBasis} icon="cube-outline" label="Received · awaiting action" value={String(data.repairs_summary.received)} accent={colors.brandSecondary} testID="repairs-received" onPress={() => router.push('/repairs?filter=received' as any)} />
+                    <StatCard basis={tileBasis} icon="hammer-outline" label="With Karigar" value={String(data.repairs_summary.with_karigar)} accent={colors.brandSecondary} testID="repairs-with-karigar" onPress={() => router.push('/repairs?filter=with_karigar' as any)} />
+                    <StatCard basis={tileBasis} icon="pricetag-outline" label="Pending to Bill" value={String(data.repairs_summary.ready)} accent={colors.brandSecondary} testID="repairs-ready" onPress={() => router.push('/repairs?filter=ready' as any)} />
+                    <StatCard basis={tileBasis} icon="alert-circle-outline" label="Overdue" value={String(data.repairs_summary.overdue)} accent={colors.onError} danger={data.repairs_summary.overdue > 0} testID="repairs-overdue" onPress={() => router.push('/repairs?filter=overdue' as any)} />
                   </View>
                 </View>
               )}
@@ -205,7 +198,6 @@ export default function DashboardScreen() {
                   <View style={styles.tileGrid}>
                     <StatCard basis={tileBasis} icon="today-outline" label="Due Today" value={String(data.tasks_summary.due_today)} accent={colors.brandSecondary} testID="tasks-due-today" onPress={() => router.push('/tasks' as any)} />
                     <StatCard basis={tileBasis} icon="alert-circle-outline" label="Overdue" value={String(data.tasks_summary.overdue)} accent={colors.onError} danger={data.tasks_summary.overdue > 0} testID="tasks-overdue" onPress={() => router.push('/tasks' as any)} />
-                    <StatCard basis={tileBasis} icon="checkmark-done-outline" label="Completed Today" value={String(data.tasks_summary.done_today)} accent={colors.onSuccess} testID="tasks-done-today" onPress={() => router.push('/tasks' as any)} />
                   </View>
                 </View>
               )}

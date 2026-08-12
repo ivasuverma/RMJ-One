@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { api } from '@/src/api/client';
+import { confirmAction } from '@/src/utils/confirm';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
@@ -30,6 +31,7 @@ export default function KarigarsScreen() {
   const [empPickerOpen, setEmpPickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const submittingRef = useRef(false);
 
   const load = useCallback(async () => {
@@ -73,6 +75,21 @@ export default function KarigarsScreen() {
       resetForm(); await load();
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
     finally { setSaving(false); submittingRef.current = false; }
+  };
+
+  const remove = () => {
+    if (!editingId) return;
+    confirmAction(
+      'Delete karigar?',
+      `Remove ${name || 'this karigar'} from Masters? Only allowed if their ledger has no entries. This cannot be undone.`,
+      'Delete',
+      async () => {
+        setDeleting(true);
+        try { await api.del(`/karigars/${editingId}`); resetForm(); await load(); }
+        catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+        finally { setDeleting(false); }
+      },
+    );
   };
 
   return (
@@ -146,6 +163,11 @@ export default function KarigarsScreen() {
               <Pressable style={[styles.saveBtn, saving && { opacity: 0.6 }]} disabled={saving} onPress={save} testID="save-karigar-btn">
                 {saving ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.saveBtnText}>{editingId ? 'Save Changes' : 'Add Karigar'}</Text>}
               </Pressable>
+              {editingId && (
+                <Pressable style={[styles.deleteBtn, deleting && { opacity: 0.6 }]} disabled={deleting} onPress={remove} testID="delete-karigar-btn">
+                  {deleting ? <ActivityIndicator color={colors.onError} /> : <Text style={styles.deleteBtnText}>Delete Karigar</Text>}
+                </Pressable>
+              )}
             </View>
           )}
 
@@ -210,6 +232,11 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   checkLabel: { color: colors.onSurfaceSecondary, fontSize: 13 },
   saveBtn: { backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: 14, alignItems: 'center', marginTop: spacing.lg },
   saveBtnText: { color: colors.onBrandPrimary, fontWeight: '800', fontSize: 14 },
+  deleteBtn: {
+    borderRadius: radius.md, paddingVertical: 12, alignItems: 'center', marginTop: spacing.sm,
+    borderWidth: 1, borderColor: colors.error,
+  },
+  deleteBtnText: { color: colors.onError, fontWeight: '700', fontSize: 13 },
 
   empty: { alignItems: 'center', paddingVertical: 40, gap: spacing.sm },
   emptyText: { color: colors.onSurfaceTertiary },

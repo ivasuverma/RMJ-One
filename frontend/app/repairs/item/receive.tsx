@@ -11,6 +11,7 @@ import { useTheme } from '@/src/theme/ThemeContext';
 
 type Item = {
   id: string; item_code: string; description: string; customer_name: string; karigar_name: string | null;
+  karigar_id?: string | null;
   current_issue_weight: number | null; current_issue_fine_weight?: number | null; purity?: number;
 };
 
@@ -37,8 +38,19 @@ export default function ReceiveFromKarigarScreen() {
   const [payCash, setPayCash] = useState('');
   const [payMetalWeight, setPayMetalWeight] = useState('');
   const [payMetalValue, setPayMetalValue] = useState('');
+  const [recvCash, setRecvCash] = useState('');
+  const [recvMetalWeight, setRecvMetalWeight] = useState('');
+  const [prevBalance, setPrevBalance] = useState(0);
   const [busy, setBusy] = useState(false);
   const submittingRef = useRef(false);
+
+  const loadBalance = useCallback(async (kid?: string | null) => {
+    if (!kid) { setPrevBalance(0); return; }
+    try {
+      const res = await api.get<{ amount_due: number }>(`/karigars/${kid}/ledger`);
+      setPrevBalance(res.amount_due || 0);
+    } catch (_e) { setPrevBalance(0); }
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -47,16 +59,17 @@ export default function ReceiveFromKarigarScreen() {
         const res = await api.get<{ item: Item }>(`/repair-items/${routeItemId}`);
         setItem(res.item);
         setMode('form');
+        loadBalance(res.item.karigar_id);
       } else {
         setPickList(await api.get<Item[]>('/repair-items?status=with_karigar'));
         setMode('pick');
       }
     } catch (_e) { /* ignore */ }
     finally { setLoading(false); }
-  }, [routeItemId]);
+  }, [routeItemId, loadBalance]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const pickItem = (it: Item) => { setItem(it); setMode('form'); };
+  const pickItem = (it: Item) => { setItem(it); setMode('form'); loadBalance(it.karigar_id); };
 
   const submit = async () => {
     if (submittingRef.current || !item) return;
@@ -71,6 +84,8 @@ export default function ReceiveFromKarigarScreen() {
         pay_cash: parseFloat(payCash) || 0,
         pay_metal_weight: parseFloat(payMetalWeight) || 0,
         pay_metal_value: parseFloat(payMetalValue) || 0,
+        recv_cash: parseFloat(recvCash) || 0,
+        recv_metal_weight: parseFloat(recvMetalWeight) || 0,
       });
       router.back();
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
@@ -110,7 +125,8 @@ export default function ReceiveFromKarigarScreen() {
   const labourNum = parseFloat(labourAmount) || 0;
   const cashNum = parseFloat(payCash) || 0;
   const metalValueNum = parseFloat(payMetalValue) || 0;
-  const remainingDue = round3(labourNum - cashNum - metalValueNum);
+  const recvCashNum = parseFloat(recvCash) || 0;
+  const remainingDue = round3(prevBalance + labourNum - cashNum - metalValueNum - recvCashNum);
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="receive-screen">
@@ -217,7 +233,27 @@ export default function ReceiveFromKarigarScreen() {
               </>
             )}
 
-            {labourNum > 0 && (
+            <Text style={styles.sectionTitle}>Receive from Karigar (optional)</Text>
+            <Text style={styles.hint}>If the karigar is settling a shortfall by handing over cash or extra metal.</Text>
+            <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>Cash received (₹)</Text>
+                <TextInput testID="recv-cash" value={recvCash} onChangeText={(v) => setRecvCash(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>Metal received (g)</Text>
+                <TextInput testID="recv-metal-weight" value={recvMetalWeight} onChangeText={(v) => setRecvMetalWeight(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0.000" placeholderTextColor={colors.mutedText} style={styles.input} />
+              </View>
+            </View>
+
+            {!!prevBalance && (
+              <View style={styles.balanceRow} testID="prev-balance-row">
+                <Text style={styles.balanceRowLabel}>Previous balance</Text>
+                <Text style={[styles.balanceRowValue, prevBalance > 0 ? { color: colors.onWarning } : { color: colors.onSuccess }]}>{fmtINR(Math.abs(prevBalance))}{prevBalance < 0 ? ' cr' : ''}</Text>
+              </View>
+            )}
+
+            {(labourNum > 0 || !!prevBalance) && (
               <View style={styles.totalRow} testID="remaining-due">
                 <Text style={styles.totalLabel}>{remainingDue > 0 ? 'Remaining Due' : remainingDue < 0 ? 'Overpaid' : 'Fully Settled'}</Text>
                 <Text style={[styles.totalValue, remainingDue > 0 && { color: colors.onError }, remainingDue <= 0 && { color: colors.onSuccess }]}>{fmtINR(Math.abs(remainingDue))}</Text>
@@ -288,6 +324,13 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   balancePreviewText: { fontSize: 12, fontWeight: '700', flex: 1 },
 
   sectionTitle: { color: colors.onSurface, fontSize: 14, fontWeight: '700', marginTop: spacing.lg, marginBottom: 4, fontFamily: fonts.display },
+
+  balanceRow: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: spacing.xs, paddingVertical: 6, marginTop: spacing.sm,
+  },
+  balanceRowLabel: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '600' },
+  balanceRowValue: { fontSize: 13, fontWeight: '700' },
 
   totalRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
