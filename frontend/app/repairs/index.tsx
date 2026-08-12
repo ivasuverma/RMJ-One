@@ -51,7 +51,7 @@ export default function RepairOrdersScreen() {
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
         <View style={{ flex: 1 }}>
-          <Text style={styles.title}>In/Out Repairs</Text>
+          <Text style={styles.title}>Repair</Text>
           {!loading && <Text style={styles.subtitle}>{items.length} tag{items.length === 1 ? '' : 's'} · {activeFilter.label}</Text>}
         </View>
         <Pressable onPress={() => router.push('/repairs/new' as any)} style={[styles.iconBtn, styles.addBtn]} testID="new-repair-btn" hitSlop={12}>
@@ -59,7 +59,7 @@ export default function RepairOrdersScreen() {
         </Pressable>
       </View>
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll} contentContainerStyle={styles.filterRow}>
         {FILTERS.map((f) => (
           <Pressable
             key={f.key}
@@ -136,9 +136,10 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   title: { color: colors.onSurface, fontSize: 20, fontWeight: '600', fontFamily: fonts.display },
   subtitle: { color: colors.mutedText, fontSize: 11, marginTop: 2 },
 
-  filterRow: { flexDirection: 'row', gap: spacing.sm, paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: 2 },
+  filterScroll: { flexGrow: 0, flexShrink: 0 },
+  filterRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: 2 },
   filterChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
+    flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 5,
     paddingHorizontal: spacing.md, paddingVertical: 8, borderRadius: radius.pill,
     backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border,
   },

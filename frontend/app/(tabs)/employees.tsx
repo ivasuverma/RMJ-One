@@ -11,7 +11,7 @@ import {
   RefreshControl,
   Platform,
 } from 'react-native';
-import { useRouter, useFocusEffect } from 'expo-router';
+import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '@/src/api/client';
@@ -33,6 +33,8 @@ const CHIPS: { key: string; label: string; status?: string }[] = [
 
 export default function EmployeesScreen() {
   const router = useRouter();
+  const { from } = useLocalSearchParams<{ from?: string }>();
+  const goBack = () => { if (from === 'transactions') router.replace('/(tabs)/transactions' as any); else router.back(); };
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [items, setItems] = useState<Emp[]>([]);
@@ -71,8 +73,8 @@ export default function EmployeesScreen() {
       {/* Sticky Header */}
       <View style={styles.header}>
         <View style={styles.headerTop}>
-          {router.canGoBack() && (
-            <Pressable onPress={() => router.back()} style={styles.backBtn} testID="back-btn" hitSlop={12}>
+          {(router.canGoBack() || from === 'transactions') && (
+            <Pressable onPress={goBack} style={styles.backBtn} testID="back-btn" hitSlop={12}>
               <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
             </Pressable>
           )}

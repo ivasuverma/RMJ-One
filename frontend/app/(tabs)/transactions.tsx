@@ -15,17 +15,16 @@ const SECTIONS: { title: string; tiles: TileDef[] }[] = [
   {
     title: 'Employee Management',
     tiles: [
-      { key: 'attendance', label: 'Attendance', icon: 'time-outline', route: '/(tabs)/attendance' },
-      { key: 'payroll', label: 'Payroll', icon: 'cash-outline', route: '/(tabs)/payroll' },
-      { key: 'ledger', label: 'Ledger Entry', icon: 'document-text-outline', route: '/(tabs)/employees' },
+      { key: 'attendance', label: 'Attendance', icon: 'time-outline', route: '/(tabs)/attendance?from=transactions' },
+      { key: 'payroll', label: 'Payroll', icon: 'cash-outline', route: '/(tabs)/payroll?from=transactions' },
+      { key: 'ledger', label: 'Ledger Entry', icon: 'document-text-outline', route: '/(tabs)/employees?from=transactions' },
       { key: 'approvals', label: 'Approvals', icon: 'checkmark-done-outline', route: '/approvals' },
     ],
   },
   {
     title: 'Repairs',
     tiles: [
-      { key: 'repair-intake', label: 'Repair Intake', icon: 'diamond-outline', route: '/repairs/new' },
-      { key: 'repair-orders', label: 'In/Out Repairs', icon: 'construct-outline', route: '/repairs' },
+      { key: 'repair-orders', label: 'Repair', icon: 'construct-outline', route: '/repairs' },
       { key: 'repair-issue', label: 'Issue to Karigar', icon: 'arrow-up-circle-outline', route: '/repairs/item/issue' },
       { key: 'repair-receive', label: 'Receive from Karigar', icon: 'arrow-down-circle-outline', route: '/repairs/item/receive' },
       { key: 'repair-bill', label: 'Repair Bill', icon: 'receipt-outline', route: '/repairs/bill' },

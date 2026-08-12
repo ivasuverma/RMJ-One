@@ -11,7 +11,6 @@ import {
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Image } from 'expo-image';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '@/src/api/client';
@@ -54,12 +53,9 @@ function timeAgo(d: Date | null) {
 
 export default function DashboardScreen() {
   const { user, hasModule } = useAuth();
-  const { colors, scheme } = useTheme();
+  const { colors } = useTheme();
   const { width } = useWindowDimensions();
   const styles = useMemo(() => makeStyles(colors), [colors]);
-  const heroGradient = scheme === 'light'
-    ? ['rgba(247,241,230,0.6)', 'rgba(247,241,230,0.92)'] as const
-    : ['rgba(13,13,13,0.65)', 'rgba(13,13,13,0.92)'] as const;
   const router = useRouter();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -69,10 +65,9 @@ export default function DashboardScreen() {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [, forceTick] = useState(0);
 
-  // Responsive breakpoints: phones stay single-column, tablets/kiosk/web widen.
+  // Responsive breakpoints: 3-across on phones, more columns as the screen widens.
   const isWide = width >= 900;
-  const isTablet = width >= 640;
-  const gridCols = width >= 1100 ? 6 : width >= 820 ? 4 : width >= 520 ? 3 : 2;
+  const gridCols = width >= 1100 ? 6 : width >= 820 ? 4 : 3;
   const tileBasis = `${100 / gridCols - 1.5}%`;
   const sectionBasis = isWide ? '48.5%' : '100%';
 
@@ -155,58 +150,37 @@ export default function DashboardScreen() {
               <StatCard basis={tileBasis} icon="hammer-outline" label="Karigars with Balance" value={String(data.business_summary.karigars_open)} accent={colors.onWarning} testID="biz-karigars-open" onPress={() => router.push('/reports/karigar-ledger' as any)} />
             </View>
 
-            {/* Today's Attendance hero */}
+            {/* Today's Attendance */}
             {hasModule('attendance') && (
-              <Pressable
-                style={styles.heroCard}
-                testID="attendance-hero-card"
-                onPress={() => router.push('/(tabs)/attendance')}
-              >
-                <Image source={images.goldTexture} style={StyleSheet.absoluteFill} contentFit="cover" />
-                <LinearGradient
-                  colors={heroGradient}
-                  style={StyleSheet.absoluteFill}
-                />
-                <View style={styles.heroInner}>
-                  <View style={styles.heroTop}>
-                    <View>
-                      <Text style={styles.heroLabel}>TODAY&apos;S ATTENDANCE</Text>
-                      <Text style={styles.heroTitle}>{data.todays_attendance.working} Working</Text>
-                      <Text style={styles.heroSub}>of {data.todays_attendance.total} total employees</Text>
-                    </View>
-                    <View style={styles.heroChip}>
-                      <View style={styles.heroChipDot} />
-                      <Text style={styles.heroChipText}>Live</Text>
-                    </View>
-                  </View>
-
-                  <View style={styles.attGrid}>
-                    <AttTile label="Present" value={data.todays_attendance.present} accent={colors.brandPrimary} testID="tile-present" onPress={() => router.push('/(tabs)/attendance')} />
-                    <AttTile label="Absent" value={data.todays_attendance.absent} accent={colors.onError} testID="tile-absent" onPress={() => router.push('/(tabs)/attendance')} />
-                    <AttTile label="Late" value={data.todays_attendance.late} accent={colors.brandSecondary} testID="tile-late" onPress={() => router.push('/(tabs)/attendance')} />
-                    <AttTile label="Half Day" value={data.todays_attendance.half_day} accent={colors.onWarning} testID="tile-half-day" onPress={() => router.push('/(tabs)/attendance')} />
-                    <AttTile label="Missing Punch" value={data.todays_attendance.missing_punch} accent={colors.onError} testID="tile-missing" onPress={() => router.push('/(tabs)/attendance')} />
-                    <AttTile label="On Leave" value={data.todays_attendance.leave} accent={colors.onSurfaceTertiary} testID="tile-leave" onPress={() => router.push('/(tabs)/attendance')} />
-                  </View>
-
-                  {hasModule('approvals') && (data.pending_approvals.attendance_corrections > 0 || data.pending_approvals.leave_requests > 0) && (
-                    <View style={styles.approvalRow}>
-                      {data.pending_approvals.attendance_corrections > 0 && (
-                        <Pressable style={styles.approvalPill} testID="approval-corrections" onPress={() => router.push('/approvals?tab=Corrections')}>
-                          <Ionicons name="time-outline" size={12} color={colors.onWarning} />
-                          <Text style={styles.approvalPillText}>{data.pending_approvals.attendance_corrections} correction{data.pending_approvals.attendance_corrections === 1 ? '' : 's'}</Text>
-                        </Pressable>
-                      )}
-                      {data.pending_approvals.leave_requests > 0 && (
-                        <Pressable style={styles.approvalPill} testID="approval-leaves" onPress={() => router.push('/approvals?tab=Leaves')}>
-                          <Ionicons name="calendar-outline" size={12} color={colors.onWarning} />
-                          <Text style={styles.approvalPillText}>{data.pending_approvals.leave_requests} leave request{data.pending_approvals.leave_requests === 1 ? '' : 's'}</Text>
-                        </Pressable>
-                      )}
-                    </View>
-                  )}
+              <>
+                <SectionHeader title="Attendance" icon="time-outline" testID="section-attendance" />
+                <Text style={styles.sectionSubtitle}>{data.todays_attendance.working} of {data.todays_attendance.total} employees working now</Text>
+                <View style={[styles.tileGrid, { marginBottom: spacing.sm }]}>
+                  <StatCard basis={tileBasis} icon="checkmark-circle-outline" label="Present" value={String(data.todays_attendance.present)} accent={colors.brandPrimary} testID="tile-present" onPress={() => router.push('/(tabs)/attendance')} />
+                  <StatCard basis={tileBasis} icon="close-circle-outline" label="Absent" value={String(data.todays_attendance.absent)} accent={colors.onError} testID="tile-absent" onPress={() => router.push('/(tabs)/attendance')} />
+                  <StatCard basis={tileBasis} icon="alarm-outline" label="Late" value={String(data.todays_attendance.late)} accent={colors.brandSecondary} testID="tile-late" onPress={() => router.push('/(tabs)/attendance')} />
+                  <StatCard basis={tileBasis} icon="time-outline" label="Half Day" value={String(data.todays_attendance.half_day)} accent={colors.onWarning} testID="tile-half-day" onPress={() => router.push('/(tabs)/attendance')} />
+                  <StatCard basis={tileBasis} icon="alert-circle-outline" label="Missing Punch" value={String(data.todays_attendance.missing_punch)} accent={colors.onError} testID="tile-missing" onPress={() => router.push('/(tabs)/attendance')} />
+                  <StatCard basis={tileBasis} icon="airplane-outline" label="On Leave" value={String(data.todays_attendance.leave)} accent={colors.onSurfaceTertiary} testID="tile-leave" onPress={() => router.push('/(tabs)/attendance')} />
                 </View>
-              </Pressable>
+
+                {hasModule('approvals') && (data.pending_approvals.attendance_corrections > 0 || data.pending_approvals.leave_requests > 0) && (
+                  <View style={[styles.approvalRow, { marginBottom: spacing.xl }]}>
+                    {data.pending_approvals.attendance_corrections > 0 && (
+                      <Pressable style={styles.approvalPill} testID="approval-corrections" onPress={() => router.push('/approvals?tab=Corrections')}>
+                        <Ionicons name="time-outline" size={12} color={colors.onWarning} />
+                        <Text style={styles.approvalPillText}>{data.pending_approvals.attendance_corrections} correction{data.pending_approvals.attendance_corrections === 1 ? '' : 's'}</Text>
+                      </Pressable>
+                    )}
+                    {data.pending_approvals.leave_requests > 0 && (
+                      <Pressable style={styles.approvalPill} testID="approval-leaves" onPress={() => router.push('/approvals?tab=Leaves')}>
+                        <Ionicons name="calendar-outline" size={12} color={colors.onWarning} />
+                        <Text style={styles.approvalPillText}>{data.pending_approvals.leave_requests} leave request{data.pending_approvals.leave_requests === 1 ? '' : 's'}</Text>
+                      </Pressable>
+                    )}
+                  </View>
+                )}
+              </>
             )}
 
             {/* Responsive section grid: Repairs / Tasks sit side-by-side on wide screens */}
@@ -215,12 +189,12 @@ export default function DashboardScreen() {
                 <View style={{ flexBasis: sectionBasis, flexGrow: 1 }}>
                   <SectionHeader title="Repairs" icon="construct-outline" testID="section-repairs" />
                   <View style={styles.tileGrid}>
-                    <StatCard basis={isTablet ? '48%' : tileBasis} icon="cube-outline" label="Received · awaiting action" value={String(data.repairs_summary.received)} accent={colors.brandSecondary} testID="repairs-received" onPress={() => router.push('/repairs/outstanding' as any)} />
-                    <StatCard basis={isTablet ? '48%' : tileBasis} icon="hammer-outline" label="With Karigar" value={String(data.repairs_summary.with_karigar)} accent={colors.brandSecondary} testID="repairs-with-karigar" onPress={() => router.push('/repairs/outstanding' as any)} />
-                    <StatCard basis={isTablet ? '48%' : tileBasis} icon="pricetag-outline" label="Pending to Bill" value={String(data.repairs_summary.ready)} accent={colors.brandSecondary} testID="repairs-ready" onPress={() => router.push('/repairs/outstanding' as any)} />
-                    <StatCard basis={isTablet ? '48%' : tileBasis} icon="alert-circle-outline" label="Overdue" value={String(data.repairs_summary.overdue)} accent={colors.onError} danger={data.repairs_summary.overdue > 0} testID="repairs-overdue" onPress={() => router.push('/repairs/outstanding' as any)} />
-                    <StatCard basis={isTablet ? '48%' : tileBasis} icon="checkmark-circle-outline" label="Delivered Today" value={String(data.repairs_summary.delivered_today)} accent={colors.onSuccess} testID="repairs-delivered-today" onPress={() => router.push('/repairs' as any)} />
-                    <StatCard basis={isTablet ? '48%' : tileBasis} icon="layers-outline" label="Total Open Tags" value={String(data.repairs_summary.total_open)} accent={colors.brandSecondary} testID="repairs-total-open" onPress={() => router.push('/repairs' as any)} />
+                    <StatCard basis={tileBasis} icon="cube-outline" label="Received · awaiting action" value={String(data.repairs_summary.received)} accent={colors.brandSecondary} testID="repairs-received" onPress={() => router.push('/repairs/outstanding' as any)} />
+                    <StatCard basis={tileBasis} icon="hammer-outline" label="With Karigar" value={String(data.repairs_summary.with_karigar)} accent={colors.brandSecondary} testID="repairs-with-karigar" onPress={() => router.push('/repairs/outstanding' as any)} />
+                    <StatCard basis={tileBasis} icon="pricetag-outline" label="Pending to Bill" value={String(data.repairs_summary.ready)} accent={colors.brandSecondary} testID="repairs-ready" onPress={() => router.push('/repairs/outstanding' as any)} />
+                    <StatCard basis={tileBasis} icon="alert-circle-outline" label="Overdue" value={String(data.repairs_summary.overdue)} accent={colors.onError} danger={data.repairs_summary.overdue > 0} testID="repairs-overdue" onPress={() => router.push('/repairs/outstanding' as any)} />
+                    <StatCard basis={tileBasis} icon="checkmark-circle-outline" label="Delivered Today" value={String(data.repairs_summary.delivered_today)} accent={colors.onSuccess} testID="repairs-delivered-today" onPress={() => router.push('/repairs' as any)} />
+                    <StatCard basis={tileBasis} icon="layers-outline" label="Total Open Tags" value={String(data.repairs_summary.total_open)} accent={colors.brandSecondary} testID="repairs-total-open" onPress={() => router.push('/repairs' as any)} />
                   </View>
                 </View>
               )}
@@ -229,9 +203,9 @@ export default function DashboardScreen() {
                 <View style={{ flexBasis: sectionBasis, flexGrow: 1 }}>
                   <SectionHeader title="Tasks" icon="checkbox-outline" testID="section-tasks" />
                   <View style={styles.tileGrid}>
-                    <StatCard basis={isTablet ? '31%' : tileBasis} icon="today-outline" label="Due Today" value={String(data.tasks_summary.due_today)} accent={colors.brandSecondary} testID="tasks-due-today" onPress={() => router.push('/tasks' as any)} />
-                    <StatCard basis={isTablet ? '31%' : tileBasis} icon="alert-circle-outline" label="Overdue" value={String(data.tasks_summary.overdue)} accent={colors.onError} danger={data.tasks_summary.overdue > 0} testID="tasks-overdue" onPress={() => router.push('/tasks' as any)} />
-                    <StatCard basis={isTablet ? '31%' : tileBasis} icon="checkmark-done-outline" label="Completed Today" value={String(data.tasks_summary.done_today)} accent={colors.onSuccess} testID="tasks-done-today" onPress={() => router.push('/tasks' as any)} />
+                    <StatCard basis={tileBasis} icon="today-outline" label="Due Today" value={String(data.tasks_summary.due_today)} accent={colors.brandSecondary} testID="tasks-due-today" onPress={() => router.push('/tasks' as any)} />
+                    <StatCard basis={tileBasis} icon="alert-circle-outline" label="Overdue" value={String(data.tasks_summary.overdue)} accent={colors.onError} danger={data.tasks_summary.overdue > 0} testID="tasks-overdue" onPress={() => router.push('/tasks' as any)} />
+                    <StatCard basis={tileBasis} icon="checkmark-done-outline" label="Completed Today" value={String(data.tasks_summary.done_today)} accent={colors.onSuccess} testID="tasks-done-today" onPress={() => router.push('/tasks' as any)} />
                   </View>
                 </View>
               )}
@@ -242,17 +216,6 @@ export default function DashboardScreen() {
         ) : null}
       </ScrollView>
     </SafeAreaView>
-  );
-}
-
-function AttTile({ label, value, accent, testID, onPress }: { label: string; value: number; accent: string; testID?: string; onPress?: () => void }) {
-  const { colors } = useTheme();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
-  return (
-    <Pressable style={({ pressed }) => [styles.attTile, pressed && { opacity: 0.7 }]} testID={testID} onPress={onPress}>
-      <Text style={[styles.attValue, { color: accent }]}>{value}</Text>
-      <Text style={styles.attLabel}>{label}</Text>
-    </Pressable>
   );
 }
 
@@ -320,37 +283,9 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   loadingWrap: { paddingVertical: 80, alignItems: 'center' },
 
-  heroCard: {
-    borderRadius: radius.lg, overflow: 'hidden', borderWidth: 1, borderColor: colors.borderStrong,
-    marginBottom: spacing.xl,
-  },
-  heroInner: { padding: spacing.lg },
-  heroTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: spacing.lg },
-  heroLabel: { color: colors.brandSecondary, fontSize: 11, letterSpacing: 1, textTransform: 'uppercase' },
-  heroTitle: {
-    color: colors.onSurface, fontSize: 30, fontWeight: '700', marginTop: 4,
-    fontFamily: fonts.display,
-  },
-  heroSub: { color: colors.onSurfaceTertiary, fontSize: 12, marginTop: 2 },
-  heroChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: colors.success, borderColor: colors.onSuccess, borderWidth: 1,
-    borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 5,
-  },
-  heroChipDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.onSuccess },
-  heroChipText: { color: colors.onSuccess, fontSize: 11, fontWeight: '700' },
+  sectionSubtitle: { color: colors.mutedText, fontSize: 11, marginBottom: spacing.sm, marginTop: -4 },
 
-  attGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
-  attTile: {
-    flexBasis: '31%', flexGrow: 1,
-    backgroundColor: colors.surfaceSecondary, borderRadius: radius.sm,
-    borderWidth: 1, borderColor: colors.border,
-    paddingVertical: spacing.sm, paddingHorizontal: spacing.sm,
-  },
-  attValue: { fontSize: 17, fontWeight: '700', color: colors.brandPrimary },
-  attLabel: { color: colors.onSurfaceTertiary, fontSize: 10, marginTop: 1 },
-
-  approvalRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, marginTop: spacing.sm },
+  approvalRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
   approvalPill: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
     backgroundColor: colors.warning, borderColor: colors.onWarning, borderWidth: 1,

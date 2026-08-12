@@ -4,7 +4,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthContext';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
@@ -24,6 +24,8 @@ const fmtINR = (n: number) => `₹${(n || 0).toLocaleString('en-IN')}`;
 
 export default function OwnerPayroll() {
   const router = useRouter();
+  const { from } = useLocalSearchParams<{ from?: string }>();
+  const goBack = () => { if (from === 'transactions') router.replace('/(tabs)/transactions' as any); else router.back(); };
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const { user } = useAuth();
@@ -94,8 +96,8 @@ export default function OwnerPayroll() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="payroll-screen">
       <View style={styles.header}>
-        {router.canGoBack() && (
-          <Pressable onPress={() => router.back()} style={styles.backBtn} testID="back-btn" hitSlop={12}>
+        {(router.canGoBack() || from === 'transactions') && (
+          <Pressable onPress={goBack} style={styles.backBtn} testID="back-btn" hitSlop={12}>
             <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
           </Pressable>
         )}

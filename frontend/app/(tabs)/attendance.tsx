@@ -4,7 +4,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
@@ -30,6 +30,8 @@ const fmtTime = (iso?: string | null) => {
 
 export default function OwnerAttendance() {
   const router = useRouter();
+  const { from } = useLocalSearchParams<{ from?: string }>();
+  const goBack = () => { if (from === 'transactions') router.replace('/(tabs)/transactions' as any); else router.back(); };
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [tab, setTab] = useState<typeof TABS[number]>('Today');
@@ -60,8 +62,8 @@ export default function OwnerAttendance() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="attendance-screen">
       <View style={styles.header}>
-        {router.canGoBack() && (
-          <Pressable onPress={() => router.back()} style={styles.backBtn} testID="back-btn" hitSlop={12}>
+        {(router.canGoBack() || from === 'transactions') && (
+          <Pressable onPress={goBack} style={styles.backBtn} testID="back-btn" hitSlop={12}>
             <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
           </Pressable>
         )}

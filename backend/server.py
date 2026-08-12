@@ -1544,6 +1544,10 @@ async def get_customer(cid: str, _: dict = Depends(require_staff)):
     out = []
     for o in orders:
         items = await db.repair_items.find({'order_id': o['id']}, {'_id': 0}).to_list(200)
+        # Skip orders whose only item(s) were since deleted (e.g. an unissued tag
+        # removed by mistake) — nothing left to show, so don't leave a dangling row.
+        if not items:
+            continue
         out.append({**o, 'item_count': len(items), 'status': _order_status(items)})
     return {'customer': c, 'orders': out}
 
@@ -1763,6 +1767,8 @@ async def list_repair_orders(status_: Optional[str] = Query(default=None, alias=
     out = []
     for o in orders:
         items = await db.repair_items.find({'order_id': o['id']}, {'_id': 0}).to_list(200)
+        if not items:
+            continue
         st = _order_status(items)
         if status_ and st != status_:
             continue
