@@ -208,12 +208,13 @@ export default function ReceiveFromKarigarScreen() {
   const wastageNum = parseFloat(wastageWeight) || 0;
   const lossNum = parseFloat(processLoss) || 0;
   const weightNum = parseFloat(weight) || 0;
-  // new_wt = issued - loss - wastage (what's expected back once both are
-  // forgiven — wastage is the karigar's charge for the work, in their favor).
-  // diff_wt = new_wt - received — the gross-gram gap this receive still
-  // leaves outstanding. balance (fine g) = diff_wt x touch%.
-  const newWt = round3(issuedWeight - lossNum - wastageNum);
-  const diffWt = weight ? round3(newWt - weightNum) : 0;
+  // new_wt = issued - loss - received — positive means less came back than
+  // expected once loss is forgiven, i.e. weight decreased, i.e. karigar owes.
+  // diff_wt = new_wt - wastage — wastage is the karigar's own charge for the
+  // work (in their favor), so it's forgiven the same way loss is, reducing
+  // the gap rather than adding to it. balance (fine g) = diff_wt x touch%.
+  const newWt = round3(issuedWeight - lossNum - weightNum);
+  const diffWt = weight ? round3(newWt - wastageNum) : 0;
   const balanceFine = weight ? round3(diffWt * recvPurityNum / 100) : null;
   const payMetalNum = parseFloat(payMetalWeight) || 0;
   const recvMetalNum = parseFloat(recvMetalWeight) || 0;
@@ -308,27 +309,41 @@ export default function ReceiveFromKarigarScreen() {
               <Text style={styles.cMeta}>{item.description}{item.karigar_name ? ` · with ${item.karigar_name}` : ''}</Text>
             </View>
 
-            <View style={styles.fieldGrid} testID="receive-field-grid">
-              <View style={styles.fieldCol}>
-                <Text style={styles.label}>Issued (g)</Text>
+            {/* Issue Wt − Loss − Receive = New Wt */}
+            <View style={styles.formulaRow} testID="receive-field-grid">
+              <View style={styles.fieldColFlex}>
+                <Text style={styles.label}>Issue Wt (g)</Text>
                 <View style={styles.readonlyBox}><Text style={styles.readonlyBoxText}>{issuedWeight.toFixed(3)}</Text></View>
               </View>
-              <View style={styles.fieldCol}>
-                <Text style={styles.label}>Receive (g)</Text>
-                <TextInput testID="receive-weight" value={weight} onChangeText={(v) => setWeight(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0.000" placeholderTextColor={colors.mutedText} style={styles.input} />
-              </View>
-              <View style={styles.fieldCol}>
+              <Text style={styles.opText}>−</Text>
+              <View style={styles.fieldColFlex}>
                 <Text style={styles.label}>Loss (g)</Text>
                 <TextInput testID="process-loss" value={processLoss} onChangeText={(v) => setProcessLoss(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0.000" placeholderTextColor={colors.mutedText} style={styles.input} />
               </View>
+              <Text style={styles.opText}>−</Text>
+              <View style={styles.fieldColFlex}>
+                <Text style={styles.label}>Receive (g)</Text>
+                <TextInput testID="receive-weight" value={weight} onChangeText={(v) => setWeight(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0.000" placeholderTextColor={colors.mutedText} style={styles.input} />
+              </View>
             </View>
 
-            <View style={[styles.fieldGrid, { marginTop: 6 }]} testID="receive-total-row">
-              <View style={styles.fieldCol}>
+            {/* New Wt − Wastage = Diff (wastage is forgiven, same as loss) */}
+            <View style={[styles.formulaRow, { marginTop: 6 }]} testID="receive-total-row">
+              <View style={styles.fieldColFlex}>
+                <Text style={styles.label}>New Wt (g)</Text>
+                <View style={styles.readonlyBox}>
+                  <Text style={[styles.readonlyBoxText, weight && newWt !== 0 ? { color: newWt > 0 ? colors.onWarning : colors.onSuccess } : null]}>
+                    {weight ? `${newWt >= 0 ? '+' : ''}${newWt.toFixed(3)}` : newWt.toFixed(3)}
+                  </Text>
+                </View>
+              </View>
+              <Text style={styles.opText}>−</Text>
+              <View style={styles.fieldColFlex}>
                 <Text style={styles.label}>Wastage (g)</Text>
                 <TextInput testID="wastage-weight" value={wastageWeight} onChangeText={(v) => setWastageWeight(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0.000" placeholderTextColor={colors.mutedText} style={styles.input} />
               </View>
-              <View style={styles.fieldCol}>
+              <Text style={styles.opText}>=</Text>
+              <View style={styles.fieldColFlex}>
                 <Text style={styles.label}>Diff (g)</Text>
                 <View style={styles.readonlyBox}>
                   <Text style={[styles.readonlyBoxText, weight && diffWt !== 0 ? { color: diffWt > 0 ? colors.onWarning : colors.onSuccess } : null]}>
@@ -336,8 +351,12 @@ export default function ReceiveFromKarigarScreen() {
                   </Text>
                 </View>
               </View>
+            </View>
+            <Text style={styles.hint}>Positive Diff = weight decreased, karigar owes. Loss and wastage are both forgiven — neither adds to what's owed.</Text>
+
+            <View style={[styles.fieldGrid, { marginTop: 10 }]}>
               <View style={styles.fieldCol}>
-                <Text style={styles.label}>%</Text>
+                <Text style={styles.label}>Touch %</Text>
                 <TextInput testID="recv-purity" value={recvPurity} onChangeText={(v) => setRecvPurity(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder={String(issuePurity)} placeholderTextColor={colors.mutedText} style={styles.input} />
               </View>
               <View style={styles.fieldCol}>
@@ -349,7 +368,6 @@ export default function ReceiveFromKarigarScreen() {
                 </View>
               </View>
             </View>
-            <Text style={styles.hint}>Loss and wastage are both forgiven — neither adds to what the karigar owes.</Text>
 
             <Text style={styles.label}>Karigar Slip Photo (optional)</Text>
             {slipPhoto ? (
@@ -493,6 +511,12 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
 
   fieldGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   fieldCol: { flexBasis: '21%', flexGrow: 1 },
+
+  // Issue Wt − Loss − Receive = New Wt − Wastage = Diff — two 3-box rows
+  // joined by inline operators, matching the hand-drawn layout.
+  formulaRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 4 },
+  fieldColFlex: { flex: 1, minWidth: 0 },
+  opText: { color: colors.mutedText, fontSize: 15, fontWeight: '700', marginBottom: 12, paddingHorizontal: 1 },
   readonlyBox: {
     backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
     paddingHorizontal: spacing.sm, paddingVertical: 10,
