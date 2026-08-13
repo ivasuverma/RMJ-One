@@ -116,14 +116,18 @@ export default function RepairBillScreen() {
   const receivedWeight = issuedWeight + (picked?.weight_diff || 0);
   const lossWeight = picked?.process_loss || 0;
   // New Wt = Issue − Loss − Received (gross grams, not fine) — positive when
-  // less metal came back than expected once loss is forgiven (charge the
-  // customer for the shortfall), negative when more came back (credit them).
+  // less metal came back than expected once loss is forgiven, i.e. the
+  // customer's item lost material during repair.
   const weightChange = round3(issuedWeight - lossWeight - receivedWeight);
   const valueAddNum = parseFloat(valueAdd) || 0;
-  // Extra metal added during the repair (solder, sizing, etc.) that isn't
-  // captured by the karigar's issued/received weight diff — added on top so
-  // it's billed to the customer the same way as any other weight change.
-  const billableWeightChange = round3(weightChange + valueAddNum);
+  // Billing direction is the opposite of New Wt's sign: the item is the
+  // customer's own gold, so if it came back lighter than expected, that
+  // missing weight is credited back to them (not charged) — the shop
+  // recovers the shortfall from the karigar separately, via the karigar
+  // ledger. If it came back heavier (extra material used), that's charged.
+  // Value Add (solder, sizing, etc. genuinely added) is always a charge on
+  // top, regardless of which way the weight moved.
+  const billableWeightChange = round3(-weightChange + valueAddNum);
   const rateNum = parseFloat(weightRate) || 0;
   // Once a rate is entered, it drives the total as usual. Until then — mainly
   // when correcting an old bill whose rate/value-add breakdown was never
@@ -308,7 +312,7 @@ export default function RepairBillScreen() {
               <View style={styles.fieldCol}>
                 <Text style={styles.label}>New Wt (g)</Text>
                 <View style={styles.readonlyBox}>
-                  <Text style={[styles.readonlyBoxText, weightChange !== 0 ? { color: weightChange > 0 ? colors.onWarning : colors.onSuccess } : null]}>
+                  <Text style={[styles.readonlyBoxText, weightChange !== 0 ? { color: weightChange > 0 ? colors.onSuccess : colors.onWarning } : null]}>
                     {weightChange >= 0 ? '+' : ''}{weightChange.toFixed(3)}
                   </Text>
                 </View>
@@ -324,18 +328,22 @@ export default function RepairBillScreen() {
               <View style={styles.fieldCol}>
                 <Text style={styles.label}>Total (₹)</Text>
                 {rateNum > 0 ? (
-                  <View style={styles.readonlyBox}><Text style={styles.readonlyBoxText}>₹{weightCharge.toFixed(0)}</Text></View>
+                  <View style={styles.readonlyBox}>
+                    <Text style={[styles.readonlyBoxText, weightCharge !== 0 ? { color: weightCharge < 0 ? colors.onSuccess : colors.onSurface } : null]}>
+                      {weightCharge < 0 ? `Credit ₹${Math.abs(weightCharge).toFixed(0)}` : `₹${weightCharge.toFixed(0)}`}
+                    </Text>
+                  </View>
                 ) : (
                   <TextInput testID="material-adj-manual" value={materialAdjManual} onChangeText={(v) => setMaterialAdjManual(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />
                 )}
               </View>
             </View>
-            <Text style={styles.hint}>Positive New Wt = weight decreased, billed to the customer. Negative = excess returned, credited.</Text>
+            <Text style={styles.hint}>Positive New Wt = weight decreased, credited back to the customer (the shop recovers this from the karigar separately). Negative = extra material came back, charged to them.</Text>
             {rateNum === 0 && (
               <Text style={styles.hint}>No rate entered — Total is entered directly{isEditingBill ? ' (pre-filled from what was billed)' : ''}. Enter a rate above to compute it from New Wt instead.</Text>
             )}
             {!!valueAddNum && (
-              <Text style={styles.hint}>Billable weight change: {billableWeightChange >= 0 ? '+' : ''}{billableWeightChange.toFixed(3)}g (New Wt {weightChange >= 0 ? '+' : ''}{weightChange.toFixed(3)}g + value add {valueAddNum.toFixed(3)}g)</Text>
+              <Text style={styles.hint}>Billable weight change: {billableWeightChange >= 0 ? '+' : ''}{billableWeightChange.toFixed(3)}g (−New Wt {weightChange >= 0 ? '+' : ''}{(-weightChange).toFixed(3)}g + value add {valueAddNum.toFixed(3)}g)</Text>
             )}
 
             <Text style={styles.label}>Previous Balance, if any (₹)</Text>
