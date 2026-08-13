@@ -2517,8 +2517,6 @@ def _issue_slip_lines(item: dict, txn: dict) -> list:
     ]
     if txn.get('note'):
         lines.append(('Note', txn['note']))
-    lines.append('')
-    lines.append('Karigar Signature: _____________________')
     return lines
 
 
@@ -4006,8 +4004,9 @@ _ESCPOS_ALIGN_CENTER = _ESC + b'a\x01'
 _ESCPOS_ALIGN_LEFT = _ESC + b'a\x00'
 _ESCPOS_BOLD_ON = _ESC + b'E\x01'
 _ESCPOS_BOLD_OFF = _ESC + b'E\x00'
-_ESCPOS_DOUBLE_ON = _GS + b'!\x11'    # double width + double height
-_ESCPOS_DOUBLE_OFF = _GS + b'!\x00'
+_ESCPOS_SIZE_NORMAL = _GS + b'!\x00'
+_ESCPOS_SIZE_TALL = _GS + b'!\x01'    # double height only — stays readable-width
+_ESCPOS_SIZE_BIG = _GS + b'!\x11'     # double width + double height — for the shop name
 _ESCPOS_CUT = _GS + b'V\x00'          # full cut
 _ESCPOS_WIDTH_CHARS = 42              # ~80mm paper at the default 12x24 font
 
@@ -4016,7 +4015,11 @@ def _escpos_receipt(shop_name: str, heading: str, lines: list) -> bytes:
     """Builds raw ESC/POS bytes for an 80mm receipt. `lines` uses the same
     shape as _thermal_slip_pdf: (label, value) tuples, plain strings for a
     divider/free line, or '' for a blank line — so both the on-screen PDF and
-    the direct network print render the same content."""
+    the direct network print render the same content.
+
+    Each field prints as a small bold label on its own line, with the value
+    on the line below at double height — easier to read at a glance than a
+    single cramped "Label: value" line, especially on a narrow 80mm roll."""
     _UNICODE_FALLBACKS = {
         '₹': 'Rs.', '—': '-', '–': '-', '·': '-', '’': "'", '‘': "'", '“': '"', '”': '"', '…': '...',
     }
@@ -4031,39 +4034,39 @@ def _escpos_receipt(shop_name: str, heading: str, lines: list) -> bytes:
             text = text.replace(ch, repl)
         return text.encode('cp437', errors='replace')
 
+    def wrapped(text: str, width: int):
+        text = text or ''
+        while True:
+            chunk, text = text[:width], text[width:]
+            yield chunk
+            if not text:
+                return
+
     out = bytearray()
     out += _ESCPOS_INIT
-    out += _ESCPOS_ALIGN_CENTER + _ESCPOS_BOLD_ON + _ESCPOS_DOUBLE_ON
+    out += _ESCPOS_ALIGN_CENTER + _ESCPOS_BOLD_ON + _ESCPOS_SIZE_BIG
     out += enc(shop_name) + b'\n'
-    out += _ESCPOS_DOUBLE_OFF + _ESCPOS_BOLD_OFF
-    out += enc(heading) + b'\n'
-    out += enc('-' * _ESCPOS_WIDTH_CHARS) + b'\n'
+    out += _ESCPOS_SIZE_NORMAL + _ESCPOS_BOLD_OFF
+    out += enc(heading) + b'\n\n'
+    out += enc('=' * _ESCPOS_WIDTH_CHARS) + b'\n\n'
     out += _ESCPOS_ALIGN_LEFT
 
     for item in lines:
         if isinstance(item, tuple):
             label, value = item
-            row = f"{label}: {value}"
-            # Wrap long values onto a hanging indent rather than letting the
-            # printer hard-wrap mid-word.
-            if len(row) <= _ESCPOS_WIDTH_CHARS:
-                out += enc(row) + b'\n'
-            else:
-                indent = ' ' * (len(label) + 2)
-                first = True
-                remaining = row
-                while remaining:
-                    width = _ESCPOS_WIDTH_CHARS if first else _ESCPOS_WIDTH_CHARS - len(indent)
-                    chunk, remaining = remaining[:width], remaining[width:]
-                    out += enc((chunk if first else indent + chunk)) + b'\n'
-                    first = False
+            out += _ESCPOS_BOLD_ON
+            out += enc(label.upper()) + b'\n'
+            out += _ESCPOS_BOLD_OFF + _ESCPOS_SIZE_TALL
+            for chunk in wrapped(str(value), _ESCPOS_WIDTH_CHARS):
+                out += enc(chunk) + b'\n'
+            out += _ESCPOS_SIZE_NORMAL + b'\n'
         elif item == '':
             out += b'\n'
         else:
             out += enc('-' * _ESCPOS_WIDTH_CHARS) + b'\n'
-            out += enc(item) + b'\n'
+            out += _ESCPOS_BOLD_ON + enc(item) + b'\n' + _ESCPOS_BOLD_OFF + b'\n'
 
-    out += b'\n'
+    out += enc('=' * _ESCPOS_WIDTH_CHARS) + b'\n'
     out += _ESCPOS_ALIGN_CENTER
     out += enc(f"Generated {now_utc().strftime('%d %b %Y %H:%M')}") + b'\n'
     out += b'\n\n\n'
