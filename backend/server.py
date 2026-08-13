@@ -2098,6 +2098,20 @@ async def _post_receive_ledger(karigar_id: str, item: dict, calc: dict, body, tx
         'note': f"Received back: {item['description']} (diff {calc['diff']:+.3f}g / fine {calc['fine_diff']:+.3f}g{loss_note}{wastage_note})",
         'created_at': iso, 'created_by': user['name'],
     })
+    # A dedicated, non-balance-affecting record of the declared process loss on
+    # this job — already folded into the credit above, so it doesn't touch
+    # weight_bal/fine_bal (the aggregator only recognizes gold_out/gold_in/
+    # labour_payable/payment/receipt/wastage/adjustment). This is purely so
+    # loss can be audited on its own — which karigars are declaring how much,
+    # on which jobs, over time — via the Loss Ledger report.
+    if calc['process_loss']:
+        fine_loss = round(calc['process_loss'] * calc['recv_purity'] / 100, 3)
+        await db.karigar_ledger.insert_one({
+            'id': str(uuid.uuid4()), 'karigar_id': karigar_id, 'type': 'loss', 'weight': calc['process_loss'],
+            'fine_weight': fine_loss, 'amount': None, 'item_id': item['id'], 'item_code': item['item_code'],
+            'txn_id': txn_id, 'note': f"Process loss declared: {item['description']}",
+            'created_at': iso, 'created_by': user['name'],
+        })
     # Optional on-the-spot settlement of what's owed to the karigar for this job.
     labour_amount = body.labour_amount or 0
     pay_cash = body.pay_cash or 0
@@ -2113,7 +2127,10 @@ async def _post_receive_ledger(karigar_id: str, item: dict, calc: dict, body, tx
     if pay_metal_weight:
         # The actual metal handed to the karigar — a real gold_out movement,
         # tracked independently of whatever ₹ value staff estimate for it below.
-        pay_metal_fine = round(pay_metal_weight * calc['purity'] / 100, 3)
+        # Converted at this receive's touch (recv_purity), not the item's
+        # static master purity — it's metal changing hands right now, at
+        # whatever fineness is actually being paid/received.
+        pay_metal_fine = round(pay_metal_weight * calc['recv_purity'] / 100, 3)
         await db.karigar_ledger.insert_one({
             'id': str(uuid.uuid4()), 'karigar_id': karigar_id, 'type': 'gold_out', 'weight': pay_metal_weight,
             'fine_weight': pay_metal_fine, 'amount': None, 'item_id': item['id'], 'item_code': item['item_code'],
@@ -2141,7 +2158,7 @@ async def _post_receive_ledger(karigar_id: str, item: dict, calc: dict, body, tx
             'created_at': iso, 'created_by': user['name'],
         })
     if recv_metal_weight:
-        recv_metal_fine = round(recv_metal_weight * calc['purity'] / 100, 3)
+        recv_metal_fine = round(recv_metal_weight * calc['recv_purity'] / 100, 3)
         await db.karigar_ledger.insert_one({
             'id': str(uuid.uuid4()), 'karigar_id': karigar_id, 'type': 'gold_in', 'weight': recv_metal_weight,
             'fine_weight': recv_metal_fine, 'amount': None, 'item_id': item['id'], 'item_code': item['item_code'],
@@ -2406,6 +2423,22 @@ async def repair_item_issue_slip_pdf(item_id: str, _: dict = Depends(require_sta
     lines.append('Karigar Signature: _____________________')
     pdf = _thermal_slip_pdf(store.get('name') or 'Ram Murti Jewellers', 'Karigar Issue Challan', lines)
     return _pdf_response(pdf, f'issue-slip-{item["item_code"]}.pdf')
+
+
+# ---------------- Repairs: Loss Ledger ----------------
+@api.get('/karigars/loss-ledger')
+async def loss_ledger(_: dict = Depends(require_staff_or_module('repairs'))):
+    """Every declared process-loss entry across all karigars, newest first —
+    an audit trail of how much gold is being written off as loss, and by
+    whom, that's otherwise buried inside individual receive transactions."""
+    entries = await db.karigar_ledger.find({'type': 'loss'}, {'_id': 0}).sort('created_at', -1).to_list(2000)
+    karigars = await db.karigars.find({}, {'_id': 0, 'id': 1, 'name': 1}).to_list(500)
+    names = {k['id']: k['name'] for k in karigars}
+    for e in entries:
+        e['karigar_name'] = names.get(e.get('karigar_id'), '')
+    total_weight = round(sum(e.get('weight') or 0 for e in entries), 3)
+    total_fine = round(sum(e.get('fine_weight') or 0 for e in entries), 3)
+    return {'entries': entries, 'total_weight': total_weight, 'total_fine_weight': total_fine}
 
 
 # ---------------- Repairs: Karigar Ledger ----------------

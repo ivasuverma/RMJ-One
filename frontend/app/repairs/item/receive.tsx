@@ -208,16 +208,21 @@ export default function ReceiveFromKarigarScreen() {
   const wastageNum = parseFloat(wastageWeight) || 0;
   const lossNum = parseFloat(processLoss) || 0;
   const weightNum = parseFloat(weight) || 0;
-  // karigar_gap = issued - loss - received (positive = shortfall). Loss is
-  // forgiven back in; wastage the karigar is separately claiming is not — it
-  // adds to what's still owed. balance (fine g) = (gap + wastage) x touch%.
-  const karigarGap = weight ? round3(issuedWeight - lossNum - weightNum) : 0;
-  const balanceFine = weight ? round3((karigarGap + wastageNum) * recvPurityNum / 100) : null;
+  // new_wt = issued - loss (what's expected back once loss is forgiven).
+  // diff_wt = new_wt - received + wastage — the gross-gram gap this receive
+  // still leaves outstanding. balance (fine g) = diff_wt x touch%.
+  const newWt = round3(issuedWeight - lossNum);
+  const diffWt = weight ? round3(newWt - weightNum + wastageNum) : 0;
+  const balanceFine = weight ? round3(diffWt * recvPurityNum / 100) : null;
   const payMetalNum = parseFloat(payMetalWeight) || 0;
   const recvMetalNum = parseFloat(recvMetalWeight) || 0;
-  // What's left owed in metal after applying whatever's being paid/received
-  // right now on this slip — zero once the settle amount matches the balance.
-  const remainingBalance = balanceFine != null ? round3(balanceFine - recvMetalNum + payMetalNum) : null;
+  // Pay/Receive Metal are entered in gross grams, but balanceFine is a fine-gram
+  // figure — convert through this receive's touch before netting them, the
+  // same way the backend does, or a gross-gram entry never quite cancels the
+  // fine balance it's meant to settle.
+  const remainingBalance = balanceFine != null
+    ? round3(balanceFine - (recvMetalNum * recvPurityNum / 100) + (payMetalNum * recvPurityNum / 100))
+    : null;
 
   const labourNum = parseFloat(labourAmount) || 0;
   const cashNum = parseFloat(payCash) || 0;
@@ -325,8 +330,8 @@ export default function ReceiveFromKarigarScreen() {
               <View style={styles.fieldCol}>
                 <Text style={styles.label}>Diff (g)</Text>
                 <View style={styles.readonlyBox}>
-                  <Text style={[styles.readonlyBoxText, weight && weightNum !== issuedWeight ? { color: weightNum > issuedWeight ? colors.onSuccess : colors.onError } : null]}>
-                    {weight ? `${round3(weightNum - issuedWeight) >= 0 ? '+' : ''}${round3(weightNum - issuedWeight).toFixed(3)}` : '—'}
+                  <Text style={[styles.readonlyBoxText, weight && diffWt !== 0 ? { color: diffWt > 0 ? colors.onWarning : colors.onSuccess } : null]}>
+                    {weight ? `${diffWt >= 0 ? '+' : ''}${diffWt.toFixed(3)}` : '—'}
                   </Text>
                 </View>
               </View>
@@ -372,7 +377,14 @@ export default function ReceiveFromKarigarScreen() {
 
             {balanceFine != null && balanceFine !== 0 && (
               <Pressable
-                onPress={() => (balanceFine > 0 ? setRecvMetalWeight(String(balanceFine.toFixed(3))) : setPayMetalWeight(String(Math.abs(balanceFine).toFixed(3))))}
+                onPress={() => {
+                  // balanceFine is a fine-gram figure; Pay/Receive Metal are
+                  // entered in gross grams — convert through this receive's
+                  // touch so the fill actually zeroes the balance out.
+                  const grossToSettle = round3(Math.abs(balanceFine) * 100 / recvPurityNum).toFixed(3);
+                  if (balanceFine > 0) setRecvMetalWeight(grossToSettle);
+                  else setPayMetalWeight(grossToSettle);
+                }}
                 style={styles.autopayBtn}
                 testID="autopay-btn"
               >

@@ -115,9 +115,10 @@ export default function RepairBillScreen() {
   const issuedWeight = picked?.current_issue_weight || 0;
   const receivedWeight = issuedWeight + (picked?.weight_diff || 0);
   const lossWeight = picked?.process_loss || 0;
-  // New Wt = Issued − Received − Loss (gross grams, not fine) — how much less
-  // came back than went out, after allowing for the declared process loss.
-  const weightChange = round3(issuedWeight - receivedWeight - lossWeight);
+  // New Wt = Received − Issued − Loss (gross grams, not fine) — positive when
+  // more metal came back than went out (charge the customer), negative when
+  // less did (credit the customer), net of the declared process loss.
+  const weightChange = round3(receivedWeight - issuedWeight - lossWeight);
   const valueAddNum = parseFloat(valueAdd) || 0;
   // Extra metal added during the repair (solder, sizing, etc.) that isn't
   // captured by the karigar's issued/received weight diff — added on top so
