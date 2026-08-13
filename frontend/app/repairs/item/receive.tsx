@@ -269,41 +269,43 @@ export default function ReceiveFromKarigarScreen() {
               <Text style={styles.cMeta}>{item.description}{item.karigar_name ? ` · with ${item.karigar_name}` : ''}</Text>
             </View>
 
-            <Text style={styles.label}>Weight received (g)</Text>
-            <TextInput testID="receive-weight" value={weight} onChangeText={(v) => setWeight(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0.000" placeholderTextColor={colors.mutedText} style={styles.input} />
-
-            <Text style={styles.label}>Wastage charged by karigar (g)</Text>
-            <TextInput testID="wastage-weight" value={wastageWeight} onChangeText={(v) => setWastageWeight(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0.000" placeholderTextColor={colors.mutedText} style={styles.input} />
-            <Text style={styles.hint}>What the karigar is claiming for wastage — written off against what they owe.</Text>
-
-            <Text style={styles.label}>Process loss (g) — for reference only</Text>
-            <TextInput testID="process-loss" value={processLoss} onChangeText={(v) => setProcessLoss(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0.000" placeholderTextColor={colors.mutedText} style={styles.input} />
-            <Text style={styles.hint}>Filing, polishing, etc. Logged on the tag's history — doesn't affect the karigar's ledger.</Text>
-
-            <View style={styles.table} testID="weight-table">
-              <View style={styles.tableHeadRow}>
-                <Text style={[styles.tableCell, styles.tableHeadText, { flex: 1.4 }]}> </Text>
-                <Text style={[styles.tableCell, styles.tableHeadText]}>Gross</Text>
-                <Text style={[styles.tableCell, styles.tableHeadText]}>%</Text>
-                <Text style={[styles.tableCell, styles.tableHeadText]}>Fine</Text>
+            <View style={styles.fieldGrid} testID="receive-field-grid">
+              <View style={styles.fieldCol}>
+                <Text style={styles.label}>Issued (g)</Text>
+                <View style={styles.readonlyBox}><Text style={styles.readonlyBoxText}>{issuedWeight.toFixed(3)}</Text></View>
               </View>
-              <View style={styles.tableRow}>
-                <Text style={[styles.tableCell, styles.tableRowLabel, { flex: 1.4 }]}>Issued</Text>
-                <Text style={styles.tableCell}>{issuedWeight.toFixed(3)}</Text>
-                <Text style={styles.tableCell}>{purity}%</Text>
-                <Text style={styles.tableCell}>{fineIssued.toFixed(3)}</Text>
+              <View style={styles.fieldCol}>
+                <Text style={styles.label}>Receive (g)</Text>
+                <TextInput testID="receive-weight" value={weight} onChangeText={(v) => setWeight(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0.000" placeholderTextColor={colors.mutedText} style={styles.input} />
               </View>
-              <View style={styles.tableRow}>
-                <Text style={[styles.tableCell, styles.tableRowLabel, { flex: 1.4 }]}>Wastage</Text>
-                <Text style={styles.tableCell}>{wastageNum.toFixed(3)}</Text>
-                <Text style={styles.tableCell}>{purity}%</Text>
-                <Text style={styles.tableCell}>{fineWastage.toFixed(3)}</Text>
+              <View style={styles.fieldCol}>
+                <Text style={styles.label}>Wastage (g) <Text style={{ color: colors.onSuccess }}>+</Text></Text>
+                <TextInput testID="wastage-weight" value={wastageWeight} onChangeText={(v) => setWastageWeight(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0.000" placeholderTextColor={colors.mutedText} style={styles.input} />
               </View>
-              <View style={styles.tableRow}>
-                <Text style={[styles.tableCell, styles.tableRowLabel, { flex: 1.4 }]}>Received</Text>
-                <Text style={styles.tableCell}>{weightNum.toFixed(3)}</Text>
-                <Text style={styles.tableCell}>{purity}%</Text>
-                <Text style={styles.tableCell}>{fineReceived.toFixed(3)}</Text>
+              <View style={styles.fieldCol}>
+                <Text style={styles.label}>Loss (g) <Text style={{ color: colors.mutedText }}>−</Text></Text>
+                <TextInput testID="process-loss" value={processLoss} onChangeText={(v) => setProcessLoss(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0.000" placeholderTextColor={colors.mutedText} style={styles.input} />
+              </View>
+            </View>
+            <Text style={styles.hint}>Wastage is what the karigar charges — it's written off against what they owe. Loss (filing, polishing, etc.) is kept for reference only and doesn't touch the ledger.</Text>
+
+            <Text style={styles.sectionTitle}>Total</Text>
+            <View style={styles.fieldGrid} testID="receive-total-row">
+              <View style={styles.fieldCol}>
+                <Text style={styles.label}>Difference (g)</Text>
+                <View style={styles.readonlyBox}>
+                  <Text style={[styles.readonlyBoxText, weight && weightNum !== issuedWeight ? { color: weightNum > issuedWeight ? colors.onSuccess : colors.onError } : null]}>
+                    {weight ? `${round3(weightNum - issuedWeight) >= 0 ? '+' : ''}${round3(weightNum - issuedWeight).toFixed(3)}` : '—'}
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.fieldCol}>
+                <Text style={styles.label}>Fine (g)</Text>
+                <View style={styles.readonlyBox}>
+                  <Text style={[styles.readonlyBoxText, balanceFine != null && balanceFine !== 0 ? { color: balanceFine > 0 ? colors.onWarning : colors.onSuccess } : null]}>
+                    {balanceFine != null ? balanceFine.toFixed(3) : '—'}
+                  </Text>
+                </View>
               </View>
             </View>
 
@@ -433,6 +435,14 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
     color: colors.onSurface, paddingHorizontal: spacing.md, paddingVertical: 12, fontSize: 14,
   },
+
+  fieldGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  fieldCol: { flexBasis: '47%', flexGrow: 1 },
+  readonlyBox: {
+    backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    paddingHorizontal: spacing.md, paddingVertical: 12,
+  },
+  readonlyBoxText: { color: colors.onSurface, fontSize: 14, fontWeight: '600' },
 
   table: {
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
