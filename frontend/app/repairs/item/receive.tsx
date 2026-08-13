@@ -327,7 +327,9 @@ export default function ReceiveFromKarigarScreen() {
               </View>
             </View>
 
-            {/* New Wt − Wastage = Diff (wastage is forgiven, same as loss) */}
+            {/* New Wt + Wastage = Diff (wastage is still forgiven under the hood —
+                subtracted when computing Diff — this "+" only matches the sketch's
+                label; see the calc block above for the actual arithmetic) */}
             <View style={[styles.formulaRow, { marginTop: 6 }]} testID="receive-total-row">
               <View style={styles.fieldColFlex}>
                 <Text style={styles.label}>New Wt (g)</Text>
@@ -337,7 +339,7 @@ export default function ReceiveFromKarigarScreen() {
                   </Text>
                 </View>
               </View>
-              <Text style={styles.opText}>−</Text>
+              <Text style={styles.opText}>+</Text>
               <View style={styles.fieldColFlex}>
                 <Text style={styles.label}>Wastage (g)</Text>
                 <TextInput testID="wastage-weight" value={wastageWeight} onChangeText={(v) => setWastageWeight(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0.000" placeholderTextColor={colors.mutedText} style={styles.input} />
