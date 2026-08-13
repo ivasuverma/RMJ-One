@@ -38,6 +38,7 @@ export default function ReceiveFromKarigarScreen() {
   const [weight, setWeight] = useState('');
   const [wastageWeight, setWastageWeight] = useState('');
   const [processLoss, setProcessLoss] = useState('');
+  const [recvPurity, setRecvPurity] = useState('');
   const [note, setNote] = useState('');
   const [labourAmount, setLabourAmount] = useState('');
   const [payCash, setPayCash] = useState('');
@@ -46,17 +47,15 @@ export default function ReceiveFromKarigarScreen() {
   const [recvCash, setRecvCash] = useState('');
   const [recvMetalWeight, setRecvMetalWeight] = useState('');
   const [prevBalance, setPrevBalance] = useState(0);
-  const [prevFineBalance, setPrevFineBalance] = useState(0);
   const [busy, setBusy] = useState(false);
   const submittingRef = useRef(false);
 
   const loadBalance = useCallback(async (kid?: string | null) => {
-    if (!kid) { setPrevBalance(0); setPrevFineBalance(0); return; }
+    if (!kid) { setPrevBalance(0); return; }
     try {
-      const res = await api.get<{ amount_due: number; fine_weight_balance: number }>(`/karigars/${kid}/ledger`);
+      const res = await api.get<{ amount_due: number }>(`/karigars/${kid}/ledger`);
       setPrevBalance(res.amount_due || 0);
-      setPrevFineBalance(res.fine_weight_balance || 0);
-    } catch (_e) { setPrevBalance(0); setPrevFineBalance(0); }
+    } catch (_e) { setPrevBalance(0); }
   }, []);
 
   const load = useCallback(async () => {
@@ -75,6 +74,7 @@ export default function ReceiveFromKarigarScreen() {
       } else if (routeItemId) {
         const res = await api.get<{ item: Item }>(`/repair-items/${routeItemId}`);
         setItem(res.item);
+        setRecvPurity(String(res.item.purity ?? 100));
         setMode('form');
         loadBalance(res.item.karigar_id);
       } else {
@@ -87,12 +87,14 @@ export default function ReceiveFromKarigarScreen() {
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const resetFormFields = () => {
-    setWeight(''); setWastageWeight(''); setProcessLoss(''); setNote('');
+    setWeight(''); setWastageWeight(''); setProcessLoss(''); setRecvPurity(''); setNote('');
     setLabourAmount(''); setPayCash(''); setPayMetalWeight(''); setPayMetalValue('');
-    setRecvCash(''); setRecvMetalWeight(''); setPrevBalance(0); setPrevFineBalance(0);
+    setRecvCash(''); setRecvMetalWeight(''); setPrevBalance(0);
   };
 
-  const pickItem = (it: Item) => { resetFormFields(); setItem(it); setMode('form'); loadBalance(it.karigar_id); };
+  const pickItem = (it: Item) => {
+    resetFormFields(); setItem(it); setRecvPurity(String(it.purity ?? 100)); setMode('form'); loadBalance(it.karigar_id);
+  };
 
   const setBulkRow = (itemId: string, patch: Partial<BulkRow>) => {
     setBulkRows((prev) => ({ ...prev, [itemId]: { ...prev[itemId], ...patch } }));
@@ -134,6 +136,7 @@ export default function ReceiveFromKarigarScreen() {
         weight: w, note,
         process_loss: parseFloat(processLoss) || 0,
         wastage_weight: parseFloat(wastageWeight) || 0,
+        purity_override: parseFloat(recvPurity) || undefined,
         labour_amount: parseFloat(labourAmount) || 0,
         pay_cash: parseFloat(payCash) || 0,
         pay_metal_weight: parseFloat(payMetalWeight) || 0,
@@ -167,23 +170,21 @@ export default function ReceiveFromKarigarScreen() {
     );
   }
 
-  const purity = item?.purity ?? 100;
+  const issuePurity = item?.purity ?? 100;
   const issuedWeight = item?.current_issue_weight || 0;
-  const fineIssued = item?.current_issue_fine_weight ?? round3(issuedWeight * purity / 100);
+  const fineIssued = item?.current_issue_fine_weight ?? round3(issuedWeight * issuePurity / 100);
+  // Touch of what's coming back this time — editable, defaults to the item's
+  // issued purity but can differ (mixed lots, karigar's own stated assay).
+  const recvPurityNum = parseFloat(recvPurity) || issuePurity;
   const wastageNum = parseFloat(wastageWeight) || 0;
-  const fineWastage = round3(wastageNum * purity / 100);
+  const fineWastage = round3(wastageNum * recvPurityNum / 100);
   const lossNum = parseFloat(processLoss) || 0;
-  const fineLoss = round3(lossNum * purity / 100);
   const weightNum = parseFloat(weight) || 0;
-  const fineReceived = round3(weightNum * purity / 100);
-  // Wastage the karigar charges for is written off (same as this item's issued
-  // gold) — process loss is reference-only and does not affect this figure.
+  // Loss reduces what's actually credited back — it's folded into the net
+  // received weight before converting to fine, not tracked as a separate line.
+  const weightNet = round3(weightNum - lossNum);
+  const fineReceived = round3(weightNet * recvPurityNum / 100);
   const balanceFine = weight ? round3(fineIssued - fineWastage - fineReceived) : null;
-  // The karigar's fine-gold balance from everything else (other jobs), before
-  // this item's own issued weight — folded back in so old balance carries
-  // forward, matching how the ₹ side already works below.
-  const otherFineBalance = round3(prevFineBalance - fineIssued);
-  const totalFineBalance = balanceFine != null ? round3(otherFineBalance + balanceFine) : null;
 
   const labourNum = parseFloat(labourAmount) || 0;
   const cashNum = parseFloat(payCash) || 0;
@@ -287,7 +288,7 @@ export default function ReceiveFromKarigarScreen() {
                 <TextInput testID="process-loss" value={processLoss} onChangeText={(v) => setProcessLoss(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0.000" placeholderTextColor={colors.mutedText} style={styles.input} />
               </View>
             </View>
-            <Text style={styles.hint}>Wastage is what the karigar charges — it's written off against what they owe. Loss (filing, polishing, etc.) is kept for reference only and doesn't touch the ledger.</Text>
+            <Text style={styles.hint}>Wastage is what the karigar charges — it's written off against what they owe. Loss (filing, polishing, etc.) reduces what's actually credited back.</Text>
 
             <Text style={styles.sectionTitle}>Total</Text>
             <View style={styles.fieldGrid} testID="receive-total-row">
@@ -300,6 +301,10 @@ export default function ReceiveFromKarigarScreen() {
                 </View>
               </View>
               <View style={styles.fieldCol}>
+                <Text style={styles.label}>Touch (%)</Text>
+                <TextInput testID="recv-purity" value={recvPurity} onChangeText={(v) => setRecvPurity(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder={String(issuePurity)} placeholderTextColor={colors.mutedText} style={styles.input} />
+              </View>
+              <View style={styles.fieldCol}>
                 <Text style={styles.label}>Fine (g)</Text>
                 <View style={styles.readonlyBox}>
                   <Text style={[styles.readonlyBoxText, balanceFine != null && balanceFine !== 0 ? { color: balanceFine > 0 ? colors.onWarning : colors.onSuccess } : null]}>
@@ -309,29 +314,21 @@ export default function ReceiveFromKarigarScreen() {
               </View>
             </View>
 
-            {!!otherFineBalance && (
-              <View style={styles.balanceRow} testID="prev-fine-balance-row">
-                <Text style={styles.balanceRowLabel}>Balance from other jobs</Text>
-                <Text style={[styles.balanceRowValue, otherFineBalance > 0 ? { color: colors.onWarning } : { color: colors.onSuccess }]}>{otherFineBalance > 0 ? '+' : ''}{otherFineBalance.toFixed(3)}g</Text>
-              </View>
-            )}
-
-            {totalFineBalance != null && (
-              <View style={[styles.balancePreview, totalFineBalance > 0 && styles.balancePreviewNegative]} testID="receive-balance-preview">
-                <Ionicons name={totalFineBalance === 0 ? 'checkmark-circle-outline' : 'alert-circle-outline'} size={14} color={totalFineBalance === 0 ? colors.onSuccess : colors.onError} />
+            {balanceFine != null && (
+              <View style={[styles.balancePreview, balanceFine > 0 && styles.balancePreviewNegative]} testID="receive-balance-preview">
+                <Ionicons name={balanceFine === 0 ? 'checkmark-circle-outline' : 'alert-circle-outline'} size={14} color={balanceFine === 0 ? colors.onSuccess : colors.onError} />
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.balancePreviewText, { color: totalFineBalance === 0 ? colors.onSuccess : colors.onError }]}>
-                    {totalFineBalance > 0 ? `Receivable: ${totalFineBalance.toFixed(3)}g fine gold — karigar still owes this` : totalFineBalance < 0 ? `Payable: ${Math.abs(totalFineBalance).toFixed(3)}g fine gold — owed back to karigar` : 'Fully accounted for'}
+                  <Text style={[styles.balancePreviewText, { color: balanceFine === 0 ? colors.onSuccess : colors.onError }]}>
+                    {balanceFine > 0 ? `Receivable: ${balanceFine.toFixed(3)}g fine gold — karigar still owes this` : balanceFine < 0 ? `Payable: ${Math.abs(balanceFine).toFixed(3)}g fine gold — owed back to karigar` : 'Fully accounted for'}
                   </Text>
-                  <Text style={styles.balancePreviewSub}>Includes this tag plus any other balance — tap to clear the whole slip</Text>
                 </View>
-                {totalFineBalance > 0 && (
-                  <Pressable onPress={() => setRecvMetalWeight(String(totalFineBalance.toFixed(3)))} style={styles.settleBtn} testID="settle-receive-btn">
+                {balanceFine > 0 && (
+                  <Pressable onPress={() => setRecvMetalWeight(String(balanceFine.toFixed(3)))} style={styles.settleBtn} testID="settle-receive-btn">
                     <Text style={styles.settleBtnText}>Receive now</Text>
                   </Pressable>
                 )}
-                {totalFineBalance < 0 && (
-                  <Pressable onPress={() => setPayMetalWeight(String(Math.abs(totalFineBalance).toFixed(3)))} style={styles.settleBtn} testID="settle-pay-btn">
+                {balanceFine < 0 && (
+                  <Pressable onPress={() => setPayMetalWeight(String(Math.abs(balanceFine).toFixed(3)))} style={styles.settleBtn} testID="settle-pay-btn">
                     <Text style={styles.settleBtnText}>Pay now</Text>
                   </Pressable>
                 )}

@@ -16,6 +16,7 @@ type Item = {
   status: 'received' | 'with_karigar' | 'ready' | 'delivered';
   labour_charge: number; customer_adjustment?: number;
   fine_weight_diff?: number | null; weight_diff?: number | null;
+  current_issue_weight?: number | null; process_loss?: number | null;
   billed_amount: number | null; payment_mode: string | null; delivered_at?: string;
 };
 
@@ -39,7 +40,6 @@ export default function RepairBillScreen() {
 
   // Bill form fields
   const [billLabour, setBillLabour] = useState('');
-  const [billMaterial, setBillMaterial] = useState('');
   const [billExtra, setBillExtra] = useState('');
   const [billExtraNote, setBillExtraNote] = useState('');
   const [paymentMode, setPaymentMode] = useState('cash');
@@ -64,19 +64,19 @@ export default function RepairBillScreen() {
   const pickItem = (item: Item) => {
     setPicked(item);
     setBillLabour(String(item.labour_charge || 0));
-    setBillMaterial(String(item.customer_adjustment || 0));
     setBillExtra(''); setBillExtraNote(''); setPaymentMode('cash'); setWeightRate(''); setPrevBalance('');
     setMode('form');
   };
 
+  const issuedWeight = picked?.current_issue_weight || 0;
+  const receivedWeight = issuedWeight + (picked?.weight_diff || 0);
+  const lossWeight = picked?.process_loss || 0;
   const fineWeightChange = picked?.fine_weight_diff || 0;
   const rateNum = parseFloat(weightRate) || 0;
   const weightCharge = Math.round(fineWeightChange * rateNum * 100) / 100;
 
-  const applyWeightCharge = () => setBillMaterial(String(weightCharge));
-
   const prevBalanceNum = parseFloat(prevBalance) || 0;
-  const billTotal = prevBalanceNum + (parseFloat(billLabour) || 0) + (parseFloat(billMaterial) || 0) + (parseFloat(billExtra) || 0);
+  const billTotal = prevBalanceNum + (parseFloat(billLabour) || 0) + weightCharge + (parseFloat(billExtra) || 0);
 
   const createBill = async () => {
     if (submittingRef.current || !picked) return;
@@ -84,7 +84,7 @@ export default function RepairBillScreen() {
     submittingRef.current = true; setBusy(true);
     try {
       await api.post(`/repair-items/${picked.id}/deliver`, {
-        labour_charge: parseFloat(billLabour) || 0, material_adjustment: parseFloat(billMaterial) || 0,
+        labour_charge: parseFloat(billLabour) || 0, material_adjustment: weightCharge,
         extra_charges: parseFloat(billExtra) || 0, extra_charges_note: billExtraNote,
         previous_balance: prevBalanceNum,
         payment_mode: paymentMode, note: '',
@@ -215,30 +215,46 @@ export default function RepairBillScreen() {
               <Text style={styles.cMeta}>{picked.description}</Text>
             </View>
 
+            <View style={styles.fieldGrid} testID="bill-field-grid">
+              <View style={styles.fieldCol}>
+                <Text style={styles.label}>Issued (g)</Text>
+                <View style={styles.readonlyBox}><Text style={styles.readonlyBoxText}>{issuedWeight.toFixed(3)}</Text></View>
+              </View>
+              <View style={styles.fieldCol}>
+                <Text style={styles.label}>Received (g)</Text>
+                <View style={styles.readonlyBox}><Text style={styles.readonlyBoxText}>{receivedWeight.toFixed(3)}</Text></View>
+              </View>
+              <View style={styles.fieldCol}>
+                <Text style={styles.label}>Loss (g)</Text>
+                <View style={styles.readonlyBox}><Text style={styles.readonlyBoxText}>{lossWeight.toFixed(3)}</Text></View>
+              </View>
+            </View>
+
+            <View style={[styles.fieldGrid, { marginTop: spacing.sm }]} testID="bill-charge-grid">
+              <View style={styles.fieldCol}>
+                <Text style={styles.label}>New Wt (g fine)</Text>
+                <View style={styles.readonlyBox}>
+                  <Text style={[styles.readonlyBoxText, fineWeightChange !== 0 ? { color: fineWeightChange > 0 ? colors.onWarning : colors.onSuccess } : null]}>
+                    {fineWeightChange >= 0 ? '+' : ''}{fineWeightChange.toFixed(3)}
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.fieldCol}>
+                <Text style={styles.label}>Rate (₹/g)</Text>
+                <TextInput testID="weight-rate" value={weightRate} onChangeText={(v) => setWeightRate(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />
+              </View>
+              <View style={styles.fieldCol}>
+                <Text style={styles.label}>Total (₹)</Text>
+                <View style={styles.readonlyBox}><Text style={styles.readonlyBoxText}>₹{weightCharge.toFixed(0)}</Text></View>
+              </View>
+            </View>
+
             <Text style={styles.label}>Previous Balance, if any (₹)</Text>
             <TextInput testID="bill-prev-balance" value={prevBalance} onChangeText={(v) => setPrevBalance(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />
 
             <Text style={styles.label}>Labour Charge (₹)</Text>
             <TextInput testID="bill-labour" value={billLabour} onChangeText={(v) => setBillLabour(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />
 
-            {!!fineWeightChange && (
-              <View style={styles.weightChangeCard} testID="weight-change-card">
-                <View style={styles.weightChangeRow}>
-                  <Ionicons name={fineWeightChange >= 0 ? 'trending-up-outline' : 'trending-down-outline'} size={14} color={fineWeightChange >= 0 ? colors.onWarning : colors.onSuccess} />
-                  <Text style={styles.weightChangeText}>Weight change from karigar: {fineWeightChange >= 0 ? '+' : ''}{fineWeightChange.toFixed(3)}g fine</Text>
-                </View>
-                <Text style={styles.label}>Rate (₹ / gram)</Text>
-                <View style={{ flexDirection: 'row', gap: spacing.sm }}>
-                  <TextInput testID="weight-rate" value={weightRate} onChangeText={(v) => setWeightRate(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={[styles.input, { flex: 1 }]} />
-                  <Pressable onPress={applyWeightCharge} disabled={!rateNum} style={[styles.applyBtn, !rateNum && { opacity: 0.5 }]} testID="apply-weight-charge">
-                    <Text style={styles.applyBtnText}>Apply ₹{weightCharge.toFixed(0)}</Text>
-                  </Pressable>
-                </View>
-              </View>
-            )}
-
-            <Text style={styles.label}>Material / Wastage Adjustment (₹)</Text>
-            <TextInput testID="bill-material" value={billMaterial} onChangeText={(v) => setBillMaterial(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />
             <Text style={styles.label}>Extra Charges (₹)</Text>
             <TextInput testID="bill-extra" value={billExtra} onChangeText={(v) => setBillExtra(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />
             {(parseFloat(billExtra) || 0) > 0 && (
@@ -246,7 +262,7 @@ export default function RepairBillScreen() {
             )}
 
             <View style={styles.totalRow} testID="bill-total">
-              <Text style={styles.totalLabel}>Total</Text>
+              <Text style={styles.totalLabel}>G. Total</Text>
               <Text style={styles.totalValue}>₹{billTotal.toFixed(0)}</Text>
             </View>
 
@@ -306,14 +322,13 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   },
 
   pickedCard: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.lg },
-  weightChangeCard: {
-    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
-    padding: spacing.md, marginTop: spacing.sm,
+  fieldGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  fieldCol: { flexBasis: '30%', flexGrow: 1 },
+  readonlyBox: {
+    backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    paddingHorizontal: spacing.md, paddingVertical: 12,
   },
-  weightChangeRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
-  weightChangeText: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '600' },
-  applyBtn: { backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingHorizontal: spacing.md, alignItems: 'center', justifyContent: 'center' },
-  applyBtnText: { color: colors.onBrandPrimary, fontWeight: '700', fontSize: 12 },
+  readonlyBoxText: { color: colors.onSurface, fontSize: 14, fontWeight: '600' },
   label: { color: colors.onSurfaceSecondary, fontSize: 12, marginBottom: 6, marginTop: spacing.sm },
   input: {
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
