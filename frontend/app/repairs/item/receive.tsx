@@ -208,11 +208,12 @@ export default function ReceiveFromKarigarScreen() {
   const wastageNum = parseFloat(wastageWeight) || 0;
   const lossNum = parseFloat(processLoss) || 0;
   const weightNum = parseFloat(weight) || 0;
-  // new_wt = issued - loss (what's expected back once loss is forgiven).
-  // diff_wt = new_wt - received + wastage — the gross-gram gap this receive
-  // still leaves outstanding. balance (fine g) = diff_wt x touch%.
-  const newWt = round3(issuedWeight - lossNum);
-  const diffWt = weight ? round3(newWt - weightNum + wastageNum) : 0;
+  // new_wt = issued - loss - wastage (what's expected back once both are
+  // forgiven — wastage is the karigar's charge for the work, in their favor).
+  // diff_wt = new_wt - received — the gross-gram gap this receive still
+  // leaves outstanding. balance (fine g) = diff_wt x touch%.
+  const newWt = round3(issuedWeight - lossNum - wastageNum);
+  const diffWt = weight ? round3(newWt - weightNum) : 0;
   const balanceFine = weight ? round3(diffWt * recvPurityNum / 100) : null;
   const payMetalNum = parseFloat(payMetalWeight) || 0;
   const recvMetalNum = parseFloat(recvMetalWeight) || 0;
@@ -348,7 +349,7 @@ export default function ReceiveFromKarigarScreen() {
                 </View>
               </View>
             </View>
-            <Text style={styles.hint}>Wastage is written off against what the karigar owes. Loss reduces what's actually credited back.</Text>
+            <Text style={styles.hint}>Loss and wastage are both forgiven — neither adds to what the karigar owes.</Text>
 
             <Text style={styles.label}>Karigar Slip Photo (optional)</Text>
             {slipPhoto ? (
