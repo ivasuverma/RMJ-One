@@ -65,11 +65,6 @@ export default function RepairItemDetailScreen() {
   const [editDueDate, setEditDueDate] = useState('');
   const [editNotes, setEditNotes] = useState('');
 
-  // Transaction edit
-  const [editingTxnId, setEditingTxnId] = useState<string | null>(null);
-  const [editWeight, setEditWeight] = useState('');
-  const [editNote, setEditNote] = useState('');
-
   const resetForms = () => { setForm(null); };
 
   const openEditForm = () => {
@@ -128,19 +123,11 @@ export default function RepairItemDetailScreen() {
     );
   };
 
-  const startEditTxn = (t: Txn) => { setEditingTxnId(t.id); setEditWeight(String(t.weight)); setEditNote(t.note || ''); };
-  const cancelEditTxn = () => { setEditingTxnId(null); setEditWeight(''); setEditNote(''); };
-
-  const saveEditTxn = async () => {
-    if (submittingRef.current || !editingTxnId) return;
-    const w = parseFloat(editWeight);
-    if (!w || w <= 0) { Alert.alert('Invalid', 'Enter a weight greater than 0'); return; }
-    submittingRef.current = true; setBusy(true);
-    try {
-      await api.put(`/repair-items/${id}/transactions/${editingTxnId}`, { weight: w, note: editNote });
-      cancelEditTxn(); await load();
-    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
-    finally { setBusy(false); submittingRef.current = false; }
+  // Editing a transaction opens the same full issue/receive form used to
+  // create it, pre-filled — not a stripped-down weight-only box.
+  const editTxn = (t: Txn) => {
+    const pathname = t.direction === 'issue' ? '/repairs/item/issue' : '/repairs/item/receive';
+    router.push({ pathname, params: { itemId: id, txnId: t.id } } as any);
   };
 
   const deleteTxn = (t: Txn) => {
@@ -311,9 +298,14 @@ export default function RepairItemDetailScreen() {
             </View>
           )}
           {item.status === 'delivered' && (
-            <Pressable onPress={() => printPdf('bill')} disabled={printing} style={[styles.actionBtn, styles.actionBtnPrimary, { marginBottom: spacing.lg }]} testID="view-bill-btn">
-              {printing ? <ActivityIndicator color={colors.onBrandPrimary} /> : <><Ionicons name="print-outline" size={16} color={colors.onBrandPrimary} /><Text style={styles.actionBtnPrimaryText}>View Repair Bill</Text></>}
-            </Pressable>
+            <View style={[styles.actionsRow, { marginBottom: spacing.lg }]}>
+              <Pressable onPress={() => printPdf('bill')} disabled={printing} style={[styles.actionBtn, styles.actionBtnPrimary, { flex: 1 }]} testID="view-bill-btn">
+                {printing ? <ActivityIndicator color={colors.onBrandPrimary} /> : <><Ionicons name="print-outline" size={16} color={colors.onBrandPrimary} /><Text style={styles.actionBtnPrimaryText}>View Bill</Text></>}
+              </Pressable>
+              <Pressable onPress={() => router.push({ pathname: '/repairs/bill', params: { itemId: id } } as any)} style={[styles.actionBtn, { flex: 1 }]} testID="edit-bill-btn">
+                <Ionicons name="pencil-outline" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>Edit Bill</Text>
+              </Pressable>
+            </View>
           )}
 
           <Text style={styles.section}>Tag History · {history.length}</Text>
@@ -337,7 +329,7 @@ export default function RepairItemDetailScreen() {
                   </View>
                   {canEdit && (
                     <View style={{ flexDirection: 'row', gap: 6 }}>
-                      <Pressable onPress={() => startEditTxn(h)} style={styles.smallIconBtn} hitSlop={8} testID={`edit-txn-${h.id}`}>
+                      <Pressable onPress={() => editTxn(h)} style={styles.smallIconBtn} hitSlop={8} testID={`edit-txn-${h.id}`}>
                         <Ionicons name="pencil-outline" size={14} color={colors.onSurfaceSecondary} />
                       </Pressable>
                       <Pressable onPress={() => deleteTxn(h)} style={[styles.smallIconBtn, styles.smallIconBtnDanger]} hitSlop={8} testID={`delete-txn-${h.id}`}>
@@ -346,22 +338,6 @@ export default function RepairItemDetailScreen() {
                     </View>
                   )}
                 </View>
-                {editingTxnId === h.id && (
-                  <View style={styles.editTxnBox} testID={`edit-txn-form-${h.id}`}>
-                    <Text style={styles.label}>Corrected weight (g)</Text>
-                    <TextInput testID={`edit-txn-weight-${h.id}`} value={editWeight} onChangeText={(v) => setEditWeight(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholderTextColor={colors.mutedText} style={styles.input} />
-                    <Text style={styles.label}>Note</Text>
-                    <TextInput testID={`edit-txn-note-${h.id}`} value={editNote} onChangeText={setEditNote} placeholderTextColor={colors.mutedText} style={styles.input} />
-                    <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm }}>
-                      <Pressable onPress={cancelEditTxn} style={[styles.smallBtn, { flex: 1, alignItems: 'center' }]} testID={`cancel-edit-txn-${h.id}`}>
-                        <Text style={styles.smallBtnText}>Cancel</Text>
-                      </Pressable>
-                      <Pressable onPress={saveEditTxn} disabled={busy} style={[styles.saveBtn, { flex: 1, marginTop: 0 }]} testID={`save-edit-txn-${h.id}`}>
-                        {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.saveBtnText}>Save</Text>}
-                      </Pressable>
-                    </View>
-                  </View>
-                )}
               </View>
             );
           })}

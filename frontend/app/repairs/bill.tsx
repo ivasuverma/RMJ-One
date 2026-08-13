@@ -19,6 +19,9 @@ type Item = {
   fine_weight_diff?: number | null; weight_diff?: number | null;
   current_issue_weight?: number | null; process_loss?: number | null;
   billed_amount: number | null; payment_mode: string | null; delivered_at?: string;
+  bill_labour_charge?: number | null; bill_material_adjustment?: number | null;
+  bill_extra_charges?: number | null; bill_extra_charges_note?: string | null;
+  bill_previous_balance?: number | null; final_photo?: string | null;
 };
 
 type Mode = 'list' | 'pick' | 'form';
@@ -52,6 +55,13 @@ export default function RepairBillScreen() {
   const [valueAdd, setValueAdd] = useState('');
   const [finalPhoto, setFinalPhoto] = useState('');
   const [cameraOpen, setCameraOpen] = useState(false);
+  // Rate x billable weight is how the Total is normally derived, but an
+  // already-billed item's rate/value-add breakdown was never persisted —
+  // only the resulting ₹ amount. Editing an existing bill without a rate
+  // entered falls back to this manually-editable total, pre-filled from what
+  // was actually billed.
+  const [materialAdjManual, setMaterialAdjManual] = useState('');
+  const isEditingBill = picked?.status === 'delivered';
 
   const loadBills = useCallback(async () => {
     try { setBills(await api.get<Item[]>('/repair-items?status=delivered')); }
@@ -62,8 +72,23 @@ export default function RepairBillScreen() {
 
   const pickItem = (item: Item) => {
     setPicked(item);
-    setBillLabour(String(item.labour_charge || 0));
-    setBillExtra(''); setBillExtraNote(''); setPaymentMode('cash'); setWeightRate(''); setPrevBalance(''); setValueAdd(''); setFinalPhoto('');
+    if (item.status === 'delivered') {
+      // Re-opening an existing bill for correction — prefill from what was
+      // actually billed rather than the item's live (possibly since-changed) fields.
+      setBillLabour(String(item.bill_labour_charge ?? item.labour_charge ?? 0));
+      setBillExtra(item.bill_extra_charges ? String(item.bill_extra_charges) : '');
+      setBillExtraNote(item.bill_extra_charges_note || '');
+      setPaymentMode(item.payment_mode || 'cash');
+      setWeightRate('');
+      setPrevBalance(item.bill_previous_balance ? String(item.bill_previous_balance) : '');
+      setValueAdd('');
+      setMaterialAdjManual(item.bill_material_adjustment ? String(item.bill_material_adjustment) : '');
+      setFinalPhoto(item.final_photo || '');
+    } else {
+      setBillLabour(String(item.labour_charge || 0));
+      setBillExtra(''); setBillExtraNote(''); setPaymentMode('cash'); setWeightRate(''); setPrevBalance(''); setValueAdd(''); setFinalPhoto('');
+      setMaterialAdjManual('');
+    }
     setMode('form');
   };
 
@@ -99,7 +124,12 @@ export default function RepairBillScreen() {
   // it's billed to the customer the same way as any other weight change.
   const billableWeightChange = round3(weightChange + valueAddNum);
   const rateNum = parseFloat(weightRate) || 0;
-  const weightCharge = Math.round(billableWeightChange * rateNum * 100) / 100;
+  // Once a rate is entered, it drives the total as usual. Until then — mainly
+  // when correcting an old bill whose rate/value-add breakdown was never
+  // stored — the total is whatever was typed into the manual field.
+  const weightCharge = rateNum > 0
+    ? Math.round(billableWeightChange * rateNum * 100) / 100
+    : Math.round((parseFloat(materialAdjManual) || 0) * 100) / 100;
 
   const prevBalanceNum = parseFloat(prevBalance) || 0;
   const billTotal = prevBalanceNum + (parseFloat(billLabour) || 0) + weightCharge + (parseFloat(billExtra) || 0);
@@ -108,13 +138,18 @@ export default function RepairBillScreen() {
     if (submittingRef.current || !picked) return;
     if (billTotal <= 0) { Alert.alert('Invalid', 'The billed total must be greater than 0'); return; }
     submittingRef.current = true; setBusy(true);
+    const payload = {
+      labour_charge: parseFloat(billLabour) || 0, material_adjustment: weightCharge,
+      extra_charges: parseFloat(billExtra) || 0, extra_charges_note: billExtraNote,
+      previous_balance: prevBalanceNum,
+      payment_mode: paymentMode, note: '', final_photo: finalPhoto,
+    };
     try {
-      await api.post(`/repair-items/${picked.id}/deliver`, {
-        labour_charge: parseFloat(billLabour) || 0, material_adjustment: weightCharge,
-        extra_charges: parseFloat(billExtra) || 0, extra_charges_note: billExtraNote,
-        previous_balance: prevBalanceNum,
-        payment_mode: paymentMode, note: '', final_photo: finalPhoto,
-      });
+      if (isEditingBill) {
+        await api.put(`/repair-items/${picked.id}/bill`, payload);
+      } else {
+        await api.post(`/repair-items/${picked.id}/deliver`, payload);
+      }
       if (routeItemId) { router.back(); return; }
       setPicked(null); setMode('list'); setLoading(true);
       await loadBills();
@@ -158,9 +193,9 @@ export default function RepairBillScreen() {
     finally { setPrintingId(''); }
   };
 
-  const headerTitle = mode === 'list' ? 'Repair Bills' : mode === 'pick' ? 'Select Item to Bill' : 'Create Bill';
+  const headerTitle = mode === 'list' ? 'Repair Bills' : mode === 'pick' ? 'Select Item to Bill' : isEditingBill ? 'Edit Bill' : 'Create Bill';
   const onBack = () => {
-    if (mode === 'form' && !routeItemId) { setMode('pick'); return; }
+    if (mode === 'form' && !routeItemId) { setMode(isEditingBill ? 'list' : 'pick'); return; }
     if (mode === 'pick') { setMode('list'); return; }
     router.back();
   };
@@ -199,6 +234,9 @@ export default function RepairBillScreen() {
                 <Text style={styles.cMeta}>
                   {b.description}{b.billed_amount != null ? ` · ₹${b.billed_amount.toFixed(0)}` : ''}{b.payment_mode ? ` · ${b.payment_mode}` : ''}{b.delivered_at ? ` · ${b.delivered_at.slice(0, 10)}` : ''}
                 </Text>
+              </Pressable>
+              <Pressable onPress={() => pickItem(b)} style={styles.editBtn} testID={`edit-bill-${b.id}`}>
+                <Ionicons name="pencil-outline" size={16} color={colors.onSurfaceSecondary} />
               </Pressable>
               <Pressable onPress={() => printBill(b)} disabled={printingId === b.id} style={styles.printBtn} testID={`print-bill-${b.id}`}>
                 {printingId === b.id ? <ActivityIndicator size="small" color={colors.onBrandPrimary} /> : <Ionicons name="print-outline" size={16} color={colors.onBrandPrimary} />}
@@ -280,9 +318,16 @@ export default function RepairBillScreen() {
               </View>
               <View style={styles.fieldCol}>
                 <Text style={styles.label}>Total (₹)</Text>
-                <View style={styles.readonlyBox}><Text style={styles.readonlyBoxText}>₹{weightCharge.toFixed(0)}</Text></View>
+                {rateNum > 0 ? (
+                  <View style={styles.readonlyBox}><Text style={styles.readonlyBoxText}>₹{weightCharge.toFixed(0)}</Text></View>
+                ) : (
+                  <TextInput testID="material-adj-manual" value={materialAdjManual} onChangeText={(v) => setMaterialAdjManual(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />
+                )}
               </View>
             </View>
+            {rateNum === 0 && (
+              <Text style={styles.hint}>No rate entered — Total is entered directly{isEditingBill ? ' (pre-filled from what was billed)' : ''}. Enter a rate above to compute it from New Wt instead.</Text>
+            )}
             {!!valueAddNum && (
               <Text style={styles.hint}>Billable weight change: {billableWeightChange >= 0 ? '+' : ''}{billableWeightChange.toFixed(3)}g (New Wt {weightChange >= 0 ? '+' : ''}{weightChange.toFixed(3)}g + value add {valueAddNum.toFixed(3)}g)</Text>
             )}
@@ -332,7 +377,7 @@ export default function RepairBillScreen() {
             )}
 
             <Pressable onPress={createBill} disabled={busy} style={[styles.saveBtn, busy && { opacity: 0.6 }]} testID="create-bill-btn">
-              {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.saveBtnText}>Create Bill</Text>}
+              {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.saveBtnText}>{isEditingBill ? 'Save Changes' : 'Create Bill'}</Text>}
             </Pressable>
           </ScrollView>
         </KeyboardAvoidingView>
@@ -375,6 +420,10 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   cName: { color: colors.onSurface, fontWeight: '700', fontSize: 13 },
   cMeta: { color: colors.onSurfaceTertiary, fontSize: 11, marginTop: 2 },
+  editBtn: {
+    width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.surfaceTertiary, borderWidth: 1, borderColor: colors.border,
+  },
   printBtn: {
     width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center',
     backgroundColor: colors.brandPrimary,

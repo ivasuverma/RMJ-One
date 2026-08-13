@@ -14,11 +14,13 @@ type Item = {
   gross_weight: number; purity?: number;
 };
 type Karigar = { id: string; name: string; mobile: string; is_employee: boolean };
+type Txn = { id: string; direction: 'issue' | 'receive'; karigar_id: string; note: string };
 
 type Mode = 'pick' | 'form' | 'bulk';
 
 export default function IssueToKarigarScreen() {
-  const { itemId: routeItemId, itemIds: routeItemIds } = useLocalSearchParams<{ itemId: string; itemIds?: string }>();
+  const { itemId: routeItemId, itemIds: routeItemIds, txnId } = useLocalSearchParams<{ itemId: string; itemIds?: string; txnId?: string }>();
+  const isEdit = !!txnId;
   const bulkIds = useMemo(() => (routeItemIds ? routeItemIds.split(',').filter(Boolean) : []), [routeItemIds]);
   const router = useRouter();
   const { colors } = useTheme();
@@ -46,8 +48,15 @@ export default function IssueToKarigarScreen() {
         setBulkItems(results.filter((x): x is Item => !!x));
         setMode('bulk');
       } else if (routeItemId) {
-        const res = await api.get<{ item: Item }>(`/repair-items/${routeItemId}`);
+        const res = await api.get<{ item: Item; history: Txn[] }>(`/repair-items/${routeItemId}`);
         setItem(res.item);
+        if (txnId) {
+          const txn = res.history.find((h) => h.id === txnId);
+          if (txn) {
+            setNote(txn.note || '');
+            setPickedKarigar(ks.find((k) => k.id === txn.karigar_id) || null);
+          }
+        }
         setMode('form');
       } else {
         setPickList(await api.get<Item[]>('/repair-items?status=received'));
@@ -55,7 +64,7 @@ export default function IssueToKarigarScreen() {
       }
     } catch (_e) { /* ignore */ }
     finally { setLoading(false); }
-  }, [routeItemId, bulkIds]);
+  }, [routeItemId, bulkIds, txnId]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const pickItem = (it: Item) => { setPickedKarigar(null); setNote(''); setItem(it); setMode('form'); };
@@ -65,7 +74,11 @@ export default function IssueToKarigarScreen() {
     if (!pickedKarigar) { Alert.alert('Missing', 'Pick a karigar'); return; }
     submittingRef.current = true; setBusy(true);
     try {
-      await api.post(`/repair-items/${item.id}/issue`, { karigar_id: pickedKarigar.id, note });
+      if (isEdit) {
+        await api.put(`/repair-items/${item.id}/transactions/${txnId}`, { karigar_id: pickedKarigar.id, note });
+      } else {
+        await api.post(`/repair-items/${item.id}/issue`, { karigar_id: pickedKarigar.id, note });
+      }
       router.back();
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
     finally { setBusy(false); submittingRef.current = false; }
@@ -96,7 +109,7 @@ export default function IssueToKarigarScreen() {
     router.back();
   };
 
-  const headerTitle = mode === 'bulk' ? `Issue ${bulkItems.length} Tags` : mode === 'pick' ? 'Select Tag to Issue' : 'Issue to Karigar';
+  const headerTitle = mode === 'bulk' ? `Issue ${bulkItems.length} Tags` : mode === 'pick' ? 'Select Tag to Issue' : isEdit ? 'Edit Issue' : 'Issue to Karigar';
 
   if (loading && ((mode === 'form' && !item) || mode === 'bulk')) {
     return (
@@ -210,7 +223,7 @@ export default function IssueToKarigarScreen() {
             <Text style={styles.label}>Note (optional)</Text>
             <TextInput testID="issue-note" value={note} onChangeText={setNote} placeholder="Instructions for the karigar" placeholderTextColor={colors.mutedText} style={styles.input} />
             <Pressable onPress={submit} disabled={busy} style={[styles.saveBtn, busy && { opacity: 0.6 }]} testID="issue-save-btn">
-              {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.saveBtnText}>Issue</Text>}
+              {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.saveBtnText}>{isEdit ? 'Save Changes' : 'Issue'}</Text>}
             </Pressable>
           </ScrollView>
         </KeyboardAvoidingView>

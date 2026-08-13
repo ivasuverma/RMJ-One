@@ -30,6 +30,7 @@ export default function ItemMasterScreen() {
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try { setItems(await api.get<ItemMaster[]>('/item-master')); }
@@ -47,12 +48,23 @@ export default function ItemMasterScreen() {
     submittingRef.current = true;
     setSaving(true);
     try {
-      await api.post('/item-master', { name: name.trim(), purity: p, category: category.trim(), active: true });
-      setName(''); setCategory(''); await load();
+      if (editingId) {
+        const existing = items.find((it) => it.id === editingId);
+        await api.put(`/item-master/${editingId}`, { name: name.trim(), purity: p, category: category.trim(), active: existing?.active ?? true });
+      } else {
+        await api.post('/item-master', { name: name.trim(), purity: p, category: category.trim(), active: true });
+      }
+      setName(''); setCategory(''); setEditingId(null); await load();
       return true;
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); return false; }
     finally { setSaving(false); submittingRef.current = false; }
   };
+
+  const startEdit = (it: ItemMaster) => {
+    setEditingId(it.id); setName(it.name); setCategory(it.category || ''); setPurity(String(it.purity));
+    setShowForm(true);
+  };
+  const closeForm = () => { setShowForm(false); setEditingId(null); setName(''); setCategory(''); setPurity('91.6'); };
 
   const toggleActive = async (it: ItemMaster) => {
     try { await api.put(`/item-master/${it.id}`, { ...it, active: !it.active }); await load(); }
@@ -73,7 +85,7 @@ export default function ItemMasterScreen() {
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
         <Text style={styles.title}>Items & Purity</Text>
-        <Pressable onPress={() => setShowForm((v) => !v)} style={[styles.iconBtn, styles.addTopBtn]} testID="show-add-item-btn" hitSlop={12}>
+        <Pressable onPress={() => (showForm ? closeForm() : setShowForm(true))} style={[styles.iconBtn, styles.addTopBtn]} testID="show-add-item-btn" hitSlop={12}>
           <Ionicons name={showForm ? 'close' : 'add'} size={22} color={colors.onBrandPrimary} />
         </Pressable>
       </View>
@@ -87,7 +99,7 @@ export default function ItemMasterScreen() {
 
           {showForm && (
             <View style={styles.formCard} testID="add-item-form">
-              <Text style={styles.section}>Add Item</Text>
+              <Text style={styles.section}>{editingId ? 'Edit Item' : 'Add Item'}</Text>
               <Text style={styles.label}>Name</Text>
               <TextInput testID="item-name" value={name} onChangeText={setName} placeholder="e.g. 22K Ring, 18K Chain" placeholderTextColor={colors.mutedText} style={styles.input} />
               <Text style={styles.label}>Category (optional)</Text>
@@ -103,7 +115,7 @@ export default function ItemMasterScreen() {
               <TextInput testID="item-purity" value={purity} onChangeText={(v) => setPurity(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="91.6" placeholderTextColor={colors.mutedText} style={styles.input} />
 
               <Pressable style={[styles.addBtn, saving && { opacity: 0.6 }]} disabled={saving} onPress={async () => { if (await add()) setShowForm(false); }} testID="add-item-btn">
-                {saving ? <ActivityIndicator color={colors.onBrandPrimary} /> : <><Ionicons name="add" size={16} color={colors.onBrandPrimary} /><Text style={styles.addBtnText}>Add Item</Text></>}
+                {saving ? <ActivityIndicator color={colors.onBrandPrimary} /> : <><Ionicons name={editingId ? 'checkmark' : 'add'} size={16} color={colors.onBrandPrimary} /><Text style={styles.addBtnText}>{editingId ? 'Save Changes' : 'Add Item'}</Text></>}
               </Pressable>
             </View>
           )}
@@ -116,6 +128,9 @@ export default function ItemMasterScreen() {
                 <Text style={styles.cName}>{it.name}</Text>
                 <Text style={styles.cMeta}>{it.purity}% purity{it.category ? ` · ${it.category}` : ''}</Text>
               </View>
+              <Pressable onPress={() => startEdit(it)} style={styles.editBtn} hitSlop={10} testID={`edit-item-${it.id}`}>
+                <Ionicons name="pencil-outline" size={15} color={colors.onSurfaceSecondary} />
+              </Pressable>
               <Pressable onPress={() => toggleActive(it)} style={styles.smallBtn} testID={`toggle-item-${it.id}`}>
                 <Text style={styles.smallBtnText}>{it.active ? 'Pause' : 'Resume'}</Text>
               </Pressable>
@@ -174,6 +189,10 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   cMeta: { color: colors.onSurfaceTertiary, fontSize: 12, marginTop: 2 },
   smallBtn: { backgroundColor: colors.surfaceTertiary, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, borderColor: colors.border },
   smallBtnText: { color: colors.onSurfaceSecondary, fontSize: 11, fontWeight: '700' },
+  editBtn: {
+    width: 34, height: 34, borderRadius: 17, backgroundColor: colors.surfaceTertiary,
+    borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center',
+  },
   delBtn: {
     width: 34, height: 34, borderRadius: 17, backgroundColor: colors.error,
     borderColor: colors.onError, borderWidth: 1, alignItems: 'center', justifyContent: 'center',

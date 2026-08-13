@@ -531,15 +531,13 @@ class ReceiveFromKarigarIn(BaseModel):
     # the transaction (and the main ledger entry) so it can be pulled up later
     # from the karigar's ledger without digging through paper.
     slip_photo: Optional[str] = ''
-    # Loss declared during the repair process (filing, polishing, etc.). It
-    # reduces the net metal actually credited back — it is folded directly into
-    # the "received back" ledger entry (net = weight - process_loss) rather than
-    # posted as its own separate ledger line.
+    # Loss declared during the repair process (filing, polishing, etc.) — it's
+    # forgiven back into what's credited (inherent to the work, not the
+    # karigar's fault): karigar_gap = issued - loss - received.
     process_loss: Optional[float] = 0
-    # Wastage the karigar is explicitly charging for (their claim on metal used/
-    # lost doing the work). This DOES reduce what the karigar owes — it's
-    # manually entered by staff based on what the karigar states, then written
-    # off against the karigar's gold balance as its own ledger entry.
+    # Wastage the karigar is explicitly claiming (metal used/lost doing the
+    # work, on their own account). Unlike loss, this is NOT forgiven — it adds
+    # to the outstanding balance: balance (fine g) = (karigar_gap + wastage) x touch%.
     wastage_weight: Optional[float] = 0
     # Touch/purity of the metal actually coming back this time — editable since
     # it can differ from the item's issued purity (mixed lots, karigar's own
@@ -559,8 +557,25 @@ class ReceiveFromKarigarIn(BaseModel):
 
 
 class KarigarTransactionEditIn(BaseModel):
-    weight: float
+    # Issue edits: change which karigar it went to and/or the note. Weight is
+    # never editable here — it always equals the item's gross weight, exactly
+    # as at issue time (same rule as creating an issue).
+    karigar_id: Optional[str] = None
     note: Optional[str] = ''
+    # Receive edits: the same full field set as ReceiveFromKarigarIn, so
+    # correcting a receive re-opens the same full form used to create it
+    # rather than a bare weight box. `weight` is required for a receive edit.
+    weight: Optional[float] = None
+    slip_photo: Optional[str] = ''
+    process_loss: Optional[float] = 0
+    wastage_weight: Optional[float] = 0
+    purity_override: Optional[float] = None
+    labour_amount: Optional[float] = 0
+    pay_cash: Optional[float] = 0
+    pay_metal_weight: Optional[float] = 0
+    pay_metal_value: Optional[float] = 0
+    recv_cash: Optional[float] = 0
+    recv_metal_weight: Optional[float] = 0
 
 
 class DeliverIn(BaseModel):
@@ -2029,13 +2044,20 @@ async def issue_to_karigar(item_id: str, body: IssueToKarigarIn, user=Depends(re
     return await db.repair_items.find_one({'id': item_id}, {'_id': 0})
 
 
-@api.post('/repair-items/{item_id}/receive')
-async def receive_from_karigar(item_id: str, body: ReceiveFromKarigarIn, user=Depends(require_admin_or_module('repairs'))):
-    item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
-    if not item: raise HTTPException(status_code=404, detail='Item not found')
-    if item['status'] != 'with_karigar':
-        raise HTTPException(status_code=400, detail='This item is not currently with a karigar')
-    karigar_id = item['karigar_id']
+def _compute_receive(item: dict, body) -> dict:
+    """Pure math shared by creating a receive and editing one, so the two paths
+    can't drift apart the way they did before.
+
+    karigar_gap = issued - loss - received   (positive = shortfall)
+    balance (fine g) = (karigar_gap + wastage) x touch%
+
+    Loss is forgiven back in (inherent to the work, not the karigar's fault).
+    Wastage the karigar is separately claiming is NOT forgiven — it adds to
+    what they still owe, since it's metal on top of the gap that never came
+    back. The single ledger entry posted for this receive is sized so the
+    ledger-derived balance lands on balance_fine_weight exactly, whatever
+    purity was used at issue vs. now.
+    """
     purity = item.get('purity') or 100.0
     weight_issued = item.get('current_issue_weight') or 0
     fine_issued = item.get('current_issue_fine_weight') or round(weight_issued * purity / 100, 3)
@@ -2044,59 +2066,38 @@ async def receive_from_karigar(item_id: str, body: ReceiveFromKarigarIn, user=De
     # Touch of the metal coming back this time — may differ from what was
     # issued at (mixed lots, karigar's own stated assay), so it's editable.
     recv_purity = body.purity_override if body.purity_override else purity
-    fine_wastage = round(wastage_weight * recv_purity / 100, 3)
-    diff = round(body.weight - weight_issued, 3)
-    # Loss is folded straight into what's actually credited back — metal that
-    # was declared lost during the process was never really "returned", so it
-    # reduces the net weight/fine posted to the ledger rather than needing its
-    # own separate write-off entry.
-    weight_net = round(body.weight - process_loss, 3)
-    fine_weight = round(weight_net * recv_purity / 100, 3)
-    fine_diff = round(fine_weight - fine_issued, 3)
-    # What's left unaccounted for: issued, less what actually came back net of
-    # loss, less the karigar's declared wastage charge. Positive means the
-    # karigar still owes this much fine gold.
-    balance_fine_weight = round(fine_issued - fine_wastage - fine_weight, 3)
-
-    iso = now_utc().isoformat()
-    txn_id = str(uuid.uuid4())
-    challan_no = f"RC-{item['item_code']}-{await db.karigar_transactions.count_documents({'item_id': item_id, 'direction': 'receive'}) + 1}"
-    txn = {
-        'id': txn_id, 'item_id': item_id, 'item_code': item['item_code'], 'karigar_id': karigar_id,
-        'karigar_name': item.get('karigar_name'), 'direction': 'receive', 'weight': body.weight,
-        'weight_net': weight_net, 'recv_purity': recv_purity,
-        'fine_weight': fine_weight, 'weight_diff': diff, 'fine_weight_diff': fine_diff,
-        'process_loss': process_loss, 'wastage_weight': wastage_weight, 'balance_fine_weight': balance_fine_weight,
-        'note': body.note or '', 'slip_photo': body.slip_photo or '', 'challan_no': challan_no, 'created_at': iso,
-        'created_by': user['name'],
+    diff = round(body.weight - weight_issued, 3)  # receive vs issue, gross — the "weight diff" shown around the app
+    karigar_gap = round(weight_issued - process_loss - body.weight, 3)
+    balance_fine_weight = round((karigar_gap + wastage_weight) * recv_purity / 100, 3)
+    entry_fine_weight = round(fine_issued - balance_fine_weight, 3)
+    # Gross-weight equivalent of that same credit, for the running gross-weight
+    # ("gold with karigar") balance — loss is added back in, wastage is not.
+    weight_net = round(body.weight + process_loss - wastage_weight, 3)
+    fine_diff = round(entry_fine_weight - fine_issued, 3)
+    return {
+        'purity': purity, 'weight_issued': weight_issued, 'fine_issued': fine_issued,
+        'process_loss': process_loss, 'wastage_weight': wastage_weight, 'recv_purity': recv_purity,
+        'diff': diff, 'karigar_gap': karigar_gap, 'balance_fine_weight': balance_fine_weight,
+        'entry_fine_weight': entry_fine_weight, 'weight_net': weight_net, 'fine_diff': fine_diff,
     }
-    await db.karigar_transactions.insert_one(dict(txn))
-    # The weight difference itself is always logged as an explicit ledger line —
-    # this is what actually leaves (or clears) a gold balance on the karigar,
-    # on top of the gold_in "goods returned" entry below. Posted net of loss.
-    # The slip photo rides along on this entry too, so the ledger view can show
-    # it without a separate lookup into karigar_transactions.
-    loss_note = f", loss {process_loss:.3f}g" if process_loss else ''
+
+
+async def _post_receive_ledger(karigar_id: str, item: dict, calc: dict, body, txn_id: str, iso: str, user: dict):
+    """Writes every karigar_ledger entry for one receive event: the single
+    'received back' credit (loss forgiveness and wastage are already baked
+    into its fine_weight via _compute_receive) plus whatever on-the-spot
+    settlement staff entered. Shared by create and edit — edit deletes the
+    old entries for this txn first, then calls this to repost fresh ones.
+    """
+    loss_note = f", loss {calc['process_loss']:.3f}g" if calc['process_loss'] else ''
+    wastage_note = f", wastage {calc['wastage_weight']:.3f}g" if calc['wastage_weight'] else ''
     await db.karigar_ledger.insert_one({
-        'id': str(uuid.uuid4()), 'karigar_id': karigar_id, 'type': 'gold_in', 'weight': weight_net,
-        'fine_weight': fine_weight, 'amount': None, 'item_id': item_id, 'item_code': item['item_code'],
+        'id': str(uuid.uuid4()), 'karigar_id': karigar_id, 'type': 'gold_in', 'weight': calc['weight_net'],
+        'fine_weight': calc['entry_fine_weight'], 'amount': None, 'item_id': item['id'], 'item_code': item['item_code'],
         'txn_id': txn_id, 'slip_photo': body.slip_photo or '',
-        'note': f"Received back: {item['description']} (diff {diff:+.3f}g / fine {fine_diff:+.3f}g{loss_note})",
+        'note': f"Received back: {item['description']} (diff {calc['diff']:+.3f}g / fine {calc['fine_diff']:+.3f}g{loss_note}{wastage_note})",
         'created_at': iso, 'created_by': user['name'],
     })
-    # Wastage the karigar explicitly charges for is metal they're claiming as
-    # compensation for the work — it shouldn't sit in their balance as gold they
-    # still owe. Post it as its own gold_in write-off so what's left outstanding
-    # is exactly balance_fine_weight (the genuine, unexplained shortfall/excess).
-    if wastage_weight:
-        await db.karigar_ledger.insert_one({
-            'id': str(uuid.uuid4()), 'karigar_id': karigar_id, 'type': 'gold_in', 'weight': wastage_weight,
-            'fine_weight': fine_wastage, 'amount': None, 'item_id': item_id, 'item_code': item['item_code'],
-            'txn_id': txn_id, 'is_adjustment': True,
-            'note': f"Wastage charged by karigar (accepted): {item['description']}",
-            'created_at': iso, 'created_by': user['name'],
-        })
-
     # Optional on-the-spot settlement of what's owed to the karigar for this job.
     labour_amount = body.labour_amount or 0
     pay_cash = body.pay_cash or 0
@@ -2105,17 +2106,17 @@ async def receive_from_karigar(item_id: str, body: ReceiveFromKarigarIn, user=De
     if labour_amount:
         await db.karigar_ledger.insert_one({
             'id': str(uuid.uuid4()), 'karigar_id': karigar_id, 'type': 'labour_payable', 'weight': None,
-            'amount': labour_amount, 'item_id': item_id, 'item_code': item['item_code'],
+            'amount': labour_amount, 'item_id': item['id'], 'item_code': item['item_code'],
             'txn_id': txn_id, 'note': f"Labour due: {item['description']}",
             'created_at': iso, 'created_by': user['name'],
         })
     if pay_metal_weight:
         # The actual metal handed to the karigar — a real gold_out movement,
         # tracked independently of whatever ₹ value staff estimate for it below.
-        pay_metal_fine = round(pay_metal_weight * purity / 100, 3)
+        pay_metal_fine = round(pay_metal_weight * calc['purity'] / 100, 3)
         await db.karigar_ledger.insert_one({
             'id': str(uuid.uuid4()), 'karigar_id': karigar_id, 'type': 'gold_out', 'weight': pay_metal_weight,
-            'fine_weight': pay_metal_fine, 'amount': None, 'item_id': item_id, 'item_code': item['item_code'],
+            'fine_weight': pay_metal_fine, 'amount': None, 'item_id': item['id'], 'item_code': item['item_code'],
             'txn_id': txn_id, 'note': f"Metal paid on the spot for {item['item_code']}",
             'created_at': iso, 'created_by': user['name'],
         })
@@ -2124,11 +2125,10 @@ async def receive_from_karigar(item_id: str, body: ReceiveFromKarigarIn, user=De
         metal_note = f", incl. {pay_metal_weight:.3f}g metal worth ₹{pay_metal_value:.0f}" if pay_metal_weight else ''
         await db.karigar_ledger.insert_one({
             'id': str(uuid.uuid4()), 'karigar_id': karigar_id, 'type': 'payment', 'weight': None,
-            'amount': paid_total, 'item_id': item_id, 'item_code': item['item_code'],
+            'amount': paid_total, 'item_id': item['id'], 'item_code': item['item_code'],
             'txn_id': txn_id, 'note': f"Paid on the spot for {item['item_code']}{metal_note}",
             'created_at': iso, 'created_by': user['name'],
         })
-
     # ...and the reverse: the karigar settling a shortfall by handing the shop
     # cash and/or extra metal, right here at receive time.
     recv_cash = body.recv_cash or 0
@@ -2136,25 +2136,56 @@ async def receive_from_karigar(item_id: str, body: ReceiveFromKarigarIn, user=De
     if recv_cash:
         await db.karigar_ledger.insert_one({
             'id': str(uuid.uuid4()), 'karigar_id': karigar_id, 'type': 'receipt', 'weight': None,
-            'amount': recv_cash, 'item_id': item_id, 'item_code': item['item_code'],
+            'amount': recv_cash, 'item_id': item['id'], 'item_code': item['item_code'],
             'txn_id': txn_id, 'note': f"Cash received from karigar for {item['item_code']}",
             'created_at': iso, 'created_by': user['name'],
         })
     if recv_metal_weight:
-        recv_metal_fine = round(recv_metal_weight * purity / 100, 3)
+        recv_metal_fine = round(recv_metal_weight * calc['purity'] / 100, 3)
         await db.karigar_ledger.insert_one({
             'id': str(uuid.uuid4()), 'karigar_id': karigar_id, 'type': 'gold_in', 'weight': recv_metal_weight,
-            'fine_weight': recv_metal_fine, 'amount': None, 'item_id': item_id, 'item_code': item['item_code'],
+            'fine_weight': recv_metal_fine, 'amount': None, 'item_id': item['id'], 'item_code': item['item_code'],
             'txn_id': txn_id, 'note': f"Extra metal received from karigar to settle shortfall on {item['item_code']}",
             'created_at': iso, 'created_by': user['name'],
         })
 
+
+@api.post('/repair-items/{item_id}/receive')
+async def receive_from_karigar(item_id: str, body: ReceiveFromKarigarIn, user=Depends(require_admin_or_module('repairs'))):
+    item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
+    if not item: raise HTTPException(status_code=404, detail='Item not found')
+    if item['status'] != 'with_karigar':
+        raise HTTPException(status_code=400, detail='This item is not currently with a karigar')
+    karigar_id = item['karigar_id']
+    calc = _compute_receive(item, body)
+
+    iso = now_utc().isoformat()
+    txn_id = str(uuid.uuid4())
+    challan_no = f"RC-{item['item_code']}-{await db.karigar_transactions.count_documents({'item_id': item_id, 'direction': 'receive'}) + 1}"
+    txn = {
+        'id': txn_id, 'item_id': item_id, 'item_code': item['item_code'], 'karigar_id': karigar_id,
+        'karigar_name': item.get('karigar_name'), 'direction': 'receive', 'weight': body.weight,
+        'weight_net': calc['weight_net'], 'recv_purity': calc['recv_purity'],
+        'fine_weight': calc['entry_fine_weight'], 'weight_diff': calc['diff'], 'fine_weight_diff': calc['fine_diff'],
+        'process_loss': calc['process_loss'], 'wastage_weight': calc['wastage_weight'], 'balance_fine_weight': calc['balance_fine_weight'],
+        'note': body.note or '', 'slip_photo': body.slip_photo or '', 'challan_no': challan_no, 'created_at': iso,
+        'created_by': user['name'],
+        # Raw settlement inputs, kept on the txn itself (not just derived into
+        # ledger entries) so a later edit can re-open this exact same form
+        # pre-filled, instead of guessing them back out of the ledger.
+        'labour_amount': body.labour_amount or 0, 'pay_cash': body.pay_cash or 0,
+        'pay_metal_weight': body.pay_metal_weight or 0, 'pay_metal_value': body.pay_metal_value or 0,
+        'recv_cash': body.recv_cash or 0, 'recv_metal_weight': body.recv_metal_weight or 0,
+    }
+    await db.karigar_transactions.insert_one(dict(txn))
+    await _post_receive_ledger(karigar_id, item, calc, body, txn_id, iso, user)
+
     await db.repair_items.update_one({'id': item_id}, {'$set': {
-        'status': 'ready', 'weight_diff': diff, 'fine_weight_diff': fine_diff,
-        'process_loss': process_loss, 'wastage_weight': wastage_weight, 'recv_purity': recv_purity,
-        'balance_fine_weight': balance_fine_weight, 'updated_by': user['name'],
+        'status': 'ready', 'weight_diff': calc['diff'], 'fine_weight_diff': calc['fine_diff'],
+        'process_loss': calc['process_loss'], 'wastage_weight': calc['wastage_weight'], 'recv_purity': calc['recv_purity'],
+        'balance_fine_weight': calc['balance_fine_weight'], 'updated_by': user['name'],
     }})
-    await log_audit(user, 'repair_item.receive', 'repair_item', item_id, item['item_code'], {'weight_diff': diff, 'fine_weight_diff': fine_diff})
+    await log_audit(user, 'repair_item.receive', 'repair_item', item_id, item['item_code'], {'weight_diff': calc['diff'], 'fine_weight_diff': calc['fine_diff']})
     return await db.repair_items.find_one({'id': item_id}, {'_id': 0})
 
 
@@ -2182,48 +2213,51 @@ async def edit_karigar_transaction(item_id: str, txn_id: str, body: KarigarTrans
     if txn['direction'] == 'receive' and item['status'] != 'ready':
         raise HTTPException(status_code=400, detail='Only the most recent receive can be edited')
 
-    purity = item.get('purity') or 100.0
-    fine_weight = round(body.weight * purity / 100, 3)
     iso = now_utc().isoformat()
 
     if txn['direction'] == 'issue':
+        # Weight is never editable here — it always equals the item's gross
+        # weight. The only things that can actually change are who it went to
+        # and the note.
+        karigar = None
+        if body.karigar_id and body.karigar_id != txn['karigar_id']:
+            karigar = await db.karigars.find_one({'id': body.karigar_id}, {'_id': 0})
+            if not karigar: raise HTTPException(status_code=404, detail='Karigar not found')
+        new_karigar_id = karigar['id'] if karigar else txn['karigar_id']
+        new_karigar_name = karigar['name'] if karigar else txn['karigar_name']
         await db.karigar_transactions.update_one({'id': txn_id}, {'$set': {
-            'weight': body.weight, 'fine_weight': fine_weight, 'note': body.note or '', 'edited_at': iso, 'edited_by': user['name'],
-        }})
-        await db.karigar_ledger.update_many({'txn_id': txn_id}, {'$set': {'weight': body.weight, 'fine_weight': fine_weight}})
-        await db.repair_items.update_one({'id': item_id}, {'$set': {
-            'current_issue_weight': body.weight, 'current_issue_fine_weight': fine_weight, 'updated_by': user['name'],
-        }})
-    else:
-        weight_issued = item.get('current_issue_weight') or 0
-        fine_issued = item.get('current_issue_fine_weight') or round(weight_issued * purity / 100, 3)
-        diff = round(body.weight - weight_issued, 3)
-        # Wastage and the touch/purity used aren't editable through this form,
-        # so keep whatever was declared at receive time and recompute the
-        # outstanding balance against the corrected weight — otherwise
-        # balance_fine_weight goes stale the moment a receive is corrected.
-        # Process loss is folded into the net weight/fine, same as at receive.
-        wastage_weight = item.get('wastage_weight') or 0
-        process_loss = item.get('process_loss') or 0
-        recv_purity = item.get('recv_purity') or purity
-        fine_wastage = round(wastage_weight * recv_purity / 100, 3)
-        weight_net = round(body.weight - process_loss, 3)
-        fine_weight = round(weight_net * recv_purity / 100, 3)
-        fine_diff = round(fine_weight - fine_issued, 3)
-        balance_fine_weight = round(fine_issued - fine_wastage - fine_weight, 3)
-        await db.karigar_transactions.update_one({'id': txn_id}, {'$set': {
-            'weight': body.weight, 'weight_net': weight_net, 'fine_weight': fine_weight,
-            'weight_diff': diff, 'fine_weight_diff': fine_diff, 'balance_fine_weight': balance_fine_weight,
+            'karigar_id': new_karigar_id, 'karigar_name': new_karigar_name,
             'note': body.note or '', 'edited_at': iso, 'edited_by': user['name'],
         }})
-        await db.karigar_ledger.update_many(
-            {'txn_id': txn_id, 'type': 'gold_in', 'is_adjustment': {'$ne': True}},
-            {'$set': {'weight': weight_net, 'fine_weight': fine_weight, 'note': f"Received back: {item['description']} (diff {diff:+.3f}g / fine {fine_diff:+.3f}g)"}},
-        )
+        await db.karigar_ledger.update_many({'txn_id': txn_id}, {'$set': {'karigar_id': new_karigar_id}})
         await db.repair_items.update_one({'id': item_id}, {'$set': {
-            'weight_diff': diff, 'fine_weight_diff': fine_diff, 'balance_fine_weight': balance_fine_weight, 'updated_by': user['name'],
+            'karigar_id': new_karigar_id, 'karigar_name': new_karigar_name, 'updated_by': user['name'],
         }})
-    await log_audit(user, 'repair_item.transaction_edit', 'repair_item', item_id, item['item_code'], {'txn_id': txn_id, 'weight': body.weight})
+    else:
+        if body.weight is None:
+            raise HTTPException(status_code=400, detail='weight is required to correct a receive')
+        # Redo this receive's whole ledger footprint from scratch against the
+        # corrected numbers — the simplest way to guarantee an edit can't drift
+        # out of sync with what a fresh receive_from_karigar call would post.
+        await db.karigar_ledger.delete_many({'txn_id': txn_id})
+        calc = _compute_receive(item, body)
+        await db.karigar_transactions.update_one({'id': txn_id}, {'$set': {
+            'weight': body.weight, 'weight_net': calc['weight_net'], 'recv_purity': calc['recv_purity'],
+            'fine_weight': calc['entry_fine_weight'], 'weight_diff': calc['diff'], 'fine_weight_diff': calc['fine_diff'],
+            'process_loss': calc['process_loss'], 'wastage_weight': calc['wastage_weight'],
+            'balance_fine_weight': calc['balance_fine_weight'], 'slip_photo': body.slip_photo or '',
+            'note': body.note or '', 'edited_at': iso, 'edited_by': user['name'],
+            'labour_amount': body.labour_amount or 0, 'pay_cash': body.pay_cash or 0,
+            'pay_metal_weight': body.pay_metal_weight or 0, 'pay_metal_value': body.pay_metal_value or 0,
+            'recv_cash': body.recv_cash or 0, 'recv_metal_weight': body.recv_metal_weight or 0,
+        }})
+        await _post_receive_ledger(item['karigar_id'], item, calc, body, txn_id, iso, user)
+        await db.repair_items.update_one({'id': item_id}, {'$set': {
+            'weight_diff': calc['diff'], 'fine_weight_diff': calc['fine_diff'],
+            'process_loss': calc['process_loss'], 'wastage_weight': calc['wastage_weight'], 'recv_purity': calc['recv_purity'],
+            'balance_fine_weight': calc['balance_fine_weight'], 'updated_by': user['name'],
+        }})
+    await log_audit(user, 'repair_item.transaction_edit', 'repair_item', item_id, item['item_code'], {'txn_id': txn_id})
     return await db.repair_items.find_one({'id': item_id}, {'_id': 0})
 
 
@@ -2279,6 +2313,31 @@ async def deliver_item(item_id: str, body: DeliverIn, user=Depends(require_admin
         'final_photo': body.final_photo or item.get('final_photo', ''),
     }})
     await log_audit(user, 'repair_item.deliver', 'repair_item', item_id, item['item_code'], {'billed_amount': billed_amount})
+    return await db.repair_items.find_one({'id': item_id}, {'_id': 0})
+
+
+@api.put('/repair-items/{item_id}/bill')
+async def edit_bill(item_id: str, body: DeliverIn, user=Depends(require_admin_or_module_right('repairs', 'edit'))):
+    """Corrects an already-delivered bill in place — same full form as creating
+    one, rather than the old delete-then-recreate dance. Doesn't touch status,
+    delivered_at, or the karigar side of the job; only the bill numbers."""
+    item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
+    if not item: raise HTTPException(status_code=404, detail='Item not found')
+    if item['status'] != 'delivered':
+        raise HTTPException(status_code=400, detail='This tag has not been billed yet')
+    labour = body.labour_charge if body.labour_charge is not None else item.get('bill_labour_charge', 0) or 0
+    material_adj = body.material_adjustment if body.material_adjustment is not None else item.get('bill_material_adjustment', 0) or 0
+    extra = body.extra_charges if body.extra_charges is not None else item.get('bill_extra_charges', 0) or 0
+    prev_balance = body.previous_balance if body.previous_balance is not None else item.get('bill_previous_balance', 0) or 0
+    billed_amount = round(prev_balance + labour + material_adj + extra, 2)
+    await db.repair_items.update_one({'id': item_id}, {'$set': {
+        'bill_labour_charge': labour, 'bill_material_adjustment': material_adj,
+        'bill_extra_charges': extra, 'bill_extra_charges_note': body.extra_charges_note or '',
+        'bill_previous_balance': prev_balance, 'billed_amount': billed_amount,
+        'payment_mode': body.payment_mode, 'delivery_note': body.note or item.get('delivery_note', ''),
+        'final_photo': body.final_photo or item.get('final_photo', ''), 'updated_by': user['name'],
+    }})
+    await log_audit(user, 'repair_item.bill_edit', 'repair_item', item_id, item['item_code'], {'billed_amount': billed_amount})
     return await db.repair_items.find_one({'id': item_id}, {'_id': 0})
 
 

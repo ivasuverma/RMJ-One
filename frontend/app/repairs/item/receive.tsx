@@ -15,6 +15,12 @@ type Item = {
   karigar_id?: string | null;
   current_issue_weight: number | null; current_issue_fine_weight?: number | null; purity?: number;
 };
+type Txn = {
+  id: string; direction: 'issue' | 'receive'; weight: number; note: string; slip_photo?: string;
+  process_loss?: number; wastage_weight?: number; recv_purity?: number;
+  labour_amount?: number; pay_cash?: number; pay_metal_weight?: number; pay_metal_value?: number;
+  recv_cash?: number; recv_metal_weight?: number;
+};
 
 type Mode = 'pick' | 'form' | 'bulk';
 type BulkRow = { weight: string; wastageWeight: string };
@@ -23,7 +29,8 @@ function round3(n: number) { return Math.round(n * 1000) / 1000; }
 const fmtINR = (n: number) => `₹${Math.round(n || 0).toLocaleString('en-IN')}`;
 
 export default function ReceiveFromKarigarScreen() {
-  const { itemId: routeItemId, itemIds: routeItemIds } = useLocalSearchParams<{ itemId: string; itemIds?: string }>();
+  const { itemId: routeItemId, itemIds: routeItemIds, txnId } = useLocalSearchParams<{ itemId: string; itemIds?: string; txnId?: string }>();
+  const isEdit = !!txnId;
   const bulkIds = useMemo(() => (routeItemIds ? routeItemIds.split(',').filter(Boolean) : []), [routeItemIds]);
   const router = useRouter();
   const { colors } = useTheme();
@@ -74,9 +81,26 @@ export default function ReceiveFromKarigarScreen() {
         });
         setMode('bulk');
       } else if (routeItemId) {
-        const res = await api.get<{ item: Item }>(`/repair-items/${routeItemId}`);
+        const res = await api.get<{ item: Item; history: Txn[] }>(`/repair-items/${routeItemId}`);
         setItem(res.item);
-        setRecvPurity(String(res.item.purity ?? 100));
+        if (txnId) {
+          const txn = res.history.find((h) => h.id === txnId);
+          if (txn) {
+            setWeight(String(txn.weight ?? ''));
+            setWastageWeight(txn.wastage_weight ? String(txn.wastage_weight) : '');
+            setProcessLoss(txn.process_loss ? String(txn.process_loss) : '');
+            setRecvPurity(String(txn.recv_purity ?? res.item.purity ?? 100));
+            setNote(txn.note || '');
+            setSlipPhoto(txn.slip_photo || '');
+            setLabourAmount(txn.labour_amount ? String(txn.labour_amount) : '');
+            setPayCash(txn.pay_cash ? String(txn.pay_cash) : '');
+            setPayMetalWeight(txn.pay_metal_weight ? String(txn.pay_metal_weight) : '');
+            setRecvCash(txn.recv_cash ? String(txn.recv_cash) : '');
+            setRecvMetalWeight(txn.recv_metal_weight ? String(txn.recv_metal_weight) : '');
+          }
+        } else {
+          setRecvPurity(String(res.item.purity ?? 100));
+        }
         setMode('form');
         loadBalance(res.item.karigar_id);
       } else {
@@ -85,7 +109,7 @@ export default function ReceiveFromKarigarScreen() {
       }
     } catch (_e) { /* ignore */ }
     finally { setLoading(false); }
-  }, [routeItemId, loadBalance, bulkIds]);
+  }, [routeItemId, loadBalance, bulkIds, txnId]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const resetFormFields = () => {
@@ -133,18 +157,23 @@ export default function ReceiveFromKarigarScreen() {
     const w = parseFloat(weight);
     if (!w || w <= 0) { Alert.alert('Invalid', 'Enter the weight received back'); return; }
     submittingRef.current = true; setBusy(true);
+    const payload = {
+      weight: w, note, slip_photo: slipPhoto,
+      process_loss: parseFloat(processLoss) || 0,
+      wastage_weight: parseFloat(wastageWeight) || 0,
+      purity_override: parseFloat(recvPurity) || undefined,
+      labour_amount: parseFloat(labourAmount) || 0,
+      pay_cash: parseFloat(payCash) || 0,
+      pay_metal_weight: parseFloat(payMetalWeight) || 0,
+      recv_cash: parseFloat(recvCash) || 0,
+      recv_metal_weight: parseFloat(recvMetalWeight) || 0,
+    };
     try {
-      await api.post(`/repair-items/${item.id}/receive`, {
-        weight: w, note, slip_photo: slipPhoto,
-        process_loss: parseFloat(processLoss) || 0,
-        wastage_weight: parseFloat(wastageWeight) || 0,
-        purity_override: parseFloat(recvPurity) || undefined,
-        labour_amount: parseFloat(labourAmount) || 0,
-        pay_cash: parseFloat(payCash) || 0,
-        pay_metal_weight: parseFloat(payMetalWeight) || 0,
-        recv_cash: parseFloat(recvCash) || 0,
-        recv_metal_weight: parseFloat(recvMetalWeight) || 0,
-      });
+      if (isEdit) {
+        await api.put(`/repair-items/${item.id}/transactions/${txnId}`, payload);
+      } else {
+        await api.post(`/repair-items/${item.id}/receive`, payload);
+      }
       router.back();
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
     finally { setBusy(false); submittingRef.current = false; }
@@ -155,7 +184,7 @@ export default function ReceiveFromKarigarScreen() {
     router.back();
   };
 
-  const headerTitle = mode === 'bulk' ? `Receive ${bulkItems.length} Tags` : mode === 'pick' ? 'Select Tag to Receive' : 'Receive from Karigar';
+  const headerTitle = mode === 'bulk' ? `Receive ${bulkItems.length} Tags` : mode === 'pick' ? 'Select Tag to Receive' : isEdit ? 'Edit Receive' : 'Receive from Karigar';
 
   if (loading && ((mode === 'form' && !item) || mode === 'bulk')) {
     return (
@@ -173,19 +202,17 @@ export default function ReceiveFromKarigarScreen() {
 
   const issuePurity = item?.purity ?? 100;
   const issuedWeight = item?.current_issue_weight || 0;
-  const fineIssued = item?.current_issue_fine_weight ?? round3(issuedWeight * issuePurity / 100);
   // Touch of what's coming back this time — editable, defaults to the item's
   // issued purity but can differ (mixed lots, karigar's own stated assay).
   const recvPurityNum = parseFloat(recvPurity) || issuePurity;
   const wastageNum = parseFloat(wastageWeight) || 0;
-  const fineWastage = round3(wastageNum * recvPurityNum / 100);
   const lossNum = parseFloat(processLoss) || 0;
   const weightNum = parseFloat(weight) || 0;
-  // Loss reduces what's actually credited back — it's folded into the net
-  // received weight before converting to fine, not tracked as a separate line.
-  const weightNet = round3(weightNum - lossNum);
-  const fineReceived = round3(weightNet * recvPurityNum / 100);
-  const balanceFine = weight ? round3(fineIssued - fineWastage - fineReceived) : null;
+  // karigar_gap = issued - loss - received (positive = shortfall). Loss is
+  // forgiven back in; wastage the karigar is separately claiming is not — it
+  // adds to what's still owed. balance (fine g) = (gap + wastage) x touch%.
+  const karigarGap = weight ? round3(issuedWeight - lossNum - weightNum) : 0;
+  const balanceFine = weight ? round3((karigarGap + wastageNum) * recvPurityNum / 100) : null;
   const payMetalNum = parseFloat(payMetalWeight) || 0;
   const recvMetalNum = parseFloat(recvMetalWeight) || 0;
   // What's left owed in metal after applying whatever's being paid/received
@@ -398,7 +425,7 @@ export default function ReceiveFromKarigarScreen() {
             )}
 
             <Pressable onPress={submit} disabled={busy} style={[styles.saveBtn, busy && { opacity: 0.6 }]} testID="receive-save-btn">
-              {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.saveBtnText}>Receive</Text>}
+              {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.saveBtnText}>{isEdit ? 'Save Changes' : 'Receive'}</Text>}
             </Pressable>
           </ScrollView>
         </KeyboardAvoidingView>

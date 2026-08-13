@@ -23,6 +23,7 @@ export default function RepairTypesScreen() {
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try { setItems(await api.get<RT[]>('/repair-types')); }
@@ -38,12 +39,26 @@ export default function RepairTypesScreen() {
     submittingRef.current = true;
     setSaving(true);
     try {
-      await api.post('/repair-types', { name: name.trim(), default_labour: parseFloat(labour) || 0, requires_karigar_default: needsKarigar, active: true });
-      setName(''); setLabour(''); setNeedsKarigar(false); await load();
+      if (editingId) {
+        const existing = items.find((rt) => rt.id === editingId);
+        await api.put(`/repair-types/${editingId}`, {
+          name: name.trim(), default_labour: parseFloat(labour) || 0,
+          requires_karigar_default: needsKarigar, active: existing?.active ?? true,
+        });
+      } else {
+        await api.post('/repair-types', { name: name.trim(), default_labour: parseFloat(labour) || 0, requires_karigar_default: needsKarigar, active: true });
+      }
+      setName(''); setLabour(''); setNeedsKarigar(false); setEditingId(null); await load();
       return true;
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); return false; }
     finally { setSaving(false); submittingRef.current = false; }
   };
+
+  const startEdit = (rt: RT) => {
+    setEditingId(rt.id); setName(rt.name); setLabour(String(rt.default_labour || '')); setNeedsKarigar(rt.requires_karigar_default);
+    setShowForm(true);
+  };
+  const closeForm = () => { setShowForm(false); setEditingId(null); setName(''); setLabour(''); setNeedsKarigar(false); };
 
   const toggleActive = async (rt: RT) => {
     try { await api.put(`/repair-types/${rt.id}`, { ...rt, active: !rt.active }); await load(); }
@@ -64,7 +79,7 @@ export default function RepairTypesScreen() {
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
         <Text style={styles.title}>Repair Types</Text>
-        <Pressable onPress={() => setShowForm((v) => !v)} style={[styles.iconBtn, styles.addTopBtn]} testID="show-add-rt-btn" hitSlop={12}>
+        <Pressable onPress={() => (showForm ? closeForm() : setShowForm(true))} style={[styles.iconBtn, styles.addTopBtn]} testID="show-add-rt-btn" hitSlop={12}>
           <Ionicons name={showForm ? 'close' : 'add'} size={22} color={colors.onBrandPrimary} />
         </Pressable>
       </View>
@@ -78,7 +93,7 @@ export default function RepairTypesScreen() {
 
           {showForm && (
             <View style={styles.formCard} testID="add-rt-form">
-              <Text style={styles.section}>Add Repair Type</Text>
+              <Text style={styles.section}>{editingId ? 'Edit Repair Type' : 'Add Repair Type'}</Text>
               <Text style={styles.label}>Name</Text>
               <TextInput testID="rt-name" value={name} onChangeText={setName} placeholder="e.g. Sizing, Polish, Stone Setting" placeholderTextColor={colors.mutedText} style={styles.input} />
               <Text style={styles.label}>Default labour charge (₹)</Text>
@@ -88,7 +103,7 @@ export default function RepairTypesScreen() {
                 <Text style={styles.checkLabel}>Usually needs a karigar</Text>
               </Pressable>
               <Pressable style={[styles.addBtn, saving && { opacity: 0.6 }]} disabled={saving} onPress={async () => { if (await add()) setShowForm(false); }} testID="add-rt-btn">
-                {saving ? <ActivityIndicator color={colors.onBrandPrimary} /> : <><Ionicons name="add" size={16} color={colors.onBrandPrimary} /><Text style={styles.addBtnText}>Add Repair Type</Text></>}
+                {saving ? <ActivityIndicator color={colors.onBrandPrimary} /> : <><Ionicons name={editingId ? 'checkmark' : 'add'} size={16} color={colors.onBrandPrimary} /><Text style={styles.addBtnText}>{editingId ? 'Save Changes' : 'Add Repair Type'}</Text></>}
               </Pressable>
             </View>
           )}
@@ -101,6 +116,9 @@ export default function RepairTypesScreen() {
                 <Text style={styles.cName}>{rt.name}</Text>
                 <Text style={styles.cMeta}>₹{rt.default_labour.toFixed(0)} labour{rt.requires_karigar_default ? ' · needs karigar' : ''}</Text>
               </View>
+              <Pressable onPress={() => startEdit(rt)} style={styles.editBtn} hitSlop={10} testID={`edit-rt-${rt.id}`}>
+                <Ionicons name="pencil-outline" size={15} color={colors.onSurfaceSecondary} />
+              </Pressable>
               <Pressable onPress={() => toggleActive(rt)} style={styles.smallBtn} testID={`toggle-rt-${rt.id}`}>
                 <Text style={styles.smallBtnText}>{rt.active ? 'Pause' : 'Resume'}</Text>
               </Pressable>
@@ -158,6 +176,10 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   cMeta: { color: colors.onSurfaceTertiary, fontSize: 12, marginTop: 2 },
   smallBtn: { backgroundColor: colors.surfaceTertiary, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, borderColor: colors.border },
   smallBtnText: { color: colors.onSurfaceSecondary, fontSize: 11, fontWeight: '700' },
+  editBtn: {
+    width: 34, height: 34, borderRadius: 17, backgroundColor: colors.surfaceTertiary,
+    borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center',
+  },
   delBtn: {
     width: 34, height: 34, borderRadius: 17, backgroundColor: colors.error,
     borderColor: colors.onError, borderWidth: 1, alignItems: 'center', justifyContent: 'center',
