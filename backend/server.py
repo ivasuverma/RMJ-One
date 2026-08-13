@@ -177,6 +177,60 @@ def require_module(key: str):
     return _check
 
 
+# ---------------- Employee-assignable module access (repairs/tasks/approvals) ----------------
+# Everything above (require_admin/require_staff) hard-rejects role == 'employee',
+# because most of the app (payroll, HR, settings) should never be touchable by an
+# employee account no matter what. But an owner can now explicitly hand an employee
+# one of the EMPLOYEE_ASSIGNABLE_MODULES — at that point the employee needs to be
+# able to actually call the endpoints behind it. These three helpers are the employee
+# on-ramp for exactly those modules; every other endpoint in the app is untouched.
+#
+# - require_staff_or_module: read access. Owner/admin/accountant always pass (same
+#   as require_staff always did); an employee passes only if the module is resolved
+#   for them.
+# - require_admin_or_module: the "do the job" actions — creating/advancing records
+#   (issue to karigar, receive from karigar, create a task, etc). Owner/admin always
+#   pass; an employee passes with module access alone, no extra right needed.
+# - require_admin_or_module_right: editing or deleting records that already exist.
+#   Owner/admin always pass; an employee additionally needs module_rights[key][right]
+#   explicitly set True by an owner in User Roles. This is the "if edit or delete
+#   rights are disabled the employee cannot make changes" behavior.
+def require_staff_or_module(key: str):
+    def _check(user=Depends(get_current)):
+        role = user.get('role')
+        if role in ('owner', 'admin', 'accountant'):
+            return user
+        if role == 'employee' and key in resolve_modules(user):
+            return user
+        raise HTTPException(status_code=403, detail=f'No access to "{key}"')
+    return _check
+
+
+def require_admin_or_module(key: str):
+    def _check(user=Depends(get_current)):
+        role = user.get('role')
+        if role in ('owner', 'admin'):
+            return user
+        if role == 'employee' and key in resolve_modules(user):
+            return user
+        raise HTTPException(status_code=403, detail=f'No access to "{key}"')
+    return _check
+
+
+def require_admin_or_module_right(key: str, right: str):
+    def _check(user=Depends(get_current)):
+        role = user.get('role')
+        if role in ('owner', 'admin'):
+            return user
+        if role == 'employee' and key in resolve_modules(user):
+            rights = (user.get('module_rights') or {}).get(key) or {}
+            if rights.get(right):
+                return user
+            raise HTTPException(status_code=403, detail=f'You do not have {right} rights on "{key}"')
+        raise HTTPException(status_code=403, detail=f'No access to "{key}"')
+    return _check
+
+
 # ---------------- Models ----------------
 class LoginIn(BaseModel):
     username: str
@@ -293,6 +347,11 @@ class ModuleAccessUpdateIn(BaseModel):
     # None = "use this account's role default"; [] = "explicitly no modules";
     # a list = "exactly these modules", regardless of role default.
     module_access: Optional[List[str]] = None
+    # Per-module edit/delete rights for employee-assignable modules only, e.g.
+    # {'repairs': {'edit': True, 'delete': False}}. A module with access but no
+    # entry here (or entries left False) means the employee can do the module's
+    # everyday actions but cannot edit or delete existing records.
+    module_rights: Optional[Dict[str, Dict[str, bool]]] = None
 
 
 class ShiftIn(BaseModel):
@@ -693,7 +752,7 @@ async def employee_login(body: EmployeeLoginIn):
             'id': emp['id'], 'username': emp.get('username', uname), 'name': emp['name'], 'role': 'employee',
             'employee_code': code, 'designation': emp.get('designation'),
             'department': emp.get('department'), 'photo': emp.get('photo', ''),
-            'modules': resolve_modules({**emp, 'role': 'employee'}),
+            'modules': resolve_modules({**emp, 'role': 'employee'}), 'module_rights': emp.get('module_rights') or {},
         },
     }
 
@@ -726,7 +785,7 @@ async def login_unified(body: LoginIn):
                 'id': emp['id'], 'username': emp.get('username', uname), 'name': emp['name'], 'role': 'employee',
                 'employee_code': code, 'designation': emp.get('designation'),
                 'department': emp.get('department'), 'photo': emp.get('photo', ''),
-                'modules': resolve_modules({**emp, 'role': 'employee'}),
+                'modules': resolve_modules({**emp, 'role': 'employee'}), 'module_rights': emp.get('module_rights') or {},
             },
         }
     raise HTTPException(status_code=401, detail='Invalid username or password')
@@ -743,7 +802,7 @@ async def me(user=Depends(get_current)):
         'id': user['id'], 'username': user.get('username') or user.get('employee_code'), 'name': user['name'], 'role': 'employee',
         'employee_code': user['employee_code'], 'designation': user.get('designation'),
         'department': user.get('department'), 'photo': user.get('photo', ''),
-        'modules': resolve_modules(user),
+        'modules': resolve_modules(user), 'module_rights': user.get('module_rights') or {},
     }
 
 
@@ -1285,7 +1344,7 @@ async def list_corrections(
 
 
 @api.post('/attendance/corrections/{cid}/decide')
-async def decide_correction(cid: str, body: DecisionIn, user=Depends(require_admin), _mod=Depends(require_module('approvals'))):
+async def decide_correction(cid: str, body: DecisionIn, user=Depends(require_admin_or_module_right('approvals', 'edit'))):
     r = await db.corrections.find_one({'id': cid}, {'_id': 0})
     if not r: raise HTTPException(status_code=404, detail='Correction not found')
     if r['status'] != 'pending': raise HTTPException(status_code=400, detail='Already decided')
@@ -1363,7 +1422,7 @@ async def list_leaves(
 
 
 @api.post('/leaves/{lid}/decide')
-async def decide_leave(lid: str, body: DecisionIn, user=Depends(require_admin), _mod=Depends(require_module('approvals'))):
+async def decide_leave(lid: str, body: DecisionIn, user=Depends(require_admin_or_module_right('approvals', 'edit'))):
     l = await db.leaves.find_one({'id': lid}, {'_id': 0})
     if not l: raise HTTPException(status_code=404, detail='Leave not found')
     if l['status'] != 'pending': raise HTTPException(status_code=400, detail='Already decided')
@@ -1388,7 +1447,7 @@ async def decide_leave(lid: str, body: DecisionIn, user=Depends(require_admin), 
 
 # ---------------- Tasks ----------------
 @api.post('/tasks')
-async def create_task(body: TaskIn, user=Depends(require_admin), _mod=Depends(require_module('tasks'))):
+async def create_task(body: TaskIn, user=Depends(require_admin_or_module('tasks'))):
     emp = await db.employees.find_one({'id': body.assigned_to}, {'_id': 0})
     if not emp: raise HTTPException(status_code=404, detail='Employee not found')
     iso = now_utc().isoformat()
@@ -1429,7 +1488,7 @@ async def get_task(task_id: str, user=Depends(get_current)):
 
 
 @api.put('/tasks/{task_id}')
-async def update_task(task_id: str, body: TaskUpdateIn, user=Depends(require_admin), _mod=Depends(require_module('tasks'))):
+async def update_task(task_id: str, body: TaskUpdateIn, user=Depends(require_admin_or_module_right('tasks', 'edit'))):
     t = await db.tasks.find_one({'id': task_id}, {'_id': 0})
     if not t: raise HTTPException(status_code=404, detail='Task not found')
     upd = {k: v for k, v in body.model_dump().items() if v is not None}
@@ -1446,7 +1505,7 @@ async def update_task(task_id: str, body: TaskUpdateIn, user=Depends(require_adm
 
 
 @api.delete('/tasks/{task_id}')
-async def delete_task(task_id: str, user=Depends(require_admin), _mod=Depends(require_module('tasks'))):
+async def delete_task(task_id: str, user=Depends(require_admin_or_module_right('tasks', 'delete'))):
     t = await db.tasks.find_one({'id': task_id}, {'_id': 0})
     r = await db.tasks.delete_one({'id': task_id})
     if r.deleted_count == 0: raise HTTPException(status_code=404, detail='Task not found')
@@ -1469,7 +1528,7 @@ async def complete_task(task_id: str, user=Depends(get_current)):
 
 
 @api.post('/tasks/{task_id}/reopen')
-async def reopen_task(task_id: str, user=Depends(require_admin), _mod=Depends(require_module('tasks'))):
+async def reopen_task(task_id: str, user=Depends(require_admin_or_module_right('tasks', 'edit'))):
     t = await db.tasks.find_one({'id': task_id}, {'_id': 0})
     if not t: raise HTTPException(status_code=404, detail='Task not found')
     await db.tasks.update_one({'id': task_id}, {'$set': {'status': 'open', 'completed_at': None, 'overdue_notified_at': None}})
@@ -1536,7 +1595,7 @@ async def delete_task_template(template_id: str, user=Depends(require_admin), _m
 
 # ---------------- Repairs: Customers ----------------
 @api.get('/customers')
-async def list_customers(q: Optional[str] = None, _: dict = Depends(require_staff)):
+async def list_customers(q: Optional[str] = None, _: dict = Depends(require_staff_or_module('repairs'))):
     query: dict = {}
     if q:
         query['$or'] = [
@@ -1564,7 +1623,7 @@ async def list_customers(q: Optional[str] = None, _: dict = Depends(require_staf
 
 
 @api.get('/customers/{cid}')
-async def get_customer(cid: str, _: dict = Depends(require_staff)):
+async def get_customer(cid: str, _: dict = Depends(require_staff_or_module('repairs'))):
     c = await db.customers.find_one({'id': cid}, {'_id': 0})
     if not c: raise HTTPException(status_code=404, detail='Customer not found')
     orders = await db.repair_orders.find({'customer_id': cid}, {'_id': 0}).sort('created_at', -1).to_list(200)
@@ -1580,7 +1639,7 @@ async def get_customer(cid: str, _: dict = Depends(require_staff)):
 
 
 @api.post('/customers')
-async def create_customer(body: CustomerIn, user=Depends(require_admin), _mod=Depends(require_module('repairs'))):
+async def create_customer(body: CustomerIn, user=Depends(require_admin_or_module('repairs'))):
     doc = {'id': str(uuid.uuid4()), **body.model_dump(), 'created_at': now_utc().isoformat()}
     await db.customers.insert_one(dict(doc))
     await log_audit(user, 'customer.create', 'customer', doc['id'], body.name)
@@ -1588,7 +1647,7 @@ async def create_customer(body: CustomerIn, user=Depends(require_admin), _mod=De
 
 
 @api.put('/customers/{cid}')
-async def update_customer(cid: str, body: CustomerIn, user=Depends(require_admin), _mod=Depends(require_module('repairs'))):
+async def update_customer(cid: str, body: CustomerIn, user=Depends(require_admin_or_module_right('repairs', 'edit'))):
     if not await db.customers.find_one({'id': cid}):
         raise HTTPException(status_code=404, detail='Customer not found')
     await db.customers.update_one({'id': cid}, {'$set': body.model_dump()})
@@ -1644,7 +1703,7 @@ def _karigar_ledger_balances(entries: list) -> dict:
 
 
 @api.get('/karigars')
-async def list_karigars(_: dict = Depends(require_staff)):
+async def list_karigars(_: dict = Depends(require_staff_or_module('repairs'))):
     karigars = await db.karigars.find({}, {'_id': 0}).sort('name', 1).to_list(500)
     entries = await db.karigar_ledger.find({}, {'_id': 0, 'karigar_id': 1, 'type': 1, 'weight': 1, 'fine_weight': 1, 'amount': 1}).to_list(20000)
     bal = _karigar_ledger_balances(entries)
@@ -1656,7 +1715,7 @@ async def list_karigars(_: dict = Depends(require_staff)):
 
 
 @api.post('/karigars')
-async def create_karigar(body: KarigarIn, user=Depends(require_admin), _mod=Depends(require_module('repairs'))):
+async def create_karigar(body: KarigarIn, user=Depends(require_admin_or_module('repairs'))):
     name = body.name
     if body.is_employee:
         if not body.employee_id:
@@ -1671,7 +1730,7 @@ async def create_karigar(body: KarigarIn, user=Depends(require_admin), _mod=Depe
 
 
 @api.put('/karigars/{kid}')
-async def update_karigar(kid: str, body: KarigarIn, user=Depends(require_admin), _mod=Depends(require_module('repairs'))):
+async def update_karigar(kid: str, body: KarigarIn, user=Depends(require_admin_or_module_right('repairs', 'edit'))):
     if not await db.karigars.find_one({'id': kid}):
         raise HTTPException(status_code=404, detail='Karigar not found')
     await db.karigars.update_one({'id': kid}, {'$set': body.model_dump()})
@@ -1692,7 +1751,7 @@ async def delete_karigar(kid: str, user=Depends(require_owner), _mod=Depends(req
 
 # ---------------- Repairs: Repair Types (master) ----------------
 @api.get('/repair-types')
-async def list_repair_types(_: dict = Depends(require_staff)):
+async def list_repair_types(_: dict = Depends(require_staff_or_module('repairs'))):
     return await db.repair_types.find({}, {'_id': 0}).sort('name', 1).to_list(200)
 
 
@@ -1724,7 +1783,7 @@ async def delete_repair_type(rtid: str, user=Depends(require_owner), _mod=Depend
 
 # ---------------- Repairs: Items Master (name + purity) ----------------
 @api.get('/item-master')
-async def list_item_master(_: dict = Depends(require_staff)):
+async def list_item_master(_: dict = Depends(require_staff_or_module('repairs'))):
     return await db.item_master.find({}, {'_id': 0}).sort('name', 1).to_list(500)
 
 
@@ -1770,7 +1829,7 @@ def _order_status(items: list) -> str:
 
 
 @api.post('/repair-orders')
-async def create_repair_order(body: RepairOrderIn, user=Depends(require_admin), _mod=Depends(require_module('repairs'))):
+async def create_repair_order(body: RepairOrderIn, user=Depends(require_admin_or_module('repairs'))):
     if not body.items:
         raise HTTPException(status_code=400, detail='At least one item is required')
     customer = None
@@ -1824,7 +1883,7 @@ async def create_repair_order(body: RepairOrderIn, user=Depends(require_admin), 
 
 
 @api.get('/repair-orders')
-async def list_repair_orders(status_: Optional[str] = Query(default=None, alias='status'), _: dict = Depends(require_staff)):
+async def list_repair_orders(status_: Optional[str] = Query(default=None, alias='status'), _: dict = Depends(require_staff_or_module('repairs'))):
     orders = await db.repair_orders.find({}, {'_id': 0}).sort('created_at', -1).to_list(1000)
     out = []
     for o in orders:
@@ -1839,7 +1898,7 @@ async def list_repair_orders(status_: Optional[str] = Query(default=None, alias=
 
 
 @api.get('/repair-orders/{order_id}')
-async def get_repair_order(order_id: str, _: dict = Depends(require_staff)):
+async def get_repair_order(order_id: str, _: dict = Depends(require_staff_or_module('repairs'))):
     order = await db.repair_orders.find_one({'id': order_id}, {'_id': 0})
     if not order: raise HTTPException(status_code=404, detail='Order not found')
     items = await db.repair_items.find({'order_id': order_id}, {'_id': 0}).sort('created_at', 1).to_list(200)
@@ -1847,7 +1906,7 @@ async def get_repair_order(order_id: str, _: dict = Depends(require_staff)):
 
 
 @api.get('/repair-orders/{order_id}/slip/pdf')
-async def repair_order_slip_pdf(order_id: str, _: dict = Depends(require_staff)):
+async def repair_order_slip_pdf(order_id: str, _: dict = Depends(require_staff_or_module('repairs'))):
     order = await db.repair_orders.find_one({'id': order_id}, {'_id': 0})
     if not order: raise HTTPException(status_code=404, detail='Order not found')
     items = await db.repair_items.find({'order_id': order_id}, {'_id': 0}).sort('created_at', 1).to_list(200)
@@ -1865,7 +1924,7 @@ async def repair_order_slip_pdf(order_id: str, _: dict = Depends(require_staff))
 async def list_repair_items(
     status_: Optional[str] = Query(default=None, alias='status'),
     q: Optional[str] = None,
-    _: dict = Depends(require_staff),
+    _: dict = Depends(require_staff_or_module('repairs')),
 ):
     query: dict = {}
     if status_ == 'overdue':
@@ -1887,7 +1946,7 @@ async def list_repair_items(
 
 
 @api.get('/repair-items/{item_id}')
-async def get_repair_item(item_id: str, _: dict = Depends(require_staff)):
+async def get_repair_item(item_id: str, _: dict = Depends(require_staff_or_module('repairs'))):
     item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
     if not item: raise HTTPException(status_code=404, detail='Item not found')
     history = await db.karigar_transactions.find({'item_id': item_id}, {'_id': 0}).sort('created_at', 1).to_list(100)
@@ -1895,7 +1954,7 @@ async def get_repair_item(item_id: str, _: dict = Depends(require_staff)):
 
 
 @api.put('/repair-items/{item_id}')
-async def update_repair_item(item_id: str, body: RepairItemUpdateIn, user=Depends(require_admin), _mod=Depends(require_module('repairs'))):
+async def update_repair_item(item_id: str, body: RepairItemUpdateIn, user=Depends(require_admin_or_module_right('repairs', 'edit'))):
     item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
     if not item: raise HTTPException(status_code=404, detail='Item not found')
     upd = {k: v for k, v in body.model_dump().items() if v is not None}
@@ -1919,7 +1978,7 @@ async def update_repair_item(item_id: str, body: RepairItemUpdateIn, user=Depend
 
 
 @api.delete('/repair-items/{item_id}')
-async def delete_repair_item(item_id: str, user=Depends(require_admin), _mod=Depends(require_module('repairs'))):
+async def delete_repair_item(item_id: str, user=Depends(require_admin_or_module_right('repairs', 'delete'))):
     item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
     if not item: raise HTTPException(status_code=404, detail='Item not found')
     if item['status'] != 'received':
@@ -1930,7 +1989,7 @@ async def delete_repair_item(item_id: str, user=Depends(require_admin), _mod=Dep
 
 
 @api.post('/repair-items/{item_id}/issue')
-async def issue_to_karigar(item_id: str, body: IssueToKarigarIn, user=Depends(require_admin), _mod=Depends(require_module('repairs'))):
+async def issue_to_karigar(item_id: str, body: IssueToKarigarIn, user=Depends(require_admin_or_module('repairs'))):
     item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
     if not item: raise HTTPException(status_code=404, detail='Item not found')
     # Once an item has completed a karigar cycle (received back), it cannot be
@@ -1971,7 +2030,7 @@ async def issue_to_karigar(item_id: str, body: IssueToKarigarIn, user=Depends(re
 
 
 @api.post('/repair-items/{item_id}/receive')
-async def receive_from_karigar(item_id: str, body: ReceiveFromKarigarIn, user=Depends(require_admin), _mod=Depends(require_module('repairs'))):
+async def receive_from_karigar(item_id: str, body: ReceiveFromKarigarIn, user=Depends(require_admin_or_module('repairs'))):
     item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
     if not item: raise HTTPException(status_code=404, detail='Item not found')
     if item['status'] != 'with_karigar':
@@ -2100,7 +2159,7 @@ async def receive_from_karigar(item_id: str, body: ReceiveFromKarigarIn, user=De
 
 
 @api.post('/repair-items/{item_id}/ready')
-async def mark_item_ready(item_id: str, user=Depends(require_admin), _mod=Depends(require_module('repairs'))):
+async def mark_item_ready(item_id: str, user=Depends(require_admin_or_module('repairs'))):
     item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
     if not item: raise HTTPException(status_code=404, detail='Item not found')
     if item['status'] != 'received':
@@ -2111,7 +2170,7 @@ async def mark_item_ready(item_id: str, user=Depends(require_admin), _mod=Depend
 
 
 @api.put('/repair-items/{item_id}/transactions/{txn_id}')
-async def edit_karigar_transaction(item_id: str, txn_id: str, body: KarigarTransactionEditIn, user=Depends(require_admin), _mod=Depends(require_module('repairs'))):
+async def edit_karigar_transaction(item_id: str, txn_id: str, body: KarigarTransactionEditIn, user=Depends(require_admin_or_module_right('repairs', 'edit'))):
     item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
     if not item: raise HTTPException(status_code=404, detail='Item not found')
     txn = await db.karigar_transactions.find_one({'id': txn_id, 'item_id': item_id}, {'_id': 0})
@@ -2169,7 +2228,7 @@ async def edit_karigar_transaction(item_id: str, txn_id: str, body: KarigarTrans
 
 
 @api.delete('/repair-items/{item_id}/transactions/{txn_id}')
-async def delete_karigar_transaction(item_id: str, txn_id: str, user=Depends(require_admin), _mod=Depends(require_module('repairs'))):
+async def delete_karigar_transaction(item_id: str, txn_id: str, user=Depends(require_admin_or_module_right('repairs', 'delete'))):
     item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
     if not item: raise HTTPException(status_code=404, detail='Item not found')
     txn = await db.karigar_transactions.find_one({'id': txn_id, 'item_id': item_id}, {'_id': 0})
@@ -2199,7 +2258,7 @@ async def delete_karigar_transaction(item_id: str, txn_id: str, user=Depends(req
 
 
 @api.post('/repair-items/{item_id}/deliver')
-async def deliver_item(item_id: str, body: DeliverIn, user=Depends(require_admin), _mod=Depends(require_module('repairs'))):
+async def deliver_item(item_id: str, body: DeliverIn, user=Depends(require_admin_or_module('repairs'))):
     item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
     if not item: raise HTTPException(status_code=404, detail='Item not found')
     if item['status'] != 'ready':
@@ -2224,7 +2283,7 @@ async def deliver_item(item_id: str, body: DeliverIn, user=Depends(require_admin
 
 
 @api.delete('/repair-items/{item_id}/bill')
-async def delete_bill(item_id: str, user=Depends(require_admin), _mod=Depends(require_module('repairs'))):
+async def delete_bill(item_id: str, user=Depends(require_admin_or_module_right('repairs', 'delete'))):
     # Undoes a bill — puts the tag back to "ready" so it can be re-billed
     # correctly. Does not touch the tag/intake record itself.
     item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
@@ -2243,7 +2302,7 @@ async def delete_bill(item_id: str, user=Depends(require_admin), _mod=Depends(re
 
 
 @api.get('/repair-items/{item_id}/bill/pdf')
-async def repair_item_bill_pdf(item_id: str, _: dict = Depends(require_staff)):
+async def repair_item_bill_pdf(item_id: str, _: dict = Depends(require_staff_or_module('repairs'))):
     item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
     if not item: raise HTTPException(status_code=404, detail='Item not found')
     rows = [
@@ -2263,7 +2322,7 @@ async def repair_item_bill_pdf(item_id: str, _: dict = Depends(require_staff)):
 
 
 @api.get('/repair-items/{item_id}/issue-slip/pdf')
-async def repair_item_issue_slip_pdf(item_id: str, _: dict = Depends(require_staff)):
+async def repair_item_issue_slip_pdf(item_id: str, _: dict = Depends(require_staff_or_module('repairs'))):
     """Narrow thermal-printer-friendly challan for the item's current (or most
     recent) karigar issue — separate from the A4 intake slip."""
     item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
@@ -2292,7 +2351,7 @@ async def repair_item_issue_slip_pdf(item_id: str, _: dict = Depends(require_sta
 
 # ---------------- Repairs: Karigar Ledger ----------------
 @api.get('/karigars/{kid}/ledger')
-async def get_karigar_ledger(kid: str, _: dict = Depends(require_staff)):
+async def get_karigar_ledger(kid: str, _: dict = Depends(require_staff_or_module('repairs'))):
     karigar = await db.karigars.find_one({'id': kid}, {'_id': 0})
     if not karigar: raise HTTPException(status_code=404, detail='Karigar not found')
     entries = await db.karigar_ledger.find({'karigar_id': kid}, {'_id': 0}).sort('created_at', -1).to_list(1000)
@@ -2305,7 +2364,7 @@ async def get_karigar_ledger(kid: str, _: dict = Depends(require_staff)):
 
 
 @api.post('/karigars/{kid}/ledger')
-async def add_karigar_ledger_entry(kid: str, body: KarigarLedgerEntryIn, user=Depends(require_admin), _mod=Depends(require_module('repairs'))):
+async def add_karigar_ledger_entry(kid: str, body: KarigarLedgerEntryIn, user=Depends(require_admin_or_module('repairs'))):
     karigar = await db.karigars.find_one({'id': kid}, {'_id': 0})
     if not karigar: raise HTTPException(status_code=404, detail='Karigar not found')
     if body.type in ('gold_out', 'gold_in'):
@@ -2335,7 +2394,7 @@ async def add_karigar_ledger_entry(kid: str, body: KarigarLedgerEntryIn, user=De
 
 
 @api.delete('/karigars/{kid}/ledger/{entry_id}')
-async def delete_karigar_ledger_entry(kid: str, entry_id: str, user=Depends(require_admin), _mod=Depends(require_module('repairs'))):
+async def delete_karigar_ledger_entry(kid: str, entry_id: str, user=Depends(require_admin_or_module_right('repairs', 'delete'))):
     entry = await db.karigar_ledger.find_one({'id': entry_id, 'karigar_id': kid}, {'_id': 0})
     if not entry: raise HTTPException(status_code=404, detail='Ledger entry not found')
     if entry.get('item_id'):
@@ -2508,7 +2567,7 @@ async def update_my_account(body: SelfAccountUpdateIn, user=Depends(get_current)
             'id': updated['id'], 'username': updated.get('username'), 'name': updated['name'], 'role': 'employee',
             'employee_code': updated.get('employee_code'), 'designation': updated.get('designation'),
             'department': updated.get('department'), 'photo': updated.get('photo', ''),
-            'modules': resolve_modules({**updated, 'role': 'employee'}),
+            'modules': resolve_modules({**updated, 'role': 'employee'}), 'module_rights': updated.get('module_rights') or {},
         }
     else:
         tok = create_token({'sub': updated['id'], 'role': updated.get('role', 'owner'), 'username': updated['username']})
@@ -2551,7 +2610,7 @@ async def list_access_accounts(_: dict = Depends(require_owner), _mod=Depends(re
         out.append({
             'id': e['id'], 'name': e['name'], 'username': e.get('username'), 'role': 'employee',
             'account_type': 'employee', 'designation': e.get('designation'), 'status': e.get('status'),
-            'module_access': e.get('module_access'),
+            'module_access': e.get('module_access'), 'module_rights': e.get('module_rights') or {},
             'resolved_modules': resolve_modules({'role': 'employee', 'module_access': e.get('module_access')}),
         })
     return out
@@ -2562,6 +2621,9 @@ async def update_access(account_id: str, body: ModuleAccessUpdateIn, user=Depend
     bad = set(body.module_access or []) - MODULE_KEYS
     if bad:
         raise HTTPException(status_code=400, detail=f'Unknown module(s): {", ".join(sorted(bad))}')
+    bad_rights = set((body.module_rights or {}).keys()) - EMPLOYEE_ASSIGNABLE_MODULES
+    if bad_rights:
+        raise HTTPException(status_code=400, detail=f'Not an employee-assignable module: {", ".join(sorted(bad_rights))}')
     u = await db.users.find_one({'id': account_id}, {'_id': 0})
     if u:
         if u.get('role') == 'owner':
@@ -2571,8 +2633,10 @@ async def update_access(account_id: str, body: ModuleAccessUpdateIn, user=Depend
         return {'ok': True}
     e = await db.employees.find_one({'id': account_id}, {'_id': 0})
     if e:
-        await db.employees.update_one({'id': account_id}, {'$set': {'module_access': body.module_access}})
-        await log_audit(user, 'access.update', 'employee', account_id, e.get('name', ''), {'module_access': body.module_access})
+        await db.employees.update_one({'id': account_id}, {'$set': {
+            'module_access': body.module_access, 'module_rights': body.module_rights or {},
+        }})
+        await log_audit(user, 'access.update', 'employee', account_id, e.get('name', ''), {'module_access': body.module_access, 'module_rights': body.module_rights})
         return {'ok': True}
     raise HTTPException(status_code=404, detail='Account not found')
 

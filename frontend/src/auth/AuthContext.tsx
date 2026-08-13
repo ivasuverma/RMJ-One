@@ -11,6 +11,10 @@ export type User = {
   department?: string;
   photo?: string;
   modules?: string[];
+  // Employee-only: per-module edit/delete rights on the modules an owner has
+  // assigned them (repairs/tasks/approvals). Owner/admin/accountant accounts
+  // don't carry this — they're never subject to it.
+  module_rights?: Record<string, { edit?: boolean; delete?: boolean }>;
 };
 
 type AuthState = {
@@ -23,6 +27,7 @@ type AuthState = {
   refresh: () => Promise<void>;
   updateMyAccount: (currentPassword: string, newUsername?: string, newPassword?: string, newName?: string) => Promise<void>;
   hasModule: (key: string) => boolean;
+  hasRight: (key: string, right: 'edit' | 'delete') => boolean;
 };
 
 const AuthCtx = createContext<AuthState>({} as AuthState);
@@ -94,9 +99,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const hasModule = useCallback((key: string) => !!user?.modules?.includes(key), [user]);
+  // Owner/admin/accountant have no module_rights concept — the backend never
+  // gates them on it, so treat them as always-rights-on here too. For an
+  // employee, edit/delete must be explicitly granted per module.
+  const hasRight = useCallback((key: string, right: 'edit' | 'delete') => {
+    if (!user) return false;
+    if (user.role !== 'employee') return true;
+    return !!user.module_rights?.[key]?.[right];
+  }, [user]);
 
   return (
-    <AuthCtx.Provider value={{ user, loading, login, loginOwner, loginEmployee, logout, refresh, updateMyAccount, hasModule }}>
+    <AuthCtx.Provider value={{ user, loading, login, loginOwner, loginEmployee, logout, refresh, updateMyAccount, hasModule, hasRight }}>
       {children}
     </AuthCtx.Provider>
   );

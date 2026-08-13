@@ -24,6 +24,13 @@ export default function EmployeeTabsLayout() {
     );
   }
 
+  // Calendar moved to a Home tile — it no longer needs its own tab. Transactions
+  // takes its place, but only for an employee an owner has actually assigned one
+  // of the employee-assignable modules to (repairs/tasks/approvals); otherwise
+  // there's nothing behind that tab, so it stays hidden like Leaves.
+  const EMPLOYEE_TRANSACTION_MODULES = ['repairs', 'tasks', 'approvals'];
+  const hasTransactionsAccess = (user.modules || []).some((m) => EMPLOYEE_TRANSACTION_MODULES.includes(m));
+
   return (
     <Tabs
       screenOptions={{
@@ -43,11 +50,19 @@ export default function EmployeeTabsLayout() {
       />
       <Tabs.Screen
         name="calendar"
-        options={{ title: 'Calendar', tabBarIcon: ({ color, size }) => <Ionicons name="calendar-outline" color={color} size={size} /> }}
+        options={{ href: null }}
       />
       <Tabs.Screen
         name="leaves"
         options={{ href: null }}
+      />
+      <Tabs.Screen
+        name="transactions"
+        options={{
+          title: 'Transactions',
+          href: hasTransactionsAccess ? undefined : null,
+          tabBarIcon: ({ color, size }) => <Ionicons name="swap-horizontal-outline" color={color} size={size} />,
+        }}
       />
       <Tabs.Screen
         name="tasks"

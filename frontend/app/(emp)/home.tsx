@@ -181,6 +181,7 @@ export default function EmployeeHome() {
             {/* Quick actions */}
             <Text style={styles.section}>Quick actions</Text>
             <View style={styles.actionsRow}>
+              <ActionCard icon="calendar-outline" label="Calendar" onPress={() => router.push('/(emp)/calendar' as any)} testID="action-calendar" />
               <ActionCard icon="airplane-outline" label="Leaves" onPress={() => router.push('/leaves')} testID="action-leave" />
               <ActionCard icon="book-outline" label="My Ledger" onPress={() => router.push(`/ledger/${user?.id}`)} testID="action-ledger" />
             </View>
