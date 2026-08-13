@@ -533,11 +533,11 @@ class ReceiveFromKarigarIn(BaseModel):
     slip_photo: Optional[str] = ''
     # Loss declared during the repair process (filing, polishing, etc.) — it's
     # forgiven back into what's credited (inherent to the work, not the
-    # karigar's fault): karigar_gap = issued - loss - wastage - received.
+    # karigar's fault): new_wt = issued - loss - received.
     process_loss: Optional[float] = 0
-    # Wastage the karigar charges for doing the repair (metal kept as their
-    # fee) — forgiven the same way loss is, since it's in the karigar's
-    # favor, not a shortfall they owe back: balance (fine g) = karigar_gap x touch%.
+    # Wastage the karigar is explicitly claiming (metal used/lost doing the
+    # work, on their own account). Unlike loss, this is NOT forgiven — it adds
+    # to the outstanding balance: karigar_gap = new_wt + wastage; balance (fine g) = karigar_gap x touch%.
     wastage_weight: Optional[float] = 0
     # Touch/purity of the metal actually coming back this time — editable since
     # it can differ from the item's issued purity (mixed lots, karigar's own
@@ -2048,15 +2048,16 @@ def _compute_receive(item: dict, body) -> dict:
     """Pure math shared by creating a receive and editing one, so the two paths
     can't drift apart the way they did before.
 
-    karigar_gap = issued - loss - wastage - received   (positive = shortfall)
+    new_wt = issued - loss - received   (positive = weight decreased, i.e. shortfall)
+    karigar_gap = new_wt + wastage
     balance (fine g) = karigar_gap x touch%
 
-    Loss and wastage are both forgiven back in — wastage is a charge the
-    karigar makes for doing the repair (metal that legitimately never comes
-    back, in their favor), so it reduces what they still owe rather than
-    adding to it, same as loss. The single ledger entry posted for this
-    receive is sized so the ledger-derived balance lands on
-    balance_fine_weight exactly, whatever purity was used at issue vs. now.
+    Loss is forgiven back in (inherent to the work, not the karigar's fault).
+    Wastage is NOT forgiven — it's the karigar's own charge for doing the
+    repair, on top of the gap, so it adds to what they still owe rather than
+    reducing it. The single ledger entry posted for this receive is sized so
+    the ledger-derived balance lands on balance_fine_weight exactly, whatever
+    purity was used at issue vs. now.
     """
     purity = item.get('purity') or 100.0
     weight_issued = item.get('current_issue_weight') or 0
@@ -2067,13 +2068,14 @@ def _compute_receive(item: dict, body) -> dict:
     # issued at (mixed lots, karigar's own stated assay), so it's editable.
     recv_purity = body.purity_override if body.purity_override else purity
     diff = round(body.weight - weight_issued, 3)  # receive vs issue, gross — the "weight diff" shown around the app
-    karigar_gap = round(weight_issued - process_loss - wastage_weight - body.weight, 3)
+    new_wt = round(weight_issued - process_loss - body.weight, 3)
+    karigar_gap = round(new_wt + wastage_weight, 3)
     balance_fine_weight = round(karigar_gap * recv_purity / 100, 3)
     entry_fine_weight = round(fine_issued - balance_fine_weight, 3)
     # Gross-weight equivalent of that same credit, for the running gross-weight
-    # ("gold with karigar") balance — both loss and wastage are forgiven, so
-    # neither is expected back; only what was actually received counts.
-    weight_net = round(body.weight + process_loss + wastage_weight, 3)
+    # ("gold with karigar") balance — loss is added back in (forgiven),
+    # wastage is not (it's on top of what's still owed).
+    weight_net = round(body.weight + process_loss - wastage_weight, 3)
     fine_diff = round(entry_fine_weight - fine_issued, 3)
     return {
         'purity': purity, 'weight_issued': weight_issued, 'fine_issued': fine_issued,

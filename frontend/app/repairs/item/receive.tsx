@@ -210,11 +210,11 @@ export default function ReceiveFromKarigarScreen() {
   const weightNum = parseFloat(weight) || 0;
   // new_wt = issued - loss - received — positive means less came back than
   // expected once loss is forgiven, i.e. weight decreased, i.e. karigar owes.
-  // diff_wt = new_wt - wastage — wastage is the karigar's own charge for the
-  // work (in their favor), so it's forgiven the same way loss is, reducing
-  // the gap rather than adding to it. balance (fine g) = diff_wt x touch%.
+  // diff_wt = new_wt + wastage — wastage is the karigar's own charge for the
+  // work, on top of the gap, so it adds to what they owe rather than
+  // reducing it. balance (fine g) = diff_wt x touch%.
   const newWt = round3(issuedWeight - lossNum - weightNum);
-  const diffWt = weight ? round3(newWt - wastageNum) : 0;
+  const diffWt = weight ? round3(newWt + wastageNum) : 0;
   const balanceFine = weight ? round3(diffWt * recvPurityNum / 100) : null;
   const payMetalNum = parseFloat(payMetalWeight) || 0;
   const recvMetalNum = parseFloat(recvMetalWeight) || 0;
@@ -327,9 +327,8 @@ export default function ReceiveFromKarigarScreen() {
               </View>
             </View>
 
-            {/* New Wt + Wastage = Diff (wastage is still forgiven under the hood —
-                subtracted when computing Diff — this "+" only matches the sketch's
-                label; see the calc block above for the actual arithmetic) */}
+            {/* New Wt + Wastage = Diff — wastage is not forgiven, it adds on
+                top of the gap (the karigar's own charge for the work). */}
             <View style={[styles.formulaRow, { marginTop: 6 }]} testID="receive-total-row">
               <View style={styles.fieldColFlex}>
                 <Text style={styles.label}>New Wt (g)</Text>
@@ -354,7 +353,7 @@ export default function ReceiveFromKarigarScreen() {
                 </View>
               </View>
             </View>
-            <Text style={styles.hint}>Positive Diff = weight decreased, karigar owes. Loss and wastage are both forgiven — neither adds to what's owed.</Text>
+            <Text style={styles.hint}>Positive Diff = weight decreased, karigar owes. Loss is forgiven; wastage is not — it adds to what's owed.</Text>
 
             <View style={[styles.fieldGrid, { marginTop: 10 }]}>
               <View style={styles.fieldCol}>
