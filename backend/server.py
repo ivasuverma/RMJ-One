@@ -8,7 +8,7 @@ import logging
 import math
 from pathlib import Path
 from pydantic import BaseModel
-from typing import List, Optional, Literal
+from typing import List, Optional, Literal, Dict
 import uuid
 from datetime import datetime, timedelta, timezone, date
 import bcrypt
@@ -133,7 +133,7 @@ MODULE_DEFS = [
     {'key': 'attendance', 'label': 'Attendance', 'default_roles': ['owner', 'admin']},
     {'key': 'team', 'label': 'Team', 'default_roles': ['owner', 'admin']},
     {'key': 'payroll', 'label': 'Payroll', 'default_roles': ['owner', 'admin', 'accountant']},
-    {'key': 'approvals', 'label': 'Approvals', 'default_roles': ['owner', 'admin']},
+    {'key': 'approvals', 'label': 'Approvals', 'default_roles': ['owner', 'admin'], 'employee_assignable': True},
     {'key': 'reports', 'label': 'Reports', 'default_roles': ['owner', 'admin', 'accountant']},
     {'key': 'biometric', 'label': 'Biometric Devices', 'default_roles': ['owner']},
     {'key': 'audit', 'label': 'Audit Log', 'default_roles': ['owner']},
@@ -142,11 +142,15 @@ MODULE_DEFS = [
     {'key': 'holidays', 'label': 'Holidays', 'default_roles': ['owner']},
     {'key': 'store_settings', 'label': 'Store Settings', 'default_roles': ['owner']},
     {'key': 'users', 'label': 'Staff Accounts', 'default_roles': ['owner']},
-    {'key': 'tasks', 'label': 'Tasks', 'default_roles': ['owner', 'admin']},
-    {'key': 'repairs', 'label': 'Gold & Diamond Repairs', 'default_roles': ['owner', 'admin']},
+    {'key': 'tasks', 'label': 'Tasks', 'default_roles': ['owner', 'admin'], 'employee_assignable': True},
+    {'key': 'repairs', 'label': 'Gold & Diamond Repairs', 'default_roles': ['owner', 'admin'], 'employee_assignable': True},
 ]
 MODULE_KEYS = {m['key'] for m in MODULE_DEFS}
 MODULE_DEFAULT_ROLES = {m['key']: set(m['default_roles']) for m in MODULE_DEFS}
+# The subset of modules that can be handed to an employee account (as opposed to
+# only owner/admin/accountant staff accounts) — these are the ones whose screens
+# live outside the owner-only tab shell and are actually reachable by employees.
+EMPLOYEE_ASSIGNABLE_MODULES = {m['key'] for m in MODULE_DEFS if m.get('employee_assignable')}
 
 
 def _default_modules_for_role(role: str) -> list:
@@ -464,6 +468,10 @@ class IssueToKarigarIn(BaseModel):
 class ReceiveFromKarigarIn(BaseModel):
     weight: float
     note: Optional[str] = ''
+    # Photo of the karigar's physical slip/voucher for this receive — kept on
+    # the transaction (and the main ledger entry) so it can be pulled up later
+    # from the karigar's ledger without digging through paper.
+    slip_photo: Optional[str] = ''
     # Loss declared during the repair process (filing, polishing, etc.). It
     # reduces the net metal actually credited back — it is folded directly into
     # the "received back" ledger entry (net = weight - process_loss) rather than
@@ -2000,18 +2008,21 @@ async def receive_from_karigar(item_id: str, body: ReceiveFromKarigarIn, user=De
         'weight_net': weight_net, 'recv_purity': recv_purity,
         'fine_weight': fine_weight, 'weight_diff': diff, 'fine_weight_diff': fine_diff,
         'process_loss': process_loss, 'wastage_weight': wastage_weight, 'balance_fine_weight': balance_fine_weight,
-        'note': body.note or '', 'challan_no': challan_no, 'created_at': iso,
+        'note': body.note or '', 'slip_photo': body.slip_photo or '', 'challan_no': challan_no, 'created_at': iso,
         'created_by': user['name'],
     }
     await db.karigar_transactions.insert_one(dict(txn))
     # The weight difference itself is always logged as an explicit ledger line —
     # this is what actually leaves (or clears) a gold balance on the karigar,
     # on top of the gold_in "goods returned" entry below. Posted net of loss.
+    # The slip photo rides along on this entry too, so the ledger view can show
+    # it without a separate lookup into karigar_transactions.
     loss_note = f", loss {process_loss:.3f}g" if process_loss else ''
     await db.karigar_ledger.insert_one({
         'id': str(uuid.uuid4()), 'karigar_id': karigar_id, 'type': 'gold_in', 'weight': weight_net,
         'fine_weight': fine_weight, 'amount': None, 'item_id': item_id, 'item_code': item['item_code'],
-        'txn_id': txn_id, 'note': f"Received back: {item['description']} (diff {diff:+.3f}g / fine {fine_diff:+.3f}g{loss_note})",
+        'txn_id': txn_id, 'slip_photo': body.slip_photo or '',
+        'note': f"Received back: {item['description']} (diff {diff:+.3f}g / fine {fine_diff:+.3f}g{loss_note})",
         'created_at': iso, 'created_by': user['name'],
     })
     # Wastage the karigar explicitly charges for is metal they're claiming as

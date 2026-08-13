@@ -8,7 +8,6 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { api, TOKEN_KEY } from '@/src/api/client';
 import { storage } from '@/src/utils/storage';
 import { confirmAction } from '@/src/utils/confirm';
-import { PhotoCaptureModal } from '@/src/components/PhotoCaptureModal';
 import { DateField } from '@/src/components/DateField';
 import { REPAIR_STATUS_LABEL, repairStatusColors, RepairItemStatus } from '@/src/utils/repairStatus';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
@@ -55,7 +54,7 @@ export default function RepairItemDetailScreen() {
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   // Which inline form is open
-  const [form, setForm] = useState<null | 'deliver' | 'edit'>(null);
+  const [form, setForm] = useState<null | 'edit'>(null);
 
   // Edit repair
   const [editDescription, setEditDescription] = useState('');
@@ -66,31 +65,12 @@ export default function RepairItemDetailScreen() {
   const [editDueDate, setEditDueDate] = useState('');
   const [editNotes, setEditNotes] = useState('');
 
-  // Bill / Deliver
-  const [billLabour, setBillLabour] = useState('');
-  const [billMaterial, setBillMaterial] = useState('');
-  const [billExtra, setBillExtra] = useState('');
-  const [billExtraNote, setBillExtraNote] = useState('');
-  const [paymentMode, setPaymentMode] = useState('cash');
-  const [finalPhoto, setFinalPhoto] = useState('');
-  const [cameraOpen, setCameraOpen] = useState(false);
-
   // Transaction edit
   const [editingTxnId, setEditingTxnId] = useState<string | null>(null);
   const [editWeight, setEditWeight] = useState('');
   const [editNote, setEditNote] = useState('');
 
-  const resetForms = () => {
-    setForm(null);
-    setBillLabour(''); setBillMaterial(''); setBillExtra(''); setBillExtraNote(''); setPaymentMode('cash'); setFinalPhoto('');
-  };
-
-  const openDeliverForm = () => {
-    if (!item) return;
-    setBillLabour(String(item.labour_charge || 0));
-    setBillMaterial(String(item.customer_adjustment || 0));
-    setForm(form === 'deliver' ? null : 'deliver');
-  };
+  const resetForms = () => { setForm(null); };
 
   const openEditForm = () => {
     if (!item) return;
@@ -146,23 +126,6 @@ export default function RepairItemDetailScreen() {
         } catch (e: any) { Alert.alert('Failed', e?.detail || 'Could not delete this tag.'); }
       },
     );
-  };
-
-  const billTotal = (parseFloat(billLabour) || 0) + (parseFloat(billMaterial) || 0) + (parseFloat(billExtra) || 0);
-
-  const doDeliver = async () => {
-    if (submittingRef.current || !item) return;
-    if (billTotal <= 0) { Alert.alert('Invalid', 'The billed total must be greater than 0'); return; }
-    submittingRef.current = true; setBusy(true);
-    try {
-      await api.post(`/repair-items/${id}/deliver`, {
-        labour_charge: parseFloat(billLabour) || 0, material_adjustment: parseFloat(billMaterial) || 0,
-        extra_charges: parseFloat(billExtra) || 0, extra_charges_note: billExtraNote,
-        payment_mode: paymentMode, note: '', final_photo: finalPhoto,
-      });
-      resetForms(); await load();
-    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
-    finally { setBusy(false); submittingRef.current = false; }
   };
 
   const startEditTxn = (t: Txn) => { setEditingTxnId(t.id); setEditWeight(String(t.weight)); setEditNote(t.note || ''); };
@@ -335,7 +298,7 @@ export default function RepairItemDetailScreen() {
           )}
           {item.status === 'ready' && (
             <View style={styles.actionsRow}>
-              <Pressable onPress={openDeliverForm} style={[styles.actionBtn, styles.actionBtnPrimary, { flex: 1 }]} testID="show-deliver-form">
+              <Pressable onPress={() => router.push({ pathname: '/repairs/bill', params: { itemId: id } } as any)} style={[styles.actionBtn, styles.actionBtnPrimary, { flex: 1 }]} testID="show-deliver-form">
                 <Ionicons name="cart-outline" size={16} color={colors.onBrandPrimary} /><Text style={styles.actionBtnPrimaryText}>Bill Repair</Text>
               </Pressable>
             </View>
@@ -351,56 +314,6 @@ export default function RepairItemDetailScreen() {
             <Pressable onPress={() => printPdf('bill')} disabled={printing} style={[styles.actionBtn, styles.actionBtnPrimary, { marginBottom: spacing.lg }]} testID="view-bill-btn">
               {printing ? <ActivityIndicator color={colors.onBrandPrimary} /> : <><Ionicons name="print-outline" size={16} color={colors.onBrandPrimary} /><Text style={styles.actionBtnPrimaryText}>View Repair Bill</Text></>}
             </Pressable>
-          )}
-
-          {form === 'deliver' && (
-            <View style={styles.formCard} testID="deliver-form">
-              <Text style={styles.section}>Bill Repair</Text>
-              <Text style={styles.label}>Labour Charge (₹)</Text>
-              <TextInput testID="deliver-labour" value={billLabour} onChangeText={(v) => setBillLabour(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />
-              <Text style={styles.label}>Material / Wastage Adjustment (₹)</Text>
-              <TextInput testID="deliver-material" value={billMaterial} onChangeText={(v) => setBillMaterial(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />
-              <Text style={styles.label}>Extra Charges (₹)</Text>
-              <TextInput testID="deliver-extra" value={billExtra} onChangeText={(v) => setBillExtra(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />
-              {(parseFloat(billExtra) || 0) > 0 && (
-                <TextInput testID="deliver-extra-note" value={billExtraNote} onChangeText={setBillExtraNote} placeholder="What's this extra charge for?" placeholderTextColor={colors.mutedText} style={styles.input} />
-              )}
-              <View style={styles.totalRow} testID="deliver-total">
-                <Text style={styles.totalLabel}>Total</Text>
-                <Text style={styles.totalValue}>₹{billTotal.toFixed(0)}</Text>
-              </View>
-
-              <Text style={styles.label}>Payment mode</Text>
-              <View style={styles.chipRow}>
-                {(['cash', 'upi', 'card'] as const).map((m) => (
-                  <Pressable key={m} onPress={() => setPaymentMode(m)} style={[styles.chip, paymentMode === m && styles.chipActive]} testID={`payment-${m}`}>
-                    <Text style={[styles.chipText, paymentMode === m && styles.chipTextActive]}>{m.toUpperCase()}</Text>
-                  </Pressable>
-                ))}
-              </View>
-
-              <Text style={styles.label}>Final Photo (optional)</Text>
-              {finalPhoto ? (
-                <View style={styles.photoRow}>
-                  <Image source={{ uri: finalPhoto }} style={styles.photoThumb} />
-                  <Pressable onPress={() => setCameraOpen(true)} style={styles.smallBtn} testID="deliver-retake-photo">
-                    <Text style={styles.smallBtnText}>Retake</Text>
-                  </Pressable>
-                  <Pressable onPress={() => setFinalPhoto('')} style={styles.delBtn} hitSlop={10} testID="deliver-remove-photo">
-                    <Ionicons name="close" size={16} color={colors.onError} />
-                  </Pressable>
-                </View>
-              ) : (
-                <Pressable onPress={() => setCameraOpen(true)} style={styles.photoBtn} testID="deliver-add-photo">
-                  <Ionicons name="camera-outline" size={16} color={colors.onSurfaceSecondary} />
-                  <Text style={styles.actionBtnText}>Add Photo</Text>
-                </Pressable>
-              )}
-
-              <Pressable onPress={doDeliver} disabled={busy} style={[styles.saveBtn, busy && { opacity: 0.6 }]} testID="deliver-save-btn">
-                {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.saveBtnText}>Deliver & Bill</Text>}
-              </Pressable>
-            </View>
           )}
 
           <Text style={styles.section}>Tag History · {history.length}</Text>
@@ -454,13 +367,6 @@ export default function RepairItemDetailScreen() {
           })}
         </ScrollView>
       </KeyboardAvoidingView>
-
-      <PhotoCaptureModal
-        visible={cameraOpen}
-        title="Final Photo"
-        onClose={() => setCameraOpen(false)}
-        onCapture={async (photo) => { setFinalPhoto(photo); setCameraOpen(false); }}
-      />
     </SafeAreaView>
   );
 }

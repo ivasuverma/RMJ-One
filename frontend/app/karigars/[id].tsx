@@ -1,6 +1,6 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Alert,
+  View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Alert, Image, Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,7 +13,12 @@ import { useTheme } from '@/src/theme/ThemeContext';
 type Karigar = { id: string; name: string; mobile: string; is_employee: boolean };
 type Entry = {
   id: string; type: 'gold_out' | 'gold_in' | 'wastage' | 'adjustment' | 'labour_payable' | 'payment' | 'receipt';
-  weight: number | null; amount: number | null; item_id?: string | null; item_code: string | null; note: string; created_at: string; created_by: string;
+  weight: number | null; fine_weight?: number | null; amount: number | null; item_id?: string | null; item_code: string | null;
+  note: string; created_at: string; created_by: string; slip_photo?: string | null;
+};
+type Job = {
+  itemId: string; itemCode: string; entries: Entry[];
+  fineBal: number; amtDue: number; slipPhoto: string | null; lastAt: string;
 };
 
 const ENTRY_LABEL: Record<Entry['type'], string> = {
@@ -34,6 +39,8 @@ export default function KarigarLedgerScreen() {
   const [amountDue, setAmountDue] = useState(0);
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState('');
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [previewPhoto, setPreviewPhoto] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -43,6 +50,52 @@ export default function KarigarLedgerScreen() {
     finally { setLoading(false); }
   }, [id]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  // Group ledger entries by repair job (item_code) so a karigar's activity on
+  // a given tag — issued, received, wastage, settlement, slip photo — reads
+  // together instead of being interleaved with every other job chronologically.
+  // Entries with no item_code (general cash/metal adjustments not tied to a
+  // specific tag) fall through to a flat "Other Entries" list.
+  const { jobs, general } = useMemo(() => {
+    const map = new Map<string, Job>();
+    const gen: Entry[] = [];
+    for (const e of entries) {
+      if (!e.item_code) { gen.push(e); continue; }
+      const key = e.item_id || e.item_code;
+      let j = map.get(key);
+      if (!j) {
+        j = { itemId: key, itemCode: e.item_code, entries: [], fineBal: 0, amtDue: 0, slipPhoto: null, lastAt: e.created_at };
+        map.set(key, j);
+      }
+      j.entries.push(e);
+      if (e.type === 'gold_out') j.fineBal += (e.fine_weight ?? e.weight) || 0;
+      else if (e.type === 'gold_in') j.fineBal -= (e.fine_weight ?? e.weight) || 0;
+      else if (e.type === 'labour_payable' || e.type === 'receipt') j.amtDue += e.amount || 0;
+      else if (e.type === 'payment') j.amtDue -= e.amount || 0;
+      else if (e.type === 'wastage' || e.type === 'adjustment') j.amtDue += e.amount || 0;
+      if (e.slip_photo) j.slipPhoto = e.slip_photo;
+      if (e.created_at > j.lastAt) j.lastAt = e.created_at;
+    }
+    const list = Array.from(map.values());
+    list.sort((a, b) => (a.lastAt < b.lastAt ? 1 : -1));
+    for (const j of list) j.entries.sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+    return { jobs: list, general: gen };
+  }, [entries]);
+
+  // Most recent job open by default; everything else collapsed so the screen
+  // stays scannable even with a long history. Only sets this once per load —
+  // once the user has toggled anything, leave their choices alone.
+  useEffect(() => {
+    if (jobs.length && expanded.size === 0) setExpanded(new Set([jobs[0].itemId]));
+  }, [jobs]);
+
+  const toggleJob = (itemId: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(itemId)) next.delete(itemId); else next.add(itemId);
+      return next;
+    });
+  };
 
   const removeEntry = (e: Entry) => {
     confirmAction(
@@ -57,6 +110,29 @@ export default function KarigarLedgerScreen() {
       },
     );
   };
+
+  const renderEntry = (e: Entry, showItemCode: boolean) => (
+    <View key={e.id} style={styles.entryRow} testID={`entry-${e.id}`}>
+      <View style={styles.entryIcon}><Ionicons name={ENTRY_ICON[e.type]} size={16} color={colors.brandSecondary} /></View>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.entryTitle}>{ENTRY_LABEL[e.type]}{showItemCode && e.item_code ? ` · ${e.item_code}` : ''}</Text>
+        <Text style={styles.entryMeta}>{e.note || '—'} · {e.created_at?.slice(0, 10)} · {e.created_by}</Text>
+      </View>
+      <Text style={styles.entryValue}>
+        {e.weight != null ? `${e.weight.toFixed(3)}g` : e.amount != null ? `₹${Math.abs(e.amount).toFixed(0)}` : ''}
+      </Text>
+      {e.slip_photo ? (
+        <Pressable onPress={() => setPreviewPhoto(e.slip_photo!)} hitSlop={8} testID={`entry-photo-${e.id}`}>
+          <Image source={{ uri: e.slip_photo }} style={styles.entryThumb} />
+        </Pressable>
+      ) : null}
+      {!e.item_id && (
+        <Pressable onPress={() => removeEntry(e)} disabled={deletingId === e.id} style={styles.entryDelBtn} hitSlop={8} testID={`del-entry-${e.id}`}>
+          {deletingId === e.id ? <ActivityIndicator size="small" color={colors.onError} /> : <Ionicons name="trash-outline" size={14} color={colors.onError} />}
+        </Pressable>
+      )}
+    </View>
+  );
 
   if (loading || !karigar) {
     return (
@@ -95,27 +171,55 @@ export default function KarigarLedgerScreen() {
             </View>
           </View>
 
-          <Text style={styles.section}>History · {entries.length}</Text>
-          {entries.length === 0 ? (
+          <Text style={styles.section}>Jobs · {jobs.length}</Text>
+          {jobs.length === 0 && general.length === 0 ? (
             <View style={styles.empty}><Text style={styles.emptyText}>No ledger entries yet</Text></View>
-          ) : entries.map((e) => (
-            <View key={e.id} style={styles.entryRow} testID={`entry-${e.id}`}>
-              <View style={styles.entryIcon}><Ionicons name={ENTRY_ICON[e.type]} size={16} color={colors.brandSecondary} /></View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.entryTitle}>{ENTRY_LABEL[e.type]}{e.item_code ? ` · ${e.item_code}` : ''}</Text>
-                <Text style={styles.entryMeta}>{e.note || '—'} · {e.created_at?.slice(0, 10)} · {e.created_by}</Text>
-              </View>
-              <Text style={styles.entryValue}>
-                {e.weight != null ? `${e.weight.toFixed(3)}g` : e.amount != null ? `₹${Math.abs(e.amount).toFixed(0)}` : ''}
-              </Text>
-              {!e.item_id && (
-                <Pressable onPress={() => removeEntry(e)} disabled={deletingId === e.id} style={styles.entryDelBtn} hitSlop={8} testID={`del-entry-${e.id}`}>
-                  {deletingId === e.id ? <ActivityIndicator size="small" color={colors.onError} /> : <Ionicons name="trash-outline" size={14} color={colors.onError} />}
+          ) : null}
+
+          {jobs.map((job) => {
+            const isOpen = expanded.has(job.itemId);
+            const fineLabel = Math.abs(job.fineBal) < 0.001
+              ? 'Fine settled'
+              : `${Math.abs(job.fineBal).toFixed(3)}g fine ${job.fineBal > 0 ? 'with karigar' : 'excess returned'}`;
+            const amtLabel = Math.abs(job.amtDue) < 0.5
+              ? ''
+              : ` · ₹${Math.abs(job.amtDue).toFixed(0)} ${job.amtDue > 0 ? 'due to karigar' : 'owed by karigar'}`;
+            return (
+              <View key={job.itemId} style={styles.jobCard} testID={`job-${job.itemId}`}>
+                <Pressable style={styles.jobHeader} onPress={() => toggleJob(job.itemId)} testID={`job-toggle-${job.itemId}`}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.jobCode}>{job.itemCode}</Text>
+                    <Text style={styles.jobMeta}>{fineLabel}{amtLabel}</Text>
+                  </View>
+                  {job.slipPhoto ? (
+                    <Pressable onPress={() => setPreviewPhoto(job.slipPhoto!)} hitSlop={8} testID={`job-photo-${job.itemId}`}>
+                      <Image source={{ uri: job.slipPhoto }} style={styles.jobThumb} />
+                    </Pressable>
+                  ) : null}
+                  <Ionicons name={isOpen ? 'chevron-up' : 'chevron-down'} size={18} color={colors.mutedText} style={{ marginLeft: spacing.xs }} />
                 </Pressable>
-              )}
-            </View>
-          ))}
+                {isOpen && (
+                  <View style={styles.jobEntries}>
+                    {job.entries.map((e) => renderEntry(e, false))}
+                  </View>
+                )}
+              </View>
+            );
+          })}
+
+          {general.length > 0 && (
+            <>
+              <Text style={[styles.section, { marginTop: spacing.md }]}>Other Entries · {general.length}</Text>
+              {general.map((e) => renderEntry(e, true))}
+            </>
+          )}
       </ScrollView>
+
+      <Modal visible={!!previewPhoto} transparent animationType="fade" onRequestClose={() => setPreviewPhoto(null)}>
+        <Pressable style={styles.previewOverlay} onPress={() => setPreviewPhoto(null)} testID="photo-preview-overlay">
+          {previewPhoto ? <Image source={{ uri: previewPhoto }} style={styles.previewImage} resizeMode="contain" /> : null}
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -141,17 +245,32 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   section: { color: colors.brandSecondary, fontSize: 11, letterSpacing: 1, textTransform: 'uppercase', marginBottom: spacing.sm },
   empty: { paddingVertical: 30, alignItems: 'center' },
   emptyText: { color: colors.mutedText },
+
+  jobCard: {
+    backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border,
+    marginBottom: spacing.sm, overflow: 'hidden',
+  },
+  jobHeader: { flexDirection: 'row', alignItems: 'center', padding: spacing.md, gap: spacing.sm },
+  jobCode: { color: colors.onSurface, fontSize: 14, fontWeight: '700' },
+  jobMeta: { color: colors.mutedText, fontSize: 11, marginTop: 2 },
+  jobThumb: { width: 34, height: 34, borderRadius: radius.sm, borderWidth: 1, borderColor: colors.border },
+  jobEntries: { paddingHorizontal: spacing.md, paddingBottom: spacing.md },
+
   entryRow: {
     flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
-    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
     padding: spacing.md, marginBottom: spacing.sm,
   },
   entryIcon: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.brandTertiary, alignItems: 'center', justifyContent: 'center' },
   entryTitle: { color: colors.onSurface, fontSize: 13, fontWeight: '700' },
   entryMeta: { color: colors.mutedText, fontSize: 11, marginTop: 2 },
   entryValue: { color: colors.onSurface, fontSize: 13, fontWeight: '700' },
+  entryThumb: { width: 30, height: 30, borderRadius: radius.sm, borderWidth: 1, borderColor: colors.border },
   entryDelBtn: {
     width: 26, height: 26, borderRadius: 13, backgroundColor: colors.error,
     alignItems: 'center', justifyContent: 'center', marginLeft: spacing.xs,
   },
+
+  previewOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.9)', alignItems: 'center', justifyContent: 'center' },
+  previewImage: { width: '92%', height: '80%' },
 });

@@ -1,13 +1,14 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, Platform, KeyboardAvoidingView, RefreshControl,
+  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, Platform, KeyboardAvoidingView, RefreshControl, Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { api, TOKEN_KEY } from '@/src/api/client';
 import { storage } from '@/src/utils/storage';
 import { confirmAction } from '@/src/utils/confirm';
+import { PhotoCaptureModal } from '@/src/components/PhotoCaptureModal';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
@@ -22,16 +23,19 @@ type Item = {
 
 type Mode = 'list' | 'pick' | 'form';
 
+function round3(n: number) { return Math.round(n * 1000) / 1000; }
+
 export default function RepairBillScreen() {
+  const { itemId: routeItemId } = useLocalSearchParams<{ itemId?: string }>();
   const router = useRouter();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
-  const [mode, setMode] = useState<Mode>('list');
+  const [mode, setMode] = useState<Mode>(routeItemId ? 'form' : 'list');
   const [bills, setBills] = useState<Item[]>([]);
   const [readyItems, setReadyItems] = useState<Item[]>([]);
   const [picked, setPicked] = useState<Item | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!!routeItemId);
   const [refreshing, setRefreshing] = useState(false);
   const [printingId, setPrintingId] = useState('');
   const [deletingId, setDeletingId] = useState('');
@@ -45,6 +49,9 @@ export default function RepairBillScreen() {
   const [paymentMode, setPaymentMode] = useState('cash');
   const [weightRate, setWeightRate] = useState('');
   const [prevBalance, setPrevBalance] = useState('');
+  const [valueAdd, setValueAdd] = useState('');
+  const [finalPhoto, setFinalPhoto] = useState('');
+  const [cameraOpen, setCameraOpen] = useState(false);
 
   const loadBills = useCallback(async () => {
     try { setBills(await api.get<Item[]>('/repair-items?status=delivered')); }
@@ -52,6 +59,13 @@ export default function RepairBillScreen() {
     finally { setLoading(false); setRefreshing(false); }
   }, []);
   useFocusEffect(useCallback(() => { if (mode === 'list') loadBills(); }, [loadBills, mode]));
+
+  const pickItem = (item: Item) => {
+    setPicked(item);
+    setBillLabour(String(item.labour_charge || 0));
+    setBillExtra(''); setBillExtraNote(''); setPaymentMode('cash'); setWeightRate(''); setPrevBalance(''); setValueAdd(''); setFinalPhoto('');
+    setMode('form');
+  };
 
   const openPicker = async () => {
     setMode('pick');
@@ -61,19 +75,31 @@ export default function RepairBillScreen() {
     finally { setLoading(false); }
   };
 
-  const pickItem = (item: Item) => {
-    setPicked(item);
-    setBillLabour(String(item.labour_charge || 0));
-    setBillExtra(''); setBillExtraNote(''); setPaymentMode('cash'); setWeightRate(''); setPrevBalance('');
-    setMode('form');
-  };
+  // Deep-linked straight into the form for one item (e.g. from the tag detail
+  // screen's "Bill Repair" button) — skip the list/pick steps entirely.
+  useFocusEffect(useCallback(() => {
+    if (!routeItemId || picked) return;
+    setLoading(true);
+    api.get<{ item: Item }>(`/repair-items/${routeItemId}`)
+      .then((res) => pickItem(res.item))
+      .catch(() => Alert.alert('Failed', 'Could not load this tag.'))
+      .finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeItemId, picked]));
 
   const issuedWeight = picked?.current_issue_weight || 0;
   const receivedWeight = issuedWeight + (picked?.weight_diff || 0);
   const lossWeight = picked?.process_loss || 0;
-  const fineWeightChange = picked?.fine_weight_diff || 0;
+  // New Wt = Issued − Received − Loss (gross grams, not fine) — how much less
+  // came back than went out, after allowing for the declared process loss.
+  const weightChange = round3(issuedWeight - receivedWeight - lossWeight);
+  const valueAddNum = parseFloat(valueAdd) || 0;
+  // Extra metal added during the repair (solder, sizing, etc.) that isn't
+  // captured by the karigar's issued/received weight diff — added on top so
+  // it's billed to the customer the same way as any other weight change.
+  const billableWeightChange = round3(weightChange + valueAddNum);
   const rateNum = parseFloat(weightRate) || 0;
-  const weightCharge = Math.round(fineWeightChange * rateNum * 100) / 100;
+  const weightCharge = Math.round(billableWeightChange * rateNum * 100) / 100;
 
   const prevBalanceNum = parseFloat(prevBalance) || 0;
   const billTotal = prevBalanceNum + (parseFloat(billLabour) || 0) + weightCharge + (parseFloat(billExtra) || 0);
@@ -87,8 +113,9 @@ export default function RepairBillScreen() {
         labour_charge: parseFloat(billLabour) || 0, material_adjustment: weightCharge,
         extra_charges: parseFloat(billExtra) || 0, extra_charges_note: billExtraNote,
         previous_balance: prevBalanceNum,
-        payment_mode: paymentMode, note: '',
+        payment_mode: paymentMode, note: '', final_photo: finalPhoto,
       });
+      if (routeItemId) { router.back(); return; }
       setPicked(null); setMode('list'); setLoading(true);
       await loadBills();
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
@@ -133,7 +160,7 @@ export default function RepairBillScreen() {
 
   const headerTitle = mode === 'list' ? 'Repair Bills' : mode === 'pick' ? 'Select Item to Bill' : 'Create Bill';
   const onBack = () => {
-    if (mode === 'form') { setMode('pick'); return; }
+    if (mode === 'form' && !routeItemId) { setMode('pick'); return; }
     if (mode === 'pick') { setMode('list'); return; }
     router.back();
   };
@@ -207,6 +234,10 @@ export default function RepairBillScreen() {
         </ScrollView>
       )}
 
+      {mode === 'form' && !picked && (
+        <View style={styles.loader}><ActivityIndicator color={colors.brandPrimary} /></View>
+      )}
+
       {mode === 'form' && picked && (
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
           <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 60 }} keyboardShouldPersistTaps="handled">
@@ -232,12 +263,16 @@ export default function RepairBillScreen() {
 
             <View style={[styles.fieldGrid, { marginTop: spacing.sm }]} testID="bill-charge-grid">
               <View style={styles.fieldCol}>
-                <Text style={styles.label}>New Wt (g fine)</Text>
+                <Text style={styles.label}>New Wt (g)</Text>
                 <View style={styles.readonlyBox}>
-                  <Text style={[styles.readonlyBoxText, fineWeightChange !== 0 ? { color: fineWeightChange > 0 ? colors.onWarning : colors.onSuccess } : null]}>
-                    {fineWeightChange >= 0 ? '+' : ''}{fineWeightChange.toFixed(3)}
+                  <Text style={[styles.readonlyBoxText, weightChange !== 0 ? { color: weightChange > 0 ? colors.onWarning : colors.onSuccess } : null]}>
+                    {weightChange >= 0 ? '+' : ''}{weightChange.toFixed(3)}
                   </Text>
                 </View>
+              </View>
+              <View style={styles.fieldCol}>
+                <Text style={styles.label}>Value Add (g)</Text>
+                <TextInput testID="value-add" value={valueAdd} onChangeText={(v) => setValueAdd(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0.000" placeholderTextColor={colors.mutedText} style={styles.input} />
               </View>
               <View style={styles.fieldCol}>
                 <Text style={styles.label}>Rate (₹/g)</Text>
@@ -248,6 +283,9 @@ export default function RepairBillScreen() {
                 <View style={styles.readonlyBox}><Text style={styles.readonlyBoxText}>₹{weightCharge.toFixed(0)}</Text></View>
               </View>
             </View>
+            {!!valueAddNum && (
+              <Text style={styles.hint}>Billable weight change: {billableWeightChange >= 0 ? '+' : ''}{billableWeightChange.toFixed(3)}g (New Wt {weightChange >= 0 ? '+' : ''}{weightChange.toFixed(3)}g + value add {valueAddNum.toFixed(3)}g)</Text>
+            )}
 
             <Text style={styles.label}>Previous Balance, if any (₹)</Text>
             <TextInput testID="bill-prev-balance" value={prevBalance} onChangeText={(v) => setPrevBalance(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />
@@ -275,12 +313,37 @@ export default function RepairBillScreen() {
               ))}
             </View>
 
+            <Text style={styles.label}>Final Photo (optional)</Text>
+            {finalPhoto ? (
+              <View style={styles.photoRow}>
+                <Image source={{ uri: finalPhoto }} style={styles.photoThumb} />
+                <Pressable onPress={() => setCameraOpen(true)} style={styles.smallBtn} testID="bill-retake-photo">
+                  <Text style={styles.smallBtnText}>Retake</Text>
+                </Pressable>
+                <Pressable onPress={() => setFinalPhoto('')} style={styles.delBtn} hitSlop={10} testID="bill-remove-photo">
+                  <Ionicons name="close" size={16} color={colors.onError} />
+                </Pressable>
+              </View>
+            ) : (
+              <Pressable onPress={() => setCameraOpen(true)} style={styles.photoBtn} testID="bill-add-photo">
+                <Ionicons name="camera-outline" size={16} color={colors.onSurfaceSecondary} />
+                <Text style={styles.smallBtnText}>Add Photo</Text>
+              </Pressable>
+            )}
+
             <Pressable onPress={createBill} disabled={busy} style={[styles.saveBtn, busy && { opacity: 0.6 }]} testID="create-bill-btn">
               {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.saveBtnText}>Create Bill</Text>}
             </Pressable>
           </ScrollView>
         </KeyboardAvoidingView>
       )}
+
+      <PhotoCaptureModal
+        visible={cameraOpen}
+        title="Final Photo"
+        onClose={() => setCameraOpen(false)}
+        onCapture={async (photo) => { setFinalPhoto(photo); setCameraOpen(false); }}
+      />
     </SafeAreaView>
   );
 }
@@ -321,18 +384,31 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     backgroundColor: colors.error,
   },
 
+  loader: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   pickedCard: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.lg },
-  fieldGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  fieldCol: { flexBasis: '30%', flexGrow: 1 },
+  fieldGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  fieldCol: { flexBasis: '21%', flexGrow: 1 },
   readonlyBox: {
     backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
-    paddingHorizontal: spacing.md, paddingVertical: 12,
+    paddingHorizontal: spacing.sm, paddingVertical: 10,
   },
-  readonlyBoxText: { color: colors.onSurface, fontSize: 14, fontWeight: '600' },
+  readonlyBoxText: { color: colors.onSurface, fontSize: 13, fontWeight: '600', textAlign: 'center' },
   label: { color: colors.onSurfaceSecondary, fontSize: 12, marginBottom: 6, marginTop: spacing.sm },
   input: {
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
     color: colors.onSurface, paddingHorizontal: spacing.md, paddingVertical: 12, fontSize: 14,
+  },
+  photoBtn: {
+    flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, paddingVertical: 12, marginTop: 4,
+  },
+  photoRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: 4 },
+  photoThumb: { width: 52, height: 52, borderRadius: radius.md, backgroundColor: colors.surfaceTertiary },
+  smallBtn: { backgroundColor: colors.surfaceTertiary, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, borderColor: colors.border },
+  smallBtnText: { color: colors.onSurfaceSecondary, fontSize: 11, fontWeight: '700' },
+  delBtn: {
+    width: 30, height: 30, borderRadius: 15, backgroundColor: colors.error,
+    borderColor: colors.onError, borderWidth: 1, alignItems: 'center', justifyContent: 'center',
   },
   totalRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',

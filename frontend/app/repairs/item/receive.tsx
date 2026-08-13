@@ -1,11 +1,12 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, Platform, KeyboardAvoidingView,
+  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, Platform, KeyboardAvoidingView, Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
+import { PhotoCaptureModal } from '@/src/components/PhotoCaptureModal';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
@@ -40,10 +41,11 @@ export default function ReceiveFromKarigarScreen() {
   const [processLoss, setProcessLoss] = useState('');
   const [recvPurity, setRecvPurity] = useState('');
   const [note, setNote] = useState('');
+  const [slipPhoto, setSlipPhoto] = useState('');
+  const [cameraOpen, setCameraOpen] = useState(false);
   const [labourAmount, setLabourAmount] = useState('');
   const [payCash, setPayCash] = useState('');
   const [payMetalWeight, setPayMetalWeight] = useState('');
-  const [payMetalValue, setPayMetalValue] = useState('');
   const [recvCash, setRecvCash] = useState('');
   const [recvMetalWeight, setRecvMetalWeight] = useState('');
   const [prevBalance, setPrevBalance] = useState(0);
@@ -87,8 +89,8 @@ export default function ReceiveFromKarigarScreen() {
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const resetFormFields = () => {
-    setWeight(''); setWastageWeight(''); setProcessLoss(''); setRecvPurity(''); setNote('');
-    setLabourAmount(''); setPayCash(''); setPayMetalWeight(''); setPayMetalValue('');
+    setWeight(''); setWastageWeight(''); setProcessLoss(''); setRecvPurity(''); setNote(''); setSlipPhoto('');
+    setLabourAmount(''); setPayCash(''); setPayMetalWeight('');
     setRecvCash(''); setRecvMetalWeight(''); setPrevBalance(0);
   };
 
@@ -133,14 +135,13 @@ export default function ReceiveFromKarigarScreen() {
     submittingRef.current = true; setBusy(true);
     try {
       await api.post(`/repair-items/${item.id}/receive`, {
-        weight: w, note,
+        weight: w, note, slip_photo: slipPhoto,
         process_loss: parseFloat(processLoss) || 0,
         wastage_weight: parseFloat(wastageWeight) || 0,
         purity_override: parseFloat(recvPurity) || undefined,
         labour_amount: parseFloat(labourAmount) || 0,
         pay_cash: parseFloat(payCash) || 0,
         pay_metal_weight: parseFloat(payMetalWeight) || 0,
-        pay_metal_value: parseFloat(payMetalValue) || 0,
         recv_cash: parseFloat(recvCash) || 0,
         recv_metal_weight: parseFloat(recvMetalWeight) || 0,
       });
@@ -185,15 +186,19 @@ export default function ReceiveFromKarigarScreen() {
   const weightNet = round3(weightNum - lossNum);
   const fineReceived = round3(weightNet * recvPurityNum / 100);
   const balanceFine = weight ? round3(fineIssued - fineWastage - fineReceived) : null;
+  const payMetalNum = parseFloat(payMetalWeight) || 0;
+  const recvMetalNum = parseFloat(recvMetalWeight) || 0;
+  // What's left owed in metal after applying whatever's being paid/received
+  // right now on this slip — zero once the settle amount matches the balance.
+  const remainingBalance = balanceFine != null ? round3(balanceFine - recvMetalNum + payMetalNum) : null;
 
   const labourNum = parseFloat(labourAmount) || 0;
   const cashNum = parseFloat(payCash) || 0;
-  const metalValueNum = parseFloat(payMetalValue) || 0;
   const recvCashNum = parseFloat(recvCash) || 0;
   // Cash the karigar hands to the shop moves the balance the same direction
   // as the backend's 'receipt' entry (amt_due += amount) — it settles what
   // the karigar owes, it does not reduce what the shop owes the karigar.
-  const remainingDue = round3(prevBalance + labourNum - cashNum - metalValueNum + recvCashNum);
+  const remainingDue = round3(prevBalance + labourNum - cashNum + recvCashNum);
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="receive-screen">
@@ -280,20 +285,18 @@ export default function ReceiveFromKarigarScreen() {
                 <TextInput testID="receive-weight" value={weight} onChangeText={(v) => setWeight(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0.000" placeholderTextColor={colors.mutedText} style={styles.input} />
               </View>
               <View style={styles.fieldCol}>
-                <Text style={styles.label}>Wastage (g) <Text style={{ color: colors.onSuccess }}>+</Text></Text>
-                <TextInput testID="wastage-weight" value={wastageWeight} onChangeText={(v) => setWastageWeight(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0.000" placeholderTextColor={colors.mutedText} style={styles.input} />
-              </View>
-              <View style={styles.fieldCol}>
-                <Text style={styles.label}>Loss (g) <Text style={{ color: colors.mutedText }}>−</Text></Text>
+                <Text style={styles.label}>Loss (g)</Text>
                 <TextInput testID="process-loss" value={processLoss} onChangeText={(v) => setProcessLoss(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0.000" placeholderTextColor={colors.mutedText} style={styles.input} />
               </View>
             </View>
-            <Text style={styles.hint}>Wastage is what the karigar charges — it's written off against what they owe. Loss (filing, polishing, etc.) reduces what's actually credited back.</Text>
 
-            <Text style={styles.sectionTitle}>Total</Text>
-            <View style={styles.fieldGrid} testID="receive-total-row">
+            <View style={[styles.fieldGrid, { marginTop: 6 }]} testID="receive-total-row">
               <View style={styles.fieldCol}>
-                <Text style={styles.label}>Difference (g)</Text>
+                <Text style={styles.label}>Wastage (g)</Text>
+                <TextInput testID="wastage-weight" value={wastageWeight} onChangeText={(v) => setWastageWeight(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0.000" placeholderTextColor={colors.mutedText} style={styles.input} />
+              </View>
+              <View style={styles.fieldCol}>
+                <Text style={styles.label}>Diff (g)</Text>
                 <View style={styles.readonlyBox}>
                   <Text style={[styles.readonlyBoxText, weight && weightNum !== issuedWeight ? { color: weightNum > issuedWeight ? colors.onSuccess : colors.onError } : null]}>
                     {weight ? `${round3(weightNum - issuedWeight) >= 0 ? '+' : ''}${round3(weightNum - issuedWeight).toFixed(3)}` : '—'}
@@ -301,7 +304,7 @@ export default function ReceiveFromKarigarScreen() {
                 </View>
               </View>
               <View style={styles.fieldCol}>
-                <Text style={styles.label}>Touch (%)</Text>
+                <Text style={styles.label}>%</Text>
                 <TextInput testID="recv-purity" value={recvPurity} onChangeText={(v) => setRecvPurity(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder={String(issuePurity)} placeholderTextColor={colors.mutedText} style={styles.input} />
               </View>
               <View style={styles.fieldCol}>
@@ -313,71 +316,79 @@ export default function ReceiveFromKarigarScreen() {
                 </View>
               </View>
             </View>
+            <Text style={styles.hint}>Wastage is written off against what the karigar owes. Loss reduces what's actually credited back.</Text>
 
-            {balanceFine != null && (
-              <View style={[styles.balancePreview, balanceFine > 0 && styles.balancePreviewNegative]} testID="receive-balance-preview">
-                <Ionicons name={balanceFine === 0 ? 'checkmark-circle-outline' : 'alert-circle-outline'} size={14} color={balanceFine === 0 ? colors.onSuccess : colors.onError} />
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.balancePreviewText, { color: balanceFine === 0 ? colors.onSuccess : colors.onError }]}>
-                    {balanceFine > 0 ? `Receivable: ${balanceFine.toFixed(3)}g fine gold — karigar still owes this` : balanceFine < 0 ? `Payable: ${Math.abs(balanceFine).toFixed(3)}g fine gold — owed back to karigar` : 'Fully accounted for'}
-                  </Text>
-                </View>
-                {balanceFine > 0 && (
-                  <Pressable onPress={() => setRecvMetalWeight(String(balanceFine.toFixed(3)))} style={styles.settleBtn} testID="settle-receive-btn">
-                    <Text style={styles.settleBtnText}>Receive now</Text>
-                  </Pressable>
-                )}
-                {balanceFine < 0 && (
-                  <Pressable onPress={() => setPayMetalWeight(String(Math.abs(balanceFine).toFixed(3)))} style={styles.settleBtn} testID="settle-pay-btn">
-                    <Text style={styles.settleBtnText}>Pay now</Text>
-                  </Pressable>
-                )}
+            <Text style={styles.label}>Karigar Slip Photo (optional)</Text>
+            {slipPhoto ? (
+              <View style={styles.photoRow}>
+                <Image source={{ uri: slipPhoto }} style={styles.photoThumb} />
+                <Pressable onPress={() => setCameraOpen(true)} style={styles.smallBtn} testID="retake-slip-photo">
+                  <Text style={styles.smallBtnText}>Retake</Text>
+                </Pressable>
+                <Pressable onPress={() => setSlipPhoto('')} style={styles.delBtn} hitSlop={10} testID="remove-slip-photo">
+                  <Ionicons name="close" size={16} color={colors.onError} />
+                </Pressable>
               </View>
+            ) : (
+              <Pressable onPress={() => setCameraOpen(true)} style={styles.photoBtn} testID="add-slip-photo">
+                <Ionicons name="camera-outline" size={16} color={colors.onSurfaceSecondary} />
+                <Text style={styles.smallBtnText}>Add Photo</Text>
+              </Pressable>
             )}
+
+            <Text style={styles.sectionTitle}>Total</Text>
+            <View style={styles.readonlyBox} testID="settle-total">
+              <Text style={[styles.readonlyBoxText, { textAlign: 'left' }, balanceFine != null && balanceFine !== 0 ? { color: balanceFine > 0 ? colors.onWarning : colors.onSuccess } : null]}>
+                {balanceFine == null ? '—' : balanceFine > 0 ? `Receivable ${balanceFine.toFixed(3)}g fine — karigar still owes this` : balanceFine < 0 ? `Payable ${Math.abs(balanceFine).toFixed(3)}g fine — owed back to karigar` : 'Fully accounted for'}
+              </Text>
+            </View>
+
+            {balanceFine != null && balanceFine !== 0 && (
+              <Pressable
+                onPress={() => (balanceFine > 0 ? setRecvMetalWeight(String(balanceFine.toFixed(3))) : setPayMetalWeight(String(Math.abs(balanceFine).toFixed(3))))}
+                style={styles.autopayBtn}
+                testID="autopay-btn"
+              >
+                <Ionicons name="flash-outline" size={13} color={colors.onBrandPrimary} />
+                <Text style={styles.autopayBtnText}>Autopay — {balanceFine > 0 ? 'fill Receive Metal' : 'fill Pay Metal'}</Text>
+              </Pressable>
+            )}
+
+            <Text style={styles.label}>Pay Metal (g)</Text>
+            <TextInput testID="pay-metal-weight" value={payMetalWeight} onChangeText={(v) => setPayMetalWeight(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0.000" placeholderTextColor={colors.mutedText} style={styles.input} />
+
+            <Text style={styles.label}>Receive Metal (g)</Text>
+            <TextInput testID="recv-metal-weight" value={recvMetalWeight} onChangeText={(v) => setRecvMetalWeight(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0.000" placeholderTextColor={colors.mutedText} style={styles.input} />
+
+            <Text style={styles.label}>Balance (g)</Text>
+            <View style={styles.readonlyBox}>
+              <Text style={[styles.readonlyBoxText, { textAlign: 'left' }, remainingBalance != null && remainingBalance !== 0 ? { color: remainingBalance > 0 ? colors.onWarning : colors.onSuccess } : { color: colors.onSuccess }]}>
+                {remainingBalance == null ? '—' : remainingBalance === 0 ? 'Slip cleared — 0.000g' : `${remainingBalance > 0 ? '+' : ''}${remainingBalance.toFixed(3)}g`}
+              </Text>
+            </View>
 
             <Text style={styles.label}>Note (optional)</Text>
             <TextInput testID="receive-note" value={note} onChangeText={setNote} placeholder="Notes" placeholderTextColor={colors.mutedText} style={styles.input} />
 
-            <Text style={styles.sectionTitle}>Pay Karigar Now (optional)</Text>
-            <Text style={styles.label}>Labour amount due (₹)</Text>
-            <TextInput testID="labour-amount" value={labourAmount} onChangeText={(v) => setLabourAmount(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />
-
-            <View style={{ flexDirection: 'row', gap: spacing.sm }}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.label}>Cash paid (₹)</Text>
-                <TextInput testID="pay-cash" value={payCash} onChangeText={(v) => setPayCash(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.label}>Metal paid (g)</Text>
-                <TextInput testID="pay-metal-weight" value={payMetalWeight} onChangeText={(v) => setPayMetalWeight(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0.000" placeholderTextColor={colors.mutedText} style={styles.input} />
-              </View>
-            </View>
-            {!!parseFloat(payMetalWeight || '0') && (
-              <>
-                <Text style={styles.label}>Value of metal paid (₹)</Text>
-                <TextInput testID="pay-metal-value" value={payMetalValue} onChangeText={(v) => setPayMetalValue(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />
-              </>
-            )}
-
-            <Text style={styles.sectionTitle}>Receive from Karigar (optional)</Text>
-            <Text style={styles.hint}>If the karigar is settling a shortfall by handing over cash or extra metal.</Text>
-            <View style={{ flexDirection: 'row', gap: spacing.sm }}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.label}>Cash received (₹)</Text>
-                <TextInput testID="recv-cash" value={recvCash} onChangeText={(v) => setRecvCash(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.label}>Metal received (g)</Text>
-                <TextInput testID="recv-metal-weight" value={recvMetalWeight} onChangeText={(v) => setRecvMetalWeight(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0.000" placeholderTextColor={colors.mutedText} style={styles.input} />
-              </View>
-            </View>
-
+            <Text style={styles.sectionTitle}>Cash Settlement</Text>
             {!!prevBalance && (
               <View style={styles.balanceRow} testID="prev-balance-row">
                 <Text style={styles.balanceRowLabel}>Previous balance</Text>
                 <Text style={[styles.balanceRowValue, prevBalance > 0 ? { color: colors.onWarning } : { color: colors.onSuccess }]}>{fmtINR(Math.abs(prevBalance))}{prevBalance < 0 ? ' cr' : ''}</Text>
               </View>
             )}
+            <Text style={styles.label}>Labour cash (₹)</Text>
+            <TextInput testID="labour-amount" value={labourAmount} onChangeText={(v) => setLabourAmount(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />
+            <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>Cash paid (₹)</Text>
+                <TextInput testID="pay-cash" value={payCash} onChangeText={(v) => setPayCash(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>Cash received (₹)</Text>
+                <TextInput testID="recv-cash" value={recvCash} onChangeText={(v) => setRecvCash(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />
+              </View>
+            </View>
 
             {(labourNum > 0 || !!prevBalance) && (
               <View style={styles.totalRow} testID="remaining-due">
@@ -392,6 +403,13 @@ export default function ReceiveFromKarigarScreen() {
           </ScrollView>
         </KeyboardAvoidingView>
       ) : null}
+
+      <PhotoCaptureModal
+        visible={cameraOpen}
+        title="Karigar Slip"
+        onClose={() => setCameraOpen(false)}
+        onCapture={async (photo) => { setSlipPhoto(photo); setCameraOpen(false); }}
+      />
     </SafeAreaView>
   );
 }
@@ -433,33 +451,32 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     color: colors.onSurface, paddingHorizontal: spacing.md, paddingVertical: 12, fontSize: 14,
   },
 
-  fieldGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  fieldCol: { flexBasis: '47%', flexGrow: 1 },
+  fieldGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  fieldCol: { flexBasis: '21%', flexGrow: 1 },
   readonlyBox: {
     backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
-    paddingHorizontal: spacing.md, paddingVertical: 12,
+    paddingHorizontal: spacing.sm, paddingVertical: 10,
   },
-  readonlyBoxText: { color: colors.onSurface, fontSize: 14, fontWeight: '600' },
+  readonlyBoxText: { color: colors.onSurface, fontSize: 13, fontWeight: '600', textAlign: 'center' },
 
-  table: {
-    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
-    marginTop: spacing.md, overflow: 'hidden',
+  photoBtn: {
+    flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, paddingVertical: 12, marginTop: 4,
   },
-  tableHeadRow: { flexDirection: 'row', backgroundColor: colors.surfaceTertiary, paddingVertical: 8, paddingHorizontal: spacing.sm },
-  tableHeadText: { color: colors.brandSecondary, fontSize: 10, fontWeight: '700', textTransform: 'uppercase' },
-  tableRow: { flexDirection: 'row', paddingVertical: 9, paddingHorizontal: spacing.sm, borderTopWidth: 1, borderTopColor: colors.divider },
-  tableCell: { flex: 1, color: colors.onSurface, fontSize: 12, textAlign: 'left' },
-  tableRowLabel: { color: colors.onSurfaceSecondary, fontWeight: '600' },
+  photoRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: 4 },
+  photoThumb: { width: 52, height: 52, borderRadius: radius.md, backgroundColor: colors.surfaceTertiary },
+  smallBtn: { backgroundColor: colors.surfaceTertiary, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, borderColor: colors.border },
+  smallBtnText: { color: colors.onSurfaceSecondary, fontSize: 11, fontWeight: '700' },
+  delBtn: {
+    width: 30, height: 30, borderRadius: 15, backgroundColor: colors.error,
+    borderColor: colors.onError, borderWidth: 1, alignItems: 'center', justifyContent: 'center',
+  },
 
-  balancePreview: {
-    flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.success,
-    borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: 10, marginTop: spacing.sm,
+  autopayBtn: {
+    flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.brandPrimary, borderRadius: radius.pill, paddingVertical: 8, marginTop: spacing.sm,
   },
-  balancePreviewNegative: { backgroundColor: colors.error },
-  balancePreviewText: { fontSize: 12, fontWeight: '700' },
-  balancePreviewSub: { fontSize: 10, opacity: 0.8, marginTop: 2, color: colors.onSurface },
-  settleBtn: { backgroundColor: colors.surface, borderRadius: radius.pill, paddingHorizontal: spacing.sm, paddingVertical: 6 },
-  settleBtnText: { color: colors.onSurface, fontSize: 11, fontWeight: '800' },
+  autopayBtnText: { color: colors.onBrandPrimary, fontSize: 12, fontWeight: '800' },
 
   sectionTitle: { color: colors.onSurface, fontSize: 14, fontWeight: '700', marginTop: spacing.lg, marginBottom: 4, fontFamily: fonts.display },
 
