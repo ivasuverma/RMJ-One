@@ -3979,10 +3979,19 @@ def _escpos_receipt(shop_name: str, heading: str, lines: list) -> bytes:
     shape as _thermal_slip_pdf: (label, value) tuples, plain strings for a
     divider/free line, or '' for a blank line — so both the on-screen PDF and
     the direct network print render the same content."""
+    _UNICODE_FALLBACKS = {
+        '₹': 'Rs.', '—': '-', '–': '-', '·': '-', '’': "'", '‘': "'", '“': '"', '”': '"', '…': '...',
+    }
+
     def enc(s: str) -> bytes:
-        # cp437 (the standard ESC/POS default code page) has no ₹ glyph — spell
-        # it out instead of letting it fall back to '?' on the printout.
-        return (s or '').replace('₹', 'Rs.').encode('cp437', errors='replace')
+        # cp437 (the standard ESC/POS default code page) is missing several
+        # characters used elsewhere in the app (₹, em dash, the · separator,
+        # smart quotes) — swap in plain-ASCII equivalents rather than letting
+        # them fall back to '?' on the printout.
+        text = s or ''
+        for ch, repl in _UNICODE_FALLBACKS.items():
+            text = text.replace(ch, repl)
+        return text.encode('cp437', errors='replace')
 
     out = bytearray()
     out += _ESCPOS_INIT
