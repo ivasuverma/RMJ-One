@@ -218,12 +218,12 @@ export default function ReceiveFromKarigarScreen() {
   const balanceFine = weight ? round3(diffWt * recvPurityNum / 100) : null;
   const payMetalNum = parseFloat(payMetalWeight) || 0;
   const recvMetalNum = parseFloat(recvMetalWeight) || 0;
-  // Pay/Receive Metal are entered in gross grams, but balanceFine is a fine-gram
-  // figure — convert through this receive's touch before netting them, the
-  // same way the backend does, or a gross-gram entry never quite cancels the
-  // fine balance it's meant to settle.
+  // Pay/Receive Metal are entered directly in fine grams — jobs vary widely
+  // in size, so staff always settle balances in fine terms rather than
+  // converting through this item's specific touch. Net them straight against
+  // balanceFine, no purity conversion.
   const remainingBalance = balanceFine != null
-    ? round3(balanceFine - (recvMetalNum * recvPurityNum / 100) + (payMetalNum * recvPurityNum / 100))
+    ? round3(balanceFine - recvMetalNum + payMetalNum)
     : null;
 
   const labourNum = parseFloat(labourAmount) || 0;
@@ -398,12 +398,11 @@ export default function ReceiveFromKarigarScreen() {
             {balanceFine != null && balanceFine !== 0 && (
               <Pressable
                 onPress={() => {
-                  // balanceFine is a fine-gram figure; Pay/Receive Metal are
-                  // entered in gross grams — convert through this receive's
-                  // touch so the fill actually zeroes the balance out.
-                  const grossToSettle = round3(Math.abs(balanceFine) * 100 / recvPurityNum).toFixed(3);
-                  if (balanceFine > 0) setRecvMetalWeight(grossToSettle);
-                  else setPayMetalWeight(grossToSettle);
+                  // Pay/Receive Metal are entered directly in fine grams, same
+                  // units as balanceFine — no touch conversion, fill as-is.
+                  const settleAmount = round3(Math.abs(balanceFine)).toFixed(3);
+                  if (balanceFine > 0) setRecvMetalWeight(settleAmount);
+                  else setPayMetalWeight(settleAmount);
                 }}
                 style={styles.autopayBtn}
                 testID="autopay-btn"
@@ -413,13 +412,13 @@ export default function ReceiveFromKarigarScreen() {
               </Pressable>
             )}
 
-            <Text style={styles.label}>Pay Metal (g)</Text>
+            <Text style={styles.label}>Pay Metal (fine g)</Text>
             <TextInput testID="pay-metal-weight" value={payMetalWeight} onChangeText={(v) => setPayMetalWeight(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0.000" placeholderTextColor={colors.mutedText} style={styles.input} />
 
-            <Text style={styles.label}>Receive Metal (g)</Text>
+            <Text style={styles.label}>Receive Metal (fine g)</Text>
             <TextInput testID="recv-metal-weight" value={recvMetalWeight} onChangeText={(v) => setRecvMetalWeight(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0.000" placeholderTextColor={colors.mutedText} style={styles.input} />
 
-            <Text style={styles.label}>Balance (g)</Text>
+            <Text style={styles.label}>Balance (fine g)</Text>
             <View style={styles.readonlyBox}>
               <Text style={[styles.readonlyBoxText, { textAlign: 'left' }, remainingBalance != null && remainingBalance !== 0 ? { color: remainingBalance > 0 ? colors.onWarning : colors.onSuccess } : { color: colors.onSuccess }]}>
                 {remainingBalance == null ? '—' : remainingBalance === 0 ? 'Slip cleared — 0.000g' : `${remainingBalance > 0 ? '+' : ''}${remainingBalance.toFixed(3)}g`}

@@ -2130,10 +2130,10 @@ async def _post_receive_ledger(karigar_id: str, item: dict, calc: dict, body, tx
     if pay_metal_weight:
         # The actual metal handed to the karigar — a real gold_out movement,
         # tracked independently of whatever ₹ value staff estimate for it below.
-        # Converted at this receive's touch (recv_purity), not the item's
-        # static master purity — it's metal changing hands right now, at
-        # whatever fineness is actually being paid/received.
-        pay_metal_fine = round(pay_metal_weight * calc['recv_purity'] / 100, 3)
+        # Entered directly in fine grams (not gross) — settlement metal is
+        # squared off in fine weight regardless of the item's own touch, since
+        # jobs vary widely in size and staff always settle balances in fine terms.
+        pay_metal_fine = round(pay_metal_weight, 3)
         await db.karigar_ledger.insert_one({
             'id': str(uuid.uuid4()), 'karigar_id': karigar_id, 'type': 'gold_out', 'weight': pay_metal_weight,
             'fine_weight': pay_metal_fine, 'amount': None, 'item_id': item['id'], 'item_code': item['item_code'],
@@ -2161,7 +2161,8 @@ async def _post_receive_ledger(karigar_id: str, item: dict, calc: dict, body, tx
             'created_at': iso, 'created_by': user['name'],
         })
     if recv_metal_weight:
-        recv_metal_fine = round(recv_metal_weight * calc['recv_purity'] / 100, 3)
+        # Same as pay_metal above — entered directly in fine grams.
+        recv_metal_fine = round(recv_metal_weight, 3)
         await db.karigar_ledger.insert_one({
             'id': str(uuid.uuid4()), 'karigar_id': karigar_id, 'type': 'gold_in', 'weight': recv_metal_weight,
             'fine_weight': recv_metal_fine, 'amount': None, 'item_id': item['id'], 'item_code': item['item_code'],
