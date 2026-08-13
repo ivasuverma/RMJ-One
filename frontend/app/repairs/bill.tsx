@@ -141,7 +141,10 @@ export default function RepairBillScreen() {
 
   const createBill = async () => {
     if (submittingRef.current || !picked) return;
-    if (billTotal <= 0) { Alert.alert('Invalid', 'The billed total must be greater than 0'); return; }
+    // billTotal can legitimately be negative now — a credit back to the
+    // customer when the item's weight decreased (see New Wt above). Only
+    // block on a genuinely broken number, not on sign.
+    if (Number.isNaN(billTotal)) { Alert.alert('Invalid', 'Check the amounts entered — the total is not a valid number.'); return; }
     submittingRef.current = true; setBusy(true);
     const payload = {
       labour_charge: parseFloat(billLabour) || 0, material_adjustment: weightCharge,
@@ -373,9 +376,14 @@ export default function RepairBillScreen() {
             )}
 
             <View style={styles.totalRow} testID="bill-total">
-              <Text style={styles.totalLabel}>G. Total</Text>
-              <Text style={styles.totalValue}>₹{billTotal.toFixed(0)}</Text>
+              <Text style={styles.totalLabel}>{billTotal < 0 ? 'G. Total — Refund Due' : 'G. Total'}</Text>
+              <Text style={[styles.totalValue, billTotal < 0 && { color: colors.onSuccess }]}>
+                {billTotal < 0 ? `₹${Math.abs(billTotal).toFixed(0)} credit` : `₹${billTotal.toFixed(0)}`}
+              </Text>
             </View>
+            {billTotal < 0 && (
+              <Text style={styles.hint}>This bill nets to a credit — the customer is owed ₹{Math.abs(billTotal).toFixed(0)} back.</Text>
+            )}
 
             <Text style={styles.label}>Payment mode</Text>
             <View style={styles.chipRow}>

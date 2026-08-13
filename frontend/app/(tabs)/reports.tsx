@@ -25,6 +25,7 @@ const SECTIONS: { title: string; tiles: TileDef[] }[] = [
       { key: 'customer-ledger', label: 'Customer Ledger', icon: 'person-outline', route: '/reports/customer-ledger' },
       { key: 'karigar-ledger', label: 'Karigar Ledger', icon: 'hammer-outline', route: '/reports/karigar-ledger' },
       { key: 'loss-ledger', label: 'Loss Ledger', icon: 'trending-down-outline', route: '/reports/loss-ledger' },
+      { key: 'cash-ledger', label: 'Cash Ledger', icon: 'cash-outline', route: '/reports/cash-ledger' },
     ],
   },
 ];

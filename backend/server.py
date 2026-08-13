@@ -2354,6 +2354,26 @@ async def delete_karigar_transaction(item_id: str, txn_id: str, user=Depends(req
     return await db.repair_items.find_one({'id': item_id}, {'_id': 0})
 
 
+async def _sync_cash_ledger_entry(item: dict, billed_amount: float, payment_mode: str, user: dict, iso: str):
+    """Keeps the shop's cash ledger in sync with one billed item — a bill can
+    be edited in place, so this deletes any prior entry for this item first,
+    then reposts fresh (same delete-then-repost pattern as karigar receive
+    edits). A positive billed_amount is cash the shop received; a negative
+    one (weight decreased more than any added material — see New Wt on the
+    bill) is a refund owed back to the customer."""
+    await db.cash_ledger.delete_many({'item_id': item['id']})
+    if not billed_amount:
+        return
+    entry_type = 'receipt' if billed_amount > 0 else 'refund'
+    await db.cash_ledger.insert_one({
+        'id': str(uuid.uuid4()), 'type': entry_type, 'amount': round(abs(billed_amount), 2),
+        'item_id': item['id'], 'item_code': item['item_code'], 'customer_name': item.get('customer_name', ''),
+        'payment_mode': payment_mode or 'cash',
+        'note': f"{'Repair bill' if entry_type == 'receipt' else 'Refund'} — {item.get('description', '')}",
+        'created_at': iso, 'created_by': user['name'],
+    })
+
+
 @api.post('/repair-items/{item_id}/deliver')
 async def deliver_item(item_id: str, body: DeliverIn, user=Depends(require_admin_or_module('repairs'))):
     item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
@@ -2375,8 +2395,10 @@ async def deliver_item(item_id: str, body: DeliverIn, user=Depends(require_admin
         'payment_mode': body.payment_mode, 'delivery_note': body.note or '', 'updated_by': user['name'],
         'final_photo': body.final_photo or item.get('final_photo', ''),
     }})
+    updated = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
+    await _sync_cash_ledger_entry(updated, billed_amount, body.payment_mode, user, iso)
     await log_audit(user, 'repair_item.deliver', 'repair_item', item_id, item['item_code'], {'billed_amount': billed_amount})
-    return await db.repair_items.find_one({'id': item_id}, {'_id': 0})
+    return updated
 
 
 @api.put('/repair-items/{item_id}/bill')
@@ -2393,6 +2415,7 @@ async def edit_bill(item_id: str, body: DeliverIn, user=Depends(require_admin_or
     extra = body.extra_charges if body.extra_charges is not None else item.get('bill_extra_charges', 0) or 0
     prev_balance = body.previous_balance if body.previous_balance is not None else item.get('bill_previous_balance', 0) or 0
     billed_amount = round(prev_balance + labour + material_adj + extra, 2)
+    iso = now_utc().isoformat()
     await db.repair_items.update_one({'id': item_id}, {'$set': {
         'bill_labour_charge': labour, 'bill_material_adjustment': material_adj,
         'bill_extra_charges': extra, 'bill_extra_charges_note': body.extra_charges_note or '',
@@ -2400,8 +2423,10 @@ async def edit_bill(item_id: str, body: DeliverIn, user=Depends(require_admin_or
         'payment_mode': body.payment_mode, 'delivery_note': body.note or item.get('delivery_note', ''),
         'final_photo': body.final_photo or item.get('final_photo', ''), 'updated_by': user['name'],
     }})
+    updated = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
+    await _sync_cash_ledger_entry(updated, billed_amount, body.payment_mode, user, iso)
     await log_audit(user, 'repair_item.bill_edit', 'repair_item', item_id, item['item_code'], {'billed_amount': billed_amount})
-    return await db.repair_items.find_one({'id': item_id}, {'_id': 0})
+    return updated
 
 
 @api.delete('/repair-items/{item_id}/bill')
@@ -2419,8 +2444,21 @@ async def delete_bill(item_id: str, user=Depends(require_admin_or_module_right('
         'billed_amount': None, 'payment_mode': None, 'delivery_note': '',
         'updated_by': user['name'],
     }})
+    await db.cash_ledger.delete_many({'item_id': item_id})
     await log_audit(user, 'repair_item.bill_delete', 'repair_item', item_id, item['item_code'], {'billed_amount': item.get('billed_amount')})
     return {'ok': True}
+
+
+@api.get('/cash-ledger')
+async def cash_ledger(_: dict = Depends(require_staff_or_module('repairs'))):
+    """Every cash movement tied to a repair bill — receipts from customers
+    and refunds paid back to them (e.g. when an item's weight decreased) —
+    newest first, with running totals."""
+    entries = await db.cash_ledger.find({}, {'_id': 0}).sort('created_at', -1).to_list(2000)
+    total_received = round(sum(e['amount'] for e in entries if e['type'] == 'receipt'), 2)
+    total_paid_out = round(sum(e['amount'] for e in entries if e['type'] == 'refund'), 2)
+    return {'entries': entries, 'total_received': total_received, 'total_paid_out': total_paid_out,
+            'net': round(total_received - total_paid_out, 2)}
 
 
 def _bill_receipt_lines(item: dict) -> list:
