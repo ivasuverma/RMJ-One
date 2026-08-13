@@ -162,6 +162,18 @@ export default function RepairItemDetailScreen() {
     finally { setPrinting(false); }
   };
 
+  const [thermalPrinting, setThermalPrinting] = useState(false);
+  // Sends straight to the WiFi thermal receipt printer configured in Store
+  // Settings (raw ESC/POS over TCP) instead of generating a PDF.
+  const printThermal = async (kind: 'bill' | 'issue-slip') => {
+    setThermalPrinting(true);
+    try {
+      const path = kind === 'bill' ? `/repair-items/${id}/bill/print` : `/repair-items/${id}/issue-slip/print`;
+      await api.post(path, {});
+    } catch (e: any) { Alert.alert('Print failed', e?.detail || 'Could not reach the printer. Check Store Settings.'); }
+    finally { setThermalPrinting(false); }
+  };
+
   if (loading || !item) {
     return (
       <SafeAreaView style={styles.root} edges={['top']}>
@@ -262,8 +274,8 @@ export default function RepairItemDetailScreen() {
           )}
 
           {item.karigar_name && (
-            <Pressable onPress={() => printPdf('issue-slip')} disabled={printing} style={[styles.actionBtn, { marginBottom: spacing.md }]} testID="print-issue-slip-btn">
-              {printing ? <ActivityIndicator color={colors.onSurfaceSecondary} /> : <><Ionicons name="print-outline" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>Print Thermal Slip (Karigar Issue)</Text></>}
+            <Pressable onPress={() => printThermal('issue-slip')} disabled={thermalPrinting} style={[styles.actionBtn, { marginBottom: spacing.md }]} testID="print-issue-slip-btn">
+              {thermalPrinting ? <ActivityIndicator color={colors.onSurfaceSecondary} /> : <><Ionicons name="print-outline" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>Print Thermal Slip (Karigar Issue)</Text></>}
             </Pressable>
           )}
 
@@ -299,11 +311,14 @@ export default function RepairItemDetailScreen() {
           )}
           {item.status === 'delivered' && (
             <View style={[styles.actionsRow, { marginBottom: spacing.lg }]}>
-              <Pressable onPress={() => printPdf('bill')} disabled={printing} style={[styles.actionBtn, styles.actionBtnPrimary, { flex: 1 }]} testID="view-bill-btn">
-                {printing ? <ActivityIndicator color={colors.onBrandPrimary} /> : <><Ionicons name="print-outline" size={16} color={colors.onBrandPrimary} /><Text style={styles.actionBtnPrimaryText}>View Bill</Text></>}
+              <Pressable onPress={() => printThermal('bill')} disabled={thermalPrinting} style={[styles.actionBtn, styles.actionBtnPrimary, { flex: 1 }]} testID="print-bill-btn">
+                {thermalPrinting ? <ActivityIndicator color={colors.onBrandPrimary} /> : <><Ionicons name="print-outline" size={16} color={colors.onBrandPrimary} /><Text style={styles.actionBtnPrimaryText}>Print</Text></>}
+              </Pressable>
+              <Pressable onPress={() => printPdf('bill')} disabled={printing} style={[styles.actionBtn, { flex: 1 }]} testID="view-bill-btn">
+                {printing ? <ActivityIndicator color={colors.onSurfaceSecondary} /> : <><Ionicons name="document-text-outline" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>PDF</Text></>}
               </Pressable>
               <Pressable onPress={() => router.push({ pathname: '/repairs/bill', params: { itemId: id } } as any)} style={[styles.actionBtn, { flex: 1 }]} testID="edit-bill-btn">
-                <Ionicons name="pencil-outline" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>Edit Bill</Text>
+                <Ionicons name="pencil-outline" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>Edit</Text>
               </Pressable>
             </View>
           )}

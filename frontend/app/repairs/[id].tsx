@@ -54,6 +54,17 @@ export default function RepairOrderDetailScreen() {
     finally { setPrinting(false); }
   };
 
+  const [thermalPrinting, setThermalPrinting] = useState(false);
+  // Sends the customer intake receipt straight to the WiFi thermal printer
+  // configured in Store Settings (raw ESC/POS over TCP).
+  const printThermal = async () => {
+    setThermalPrinting(true);
+    try {
+      await api.post(`/repair-orders/${id}/slip/print`, {});
+    } catch (e: any) { Alert.alert('Print failed', e?.detail || 'Could not reach the printer. Check Store Settings.'); }
+    finally { setThermalPrinting(false); }
+  };
+
   if (loading || !order) {
     return (
       <SafeAreaView style={styles.root} edges={['top']}>
@@ -87,9 +98,14 @@ export default function RepairOrderDetailScreen() {
           <MetaRow icon="person-circle-outline" label="Taken by" value={order.created_by} colors={colors} />
         </View>
 
-        <Pressable onPress={printSlip} disabled={printing} style={[styles.printBtn, printing && { opacity: 0.6 }]} testID="print-slip-btn">
-          {printing ? <ActivityIndicator color={colors.onBrandPrimary} /> : <><Ionicons name="print-outline" size={16} color={colors.onBrandPrimary} /><Text style={styles.printBtnText}>Print Intake Slip</Text></>}
-        </Pressable>
+        <View style={styles.printRow}>
+          <Pressable onPress={printThermal} disabled={thermalPrinting} style={[styles.printBtn, { flex: 1 }, thermalPrinting && { opacity: 0.6 }]} testID="print-slip-btn">
+            {thermalPrinting ? <ActivityIndicator color={colors.onBrandPrimary} /> : <><Ionicons name="print-outline" size={16} color={colors.onBrandPrimary} /><Text style={styles.printBtnText}>Print Receipt</Text></>}
+          </Pressable>
+          <Pressable onPress={printSlip} disabled={printing} style={[styles.pdfBtn, printing && { opacity: 0.6 }]} testID="print-slip-pdf-btn">
+            {printing ? <ActivityIndicator color={colors.onSurfaceSecondary} /> : <><Ionicons name="document-text-outline" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.pdfBtnText}>PDF</Text></>}
+          </Pressable>
+        </View>
 
         <Text style={styles.section}>Items · {items.length}</Text>
         {items.map((i) => {
@@ -142,11 +158,18 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   metaLabel: { color: colors.mutedText, fontSize: 12, width: 80 },
   metaValue: { flex: 1, color: colors.onSurface, fontSize: 13, fontWeight: '600' },
 
+  printRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.xl },
   printBtn: {
     flexDirection: 'row', gap: spacing.sm, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: 13, marginBottom: spacing.xl,
+    backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: 13,
   },
   printBtnText: { color: colors.onBrandPrimary, fontWeight: '700', fontSize: 13 },
+  pdfBtn: {
+    flexDirection: 'row', gap: spacing.sm, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    paddingVertical: 13, paddingHorizontal: spacing.md,
+  },
+  pdfBtnText: { color: colors.onSurfaceSecondary, fontWeight: '700', fontSize: 13 },
 
   section: { color: colors.brandSecondary, fontSize: 11, letterSpacing: 1, textTransform: 'uppercase', marginBottom: spacing.sm },
   itemRow: {

@@ -284,6 +284,11 @@ class StoreSettingsIn(BaseModel):
     work_end: str = '19:30'
     grace_min: int = 15
     round_net_salary: bool = False
+    # WiFi ESC/POS thermal receipt printer (e.g. Retsol RTP82) — raw socket
+    # printing on the standard JetDirect/RAW port, no driver needed. Left
+    # unset means no printer is configured and print actions will 400.
+    printer_ip: Optional[str] = None
+    printer_port: int = 9100
 
 
 class PunchIn(BaseModel):
@@ -1935,6 +1940,43 @@ async def repair_order_slip_pdf(order_id: str, _: dict = Depends(require_staff_o
     return _pdf_response(pdf, f'repair-slip-{order["order_no"]}.pdf')
 
 
+def _intake_receipt_lines(order: dict, items: list) -> list:
+    """Customer-facing repair intake receipt — one or more items per order,
+    each rendered as its own labeled block on the narrow thermal format."""
+    lines = [
+        ('Order No', order['order_no']),
+        ('Customer', order['customer_name']),
+        ('Mobile', order.get('customer_mobile') or '—'),
+        ('Received', order['created_at'][:10]),
+    ]
+    for idx, item in enumerate(items, 1):
+        lines.append(f'Item {idx}' if len(items) > 1 else 'Item')
+        lines.append(('Tag', item['item_code']))
+        lines.append(('Description', item['description']))
+        lines.append(('Repair Type', item['repair_type'] or '—'))
+        lines.append(('Weight', f"{item['gross_weight']:.3f}g"))
+        lines.append(('Pcs', str(item['pc_count'])))
+        lines.append(('Due Date', item['due_date'] or '—'))
+    lines.append('')
+    lines.append('Customer Signature: _____________________')
+    return lines
+
+
+@api.post('/repair-orders/{order_id}/slip/print')
+async def repair_order_slip_print(order_id: str, user: dict = Depends(require_staff_or_module('repairs'))):
+    """Sends the customer repair intake receipt straight to the configured
+    WiFi thermal printer instead of generating a PDF."""
+    order = await db.repair_orders.find_one({'id': order_id}, {'_id': 0})
+    if not order: raise HTTPException(status_code=404, detail='Order not found')
+    items = await db.repair_items.find({'order_id': order_id}, {'_id': 0}).sort('created_at', 1).to_list(200)
+    store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
+    data = _escpos_receipt(store.get('name') or 'Ram Murti Jewellers',
+                            f"Repair Intake — {order['order_no']}", _intake_receipt_lines(order, items))
+    await _print_escpos(data)
+    await log_audit(user, 'repair_order.slip_print', 'repair_order', order_id, order['order_no'], {})
+    return {'ok': True}
+
+
 @api.get('/repair-items')
 async def list_repair_items(
     status_: Optional[str] = Query(default=None, alias='status'),
@@ -2381,35 +2423,49 @@ async def delete_bill(item_id: str, user=Depends(require_admin_or_module_right('
     return {'ok': True}
 
 
+def _bill_receipt_lines(item: dict) -> list:
+    """Shared by the A4 bill PDF's row data and the thermal receipt print —
+    (label, value) tuples for the narrow-format version."""
+    lines = [
+        ('Item', item['description']), ('Tag', item['item_code']), ('Repair Type', item['repair_type'] or '—'),
+        ('Weight', f"{item['gross_weight']:.3f}g"),
+        ('Labour Charge', f"₹{(item.get('bill_labour_charge') if item.get('bill_labour_charge') is not None else item.get('labour_charge', 0)):.0f}"),
+    ]
+    if item.get('bill_material_adjustment'):
+        lines.append(('Material Adjustment', f"₹{item['bill_material_adjustment']:.0f}"))
+    if item.get('bill_extra_charges'):
+        lines.append((item.get('bill_extra_charges_note') or 'Extra Charges', f"₹{item['bill_extra_charges']:.0f}"))
+    lines.append(('Total Billed', f"₹{(item.get('billed_amount') or 0):.0f}"))
+    lines.append(('Payment Mode', (item.get('payment_mode') or '—').title()))
+    return lines
+
+
 @api.get('/repair-items/{item_id}/bill/pdf')
 async def repair_item_bill_pdf(item_id: str, _: dict = Depends(require_staff_or_module('repairs'))):
     item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
     if not item: raise HTTPException(status_code=404, detail='Item not found')
-    rows = [
-        ['Item', item['description']], ['Tag', item['item_code']], ['Repair Type', item['repair_type'] or '—'],
-        ['Weight', f"{item['gross_weight']:.3f}g"],
-        ['Labour Charge', f"₹{(item.get('bill_labour_charge') if item.get('bill_labour_charge') is not None else item.get('labour_charge', 0)):.0f}"],
-    ]
-    if item.get('bill_material_adjustment'):
-        rows.append(['Material Adjustment', f"₹{item['bill_material_adjustment']:.0f}"])
-    if item.get('bill_extra_charges'):
-        rows.append([item.get('bill_extra_charges_note') or 'Extra Charges', f"₹{item['bill_extra_charges']:.0f}"])
-    rows.append(['Total Billed', f"₹{(item.get('billed_amount') or 0):.0f}"])
-    rows.append(['Payment Mode', (item.get('payment_mode') or '—').title()])
+    rows = [[label, value] for label, value in _bill_receipt_lines(item)]
     pdf = _report_pdf(f"Repair Bill — {item['item_code']}", f"{item.get('customer_name', '')} · {item.get('order_no', '')}",
                        ['Field', 'Value'], rows)
     return _pdf_response(pdf, f'repair-bill-{item["item_code"]}.pdf')
 
 
-@api.get('/repair-items/{item_id}/issue-slip/pdf')
-async def repair_item_issue_slip_pdf(item_id: str, _: dict = Depends(require_staff_or_module('repairs'))):
-    """Narrow thermal-printer-friendly challan for the item's current (or most
-    recent) karigar issue — separate from the A4 intake slip."""
+@api.post('/repair-items/{item_id}/bill/print')
+async def repair_item_bill_print(item_id: str, user: dict = Depends(require_staff_or_module('repairs'))):
+    """Sends the bill straight to the configured WiFi thermal printer instead
+    of generating a PDF — same content as repair_item_bill_pdf, narrow format."""
     item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
     if not item: raise HTTPException(status_code=404, detail='Item not found')
-    txn = await db.karigar_transactions.find_one({'item_id': item_id, 'direction': 'issue'}, {'_id': 0}, sort=[('created_at', -1)])
-    if not txn: raise HTTPException(status_code=404, detail='This item has not been issued to a karigar yet')
-    store = await db.settings.find_one({}, {'_id': 0, 'name': 1}) or {}
+    store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
+    data = _escpos_receipt(store.get('name') or 'Ram Murti Jewellers',
+                            f"Repair Bill — {item['item_code']}", _bill_receipt_lines(item))
+    await _print_escpos(data)
+    await log_audit(user, 'repair_item.bill_print', 'repair_item', item_id, item['item_code'], {})
+    return {'ok': True}
+
+
+def _issue_slip_lines(item: dict, txn: dict) -> list:
+    """Shared by the issue-slip PDF and the thermal receipt print."""
     lines = [
         ('Challan No', txn['challan_no']),
         ('Date', txn['created_at'][:10]),
@@ -2425,8 +2481,37 @@ async def repair_item_issue_slip_pdf(item_id: str, _: dict = Depends(require_sta
         lines.append(('Note', txn['note']))
     lines.append('')
     lines.append('Karigar Signature: _____________________')
-    pdf = _thermal_slip_pdf(store.get('name') or 'Ram Murti Jewellers', 'Karigar Issue Challan', lines)
+    return lines
+
+
+async def _get_issue_txn(item_id: str) -> tuple:
+    item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
+    if not item: raise HTTPException(status_code=404, detail='Item not found')
+    txn = await db.karigar_transactions.find_one({'item_id': item_id, 'direction': 'issue'}, {'_id': 0}, sort=[('created_at', -1)])
+    if not txn: raise HTTPException(status_code=404, detail='This item has not been issued to a karigar yet')
+    return item, txn
+
+
+@api.get('/repair-items/{item_id}/issue-slip/pdf')
+async def repair_item_issue_slip_pdf(item_id: str, _: dict = Depends(require_staff_or_module('repairs'))):
+    """Narrow thermal-printer-friendly challan for the item's current (or most
+    recent) karigar issue — separate from the A4 intake slip."""
+    item, txn = await _get_issue_txn(item_id)
+    store = await db.settings.find_one({}, {'_id': 0, 'name': 1}) or {}
+    pdf = _thermal_slip_pdf(store.get('name') or 'Ram Murti Jewellers', 'Karigar Issue Challan', _issue_slip_lines(item, txn))
     return _pdf_response(pdf, f'issue-slip-{item["item_code"]}.pdf')
+
+
+@api.post('/repair-items/{item_id}/issue-slip/print')
+async def repair_item_issue_slip_print(item_id: str, user: dict = Depends(require_staff_or_module('repairs'))):
+    """Sends the karigar issue challan straight to the configured WiFi
+    thermal printer instead of generating a PDF."""
+    item, txn = await _get_issue_txn(item_id)
+    store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
+    data = _escpos_receipt(store.get('name') or 'Ram Murti Jewellers', 'Karigar Issue Challan', _issue_slip_lines(item, txn))
+    await _print_escpos(data)
+    await log_audit(user, 'repair_item.issue_slip_print', 'repair_item', item_id, item['item_code'], {})
+    return {'ok': True}
 
 
 # ---------------- Repairs: Loss Ledger ----------------
@@ -3870,6 +3955,93 @@ def _thermal_slip_pdf(shop_name: str, heading: str, lines: list) -> bytes:
     doc.build(els)
     pdf = buf.getvalue(); buf.close()
     return pdf
+
+
+# ---------------- WiFi thermal receipt printer (ESC/POS over raw TCP) ----------------
+# Targets a network receipt printer (e.g. Retsol RTP82) listening on the
+# standard JetDirect/RAW port (9100) — no driver, no OS print queue, just a
+# raw socket with ESC/POS command bytes. IP/port come from Store Settings.
+_ESC = b'\x1b'
+_GS = b'\x1d'
+_ESCPOS_INIT = _ESC + b'@'            # reset printer state
+_ESCPOS_ALIGN_CENTER = _ESC + b'a\x01'
+_ESCPOS_ALIGN_LEFT = _ESC + b'a\x00'
+_ESCPOS_BOLD_ON = _ESC + b'E\x01'
+_ESCPOS_BOLD_OFF = _ESC + b'E\x00'
+_ESCPOS_DOUBLE_ON = _GS + b'!\x11'    # double width + double height
+_ESCPOS_DOUBLE_OFF = _GS + b'!\x00'
+_ESCPOS_CUT = _GS + b'V\x00'          # full cut
+_ESCPOS_WIDTH_CHARS = 42              # ~80mm paper at the default 12x24 font
+
+
+def _escpos_receipt(shop_name: str, heading: str, lines: list) -> bytes:
+    """Builds raw ESC/POS bytes for an 80mm receipt. `lines` uses the same
+    shape as _thermal_slip_pdf: (label, value) tuples, plain strings for a
+    divider/free line, or '' for a blank line — so both the on-screen PDF and
+    the direct network print render the same content."""
+    def enc(s: str) -> bytes:
+        # cp437 (the standard ESC/POS default code page) has no ₹ glyph — spell
+        # it out instead of letting it fall back to '?' on the printout.
+        return (s or '').replace('₹', 'Rs.').encode('cp437', errors='replace')
+
+    out = bytearray()
+    out += _ESCPOS_INIT
+    out += _ESCPOS_ALIGN_CENTER + _ESCPOS_BOLD_ON + _ESCPOS_DOUBLE_ON
+    out += enc(shop_name) + b'\n'
+    out += _ESCPOS_DOUBLE_OFF + _ESCPOS_BOLD_OFF
+    out += enc(heading) + b'\n'
+    out += enc('-' * _ESCPOS_WIDTH_CHARS) + b'\n'
+    out += _ESCPOS_ALIGN_LEFT
+
+    for item in lines:
+        if isinstance(item, tuple):
+            label, value = item
+            row = f"{label}: {value}"
+            # Wrap long values onto a hanging indent rather than letting the
+            # printer hard-wrap mid-word.
+            if len(row) <= _ESCPOS_WIDTH_CHARS:
+                out += enc(row) + b'\n'
+            else:
+                indent = ' ' * (len(label) + 2)
+                first = True
+                remaining = row
+                while remaining:
+                    width = _ESCPOS_WIDTH_CHARS if first else _ESCPOS_WIDTH_CHARS - len(indent)
+                    chunk, remaining = remaining[:width], remaining[width:]
+                    out += enc((chunk if first else indent + chunk)) + b'\n'
+                    first = False
+        elif item == '':
+            out += b'\n'
+        else:
+            out += enc('-' * _ESCPOS_WIDTH_CHARS) + b'\n'
+            out += enc(item) + b'\n'
+
+    out += b'\n'
+    out += _ESCPOS_ALIGN_CENTER
+    out += enc(f"Generated {now_utc().strftime('%d %b %Y %H:%M')}") + b'\n'
+    out += b'\n\n\n'
+    out += _ESCPOS_CUT
+    return bytes(out)
+
+
+async def _print_escpos(data: bytes):
+    """Opens a raw TCP socket to the configured printer and sends the ESC/POS
+    bytes. Runs on a worker thread since socket I/O blocks."""
+    store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
+    ip = store.get('printer_ip')
+    if not ip:
+        raise HTTPException(status_code=400, detail='No printer configured. Set the printer IP in Store Settings.')
+    port = store.get('printer_port') or 9100
+
+    def _send():
+        import socket
+        with socket.create_connection((ip, port), timeout=5) as sock:
+            sock.sendall(data)
+
+    try:
+        await asyncio.to_thread(_send)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f'Could not reach the printer at {ip}:{port} — {e}')
 
 
 @api.get('/reports/{kind}/pdf')

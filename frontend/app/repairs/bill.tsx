@@ -198,6 +198,17 @@ export default function RepairBillScreen() {
     finally { setPrintingId(''); }
   };
 
+  const [thermalPrintingId, setThermalPrintingId] = useState('');
+  // Sends straight to the WiFi thermal printer configured in Store Settings
+  // (raw ESC/POS over TCP) instead of generating a PDF.
+  const printThermalBill = async (item: Item) => {
+    setThermalPrintingId(item.id);
+    try {
+      await api.post(`/repair-items/${item.id}/bill/print`, {});
+    } catch (e: any) { Alert.alert('Print failed', e?.detail || 'Could not reach the printer. Check Store Settings.'); }
+    finally { setThermalPrintingId(''); }
+  };
+
   const headerTitle = mode === 'list' ? 'Repair Bills' : mode === 'pick' ? 'Select Item to Bill' : isEditingBill ? 'Edit Bill' : 'Create Bill';
   const onBack = () => {
     if (mode === 'form' && !routeItemId) { setMode(isEditingBill ? 'list' : 'pick'); return; }
@@ -243,8 +254,11 @@ export default function RepairBillScreen() {
               <Pressable onPress={() => pickItem(b)} style={styles.editBtn} testID={`edit-bill-${b.id}`}>
                 <Ionicons name="pencil-outline" size={16} color={colors.onSurfaceSecondary} />
               </Pressable>
-              <Pressable onPress={() => printBill(b)} disabled={printingId === b.id} style={styles.printBtn} testID={`print-bill-${b.id}`}>
-                {printingId === b.id ? <ActivityIndicator size="small" color={colors.onBrandPrimary} /> : <Ionicons name="print-outline" size={16} color={colors.onBrandPrimary} />}
+              <Pressable onPress={() => printBill(b)} disabled={printingId === b.id} style={styles.editBtn} testID={`print-bill-pdf-${b.id}`}>
+                {printingId === b.id ? <ActivityIndicator size="small" color={colors.onSurfaceSecondary} /> : <Ionicons name="document-text-outline" size={16} color={colors.onSurfaceSecondary} />}
+              </Pressable>
+              <Pressable onPress={() => printThermalBill(b)} disabled={thermalPrintingId === b.id} style={styles.printBtn} testID={`print-bill-${b.id}`}>
+                {thermalPrintingId === b.id ? <ActivityIndicator size="small" color={colors.onBrandPrimary} /> : <Ionicons name="print-outline" size={16} color={colors.onBrandPrimary} />}
               </Pressable>
               <Pressable onPress={() => confirmDeleteBill(b)} disabled={deletingId === b.id} style={styles.deleteBtn} testID={`delete-bill-${b.id}`}>
                 {deletingId === b.id ? <ActivityIndicator size="small" color={colors.onError} /> : <Ionicons name="trash-outline" size={16} color={colors.onError} />}

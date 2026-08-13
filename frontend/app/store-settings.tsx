@@ -13,11 +13,13 @@ import { useTheme } from '@/src/theme/ThemeContext';
 type Form = {
   name: string; latitude: string; longitude: string; radius_m: string;
   work_start: string; work_end: string; grace_min: string; round_net_salary: boolean;
+  printer_ip: string; printer_port: string;
 };
 
 const EMPTY: Form = {
   name: '', latitude: '', longitude: '', radius_m: '150',
   work_start: '10:00', work_end: '19:30', grace_min: '15', round_net_salary: false,
+  printer_ip: '', printer_port: '9100',
 };
 
 export default function StoreSettings() {
@@ -39,6 +41,7 @@ export default function StoreSettings() {
             radius_m: String(s.radius_m ?? 150), work_start: s.work_start || '10:00',
             work_end: s.work_end || '19:30', grace_min: String(s.grace_min ?? 15),
             round_net_salary: !!s.round_net_salary,
+            printer_ip: s.printer_ip || '', printer_port: String(s.printer_port ?? 9100),
           });
         }
       } finally { setLoading(false); }
@@ -81,6 +84,8 @@ export default function StoreSettings() {
         work_start: form.work_start, work_end: form.work_end,
         grace_min: parseInt(form.grace_min || '15', 10),
         round_net_salary: form.round_net_salary,
+        printer_ip: form.printer_ip.trim() || null,
+        printer_port: parseInt(form.printer_port || '9100', 10),
       });
       router.back();
     } catch (e: any) {
@@ -162,6 +167,20 @@ export default function StoreSettings() {
           <View style={styles.infoBox}>
             <Ionicons name="information-circle-outline" size={16} color={colors.brandSecondary} />
             <Text style={styles.infoText}>Employees can only check in when within the fence radius of these coordinates.</Text>
+          </View>
+
+          <SectionTitle text="Thermal Printer" />
+          <View style={styles.row2}>
+            <View style={{ flex: 2 }}>
+              <F label="Printer IP" v={form.printer_ip} onC={(v) => setForm({ ...form, printer_ip: v.replace(/[^0-9.]/g, '') })} kt="numeric" testID="ss-printer-ip" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <F label="Port" v={form.printer_port} onC={(v) => setForm({ ...form, printer_port: v.replace(/[^0-9]/g, '') })} kt="numeric" testID="ss-printer-port" />
+            </View>
+          </View>
+          <View style={styles.infoBox}>
+            <Ionicons name="print-outline" size={16} color={colors.brandSecondary} />
+            <Text style={styles.infoText}>WiFi ESC/POS receipt printer (e.g. Retsol RTP82). Port 9100 is the standard raw/JetDirect port. Leave blank to disable direct printing.</Text>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
