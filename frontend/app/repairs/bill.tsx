@@ -115,10 +115,10 @@ export default function RepairBillScreen() {
   const issuedWeight = picked?.current_issue_weight || 0;
   const receivedWeight = issuedWeight + (picked?.weight_diff || 0);
   const lossWeight = picked?.process_loss || 0;
-  // New Wt = Received − Issued − Loss (gross grams, not fine) — positive when
-  // more metal came back than went out (charge the customer), negative when
-  // less did (credit the customer), net of the declared process loss.
-  const weightChange = round3(receivedWeight - issuedWeight - lossWeight);
+  // New Wt = Issue − Loss − Received (gross grams, not fine) — positive when
+  // less metal came back than expected once loss is forgiven (charge the
+  // customer for the shortfall), negative when more came back (credit them).
+  const weightChange = round3(issuedWeight - lossWeight - receivedWeight);
   const valueAddNum = parseFloat(valueAdd) || 0;
   // Extra metal added during the repair (solder, sizing, etc.) that isn't
   // captured by the karigar's issued/received weight diff — added on top so
@@ -285,21 +285,25 @@ export default function RepairBillScreen() {
               <Text style={styles.cMeta}>{picked.description}</Text>
             </View>
 
-            <View style={styles.fieldGrid} testID="bill-field-grid">
-              <View style={styles.fieldCol}>
-                <Text style={styles.label}>Issued (g)</Text>
+            {/* Issue − Loss − Received = New Wt */}
+            <View style={styles.formulaRow} testID="bill-field-grid">
+              <View style={styles.fieldColFlex}>
+                <Text style={styles.label}>Issue (g)</Text>
                 <View style={styles.readonlyBox}><Text style={styles.readonlyBoxText}>{issuedWeight.toFixed(3)}</Text></View>
               </View>
-              <View style={styles.fieldCol}>
+              <Text style={styles.opText}>−</Text>
+              <View style={styles.fieldColFlex}>
+                <Text style={styles.label}>Loss Wt (g)</Text>
+                <View style={styles.readonlyBox}><Text style={styles.readonlyBoxText}>{lossWeight.toFixed(3)}</Text></View>
+              </View>
+              <Text style={styles.opText}>−</Text>
+              <View style={styles.fieldColFlex}>
                 <Text style={styles.label}>Received (g)</Text>
                 <View style={styles.readonlyBox}><Text style={styles.readonlyBoxText}>{receivedWeight.toFixed(3)}</Text></View>
               </View>
-              <View style={styles.fieldCol}>
-                <Text style={styles.label}>Loss (g)</Text>
-                <View style={styles.readonlyBox}><Text style={styles.readonlyBoxText}>{lossWeight.toFixed(3)}</Text></View>
-              </View>
             </View>
 
+            {/* New Wt · Value Add · Rate · Total */}
             <View style={[styles.fieldGrid, { marginTop: spacing.sm }]} testID="bill-charge-grid">
               <View style={styles.fieldCol}>
                 <Text style={styles.label}>New Wt (g)</Text>
@@ -326,6 +330,7 @@ export default function RepairBillScreen() {
                 )}
               </View>
             </View>
+            <Text style={styles.hint}>Positive New Wt = weight decreased, billed to the customer. Negative = excess returned, credited.</Text>
             {rateNum === 0 && (
               <Text style={styles.hint}>No rate entered — Total is entered directly{isEditingBill ? ' (pre-filled from what was billed)' : ''}. Enter a rate above to compute it from New Wt instead.</Text>
             )}
@@ -438,6 +443,11 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   pickedCard: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.lg },
   fieldGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   fieldCol: { flexBasis: '21%', flexGrow: 1 },
+  // Issue − Loss − Received = New Wt — three boxes joined by inline
+  // operators, matching the hand-drawn layout.
+  formulaRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 4 },
+  fieldColFlex: { flex: 1, minWidth: 0 },
+  opText: { color: colors.mutedText, fontSize: 15, fontWeight: '700', marginBottom: 12, paddingHorizontal: 1 },
   readonlyBox: {
     backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
     paddingHorizontal: spacing.sm, paddingVertical: 10,
