@@ -4,6 +4,9 @@
 .idea/
 .vscode/
 
+# Stray scratch file, harmless — ignored so it never gets committed
+.commit-instructions.txt
+
 # Dependencies
 node_modules/
 /node_modules

@@ -16,7 +16,7 @@ type Item = {
 };
 
 type Mode = 'pick' | 'form' | 'bulk';
-type BulkRow = { weight: string; processLoss: string };
+type BulkRow = { weight: string; wastageWeight: string };
 
 function round3(n: number) { return Math.round(n * 1000) / 1000; }
 const fmtINR = (n: number) => `₹${Math.round(n || 0).toLocaleString('en-IN')}`;
@@ -36,6 +36,7 @@ export default function ReceiveFromKarigarScreen() {
   const [loading, setLoading] = useState(true);
 
   const [weight, setWeight] = useState('');
+  const [wastageWeight, setWastageWeight] = useState('');
   const [processLoss, setProcessLoss] = useState('');
   const [note, setNote] = useState('');
   const [labourAmount, setLabourAmount] = useState('');
@@ -45,15 +46,17 @@ export default function ReceiveFromKarigarScreen() {
   const [recvCash, setRecvCash] = useState('');
   const [recvMetalWeight, setRecvMetalWeight] = useState('');
   const [prevBalance, setPrevBalance] = useState(0);
+  const [prevFineBalance, setPrevFineBalance] = useState(0);
   const [busy, setBusy] = useState(false);
   const submittingRef = useRef(false);
 
   const loadBalance = useCallback(async (kid?: string | null) => {
-    if (!kid) { setPrevBalance(0); return; }
+    if (!kid) { setPrevBalance(0); setPrevFineBalance(0); return; }
     try {
-      const res = await api.get<{ amount_due: number }>(`/karigars/${kid}/ledger`);
+      const res = await api.get<{ amount_due: number; fine_weight_balance: number }>(`/karigars/${kid}/ledger`);
       setPrevBalance(res.amount_due || 0);
-    } catch (_e) { setPrevBalance(0); }
+      setPrevFineBalance(res.fine_weight_balance || 0);
+    } catch (_e) { setPrevBalance(0); setPrevFineBalance(0); }
   }, []);
 
   const load = useCallback(async () => {
@@ -65,7 +68,7 @@ export default function ReceiveFromKarigarScreen() {
         setBulkItems(found);
         setBulkRows((prev) => {
           const next = { ...prev };
-          for (const it of found) if (!next[it.id]) next[it.id] = { weight: '', processLoss: '' };
+          for (const it of found) if (!next[it.id]) next[it.id] = { weight: '', wastageWeight: '' };
           return next;
         });
         setMode('bulk');
@@ -84,9 +87,9 @@ export default function ReceiveFromKarigarScreen() {
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const resetFormFields = () => {
-    setWeight(''); setProcessLoss(''); setNote('');
+    setWeight(''); setWastageWeight(''); setProcessLoss(''); setNote('');
     setLabourAmount(''); setPayCash(''); setPayMetalWeight(''); setPayMetalValue('');
-    setRecvCash(''); setRecvMetalWeight(''); setPrevBalance(0);
+    setRecvCash(''); setRecvMetalWeight(''); setPrevBalance(0); setPrevFineBalance(0);
   };
 
   const pickItem = (it: Item) => { resetFormFields(); setItem(it); setMode('form'); loadBalance(it.karigar_id); };
@@ -97,7 +100,7 @@ export default function ReceiveFromKarigarScreen() {
 
   const submitBulk = async () => {
     if (submittingRef.current || bulkItems.length === 0) return;
-    const rows = bulkItems.map((it) => ({ it, row: bulkRows[it.id] || { weight: '', processLoss: '' } }));
+    const rows = bulkItems.map((it) => ({ it, row: bulkRows[it.id] || { weight: '', wastageWeight: '' } }));
     const missing = rows.filter(({ row }) => !parseFloat(row.weight));
     if (missing.length > 0) { Alert.alert('Missing', `Enter the weight received for: ${missing.map((m) => m.it.item_code).join(', ')}`); return; }
     submittingRef.current = true; setBusy(true);
@@ -106,7 +109,7 @@ export default function ReceiveFromKarigarScreen() {
     for (const { it, row } of rows) {
       try {
         await api.post(`/repair-items/${it.id}/receive`, {
-          weight: parseFloat(row.weight) || 0, process_loss: parseFloat(row.processLoss) || 0, note: '',
+          weight: parseFloat(row.weight) || 0, wastage_weight: parseFloat(row.wastageWeight) || 0, note: '',
         });
         okCount += 1;
       } catch (_e) { failed.push(it.item_code); }
@@ -130,6 +133,7 @@ export default function ReceiveFromKarigarScreen() {
       await api.post(`/repair-items/${item.id}/receive`, {
         weight: w, note,
         process_loss: parseFloat(processLoss) || 0,
+        wastage_weight: parseFloat(wastageWeight) || 0,
         labour_amount: parseFloat(labourAmount) || 0,
         pay_cash: parseFloat(payCash) || 0,
         pay_metal_weight: parseFloat(payMetalWeight) || 0,
@@ -166,11 +170,20 @@ export default function ReceiveFromKarigarScreen() {
   const purity = item?.purity ?? 100;
   const issuedWeight = item?.current_issue_weight || 0;
   const fineIssued = item?.current_issue_fine_weight ?? round3(issuedWeight * purity / 100);
+  const wastageNum = parseFloat(wastageWeight) || 0;
+  const fineWastage = round3(wastageNum * purity / 100);
   const lossNum = parseFloat(processLoss) || 0;
   const fineLoss = round3(lossNum * purity / 100);
   const weightNum = parseFloat(weight) || 0;
   const fineReceived = round3(weightNum * purity / 100);
-  const balanceFine = weight ? round3(fineIssued - fineLoss - fineReceived) : null;
+  // Wastage the karigar charges for is written off (same as this item's issued
+  // gold) — process loss is reference-only and does not affect this figure.
+  const balanceFine = weight ? round3(fineIssued - fineWastage - fineReceived) : null;
+  // The karigar's fine-gold balance from everything else (other jobs), before
+  // this item's own issued weight — folded back in so old balance carries
+  // forward, matching how the ₹ side already works below.
+  const otherFineBalance = round3(prevFineBalance - fineIssued);
+  const totalFineBalance = balanceFine != null ? round3(otherFineBalance + balanceFine) : null;
 
   const labourNum = parseFloat(labourAmount) || 0;
   const cashNum = parseFloat(payCash) || 0;
@@ -217,7 +230,7 @@ export default function ReceiveFromKarigarScreen() {
           <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 60 }} keyboardShouldPersistTaps="handled">
             <Text style={styles.hint}>Enter what came back for each tag. Process loss, pay/receive settlement, and labour stay per-tag on the individual receive screen.</Text>
             {bulkItems.map((it) => {
-              const row = bulkRows[it.id] || { weight: '', processLoss: '' };
+              const row = bulkRows[it.id] || { weight: '', wastageWeight: '' };
               return (
                 <View key={it.id} style={styles.bulkRowCard} testID={`bulk-row-${it.id}`}>
                   <Text style={styles.cName}>{it.item_code} · {it.customer_name}</Text>
@@ -232,10 +245,10 @@ export default function ReceiveFromKarigarScreen() {
                       />
                     </View>
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.label}>Process loss (g)</Text>
+                      <Text style={styles.label}>Wastage charged (g)</Text>
                       <TextInput
-                        testID={`bulk-loss-${it.id}`} value={row.processLoss}
-                        onChangeText={(v) => setBulkRow(it.id, { processLoss: v.replace(/[^0-9.]/g, '') })}
+                        testID={`bulk-wastage-${it.id}`} value={row.wastageWeight}
+                        onChangeText={(v) => setBulkRow(it.id, { wastageWeight: v.replace(/[^0-9.]/g, '') })}
                         keyboardType="decimal-pad" placeholder="0.000" placeholderTextColor={colors.mutedText} style={styles.input}
                       />
                     </View>
@@ -259,8 +272,13 @@ export default function ReceiveFromKarigarScreen() {
             <Text style={styles.label}>Weight received (g)</Text>
             <TextInput testID="receive-weight" value={weight} onChangeText={(v) => setWeight(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0.000" placeholderTextColor={colors.mutedText} style={styles.input} />
 
-            <Text style={styles.label}>Process loss (g) — filing, polishing, etc.</Text>
+            <Text style={styles.label}>Wastage charged by karigar (g)</Text>
+            <TextInput testID="wastage-weight" value={wastageWeight} onChangeText={(v) => setWastageWeight(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0.000" placeholderTextColor={colors.mutedText} style={styles.input} />
+            <Text style={styles.hint}>What the karigar is claiming for wastage — written off against what they owe.</Text>
+
+            <Text style={styles.label}>Process loss (g) — for reference only</Text>
             <TextInput testID="process-loss" value={processLoss} onChangeText={(v) => setProcessLoss(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0.000" placeholderTextColor={colors.mutedText} style={styles.input} />
+            <Text style={styles.hint}>Filing, polishing, etc. Logged on the tag's history — doesn't affect the karigar's ledger.</Text>
 
             <View style={styles.table} testID="weight-table">
               <View style={styles.tableHeadRow}>
@@ -276,10 +294,10 @@ export default function ReceiveFromKarigarScreen() {
                 <Text style={styles.tableCell}>{fineIssued.toFixed(3)}</Text>
               </View>
               <View style={styles.tableRow}>
-                <Text style={[styles.tableCell, styles.tableRowLabel, { flex: 1.4 }]}>Process Loss</Text>
-                <Text style={styles.tableCell}>{lossNum.toFixed(3)}</Text>
+                <Text style={[styles.tableCell, styles.tableRowLabel, { flex: 1.4 }]}>Wastage</Text>
+                <Text style={styles.tableCell}>{wastageNum.toFixed(3)}</Text>
                 <Text style={styles.tableCell}>{purity}%</Text>
-                <Text style={styles.tableCell}>{fineLoss.toFixed(3)}</Text>
+                <Text style={styles.tableCell}>{fineWastage.toFixed(3)}</Text>
               </View>
               <View style={styles.tableRow}>
                 <Text style={[styles.tableCell, styles.tableRowLabel, { flex: 1.4 }]}>Received</Text>
@@ -289,22 +307,29 @@ export default function ReceiveFromKarigarScreen() {
               </View>
             </View>
 
-            {balanceFine != null && (
-              <View style={[styles.balancePreview, balanceFine > 0 && styles.balancePreviewNegative]} testID="receive-balance-preview">
-                <Ionicons name={balanceFine === 0 ? 'checkmark-circle-outline' : 'alert-circle-outline'} size={14} color={balanceFine === 0 ? colors.onSuccess : colors.onError} />
+            {!!otherFineBalance && (
+              <View style={styles.balanceRow} testID="prev-fine-balance-row">
+                <Text style={styles.balanceRowLabel}>Balance from other jobs</Text>
+                <Text style={[styles.balanceRowValue, otherFineBalance > 0 ? { color: colors.onWarning } : { color: colors.onSuccess }]}>{otherFineBalance > 0 ? '+' : ''}{otherFineBalance.toFixed(3)}g</Text>
+              </View>
+            )}
+
+            {totalFineBalance != null && (
+              <View style={[styles.balancePreview, totalFineBalance > 0 && styles.balancePreviewNegative]} testID="receive-balance-preview">
+                <Ionicons name={totalFineBalance === 0 ? 'checkmark-circle-outline' : 'alert-circle-outline'} size={14} color={totalFineBalance === 0 ? colors.onSuccess : colors.onError} />
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.balancePreviewText, { color: balanceFine === 0 ? colors.onSuccess : colors.onError }]}>
-                    {balanceFine > 0 ? `Receivable: ${balanceFine.toFixed(3)}g fine gold — karigar still owes this` : balanceFine < 0 ? `Payable: ${Math.abs(balanceFine).toFixed(3)}g fine gold — owed back to karigar` : 'Fully accounted for'}
+                  <Text style={[styles.balancePreviewText, { color: totalFineBalance === 0 ? colors.onSuccess : colors.onError }]}>
+                    {totalFineBalance > 0 ? `Receivable: ${totalFineBalance.toFixed(3)}g fine gold — karigar still owes this` : totalFineBalance < 0 ? `Payable: ${Math.abs(totalFineBalance).toFixed(3)}g fine gold — owed back to karigar` : 'Fully accounted for'}
                   </Text>
-                  <Text style={styles.balancePreviewSub}>Tracked automatically on the karigar's ledger — process loss is already accounted for</Text>
+                  <Text style={styles.balancePreviewSub}>Includes this tag plus any other balance — tap to clear the whole slip</Text>
                 </View>
-                {balanceFine > 0 && (
-                  <Pressable onPress={() => setRecvMetalWeight(String(balanceFine.toFixed(3)))} style={styles.settleBtn} testID="settle-receive-btn">
+                {totalFineBalance > 0 && (
+                  <Pressable onPress={() => setRecvMetalWeight(String(totalFineBalance.toFixed(3)))} style={styles.settleBtn} testID="settle-receive-btn">
                     <Text style={styles.settleBtnText}>Receive now</Text>
                   </Pressable>
                 )}
-                {balanceFine < 0 && (
-                  <Pressable onPress={() => setPayMetalWeight(String(Math.abs(balanceFine).toFixed(3)))} style={styles.settleBtn} testID="settle-pay-btn">
+                {totalFineBalance < 0 && (
+                  <Pressable onPress={() => setPayMetalWeight(String(Math.abs(totalFineBalance).toFixed(3)))} style={styles.settleBtn} testID="settle-pay-btn">
                     <Text style={styles.settleBtnText}>Pay now</Text>
                   </Pressable>
                 )}
