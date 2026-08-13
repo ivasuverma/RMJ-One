@@ -22,6 +22,7 @@ type Item = {
   bill_labour_charge?: number | null; bill_material_adjustment?: number | null;
   bill_extra_charges?: number | null; bill_extra_charges_note?: string | null;
   bill_previous_balance?: number | null; final_photo?: string | null;
+  bill_weight_rate?: number | null; bill_value_add?: number | null;
 };
 
 type Mode = 'list' | 'pick' | 'form';
@@ -79,9 +80,9 @@ export default function RepairBillScreen() {
       setBillExtra(item.bill_extra_charges ? String(item.bill_extra_charges) : '');
       setBillExtraNote(item.bill_extra_charges_note || '');
       setPaymentMode(item.payment_mode || 'cash');
-      setWeightRate('');
+      setWeightRate(item.bill_weight_rate ? String(item.bill_weight_rate) : '');
       setPrevBalance(item.bill_previous_balance ? String(item.bill_previous_balance) : '');
-      setValueAdd('');
+      setValueAdd(item.bill_value_add ? String(item.bill_value_add) : '');
       setMaterialAdjManual(item.bill_material_adjustment ? String(item.bill_material_adjustment) : '');
       setFinalPhoto(item.final_photo || '');
     } else {
@@ -151,6 +152,7 @@ export default function RepairBillScreen() {
       extra_charges: parseFloat(billExtra) || 0, extra_charges_note: billExtraNote,
       previous_balance: prevBalanceNum,
       payment_mode: paymentMode, note: '', final_photo: finalPhoto,
+      weight_rate: rateNum, value_add: valueAddNum,
     };
     try {
       if (isEditingBill) {

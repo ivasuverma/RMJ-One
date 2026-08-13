@@ -597,6 +597,12 @@ class DeliverIn(BaseModel):
     payment_mode: Optional[str] = 'cash'
     note: Optional[str] = ''
     final_photo: Optional[str] = ''
+    # The rate (Rs/g) and value-add (g) that produced material_adjustment —
+    # persisted purely so the weight breakdown can be shown on the printed
+    # bill/quotation and pre-filled correctly when re-opening the bill to
+    # edit it (previously only the resulting ₹ figure was kept).
+    weight_rate: Optional[float] = 0
+    value_add: Optional[float] = 0
 
 
 class KarigarLedgerEntryIn(BaseModel):
@@ -2391,6 +2397,7 @@ async def deliver_item(item_id: str, body: DeliverIn, user=Depends(require_admin
         'bill_labour_charge': labour, 'bill_material_adjustment': material_adj,
         'bill_extra_charges': extra, 'bill_extra_charges_note': body.extra_charges_note or '',
         'bill_previous_balance': prev_balance,
+        'bill_weight_rate': body.weight_rate or 0, 'bill_value_add': body.value_add or 0,
         'billed_amount': billed_amount,
         'payment_mode': body.payment_mode, 'delivery_note': body.note or '', 'updated_by': user['name'],
         'final_photo': body.final_photo or item.get('final_photo', ''),
@@ -2416,10 +2423,14 @@ async def edit_bill(item_id: str, body: DeliverIn, user=Depends(require_admin_or
     prev_balance = body.previous_balance if body.previous_balance is not None else item.get('bill_previous_balance', 0) or 0
     billed_amount = round(prev_balance + labour + material_adj + extra, 2)
     iso = now_utc().isoformat()
+    weight_rate = body.weight_rate if body.weight_rate is not None else item.get('bill_weight_rate', 0) or 0
+    value_add = body.value_add if body.value_add is not None else item.get('bill_value_add', 0) or 0
     await db.repair_items.update_one({'id': item_id}, {'$set': {
         'bill_labour_charge': labour, 'bill_material_adjustment': material_adj,
         'bill_extra_charges': extra, 'bill_extra_charges_note': body.extra_charges_note or '',
-        'bill_previous_balance': prev_balance, 'billed_amount': billed_amount,
+        'bill_previous_balance': prev_balance,
+        'bill_weight_rate': weight_rate, 'bill_value_add': value_add,
+        'billed_amount': billed_amount,
         'payment_mode': body.payment_mode, 'delivery_note': body.note or item.get('delivery_note', ''),
         'final_photo': body.final_photo or item.get('final_photo', ''), 'updated_by': user['name'],
     }})
@@ -2441,6 +2452,7 @@ async def delete_bill(item_id: str, user=Depends(require_admin_or_module_right('
         'status': 'ready', 'delivered_at': None,
         'bill_labour_charge': None, 'bill_material_adjustment': None,
         'bill_extra_charges': None, 'bill_extra_charges_note': '', 'bill_previous_balance': None,
+        'bill_weight_rate': None, 'bill_value_add': None,
         'billed_amount': None, 'payment_mode': None, 'delivery_note': '',
         'updated_by': user['name'],
     }})
@@ -2490,13 +2502,13 @@ async def repair_item_bill_pdf(item_id: str, _: dict = Depends(require_staff_or_
 
 @api.post('/repair-items/{item_id}/bill/print')
 async def repair_item_bill_print(item_id: str, user: dict = Depends(require_staff_or_module('repairs'))):
-    """Sends the bill straight to the configured WiFi thermal printer instead
-    of generating a PDF — same content as repair_item_bill_pdf, narrow format."""
+    """Sends the bill/quotation straight to the configured WiFi thermal
+    printer as a bordered table — item details, the weight change breakdown,
+    and the charges/total, instead of generating a PDF."""
     item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
     if not item: raise HTTPException(status_code=404, detail='Item not found')
     store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
-    data = _escpos_receipt(store.get('name') or 'Ram Murti Jewellers',
-                            f"Repair Bill — {item['item_code']}", _bill_receipt_lines(item))
+    data = _escpos_bill_table(store.get('name') or 'Ram Murti Jewellers', item)
     await _print_escpos(data)
     await log_audit(user, 'repair_item.bill_print', 'repair_item', item_id, item['item_code'], {})
     return {'ok': True}
@@ -4000,6 +4012,7 @@ def _thermal_slip_pdf(shop_name: str, heading: str, lines: list) -> bytes:
 _ESC = b'\x1b'
 _GS = b'\x1d'
 _ESCPOS_INIT = _ESC + b'@'            # reset printer state
+_ESCPOS_LINE_SPACING = _ESC + b'3' + bytes([50])  # roomier than the ~30-dot default — makes slips read taller
 _ESCPOS_ALIGN_CENTER = _ESC + b'a\x01'
 _ESCPOS_ALIGN_LEFT = _ESC + b'a\x00'
 _ESCPOS_BOLD_ON = _ESC + b'E\x01'
@@ -4009,6 +4022,34 @@ _ESCPOS_SIZE_TALL = _GS + b'!\x01'    # double height only — stays readable-wi
 _ESCPOS_SIZE_BIG = _GS + b'!\x11'     # double width + double height — for the shop name
 _ESCPOS_CUT = _GS + b'V\x00'          # full cut
 _ESCPOS_WIDTH_CHARS = 42              # ~80mm paper at the default 12x24 font
+
+_ESCPOS_UNICODE_FALLBACKS = {
+    '₹': 'Rs.', '—': '-', '–': '-', '·': '-', '’': "'", '‘': "'", '“': '"', '”': '"', '…': '...',
+}
+
+
+def _escpos_text(s: str) -> str:
+    # cp437 (the standard ESC/POS default code page) is missing several
+    # characters used elsewhere in the app (₹, em dash, the · separator,
+    # smart quotes) — swap in plain-ASCII equivalents rather than letting
+    # them fall back to '?' on the printout.
+    text = s or ''
+    for ch, repl in _ESCPOS_UNICODE_FALLBACKS.items():
+        text = text.replace(ch, repl)
+    return text
+
+
+def _escpos_enc(s: str) -> bytes:
+    return _escpos_text(s).encode('cp437', errors='replace')
+
+
+def _escpos_wrapped(text: str, width: int):
+    text = text or ''
+    while True:
+        chunk, text = text[:width], text[width:]
+        yield chunk
+        if not text:
+            return
 
 
 def _escpos_receipt(shop_name: str, heading: str, lines: list) -> bytes:
@@ -4020,30 +4061,9 @@ def _escpos_receipt(shop_name: str, heading: str, lines: list) -> bytes:
     Each field prints as a small bold label on its own line, with the value
     on the line below at double height — easier to read at a glance than a
     single cramped "Label: value" line, especially on a narrow 80mm roll."""
-    _UNICODE_FALLBACKS = {
-        '₹': 'Rs.', '—': '-', '–': '-', '·': '-', '’': "'", '‘': "'", '“': '"', '”': '"', '…': '...',
-    }
-
-    def enc(s: str) -> bytes:
-        # cp437 (the standard ESC/POS default code page) is missing several
-        # characters used elsewhere in the app (₹, em dash, the · separator,
-        # smart quotes) — swap in plain-ASCII equivalents rather than letting
-        # them fall back to '?' on the printout.
-        text = s or ''
-        for ch, repl in _UNICODE_FALLBACKS.items():
-            text = text.replace(ch, repl)
-        return text.encode('cp437', errors='replace')
-
-    def wrapped(text: str, width: int):
-        text = text or ''
-        while True:
-            chunk, text = text[:width], text[width:]
-            yield chunk
-            if not text:
-                return
-
+    enc = _escpos_enc
     out = bytearray()
-    out += _ESCPOS_INIT
+    out += _ESCPOS_INIT + _ESCPOS_LINE_SPACING
     out += _ESCPOS_ALIGN_CENTER + _ESCPOS_BOLD_ON + _ESCPOS_SIZE_BIG
     out += enc(shop_name) + b'\n'
     out += _ESCPOS_SIZE_NORMAL + _ESCPOS_BOLD_OFF
@@ -4057,7 +4077,7 @@ def _escpos_receipt(shop_name: str, heading: str, lines: list) -> bytes:
             out += _ESCPOS_BOLD_ON
             out += enc(label.upper()) + b'\n'
             out += _ESCPOS_BOLD_OFF + _ESCPOS_SIZE_TALL
-            for chunk in wrapped(str(value), _ESCPOS_WIDTH_CHARS):
+            for chunk in _escpos_wrapped(str(value), _ESCPOS_WIDTH_CHARS):
                 out += enc(chunk) + b'\n'
             out += _ESCPOS_SIZE_NORMAL + b'\n'
         elif item == '':
@@ -4069,6 +4089,90 @@ def _escpos_receipt(shop_name: str, heading: str, lines: list) -> bytes:
     out += enc('=' * _ESCPOS_WIDTH_CHARS) + b'\n'
     out += _ESCPOS_ALIGN_CENTER
     out += enc(f"Generated {now_utc().strftime('%d %b %Y %H:%M')}") + b'\n'
+    out += b'\n\n\n'
+    out += _ESCPOS_CUT
+    return bytes(out)
+
+
+# Two-column bordered table, used for the repair bill/quotation print — a
+# denser, more scannable layout than the label-above-value style above,
+# since a bill has many short rows (weights, rate, charges) that read better
+# side by side than stacked.
+_ESCPOS_COL1 = 21
+_ESCPOS_COL2 = 18
+
+
+def _escpos_table_hline(left: str, mid: str, right: str, fill: str = '─') -> bytes:
+    return _escpos_enc(left + fill * _ESCPOS_COL1 + mid + fill * _ESCPOS_COL2 + right) + b'\n'
+
+
+def _escpos_table_row(col1: str, col2: str, bold: bool = False) -> bytes:
+    c1 = _escpos_text(col1 or '')[:_ESCPOS_COL1].ljust(_ESCPOS_COL1)
+    c2 = _escpos_text(col2 or '')[:_ESCPOS_COL2].rjust(_ESCPOS_COL2)
+    row = _escpos_enc('│' + c1 + '│' + c2 + '│') + b'\n'
+    return (_ESCPOS_BOLD_ON + row + _ESCPOS_BOLD_OFF) if bold else row
+
+
+def _escpos_bill_table(shop_name: str, item: dict) -> bytes:
+    """Repair bill / quotation, laid out as a bordered table: item details,
+    the weight change breakdown (issue/loss/received/new wt/value add/rate),
+    then the charges and total — everything staff currently see on-screen
+    when billing, in one printable table instead of scattered flat lines."""
+    issued = item.get('current_issue_weight') or 0
+    loss = item.get('process_loss') or 0
+    received = issued + (item.get('weight_diff') or 0)
+    new_wt = round(issued - loss - received, 3)
+    value_add = item.get('bill_value_add') or 0
+    rate = item.get('bill_weight_rate') or 0
+    weight_amount = item.get('bill_material_adjustment') or 0
+    labour = item.get('bill_labour_charge') or 0
+    extra = item.get('bill_extra_charges') or 0
+    extra_note = item.get('bill_extra_charges_note') or ''
+    prev_balance = item.get('bill_previous_balance') or 0
+    total = item.get('billed_amount') or 0
+
+    def rs(n: float, signed: bool = False) -> str:
+        sign = '+' if signed and n > 0 else '-' if n < 0 else ''
+        body = f"Rs.{abs(n):.0f}" if abs(n) >= 1 or n == 0 else f"Rs.{abs(n):.2f}"
+        return sign + body
+
+    out = bytearray()
+    out += _ESCPOS_INIT + _ESCPOS_LINE_SPACING
+    out += _ESCPOS_ALIGN_CENTER + _ESCPOS_BOLD_ON + _ESCPOS_SIZE_BIG
+    out += _escpos_enc(shop_name) + b'\n'
+    out += _ESCPOS_SIZE_NORMAL + _ESCPOS_BOLD_OFF
+    out += _escpos_enc(f"Repair Quotation — {item['item_code']}") + b'\n'
+    out += _escpos_enc(item.get('customer_name', '')) + b'\n\n'
+    out += _ESCPOS_ALIGN_LEFT
+
+    out += _escpos_table_hline('┌', '┬', '┐')
+    out += _escpos_table_row('Item', item.get('description', ''))
+    out += _escpos_table_row('Tag', item.get('item_code', ''))
+    out += _escpos_table_row('Repair Type', item.get('repair_type') or '-')
+    out += _escpos_table_hline('├', '┼', '┤')
+    out += _escpos_table_row('Issue Wt', f"{issued:.3f}g")
+    out += _escpos_table_row('Loss Wt', f"{loss:.3f}g")
+    out += _escpos_table_row('Received Wt', f"{received:.3f}g")
+    out += _escpos_table_row('New Wt', f"{new_wt:+.3f}g", bold=True)
+    if value_add:
+        out += _escpos_table_row('Value Add', f"{value_add:.3f}g")
+    if rate:
+        out += _escpos_table_row('Rate', f"Rs.{rate:.0f}/g")
+    out += _escpos_table_hline('├', '┼', '┤')
+    out += _escpos_table_row('Weight Amount', rs(weight_amount, signed=True))
+    out += _escpos_table_row('Labour Charge', rs(labour))
+    if extra:
+        out += _escpos_table_row(extra_note or 'Extra Charges', rs(extra))
+    if prev_balance:
+        out += _escpos_table_row('Previous Balance', rs(prev_balance))
+    out += _escpos_table_hline('╞', '╪', '╡', fill='═')
+    out += _escpos_table_row('CREDIT DUE' if total < 0 else 'TOTAL', rs(abs(total)) if total < 0 else rs(total), bold=True)
+    out += _escpos_table_row('Payment Mode', (item.get('payment_mode') or 'cash').upper())
+    out += _escpos_table_hline('└', '┴', '┘')
+
+    out += b'\n'
+    out += _ESCPOS_ALIGN_CENTER
+    out += _escpos_enc(f"Generated {now_utc().strftime('%d %b %Y %H:%M')}") + b'\n'
     out += b'\n\n\n'
     out += _ESCPOS_CUT
     return bytes(out)
