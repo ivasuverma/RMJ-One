@@ -1,0 +1,312 @@
+"""Biometric devices: eSSL cloud push, ZKTeco/eSSL iClock ADMS protocol, eBioServer webhook
+
+Extracted from the former monolithic server.py (§2.1 router split). Shared
+infrastructure (db, auth deps, models, cross-domain helpers) stays in
+server.py and is imported from here — nothing about behavior changed,
+only where the code lives."""
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import PlainTextResponse
+from pydantic import BaseModel
+from typing import Optional, Literal
+from datetime import datetime, timezone
+import uuid
+from server import (
+    db,
+    now_utc,
+    require_owner,
+    require_staff,
+    require_module,
+    _apply_punch,
+    log_audit,
+    IST,
+)
+
+router = APIRouter()
+iclock_router = APIRouter()  # mounted directly on app, no /api prefix — real ADMS device protocol
+
+# ---------------- Biometric (eSSL Cloud Push) ----------------
+class DeviceIn(BaseModel):
+    serial: str
+    label: str
+    secret: str
+
+
+class BiometricPushIn(BaseModel):
+    serial: str
+    secret: str
+    user_id: str  # employee_code (as configured in eSSL device)
+    timestamp: Optional[str] = None  # ISO; defaults to now
+    event_type: Optional[Literal['check_in', 'check_out', 'auto']] = 'auto'
+    verify_mode: Optional[str] = ''  # 'face', 'fingerprint', etc.
+
+
+@router.get('/biometric/devices')
+async def list_devices(_: dict = Depends(require_staff)):
+    docs = await db.biometric_devices.find({}, {'_id': 0, 'secret': 0}).sort('created_at', 1).to_list(100)
+    return docs
+
+
+@router.post('/biometric/devices')
+async def create_device(body: DeviceIn, user=Depends(require_owner), _mod=Depends(require_module('biometric'))):
+    if await db.biometric_devices.find_one({'serial': body.serial}):
+        raise HTTPException(status_code=400, detail='Device serial already registered')
+    doc = {
+        'id': str(uuid.uuid4()), 'serial': body.serial.strip(), 'label': body.label.strip(),
+        'secret': body.secret, 'created_at': now_utc().isoformat(),
+        'last_seen': None, 'status': 'idle',
+    }
+    await db.biometric_devices.insert_one(dict(doc))
+    await log_audit(user, 'biometric.device.create', 'device', doc['id'], body.serial)
+    return {k: v for k, v in doc.items() if k not in ('_id', 'secret')}
+
+
+@router.delete('/biometric/devices/{did}')
+async def delete_device(did: str, user=Depends(require_owner), _mod=Depends(require_module('biometric'))):
+    d = await db.biometric_devices.find_one({'id': did}, {'_id': 0})
+    if not d: raise HTTPException(status_code=404, detail='Device not found')
+    await db.biometric_devices.delete_one({'id': did})
+    await log_audit(user, 'biometric.device.delete', 'device', did, d.get('serial', ''))
+    return {'ok': True}
+
+
+@router.get('/biometric/logs')
+async def biometric_logs(limit: int = 100, _: dict = Depends(require_staff)):
+    return await db.biometric_logs.find({}, {'_id': 0}).sort('created_at', -1).limit(limit).to_list(limit)
+
+
+async def _ingest_biometric_punch(serial: str, user_id: str, ts: datetime, event_type: str = 'auto', verify_mode: str = '') -> dict:
+    """Turn one (serial, user_id, timestamp) punch into an attendance
+    check-in/check-out, however it arrived (custom JSON push, real
+    ADMS/iClock upload, or the eBioServer webhook). Matches the device's
+    user_id to an employee, then hands off to _apply_punch() — the same
+    state machine the app's own check-in/check-out endpoints use — so a
+    biometric punch and an app punch can never disagree on shift/late/
+    half-day handling. This wrapper's own job is just employee matching and
+    the biometric_logs audit trail."""
+    log_doc = {
+        'id': str(uuid.uuid4()), 'serial': serial, 'user_id': user_id,
+        'timestamp': ts.isoformat(), 'event_type': event_type or 'auto',
+        'verify_mode': verify_mode or '', 'created_at': now_utc().isoformat(),
+    }
+
+    # Match by biometric_id first (the device's own numeric/short ID, set per-employee
+    # in the app when it doesn't line up with employee_code), then fall back to
+    # employee_code directly (for setups where they were deliberately enrolled to match).
+    emp = await db.employees.find_one({'biometric_id': user_id}, {'_id': 0, 'password_hash': 0})
+    if not emp:
+        emp = await db.employees.find_one({'employee_code': user_id.upper()}, {'_id': 0, 'password_hash': 0})
+    if not emp:
+        log_doc['result'] = 'rejected'; log_doc['reason'] = 'unknown_employee'
+        await db.biometric_logs.insert_one(dict(log_doc))
+        return {'ok': False, 'reason': 'unknown_employee', 'user_id': user_id}
+
+    # Normalize to UTC before storing — same as the app path, which always
+    # passes now_utc(). Devices/eBioServer hand us IST-labelled timestamps;
+    # _apply_punch converts back to IST internally for date/lateness math
+    # either way, so this only affects what's persisted, not the logic.
+    norm_ts = ts.astimezone(timezone.utc)
+    result = await _apply_punch(emp, event_type or 'auto', norm_ts, {'source': 'biometric', 'device_serial': serial})
+
+    if not result['ok']:
+        reason = result['reason']
+        if reason in ('already_checked_in', 'already_checked_out'):
+            log_doc['result'] = 'skipped'; log_doc['reason'] = reason
+            await db.biometric_logs.insert_one(dict(log_doc))
+            return {'ok': True, 'skipped': True, 'reason': reason}
+        log_doc['result'] = 'rejected'; log_doc['reason'] = reason
+        await db.biometric_logs.insert_one(dict(log_doc))
+        return {'ok': False, 'reason': reason, 'user_id': user_id}
+
+    kind = result['kind']
+    await db.biometric_devices.update_one({'serial': serial},
+                                          {'$set': {'last_seen': norm_ts.isoformat(), 'status': 'online'}})
+    log_doc['result'] = 'accepted'; log_doc['action'] = kind; log_doc['attendance_id'] = result['attendance_id']
+    log_doc['employee_id'] = emp['id']; log_doc['employee_name'] = emp['name']
+    await db.biometric_logs.insert_one(dict(log_doc))
+    return {'ok': True, 'action': kind, 'employee': emp['name'], 'attendance_id': result['attendance_id']}
+
+
+@router.post('/biometric/push')
+async def biometric_push(body: BiometricPushIn):
+    # Called by a bridge script (e.g. biometric_bridge.py) — no bearer JWT;
+    # validated via device serial + secret since it's not an ADMS-capable flow.
+    device = await db.biometric_devices.find_one({'serial': body.serial}, {'_id': 0})
+    if not device or device.get('secret') != body.secret:
+        await db.biometric_logs.insert_one({
+            'id': str(uuid.uuid4()), 'serial': body.serial, 'user_id': body.user_id,
+            'timestamp': body.timestamp or now_utc().isoformat(), 'event_type': body.event_type or 'auto',
+            'verify_mode': body.verify_mode or '', 'created_at': now_utc().isoformat(),
+            'result': 'rejected', 'reason': 'invalid_device_credentials',
+        })
+        raise HTTPException(status_code=401, detail='Invalid device credentials')
+
+    try:
+        ts = datetime.fromisoformat(body.timestamp) if body.timestamp else now_utc()
+    except Exception:
+        ts = now_utc()
+    result = await _ingest_biometric_punch(body.serial, body.user_id, ts, body.event_type or 'auto', body.verify_mode or '')
+    if not result['ok'] and result.get('reason') == 'unknown_employee':
+        raise HTTPException(status_code=404, detail=f'Unknown employee {body.user_id}')
+    if not result['ok'] and result.get('reason') == 'no_check_in':
+        raise HTTPException(status_code=400, detail='No check-in yet today')
+    return result
+
+
+# ---------------- Biometric (real eSSL/ZKTeco ADMS / iClock push protocol) ----------------
+# This is the protocol the device itself speaks natively when you set
+# Comm > Cloud Server Settings > Server Address/Port to point at this backend
+# (Server Mode stays "ADMS" — that field usually can't be changed, and doesn't
+# need to be). These routes are intentionally at the app root (not under /api)
+# because the device hard-codes the /iclock/... paths — they're not configurable.
+# No shared secret is used here (the protocol has no field for one); trust is
+# "the device is on your LAN and its serial is registered" — same as any other
+# local network appliance.
+
+@iclock_router.get('/iclock/cdata')
+async def iclock_handshake(SN: str = Query(...)):
+    """Device 'hello' on boot / periodic re-handshake. Tells it how often to
+    push and what tables we want. A plain 200 with this shape is enough for
+    it to start sending ATTLOG data."""
+    await db.biometric_devices.update_one(
+        {'serial': SN}, {'$set': {'last_seen': now_utc().isoformat(), 'status': 'online'}}
+    )
+    body = (
+        "GET OPTION FROM: {sn}\r\n"
+        "Stamp=9999\r\n"
+        "OpStamp=9999\r\n"
+        "ErrorDelay=30\r\n"
+        "Delay=10\r\n"
+        "TransFlag=TransData AttLog\r\n"
+        "TransInterval=1\r\n"
+        "Realtime=1\r\n"
+        "Encrypt=None\r\n"
+    ).format(sn=SN)
+    return PlainTextResponse(body)
+
+
+@iclock_router.post('/iclock/cdata')
+async def iclock_upload(request: Request, SN: str = Query(...), table: str = Query('ATTLOG')):
+    """Device pushes punch data here. Body is plain text, one record per line,
+    tab-separated: PIN<TAB>Time<TAB>Status<TAB>Verify<TAB>WorkCode..."""
+    device = await db.biometric_devices.find_one({'serial': SN}, {'_id': 0})
+    raw = (await request.body()).decode('utf-8', errors='ignore')
+    if not device:
+        # Log it anyway so it shows up in Settings > Biometric > Logs — makes it
+        # obvious the device is reachable but just isn't registered yet.
+        await db.biometric_logs.insert_one({
+            'id': str(uuid.uuid4()), 'serial': SN, 'user_id': '', 'timestamp': now_utc().isoformat(),
+            'event_type': 'auto', 'verify_mode': '', 'created_at': now_utc().isoformat(),
+            'result': 'rejected', 'reason': 'unregistered_device',
+        })
+        return PlainTextResponse('OK')  # ack anyway — device will just keep retrying otherwise
+
+    n = 0
+    if table.upper() == 'ATTLOG':
+        for line in raw.splitlines():
+            parts = line.strip().split('\t')
+            if len(parts) < 2:
+                continue
+            pin, time_str = parts[0].strip(), parts[1].strip()
+            if not pin or not time_str:
+                continue
+            try:
+                ts = datetime.strptime(time_str, '%Y-%m-%d %H:%M:%S').replace(
+                    tzinfo=IST
+                )
+            except Exception:
+                continue
+            await _ingest_biometric_punch(SN, pin, ts, 'auto')
+            n += 1
+    return PlainTextResponse(f'OK: {n}')
+
+
+@iclock_router.get('/iclock/getrequest')
+async def iclock_getrequest(SN: str = Query(...)):
+    """Device polls this periodically asking 'any commands for me?'. We never
+    queue commands, so always say no."""
+    return PlainTextResponse('OK')
+
+
+@iclock_router.post('/iclock/devicecmd')
+async def iclock_devicecmd(request: Request):
+    """Device posts the result of a command we supposedly sent. We don't send
+    any, but must still 200 or the device logs errors."""
+    await request.body()
+    return PlainTextResponse('OK')
+
+
+# ---------------- Biometric (eBioServer webhook) ----------------
+# A third path into the same attendance pipeline, for shops running eSSL's
+# eBioServer middleware app on a Windows PC between the fingerprint device
+# and RMJ-One (used when the device itself can't be pointed at a custom
+# server via ADMS/iClock — e.g. it only supports eBioServer's own cloud/local
+# push). eBioServer's Master Settings has a single "Web URL" field for the
+# whole app, POSTed to on every punch. Per eSSL's Web Hook manual (v1.1):
+#   plain mode:     {"UserId","LogDateTime","SerialNumber","TransactionMode","Direction"}
+#   encrypted mode: {"data": "<base64 AES>"}  — key is a 32-char string set
+#                    in eBioServer, but the manual never specifies cipher
+#                    mode/IV, so we can't decrypt it reliably. We only
+#                    support the plain ("without password") mode — leave the
+#                    Symmetric Key blank in eBioServer's Web Hook settings.
+# Both modes are told by eSSL to always get back {"StatusCode":"200",...},
+# so we never raise here — reject/accept is recorded in biometric_logs
+# instead (Settings > Biometric > Logs), same pattern as the ADMS receiver.
+class EBioServerWebhookIn(BaseModel):
+    UserId: Optional[str] = None
+    LogDateTime: Optional[str] = None
+    SerialNumber: Optional[str] = None
+    TransactionMode: Optional[str] = None
+    Direction: Optional[str] = None
+    data: Optional[str] = None  # present only in encrypted mode (unsupported)
+
+
+_EBIOSERVER_ACK = {'StatusCode': '200', 'Message': 'Success'}
+
+
+@router.post('/biometric/ebioserver-webhook')
+async def ebioserver_webhook(body: EBioServerWebhookIn, key: Optional[str] = Query(None)):
+    store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
+    configured_secret = store.get('biometric_webhook_secret')
+    if configured_secret and key != configured_secret:
+        await db.biometric_logs.insert_one({
+            'id': str(uuid.uuid4()), 'serial': body.SerialNumber or '', 'user_id': body.UserId or '',
+            'timestamp': body.LogDateTime or now_utc().isoformat(), 'event_type': 'auto',
+            'verify_mode': body.TransactionMode or '', 'created_at': now_utc().isoformat(),
+            'result': 'rejected', 'reason': 'invalid_webhook_key',
+        })
+        # Still ack 200 — eBioServer has no real retry/backoff handling to
+        # speak of, and a non-200 just makes it spam retries. The rejection
+        # is visible in the logs screen instead.
+        return _EBIOSERVER_ACK
+
+    if body.data and not body.UserId:
+        await db.biometric_logs.insert_one({
+            'id': str(uuid.uuid4()), 'serial': body.SerialNumber or '', 'user_id': '',
+            'timestamp': now_utc().isoformat(), 'event_type': 'auto', 'verify_mode': '',
+            'created_at': now_utc().isoformat(), 'result': 'rejected', 'reason': 'encrypted_mode_unsupported',
+        })
+        return _EBIOSERVER_ACK
+
+    if not body.UserId or not body.LogDateTime:
+        await db.biometric_logs.insert_one({
+            'id': str(uuid.uuid4()), 'serial': body.SerialNumber or '', 'user_id': body.UserId or '',
+            'timestamp': now_utc().isoformat(), 'event_type': 'auto', 'verify_mode': body.TransactionMode or '',
+            'created_at': now_utc().isoformat(), 'result': 'rejected', 'reason': 'missing_fields',
+        })
+        return _EBIOSERVER_ACK
+
+    try:
+        ts = datetime.strptime(body.LogDateTime, '%Y-%m-%d %H:%M:%S').replace(
+            tzinfo=IST
+        )
+    except Exception:
+        ts = now_utc()
+
+    # No Direction/in-out field is actually populated in eBioServer's own
+    # examples — TransactionMode is a verify-method label (e.g. "VS_FP"),
+    # not a direction — so we auto-toggle check-in/check-out exactly like
+    # the ADMS receiver does.
+    await _ingest_biometric_punch(
+        body.SerialNumber or 'ebioserver', body.UserId, ts, 'auto', body.TransactionMode or ''
+    )
+    return _EBIOSERVER_ACK
