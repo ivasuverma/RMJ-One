@@ -31,8 +31,17 @@ jobs:
           cd $repo
 
           function Assert-ServiceRunning($name) {
-            $status = (nssm status $name).Trim()
-            Write-Host "$name -> $status"
+            # nssm.exe writes its status output as UTF-16LE. Depending on the
+            # console's active code page, capturing it via PowerShell can come
+            # back with embedded/garbled bytes that LOOK like "SERVICE_RUNNING"
+            # when printed but fail a strict -eq/-ne comparison even after
+            # .Trim() (this silently broke the last two deploys — the service
+            # was genuinely up both times, only the check was wrong). Strip
+            # everything but letters/underscores before comparing so stray
+            # whitespace, nulls, or CR/LF noise can't cause a false negative.
+            $raw = (nssm status $name | Out-String)
+            $status = ($raw -replace '[^A-Za-z_]', '')
+            Write-Host "$name -> raw=[$raw] clean=[$status]"
             if ($status -ne 'SERVICE_RUNNING') {
               throw "$name did not come up (status: $status)"
             }
