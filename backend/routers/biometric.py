@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 from typing import Optional, Literal
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import uuid
 from server import (
     db,
@@ -222,9 +222,22 @@ async def iclock_upload(request: Request, SN: str = Query(...), table: str = Que
 
 @iclock_router.get('/iclock/getrequest')
 async def iclock_getrequest(SN: str = Query(...)):
-    """Device polls this periodically asking 'any commands for me?'. We never
-    queue commands, so always say no."""
-    return PlainTextResponse('OK')
+    """Device polls this periodically asking 'any commands for me?'. Some
+    ADMS firmwares (confirmed on at least one eSSL model in the field) don't
+    actually push new ATTLOG records on their own even with Realtime=1 in the
+    handshake — they sit on captured punches until the server explicitly
+    asks for them here. So instead of always saying 'no commands', ask a
+    registered device to upload its attendance log on every poll. This is
+    idempotent: the device only has new data to send when there's actually a
+    new punch, so a device that already pushes spontaneously just no-ops on
+    an empty query. Command id is fixed at 1 since we never track command
+    acks (devicecmd below accepts anything)."""
+    device = await db.biometric_devices.find_one({'serial': SN}, {'_id': 0})
+    if not device:
+        return PlainTextResponse('OK')
+    start = '2000-01-01 00:00:00'
+    end = (now_utc() + timedelta(days=1)).strftime('%Y-%m-%d %H:%M:%S')
+    return PlainTextResponse(f'C:1:DATA QUERY ATTLOG StartTime={start} EndTime={end}')
 
 
 @iclock_router.post('/iclock/devicecmd')
