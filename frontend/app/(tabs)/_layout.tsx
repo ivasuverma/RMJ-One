@@ -39,19 +39,19 @@ export default function OwnerTabsLayout() {
     >
       <Tabs.Screen
         name="dashboard"
-        options={{ title: 'Home', tabBarIcon: ({ color, size }) => <Ionicons name="home-outline" color={color} size={size} /> }}
+        options={{ title: 'Home', tabBarButtonTestID: 'tab-dashboard', tabBarIcon: ({ color, size }) => <Ionicons name="home-outline" color={color} size={size} /> }}
       />
       <Tabs.Screen
         name="transactions"
-        options={{ title: 'Transactions', tabBarIcon: ({ color, size }) => <Ionicons name="swap-horizontal-outline" color={color} size={size} /> }}
+        options={{ title: 'Transactions', tabBarButtonTestID: 'tab-transactions', tabBarIcon: ({ color, size }) => <Ionicons name="swap-horizontal-outline" color={color} size={size} /> }}
       />
       <Tabs.Screen
         name="reports"
-        options={{ title: 'Reports', tabBarIcon: ({ color, size }) => <Ionicons name="bar-chart-outline" color={color} size={size} /> }}
+        options={{ title: 'Reports', tabBarButtonTestID: 'tab-reports', tabBarIcon: ({ color, size }) => <Ionicons name="bar-chart-outline" color={color} size={size} /> }}
       />
       <Tabs.Screen
         name="utility"
-        options={{ title: 'Settings', tabBarIcon: ({ color, size }) => <Ionicons name="settings-outline" color={color} size={size} /> }}
+        options={{ title: 'Settings', tabBarButtonTestID: 'tab-utility', tabBarIcon: ({ color, size }) => <Ionicons name="settings-outline" color={color} size={size} /> }}
       />
       {/* Still routable (tiles above link into these) but no longer their own bottom
           tab — the reference IA groups by action type, not by module. */}

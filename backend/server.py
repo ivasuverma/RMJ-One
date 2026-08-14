@@ -4803,8 +4803,29 @@ class AssistantAskIn(BaseModel):
     question: str
 
 
+_ASSISTANT_CONTEXT_CACHE: Dict[str, object] = {'snapshot': None, 'built_at': 0.0}
+_ASSISTANT_CONTEXT_TTL_SEC = 30
+
+
 async def _build_context() -> str:
-    """Compact snapshot for the assistant prompt (read-only)."""
+    """Compact snapshot for the assistant prompt (read-only). Rebuilding this
+    is O(N) reads across every employee + every closing-balance computation
+    (_opening_balance per employee), so a burst of questions in the same
+    chat used to redo that full scan on every single message. Cached for
+    _ASSISTANT_CONTEXT_TTL_SEC — fine at current scale (a snapshot up to 30s
+    stale is not meaningfully different for a "what's going on today"
+    assistant), and avoids the cost scaling with chat activity rather than
+    just with employee count."""
+    now = _time.monotonic()
+    if _ASSISTANT_CONTEXT_CACHE['snapshot'] is not None and (now - _ASSISTANT_CONTEXT_CACHE['built_at']) < _ASSISTANT_CONTEXT_TTL_SEC:
+        return _ASSISTANT_CONTEXT_CACHE['snapshot']
+    snapshot = await _build_context_uncached()
+    _ASSISTANT_CONTEXT_CACHE['snapshot'] = snapshot
+    _ASSISTANT_CONTEXT_CACHE['built_at'] = now
+    return snapshot
+
+
+async def _build_context_uncached() -> str:
     d = today_str()
     lines: list = []
     employees = await db.employees.find({}, {'_id': 0, 'password_hash': 0, 'photo': 0}).to_list(500)
@@ -4864,8 +4885,10 @@ async def assistant_ask(body: AssistantAskIn, user=Depends(require_staff)):
         system_message=f"{SYSTEM_PROMPT}\n\nDATA SNAPSHOT:\n{context}",
     ).with_model("gemini", "gemini-3-flash-preview")
     try:
-        resp = await chat.send_message(UserMessage(text=body.question))
+        resp = await asyncio.wait_for(chat.send_message(UserMessage(text=body.question)), timeout=20)
         text = resp if isinstance(resp, str) else str(resp)
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail='The AI assistant took too long to respond. Please try again.')
     except Exception as ex:
         raise HTTPException(status_code=502, detail=f'AI service error: {ex}')
     # Store transcript

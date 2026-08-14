@@ -47,7 +47,7 @@ export default function EmployeeTabsLayout() {
     >
       <Tabs.Screen
         name="home"
-        options={{ title: 'Home', tabBarIcon: ({ color, size }) => <Ionicons name="scan-outline" color={color} size={size} /> }}
+        options={{ title: 'Home', tabBarButtonTestID: 'tab-home', tabBarIcon: ({ color, size }) => <Ionicons name="scan-outline" color={color} size={size} /> }}
       />
       <Tabs.Screen
         name="calendar"
@@ -62,16 +62,17 @@ export default function EmployeeTabsLayout() {
         options={{
           title: 'Transactions',
           href: hasTransactionsAccess ? undefined : null,
+          tabBarButtonTestID: 'tab-transactions',
           tabBarIcon: ({ color, size }) => <Ionicons name="swap-horizontal-outline" color={color} size={size} />,
         }}
       />
       <Tabs.Screen
         name="tasks"
-        options={{ title: 'Tasks', tabBarIcon: ({ color, size }) => <Ionicons name="checkbox-outline" color={color} size={size} /> }}
+        options={{ title: 'Tasks', tabBarButtonTestID: 'tab-tasks', tabBarIcon: ({ color, size }) => <Ionicons name="checkbox-outline" color={color} size={size} /> }}
       />
       <Tabs.Screen
         name="profile"
-        options={{ title: 'Profile', tabBarIcon: ({ color, size }) => <Ionicons name="person-outline" color={color} size={size} /> }}
+        options={{ title: 'Profile', tabBarButtonTestID: 'tab-profile', tabBarIcon: ({ color, size }) => <Ionicons name="person-outline" color={color} size={size} /> }}
       />
     </Tabs>
   );
