@@ -4219,14 +4219,14 @@ def _thermal_slip_pdf(shop_name: str, heading: str, lines: list) -> bytes:
 _ESC = b'\x1b'
 _GS = b'\x1d'
 _ESCPOS_INIT = _ESC + b'@'            # reset printer state
-_ESCPOS_LINE_SPACING = _ESC + b'3' + bytes([50])  # roomier than the ~30-dot default — makes slips read taller
+_ESCPOS_LINE_SPACING = _ESC + b'3' + bytes([36])  # a touch roomier than the ~30-dot default, not the oversized 50 from before
 _ESCPOS_ALIGN_CENTER = _ESC + b'a\x01'
 _ESCPOS_ALIGN_LEFT = _ESC + b'a\x00'
 _ESCPOS_BOLD_ON = _ESC + b'E\x01'
 _ESCPOS_BOLD_OFF = _ESC + b'E\x00'
 _ESCPOS_SIZE_NORMAL = _GS + b'!\x00'
 _ESCPOS_SIZE_TALL = _GS + b'!\x01'    # double height only — stays readable-width
-_ESCPOS_SIZE_BIG = _GS + b'!\x11'     # double width + double height — for the shop name
+_ESCPOS_SIZE_BIG = _GS + b'!\x11'     # double width + double height — for the shop name only
 _ESCPOS_CUT = _GS + b'V\x00'          # full cut
 _ESCPOS_WIDTH_CHARS = 42              # ~80mm paper at the default 12x24 font
 
@@ -4265,9 +4265,10 @@ def _escpos_receipt(shop_name: str, heading: str, lines: list) -> bytes:
     divider/free line, or '' for a blank line — so both the on-screen PDF and
     the direct network print render the same content.
 
-    Each field prints as a small bold label on its own line, with the value
-    on the line below at double height — easier to read at a glance than a
-    single cramped "Label: value" line, especially on a narrow 80mm roll."""
+    Compact "LABEL: value" layout at normal font size — the shop name is the
+    only oversized text on the slip. Values that don't fit next to their
+    label on one line drop to a wrapped block below it, still at normal size,
+    so long notes/addresses don't clip."""
     enc = _escpos_enc
     out = bytearray()
     out += _ESCPOS_INIT + _ESCPOS_LINE_SPACING
@@ -4281,17 +4282,21 @@ def _escpos_receipt(shop_name: str, heading: str, lines: list) -> bytes:
     for item in lines:
         if isinstance(item, tuple):
             label, value = item
-            out += _ESCPOS_BOLD_ON
-            out += enc(label.upper()) + b'\n'
-            out += _ESCPOS_BOLD_OFF + _ESCPOS_SIZE_TALL
-            for chunk in _escpos_wrapped(str(value), _ESCPOS_WIDTH_CHARS):
-                out += enc(chunk) + b'\n'
-            out += _ESCPOS_SIZE_NORMAL + b'\n'
+            label_str = f"{label.upper()}: "
+            value_str = str(value)
+            if len(label_str) + len(value_str) <= _ESCPOS_WIDTH_CHARS:
+                out += _ESCPOS_BOLD_ON + enc(label_str) + _ESCPOS_BOLD_OFF
+                out += enc(value_str) + b'\n'
+            else:
+                out += _ESCPOS_BOLD_ON + enc(label.upper()) + b'\n' + _ESCPOS_BOLD_OFF
+                for chunk in _escpos_wrapped(value_str, _ESCPOS_WIDTH_CHARS):
+                    out += enc(chunk) + b'\n'
         elif item == '':
             out += b'\n'
         else:
             out += enc('-' * _ESCPOS_WIDTH_CHARS) + b'\n'
-            out += _ESCPOS_BOLD_ON + enc(item) + b'\n' + _ESCPOS_BOLD_OFF + b'\n'
+            out += _ESCPOS_BOLD_ON + enc(item) + b'\n' + _ESCPOS_BOLD_OFF
+            out += b'\n'
 
     out += enc('=' * _ESCPOS_WIDTH_CHARS) + b'\n'
     out += _ESCPOS_ALIGN_CENTER
