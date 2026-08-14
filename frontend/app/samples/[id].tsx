@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, Platform, KeyboardAvoidingView,
+  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, Platform, KeyboardAvoidingView, Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -12,10 +12,10 @@ import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
 type Sample = {
-  id: string; sample_code: string; description: string; purity: number;
-  gross_weight: number; fine_weight: number; karigar_id: string; karigar_name: string;
+  id: string; sample_code: string; description: string; tag_number: string;
+  weight: number; photo: string; karigar_id: string; karigar_name: string;
   status: 'with_karigar' | 'received';
-  received_weight: number | null; received_fine_weight: number | null; weight_diff: number | null;
+  received_weight: number | null; weight_diff: number | null;
   issued_at: string; issued_by: string; received_at: string | null; received_by: string | null;
   note: string;
 };
@@ -31,11 +31,13 @@ export default function SampleDetailScreen() {
 
   const [sample, setSample] = useState<Sample | null>(null);
   const [loading, setLoading] = useState(true);
-  const [showReceive, setShowReceive] = useState(false);
-  const [receivedWeight, setReceivedWeight] = useState('');
-  const [receiveNote, setReceiveNote] = useState('');
-  const [receiving, setReceiving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  const [showEdit, setShowEdit] = useState(false);
+  const [editDescription, setEditDescription] = useState('');
+  const [editTagNumber, setEditTagNumber] = useState('');
+  const [editNote, setEditNote] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
 
   const load = useCallback(async () => {
     try { setSample(await api.get<Sample>(`/samples/${id}`)); }
@@ -44,16 +46,21 @@ export default function SampleDetailScreen() {
   }, [id]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const receive = async () => {
-    const w = parseFloat(receivedWeight);
-    if (!w || w <= 0) { Alert.alert('Missing', 'Enter the weight received back'); return; }
-    setReceiving(true);
+  const openEdit = () => {
+    if (!sample) return;
+    setEditDescription(sample.description); setEditTagNumber(sample.tag_number || ''); setEditNote('');
+    setShowEdit(true);
+  };
+
+  const saveEdit = async () => {
+    if (!editDescription.trim()) { Alert.alert('Missing', 'Description cannot be empty'); return; }
+    setSavingEdit(true);
     try {
-      await api.post(`/samples/${id}/receive`, { received_weight: w, note: receiveNote.trim() });
-      setShowReceive(false); setReceivedWeight(''); setReceiveNote('');
+      await api.put(`/samples/${id}`, { description: editDescription.trim(), tag_number: editTagNumber.trim(), note: editNote });
+      setShowEdit(false);
       await load();
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
-    finally { setReceiving(false); }
+    finally { setSavingEdit(false); }
   };
 
   const remove = () => {
@@ -95,6 +102,11 @@ export default function SampleDetailScreen() {
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
         <Text style={styles.title} numberOfLines={1}>{sample.sample_code}</Text>
+        {isWithKarigar && canEdit && (
+          <Pressable onPress={openEdit} style={styles.iconBtn} testID="edit-sample-btn" hitSlop={12}>
+            <Ionicons name="pencil-outline" size={18} color={colors.onSurface} />
+          </Pressable>
+        )}
         {canDelete && (
           <Pressable onPress={remove} disabled={deleting} style={styles.iconBtn} testID="delete-sample-btn" hitSlop={12}>
             {deleting ? <ActivityIndicator size="small" color={colors.onError} /> : <Ionicons name="trash-outline" size={18} color={colors.onError} />}
@@ -110,31 +122,27 @@ export default function SampleDetailScreen() {
             </Text>
           </View>
 
+          {sample.photo ? <Image source={{ uri: sample.photo }} style={styles.photo} /> : null}
+
           <Text style={styles.description}>{sample.description}</Text>
+          {!!sample.tag_number && <Text style={styles.tagNumber}>Tag {sample.tag_number}</Text>}
 
           <View style={styles.summaryRow}>
             <View style={styles.summaryTile}>
-              <Text style={styles.summaryValue}>{sample.gross_weight.toFixed(3)}g</Text>
+              <Text style={styles.summaryValue}>{sample.weight.toFixed(3)}g</Text>
               <Text style={styles.summaryLabel}>Issued weight</Text>
             </View>
-            <View style={styles.summaryTile}>
-              <Text style={styles.summaryValue}>{sample.purity}%</Text>
-              <Text style={styles.summaryLabel}>Purity</Text>
-            </View>
-          </View>
-
-          {sample.status === 'received' && (
-            <View style={styles.summaryRow}>
+            {sample.status === 'received' && (
               <View style={styles.summaryTile}>
                 <Text style={styles.summaryValue}>{sample.received_weight?.toFixed(3)}g</Text>
                 <Text style={styles.summaryLabel}>Received weight</Text>
               </View>
-              <View style={styles.summaryTile}>
-                <Text style={[styles.summaryValue, !!sample.weight_diff && { color: colors.onWarning }]}>
-                  {sample.weight_diff ? `${sample.weight_diff > 0 ? '+' : ''}${sample.weight_diff.toFixed(3)}g` : 'Exact'}
-                </Text>
-                <Text style={styles.summaryLabel}>Difference</Text>
-              </View>
+            )}
+          </View>
+          {sample.status === 'received' && !!sample.weight_diff && (
+            <View style={styles.diffTile}>
+              <Text style={[styles.summaryValue, { color: colors.onWarning }]}>{sample.weight_diff > 0 ? '+' : ''}{sample.weight_diff.toFixed(3)}g</Text>
+              <Text style={styles.summaryLabel}>Difference vs issued</Text>
             </View>
           )}
 
@@ -152,35 +160,29 @@ export default function SampleDetailScreen() {
             )}
           </View>
 
-          {isWithKarigar && canEdit && !showReceive && (
-            <Pressable style={styles.primaryBtn} onPress={() => setShowReceive(true)} testID="open-receive-sample-btn">
-              <Text style={styles.primaryBtnText}>Receive Back</Text>
-            </Pressable>
-          )}
-
-          {isWithKarigar && showReceive && (
-            <View style={styles.formCard} testID="receive-sample-form">
-              <Text style={styles.formHeaderText}>Receive Sample</Text>
-              <Text style={styles.formHint}>Expected {sample.gross_weight.toFixed(3)}g back — enter what actually came back.</Text>
-              <Text style={styles.label}>Received weight (g)</Text>
-              <TextInput
-                testID="received-weight" value={receivedWeight} onChangeText={setReceivedWeight}
-                keyboardType="decimal-pad" placeholder={sample.gross_weight.toFixed(3)}
-                placeholderTextColor={colors.mutedText} style={styles.input}
-              />
-              <Text style={styles.label}>Note (optional)</Text>
-              <TextInput
-                testID="receive-note" value={receiveNote} onChangeText={setReceiveNote}
-                placeholder="Anything worth noting about the return" placeholderTextColor={colors.mutedText}
-                style={styles.input} multiline
-              />
-              <Pressable style={[styles.primaryBtn, receiving && { opacity: 0.6 }]} disabled={receiving} onPress={receive} testID="confirm-receive-sample-btn">
-                {receiving ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.primaryBtnText}>Confirm Receipt</Text>}
+          {isWithKarigar && showEdit && (
+            <View style={styles.formCard} testID="edit-sample-form">
+              <Text style={styles.formHeaderText}>Edit Sample</Text>
+              <Text style={styles.formHint}>Weight is locked — it's what the karigar ledger entry was posted with. Delete and reissue if it needs correcting.</Text>
+              <Text style={styles.label}>Description</Text>
+              <TextInput testID="edit-description" value={editDescription} onChangeText={setEditDescription} placeholderTextColor={colors.mutedText} style={styles.input} />
+              <Text style={styles.label}>Tag Number</Text>
+              <TextInput testID="edit-tag-number" value={editTagNumber} onChangeText={setEditTagNumber} placeholderTextColor={colors.mutedText} style={styles.input} />
+              <Text style={styles.label}>Add a note (optional)</Text>
+              <TextInput testID="edit-note" value={editNote} onChangeText={setEditNote} placeholderTextColor={colors.mutedText} style={styles.input} multiline />
+              <Pressable style={[styles.primaryBtn, savingEdit && { opacity: 0.6 }]} disabled={savingEdit} onPress={saveEdit} testID="save-edit-sample-btn">
+                {savingEdit ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.primaryBtnText}>Save Changes</Text>}
               </Pressable>
-              <Pressable style={styles.secondaryBtn} onPress={() => setShowReceive(false)} testID="cancel-receive-sample-btn">
+              <Pressable style={styles.secondaryBtn} onPress={() => setShowEdit(false)} testID="cancel-edit-sample-btn">
                 <Text style={styles.secondaryBtnText}>Cancel</Text>
               </Pressable>
             </View>
+          )}
+
+          {isWithKarigar && !showEdit && (
+            <Pressable style={styles.primaryBtn} onPress={() => router.push(`/samples/receive?id=${id}` as any)} testID="open-receive-sample-btn">
+              <Text style={styles.primaryBtnText}>Receive Back</Text>
+            </Pressable>
           )}
         </ScrollView>
       </KeyboardAvoidingView>
@@ -208,22 +210,25 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   badgeTextOut: { color: colors.brandSecondary },
   badgeTextReceived: { color: colors.onSuccess },
 
-  description: { color: colors.onSurface, fontSize: 18, fontWeight: '700', fontFamily: fonts.display, marginBottom: spacing.md },
+  photo: { width: '100%', height: 200, borderRadius: radius.lg, backgroundColor: colors.surfaceTertiary, marginBottom: spacing.md },
+  description: { color: colors.onSurface, fontSize: 18, fontWeight: '700', fontFamily: fonts.display },
+  tagNumber: { color: colors.mutedText, fontSize: 13, marginTop: 2, marginBottom: spacing.md },
 
-  summaryRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md },
+  summaryRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
   summaryTile: { flex: 1, backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.md, alignItems: 'center' },
+  diffTile: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.md, alignItems: 'center', marginTop: spacing.sm },
   summaryValue: { color: colors.onSurface, fontSize: 18, fontWeight: '700' },
   summaryLabel: { color: colors.mutedText, fontSize: 11, marginTop: 4, textAlign: 'center' },
 
   detailCard: {
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border,
-    padding: spacing.md, marginBottom: spacing.lg,
+    padding: spacing.md, marginTop: spacing.md, marginBottom: spacing.lg,
   },
   detailRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6 },
   detailLabel: { color: colors.mutedText, fontSize: 12 },
   detailValue: { color: colors.onSurface, fontSize: 13, fontWeight: '600' },
 
-  formCard: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.lg },
+  formCard: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.lg, marginBottom: spacing.md },
   formHeaderText: { color: colors.onSurface, fontSize: 13, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
   formHint: { color: colors.mutedText, fontSize: 11, marginTop: 4, marginBottom: spacing.sm },
   label: { color: colors.onSurfaceSecondary, fontSize: 12, marginTop: spacing.md, marginBottom: 6 },

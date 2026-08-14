@@ -680,18 +680,23 @@ class KarigarLedgerEntryIn(BaseModel):
     note: Optional[str] = ''
 
 
-# ---------------- Samples (gold sample piece issued to a karigar, expected back at the same weight) ----------------
+# ---------------- Samples (gold sample pieces issued to a karigar, expected back at the same weight) ----------------
+class SampleItemSpec(BaseModel):
+    description: str
+    tag_number: Optional[str] = ''
+    weight: float
+    photo: Optional[str] = ''
+
+
 class SampleIn(BaseModel):
     karigar_id: str
-    description: str
-    purity: Optional[float] = 100.0
-    gross_weight: float
     note: Optional[str] = ''
+    items: List[SampleItemSpec]
 
 
 class SampleUpdateIn(BaseModel):
     description: Optional[str] = None
-    purity: Optional[float] = None
+    tag_number: Optional[str] = None
     note: Optional[str] = None
 
 

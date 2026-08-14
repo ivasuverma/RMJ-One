@@ -1,8 +1,10 @@
 """Sample Issue/Receive: gold sample pieces lent to a karigar (e.g. for
 quoting or reference), expected back at the same weight — no billing, no
-customer, no repair lifecycle. Much lighter than the repairs module, but
-shares the same karigar_ledger so a karigar's gold balance always reflects
-samples out with them, same as repair items.
+customer, no repair lifecycle, no purity/fine-weight conversion (samples
+are tracked in plain weight; karigar_ledger entries omit fine_weight so the
+balance aggregator falls back to using weight directly). Much lighter than
+the repairs module, but shares the same karigar_ledger so a karigar's gold
+balance always reflects samples out with them.
 
 New module, added alongside the §2.1 router split — see server.py for the
 'samples' entry in MODULE_DEFS."""
@@ -31,42 +33,49 @@ async def _next_sample_code() -> str:
 
 
 @router.post('/samples')
-async def create_sample(body: SampleIn, user=Depends(require_admin_or_module('samples'))):
+async def create_samples(body: SampleIn, user=Depends(require_admin_or_module('samples'))):
     """Creating a sample IS issuing it — there's no shop-held precursor state
     the way repair items have (received from a customer first); the shop's
-    own sample piece goes straight to the karigar."""
+    own sample piece(s) go straight to the karigar. Takes a list so several
+    pieces can be issued to the same karigar in one go, each still getting
+    its own record, tag, and ledger entry."""
+    if not body.items:
+        raise HTTPException(status_code=400, detail='At least one sample is required')
     karigar = await db.karigars.find_one({'id': body.karigar_id}, {'_id': 0})
     if not karigar:
         raise HTTPException(status_code=404, detail='Karigar not found')
-    if body.gross_weight <= 0:
-        raise HTTPException(status_code=400, detail='Weight must be greater than 0')
+    for spec in body.items:
+        if spec.weight <= 0:
+            raise HTTPException(status_code=400, detail=f'Weight must be greater than 0 for "{spec.description}"')
 
-    purity = body.purity if body.purity is not None else 100.0
-    fine_weight = round(body.gross_weight * purity / 100, 3)
     iso = now_utc().isoformat()
-    sample_id = str(uuid.uuid4())
-    sample_code = await _next_sample_code()
+    created = []
+    for spec in body.items:
+        sample_id = str(uuid.uuid4())
+        sample_code = await _next_sample_code()
+        sample = {
+            'id': sample_id, 'sample_code': sample_code, 'description': spec.description,
+            'tag_number': spec.tag_number or '', 'weight': spec.weight, 'photo': spec.photo or '',
+            'karigar_id': karigar['id'], 'karigar_name': karigar['name'],
+            'status': 'with_karigar',
+            'issued_at': iso, 'issued_by': user['name'],
+            'received_weight': None, 'weight_diff': None,
+            'received_at': None, 'received_by': None,
+            'note': body.note or '', 'created_at': iso, 'created_by': user['name'],
+        }
+        await db.samples.insert_one(dict(sample))
+        tag_note = f" (tag {spec.tag_number})" if spec.tag_number else ''
+        await db.karigar_ledger.insert_one({
+            'id': str(uuid.uuid4()), 'karigar_id': karigar['id'], 'type': 'gold_out',
+            'weight': spec.weight, 'fine_weight': None, 'amount': None,
+            'item_id': sample_id, 'item_code': sample_code,
+            'note': f"Sample issued: {spec.description}{tag_note}", 'created_at': iso, 'created_by': user['name'],
+        })
+        created.append({k: v for k, v in sample.items() if k != '_id'})
 
-    sample = {
-        'id': sample_id, 'sample_code': sample_code, 'description': body.description,
-        'purity': purity, 'gross_weight': body.gross_weight, 'fine_weight': fine_weight,
-        'karigar_id': karigar['id'], 'karigar_name': karigar['name'],
-        'status': 'with_karigar',
-        'issued_at': iso, 'issued_by': user['name'],
-        'received_weight': None, 'received_fine_weight': None, 'weight_diff': None,
-        'received_at': None, 'received_by': None,
-        'note': body.note or '', 'created_at': iso, 'created_by': user['name'],
-    }
-    await db.samples.insert_one(dict(sample))
-    await db.karigar_ledger.insert_one({
-        'id': str(uuid.uuid4()), 'karigar_id': karigar['id'], 'type': 'gold_out',
-        'weight': body.gross_weight, 'fine_weight': fine_weight, 'amount': None,
-        'item_id': sample_id, 'item_code': sample_code,
-        'note': f"Sample issued: {body.description}", 'created_at': iso, 'created_by': user['name'],
-    })
-    await log_audit(user, 'sample.issue', 'sample', sample_id, sample_code,
-                     {'karigar': karigar['name'], 'weight': body.gross_weight})
-    return {k: v for k, v in sample.items() if k != '_id'}
+    await log_audit(user, 'sample.issue', 'sample', created[0]['id'], f"{len(created)} sample(s)",
+                     {'karigar': karigar['name'], 'count': len(created)})
+    return created
 
 
 @router.get('/samples')
@@ -82,6 +91,7 @@ async def list_samples(
         q_esc = re.escape(q)
         query['$or'] = [
             {'sample_code': {'$regex': q_esc, '$options': 'i'}},
+            {'tag_number': {'$regex': q_esc, '$options': 'i'}},
             {'description': {'$regex': q_esc, '$options': 'i'}},
             {'karigar_name': {'$regex': q_esc, '$options': 'i'}},
         ]
@@ -102,17 +112,12 @@ async def update_sample(sample_id: str, body: SampleUpdateIn, user=Depends(requi
     if not sample:
         raise HTTPException(status_code=404, detail='Sample not found')
     if sample['status'] != 'with_karigar':
-        raise HTTPException(status_code=400, detail='This sample has already been received back — only description/note edits before receipt are allowed')
+        raise HTTPException(status_code=400, detail='This sample has already been received back — only description/tag/note edits before receipt are allowed')
 
     upd: dict = {}
     if body.description is not None: upd['description'] = body.description
+    if body.tag_number is not None: upd['tag_number'] = body.tag_number
     if body.note is not None: upd['note'] = body.note
-    if body.purity is not None:
-        # Weight itself is locked once issued (it's what the karigar_ledger
-        # gold_out entry was posted with) — same rule repair items use —
-        # but purity alone can still be corrected, recomputing fine_weight.
-        upd['purity'] = body.purity
-        upd['fine_weight'] = round(sample['gross_weight'] * body.purity / 100, 3)
     if upd:
         await db.samples.update_one({'id': sample_id}, {'$set': upd})
         await log_audit(user, 'sample.update', 'sample', sample_id, sample['sample_code'])
@@ -143,24 +148,20 @@ async def receive_sample(sample_id: str, body: SampleReceiveIn, user=Depends(req
     if body.received_weight <= 0:
         raise HTTPException(status_code=400, detail='Received weight must be greater than 0')
 
-    purity = sample.get('purity') or 100.0
-    received_fine_weight = round(body.received_weight * purity / 100, 3)
-    weight_diff = round(body.received_weight - sample['gross_weight'], 3)
+    weight_diff = round(body.received_weight - sample['weight'], 3)
     iso = now_utc().isoformat()
-
     note = f"Sample received back: {sample['description']}"
     if weight_diff:
         note += f" (diff {weight_diff:+.3f}g vs issued — expected the same weight back)"
 
     await db.karigar_ledger.insert_one({
         'id': str(uuid.uuid4()), 'karigar_id': sample['karigar_id'], 'type': 'gold_in',
-        'weight': body.received_weight, 'fine_weight': received_fine_weight, 'amount': None,
+        'weight': body.received_weight, 'fine_weight': None, 'amount': None,
         'item_id': sample_id, 'item_code': sample['sample_code'],
         'note': note, 'created_at': iso, 'created_by': user['name'],
     })
     await db.samples.update_one({'id': sample_id}, {'$set': {
-        'status': 'received', 'received_weight': body.received_weight,
-        'received_fine_weight': received_fine_weight, 'weight_diff': weight_diff,
+        'status': 'received', 'received_weight': body.received_weight, 'weight_diff': weight_diff,
         'received_at': iso, 'received_by': user['name'],
         'note': (sample.get('note') or '') + (f"\n{body.note}" if body.note else ''),
     }})
