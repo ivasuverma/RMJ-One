@@ -289,6 +289,12 @@ class StoreSettingsIn(BaseModel):
     # unset means no printer is configured and print actions will 400.
     printer_ip: Optional[str] = None
     printer_port: int = 9100
+    # Shared secret for the eBioServer webhook receiver (?key=... query param).
+    # eBioServer's Master Settings only has one "Web URL" field for the whole
+    # app (not per-device), so this is one shop-wide key rather than a
+    # per-device secret. Leave blank to accept unauthenticated pushes (fine
+    # if the tunnel/network is already trusted).
+    biometric_webhook_secret: Optional[str] = None
 
 
 class PunchIn(BaseModel):
@@ -4610,6 +4616,83 @@ async def iclock_devicecmd(request: Request):
     any, but must still 200 or the device logs errors."""
     await request.body()
     return PlainTextResponse('OK')
+
+
+# ---------------- Biometric (eBioServer webhook) ----------------
+# A third path into the same attendance pipeline, for shops running eSSL's
+# eBioServer middleware app on a Windows PC between the fingerprint device
+# and RMJ-One (used when the device itself can't be pointed at a custom
+# server via ADMS/iClock — e.g. it only supports eBioServer's own cloud/local
+# push). eBioServer's Master Settings has a single "Web URL" field for the
+# whole app, POSTed to on every punch. Per eSSL's Web Hook manual (v1.1):
+#   plain mode:     {"UserId","LogDateTime","SerialNumber","TransactionMode","Direction"}
+#   encrypted mode: {"data": "<base64 AES>"}  — key is a 32-char string set
+#                    in eBioServer, but the manual never specifies cipher
+#                    mode/IV, so we can't decrypt it reliably. We only
+#                    support the plain ("without password") mode — leave the
+#                    Symmetric Key blank in eBioServer's Web Hook settings.
+# Both modes are told by eSSL to always get back {"StatusCode":"200",...},
+# so we never raise here — reject/accept is recorded in biometric_logs
+# instead (Settings > Biometric > Logs), same pattern as the ADMS receiver.
+class EBioServerWebhookIn(BaseModel):
+    UserId: Optional[str] = None
+    LogDateTime: Optional[str] = None
+    SerialNumber: Optional[str] = None
+    TransactionMode: Optional[str] = None
+    Direction: Optional[str] = None
+    data: Optional[str] = None  # present only in encrypted mode (unsupported)
+
+
+_EBIOSERVER_ACK = {'StatusCode': '200', 'Message': 'Success'}
+
+
+@api.post('/biometric/ebioserver-webhook')
+async def ebioserver_webhook(body: EBioServerWebhookIn, key: Optional[str] = Query(None)):
+    store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
+    configured_secret = store.get('biometric_webhook_secret')
+    if configured_secret and key != configured_secret:
+        await db.biometric_logs.insert_one({
+            'id': str(uuid.uuid4()), 'serial': body.SerialNumber or '', 'user_id': body.UserId or '',
+            'timestamp': body.LogDateTime or now_utc().isoformat(), 'event_type': 'auto',
+            'verify_mode': body.TransactionMode or '', 'created_at': now_utc().isoformat(),
+            'result': 'rejected', 'reason': 'invalid_webhook_key',
+        })
+        # Still ack 200 — eBioServer has no real retry/backoff handling to
+        # speak of, and a non-200 just makes it spam retries. The rejection
+        # is visible in the logs screen instead.
+        return _EBIOSERVER_ACK
+
+    if body.data and not body.UserId:
+        await db.biometric_logs.insert_one({
+            'id': str(uuid.uuid4()), 'serial': body.SerialNumber or '', 'user_id': '',
+            'timestamp': now_utc().isoformat(), 'event_type': 'auto', 'verify_mode': '',
+            'created_at': now_utc().isoformat(), 'result': 'rejected', 'reason': 'encrypted_mode_unsupported',
+        })
+        return _EBIOSERVER_ACK
+
+    if not body.UserId or not body.LogDateTime:
+        await db.biometric_logs.insert_one({
+            'id': str(uuid.uuid4()), 'serial': body.SerialNumber or '', 'user_id': body.UserId or '',
+            'timestamp': now_utc().isoformat(), 'event_type': 'auto', 'verify_mode': body.TransactionMode or '',
+            'created_at': now_utc().isoformat(), 'result': 'rejected', 'reason': 'missing_fields',
+        })
+        return _EBIOSERVER_ACK
+
+    try:
+        ts = datetime.strptime(body.LogDateTime, '%Y-%m-%d %H:%M:%S').replace(
+            tzinfo=timezone(timedelta(hours=5, minutes=30))
+        )
+    except Exception:
+        ts = now_utc()
+
+    # No Direction/in-out field is actually populated in eBioServer's own
+    # examples — TransactionMode is a verify-method label (e.g. "VS_FP"),
+    # not a direction — so we auto-toggle check-in/check-out exactly like
+    # the ADMS receiver does.
+    await _ingest_biometric_punch(
+        body.SerialNumber or 'ebioserver', body.UserId, ts, 'auto', body.TransactionMode or ''
+    )
+    return _EBIOSERVER_ACK
 
 
 # ---------------- AI Assistant (Gemini 3 Flash) ----------------

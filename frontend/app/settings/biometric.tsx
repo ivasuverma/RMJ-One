@@ -31,14 +31,20 @@ export default function BiometricScreen() {
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [tab, setTab] = useState<'devices' | 'logs'>('devices');
+  const [webhookUrl, setWebhookUrl] = useState('');
 
   const load = useCallback(async () => {
     try {
-      const [d, l] = await Promise.all([
+      const [d, l, s] = await Promise.all([
         api.get<Device[]>('/biometric/devices').catch(() => []),
         api.get<Log[]>('/biometric/logs?limit=100').catch(() => []),
+        api.get<any>('/settings/store').catch(() => null),
       ]);
       setDevices(d); setLogs(l);
+      const base = process.env.EXPO_PUBLIC_BACKEND_URL || '';
+      const path = `${base}/api/biometric/ebioserver-webhook`;
+      const key = s?.biometric_webhook_secret;
+      setWebhookUrl(key ? `${path}?key=${encodeURIComponent(key)}` : path);
     } finally { setRefreshing(false); }
   }, []);
 
@@ -101,6 +107,15 @@ export default function BiometricScreen() {
                   <Text style={styles.pushUrl}>Server Port: 8000 (backend's local port)</Text>
                 </View>
               </View>
+
+              <Pressable style={styles.pushCard} onPress={() => router.push('/store-settings' as any)} testID="ebioserver-webhook-card">
+                <Ionicons name="finger-print-outline" size={18} color={colors.brandSecondary} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.pushLabel}>Or, if using eSSL's eBioServer app: in its Master Settings, set Web URL to this (leave Symmetric Key blank), and set each employee's Biometric ID on their profile:</Text>
+                  <Text style={styles.pushUrl} selectable>{webhookUrl}</Text>
+                  <Text style={[styles.pushLabel, { marginTop: 6 }]}>Tap to change the secret in Store Settings →</Text>
+                </View>
+              </Pressable>
 
               <Text style={styles.section}>Register Device</Text>
               <TextInput testID="dev-serial" value={serial} onChangeText={setSerial} placeholder="Device serial" placeholderTextColor={colors.mutedText} style={styles.input} autoCapitalize="characters" />

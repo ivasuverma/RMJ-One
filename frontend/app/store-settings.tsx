@@ -14,12 +14,14 @@ type Form = {
   name: string; latitude: string; longitude: string; radius_m: string;
   work_start: string; work_end: string; grace_min: string; round_net_salary: boolean;
   printer_ip: string; printer_port: string;
+  biometric_webhook_secret: string;
 };
 
 const EMPTY: Form = {
   name: '', latitude: '', longitude: '', radius_m: '150',
   work_start: '10:00', work_end: '19:30', grace_min: '15', round_net_salary: false,
   printer_ip: '', printer_port: '9100',
+  biometric_webhook_secret: '',
 };
 
 export default function StoreSettings() {
@@ -42,6 +44,7 @@ export default function StoreSettings() {
             work_end: s.work_end || '19:30', grace_min: String(s.grace_min ?? 15),
             round_net_salary: !!s.round_net_salary,
             printer_ip: s.printer_ip || '', printer_port: String(s.printer_port ?? 9100),
+            biometric_webhook_secret: s.biometric_webhook_secret || '',
           });
         }
       } finally { setLoading(false); }
@@ -86,6 +89,7 @@ export default function StoreSettings() {
         round_net_salary: form.round_net_salary,
         printer_ip: form.printer_ip.trim() || null,
         printer_port: parseInt(form.printer_port || '9100', 10),
+        biometric_webhook_secret: form.biometric_webhook_secret.trim() || null,
       });
       router.back();
     } catch (e: any) {
@@ -181,6 +185,20 @@ export default function StoreSettings() {
           <View style={styles.infoBox}>
             <Ionicons name="print-outline" size={16} color={colors.brandSecondary} />
             <Text style={styles.infoText}>WiFi ESC/POS receipt printer (e.g. Retsol RTP82). Port 9100 is the standard raw/JetDirect port. Leave blank to disable direct printing.</Text>
+          </View>
+
+          <SectionTitle text="Biometric Attendance (eBioServer)" />
+          <F
+            label="Webhook Secret (optional)"
+            v={form.biometric_webhook_secret}
+            onC={(v) => setForm({ ...form, biometric_webhook_secret: v })}
+            testID="ss-biometric-secret"
+          />
+          <View style={styles.infoBox}>
+            <Ionicons name="finger-print-outline" size={16} color={colors.brandSecondary} />
+            <Text style={styles.infoText}>
+              Optional — if set, only pushes with this key in the webhook URL are accepted. Set it here, then find the full webhook URL to paste into eBioServer under Settings → Biometric Devices.
+            </Text>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
