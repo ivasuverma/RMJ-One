@@ -5,6 +5,15 @@ name: Deploy to RMJ Server
 # this workflow doesn't use actions/checkout — it just tells git (already
 # cloned at E:\Rmj-One) to fast-forward to what was just pushed, rebuilds the
 # frontend web export, and restarts both NSSM services.
+#
+# Post-deploy verification is a smoke test only: it confirms the backend
+# process actually came back up and is answering HTTP requests. It
+# deliberately does NOT run backend/tests/*.py — that suite logs in as the
+# real owner account and creates/deletes real employee records against
+# whatever data your shop actually has, so it's not safe to run
+# unattended on every push. Run it yourself manually when you want it
+# (see backend/tests/README, or just `pytest tests/` with
+# EXPO_PUBLIC_BACKEND_URL pointed at this server) — never as part of deploy.
 on:
   push:
     branches: [main]
@@ -21,6 +30,14 @@ jobs:
           $repo = 'E:\Rmj-One'
           cd $repo
 
+          function Assert-ServiceRunning($name) {
+            $status = (nssm status $name).Trim()
+            Write-Host "$name -> $status"
+            if ($status -ne 'SERVICE_RUNNING') {
+              throw "$name did not come up (status: $status)"
+            }
+          }
+
           Write-Host '--- git pull ---'
           git fetch origin main
           git reset --hard origin/main
@@ -28,7 +45,26 @@ jobs:
           Write-Host '--- restart backend ---'
           nssm restart RMJOneBackend
           Start-Sleep -Seconds 3
-          nssm status RMJOneBackend
+          Assert-ServiceRunning RMJOneBackend
+
+          Write-Host '--- backend smoke test ---'
+          # Pure read-only GET against the unauthenticated root route — confirms
+          # the API is actually answering requests post-restart, no login and
+          # no data mutation, so it's safe to run on every deploy.
+          $ok = $false
+          for ($i = 1; $i -le 10; $i++) {
+            try {
+              $resp = Invoke-RestMethod -Uri 'http://localhost:8000/api/' -TimeoutSec 5
+              if ($resp.status -eq 'ok') { $ok = $true; break }
+            } catch {
+              Write-Host "  attempt $i failed: $($_.Exception.Message)"
+            }
+            Start-Sleep -Seconds 2
+          }
+          if (-not $ok) {
+            throw 'Backend smoke test failed: http://localhost:8000/api/ did not return {status: ok} after restart.'
+          }
+          Write-Host '  backend is up'
 
           Write-Host '--- rebuild frontend web export ---'
           nssm stop RMJOneWeb
@@ -42,6 +78,6 @@ jobs:
           Write-Host '--- restart web ---'
           nssm start RMJOneWeb
           Start-Sleep -Seconds 2
-          nssm status RMJOneWeb
+          Assert-ServiceRunning RMJOneWeb
 
           Write-Host '--- done ---'
