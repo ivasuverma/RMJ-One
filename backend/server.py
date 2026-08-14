@@ -173,15 +173,17 @@ MODULE_DEFS = [
     {'key': 'store_settings', 'label': 'Store Settings', 'default_roles': ['owner']},
     {'key': 'users', 'label': 'Staff Accounts', 'default_roles': ['owner']},
     {'key': 'tasks', 'label': 'Tasks', 'default_roles': ['owner', 'admin']},
-    # The only four modules an employee can be granted, matching the four tiles
-    # they're ever shown: Transactions > Repair, Repair Bill; Reports > Customer
-    # Ledger, Karigar Ledger. "Repair" access also covers browsing repair items
-    # (read) so a Repair Bill-only employee can still pick an item to bill —
-    # see the ['repairs', 'repair_bill'] any-of checks on the relevant endpoints.
+    # The modules an employee can be granted, matching the tiles they're ever
+    # shown: Transactions > Repair, Repair Bill, Sample Issue/Receive;
+    # Reports > Customer Ledger, Karigar Ledger. "Repair" access also covers
+    # browsing repair items (read) so a Repair Bill-only employee can still
+    # pick an item to bill — see the ['repairs', 'repair_bill'] any-of checks
+    # on the relevant endpoints.
     {'key': 'repairs', 'label': 'Repair', 'default_roles': ['owner', 'admin'], 'employee_assignable': True},
     {'key': 'repair_bill', 'label': 'Repair Bill', 'default_roles': ['owner', 'admin'], 'employee_assignable': True},
     {'key': 'customer_ledger', 'label': 'Customer Ledger', 'default_roles': ['owner', 'admin', 'accountant'], 'employee_assignable': True},
     {'key': 'karigar_ledger', 'label': 'Karigar Ledger', 'default_roles': ['owner', 'admin', 'accountant'], 'employee_assignable': True},
+    {'key': 'samples', 'label': 'Sample Issue/Receive', 'default_roles': ['owner', 'admin'], 'employee_assignable': True},
 ]
 MODULE_KEYS = {m['key'] for m in MODULE_DEFS}
 MODULE_DEFAULT_ROLES = {m['key']: set(m['default_roles']) for m in MODULE_DEFS}
@@ -675,6 +677,26 @@ class KarigarLedgerEntryIn(BaseModel):
     type: Literal['labour_payable', 'payment', 'receipt', 'adjustment', 'gold_out', 'gold_in']
     amount: Optional[float] = 0   # ₹ types (labour_payable/payment/adjustment)
     weight: Optional[float] = 0   # gold types (gold_out/gold_in) — entered directly in fine-gold grams
+    note: Optional[str] = ''
+
+
+# ---------------- Samples (gold sample piece issued to a karigar, expected back at the same weight) ----------------
+class SampleIn(BaseModel):
+    karigar_id: str
+    description: str
+    purity: Optional[float] = 100.0
+    gross_weight: float
+    note: Optional[str] = ''
+
+
+class SampleUpdateIn(BaseModel):
+    description: Optional[str] = None
+    purity: Optional[float] = None
+    note: Optional[str] = None
+
+
+class SampleReceiveIn(BaseModel):
+    received_weight: float
     note: Optional[str] = ''
 
 
@@ -1341,7 +1363,7 @@ def _pdf_response(pdf: bytes, filename: str):
 # runs.
 from routers import (
     auth, employees, settings as settings_router, attendance, tasks, repairs,
-    users, payroll, notifications, biometric, reports, assistant,
+    users, payroll, notifications, biometric, reports, assistant, samples,
 )
 
 # ---------------- Mount ----------------
@@ -1357,6 +1379,7 @@ api.include_router(notifications.router)
 api.include_router(biometric.router)
 api.include_router(reports.router)
 api.include_router(assistant.router)
+api.include_router(samples.router)
 
 app.include_router(api)
 app.include_router(biometric.iclock_router)  # /iclock/* — real device protocol, no /api prefix

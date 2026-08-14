@@ -23,6 +23,7 @@ const SECTIONS: { title: string; tiles: TileDef[] }[] = [
     tiles: [
       { key: 'repair-orders', label: 'Repair', icon: 'construct-outline', route: '/repairs', module: 'repairs' },
       { key: 'repair-bill', label: 'Repair Bill', icon: 'receipt-outline', route: '/repairs/bill', module: 'repair_bill' },
+      { key: 'samples', label: 'Sample Issue/Receive', icon: 'diamond-outline', route: '/samples', module: 'samples' },
     ],
   },
   {
