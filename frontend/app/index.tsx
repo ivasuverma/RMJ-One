@@ -17,8 +17,9 @@ export default function Index() {
   useEffect(() => {
     if (loading) return;
     if (!user) { router.replace('/login'); return; }
-    if (user.role === 'employee') router.replace('/(emp)/home');
-    else router.replace('/(tabs)/dashboard');
+    if (user.role === 'employee') {
+      router.replace((user.must_change_password ? '/set-password' : '/(emp)/home') as any);
+    } else router.replace('/(tabs)/dashboard');
   }, [user, loading, router]);
 
   return (

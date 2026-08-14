@@ -6,6 +6,18 @@ export const TOKEN_KEY = 'rmj.access_token';
 
 export type ApiError = { status: number; detail: string };
 
+// Fired once, globally, whenever an *authenticated* request comes back 401 —
+// i.e. the token we sent was rejected (expired, or the backend was
+// redeployed with a new JWT_SECRET). Registered by AuthContext on mount so
+// every screen gets the same "session expired" behavior instead of each one
+// independently handling (or not handling) a raw 401 from api.get/post/etc.
+// Deliberately NOT fired for unauthenticated calls like login itself — a
+// wrong-password 401 on the login screen isn't a session expiry.
+let onUnauthorized: (() => void) | null = null;
+export function setUnauthorizedHandler(fn: (() => void) | null) {
+  onUnauthorized = fn;
+}
+
 if (!BASE && __DEV__) {
   // eslint-disable-next-line no-console
   console.warn(
@@ -20,15 +32,19 @@ async function authHeaders(): Promise<Record<string, string>> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-async function handle(res: Response) {
+async function handle(res: Response, authed: boolean = true) {
   const text = await res.text();
   if (!text) {
-    if (!res.ok) throw { status: res.status, detail: res.statusText || 'Request failed' } as ApiError;
+    if (!res.ok) {
+      if (res.status === 401 && authed) { await clearToken(); onUnauthorized?.(); }
+      throw { status: res.status, detail: res.statusText || 'Request failed' } as ApiError;
+    }
     return null;
   }
   const parsed = safeJson(text);
   if (!res.ok) {
     const detail = (parsed.ok && (parsed.value?.detail || parsed.value?.message)) || res.statusText || 'Request failed';
+    if (res.status === 401 && authed) { await clearToken(); onUnauthorized?.(); }
     throw { status: res.status, detail: String(detail) } as ApiError;
   }
   if (!parsed.ok) {
@@ -58,7 +74,7 @@ export const api = {
       headers,
       body: body ? JSON.stringify(body) : undefined,
     });
-    return handle(res) as Promise<T>;
+    return handle(res, auth) as Promise<T>;
   },
   async put<T>(path: string, body?: any): Promise<T> {
     const headers: Record<string, string> = { 'Content-Type': 'application/json', ...(await authHeaders()) };
@@ -67,15 +83,15 @@ export const api = {
       headers,
       body: body ? JSON.stringify(body) : undefined,
     });
-    return handle(res) as Promise<T>;
+    return handle(res, true) as Promise<T>;
   },
   async get<T>(path: string): Promise<T> {
     const res = await fetch(`${BASE}/api${path}`, { headers: await authHeaders() });
-    return handle(res) as Promise<T>;
+    return handle(res, true) as Promise<T>;
   },
   async del<T>(path: string): Promise<T> {
     const res = await fetch(`${BASE}/api${path}`, { method: 'DELETE', headers: await authHeaders() });
-    return handle(res) as Promise<T>;
+    return handle(res, true) as Promise<T>;
   },
 };
 

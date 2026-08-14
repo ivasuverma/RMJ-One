@@ -10,6 +10,7 @@ import { useIconFonts } from '@/src/hooks/use-icon-fonts';
 import { useTextFonts } from '@/src/hooks/use-text-fonts';
 import { AuthProvider } from '@/src/auth/AuthContext';
 import { ThemeProvider, useTheme } from '@/src/theme/ThemeContext';
+import { ErrorBoundary } from '@/src/components/ErrorBoundary';
 
 // Disable logbox errors etc so that users can see the app and agent works as expected.
 LogBox.ignoreAllLogs(true);
@@ -37,13 +38,15 @@ export default function RootLayout() {
   if (!loaded && !error) return null;
 
   return (
-    <ThemeProvider>
-      <SafeAreaProvider>
-        <AuthProvider>
-          <AppShell />
-        </AuthProvider>
-      </SafeAreaProvider>
-    </ThemeProvider>
+    <ErrorBoundary>
+      <ThemeProvider>
+        <SafeAreaProvider>
+          <AuthProvider>
+            <AppShell />
+          </AuthProvider>
+        </SafeAreaProvider>
+      </ThemeProvider>
+    </ErrorBoundary>
   );
 }
 

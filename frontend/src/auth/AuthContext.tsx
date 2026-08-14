@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import { api, saveToken, clearToken, getToken, isSessionOnly } from '@/src/api/client';
+import { useRouter } from 'expo-router';
+import { api, saveToken, clearToken, getToken, isSessionOnly, setUnauthorizedHandler } from '@/src/api/client';
 
 export type User = {
   id: string;
@@ -11,6 +12,10 @@ export type User = {
   department?: string;
   photo?: string;
   modules?: string[];
+  // Employee-only: true right after an admin creates the account, until they
+  // set a real password — the default (last 4 digits of employee code) is
+  // predictable. Gates entry to the employee tabs; see set-password.tsx.
+  must_change_password?: boolean;
   // Employee-only: per-module edit/delete rights on the modules an owner has
   // assigned them (repairs/tasks/approvals). Owner/admin/accountant accounts
   // don't carry this — they're never subject to it.
@@ -35,6 +40,20 @@ const AuthCtx = createContext<AuthState>({} as AuthState);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const router = useRouter();
+
+  // Single global point for "your session is no longer valid" — fired by
+  // api/client.ts whenever an authenticated request comes back 401 (token
+  // expired, or the backend was redeployed with a new JWT_SECRET). Without
+  // this, screens each got a raw 401 and handled it (or didn't) on their
+  // own, so behavior varied screen to screen.
+  useEffect(() => {
+    setUnauthorizedHandler(() => {
+      setUser(null);
+      router.replace('/login');
+    });
+    return () => setUnauthorizedHandler(null);
+  }, [router]);
 
   const refresh = useCallback(async () => {
     try {

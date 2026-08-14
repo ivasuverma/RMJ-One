@@ -6,6 +6,9 @@ from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 import math
+import re
+import time as _time
+from collections import defaultdict
 from pathlib import Path
 from pydantic import BaseModel
 from typing import List, Optional, Literal, Dict
@@ -26,6 +29,20 @@ JWT_EXPIRE_MIN = 60 * 24 * 7
 VAPID_PUBLIC_KEY = os.environ.get('VAPID_PUBLIC_KEY', '')
 VAPID_PRIVATE_KEY = os.environ.get('VAPID_PRIVATE_KEY', '')
 VAPID_SUBJECT = os.environ.get('VAPID_SUBJECT', 'mailto:admin@example.com')
+
+# Comma-separated list of origins allowed to call this API, e.g.
+# "https://app.ramjewellers.in,https://admin.ramjewellers.in". Defaults to
+# "*" (anything) so local/dev setups keep working without extra config —
+# but ENVIRONMENT=production below refuses to boot with an unset JWT_SECRET,
+# so treat ALLOWED_ORIGINS the same way in your prod .env.
+ALLOWED_ORIGINS = [o.strip() for o in os.environ.get('ALLOWED_ORIGINS', '*').split(',') if o.strip()] or ['*']
+
+ENVIRONMENT = os.environ.get('ENVIRONMENT', 'development')
+if ENVIRONMENT == 'production' and JWT_SECRET == 'rmj-one-dev-secret-change-in-prod':
+    raise RuntimeError(
+        'Refusing to start: ENVIRONMENT=production but JWT_SECRET is still the default dev value. '
+        'Set a real JWT_SECRET in backend/.env before running in production.'
+    )
 
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
@@ -50,8 +67,22 @@ def now_utc() -> datetime:
     return datetime.now(timezone.utc)
 
 
+# Every shift/grace-period/attendance calculation in this file assumes IST,
+# so "today" has to mean IST-today everywhere too. A single shared constant
+# instead of each call site spelling out timezone(timedelta(hours=5,
+# minutes=30))) on its own — used to be duplicated ~12 times, which is how
+# today_str() below drifted to UTC while the rest of the file didn't.
+IST = timezone(timedelta(hours=5, minutes=30))
+
+
 def today_str() -> str:
-    return date.today().isoformat()
+    # IST, not UTC/system date. A UTC-based "today" would make any record
+    # written between 00:00-05:29 UTC (5:30am-11:00am IST) look like it
+    # belongs to the wrong day everywhere this is used to query back —
+    # this bit biometric punches landing in that window (see
+    # _ingest_biometric_punch, which already computed the date in IST;
+    # today_str() previously didn't, so the two disagreed).
+    return datetime.now(IST).date().isoformat()
 
 
 def haversine_m(a_lat: float, a_lng: float, b_lat: float, b_lng: float) -> float:
@@ -749,15 +780,48 @@ async def on_shutdown():
 
 
 # ---------------- Auth ----------------
+# Login rate limiting — in-memory only (resets on restart; won't coordinate
+# across multiple backend instances behind a load balancer). Fine for the
+# current single-store/single-instance deployment.
+_LOGIN_ATTEMPTS: Dict[str, list] = defaultdict(list)
+_LOGIN_MAX_ATTEMPTS = 5
+_LOGIN_WINDOW_SEC = 5 * 60
+
+
+def _login_rate_key(request: Request, username: str) -> str:
+    ip = request.client.host if request.client else 'unknown'
+    return f'{ip}:{(username or "").strip().lower()}'
+
+
+def _check_login_rate_limit(request: Request, username: str):
+    key = _login_rate_key(request, username)
+    now = _time.monotonic()
+    attempts = _LOGIN_ATTEMPTS[key]
+    attempts[:] = [t for t in attempts if now - t < _LOGIN_WINDOW_SEC]
+    if len(attempts) >= _LOGIN_MAX_ATTEMPTS:
+        raise HTTPException(status_code=429, detail='Too many login attempts. Please wait a few minutes and try again.')
+
+
+def _record_failed_login(request: Request, username: str):
+    _LOGIN_ATTEMPTS[_login_rate_key(request, username)].append(_time.monotonic())
+
+
+def _clear_login_attempts(request: Request, username: str):
+    _LOGIN_ATTEMPTS.pop(_login_rate_key(request, username), None)
+
+
 @api.get('/')
 async def root(): return {'app': 'RMJ One', 'status': 'ok'}
 
 
 @api.post('/auth/login')
-async def login(body: LoginIn):
+async def login(body: LoginIn, request: Request):
+    _check_login_rate_limit(request, body.username)
     user = await db.users.find_one({'username': body.username.strip().lower()})
     if not user or not verify_secret(body.password, user.get('password_hash', '')):
+        _record_failed_login(request, body.username)
         raise HTTPException(status_code=401, detail='Invalid username or password')
+    _clear_login_attempts(request, body.username)
     tok = create_token({'sub': user['id'], 'role': user.get('role', 'owner'), 'username': user['username']})
     return {
         'access_token': tok, 'token_type': 'bearer',
@@ -769,13 +833,16 @@ async def login(body: LoginIn):
 
 
 @api.post('/auth/employee-login')
-async def employee_login(body: EmployeeLoginIn):
+async def employee_login(body: EmployeeLoginIn, request: Request):
+    _check_login_rate_limit(request, body.username)
     uname = body.username.strip().lower()
     emp = await db.employees.find_one({'username': uname})
     if not emp or not emp.get('password_hash') or not verify_secret(body.password, emp['password_hash']):
+        _record_failed_login(request, body.username)
         raise HTTPException(status_code=401, detail='Invalid username or password')
     if emp.get('status') == 'inactive':
         raise HTTPException(status_code=403, detail='This employee account is inactive')
+    _clear_login_attempts(request, body.username)
     code = emp.get('employee_code')
     tok = create_token({'sub': emp['id'], 'role': 'employee', 'employee_code': code})
     return {
@@ -785,18 +852,21 @@ async def employee_login(body: EmployeeLoginIn):
             'employee_code': code, 'designation': emp.get('designation'),
             'department': emp.get('department'), 'photo': emp.get('photo', ''),
             'modules': resolve_modules({**emp, 'role': 'employee'}), 'module_rights': emp.get('module_rights') or {},
+            'must_change_password': bool(emp.get('must_change_password')),
         },
     }
 
 
 @api.post('/auth/login-unified')
-async def login_unified(body: LoginIn):
+async def login_unified(body: LoginIn, request: Request):
     # Single sign-in for the whole business — owner/admin/accountant accounts
     # live in db.users, employees live in db.employees. Try both silently so
     # the app never has to ask "which kind of user are you?"
+    _check_login_rate_limit(request, body.username)
     uname = body.username.strip().lower()
     user = await db.users.find_one({'username': uname})
     if user and verify_secret(body.password, user.get('password_hash', '')):
+        _clear_login_attempts(request, body.username)
         tok = create_token({'sub': user['id'], 'role': user.get('role', 'owner'), 'username': user['username']})
         return {
             'access_token': tok, 'token_type': 'bearer',
@@ -809,6 +879,7 @@ async def login_unified(body: LoginIn):
     if emp and emp.get('password_hash') and verify_secret(body.password, emp['password_hash']):
         if emp.get('status') == 'inactive':
             raise HTTPException(status_code=403, detail='This employee account is inactive')
+        _clear_login_attempts(request, body.username)
         code = emp.get('employee_code')
         tok = create_token({'sub': emp['id'], 'role': 'employee', 'employee_code': code})
         return {
@@ -820,6 +891,7 @@ async def login_unified(body: LoginIn):
                 'modules': resolve_modules({**emp, 'role': 'employee'}), 'module_rights': emp.get('module_rights') or {},
             },
         }
+    _record_failed_login(request, body.username)
     raise HTTPException(status_code=401, detail='Invalid username or password')
 
 
@@ -835,7 +907,30 @@ async def me(user=Depends(get_current)):
         'employee_code': user['employee_code'], 'designation': user.get('designation'),
         'department': user.get('department'), 'photo': user.get('photo', ''),
         'modules': resolve_modules(user), 'module_rights': user.get('module_rights') or {},
+        'must_change_password': bool(user.get('must_change_password')),
     }
+
+
+class SetEmployeePasswordIn(BaseModel):
+    new_password: str
+
+
+@api.post('/auth/employee/set-password')
+async def employee_set_password(body: SetEmployeePasswordIn, user=Depends(require_employee)):
+    # Used both for the forced first-login password change (must_change_password)
+    # and for an employee voluntarily changing their password later — either way
+    # this clears the flag, since a real password is now in place. No current-
+    # password check on this path deliberately: if must_change_password is set,
+    # the "current" password is still the predictable default, so requiring it
+    # back would add friction without adding security.
+    if len(body.new_password) < 4:
+        raise HTTPException(status_code=400, detail='Password must be at least 4 characters')
+    await db.employees.update_one(
+        {'id': user['id']},
+        {'$set': {'password_hash': hash_secret(body.new_password), 'must_change_password': False}},
+    )
+    tok = create_token({'sub': user['id'], 'role': 'employee', 'employee_code': user.get('employee_code')})
+    return {'ok': True, 'access_token': tok}
 
 
 # ---------------- Employees ----------------
@@ -848,11 +943,15 @@ async def list_employees(
 ):
     query: dict = {}
     if q:
+        # re.escape() so special regex chars in free-text search (., *, (, etc.)
+        # are matched literally instead of as regex syntax — avoids malformed
+        # or pathologically slow queries from arbitrary user input.
+        q_esc = re.escape(q)
         query['$or'] = [
-            {'name': {'$regex': q, '$options': 'i'}},
-            {'employee_code': {'$regex': q, '$options': 'i'}},
-            {'designation': {'$regex': q, '$options': 'i'}},
-            {'department': {'$regex': q, '$options': 'i'}},
+            {'name': {'$regex': q_esc, '$options': 'i'}},
+            {'employee_code': {'$regex': q_esc, '$options': 'i'}},
+            {'designation': {'$regex': q_esc, '$options': 'i'}},
+            {'department': {'$regex': q_esc, '$options': 'i'}},
         ]
     if department: query['department'] = department
     if status_: query['status'] = status_
@@ -896,8 +995,13 @@ async def create_employee(body: EmployeeIn, user: dict = Depends(require_admin),
     # digits of employee_code, else 0000 — same pattern as the old default-PIN scheme.
     default_username = data['employee_code'].lower()
     default_password = (''.join(ch for ch in data['employee_code'] if ch.isdigit())[-4:] or '0000').zfill(4)
+    # The default password is predictable (last 4 digits of a sequential
+    # employee code — 10,000 possible combinations), so force a real
+    # password to be set on first login rather than relying on the employee
+    # to think to change it themselves.
     doc = {'id': eid, 'created_at': iso, 'updated_at': iso,
-           'username': default_username, 'password_hash': hash_secret(default_password), **data}
+           'username': default_username, 'password_hash': hash_secret(default_password),
+           'must_change_password': True, **data}
     await db.employees.insert_one(dict(doc))
     await db.timeline.insert_one({
         'id': str(uuid.uuid4()), 'employee_id': eid, 'type': 'joined',
@@ -1018,6 +1122,111 @@ def _minutes(hhmm: str) -> int:
     return hm[0] * 60 + hm[1] if hm else 0
 
 
+async def _apply_punch(emp: dict, kind: str, ts: datetime, extra: Optional[dict] = None) -> dict:
+    """Shared attendance state machine — the single place shift resolution,
+    late/half-day calculation, and the attendance/attendance_events writes
+    happen, used by BOTH the app's GPS+selfie check-in/check-out endpoints
+    and biometric device punches (via _ingest_biometric_punch). Before this,
+    the two paths independently reimplemented this logic, so a future change
+    to grace periods/holiday handling/etc. had to be hand-duplicated in two
+    places — exactly the kind of drift that let today_str() go UTC-only
+    while this logic stayed IST-only.
+
+    `kind` is 'check_in', 'check_out', or 'auto' (resolves by checking
+    whether today's record already has a check_in — the toggle behaviour
+    biometric punches have always used). `extra` are punch-method-specific
+    fields merged into the stored check_in/check_out sub-document — real
+    GPS/selfie values for the app, {'source': 'biometric', 'device_serial':
+    ...} for a device (which just get merged on top of harmless 0/'' GPS
+    defaults). This function does not send notifications or write
+    device/audit logs — callers do that, since it differs per punch method.
+    """
+    extra = extra or {}
+    d = ts.astimezone(IST).date().isoformat()
+    existing = await db.attendance.find_one({'employee_id': emp['id'], 'date': d}, {'_id': 0})
+
+    if kind == 'auto':
+        kind = 'check_out' if (existing and existing.get('check_in') and not existing.get('check_out')) else 'check_in'
+
+    store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
+    shift = await db.shifts.find_one({'name': emp.get('shift')}, {'_id': 0})
+
+    if kind == 'check_in':
+        if existing and existing.get('check_in'):
+            return {'ok': False, 'reason': 'already_checked_in', 'kind': kind}
+
+        now_local = ts.astimezone(IST)
+        minutes_now = now_local.hour * 60 + now_local.minute
+        work_start = _minutes(shift['start']) if shift and shift.get('start') else _minutes(store.get('work_start', '10:00'))
+        grace = int(shift.get('grace_min', 15)) if shift else int(store.get('grace_min', 15))
+        late_by_min = minutes_now - (work_start + grace)
+        is_late = late_by_min > 0
+
+        check_in_doc = {
+            'timestamp': ts.isoformat(), 'latitude': 0, 'longitude': 0, 'selfie': '', 'distance_m': 0,
+            'is_late': is_late, 'late_by_min': max(late_by_min, 0),
+            **extra,
+        }
+        if existing:
+            await db.attendance.update_one({'id': existing['id']}, {'$set': {'check_in': check_in_doc, 'is_late': is_late, 'status': 'present'}})
+            att_id = existing['id']
+        else:
+            att_id = str(uuid.uuid4())
+            insert_doc = {
+                'id': att_id, 'employee_id': emp['id'], 'date': d,
+                'check_in': check_in_doc, 'check_out': None, 'is_late': is_late,
+                'working_hours': 0, 'status': 'present', 'created_at': ts.isoformat(),
+            }
+            if extra.get('source'):
+                insert_doc['source'] = extra['source']
+            await db.attendance.insert_one(insert_doc)
+
+        event_doc = {
+            'id': str(uuid.uuid4()), 'employee_id': emp['id'], 'employee_name': emp['name'],
+            'type': 'check_in', 'timestamp': ts.isoformat(), 'is_late': is_late, 'created_at': ts.isoformat(),
+        }
+        if extra.get('source'):
+            event_doc['source'] = extra['source']; event_doc['device_serial'] = extra.get('device_serial', '')
+        await db.attendance_events.insert_one(event_doc)
+        return {'ok': True, 'kind': 'check_in', 'attendance_id': att_id, 'is_late': is_late, 'timestamp': ts.isoformat()}
+
+    else:  # check_out
+        if not existing or not existing.get('check_in'):
+            return {'ok': False, 'reason': 'no_check_in', 'kind': kind}
+        if existing.get('check_out'):
+            return {'ok': False, 'reason': 'already_checked_out', 'kind': kind}
+
+        try:
+            check_in_ts = datetime.fromisoformat(existing['check_in']['timestamp'])
+            hours = round((ts - check_in_ts).total_seconds() / 3600.0, 2)
+        except Exception:
+            hours = 0
+        late_half_day_after = int(shift.get('late_half_day_after_min') or 0) if shift else 0
+        late_by_min = int(existing['check_in'].get('late_by_min') or 0)
+        half_day_for_lateness = bool(late_half_day_after) and late_by_min >= late_half_day_after
+        status = 'half_day' if (hours < 4 or half_day_for_lateness) else 'present'
+        half_day_reason = None
+        if status == 'half_day':
+            half_day_reason = 'short_hours' if hours < 4 else 'late'
+
+        check_out_doc = {
+            'timestamp': ts.isoformat(), 'latitude': 0, 'longitude': 0, 'selfie': '', 'distance_m': 0,
+            **extra,
+        }
+        await db.attendance.update_one(
+            {'id': existing['id']},
+            {'$set': {'check_out': check_out_doc, 'working_hours': hours, 'status': status, 'half_day_reason': half_day_reason}},
+        )
+        event_doc = {
+            'id': str(uuid.uuid4()), 'employee_id': emp['id'], 'employee_name': emp['name'],
+            'type': 'check_out', 'timestamp': ts.isoformat(), 'working_hours': hours, 'created_at': ts.isoformat(),
+        }
+        if extra.get('source'):
+            event_doc['source'] = extra['source']; event_doc['device_serial'] = extra.get('device_serial', '')
+        await db.attendance_events.insert_one(event_doc)
+        return {'ok': True, 'kind': 'check_out', 'attendance_id': existing['id'], 'working_hours': hours, 'status': status, 'timestamp': ts.isoformat()}
+
+
 @api.post('/attendance/check-in')
 async def check_in(body: PunchIn, user=Depends(require_employee)):
     store = await _get_store()
@@ -1027,45 +1236,19 @@ async def check_in(body: PunchIn, user=Depends(require_employee)):
     if not body.selfie or len(body.selfie) < 100:
         raise HTTPException(status_code=400, detail='Selfie is required')
 
-    d = today_str()
-    existing = await db.attendance.find_one({'employee_id': user['id'], 'date': d}, {'_id': 0})
-    if existing and existing.get('check_in'):
+    now = now_utc()
+    result = await _apply_punch(user, 'check_in', now, {
+        'latitude': body.latitude, 'longitude': body.longitude,
+        'selfie': body.selfie, 'distance_m': round(dist, 1),
+    })
+    if not result['ok']:
         raise HTTPException(status_code=400, detail='Already checked in today')
 
-    now = now_utc()
-    now_local = now.astimezone(timezone(timedelta(hours=5, minutes=30)))
-    minutes_now = now_local.hour * 60 + now_local.minute
-    shift = await db.shifts.find_one({'name': user.get('shift')}, {'_id': 0})
-    work_start = _minutes(shift['start']) if shift and shift.get('start') else _minutes(store.get('work_start', '10:00'))
-    grace = int(shift.get('grace_min', 15)) if shift else int(store.get('grace_min', 15))
-    late_by_min = minutes_now - (work_start + grace)
-    is_late = late_by_min > 0
-
-    check_in_doc = {
-        'timestamp': now.isoformat(), 'latitude': body.latitude, 'longitude': body.longitude,
-        'selfie': body.selfie, 'distance_m': round(dist, 1), 'is_late': is_late,
-        'late_by_min': max(late_by_min, 0),
-    }
-    if existing:
-        await db.attendance.update_one({'id': existing['id']}, {'$set': {'check_in': check_in_doc, 'is_late': is_late, 'status': 'present'}})
-        att_id = existing['id']
-    else:
-        att_id = str(uuid.uuid4())
-        await db.attendance.insert_one({
-            'id': att_id, 'employee_id': user['id'], 'date': d,
-            'check_in': check_in_doc, 'check_out': None, 'is_late': is_late,
-            'working_hours': 0, 'status': 'present', 'created_at': now.isoformat(),
-        })
-
-    await db.attendance_events.insert_one({
-        'id': str(uuid.uuid4()), 'employee_id': user['id'], 'employee_name': user['name'],
-        'type': 'check_in', 'timestamp': now.isoformat(), 'is_late': is_late,
-        'created_at': now.isoformat(),
-    })
+    now_local = now.astimezone(IST)
     await notify_roles(['owner', 'admin'], f"{user['name']} checked in",
-                        f"{now_local.strftime('%I:%M %p')}{' · Late' if is_late else ''}", '/(tabs)/attendance')
+                        f"{now_local.strftime('%I:%M %p')}{' · Late' if result['is_late'] else ''}", '/(tabs)/attendance')
 
-    return {'ok': True, 'attendance_id': att_id, 'is_late': is_late, 'timestamp': now.isoformat()}
+    return {'ok': True, 'attendance_id': result['attendance_id'], 'is_late': result['is_late'], 'timestamp': result['timestamp']}
 
 
 @api.post('/attendance/check-out')
@@ -1077,42 +1260,19 @@ async def check_out(body: PunchIn, user=Depends(require_employee)):
     if not body.selfie or len(body.selfie) < 100:
         raise HTTPException(status_code=400, detail='Selfie is required')
 
-    d = today_str()
-    existing = await db.attendance.find_one({'employee_id': user['id'], 'date': d}, {'_id': 0})
-    if not existing or not existing.get('check_in'):
-        raise HTTPException(status_code=400, detail='You must check in before checking out')
-    if existing.get('check_out'):
-        raise HTTPException(status_code=400, detail='Already checked out today')
-
     now = now_utc()
-    check_in_ts = datetime.fromisoformat(existing['check_in']['timestamp'])
-    hours = round((now - check_in_ts).total_seconds() / 3600.0, 2)
-
-    shift = await db.shifts.find_one({'name': user.get('shift')}, {'_id': 0})
-    late_half_day_after = int(shift.get('late_half_day_after_min') or 0) if shift else 0
-    late_by_min = int(existing['check_in'].get('late_by_min') or 0)
-    half_day_for_lateness = bool(late_half_day_after) and late_by_min >= late_half_day_after
-    status = 'half_day' if (hours < 4 or half_day_for_lateness) else 'present'
-    half_day_reason = None
-    if status == 'half_day':
-        half_day_reason = 'short_hours' if hours < 4 else 'late'
-
-    check_out_doc = {
-        'timestamp': now.isoformat(), 'latitude': body.latitude, 'longitude': body.longitude,
+    result = await _apply_punch(user, 'check_out', now, {
+        'latitude': body.latitude, 'longitude': body.longitude,
         'selfie': body.selfie, 'distance_m': round(dist, 1),
-    }
-    await db.attendance.update_one(
-        {'id': existing['id']},
-        {'$set': {'check_out': check_out_doc, 'working_hours': hours, 'status': status, 'half_day_reason': half_day_reason}},
-    )
-    await db.attendance_events.insert_one({
-        'id': str(uuid.uuid4()), 'employee_id': user['id'], 'employee_name': user['name'],
-        'type': 'check_out', 'timestamp': now.isoformat(), 'working_hours': hours,
-        'created_at': now.isoformat(),
     })
+    if not result['ok']:
+        detail = 'You must check in before checking out' if result['reason'] == 'no_check_in' else 'Already checked out today'
+        raise HTTPException(status_code=400, detail=detail)
+
+    hours = result['working_hours']
     await notify_roles(['owner', 'admin'], f"{user['name']} checked out",
-                        f"Worked {hours}h today" + (' · Half day' if status == 'half_day' else ''), '/(tabs)/attendance')
-    return {'ok': True, 'working_hours': hours, 'timestamp': now.isoformat()}
+                        f"Worked {hours}h today" + (' · Half day' if result['status'] == 'half_day' else ''), '/(tabs)/attendance')
+    return {'ok': True, 'working_hours': hours, 'timestamp': result['timestamp']}
 
 
 @api.get('/attendance/me/today')
@@ -1229,7 +1389,7 @@ def _combine_dt(date_str: str, hhmm: Optional[str]) -> Optional[str]:
         h, m = hhmm.split(':')
         # Assume IST for display consistency; store UTC ISO
         d = date.fromisoformat(date_str)
-        dt = datetime(d.year, d.month, d.day, int(h), int(m), tzinfo=timezone(timedelta(hours=5, minutes=30)))
+        dt = datetime(d.year, d.month, d.day, int(h), int(m), tzinfo=IST)
         return dt.astimezone(timezone.utc).isoformat()
     except Exception:
         return None
@@ -1269,7 +1429,7 @@ async def edit_day(emp_id: str, d: str, body: AttendanceDayIn, user=Depends(requ
             shift_start = store.get('work_start', '10:00')
         late_by_min = 0
         try:
-            in_local = datetime.fromisoformat(check_in_ts).astimezone(timezone(timedelta(hours=5, minutes=30)))
+            in_local = datetime.fromisoformat(check_in_ts).astimezone(IST)
             minutes_in = in_local.hour * 60 + in_local.minute
             late_by_min = minutes_in - (_minutes(shift_start) + grace)
             is_late = late_by_min > 0
@@ -1319,7 +1479,7 @@ async def delete_day(emp_id: str, d: str, user=Depends(require_admin), _mod=Depe
     # Also clear any raw punch events logged for this employee within that IST day,
     # so a deleted entry doesn't linger in the "Live" feed.
     try:
-        day_start_ist = datetime.fromisoformat(d).replace(tzinfo=timezone(timedelta(hours=5, minutes=30)))
+        day_start_ist = datetime.fromisoformat(d).replace(tzinfo=IST)
         day_start_utc = day_start_ist.astimezone(timezone.utc)
         day_end_utc = day_start_utc + timedelta(days=1)
         await db.attendance_events.delete_many({
@@ -1630,9 +1790,10 @@ async def delete_task_template(template_id: str, user=Depends(require_admin), _m
 async def list_customers(q: Optional[str] = None, _: dict = Depends(require_staff_or_module('repairs'))):
     query: dict = {}
     if q:
+        q_esc = re.escape(q)
         query['$or'] = [
-            {'name': {'$regex': q, '$options': 'i'}},
-            {'mobile': {'$regex': q, '$options': 'i'}},
+            {'name': {'$regex': q_esc, '$options': 'i'}},
+            {'mobile': {'$regex': q_esc, '$options': 'i'}},
         ]
     customers = await db.customers.find(query, {'_id': 0}).sort('name', 1).to_list(1000)
     # Attach a quick "balance" glance: how many items and how much gold weight
@@ -2006,10 +2167,11 @@ async def list_repair_items(
         # Default view (no filters at all) is the outstanding worklist.
         query['status'] = {'$ne': 'delivered'}
     if q:
+        q_esc = re.escape(q)
         query['$or'] = [
-            {'item_code': {'$regex': q, '$options': 'i'}},
-            {'description': {'$regex': q, '$options': 'i'}},
-            {'customer_name': {'$regex': q, '$options': 'i'}},
+            {'item_code': {'$regex': q_esc, '$options': 'i'}},
+            {'description': {'$regex': q_esc, '$options': 'i'}},
+            {'customer_name': {'$regex': q_esc, '$options': 'i'}},
         ]
     return await db.repair_items.find(query, {'_id': 0}).sort('created_at', -1).to_list(1000)
 
@@ -3674,7 +3836,7 @@ async def notify_roles(roles: list, title: str, body: str, url: str = '/'):
 
 
 async def _check_missed_attendance():
-    now_ist = now_utc().astimezone(timezone(timedelta(hours=5, minutes=30)))
+    now_ist = now_utc().astimezone(IST)
     today = now_ist.date().isoformat()
     if now_ist.weekday() == 6:
         return  # Sunday — normally a day off, skip reminders
@@ -3717,7 +3879,7 @@ async def _check_daily_absentee_summary():
     never checked in today (no check-in, and not on approved leave/holiday/paid
     off). Guarded by `db.absentee_summaries` so it only fires once even though
     the loop polls every 15 minutes."""
-    now_ist = now_utc().astimezone(timezone(timedelta(hours=5, minutes=30)))
+    now_ist = now_utc().astimezone(IST)
     today = now_ist.date().isoformat()
     minutes_now = now_ist.hour * 60 + now_ist.minute
     if minutes_now < 21 * 60:
@@ -3764,7 +3926,7 @@ async def _check_auto_advances():
     15-minute poll can safely re-check without double-crediting. A day beyond
     the current month's length (e.g. 31 in February) clamps to the last day."""
     from calendar import monthrange
-    now_ist = now_utc().astimezone(timezone(timedelta(hours=5, minutes=30)))
+    now_ist = now_utc().astimezone(IST)
     today = now_ist.date()
     ym = f'{today.year:04d}-{today.month:02d}'
     last_day = monthrange(today.year, today.month)[1]
@@ -3807,7 +3969,7 @@ async def _check_recurring_tasks():
     hourly templates) so the 15-minute poll can safely re-check. A missed or
     completed instance never blocks the next one — each cycle is its own
     independent task, not a chain."""
-    now_ist = now_utc().astimezone(timezone(timedelta(hours=5, minutes=30)))
+    now_ist = now_utc().astimezone(IST)
     today = now_ist.date()
     today_iso = today.isoformat()
 
@@ -3848,7 +4010,7 @@ async def _check_overdue_tasks():
     """Pushes owner/admin once per task that's past its due date and still
     open — guarded by `overdue_notified_at` so it fires exactly once, not
     every 15-minute poll cycle."""
-    today_iso = now_utc().astimezone(timezone(timedelta(hours=5, minutes=30))).date().isoformat()
+    today_iso = now_utc().astimezone(IST).date().isoformat()
     async for t in db.tasks.find(
         {'status': 'open', 'due_date': {'$ne': None, '$lt': today_iso}, 'overdue_notified_at': None},
         {'_id': 0},
@@ -4399,9 +4561,14 @@ async def biometric_logs(limit: int = 100, _: dict = Depends(require_staff)):
 
 
 async def _ingest_biometric_punch(serial: str, user_id: str, ts: datetime, event_type: str = 'auto', verify_mode: str = '') -> dict:
-    """Shared logic: turn one (serial, user_id, timestamp) punch into an attendance
-    check-in/check-out, however it arrived (custom JSON push or real ADMS/iClock
-    upload). Returns a dict describing what happened; also writes a biometric_logs row."""
+    """Turn one (serial, user_id, timestamp) punch into an attendance
+    check-in/check-out, however it arrived (custom JSON push, real
+    ADMS/iClock upload, or the eBioServer webhook). Matches the device's
+    user_id to an employee, then hands off to _apply_punch() — the same
+    state machine the app's own check-in/check-out endpoints use — so a
+    biometric punch and an app punch can never disagree on shift/late/
+    half-day handling. This wrapper's own job is just employee matching and
+    the biometric_logs audit trail."""
     log_doc = {
         'id': str(uuid.uuid4()), 'serial': serial, 'user_id': user_id,
         'timestamp': ts.isoformat(), 'event_type': event_type or 'auto',
@@ -4419,94 +4586,30 @@ async def _ingest_biometric_punch(serial: str, user_id: str, ts: datetime, event
         await db.biometric_logs.insert_one(dict(log_doc))
         return {'ok': False, 'reason': 'unknown_employee', 'user_id': user_id}
 
-    ist = ts.astimezone(timezone(timedelta(hours=5, minutes=30)))
-    d = ist.date().isoformat()
+    # Normalize to UTC before storing — same as the app path, which always
+    # passes now_utc(). Devices/eBioServer hand us IST-labelled timestamps;
+    # _apply_punch converts back to IST internally for date/lateness math
+    # either way, so this only affects what's persisted, not the logic.
+    norm_ts = ts.astimezone(timezone.utc)
+    result = await _apply_punch(emp, event_type or 'auto', norm_ts, {'source': 'biometric', 'device_serial': serial})
 
-    existing = await db.attendance.find_one({'employee_id': emp['id'], 'date': d}, {'_id': 0})
-    kind = event_type
-    if kind == 'auto':
-        kind = 'check_out' if (existing and existing.get('check_in') and not existing.get('check_out')) else 'check_in'
+    if not result['ok']:
+        reason = result['reason']
+        if reason in ('already_checked_in', 'already_checked_out'):
+            log_doc['result'] = 'skipped'; log_doc['reason'] = reason
+            await db.biometric_logs.insert_one(dict(log_doc))
+            return {'ok': True, 'skipped': True, 'reason': reason}
+        log_doc['result'] = 'rejected'; log_doc['reason'] = reason
+        await db.biometric_logs.insert_one(dict(log_doc))
+        return {'ok': False, 'reason': reason, 'user_id': user_id}
 
-    iso = ts.astimezone(timezone.utc).isoformat()
-    store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
-    # Use the employee's assigned shift (falling back to store defaults) — same
-    # source of truth the app's own check-in/check-out endpoints use — so a
-    # biometric-device punch and an app punch produce identical late/half-day
-    # results instead of the device path silently ignoring Shift Master.
-    shift = await db.shifts.find_one({'name': emp.get('shift')}, {'_id': 0})
-    work_start_str = (shift.get('start') if shift else None) or store.get('work_start', '10:00')
-    grace = int(shift.get('grace_min', 15)) if shift else int(store.get('grace_min', 15))
-    late_half_day_after = int(shift.get('late_half_day_after_min') or 0) if shift else 0
-    is_late = False
-    if kind == 'check_in':
-        late_by_min = 0
-        try:
-            wsh, wsm = work_start_str.split(':')
-            work_start_min = int(wsh) * 60 + int(wsm)
-            minutes_now = ist.hour * 60 + ist.minute
-            late_by_min = minutes_now - (work_start_min + grace)
-            is_late = late_by_min > 0
-        except Exception: is_late = False
-        payload = {
-            'timestamp': iso, 'latitude': 0, 'longitude': 0, 'selfie': '',
-            'distance_m': 0, 'is_late': is_late, 'late_by_min': max(late_by_min, 0),
-            'source': 'biometric', 'device_serial': serial,
-        }
-        if existing and existing.get('check_in'):
-            log_doc['result'] = 'skipped'; log_doc['reason'] = 'already_checked_in'
-            await db.biometric_logs.insert_one(dict(log_doc))
-            return {'ok': True, 'skipped': True, 'reason': 'already_checked_in'}
-        if existing:
-            await db.attendance.update_one({'id': existing['id']}, {'$set': {'check_in': payload, 'is_late': is_late, 'status': 'present'}})
-            att_id = existing['id']
-        else:
-            att_id = str(uuid.uuid4())
-            await db.attendance.insert_one({
-                'id': att_id, 'employee_id': emp['id'], 'date': d,
-                'check_in': payload, 'check_out': None, 'is_late': is_late, 'working_hours': 0,
-                'status': 'present', 'created_at': iso, 'source': 'biometric',
-            })
-    else:  # check_out
-        if not existing or not existing.get('check_in'):
-            log_doc['result'] = 'rejected'; log_doc['reason'] = 'no_check_in'
-            await db.biometric_logs.insert_one(dict(log_doc))
-            return {'ok': False, 'reason': 'no_check_in', 'user_id': user_id}
-        if existing.get('check_out'):
-            log_doc['result'] = 'skipped'; log_doc['reason'] = 'already_checked_out'
-            await db.biometric_logs.insert_one(dict(log_doc))
-            return {'ok': True, 'skipped': True, 'reason': 'already_checked_out'}
-        try:
-            ci_ts = datetime.fromisoformat(existing['check_in']['timestamp'])
-            hours = round((ts - ci_ts).total_seconds() / 3600, 2)
-        except Exception:
-            hours = 0
-        late_by_min = int(existing['check_in'].get('late_by_min') or 0)
-        half_day_for_lateness = bool(late_half_day_after) and late_by_min >= late_half_day_after
-        status = 'half_day' if (hours < 4 or half_day_for_lateness) else 'present'
-        half_day_reason = None
-        if status == 'half_day':
-            half_day_reason = 'short_hours' if hours < 4 else 'late'
-        payload = {'timestamp': iso, 'latitude': 0, 'longitude': 0, 'selfie': '',
-                   'distance_m': 0, 'source': 'biometric', 'device_serial': serial}
-        await db.attendance.update_one(
-            {'id': existing['id']},
-            {'$set': {'check_out': payload, 'working_hours': hours, 'status': status, 'half_day_reason': half_day_reason}},
-        )
-        att_id = existing['id']
-
-    # Update device last_seen
+    kind = result['kind']
     await db.biometric_devices.update_one({'serial': serial},
-                                          {'$set': {'last_seen': iso, 'status': 'online'}})
-    # Attendance event feed
-    await db.attendance_events.insert_one({
-        'id': str(uuid.uuid4()), 'employee_id': emp['id'], 'employee_name': emp['name'],
-        'type': kind, 'timestamp': iso, 'is_late': is_late if kind == 'check_in' else False,
-        'created_at': iso, 'source': 'biometric', 'device_serial': serial,
-    })
-    log_doc['result'] = 'accepted'; log_doc['action'] = kind; log_doc['attendance_id'] = att_id
+                                          {'$set': {'last_seen': norm_ts.isoformat(), 'status': 'online'}})
+    log_doc['result'] = 'accepted'; log_doc['action'] = kind; log_doc['attendance_id'] = result['attendance_id']
     log_doc['employee_id'] = emp['id']; log_doc['employee_name'] = emp['name']
     await db.biometric_logs.insert_one(dict(log_doc))
-    return {'ok': True, 'action': kind, 'employee': emp['name'], 'attendance_id': att_id}
+    return {'ok': True, 'action': kind, 'employee': emp['name'], 'attendance_id': result['attendance_id']}
 
 
 @api.post('/biometric/push')
@@ -4594,7 +4697,7 @@ async def iclock_upload(request: Request, SN: str = Query(...), table: str = Que
                 continue
             try:
                 ts = datetime.strptime(time_str, '%Y-%m-%d %H:%M:%S').replace(
-                    tzinfo=timezone(timedelta(hours=5, minutes=30))
+                    tzinfo=IST
                 )
             except Exception:
                 continue
@@ -4680,7 +4783,7 @@ async def ebioserver_webhook(body: EBioServerWebhookIn, key: Optional[str] = Que
 
     try:
         ts = datetime.strptime(body.LogDateTime, '%Y-%m-%d %H:%M:%S').replace(
-            tzinfo=timezone(timedelta(hours=5, minutes=30))
+            tzinfo=IST
         )
     except Exception:
         ts = now_utc()
@@ -4783,6 +4886,6 @@ async def assistant_history(user=Depends(require_staff), limit: int = 50):
 # ---------------- Mount ----------------
 app.include_router(api)
 app.add_middleware(
-    CORSMiddleware, allow_credentials=True, allow_origins=['*'],
+    CORSMiddleware, allow_credentials=True, allow_origins=ALLOWED_ORIGINS,
     allow_methods=['*'], allow_headers=['*'],
 )

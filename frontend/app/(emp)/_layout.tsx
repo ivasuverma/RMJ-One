@@ -14,9 +14,10 @@ export default function EmployeeTabsLayout() {
     if (loading) return;
     if (!user) router.replace('/login');
     else if (user.role !== 'employee') router.replace('/(tabs)/dashboard');
+    else if (user.must_change_password) router.replace('/set-password' as any);
   }, [user, loading, router]);
 
-  if (loading || !user || user.role !== 'employee') {
+  if (loading || !user || user.role !== 'employee' || user.must_change_password) {
     return (
       <View style={{ flex: 1, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' }}>
         <ActivityIndicator color={colors.brandPrimary} size="large" />
