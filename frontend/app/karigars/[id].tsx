@@ -9,6 +9,7 @@ import { api } from '@/src/api/client';
 import { confirmAction } from '@/src/utils/confirm';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { useAuth } from '@/src/auth/AuthContext';
 
 type Karigar = { id: string; name: string; mobile: string; is_employee: boolean };
 type Entry = {
@@ -32,6 +33,8 @@ export default function KarigarLedgerScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { colors } = useTheme();
+  const { hasRight } = useAuth();
+  const canDeleteEntry = hasRight('karigar_ledger', 'delete');
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [karigar, setKarigar] = useState<Karigar | null>(null);
   const [entries, setEntries] = useState<Entry[]>([]);
@@ -126,7 +129,7 @@ export default function KarigarLedgerScreen() {
           <Image source={{ uri: e.slip_photo }} style={styles.entryThumb} />
         </Pressable>
       ) : null}
-      {!e.item_id && (
+      {!e.item_id && canDeleteEntry && (
         <Pressable onPress={() => removeEntry(e)} disabled={deletingId === e.id} style={styles.entryDelBtn} hitSlop={8} testID={`del-entry-${e.id}`}>
           {deletingId === e.id ? <ActivityIndicator size="small" color={colors.onError} /> : <Ionicons name="trash-outline" size={14} color={colors.onError} />}
         </Pressable>

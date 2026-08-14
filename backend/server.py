@@ -164,7 +164,10 @@ MODULE_DEFS = [
     {'key': 'attendance', 'label': 'Attendance', 'default_roles': ['owner', 'admin']},
     {'key': 'team', 'label': 'Team', 'default_roles': ['owner', 'admin']},
     {'key': 'payroll', 'label': 'Payroll', 'default_roles': ['owner', 'admin', 'accountant']},
-    {'key': 'approvals', 'label': 'Approvals', 'default_roles': ['owner', 'admin'], 'employee_assignable': True},
+    # Approvals/Tasks are owner/admin-only now — no longer grantable to employee
+    # accounts (previously employee_assignable). Deliberately kept as plain
+    # modules rather than deleted so owner/admin staff-account access is unaffected.
+    {'key': 'approvals', 'label': 'Approvals', 'default_roles': ['owner', 'admin']},
     {'key': 'reports', 'label': 'Reports', 'default_roles': ['owner', 'admin', 'accountant']},
     {'key': 'biometric', 'label': 'Biometric Devices', 'default_roles': ['owner']},
     {'key': 'audit', 'label': 'Audit Log', 'default_roles': ['owner']},
@@ -173,8 +176,16 @@ MODULE_DEFS = [
     {'key': 'holidays', 'label': 'Holidays', 'default_roles': ['owner']},
     {'key': 'store_settings', 'label': 'Store Settings', 'default_roles': ['owner']},
     {'key': 'users', 'label': 'Staff Accounts', 'default_roles': ['owner']},
-    {'key': 'tasks', 'label': 'Tasks', 'default_roles': ['owner', 'admin'], 'employee_assignable': True},
-    {'key': 'repairs', 'label': 'Gold & Diamond Repairs', 'default_roles': ['owner', 'admin'], 'employee_assignable': True},
+    {'key': 'tasks', 'label': 'Tasks', 'default_roles': ['owner', 'admin']},
+    # The only four modules an employee can be granted, matching the four tiles
+    # they're ever shown: Transactions > Repair, Repair Bill; Reports > Customer
+    # Ledger, Karigar Ledger. "Repair" access also covers browsing repair items
+    # (read) so a Repair Bill-only employee can still pick an item to bill —
+    # see the ['repairs', 'repair_bill'] any-of checks on the relevant endpoints.
+    {'key': 'repairs', 'label': 'Repair', 'default_roles': ['owner', 'admin'], 'employee_assignable': True},
+    {'key': 'repair_bill', 'label': 'Repair Bill', 'default_roles': ['owner', 'admin'], 'employee_assignable': True},
+    {'key': 'customer_ledger', 'label': 'Customer Ledger', 'default_roles': ['owner', 'admin', 'accountant'], 'employee_assignable': True},
+    {'key': 'karigar_ledger', 'label': 'Karigar Ledger', 'default_roles': ['owner', 'admin', 'accountant'], 'employee_assignable': True},
 ]
 MODULE_KEYS = {m['key'] for m in MODULE_DEFS}
 MODULE_DEFAULT_ROLES = {m['key']: set(m['default_roles']) for m in MODULE_DEFS}
@@ -191,12 +202,19 @@ def _default_modules_for_role(role: str) -> list:
 def resolve_modules(user: dict) -> list:
     """Owner always has every module. Otherwise an explicit `module_access` list
     (which may be set to []) overrides the role's default set; module_access being
-    absent/None means 'use whatever this role normally gets'."""
+    absent/None means 'use whatever this role normally gets'.
+
+    An employee's override is additionally clamped to EMPLOYEE_ASSIGNABLE_MODULES
+    (belt-and-suspenders alongside the same check in update_access) — so if a
+    module is ever removed from that set (as tasks/approvals were), any account
+    that still has it stored from before loses access immediately, with no
+    separate data migration needed."""
     if user.get('role') == 'owner':
         return sorted(MODULE_KEYS)
     override = user.get('module_access')
     if override is not None:
-        return sorted(set(override) & MODULE_KEYS)
+        allowed = EMPLOYEE_ASSIGNABLE_MODULES if user.get('role') == 'employee' else MODULE_KEYS
+        return sorted(set(override) & allowed)
     return _default_modules_for_role(user.get('role', ''))
 
 
@@ -208,13 +226,17 @@ def require_module(key: str):
     return _check
 
 
-# ---------------- Employee-assignable module access (repairs/tasks/approvals) ----------------
+# ---------------- Employee-assignable module access (repairs/repair_bill/customer_ledger/karigar_ledger) ----------------
 # Everything above (require_admin/require_staff) hard-rejects role == 'employee',
 # because most of the app (payroll, HR, settings) should never be touchable by an
 # employee account no matter what. But an owner can now explicitly hand an employee
 # one of the EMPLOYEE_ASSIGNABLE_MODULES — at that point the employee needs to be
 # able to actually call the endpoints behind it. These three helpers are the employee
 # on-ramp for exactly those modules; every other endpoint in the app is untouched.
+#
+# `key` may be a single module key, or a list of keys checked any-of (used where
+# a screen is reachable via more than one grant — e.g. browsing repair items is
+# needed both to work a repair AND to bill one, so it accepts either module).
 #
 # - require_staff_or_module: read access. Owner/admin/accountant always pass (same
 #   as require_staff always did); an employee passes only if the module is resolved
@@ -225,26 +247,37 @@ def require_module(key: str):
 # - require_admin_or_module_right: editing or deleting records that already exist.
 #   Owner/admin always pass; an employee additionally needs module_rights[key][right]
 #   explicitly set True by an owner in User Roles. This is the "if edit or delete
-#   rights are disabled the employee cannot make changes" behavior.
-def require_staff_or_module(key: str):
+#   rights are disabled the employee cannot make changes" behavior. Always a single
+#   key — a right is granted per-module, never shared across an any-of group.
+def _keys_label(key) -> str:
+    return key if isinstance(key, str) else '/'.join(key)
+
+
+def _has_any_module(user: dict, key) -> bool:
+    keys = [key] if isinstance(key, str) else key
+    resolved = resolve_modules(user)
+    return any(k in resolved for k in keys)
+
+
+def require_staff_or_module(key):
     def _check(user=Depends(get_current)):
         role = user.get('role')
         if role in ('owner', 'admin', 'accountant'):
             return user
-        if role == 'employee' and key in resolve_modules(user):
+        if role == 'employee' and _has_any_module(user, key):
             return user
-        raise HTTPException(status_code=403, detail=f'No access to "{key}"')
+        raise HTTPException(status_code=403, detail=f'No access to "{_keys_label(key)}"')
     return _check
 
 
-def require_admin_or_module(key: str):
+def require_admin_or_module(key):
     def _check(user=Depends(get_current)):
         role = user.get('role')
         if role in ('owner', 'admin'):
             return user
-        if role == 'employee' and key in resolve_modules(user):
+        if role == 'employee' and _has_any_module(user, key):
             return user
-        raise HTTPException(status_code=403, detail=f'No access to "{key}"')
+        raise HTTPException(status_code=403, detail=f'No access to "{_keys_label(key)}"')
     return _check
 
 
@@ -1787,7 +1820,7 @@ async def delete_task_template(template_id: str, user=Depends(require_admin), _m
 
 # ---------------- Repairs: Customers ----------------
 @api.get('/customers')
-async def list_customers(q: Optional[str] = None, _: dict = Depends(require_staff_or_module('repairs'))):
+async def list_customers(q: Optional[str] = None, _: dict = Depends(require_staff_or_module(['repairs', 'customer_ledger']))):
     query: dict = {}
     if q:
         q_esc = re.escape(q)
@@ -1816,7 +1849,7 @@ async def list_customers(q: Optional[str] = None, _: dict = Depends(require_staf
 
 
 @api.get('/customers/{cid}')
-async def get_customer(cid: str, _: dict = Depends(require_staff_or_module('repairs'))):
+async def get_customer(cid: str, _: dict = Depends(require_staff_or_module(['repairs', 'customer_ledger']))):
     c = await db.customers.find_one({'id': cid}, {'_id': 0})
     if not c: raise HTTPException(status_code=404, detail='Customer not found')
     orders = await db.repair_orders.find({'customer_id': cid}, {'_id': 0}).sort('created_at', -1).to_list(200)
@@ -1840,7 +1873,7 @@ async def create_customer(body: CustomerIn, user=Depends(require_admin_or_module
 
 
 @api.put('/customers/{cid}')
-async def update_customer(cid: str, body: CustomerIn, user=Depends(require_admin_or_module_right('repairs', 'edit'))):
+async def update_customer(cid: str, body: CustomerIn, user=Depends(require_admin_or_module_right('customer_ledger', 'edit'))):
     if not await db.customers.find_one({'id': cid}):
         raise HTTPException(status_code=404, detail='Customer not found')
     await db.customers.update_one({'id': cid}, {'$set': body.model_dump()})
@@ -1896,7 +1929,7 @@ def _karigar_ledger_balances(entries: list) -> dict:
 
 
 @api.get('/karigars')
-async def list_karigars(_: dict = Depends(require_staff_or_module('repairs'))):
+async def list_karigars(_: dict = Depends(require_staff_or_module(['repairs', 'karigar_ledger']))):
     karigars = await db.karigars.find({}, {'_id': 0}).sort('name', 1).to_list(500)
     entries = await db.karigar_ledger.find({}, {'_id': 0, 'karigar_id': 1, 'type': 1, 'weight': 1, 'fine_weight': 1, 'amount': 1}).to_list(20000)
     bal = _karigar_ledger_balances(entries)
@@ -1923,7 +1956,7 @@ async def create_karigar(body: KarigarIn, user=Depends(require_admin_or_module('
 
 
 @api.put('/karigars/{kid}')
-async def update_karigar(kid: str, body: KarigarIn, user=Depends(require_admin_or_module_right('repairs', 'edit'))):
+async def update_karigar(kid: str, body: KarigarIn, user=Depends(require_admin_or_module_right('karigar_ledger', 'edit'))):
     if not await db.karigars.find_one({'id': kid}):
         raise HTTPException(status_code=404, detail='Karigar not found')
     await db.karigars.update_one({'id': kid}, {'$set': body.model_dump()})
@@ -2154,7 +2187,7 @@ async def repair_order_slip_print(order_id: str, user: dict = Depends(require_st
 async def list_repair_items(
     status_: Optional[str] = Query(default=None, alias='status'),
     q: Optional[str] = None,
-    _: dict = Depends(require_staff_or_module('repairs')),
+    _: dict = Depends(require_staff_or_module(['repairs', 'repair_bill'])),
 ):
     query: dict = {}
     if status_ == 'overdue':
@@ -2177,7 +2210,7 @@ async def list_repair_items(
 
 
 @api.get('/repair-items/{item_id}')
-async def get_repair_item(item_id: str, _: dict = Depends(require_staff_or_module('repairs'))):
+async def get_repair_item(item_id: str, _: dict = Depends(require_staff_or_module(['repairs', 'repair_bill']))):
     item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
     if not item: raise HTTPException(status_code=404, detail='Item not found')
     history = await db.karigar_transactions.find({'item_id': item_id}, {'_id': 0}).sort('created_at', 1).to_list(100)
@@ -2549,7 +2582,7 @@ async def _sync_cash_ledger_entry(item: dict, billed_amount: float, payment_mode
 
 
 @api.post('/repair-items/{item_id}/deliver')
-async def deliver_item(item_id: str, body: DeliverIn, user=Depends(require_admin_or_module('repairs'))):
+async def deliver_item(item_id: str, body: DeliverIn, user=Depends(require_admin_or_module(['repairs', 'repair_bill']))):
     item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
     if not item: raise HTTPException(status_code=404, detail='Item not found')
     if item['status'] != 'ready':
@@ -2577,7 +2610,7 @@ async def deliver_item(item_id: str, body: DeliverIn, user=Depends(require_admin
 
 
 @api.put('/repair-items/{item_id}/bill')
-async def edit_bill(item_id: str, body: DeliverIn, user=Depends(require_admin_or_module_right('repairs', 'edit'))):
+async def edit_bill(item_id: str, body: DeliverIn, user=Depends(require_admin_or_module_right('repair_bill', 'edit'))):
     """Corrects an already-delivered bill in place — same full form as creating
     one, rather than the old delete-then-recreate dance. Doesn't touch status,
     delivered_at, or the karigar side of the job; only the bill numbers."""
@@ -2609,7 +2642,7 @@ async def edit_bill(item_id: str, body: DeliverIn, user=Depends(require_admin_or
 
 
 @api.delete('/repair-items/{item_id}/bill')
-async def delete_bill(item_id: str, user=Depends(require_admin_or_module_right('repairs', 'delete'))):
+async def delete_bill(item_id: str, user=Depends(require_admin_or_module_right('repair_bill', 'delete'))):
     # Undoes a bill — puts the tag back to "ready" so it can be re-billed
     # correctly. Does not touch the tag/intake record itself.
     item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
@@ -2659,7 +2692,7 @@ def _bill_receipt_lines(item: dict) -> list:
 
 
 @api.get('/repair-items/{item_id}/bill/pdf')
-async def repair_item_bill_pdf(item_id: str, _: dict = Depends(require_staff_or_module('repairs'))):
+async def repair_item_bill_pdf(item_id: str, _: dict = Depends(require_staff_or_module(['repairs', 'repair_bill']))):
     item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
     if not item: raise HTTPException(status_code=404, detail='Item not found')
     rows = [[label, value] for label, value in _bill_receipt_lines(item)]
@@ -2669,7 +2702,7 @@ async def repair_item_bill_pdf(item_id: str, _: dict = Depends(require_staff_or_
 
 
 @api.post('/repair-items/{item_id}/bill/print')
-async def repair_item_bill_print(item_id: str, user: dict = Depends(require_staff_or_module('repairs'))):
+async def repair_item_bill_print(item_id: str, user: dict = Depends(require_staff_or_module(['repairs', 'repair_bill']))):
     """Sends the bill/quotation straight to the configured WiFi thermal
     printer as a bordered table — item details, the weight change breakdown,
     and the charges/total, instead of generating a PDF."""
@@ -2732,7 +2765,7 @@ async def repair_item_issue_slip_print(item_id: str, user: dict = Depends(requir
 
 # ---------------- Repairs: Loss Ledger ----------------
 @api.get('/karigars/loss-ledger')
-async def loss_ledger(_: dict = Depends(require_staff_or_module('repairs'))):
+async def loss_ledger(_: dict = Depends(require_staff_or_module(['repairs', 'karigar_ledger']))):
     """Every declared process-loss entry across all karigars, newest first —
     an audit trail of how much gold is being written off as loss, and by
     whom, that's otherwise buried inside individual receive transactions."""
@@ -2748,7 +2781,7 @@ async def loss_ledger(_: dict = Depends(require_staff_or_module('repairs'))):
 
 # ---------------- Repairs: Karigar Ledger ----------------
 @api.get('/karigars/{kid}/ledger')
-async def get_karigar_ledger(kid: str, _: dict = Depends(require_staff_or_module('repairs'))):
+async def get_karigar_ledger(kid: str, _: dict = Depends(require_staff_or_module(['repairs', 'karigar_ledger']))):
     karigar = await db.karigars.find_one({'id': kid}, {'_id': 0})
     if not karigar: raise HTTPException(status_code=404, detail='Karigar not found')
     entries = await db.karigar_ledger.find({'karigar_id': kid}, {'_id': 0}).sort('created_at', -1).to_list(1000)
@@ -2761,7 +2794,7 @@ async def get_karigar_ledger(kid: str, _: dict = Depends(require_staff_or_module
 
 
 @api.post('/karigars/{kid}/ledger')
-async def add_karigar_ledger_entry(kid: str, body: KarigarLedgerEntryIn, user=Depends(require_admin_or_module('repairs'))):
+async def add_karigar_ledger_entry(kid: str, body: KarigarLedgerEntryIn, user=Depends(require_admin_or_module(['repairs', 'karigar_ledger']))):
     karigar = await db.karigars.find_one({'id': kid}, {'_id': 0})
     if not karigar: raise HTTPException(status_code=404, detail='Karigar not found')
     if body.type in ('gold_out', 'gold_in'):
@@ -2791,7 +2824,7 @@ async def add_karigar_ledger_entry(kid: str, body: KarigarLedgerEntryIn, user=De
 
 
 @api.delete('/karigars/{kid}/ledger/{entry_id}')
-async def delete_karigar_ledger_entry(kid: str, entry_id: str, user=Depends(require_admin_or_module_right('repairs', 'delete'))):
+async def delete_karigar_ledger_entry(kid: str, entry_id: str, user=Depends(require_admin_or_module_right('karigar_ledger', 'delete'))):
     entry = await db.karigar_ledger.find_one({'id': entry_id, 'karigar_id': kid}, {'_id': 0})
     if not entry: raise HTTPException(status_code=404, detail='Ledger entry not found')
     if entry.get('item_id'):
@@ -3030,6 +3063,12 @@ async def update_access(account_id: str, body: ModuleAccessUpdateIn, user=Depend
         return {'ok': True}
     e = await db.employees.find_one({'id': account_id}, {'_id': 0})
     if e:
+        # Employees can only ever be granted the employee-assignable subset —
+        # enforced here too (not just hidden in the UI), so this can't be
+        # bypassed by calling the API directly.
+        bad_access = set(body.module_access or []) - EMPLOYEE_ASSIGNABLE_MODULES
+        if bad_access:
+            raise HTTPException(status_code=400, detail=f'Not an employee-assignable module: {", ".join(sorted(bad_access))}')
         await db.employees.update_one({'id': account_id}, {'$set': {
             'module_access': body.module_access, 'module_rights': body.module_rights or {},
         }})

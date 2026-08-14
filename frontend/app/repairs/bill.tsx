@@ -11,6 +11,7 @@ import { confirmAction } from '@/src/utils/confirm';
 import { PhotoCaptureModal } from '@/src/components/PhotoCaptureModal';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { useAuth } from '@/src/auth/AuthContext';
 
 type Item = {
   id: string; item_code: string; customer_name: string; description: string;
@@ -34,6 +35,9 @@ export default function RepairBillScreen() {
   const router = useRouter();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+  const { hasRight } = useAuth();
+  const canEditBill = hasRight('repair_bill', 'edit');
+  const canDeleteBill = hasRight('repair_bill', 'delete');
 
   const [mode, setMode] = useState<Mode>(routeItemId ? 'form' : 'list');
   const [bills, setBills] = useState<Item[]>([]);
@@ -256,18 +260,22 @@ export default function RepairBillScreen() {
                   {b.description}{b.billed_amount != null ? ` · ₹${b.billed_amount.toFixed(0)}` : ''}{b.payment_mode ? ` · ${b.payment_mode}` : ''}{b.delivered_at ? ` · ${b.delivered_at.slice(0, 10)}` : ''}
                 </Text>
               </Pressable>
-              <Pressable onPress={() => pickItem(b)} style={styles.editBtn} testID={`edit-bill-${b.id}`}>
-                <Ionicons name="pencil-outline" size={16} color={colors.onSurfaceSecondary} />
-              </Pressable>
+              {canEditBill && (
+                <Pressable onPress={() => pickItem(b)} style={styles.editBtn} testID={`edit-bill-${b.id}`}>
+                  <Ionicons name="pencil-outline" size={16} color={colors.onSurfaceSecondary} />
+                </Pressable>
+              )}
               <Pressable onPress={() => printBill(b)} disabled={printingId === b.id} style={styles.editBtn} testID={`print-bill-pdf-${b.id}`}>
                 {printingId === b.id ? <ActivityIndicator size="small" color={colors.onSurfaceSecondary} /> : <Ionicons name="document-text-outline" size={16} color={colors.onSurfaceSecondary} />}
               </Pressable>
               <Pressable onPress={() => printThermalBill(b)} disabled={thermalPrintingId === b.id} style={styles.printBtn} testID={`print-bill-${b.id}`}>
                 {thermalPrintingId === b.id ? <ActivityIndicator size="small" color={colors.onBrandPrimary} /> : <Ionicons name="print-outline" size={16} color={colors.onBrandPrimary} />}
               </Pressable>
-              <Pressable onPress={() => confirmDeleteBill(b)} disabled={deletingId === b.id} style={styles.deleteBtn} testID={`delete-bill-${b.id}`}>
-                {deletingId === b.id ? <ActivityIndicator size="small" color={colors.onError} /> : <Ionicons name="trash-outline" size={16} color={colors.onError} />}
-              </Pressable>
+              {canDeleteBill && (
+                <Pressable onPress={() => confirmDeleteBill(b)} disabled={deletingId === b.id} style={styles.deleteBtn} testID={`delete-bill-${b.id}`}>
+                  {deletingId === b.id ? <ActivityIndicator size="small" color={colors.onError} /> : <Ionicons name="trash-outline" size={16} color={colors.onError} />}
+                </Pressable>
+              )}
             </View>
           ))}
         </ScrollView>

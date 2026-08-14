@@ -178,7 +178,14 @@ export default function UserRolesScreen() {
 
                 {isExpanded && (
                   <View style={styles.expandBody}>
-                    {modules.map((m) => {
+                    {/* Employee accounts can only ever be granted the four
+                        employee-assignable modules (Repair, Repair Bill,
+                        Customer Ledger, Karigar Ledger) — everything else
+                        (Payroll, Store Settings, etc.) isn't shown as an
+                        option for them at all, not just hidden behind a
+                        rights toggle. User/admin/accountant accounts still
+                        see the full module list. */}
+                    {(acc.account_type === 'employee' ? modules.filter((m) => m.employee_assignable) : modules).map((m) => {
                       const checked = sel.has(m.key);
                       const showRights = checked && m.employee_assignable && acc.account_type === 'employee';
                       const modRights = (rights[acc.id] || {})[m.key] || {};

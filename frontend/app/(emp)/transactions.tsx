@@ -13,24 +13,23 @@ type TileDef = { key: string; label: string; icon: keyof typeof Ionicons.glyphMa
 // grants access per module in User Roles, and this screen only shows what's
 // actually been handed to this employee. If none are granted the whole
 // Transactions tab is hidden by the tab layout, so this screen never renders empty.
+// Only four modules are ever grantable to an employee: repairs, repair_bill,
+// customer_ledger, karigar_ledger — Tasks/Approvals management is owner/admin
+// only now (an employee's personal task list on the Tasks tab is unaffected;
+// that's a separate, always-available feature, not this module).
 const SECTIONS: { title: string; tiles: TileDef[] }[] = [
   {
     title: 'Repairs',
     tiles: [
       { key: 'repair-orders', label: 'Repair', icon: 'construct-outline', route: '/repairs', module: 'repairs' },
-      { key: 'repair-bill', label: 'Repair Bill', icon: 'receipt-outline', route: '/repairs/bill', module: 'repairs' },
+      { key: 'repair-bill', label: 'Repair Bill', icon: 'receipt-outline', route: '/repairs/bill', module: 'repair_bill' },
     ],
   },
   {
-    title: 'Tasks',
+    title: 'Reports',
     tiles: [
-      { key: 'tasks', label: 'Manage Tasks', icon: 'checkbox-outline', route: '/tasks', module: 'tasks' },
-    ],
-  },
-  {
-    title: 'Approvals',
-    tiles: [
-      { key: 'approvals', label: 'Approvals', icon: 'checkmark-done-outline', route: '/approvals', module: 'approvals' },
+      { key: 'customer-ledger', label: 'Customer Ledger', icon: 'person-outline', route: '/reports/customer-ledger', module: 'customer_ledger' },
+      { key: 'karigar-ledger', label: 'Karigar Ledger', icon: 'hammer-outline', route: '/reports/karigar-ledger', module: 'karigar_ledger' },
     ],
   },
 ];

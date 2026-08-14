@@ -12,6 +12,7 @@ import { DateField } from '@/src/components/DateField';
 import { REPAIR_STATUS_LABEL, repairStatusColors, RepairItemStatus } from '@/src/utils/repairStatus';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { useAuth } from '@/src/auth/AuthContext';
 
 type Item = {
   id: string; item_code: string; order_id: string; order_no: string; customer_name: string;
@@ -37,6 +38,9 @@ export default function RepairItemDetailScreen() {
   const router = useRouter();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+  const { hasRight } = useAuth();
+  const canEditRepair = hasRight('repairs', 'edit');
+  const canDeleteRepair = hasRight('repairs', 'delete');
 
   const [item, setItem] = useState<Item | null>(null);
   const [history, setHistory] = useState<Txn[]>([]);
@@ -201,9 +205,11 @@ export default function RepairItemDetailScreen() {
         <View style={[styles.statusBadge, { backgroundColor: sc.bg, borderColor: sc.border }]}>
           <Text style={[styles.statusText, { color: sc.fg }]}>{REPAIR_STATUS_LABEL[item.status]}</Text>
         </View>
-        <Pressable onPress={openEditForm} style={styles.editIconBtn} testID="edit-item-btn" hitSlop={12}>
-          <Ionicons name={form === 'edit' ? 'close' : 'pencil-outline'} size={18} color={colors.onSurface} />
-        </Pressable>
+        {canEditRepair && (
+          <Pressable onPress={openEditForm} style={styles.editIconBtn} testID="edit-item-btn" hitSlop={12}>
+            <Ionicons name={form === 'edit' ? 'close' : 'pencil-outline'} size={18} color={colors.onSurface} />
+          </Pressable>
+        )}
       </View>
 
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
@@ -290,9 +296,11 @@ export default function RepairItemDetailScreen() {
                   {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <><Ionicons name="checkmark" size={16} color={colors.onBrandPrimary} /><Text style={styles.actionBtnPrimaryText}>Mark Ready</Text></>}
                 </Pressable>
               </View>
-              <Pressable onPress={doDeleteItem} disabled={busy} style={[styles.actionBtn, styles.deleteWideBtn, { marginBottom: spacing.md }]} testID="delete-item-btn">
-                <Ionicons name="trash-outline" size={16} color={colors.onError} /><Text style={[styles.actionBtnText, { color: colors.onError }]}>Delete This Tag</Text>
-              </Pressable>
+              {canDeleteRepair && (
+                <Pressable onPress={doDeleteItem} disabled={busy} style={[styles.actionBtn, styles.deleteWideBtn, { marginBottom: spacing.md }]} testID="delete-item-btn">
+                  <Ionicons name="trash-outline" size={16} color={colors.onError} /><Text style={[styles.actionBtnText, { color: colors.onError }]}>Delete This Tag</Text>
+                </Pressable>
+              )}
             </>
           )}
           {item.status === 'ready' && (
@@ -317,9 +325,11 @@ export default function RepairItemDetailScreen() {
               <Pressable onPress={() => printPdf('bill')} disabled={printing} style={[styles.actionBtn, { flex: 1 }]} testID="view-bill-btn">
                 {printing ? <ActivityIndicator color={colors.onSurfaceSecondary} /> : <><Ionicons name="document-text-outline" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>PDF</Text></>}
               </Pressable>
-              <Pressable onPress={() => router.push({ pathname: '/repairs/bill', params: { itemId: id } } as any)} style={[styles.actionBtn, { flex: 1 }]} testID="edit-bill-btn">
-                <Ionicons name="pencil-outline" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>Edit</Text>
-              </Pressable>
+              {hasRight('repair_bill', 'edit') && (
+                <Pressable onPress={() => router.push({ pathname: '/repairs/bill', params: { itemId: id } } as any)} style={[styles.actionBtn, { flex: 1 }]} testID="edit-bill-btn">
+                  <Ionicons name="pencil-outline" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>Edit</Text>
+                </Pressable>
+              )}
             </View>
           )}
 
@@ -342,14 +352,18 @@ export default function RepairItemDetailScreen() {
                     <Text style={styles.cMeta}>{h.weight.toFixed(3)}g{h.fine_weight != null ? ` (fine ${h.fine_weight.toFixed(3)}g)` : ''}{h.weight_diff != null ? ` · diff ${h.weight_diff >= 0 ? '+' : ''}${h.weight_diff.toFixed(3)}g` : ''}</Text>
                     <Text style={styles.cMeta}>{h.note || '—'} · {h.created_at?.slice(0, 10)} · {h.created_by}{h.edited_by ? ` · edited by ${h.edited_by}` : ''}</Text>
                   </View>
-                  {canEdit && (
+                  {canEdit && (canEditRepair || canDeleteRepair) && (
                     <View style={{ flexDirection: 'row', gap: 6 }}>
-                      <Pressable onPress={() => editTxn(h)} style={styles.smallIconBtn} hitSlop={8} testID={`edit-txn-${h.id}`}>
-                        <Ionicons name="pencil-outline" size={14} color={colors.onSurfaceSecondary} />
-                      </Pressable>
-                      <Pressable onPress={() => deleteTxn(h)} style={[styles.smallIconBtn, styles.smallIconBtnDanger]} hitSlop={8} testID={`delete-txn-${h.id}`}>
-                        <Ionicons name="trash-outline" size={14} color={colors.onError} />
-                      </Pressable>
+                      {canEditRepair && (
+                        <Pressable onPress={() => editTxn(h)} style={styles.smallIconBtn} hitSlop={8} testID={`edit-txn-${h.id}`}>
+                          <Ionicons name="pencil-outline" size={14} color={colors.onSurfaceSecondary} />
+                        </Pressable>
+                      )}
+                      {canDeleteRepair && (
+                        <Pressable onPress={() => deleteTxn(h)} style={[styles.smallIconBtn, styles.smallIconBtnDanger]} hitSlop={8} testID={`delete-txn-${h.id}`}>
+                          <Ionicons name="trash-outline" size={14} color={colors.onError} />
+                        </Pressable>
+                      )}
                     </View>
                   )}
                 </View>
