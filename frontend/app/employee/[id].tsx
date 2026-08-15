@@ -181,15 +181,26 @@ export default function EmployeeProfile() {
             <StatusChip status={emp.status} />
           </View>
 
-          <Pressable
-            onPress={() => router.push(`/ledger/${emp.id}`)}
-            style={styles.ledgerLink}
-            testID="open-ledger-btn"
-          >
-            <Ionicons name="book-outline" size={16} color={colors.onBrandPrimary} />
-            <Text style={styles.ledgerLinkText}>Open Ledger</Text>
-            <Ionicons name="chevron-forward" size={16} color={colors.onBrandPrimary} />
-          </Pressable>
+          <View style={styles.actionLinkRow}>
+            <Pressable
+              onPress={() => router.push(`/ledger/${emp.id}`)}
+              style={styles.ledgerLink}
+              testID="open-ledger-btn"
+            >
+              <Ionicons name="book-outline" size={16} color={colors.onBrandPrimary} />
+              <Text style={styles.ledgerLinkText}>Open Ledger</Text>
+              <Ionicons name="chevron-forward" size={16} color={colors.onBrandPrimary} />
+            </Pressable>
+
+            <Pressable
+              onPress={() => router.push(`/employee/set-credentials/${emp.id}`)}
+              style={styles.shareCredsLink}
+              testID="share-credentials-btn"
+            >
+              <Ionicons name="key-outline" size={16} color={colors.brandSecondary} />
+              <Text style={styles.shareCredsLinkText}>Share Credentials</Text>
+            </Pressable>
+          </View>
         </View>
 
         {/* Segmented tabs */}
@@ -556,12 +567,19 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   designation: { color: colors.onSurfaceTertiary, fontSize: 14, marginTop: 4 },
   metaRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md, alignItems: 'center' },
+  actionLinkRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.md },
   ledgerLink: {
-    flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.md,
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
     backgroundColor: colors.brandPrimary, paddingVertical: 10, paddingHorizontal: spacing.md,
     borderRadius: radius.md, alignSelf: 'flex-start',
   },
   ledgerLinkText: { color: colors.onBrandPrimary, fontWeight: '700', fontSize: 13 },
+  shareCredsLink: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+    backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.brand,
+    paddingVertical: 10, paddingHorizontal: spacing.md, borderRadius: radius.md, alignSelf: 'flex-start',
+  },
+  shareCredsLinkText: { color: colors.brandSecondary, fontWeight: '700', fontSize: 13 },
   metaChip: {
     color: colors.brandSecondary, fontSize: 12, fontWeight: '600',
     backgroundColor: colors.brandTertiary, paddingHorizontal: 10, paddingVertical: 4, borderRadius: radius.pill,

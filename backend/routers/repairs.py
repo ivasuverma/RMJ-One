@@ -1090,6 +1090,15 @@ _ESCPOS_CUT = _GS + b'V\x01'          # partial cut — leaves a small connectin
 # away with a light pull, same as any till receipt.
 _ESCPOS_WIDTH_CHARS = 42              # ~80mm paper at the default 12x24 font
 
+# Blank feed before the cut, specified directly in dots via ESC J (print and
+# feed n dots) rather than a pile of '\n's — ESC J feeds an exact physical
+# distance regardless of the ESC 3 line-spacing setting above, so this margin
+# doesn't quietly change if that setting ever does. At this printer class's
+# standard 203dpi / 8 dots-per-mm resolution, 30mm needs 240 dots (the max a
+# single byte allows here, which comfortably covers it).
+_ESCPOS_CUT_FEED_MM = 30
+_ESCPOS_FEED_BEFORE_CUT = _ESC + b'J' + bytes([min(255, round(_ESCPOS_CUT_FEED_MM * 8))])
+
 _ESCPOS_UNICODE_FALLBACKS = {
     '₹': 'Rs.', '—': '-', '–': '-', '·': '-', '’': "'", '‘': "'", '“': '"', '”': '"', '…': '...',
 }
@@ -1161,11 +1170,7 @@ def _escpos_receipt(shop_name: str, heading: str, lines: list) -> bytes:
     out += enc('=' * _ESCPOS_WIDTH_CHARS) + b'\n'
     out += _ESCPOS_ALIGN_CENTER
     out += enc(f"Generated {now_utc().strftime('%d %b %Y %H:%M')}") + b'\n'
-    # Extra feed before cutting — the cutter blade sits a fair way below the
-    # print head on these printers, so too little feed here is what caused
-    # the "receipts not cutting apart" issue (the blade had no clear paper
-    # to cut through yet).
-    out += b'\n\n\n\n\n'
+    out += _ESCPOS_FEED_BEFORE_CUT
     out += _ESCPOS_CUT
     return bytes(out)
 
@@ -1249,7 +1254,7 @@ def _escpos_bill_table(shop_name: str, item: dict) -> bytes:
     out += b'\n'
     out += _ESCPOS_ALIGN_CENTER
     out += _escpos_enc(f"Generated {now_utc().strftime('%d %b %Y %H:%M')}") + b'\n'
-    out += b'\n\n\n\n\n'
+    out += _ESCPOS_FEED_BEFORE_CUT
     out += _ESCPOS_CUT
     return bytes(out)
 
