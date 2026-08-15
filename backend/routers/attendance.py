@@ -35,6 +35,7 @@ from server import (
     log_audit,
     notify_user,
     _notify_module,
+    MISSED_CHECKOUT_GRACE_MIN,
     IST,
 )
 
@@ -140,10 +141,21 @@ async def attendance_today(_: dict = Depends(require_staff)):
                 'check_out': a.get('check_out', {}).get('timestamp') if a.get('check_out') else None,
                 'is_late': a.get('is_late', False),
                 'working_hours': a.get('working_hours', 0),
-                'missing_punch': bool(a.get('check_in') and not a.get('check_out')),
             })
         else:
             row.update({'status': 'absent', 'check_in': None, 'check_out': None, 'is_late': False, 'working_hours': 0})
+
+        # 'Missing Punch' means checked in but past their shift end (+ grace)
+        # with still no check-out — i.e. actually forgot to punch out, not
+        # just "hasn't left yet" (which is true of everyone still mid-shift
+        # and shouldn't knock them out of the Present filter).
+        missing_punch = False
+        if a and a.get('check_in') and not a.get('check_out'):
+            shift = shifts_by_name.get(e.get('shift'))
+            end = (shift.get('end') if shift else None) or store.get('work_end', '19:30')
+            if minutes_now >= _minutes(end) + MISSED_CHECKOUT_GRACE_MIN:
+                missing_punch = True
+        row['missing_punch'] = missing_punch
 
         not_checked_in_late = False
         already_settled = bool(a and (a.get('check_in') or a.get('status') in ('leave', 'holiday', 'weekly_off', 'absent')))
