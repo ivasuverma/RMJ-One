@@ -55,9 +55,11 @@ const fmtTime = (iso?: string | null) => {
   catch { return '—:—'; }
 };
 
+const VALID_STATUS_KEYS = new Set(STATUS_FILTERS.map((f) => f.key));
+
 export default function OwnerAttendance() {
   const router = useRouter();
-  const { from } = useLocalSearchParams<{ from?: string }>();
+  const { from, filter } = useLocalSearchParams<{ from?: string; filter?: string }>();
   const goBack = () => { if (from === 'transactions') router.replace('/(tabs)/transactions' as any); else router.back(); };
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
@@ -67,9 +69,17 @@ export default function OwnerAttendance() {
   const [pendingCount, setPendingCount] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState<StatusKey>('all');
+  const [statusFilter, setStatusFilter] = useState<StatusKey>(
+    (filter && VALID_STATUS_KEYS.has(filter as StatusKey)) ? (filter as StatusKey) : 'all',
+  );
   const [deptFilter, setDeptFilter] = useState('all');
   const [query, setQuery] = useState('');
+
+  // Coming in from a dashboard tile (e.g. tapping "Present") should re-apply
+  // that filter even if this screen was already mounted from a previous visit.
+  useFocusEffect(useCallback(() => {
+    if (filter && VALID_STATUS_KEYS.has(filter as StatusKey)) setStatusFilter(filter as StatusKey);
+  }, [filter]));
 
   const load = useCallback(async () => {
     try {

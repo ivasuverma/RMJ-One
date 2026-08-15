@@ -1080,7 +1080,14 @@ _ESCPOS_BOLD_OFF = _ESC + b'E\x00'
 _ESCPOS_SIZE_NORMAL = _GS + b'!\x00'
 _ESCPOS_SIZE_TALL = _GS + b'!\x01'    # double height only — stays readable-width
 _ESCPOS_SIZE_BIG = _GS + b'!\x11'     # double width + double height — for the shop name only
-_ESCPOS_CUT = _GS + b'V\x00'          # full cut
+_ESCPOS_CUT = _GS + b'V\x01'          # partial cut — leaves a small connecting
+# tab rather than a full separation. Deliberately NOT full cut (\x00): on the
+# clone/no-name 80mm auto-cutters this app targets (e.g. Retsol RTP82), full
+# cut is the mode most likely to jam or fail to fully engage if the blade
+# isn't perfectly aligned, which showed up as consecutive receipts printing
+# back-to-back with no cut between them at all. Partial cut is the far more
+# reliable auto-cut mode on cheap hardware — the tiny remaining tab tears
+# away with a light pull, same as any till receipt.
 _ESCPOS_WIDTH_CHARS = 42              # ~80mm paper at the default 12x24 font
 
 _ESCPOS_UNICODE_FALLBACKS = {
@@ -1154,7 +1161,11 @@ def _escpos_receipt(shop_name: str, heading: str, lines: list) -> bytes:
     out += enc('=' * _ESCPOS_WIDTH_CHARS) + b'\n'
     out += _ESCPOS_ALIGN_CENTER
     out += enc(f"Generated {now_utc().strftime('%d %b %Y %H:%M')}") + b'\n'
-    out += b'\n\n\n'
+    # Extra feed before cutting — the cutter blade sits a fair way below the
+    # print head on these printers, so too little feed here is what caused
+    # the "receipts not cutting apart" issue (the blade had no clear paper
+    # to cut through yet).
+    out += b'\n\n\n\n\n'
     out += _ESCPOS_CUT
     return bytes(out)
 
@@ -1238,7 +1249,7 @@ def _escpos_bill_table(shop_name: str, item: dict) -> bytes:
     out += b'\n'
     out += _ESCPOS_ALIGN_CENTER
     out += _escpos_enc(f"Generated {now_utc().strftime('%d %b %Y %H:%M')}") + b'\n'
-    out += b'\n\n\n'
+    out += b'\n\n\n\n\n'
     out += _ESCPOS_CUT
     return bytes(out)
 

@@ -10,6 +10,7 @@ from datetime import date
 from server import (
     db,
     today_str,
+    now_utc,
     get_current,
     require_owner,
     require_staff,
@@ -18,25 +19,67 @@ from server import (
     _report_pdf,
     _pdf_response,
     _ledger_sign,
+    _minutes,
+    MISSED_CHECKOUT_GRACE_MIN,
+    IST,
 )
 
 router = APIRouter()
+
+# Same thresholds as routers/attendance.py's own NOT_CHECKED_IN_GRACE_MIN —
+# keep in sync so the dashboard tiles and the Attendance screen's filters
+# agree on who counts as "not checked in yet" / "missing a punch".
+NOT_CHECKED_IN_GRACE_MIN = 30
 
 # ---------------- Dashboard ----------------
 @router.get('/dashboard')
 async def dashboard(_: dict = Depends(get_current)):
     d = today_str()
-    total = await db.employees.count_documents({})
-    on_leave_status = await db.employees.count_documents({'status': 'on_leave'})
+    employees = await db.employees.find({}, {'_id': 0, 'id': 1, 'status': 1, 'shift': 1}).to_list(2000)
+    total = len(employees)
+    on_leave_status = sum(1 for e in employees if e.get('status') == 'on_leave')
 
     att = await db.attendance.find({'date': d}, {'_id': 0, 'check_in.selfie': 0, 'check_out.selfie': 0}).to_list(1000)
+    att_by_emp = {a['employee_id']: a for a in att}
     present = sum(1 for a in att if a.get('status') == 'present' and a.get('check_in'))
     half_day = sum(1 for a in att if a.get('status') == 'half_day')
     late = sum(1 for a in att if a.get('is_late'))
-    missing_punch = sum(1 for a in att if a.get('check_in') and not a.get('check_out'))
     working = sum(1 for a in att if a.get('check_in') and not a.get('check_out'))
     marked_ids = {a['employee_id'] for a in att}
     absent = max(total - len(marked_ids) - on_leave_status, 0)
+
+    # 'Missing Punch' = checked in but past shift end (+ grace) with still no
+    # check-out — not just "hasn't left yet", which is true of everyone still
+    # mid-shift. 'Not checked in' = shift started 30+ min ago, still no
+    # check-in, nothing explicitly recorded for the day. Both mirror the
+    # exact per-employee criteria in routers/attendance.py's /attendance/today
+    # so these dashboard counts always agree with what tapping through to the
+    # Attendance screen's filters shows.
+    now_ist = now_utc().astimezone(IST)
+    minutes_now = now_ist.hour * 60 + now_ist.minute
+    check_today = now_ist.weekday() != 6 and not await db.holidays.find_one({'date': d}, {'_id': 0, 'id': 1})
+    store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
+    shifts_by_name = {}
+    async for s in db.shifts.find({}, {'_id': 0}):
+        shifts_by_name[s['name']] = s
+
+    missing_punch = 0
+    not_checked_in = 0
+    if check_today:
+        for e in employees:
+            if e.get('status') == 'on_leave':
+                continue
+            a = att_by_emp.get(e['id'])
+            shift = shifts_by_name.get(e.get('shift'))
+            if a and a.get('check_in') and not a.get('check_out'):
+                end = (shift.get('end') if shift else None) or store.get('work_end', '19:30')
+                if minutes_now >= _minutes(end) + MISSED_CHECKOUT_GRACE_MIN:
+                    missing_punch += 1
+            already_settled = bool(a and (a.get('check_in') or a.get('status') in ('leave', 'holiday', 'weekly_off', 'absent')))
+            if not already_settled:
+                start = (shift.get('start') if shift else None) or store.get('work_start', '10:00')
+                if minutes_now >= _minutes(start) + NOT_CHECKED_IN_GRACE_MIN:
+                    not_checked_in += 1
 
     pending_corrections = await db.corrections.count_documents({'status': 'pending'})
     pending_leaves = await db.leaves.count_documents({'status': 'pending'})
@@ -78,8 +121,8 @@ async def dashboard(_: dict = Depends(get_current)):
     return {
         'todays_attendance': {
             'present': present, 'absent': absent, 'late': late, 'half_day': half_day,
-            'missing_punch': missing_punch, 'leave': on_leave_status, 'working': working,
-            'total': total,
+            'missing_punch': missing_punch, 'not_checked_in': not_checked_in,
+            'leave': on_leave_status, 'working': working, 'total': total,
         },
         'pending_approvals': {
             'attendance_corrections': pending_corrections,
