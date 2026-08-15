@@ -1144,7 +1144,7 @@ async def _check_missed_attendance():
         if minutes_now < _minutes(start) + MISSED_ATTENDANCE_GRACE_MIN:
             continue  # not yet past their shift start + grace period
 
-        if await db.attendance_reminders.find_one({'employee_id': emp['id'], 'date': today}, {'_id': 0, 'id': 1}):
+        if await db.attendance_reminders.find_one({'employee_id': emp['id'], 'date': today}, {'_id': 0}) is not None:
             continue  # already reminded today
 
         att = await db.attendance.find_one({'employee_id': emp['id'], 'date': today}, {'_id': 0})
@@ -1181,7 +1181,7 @@ async def _check_daily_absentee_summary():
         return  # Sunday — normally a day off
     if await db.holidays.find_one({'date': today}, {'_id': 0, 'id': 1}):
         return
-    if await db.absentee_summaries.find_one({'date': today}, {'_id': 0, 'id': 1}):
+    if await db.absentee_summaries.find_one({'date': today}, {'_id': 0}) is not None:
         return  # already sent today
 
     absent_names = []
@@ -1214,15 +1214,27 @@ async def _check_daily_absentee_summary():
 
 
 async def _check_auto_advances():
-    """Fires each employee's recurring monthly advance on their configured day.
-    Idempotent via `db.auto_advances` (keyed by employee + year-month) so the
-    15-minute poll can safely re-check without double-crediting. A day beyond
-    the current month's length (e.g. 31 in February) clamps to the last day."""
+    """Fires each employee's recurring monthly advance on their configured
+    day. An auto-advance is an early payout against the month that JUST
+    ENDED — e.g. a day=1 advance disbursed on 1 March is money against
+    February's salary, paid before that month's payroll is finalized, not
+    against March's not-yet-worked days. So the resulting timeline entry is
+    tagged with for_month = the previous calendar month (relative to the
+    disbursement date), and payroll's ledger query matches an entry against
+    for_month when present, falling back to created_at's own month for
+    older/manual ledger entries that never set for_month — see
+    _compute_payroll in routers/payroll.py.
+
+    Idempotent via `db.auto_advances` (keyed by employee + for_month) so the
+    15-minute poll can safely re-check without double-crediting. A day
+    beyond the current month's length (e.g. 31 in February) clamps to the
+    last day."""
     from calendar import monthrange
     now_ist = now_utc().astimezone(IST)
     today = now_ist.date()
-    ym = f'{today.year:04d}-{today.month:02d}'
     last_day = monthrange(today.year, today.month)[1]
+    prev_year, prev_month = (today.year - 1, 12) if today.month == 1 else (today.year, today.month - 1)
+    for_month = f'{prev_year:04d}-{prev_month:02d}'
 
     async for emp in db.employees.find(
         {'status': 'active', 'auto_advance_amount': {'$gt': 0}, 'auto_advance_day': {'$ne': None}},
@@ -1233,19 +1245,19 @@ async def _check_auto_advances():
             continue
         if today.day != min(day, last_day):
             continue
-        if await db.auto_advances.find_one({'employee_id': emp['id'], 'month': ym}, {'_id': 0, 'id': 1}):
-            continue  # already fired this month
+        if await db.auto_advances.find_one({'employee_id': emp['id'], 'month': for_month}, {'_id': 0}) is not None:
+            continue  # already fired for this month
 
         amount = float(emp['auto_advance_amount'])
         iso = now_utc().isoformat()
         await db.timeline.insert_one({
             'id': str(uuid.uuid4()), 'employee_id': emp['id'], 'type': 'advance',
-            'title': 'Auto Advance', 'description': f'Automatic monthly advance ({ym})',
-            'amount': amount, 'sign': _ledger_sign('advance'), 'created_at': iso,
+            'title': 'Auto Advance', 'description': f'Automatic advance for {for_month} (paid {today.isoformat()})',
+            'amount': amount, 'sign': _ledger_sign('advance'), 'created_at': iso, 'for_month': for_month,
         })
         await db.auto_advances.update_one(
-            {'employee_id': emp['id'], 'month': ym},
-            {'$set': {'employee_id': emp['id'], 'month': ym, 'amount': amount, 'created_at': iso}},
+            {'employee_id': emp['id'], 'month': for_month},
+            {'$set': {'employee_id': emp['id'], 'month': for_month, 'amount': amount, 'created_at': iso}},
             upsert=True,
         )
         await notify_user(emp['id'], 'Advance credited',
@@ -1277,7 +1289,7 @@ async def _check_recurring_tasks():
         else:
             gen_key = {'template_id': tpl['id'], 'date': today_iso, 'hour_bucket': None}
 
-        if await db.task_generations.find_one(gen_key, {'_id': 0, 'id': 1}):
+        if await db.task_generations.find_one(gen_key, {'_id': 0}) is not None:
             continue  # already generated for this cycle
 
         emp = await db.employees.find_one({'id': tpl['assigned_to'], 'status': 'active'}, {'_id': 0})

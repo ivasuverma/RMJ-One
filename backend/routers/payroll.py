@@ -169,10 +169,23 @@ async def _compute_payroll(year: int, month: int) -> list:
     async for h in db.holidays.find({'date': {'$gte': start, '$lte': end}}, {'_id': 0, 'date': 1}):
         holidays.add(h['date'])
     all_month_dates = [d.isoformat() for d in _iter_month_dates(year, month)]
-    # Ledger entries in month (advance/bonus/fine/deduction)
+    # Ledger entries in month (advance/bonus/fine/deduction). An entry
+    # normally counts toward whichever month its created_at falls in — but
+    # an auto-advance is explicitly an early payout against the month that
+    # just ended (paid on e.g. the 1st of the next month, before that
+    # month's payroll is finalized), so it's tagged with for_month at
+    # creation time (see _check_auto_advances) and must be matched against
+    # THAT month here regardless of when it was actually created.
+    month_ym = f'{year:04d}-{month:02d}'
     ledger_by_emp: dict = {}
     async for t in db.timeline.find(
-        {'type': {'$in': ['advance', 'bonus', 'fine', 'deduction']}, 'created_at': {'$gte': start, '$lte': f'{end}T23:59:59'}},
+        {
+            'type': {'$in': ['advance', 'bonus', 'fine', 'deduction']},
+            '$or': [
+                {'for_month': month_ym},
+                {'for_month': {'$in': [None, '']}, 'created_at': {'$gte': start, '$lte': f'{end}T23:59:59'}},
+            ],
+        },
         {'_id': 0},
     ):
         ledger_by_emp.setdefault(t['employee_id'], []).append(t)
