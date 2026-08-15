@@ -24,6 +24,12 @@ from server import (
 router = APIRouter()
 iclock_router = APIRouter()  # mounted directly on app, no /api prefix — real ADMS device protocol
 
+# Minimum minutes required between two accepted biometric punches for the
+# same employee before a new scan is treated as a real check-in/check-out
+# toggle rather than the device re-capturing the same visit. See
+# _ingest_biometric_punch.
+PUNCH_COOLDOWN_MIN = 180
+
 # ---------------- Biometric (eSSL Cloud Push) ----------------
 class DeviceIn(BaseModel):
     serial: str
@@ -105,6 +111,29 @@ async def _ingest_biometric_punch(serial: str, user_id: str, ts: datetime, event
     # _apply_punch converts back to IST internally for date/lateness math
     # either way, so this only affects what's persisted, not the logic.
     norm_ts = ts.astimezone(timezone.utc)
+
+    # Debounce: this device re-captures the same physical visit as multiple
+    # separate scans a few seconds apart (confirmed in the field — back-to-
+    # back punches produced a 0.01h 'half day' since 'auto' toggled straight
+    # from check-in to check-out). Require at least PUNCH_COOLDOWN_MIN since
+    # this employee's last accepted biometric punch before treating a new
+    # scan as a real check-in/check-out; anything sooner is almost certainly
+    # the same visit being re-captured, not a genuine quick check-out. Only
+    # applies to the biometric path — the app's own check-in/check-out
+    # buttons are deliberate user actions and aren't debounced.
+    last = await db.attendance_events.find_one(
+        {'employee_id': emp['id'], 'source': 'biometric'}, {'_id': 0}, sort=[('timestamp', -1)],
+    )
+    if last:
+        try:
+            gap_min = abs((norm_ts - datetime.fromisoformat(last['timestamp'])).total_seconds()) / 60
+        except Exception:
+            gap_min = None
+        if gap_min is not None and gap_min < PUNCH_COOLDOWN_MIN:
+            log_doc['result'] = 'skipped'; log_doc['reason'] = 'duplicate_punch_cooldown'
+            await db.biometric_logs.insert_one(dict(log_doc))
+            return {'ok': True, 'skipped': True, 'reason': 'duplicate_punch_cooldown'}
+
     result = await _apply_punch(emp, event_type or 'auto', norm_ts, {'source': 'biometric', 'device_serial': serial})
 
     if not result['ok']:
