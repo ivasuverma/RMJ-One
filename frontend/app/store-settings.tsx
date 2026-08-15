@@ -15,6 +15,7 @@ type Form = {
   work_start: string; work_end: string; grace_min: string; round_net_salary: boolean;
   printer_ip: string; printer_port: string;
   biometric_webhook_secret: string;
+  app_checkin_enabled: boolean;
 };
 
 const EMPTY: Form = {
@@ -22,6 +23,7 @@ const EMPTY: Form = {
   work_start: '10:00', work_end: '19:30', grace_min: '15', round_net_salary: false,
   printer_ip: '', printer_port: '9100',
   biometric_webhook_secret: '',
+  app_checkin_enabled: true,
 };
 
 export default function StoreSettings() {
@@ -45,6 +47,7 @@ export default function StoreSettings() {
             round_net_salary: !!s.round_net_salary,
             printer_ip: s.printer_ip || '', printer_port: String(s.printer_port ?? 9100),
             biometric_webhook_secret: s.biometric_webhook_secret || '',
+            app_checkin_enabled: s.app_checkin_enabled !== false,
           });
         }
       } finally { setLoading(false); }
@@ -90,6 +93,7 @@ export default function StoreSettings() {
         printer_ip: form.printer_ip.trim() || null,
         printer_port: parseInt(form.printer_port || '9100', 10),
         biometric_webhook_secret: form.biometric_webhook_secret.trim() || null,
+        app_checkin_enabled: form.app_checkin_enabled,
       });
       router.back();
     } catch (e: any) {
@@ -152,6 +156,20 @@ export default function StoreSettings() {
             </View>
           </View>
           <F label="Late Grace (minutes)" v={form.grace_min} onC={(v) => setForm({ ...form, grace_min: v.replace(/[^0-9]/g, '') })} kt="numeric" testID="ss-grace" />
+
+          <Pressable
+            onPress={() => setForm({ ...form, app_checkin_enabled: !form.app_checkin_enabled })}
+            style={styles.toggleRow}
+            testID="ss-app-checkin-toggle"
+          >
+            <View style={{ flex: 1 }}>
+              <Text style={styles.toggleLabel}>Allow check-in/check-out from the app</Text>
+              <Text style={styles.toggleSub}>Turn off if attendance is tracked only via a biometric device — employees' Check In/Check Out buttons will be disabled</Text>
+            </View>
+            <View style={[styles.switch, form.app_checkin_enabled && styles.switchOn]}>
+              <View style={[styles.switchKnob, form.app_checkin_enabled && styles.switchKnobOn]} />
+            </View>
+          </Pressable>
 
           <SectionTitle text="Payroll" />
           <Pressable

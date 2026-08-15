@@ -346,6 +346,12 @@ class StoreSettingsIn(BaseModel):
     work_end: str = '19:30'
     grace_min: int = 15
     round_net_salary: bool = False
+    # When False, employees can't self-mark attendance from the app (GPS+selfie
+    # check-in/check-out) — the buttons are disabled in their profile. Meant for
+    # shops that have switched fully to a biometric device as the attendance
+    # source of truth. Enforced server-side too (see /attendance/check-in and
+    # /attendance/check-out), not just hidden client-side.
+    app_checkin_enabled: bool = True
     # WiFi ESC/POS thermal receipt printer (e.g. Retsol RTP82) — raw socket
     # printing on the standard JetDirect/RAW port, no driver needed. Left
     # unset means no printer is configured and print actions will 400.

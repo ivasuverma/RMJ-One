@@ -23,7 +23,7 @@ type Att = {
   status?: string;
 };
 
-type Store = { work_start?: string; work_end?: string; grace_min?: number; name?: string; radius_m?: number };
+type Store = { work_start?: string; work_end?: string; grace_min?: number; name?: string; radius_m?: number; app_checkin_enabled?: boolean };
 
 const fmtTime = (iso?: string) => {
   if (!iso) return '—';
@@ -81,10 +81,11 @@ export default function EmployeeHome() {
 
   const hasCheckIn = !!att?.check_in;
   const hasCheckOut = !!att?.check_out;
+  const appCheckinEnabled = store.app_checkin_enabled !== false;
 
   const now = new Date();
-  const reminderCheckIn = !hasCheckIn && shouldRemindCheckIn(now, store.work_start, store.grace_min);
-  const reminderCheckOut = hasCheckIn && !hasCheckOut && shouldRemindCheckOut(now, store.work_end);
+  const reminderCheckIn = appCheckinEnabled && !hasCheckIn && shouldRemindCheckIn(now, store.work_start, store.grace_min);
+  const reminderCheckOut = appCheckinEnabled && hasCheckIn && !hasCheckOut && shouldRemindCheckOut(now, store.work_end);
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="emp-home-screen">
@@ -158,19 +159,25 @@ export default function EmployeeHome() {
               {!!att?.is_late && <View style={styles.lateBadge}><Ionicons name="warning-outline" size={12} color={colors.onWarning} /><Text style={styles.lateText}>Marked late today</Text></View>}
               {!!att?.working_hours && <Text style={styles.hoursText}>{att.working_hours} hours worked today</Text>}
 
-              {!hasCheckIn && (
+              {!appCheckinEnabled && (
+                <View style={styles.doneBadge} testID="app-checkin-disabled-notice">
+                  <Ionicons name="finger-print-outline" size={18} color={colors.mutedText} />
+                  <Text style={styles.doneText}>Attendance is tracked via biometric device here. Check-in/out from the app is turned off.</Text>
+                </View>
+              )}
+              {appCheckinEnabled && !hasCheckIn && (
                 <Pressable onPress={() => setShowPunch('check_in')} style={styles.punchBtn} testID="btn-check-in">
                   <Ionicons name="log-in" size={20} color={colors.onBrandPrimary} />
                   <Text style={styles.punchBtnText}>Check In</Text>
                 </Pressable>
               )}
-              {hasCheckIn && !hasCheckOut && (
+              {appCheckinEnabled && hasCheckIn && !hasCheckOut && (
                 <Pressable onPress={() => setShowPunch('check_out')} style={[styles.punchBtn, styles.punchBtnOut]} testID="btn-check-out">
                   <Ionicons name="log-out" size={20} color={colors.onSurface} />
                   <Text style={[styles.punchBtnText, { color: colors.onSurface }]}>Check Out</Text>
                 </Pressable>
               )}
-              {hasCheckIn && hasCheckOut && (
+              {appCheckinEnabled && hasCheckIn && hasCheckOut && (
                 <View style={styles.doneBadge} testID="punch-done-badge">
                   <Ionicons name="checkmark-circle" size={18} color={colors.brandPrimary} />
                   <Text style={styles.doneText}>All punches done · See you tomorrow</Text>

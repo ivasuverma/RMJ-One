@@ -43,6 +43,8 @@ router = APIRouter()
 @router.post('/attendance/check-in')
 async def check_in(body: PunchIn, user=Depends(require_employee)):
     store = await _get_store()
+    if not store.get('app_checkin_enabled', True):
+        raise HTTPException(status_code=403, detail='App check-in is currently turned off — attendance is tracked another way.')
     dist = haversine_m(body.latitude, body.longitude, store['latitude'], store['longitude'])
     if dist > float(store.get('radius_m', 150)):
         raise HTTPException(status_code=400, detail=f'Outside store area ({int(dist)}m away, allowed {int(store["radius_m"])}m).')
@@ -67,6 +69,8 @@ async def check_in(body: PunchIn, user=Depends(require_employee)):
 @router.post('/attendance/check-out')
 async def check_out(body: PunchIn, user=Depends(require_employee)):
     store = await _get_store()
+    if not store.get('app_checkin_enabled', True):
+        raise HTTPException(status_code=403, detail='App check-out is currently turned off — attendance is tracked another way.')
     dist = haversine_m(body.latitude, body.longitude, store['latitude'], store['longitude'])
     if dist > float(store.get('radius_m', 150)):
         raise HTTPException(status_code=400, detail=f'Outside store area ({int(dist)}m away, allowed {int(store["radius_m"])}m).')
