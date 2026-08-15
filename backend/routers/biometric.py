@@ -163,6 +163,7 @@ async def biometric_push(body: BiometricPushIn):
 # local network appliance.
 
 @iclock_router.get('/iclock/cdata')
+@iclock_router.get('/iclock/cdata.aspx')
 async def iclock_handshake(SN: str = Query(...)):
     """Device 'hello' on boot / periodic re-handshake. Tells it how often to
     push and what tables we want. A plain 200 with this shape is enough for
@@ -185,6 +186,7 @@ async def iclock_handshake(SN: str = Query(...)):
 
 
 @iclock_router.post('/iclock/cdata')
+@iclock_router.post('/iclock/cdata.aspx')
 async def iclock_upload(request: Request, SN: str = Query(...), table: str = Query('ATTLOG')):
     """Device pushes punch data here. Body is plain text, one record per line,
     tab-separated: PIN<TAB>Time<TAB>Status<TAB>Verify<TAB>WorkCode..."""
@@ -221,6 +223,7 @@ async def iclock_upload(request: Request, SN: str = Query(...), table: str = Que
 
 
 @iclock_router.get('/iclock/getrequest')
+@iclock_router.get('/iclock/getrequest.aspx')
 async def iclock_getrequest(SN: str = Query(...)):
     """Device polls this periodically asking 'any commands for me?'. Some
     ADMS firmwares (confirmed on at least one eSSL model in the field) don't
@@ -241,6 +244,7 @@ async def iclock_getrequest(SN: str = Query(...)):
 
 
 @iclock_router.post('/iclock/devicecmd')
+@iclock_router.post('/iclock/devicecmd.aspx')
 async def iclock_devicecmd(request: Request):
     """Device posts the result of a command we supposedly sent. We don't send
     any, but must still 200 or the device logs errors."""
