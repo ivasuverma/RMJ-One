@@ -1243,6 +1243,46 @@ async def _check_missed_attendance():
         )
 
 
+MISSED_CHECKOUT_GRACE_MIN = 30  # evening mirror of MISSED_ATTENDANCE_GRACE_MIN — reminds an employee who checked in but never checked out
+
+
+async def _check_missed_checkout():
+    """Evening counterpart to _check_missed_attendance: once past shift end (+
+    grace), reminds anyone who checked in today but hasn't checked out yet.
+    Personal reminder to the employee themselves — not affected by the owner's
+    Notification Settings module toggle, same as the morning missed-check-in
+    reminder."""
+    now_ist = now_utc().astimezone(IST)
+    today = now_ist.date().isoformat()
+    if now_ist.weekday() == 6:
+        return  # Sunday — normally a day off, skip reminders
+    if await db.holidays.find_one({'date': today}, {'_id': 0, 'id': 1}):
+        return
+    store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
+    minutes_now = now_ist.hour * 60 + now_ist.minute
+
+    async for emp in db.employees.find({'status': 'active'}, {'_id': 0, 'password_hash': 0}):
+        shift = await db.shifts.find_one({'name': emp.get('shift')}, {'_id': 0})
+        end = (shift.get('end') if shift else None) or store.get('work_end', '19:30')
+        if minutes_now < _minutes(end) + MISSED_CHECKOUT_GRACE_MIN:
+            continue  # not yet past their shift end + grace period
+
+        if await db.checkout_reminders.find_one({'employee_id': emp['id'], 'date': today}, {'_id': 0}) is not None:
+            continue  # already reminded today
+
+        att = await db.attendance.find_one({'employee_id': emp['id'], 'date': today}, {'_id': 0})
+        if not att or not att.get('check_in') or att.get('check_out'):
+            continue  # never checked in, or already checked out — nothing to remind about
+
+        await notify_user(emp['id'], 'Missed check-out',
+                           "You checked in today but haven't checked out yet — don't forget before you leave.", '/')
+        await db.checkout_reminders.update_one(
+            {'employee_id': emp['id'], 'date': today},
+            {'$set': {'employee_id': emp['id'], 'date': today, 'sent_at': now_utc().isoformat()}},
+            upsert=True,
+        )
+
+
 async def _check_daily_absentee_summary():
     """Once per day, at/after 9:00 PM IST, push the owner/admin a summary of who
     never checked in today (no check-in, and not on approved leave/holiday/paid
@@ -1406,6 +1446,7 @@ async def _attendance_reminder_loop():
         try:
             await asyncio.sleep(15 * 60)
             await _check_missed_attendance()
+            await _check_missed_checkout()
             await _check_daily_absentee_summary()
             await _check_auto_advances()
             await _check_recurring_tasks()
