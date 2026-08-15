@@ -878,6 +878,19 @@ async def _apply_punch(emp: dict, kind: str, ts: datetime, extra: Optional[dict]
     d = ts.astimezone(IST).date().isoformat()
     existing = await db.attendance.find_one({'employee_id': emp['id'], 'date': d}, {'_id': 0})
 
+    # A day an admin has manually corrected (PUT /attendance/day/{emp}/{date},
+    # or an approved correction request) is authoritative. Without this guard,
+    # a biometric device replaying a punch for that date — its own retry, a
+    # delayed resync, or the same historical backlog surfacing again — could
+    # silently flip a manually-set 'absent'/'leave'/edited day back to
+    # 'present' and overwrite the corrected times, since check_in/check_out
+    # are explicitly null on no-time statuses (absent/leave/holiday/
+    # weekly_off) and so wouldn't otherwise trip the already_checked_in/out
+    # guards below. App-originated punches (extra has no 'source') are
+    # unaffected — this only blocks the biometric device path specifically.
+    if existing and (existing.get('edited_by') or existing.get('via_correction')) and extra.get('source') == 'biometric':
+        return {'ok': False, 'reason': 'manually_edited', 'kind': kind}
+
     if kind == 'auto':
         kind = 'check_out' if (existing and existing.get('check_in') and not existing.get('check_out')) else 'check_in'
 
