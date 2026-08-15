@@ -83,6 +83,7 @@ export default function EmployeesScreen() {
             <Text style={styles.countBadgeText}>{items.length}</Text>
           </View>
         </View>
+        {from === 'transactions' && <Text style={styles.ledgerHint}>Tap an employee to open their ledger</Text>}
 
         <View style={styles.searchWrap}>
           <Ionicons name="search" size={18} color={colors.mutedText} />
@@ -152,7 +153,7 @@ export default function EmployeesScreen() {
             <Pressable
               testID={`emp-row-${item.id}`}
               style={({ pressed }) => [styles.row, pressed && { opacity: 0.85 }]}
-              onPress={() => router.push(`/employee/${item.id}`)}
+              onPress={() => router.push(from === 'transactions' ? `/ledger/${item.id}` : `/employee/${item.id}`)}
             >
               <View style={styles.avatar}>
                 <Text style={styles.avatarText}>{initials(item.name)}</Text>
@@ -214,6 +215,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     backgroundColor: colors.brandTertiary, alignItems: 'center', justifyContent: 'center',
   },
   countBadgeText: { color: colors.brandSecondary, fontWeight: '700' },
+  ledgerHint: { color: colors.mutedText, fontSize: 12, marginTop: -6, marginBottom: spacing.md },
 
   searchWrap: {
     flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
