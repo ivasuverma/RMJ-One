@@ -94,6 +94,9 @@ async def my_today(user=Depends(require_employee)):
     return doc or {}
 
 
+NOT_CHECKED_IN_GRACE_MIN = 30  # keep in sync with _check_missed_attendance's own threshold
+
+
 @router.get('/attendance/today')
 async def attendance_today(_: dict = Depends(require_staff)):
     d = today_str()
@@ -101,6 +104,21 @@ async def attendance_today(_: dict = Depends(require_staff)):
     att_map = {}
     async for a in db.attendance.find({'date': d}, {'_id': 0, 'check_in.selfie': 0, 'check_out.selfie': 0}):
         att_map[a['employee_id']] = a
+
+    # For the 'Not Checked In' filter: an employee whose shift started more
+    # than NOT_CHECKED_IN_GRACE_MIN minutes ago and who still has no
+    # check-in today (and no admin-recorded absent/leave/holiday/weekly_off
+    # for the day) — mirrors _check_missed_attendance's own criteria so the
+    # UI filter and the automatic reminder agree on who counts. Skipped
+    # entirely on Sundays/holidays, same as the reminder.
+    now_ist = now_utc().astimezone(IST)
+    minutes_now = now_ist.hour * 60 + now_ist.minute
+    check_late_arrivals = now_ist.weekday() != 6 and not await db.holidays.find_one({'date': d}, {'_id': 0, 'id': 1})
+    store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
+    shifts_by_name = {}
+    async for s in db.shifts.find({}, {'_id': 0}):
+        shifts_by_name[s['name']] = s
+
     rows = []
     for e in employees:
         a = att_map.get(e['id'])
@@ -122,6 +140,16 @@ async def attendance_today(_: dict = Depends(require_staff)):
             })
         else:
             row.update({'status': 'absent', 'check_in': None, 'check_out': None, 'is_late': False, 'working_hours': 0})
+
+        not_checked_in_late = False
+        already_settled = bool(a and (a.get('check_in') or a.get('status') in ('leave', 'holiday', 'weekly_off', 'absent')))
+        if check_late_arrivals and e.get('status') != 'on_leave' and not already_settled:
+            shift = shifts_by_name.get(e.get('shift'))
+            start = (shift.get('start') if shift else None) or store.get('work_start', '10:00')
+            if minutes_now >= _minutes(start) + NOT_CHECKED_IN_GRACE_MIN:
+                not_checked_in_late = True
+        row['not_checked_in_late'] = not_checked_in_late
+
         rows.append(row)
     return rows
 

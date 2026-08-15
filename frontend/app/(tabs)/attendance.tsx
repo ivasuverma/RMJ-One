@@ -14,6 +14,7 @@ type Row = {
   department: string; designation: string; shift: string;
   status: string; check_in?: string | null; check_out?: string | null;
   is_late?: boolean; working_hours?: number; missing_punch?: boolean; employee_status?: string;
+  not_checked_in_late?: boolean;
 };
 type Ev = {
   id: string; employee_name: string; type: 'check_in' | 'check_out';
@@ -22,13 +23,14 @@ type Ev = {
 
 const TABS = ['Today', 'Live'] as const;
 
-type StatusKey = 'all' | 'present' | 'late' | 'half_day' | 'absent' | 'missing' | 'leave';
+type StatusKey = 'all' | 'present' | 'late' | 'half_day' | 'absent' | 'missing' | 'leave' | 'not_checked_in';
 
 const STATUS_FILTERS: { key: StatusKey; label: string; icon: any }[] = [
   { key: 'all', label: 'All', icon: 'apps-outline' },
   { key: 'present', label: 'Present', icon: 'checkmark-circle-outline' },
   { key: 'late', label: 'Late', icon: 'alarm-outline' },
   { key: 'half_day', label: 'Half Day', icon: 'time-outline' },
+  { key: 'not_checked_in', label: 'Not Checked In', icon: 'hourglass-outline' },
   { key: 'absent', label: 'Absent', icon: 'close-circle-outline' },
   { key: 'missing', label: 'Missing Punch', icon: 'alert-circle-outline' },
   { key: 'leave', label: 'On Leave', icon: 'airplane-outline' },
@@ -39,6 +41,11 @@ function statusKeyOf(row: Row): StatusKey {
   if (row.employee_status === 'on_leave') return 'leave';
   if (row.status === 'present') return row.is_late ? 'late' : 'present';
   if (row.status === 'half_day') return 'half_day';
+  // 'not_checked_in_late' is server-computed: shift started 30+ min ago,
+  // still no check-in today, and nothing was explicitly recorded for the
+  // day (not absent/leave/holiday/weekly_off) — a live no-show risk,
+  // distinct from 'Absent' which also covers days that are simply over.
+  if (row.not_checked_in_late) return 'not_checked_in';
   return 'absent';
 }
 
@@ -242,6 +249,7 @@ function StatusPill({ row }: { row: Row }) {
   if (row.employee_status === 'on_leave') { label = 'Leave'; bg = colors.warning; bd = colors.onWarning; fg = colors.onWarning; }
   else if (row.status === 'present') { label = row.is_late ? 'Late' : 'Present'; bg = colors.success; bd = colors.onSuccess; fg = colors.onSuccess; if (row.is_late) { bg = colors.warning; bd = colors.onWarning; fg = colors.onWarning; } }
   else if (row.status === 'half_day') { label = 'Half Day'; bg = colors.warning; bd = colors.onWarning; fg = colors.onWarning; }
+  else if (row.not_checked_in_late) { label = 'Not Checked In'; bg = colors.warning; bd = colors.onWarning; fg = colors.onWarning; }
   if (row.missing_punch) { label = 'Missing'; bg = colors.error; bd = colors.onError; fg = colors.onError; }
   return (
     <View style={[styles.pill, { backgroundColor: bg, borderColor: bd }]}>

@@ -1125,6 +1125,9 @@ async def notify_roles(roles: list, title: str, body: str, url: str = '/'):
         logger.warning(f'notify_roles failed: {e}')
 
 
+MISSED_ATTENDANCE_GRACE_MIN = 30  # keep in sync with attendance.py's NOT_CHECKED_IN_GRACE_MIN (same criteria, UI filter vs push reminder)
+
+
 async def _check_missed_attendance():
     now_ist = now_utc().astimezone(IST)
     today = now_ist.date().isoformat()
@@ -1138,8 +1141,8 @@ async def _check_missed_attendance():
     async for emp in db.employees.find({'status': 'active'}, {'_id': 0, 'password_hash': 0}):
         shift = await db.shifts.find_one({'name': emp.get('shift')}, {'_id': 0})
         start = (shift.get('start') if shift else None) or store.get('work_start', '10:00')
-        if minutes_now < _minutes(start) + 60:
-            continue  # not yet an hour past their shift start
+        if minutes_now < _minutes(start) + MISSED_ATTENDANCE_GRACE_MIN:
+            continue  # not yet past their shift start + grace period
 
         if await db.attendance_reminders.find_one({'employee_id': emp['id'], 'date': today}, {'_id': 0, 'id': 1}):
             continue  # already reminded today
