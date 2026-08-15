@@ -234,11 +234,20 @@ async def iclock_getrequest(SN: str = Query(...)):
     idempotent: the device only has new data to send when there's actually a
     new punch, so a device that already pushes spontaneously just no-ops on
     an empty query. Command id is fixed at 1 since we never track command
-    acks (devicecmd below accepts anything)."""
+    acks (devicecmd below accepts anything).
+
+    StartTime is a rolling 48h window, not an all-time query: the first-ever
+    query after this feature shipped intentionally asked for everything
+    (StartTime=2000-01-01) to drain whatever backlog a device had accumulated
+    while it couldn't reach the server — confirmed in the field this pulled
+    in real punches going back to March that had never synced. That one-time
+    full drain already happened, so a 48h window is enough going forward
+    (covers this poll plus any missed polls from a brief outage) without
+    risking a full historical re-backfill on every request."""
     device = await db.biometric_devices.find_one({'serial': SN}, {'_id': 0})
     if not device:
         return PlainTextResponse('OK')
-    start = '2000-01-01 00:00:00'
+    start = (now_utc() - timedelta(hours=48)).strftime('%Y-%m-%d %H:%M:%S')
     end = (now_utc() + timedelta(days=1)).strftime('%Y-%m-%d %H:%M:%S')
     return PlainTextResponse(f'C:1:DATA QUERY ATTLOG StartTime={start} EndTime={end}')
 
