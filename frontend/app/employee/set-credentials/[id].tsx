@@ -1,6 +1,6 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, TextInput, Pressable, ActivityIndicator, Alert, Platform, KeyboardAvoidingView,
+  View, Text, StyleSheet, TextInput, Pressable, ActivityIndicator, Alert, Platform, KeyboardAvoidingView, Share,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -14,11 +14,22 @@ export default function SetEmployeeCredentials() {
   const router = useRouter();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+  const [empName, setEmpName] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [saving, setSaving] = useState(false);
   const submittingRef = useRef(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await api.get<{ employee: { name: string; username?: string } }>(`/employees/${id}`);
+        setEmpName(res.employee?.name || '');
+        if (res.employee?.username) setUsername(res.employee.username);
+      } catch (_e) { /* ignore — name is just for display/share text */ }
+    })();
+  }, [id]);
 
   const submit = async () => {
     if (submittingRef.current) return;
@@ -30,6 +41,9 @@ export default function SetEmployeeCredentials() {
     try {
       await api.post(`/employees/${id}/set-credentials`, { username: username.trim(), password });
       router.back();
+      Share.share({
+        message: `RMJ-One login${empName ? ` for ${empName}` : ''}\nUsername: ${username.trim()}\nPassword: ${password}`,
+      }).catch(() => {});
     } catch (e: any) {
       Alert.alert('Failed', e?.detail || 'Please try again');
     } finally { setSaving(false); submittingRef.current = false; }
@@ -47,7 +61,10 @@ export default function SetEmployeeCredentials() {
 
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <View style={{ padding: spacing.xl }}>
-          <Text style={styles.info}>Set the username and password this employee will use to log in.</Text>
+          <Text style={styles.info}>
+            {empName ? `Set the username and password ${empName} will use to log in.` : 'Set the username and password this employee will use to log in.'}
+            {' '}You'll get a share prompt with the new login once it's saved.
+          </Text>
 
           <Text style={styles.label}>Username</Text>
           <TextInput

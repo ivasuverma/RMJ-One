@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TextInput, ScrollView, Pressable,
-  KeyboardAvoidingView, Platform, ActivityIndicator, Alert,
+  KeyboardAvoidingView, Platform, ActivityIndicator, Alert, Share,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -106,9 +106,21 @@ export default function EmployeeForm() {
         auto_advance_amount: form.auto_advance_amount ? Number(form.auto_advance_amount) : null,
         auto_advance_day: form.auto_advance_day ? Number(form.auto_advance_day) : null,
       };
-      if (isEdit) await api.put(`/employees/${id}`, payload);
-      else await api.post('/employees', payload);
-      router.back();
+      if (isEdit) {
+        await api.put(`/employees/${id}`, payload);
+        router.back();
+      } else {
+        const created = await api.post<{ default_username?: string; default_password?: string }>('/employees', payload);
+        router.back();
+        // Fire-and-forget: offer to share the auto-generated login right away —
+        // this is the only moment the plaintext password is ever available
+        // (it's hashed from here on), so it's now or "Set Credentials" later.
+        if (created?.default_username && created?.default_password) {
+          Share.share({
+            message: `RMJ-One login for ${form.name}\nUsername: ${created.default_username}\nPassword: ${created.default_password}\n\nPlease change your password after logging in.`,
+          }).catch(() => {});
+        }
+      }
     } catch (e: any) {
       Alert.alert('Save failed', e?.detail || 'Please try again');
     } finally {
