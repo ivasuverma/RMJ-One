@@ -30,21 +30,30 @@ jobs:
           $repo = 'E:\Rmj-One'
           cd $repo
 
-          function Assert-ServiceRunning($name) {
+          function Get-CleanServiceStatus($name) {
             # nssm.exe writes its status output as UTF-16LE. Depending on the
             # console's active code page, capturing it via PowerShell can come
             # back with embedded/garbled bytes that LOOK like "SERVICE_RUNNING"
             # when printed but fail a strict -eq/-ne comparison even after
-            # .Trim() (this silently broke the last two deploys — the service
-            # was genuinely up both times, only the check was wrong). Strip
-            # everything but letters/underscores before comparing so stray
-            # whitespace, nulls, or CR/LF noise can't cause a false negative.
+            # .Trim(). Strip everything but letters/underscores before
+            # comparing so stray whitespace, nulls, or CR/LF noise can't
+            # cause a false negative.
             $raw = (nssm status $name | Out-String)
-            $status = ($raw -replace '[^A-Za-z_]', '')
-            Write-Host "$name -> raw=[$raw] clean=[$status]"
-            if ($status -ne 'SERVICE_RUNNING') {
-              throw "$name did not come up (status: $status)"
+            return ($raw -replace '[^A-Za-z_]', '')
+          }
+
+          function Wait-ForServiceStatus($name, $wanted, $tries) {
+            # Poll instead of a single fixed sleep+check — nssm restart/start
+            # is asynchronous and how long the process takes to actually
+            # settle varies. Retrying is more robust than guessing one sleep
+            # duration that may or may not be long enough on a given day.
+            for ($i = 1; $i -le $tries; $i++) {
+              $status = Get-CleanServiceStatus $name
+              Write-Host "  [$i/$tries] $name -> $status"
+              if ($status -eq $wanted) { return }
+              Start-Sleep -Seconds 2
             }
+            throw "$name did not reach $wanted (last status: $status)"
           }
 
           Write-Host '--- git pull ---'
@@ -52,9 +61,15 @@ jobs:
           git reset --hard origin/main
 
           Write-Host '--- restart backend ---'
-          nssm restart RMJOneBackend
-          Start-Sleep -Seconds 3
-          Assert-ServiceRunning RMJOneBackend
+          # `nssm restart` was observed to stop the service but not reliably
+          # bring it back up on this box (confirmed: a plain `nssm start`
+          # immediately after a failed `nssm restart` worked instantly). Do
+          # an explicit stop-then-start instead, each polled to completion,
+          # rather than trusting restart's internal stop->start handoff.
+          nssm stop RMJOneBackend
+          Wait-ForServiceStatus RMJOneBackend 'SERVICE_STOPPED' 10
+          nssm start RMJOneBackend
+          Wait-ForServiceStatus RMJOneBackend 'SERVICE_RUNNING' 10
 
           Write-Host '--- backend smoke test ---'
           # Pure read-only GET against the unauthenticated root route — confirms
@@ -86,7 +101,6 @@ jobs:
 
           Write-Host '--- restart web ---'
           nssm start RMJOneWeb
-          Start-Sleep -Seconds 2
-          Assert-ServiceRunning RMJOneWeb
+          Wait-ForServiceStatus RMJOneWeb 'SERVICE_RUNNING' 10
 
           Write-Host '--- done ---'
