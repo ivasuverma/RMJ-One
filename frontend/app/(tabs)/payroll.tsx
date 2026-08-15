@@ -3,6 +3,7 @@ import {
   View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Platform, RefreshControl, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
@@ -15,7 +16,7 @@ type Row = {
   base_salary: number; present_days: number; half_days: number; sunday_work: number;
   leave_days: number; total_days: number; effective_days: number;
   earned: number; advance: number; bonus: number; fine: number; manual_deduction: number;
-  net_salary: number; paid?: boolean; id?: string;
+  net_salary: number; paid?: boolean; id?: string; photo?: string;
 };
 type PayrollResp = { year: number; month: number; rows: Row[]; saved?: boolean; locked?: boolean; total_net: number };
 
@@ -180,7 +181,11 @@ export default function OwnerPayroll() {
               })}
               style={[styles.empRow, r.paid && styles.empRowPaid]}
             >
-              <View style={styles.avatar}><Text style={styles.avatarText}>{initials(r.name)}</Text></View>
+              {r.photo ? (
+                <Image source={{ uri: r.photo }} style={styles.avatarPhoto} />
+              ) : (
+                <View style={styles.avatar}><Text style={styles.avatarText}>{initials(r.name)}</Text></View>
+              )}
               <View style={{ flex: 1 }}>
                 <Text style={styles.empName} numberOfLines={1}>{r.name}</Text>
                 <Text style={styles.empSub}>
@@ -292,6 +297,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.brand,
   },
   avatarText: { color: colors.brandSecondary, fontWeight: '700', fontSize: 13 },
+  avatarPhoto: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surfaceTertiary },
   empName: { color: colors.onSurface, fontSize: 14, fontWeight: '600' },
   empSub: { color: colors.onSurfaceTertiary, fontSize: 11, marginTop: 2 },
   empExtras: { color: colors.mutedText, fontSize: 10, marginTop: 2 },

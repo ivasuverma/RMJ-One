@@ -3,12 +3,14 @@ import {
   View, Text, StyleSheet, TextInput, ScrollView, Pressable,
   KeyboardAvoidingView, Platform, ActivityIndicator, Alert, Share,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { api } from '@/src/api/client';
 import { DateField } from '@/src/components/DateField';
+import { PhotoCaptureModal } from '@/src/components/PhotoCaptureModal';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
@@ -19,14 +21,14 @@ type EmployeeForm = {
   shift: string; salary: string; joining_date: string; mobile: string; address: string;
   aadhaar: string; pan: string; bank_account: string; bank_ifsc: string; bank_name: string;
   status: 'active' | 'inactive' | 'on_leave'; notes: string;
-  auto_advance_amount: string; auto_advance_day: string;
+  auto_advance_amount: string; auto_advance_day: string; photo: string;
 };
 
 const EMPTY: EmployeeForm = {
   name: '', employee_code: '', biometric_id: '', department: '', designation: '', shift: 'General', salary: '',
   joining_date: new Date().toISOString().slice(0, 10), mobile: '', address: '',
   aadhaar: '', pan: '', bank_account: '', bank_ifsc: '', bank_name: '', status: 'active', notes: '',
-  auto_advance_amount: '', auto_advance_day: '',
+  auto_advance_amount: '', auto_advance_day: '', photo: '',
 };
 
 const STATUSES: EmployeeForm['status'][] = ['active', 'on_leave', 'inactive'];
@@ -45,6 +47,7 @@ export default function EmployeeForm() {
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [shifts, setShifts] = useState<Shift[]>([]);
+  const [cameraOpen, setCameraOpen] = useState(false);
   const submittingRef = useRef(false);
 
   useEffect(() => {
@@ -66,6 +69,7 @@ export default function EmployeeForm() {
           bank_name: e.bank_name || '', status: e.status || 'active', notes: e.notes || '',
           auto_advance_amount: e.auto_advance_amount ? String(e.auto_advance_amount) : '',
           auto_advance_day: e.auto_advance_day ? String(e.auto_advance_day) : '',
+          photo: e.photo || '',
         });
       } catch (_e) {
         Alert.alert('Failed to load employee');
@@ -149,6 +153,29 @@ export default function EmployeeForm() {
 
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+          <View style={styles.photoSection}>
+            {form.photo ? (
+              <>
+                <Image source={{ uri: form.photo }} style={styles.photoPreview} />
+                <View style={styles.photoActions}>
+                  <Pressable onPress={() => setCameraOpen(true)} style={styles.photoActionBtn} testID="retake-photo-btn">
+                    <Ionicons name="camera-outline" size={16} color={colors.brandSecondary} />
+                    <Text style={styles.photoActionText}>Retake</Text>
+                  </Pressable>
+                  <Pressable onPress={() => setField('photo', '')} style={styles.photoActionBtn} testID="remove-photo-btn">
+                    <Ionicons name="trash-outline" size={16} color={colors.error} />
+                    <Text style={[styles.photoActionText, { color: colors.error }]}>Remove</Text>
+                  </Pressable>
+                </View>
+              </>
+            ) : (
+              <Pressable onPress={() => setCameraOpen(true)} style={styles.photoPlaceholder} testID="add-photo-btn">
+                <Ionicons name="camera-outline" size={26} color={colors.brandSecondary} />
+                <Text style={styles.photoPlaceholderText}>Add Photo</Text>
+              </Pressable>
+            )}
+          </View>
+
           <SectionTitle text="Personal" />
           <Field label="Full Name *" value={form.name} onChangeText={(v) => setField('name', v)} error={errors.name} testID="field-name" />
           <Field label="Mobile" value={form.mobile} onChangeText={(v) => setField('mobile', v)} keyboardType="phone-pad" testID="field-mobile" />
@@ -279,6 +306,13 @@ export default function EmployeeForm() {
           {saving ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.saveBtnText}>{isEdit ? 'Update Employee' : 'Save Employee'}</Text>}
         </Pressable>
       </View>
+
+      <PhotoCaptureModal
+        visible={cameraOpen}
+        title="Employee Photo"
+        onClose={() => setCameraOpen(false)}
+        onCapture={async (photo) => { setField('photo', photo); setCameraOpen(false); }}
+      />
     </SafeAreaView>
   );
 }
@@ -341,6 +375,21 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     color: colors.brandSecondary, fontSize: 11, letterSpacing: 1, textTransform: 'uppercase',
     marginTop: spacing.lg, marginBottom: spacing.sm,
   },
+
+  photoSection: { alignItems: 'center', marginBottom: spacing.md },
+  photoPreview: {
+    width: 96, height: 96, borderRadius: 48, backgroundColor: colors.surfaceTertiary,
+    borderWidth: 2, borderColor: colors.brand,
+  },
+  photoActions: { flexDirection: 'row', gap: spacing.lg, marginTop: spacing.sm },
+  photoActionBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  photoActionText: { color: colors.brandSecondary, fontSize: 12, fontWeight: '600' },
+  photoPlaceholder: {
+    width: 96, height: 96, borderRadius: 48, backgroundColor: colors.brandTertiary,
+    borderWidth: 1, borderColor: colors.brand, borderStyle: 'dashed',
+    alignItems: 'center', justifyContent: 'center', gap: 4,
+  },
+  photoPlaceholderText: { color: colors.brandSecondary, fontSize: 11, fontWeight: '600' },
   label: { color: colors.onSurfaceSecondary, fontSize: 12, marginBottom: 6 },
   hint: { color: colors.mutedText, fontSize: 11, marginBottom: spacing.sm, lineHeight: 15 },
   input: {

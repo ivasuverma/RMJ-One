@@ -12,6 +12,7 @@ import {
   Platform,
 } from 'react-native';
 import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '@/src/api/client';
@@ -20,7 +21,7 @@ import { useTheme } from '@/src/theme/ThemeContext';
 
 type Emp = {
   id: string; name: string; employee_code: string; department: string;
-  designation: string; status: 'active' | 'inactive' | 'on_leave'; photo?: string;
+  designation: string; status: 'active' | 'inactive' | 'on_leave'; photo?: string | null;
   salary: number;
 };
 
@@ -155,9 +156,13 @@ export default function EmployeesScreen() {
               style={({ pressed }) => [styles.row, pressed && { opacity: 0.85 }]}
               onPress={() => router.push(from === 'transactions' ? `/ledger/${item.id}` : `/employee/${item.id}`)}
             >
-              <View style={styles.avatar}>
-                <Text style={styles.avatarText}>{initials(item.name)}</Text>
-              </View>
+              {item.photo ? (
+                <Image source={{ uri: item.photo }} style={styles.avatarPhoto} />
+              ) : (
+                <View style={styles.avatar}>
+                  <Text style={styles.avatarText}>{initials(item.name)}</Text>
+                </View>
+              )}
               <View style={{ flex: 1 }}>
                 <Text style={styles.rowName} numberOfLines={1}>{item.name}</Text>
                 <Text style={styles.rowSub} numberOfLines={1}>
@@ -249,6 +254,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     borderWidth: 1, borderColor: colors.brand,
   },
   avatarText: { color: colors.brandSecondary, fontWeight: '700', fontSize: 16 },
+  avatarPhoto: { width: 48, height: 48, borderRadius: 24, backgroundColor: colors.surfaceTertiary },
   rowName: { color: colors.onSurface, fontSize: 15, fontWeight: '600' },
   rowSub: { color: colors.onSurfaceTertiary, fontSize: 12, marginTop: 2 },
   rowCode: { color: colors.mutedText, fontSize: 11, marginTop: 2 },

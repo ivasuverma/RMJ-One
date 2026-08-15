@@ -267,7 +267,7 @@ async def _compute_payroll(year: int, month: int) -> list:
         net_rounded = round(net_with_opening / 10) * 10 if round_nearest_10 else net_with_opening
         rows.append({
             'employee_id': e['id'], 'employee_code': e.get('employee_code'), 'name': e['name'],
-            'designation': e.get('designation'), 'department': e.get('department'),
+            'designation': e.get('designation'), 'department': e.get('department'), 'photo': e.get('photo') or '',
             'base_salary': base, 'present_days': present, 'half_days': half,
             'sunday_work': sunday_work, 'leave_days': leave_days,
             'holiday_days': holiday_days, 'weekly_off_days': weekly_off_days,

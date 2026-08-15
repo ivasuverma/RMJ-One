@@ -162,9 +162,13 @@ export default function EmployeeProfile() {
             </View>
           </SafeAreaView>
           <View style={styles.avatarWrap}>
-            <View style={styles.bigAvatar}>
-              <Text style={styles.bigAvatarText}>{initials}</Text>
-            </View>
+            {emp.photo ? (
+              <Image source={{ uri: emp.photo }} style={styles.bigAvatarPhoto} />
+            ) : (
+              <View style={styles.bigAvatar}>
+                <Text style={styles.bigAvatarText}>{initials}</Text>
+              </View>
+            )}
           </View>
         </View>
 
@@ -540,6 +544,10 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: colors.surface,
   },
   bigAvatarText: { color: colors.onBrandPrimary, fontWeight: '800', fontSize: 32 },
+  bigAvatarPhoto: {
+    width: 88, height: 88, borderRadius: 44, backgroundColor: colors.surfaceTertiary,
+    borderWidth: 3, borderColor: colors.surface,
+  },
 
   nameBlock: { paddingHorizontal: spacing.lg, paddingTop: spacing.xxl + spacing.md, paddingBottom: spacing.md },
   name: {
