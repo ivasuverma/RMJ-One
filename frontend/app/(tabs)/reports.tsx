@@ -15,7 +15,7 @@ const SECTIONS: { title: string; tiles: TileDef[] }[] = [
   {
     title: 'Employee Management',
     tiles: [
-      { key: 'reports', label: 'Reports', icon: 'document-text-outline', route: '/reports' },
+      { key: 'reports', label: 'Custom PDF Report', icon: 'document-text-outline', route: '/reports/generate' },
       { key: 'employee-ledger', label: 'Employee Ledger', icon: 'people-outline', route: '/reports/employee-ledger' },
     ],
   },

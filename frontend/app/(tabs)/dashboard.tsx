@@ -142,7 +142,7 @@ export default function DashboardScreen() {
             {/* Business Snapshot */}
             <SectionHeader title="Business Snapshot" icon="stats-chart-outline" testID="section-business" />
             <View style={[styles.tileGrid, { marginBottom: spacing.xl }]}>
-              <StatCard basis={tileBasis} icon="cash-outline" label="Revenue Today" value={fmtINR(data.business_summary.revenue_today)} accent={colors.brandPrimary} testID="biz-revenue-today" onPress={() => router.push('/reports' as any)} />
+              <StatCard basis={tileBasis} icon="cash-outline" label="Revenue Today" value={fmtINR(data.business_summary.revenue_today)} accent={colors.brandPrimary} testID="biz-revenue-today" onPress={() => router.push('/reports/generate' as any)} />
               <StatCard basis={tileBasis} icon="diamond-outline" label="New Intake Today" value={String(data.business_summary.intake_today)} accent={colors.brandSecondary} testID="biz-intake-today" onPress={() => router.push('/repairs' as any)} />
               <StatCard basis={tileBasis} icon="person-outline" label="Customers with Balance" value={String(data.business_summary.customers_open)} accent={colors.onWarning} testID="biz-customers-open" onPress={() => router.push('/reports/customer-ledger' as any)} />
               <StatCard basis={tileBasis} icon="hammer-outline" label="Karigars with Balance" value={String(data.business_summary.karigars_open)} accent={colors.onWarning} testID="biz-karigars-open" onPress={() => router.push('/reports/karigar-ledger' as any)} />
