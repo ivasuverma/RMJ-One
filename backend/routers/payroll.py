@@ -195,6 +195,7 @@ async def _compute_payroll(year: int, month: int) -> list:
         atts = att_by_emp.get(e['id'], [])
         present = sum(1 for a in atts if a.get('status') == 'present')
         half = sum(1 for a in atts if a.get('status') == 'half_day')
+        absent = sum(1 for a in atts if a.get('status') == 'absent')
         manual_off = sum(1 for a in atts if a.get('status') == 'weekly_off')
         # Sunday work
         sunday_work = 0
@@ -269,6 +270,7 @@ async def _compute_payroll(year: int, month: int) -> list:
             'employee_id': e['id'], 'employee_code': e.get('employee_code'), 'name': e['name'],
             'designation': e.get('designation'), 'department': e.get('department'), 'photo': e.get('photo') or '',
             'base_salary': base, 'present_days': present, 'half_days': half,
+            'absent_days': absent,
             'sunday_work': sunday_work, 'leave_days': leave_days,
             'holiday_days': holiday_days, 'weekly_off_days': weekly_off_days,
             'total_days': total_days, 'effective_days': round(min(effective, total_days), 2),
