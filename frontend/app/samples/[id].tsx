@@ -38,6 +38,7 @@ export default function SampleDetailScreen() {
   const [editTagNumber, setEditTagNumber] = useState('');
   const [editNote, setEditNote] = useState('');
   const [savingEdit, setSavingEdit] = useState(false);
+  const [printing, setPrinting] = useState(false);
 
   const load = useCallback(async () => {
     try { setSample(await api.get<Sample>(`/samples/${id}`)); }
@@ -61,6 +62,13 @@ export default function SampleDetailScreen() {
       await load();
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
     finally { setSavingEdit(false); }
+  };
+
+  const printThermal = async () => {
+    setPrinting(true);
+    try { await api.post(`/samples/${id}/issue-slip/print`, {}); }
+    catch (e: any) { Alert.alert('Print failed', e?.detail || 'Could not reach the printer. Check Store Settings.'); }
+    finally { setPrinting(false); }
   };
 
   const remove = () => {
@@ -179,6 +187,12 @@ export default function SampleDetailScreen() {
             </View>
           )}
 
+          {!showEdit && (
+            <Pressable onPress={printThermal} disabled={printing} style={styles.actionBtn} testID="print-sample-issue-slip-btn">
+              {printing ? <ActivityIndicator color={colors.onSurfaceSecondary} /> : <><Ionicons name="print-outline" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>Print Thermal Slip (Karigar Issue)</Text></>}
+            </Pressable>
+          )}
+
           {isWithKarigar && !showEdit && (
             <Pressable style={styles.primaryBtn} onPress={() => router.push(`/samples/receive?id=${id}` as any)} testID="open-receive-sample-btn">
               <Text style={styles.primaryBtnText}>Receive Back</Text>
@@ -238,6 +252,12 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   primaryBtn: { backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: 14, alignItems: 'center', marginTop: spacing.lg },
   primaryBtnText: { color: colors.onBrandPrimary, fontWeight: '800', fontSize: 14 },
+  actionBtn: {
+    flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    paddingVertical: 12, marginTop: spacing.lg,
+  },
+  actionBtnText: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '700' },
   secondaryBtn: { borderRadius: radius.md, paddingVertical: 12, alignItems: 'center', marginTop: spacing.sm },
   secondaryBtnText: { color: colors.mutedText, fontWeight: '700', fontSize: 13 },
 });

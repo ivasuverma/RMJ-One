@@ -24,6 +24,10 @@ from server import (
     log_audit,
     _notify_module,
 )
+# Thermal-printer helpers live in routers/repairs.py (where they were first
+# built) rather than the shared core — reused here as-is instead of
+# duplicating the ESC/POS builder for a second module.
+from routers.repairs import _escpos_receipt, _print_escpos
 
 router = APIRouter()
 
@@ -138,6 +142,41 @@ async def delete_sample(sample_id: str, user=Depends(require_admin_or_module_rig
     await db.karigar_ledger.delete_many({'item_id': sample_id})
     await db.samples.delete_one({'id': sample_id})
     await log_audit(user, 'sample.delete', 'sample', sample_id, sample['sample_code'])
+    return {'ok': True}
+
+
+def _sample_issue_slip_lines(sample: dict) -> list:
+    """Shared shape with repairs.py's _issue_slip_lines, minus the
+    purity/fine-weight fields samples don't track."""
+    lines = [
+        ('Sample No', sample['sample_code']),
+        ('Date', (sample.get('issued_at') or '')[:10]),
+        ('Karigar', sample['karigar_name']),
+    ]
+    if sample.get('tag_number'):
+        lines.append(('Tag', sample['tag_number']))
+    lines += [
+        ('Item', sample['description']),
+        ('Weight Issued', f"{sample['weight']:.3f}g"),
+        ('Issued By', sample.get('issued_by') or ''),
+    ]
+    if sample.get('note'):
+        lines.append(('Note', sample['note']))
+    return lines
+
+
+@router.post('/samples/{sample_id}/issue-slip/print')
+async def sample_issue_slip_print(sample_id: str, user=Depends(require_staff_or_module('samples'))):
+    """Sends a karigar issue challan for this sample straight to the
+    configured WiFi thermal printer — same idea as the repairs module's
+    issue-slip print, just with the lighter sample field set."""
+    sample = await db.samples.find_one({'id': sample_id}, {'_id': 0})
+    if not sample:
+        raise HTTPException(status_code=404, detail='Sample not found')
+    store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
+    data = _escpos_receipt(store.get('name') or 'Ram Murti Jewellers', 'Sample Issue Challan', _sample_issue_slip_lines(sample))
+    await _print_escpos(data)
+    await log_audit(user, 'sample.issue_slip_print', 'sample', sample_id, sample['sample_code'], {})
     return {'ok': True}
 
 

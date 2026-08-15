@@ -133,6 +133,7 @@ async def login_unified(body: LoginIn, request: Request):
                 'employee_code': code, 'designation': emp.get('designation'),
                 'department': emp.get('department'), 'photo': emp.get('photo', ''),
                 'modules': resolve_modules({**emp, 'role': 'employee'}), 'module_rights': emp.get('module_rights') or {},
+                'must_change_password': bool(emp.get('must_change_password')),
             },
         }
     _record_failed_login(request, body.username)

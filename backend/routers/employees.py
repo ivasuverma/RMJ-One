@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Optional
 import uuid
 import re
+import secrets
 from server import (
     db,
     hash_secret,
@@ -171,7 +172,38 @@ async def set_employee_credentials(emp_id: str, body: SetEmployeeCredentialsIn, 
             raise HTTPException(status_code=400, detail='Username already in use')
     await db.employees.update_one(
         {'id': emp_id},
-        {'$set': {'username': uname, 'password_hash': hash_secret(body.password), 'updated_at': now_utc().isoformat()}},
+        {'$set': {
+            'username': uname, 'password_hash': hash_secret(body.password),
+            # Same reasoning as a brand-new employee's default password: this
+            # was just typed in by an admin and shared out, not chosen by the
+            # employee themselves, so force a real password on next login.
+            'must_change_password': True, 'updated_at': now_utc().isoformat(),
+        }},
     )
     await log_audit(user, 'employee.credentials.set', 'employee', emp_id, emp.get('name', ''), {})
     return {'ok': True}
+
+
+@router.post('/employees/{emp_id}/reset-credentials')
+async def reset_employee_credentials(emp_id: str, user=Depends(require_admin), _mod=Depends(require_module('team'))):
+    """One-tap alternative to /set-credentials: generates a fresh random
+    temporary password (keeping the employee's existing username, or falling
+    back to the employee_code-based default if they somehow don't have one
+    yet), saves it, and hands the plaintext back so the caller can share it
+    immediately — no typing required. Forces a real password on next login,
+    same as a brand-new employee."""
+    emp = await db.employees.find_one({'id': emp_id}, {'_id': 0})
+    if not emp: raise HTTPException(status_code=404, detail='Employee not found')
+    username = emp.get('username') or (emp.get('employee_code') or '').lower()
+    if not username:
+        raise HTTPException(status_code=400, detail='This employee has no username or employee code to base one on')
+    password = f'{secrets.randbelow(1000000):06d}'
+    await db.employees.update_one(
+        {'id': emp_id},
+        {'$set': {
+            'username': username, 'password_hash': hash_secret(password),
+            'must_change_password': True, 'updated_at': now_utc().isoformat(),
+        }},
+    )
+    await log_audit(user, 'employee.credentials.reset', 'employee', emp_id, emp.get('name', ''), {})
+    return {'username': username, 'password': password}

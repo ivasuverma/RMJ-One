@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, ActivityIndicator, Pressable, Platform, RefreshControl, Alert,
+  View, Text, StyleSheet, ScrollView, ActivityIndicator, Pressable, Platform, RefreshControl, Alert, Share,
 } from 'react-native';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { Image } from 'expo-image';
@@ -78,6 +78,7 @@ export default function EmployeeProfile() {
   const [tab, setTab] = useState<TabKey>('Details');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [sharingCreds, setSharingCreds] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -98,6 +99,29 @@ export default function EmployeeProfile() {
       try { await api.del(`/employees/${id}`); router.replace('/(tabs)/employees'); }
       catch (e: any) { Alert.alert('Failed', e?.detail || 'Could not delete this employee. Please try again.'); }
     });
+  };
+
+  const onShareCredentials = () => {
+    if (!data) return;
+    const name = data.employee.name;
+    confirmAction(
+      'Share login credentials',
+      `This generates a new temporary password for ${name} and opens the share sheet. Their current password stops working immediately, and they'll be asked to set a new one the first time they log in.`,
+      'Generate & Share',
+      async () => {
+        setSharingCreds(true);
+        try {
+          const res = await api.post<{ username: string; password: string }>(`/employees/${id}/reset-credentials`, {});
+          Share.share({
+            message: `RMJ-One login for ${name}\nUsername: ${res.username}\nTemporary Password: ${res.password}\n\nPlease log in and set your own password when asked.`,
+          }).catch(() => {});
+        } catch (e: any) {
+          Alert.alert('Failed', e?.detail || 'Could not reset credentials. Please try again.');
+        } finally {
+          setSharingCreds(false);
+        }
+      },
+    );
   };
 
   if (loading) {
