@@ -59,7 +59,7 @@ async def create_samples(body: SampleIn, user=Depends(require_admin_or_module('s
             'tag_number': spec.tag_number or '', 'weight': spec.weight, 'photo': spec.photo or '',
             'karigar_id': karigar['id'], 'karigar_name': karigar['name'],
             'status': 'with_karigar',
-            'issued_at': iso, 'issued_by': user['name'],
+            'issued_at': iso, 'issued_by': user['name'], 'issued_by_id': user['id'],
             'received_weight': None, 'weight_diff': None,
             'received_at': None, 'received_by': None,
             'note': body.note or '', 'created_at': iso, 'created_by': user['name'],

@@ -1329,6 +1329,73 @@ async def _check_daily_absentee_summary():
         )
 
 
+def _summarize_codes(codes: list, limit: int = 8) -> str:
+    shown = ', '.join(codes[:limit])
+    if len(codes) > limit:
+        shown += f' +{len(codes) - limit} more'
+    return shown
+
+
+async def _check_repair_sample_followups():
+    """Once per day, at/after 12:00 noon IST, personally reminds whoever added
+    a repair item (or issued a sample) that it's still sitting in a state that
+    needs their action — not yet sent out to a karigar, or sent out and not
+    yet received back. Fires again every day the item stays pending (the
+    guard is per-day, not per-item), same idea as the morning/evening
+    attendance reminders. Personal reminder to the specific person
+    responsible, so — like those — it's not gated by the owner's Notification
+    Settings module toggle."""
+    now_ist = now_utc().astimezone(IST)
+    today = now_ist.date().isoformat()
+    minutes_now = now_ist.hour * 60 + now_ist.minute
+    if minutes_now < 12 * 60:
+        return  # only fire at/after 12:00 noon IST
+    if await db.followup_reminders.find_one({'date': today}, {'_id': 0}) is not None:
+        return  # already sent today
+
+    # Repair items still waiting to be issued to a karigar — remind whoever
+    # added them.
+    to_issue: dict = {}
+    async for it in db.repair_items.find(
+        {'status': 'received', 'needs_karigar': True, 'created_by_id': {'$ne': None}}, {'_id': 0},
+    ):
+        to_issue.setdefault(it['created_by_id'], []).append(it['item_code'])
+
+    # Repair items out with a karigar, still not received back — remind
+    # whoever issued them (fall back to the creator if that's missing, e.g.
+    # older records from before this tracking existed).
+    to_receive_repair: dict = {}
+    async for it in db.repair_items.find({'status': 'with_karigar'}, {'_id': 0}):
+        uid = it.get('issued_by_id') or it.get('created_by_id')
+        if uid:
+            to_receive_repair.setdefault(uid, []).append(it['item_code'])
+
+    # Samples out with a karigar, still not received back — remind whoever
+    # issued them.
+    to_receive_sample: dict = {}
+    async for s in db.samples.find({'status': 'with_karigar', 'issued_by_id': {'$ne': None}}, {'_id': 0}):
+        to_receive_sample.setdefault(s['issued_by_id'], []).append(s['sample_code'])
+
+    recipients = set(to_issue) | set(to_receive_repair) | set(to_receive_sample)
+    for uid in recipients:
+        lines = []
+        if to_issue.get(uid):
+            lines.append(f"Issue to karigar: {_summarize_codes(to_issue[uid])}")
+        if to_receive_repair.get(uid):
+            lines.append(f"Receive from karigar: {_summarize_codes(to_receive_repair[uid])}")
+        if to_receive_sample.get(uid):
+            lines.append(f"Receive sample: {_summarize_codes(to_receive_sample[uid])}")
+        if not lines:
+            continue
+        await notify_user(uid, 'Repair/sample follow-up', ' · '.join(lines), '/(tabs)/transactions')
+
+    await db.followup_reminders.update_one(
+        {'date': today},
+        {'$set': {'date': today, 'sent_at': now_utc().isoformat(), 'recipients': len(recipients)}},
+        upsert=True,
+    )
+
+
 async def _check_auto_advances():
     """Fires each employee's recurring monthly advance on their configured
     day. An auto-advance is an early payout against the month that JUST
@@ -1448,6 +1515,7 @@ async def _attendance_reminder_loop():
             await _check_missed_attendance()
             await _check_missed_checkout()
             await _check_daily_absentee_summary()
+            await _check_repair_sample_followups()
             await _check_auto_advances()
             await _check_recurring_tasks()
             await _check_overdue_tasks()

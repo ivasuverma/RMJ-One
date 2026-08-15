@@ -261,7 +261,8 @@ async def create_repair_order(body: RepairOrderIn, user=Depends(require_admin_or
     order_no = await _next_order_no()
     order = {
         'id': order_id, 'order_no': order_no, 'customer_id': customer['id'], 'customer_name': customer['name'],
-        'customer_mobile': customer.get('mobile', ''), 'created_at': iso, 'created_by': user['name'],
+        'customer_mobile': customer.get('mobile', ''), 'created_at': iso,
+        'created_by': user['name'], 'created_by_id': user['id'],
     }
     await db.repair_orders.insert_one(dict(order))
 
@@ -285,7 +286,9 @@ async def create_repair_order(body: RepairOrderIn, user=Depends(require_admin_or
             'intake_photo': spec.intake_photo or '', 'final_photo': '',
             'status': 'received', 'karigar_id': None, 'karigar_name': None,
             'current_issue_weight': None, 'billed_amount': None, 'payment_mode': None,
-            'created_at': iso, 'created_by': user['name'], 'updated_by': user['name'], 'delivered_at': None,
+            'created_at': iso, 'created_by': user['name'], 'created_by_id': user['id'],
+            'updated_by': user['name'], 'delivered_at': None,
+            'issued_by': None, 'issued_by_id': None,
         }
         await db.repair_items.insert_one(dict(item))
         items_out.append({k: v for k, v in item.items() if k != '_id'})
@@ -475,6 +478,7 @@ async def issue_to_karigar(item_id: str, body: IssueToKarigarIn, user=Depends(re
     await db.repair_items.update_one({'id': item_id}, {'$set': {
         'status': 'with_karigar', 'karigar_id': karigar['id'], 'karigar_name': karigar['name'],
         'current_issue_weight': weight, 'current_issue_fine_weight': fine_weight, 'updated_by': user['name'],
+        'issued_by': user['name'], 'issued_by_id': user['id'],
     }})
     await log_audit(user, 'repair_item.issue', 'repair_item', item_id, item['item_code'], {'karigar': karigar['name'], 'weight': weight})
     if karigar.get('is_employee') and karigar.get('employee_id'):
