@@ -21,7 +21,7 @@ import { useTheme } from '@/src/theme/ThemeContext';
 type DashboardData = {
   todays_attendance: {
     present: number; absent: number; late: number; half_day: number;
-    missing_punch: number; leave: number; working: number; total: number;
+    missing_punch: number; not_checked_in: number; leave: number; working: number; total: number;
   };
   pending_approvals: {
     attendance_corrections: number; leave_requests: number;
@@ -33,14 +33,11 @@ type DashboardData = {
   tasks_summary: {
     due_today: number; overdue: number; done_today: number; open_total: number;
   };
-  business_summary: {
-    revenue_today: number; revenue_month: number; intake_today: number;
-    active_employees: number; customers_open: number; karigars_open: number;
-  };
 };
 
 const AUTO_REFRESH_MS = 45000;
-const fmtINR = (n: number) => `₹${Math.round(n || 0).toLocaleString('en-IN')}`;
+
+type Tone = 'brand' | 'success' | 'warning' | 'error' | 'info';
 
 function timeAgo(d: Date | null) {
   if (!d) return '';
@@ -139,24 +136,18 @@ export default function DashboardScreen() {
           </View>
         ) : data ? (
           <>
-            {/* Business Snapshot */}
-            <SectionHeader title="Business Snapshot" icon="stats-chart-outline" testID="section-business" />
-            <View style={[styles.tileGrid, { marginBottom: spacing.xl }]}>
-              <StatCard basis={tileBasis} icon="cash-outline" label="Revenue Today" value={fmtINR(data.business_summary.revenue_today)} accent={colors.brandPrimary} testID="biz-revenue-today" onPress={() => router.push('/reports/generate' as any)} />
-              <StatCard basis={tileBasis} icon="diamond-outline" label="New Intake Today" value={String(data.business_summary.intake_today)} accent={colors.brandSecondary} testID="biz-intake-today" onPress={() => router.push('/repairs' as any)} />
-              <StatCard basis={tileBasis} icon="person-outline" label="Customers with Balance" value={String(data.business_summary.customers_open)} accent={colors.onWarning} testID="biz-customers-open" onPress={() => router.push('/reports/customer-ledger' as any)} />
-              <StatCard basis={tileBasis} icon="hammer-outline" label="Karigars with Balance" value={String(data.business_summary.karigars_open)} accent={colors.onWarning} testID="biz-karigars-open" onPress={() => router.push('/reports/karigar-ledger' as any)} />
-            </View>
-
             {/* Today's Attendance */}
             {hasModule('attendance') && (
               <>
                 <SectionHeader title="Attendance" icon="time-outline" testID="section-attendance" />
                 <Text style={styles.sectionSubtitle}>{data.todays_attendance.working} of {data.todays_attendance.total} employees working now</Text>
                 <View style={[styles.tileGrid, { marginBottom: spacing.sm }]}>
-                  <StatCard basis={tileBasis} icon="checkmark-circle-outline" label="Present" value={String(data.todays_attendance.present)} accent={colors.brandPrimary} testID="tile-present" onPress={() => router.push('/(tabs)/attendance')} />
-                  <StatCard basis={tileBasis} icon="close-circle-outline" label="Absent" value={String(data.todays_attendance.absent)} accent={colors.onError} testID="tile-absent" onPress={() => router.push('/(tabs)/attendance')} />
-                  <StatCard basis={tileBasis} icon="alert-circle-outline" label="Missing Punch" value={String(data.todays_attendance.missing_punch)} accent={colors.onError} testID="tile-missing" onPress={() => router.push('/(tabs)/attendance')} />
+                  <StatCard basis={tileBasis} icon="checkmark-circle-outline" label="Present" value={String(data.todays_attendance.present)} tone="success" testID="tile-present" onPress={() => router.push('/(tabs)/attendance?filter=present' as any)} />
+                  <StatCard basis={tileBasis} icon="alarm-outline" label="Late" value={String(data.todays_attendance.late)} tone="warning" testID="tile-late" onPress={() => router.push('/(tabs)/attendance?filter=late' as any)} />
+                  <StatCard basis={tileBasis} icon="time-outline" label="Half Day" value={String(data.todays_attendance.half_day)} tone="info" testID="tile-half-day" onPress={() => router.push('/(tabs)/attendance?filter=half_day' as any)} />
+                  <StatCard basis={tileBasis} icon="hourglass-outline" label="Not Checked In" value={String(data.todays_attendance.not_checked_in)} tone="warning" testID="tile-not-checked-in" onPress={() => router.push('/(tabs)/attendance?filter=not_checked_in' as any)} />
+                  <StatCard basis={tileBasis} icon="close-circle-outline" label="Absent" value={String(data.todays_attendance.absent)} tone="error" testID="tile-absent" onPress={() => router.push('/(tabs)/attendance?filter=absent' as any)} />
+                  <StatCard basis={tileBasis} icon="alert-circle-outline" label="Missing Punch" value={String(data.todays_attendance.missing_punch)} tone="error" testID="tile-missing" onPress={() => router.push('/(tabs)/attendance?filter=missing' as any)} />
                 </View>
 
                 {hasModule('approvals') && (data.pending_approvals.attendance_corrections > 0 || data.pending_approvals.leave_requests > 0) && (
@@ -184,10 +175,9 @@ export default function DashboardScreen() {
                 <View style={{ flexBasis: sectionBasis, flexGrow: 1 }}>
                   <SectionHeader title="Repairs" icon="construct-outline" testID="section-repairs" />
                   <View style={styles.tileGrid}>
-                    <StatCard basis={tileBasis} icon="cube-outline" label="Received · awaiting action" value={String(data.repairs_summary.received)} accent={colors.brandSecondary} testID="repairs-received" onPress={() => router.push('/repairs?filter=received' as any)} />
-                    <StatCard basis={tileBasis} icon="hammer-outline" label="With Karigar" value={String(data.repairs_summary.with_karigar)} accent={colors.brandSecondary} testID="repairs-with-karigar" onPress={() => router.push('/repairs?filter=with_karigar' as any)} />
-                    <StatCard basis={tileBasis} icon="pricetag-outline" label="Pending to Bill" value={String(data.repairs_summary.ready)} accent={colors.brandSecondary} testID="repairs-ready" onPress={() => router.push('/repairs?filter=ready' as any)} />
-                    <StatCard basis={tileBasis} icon="alert-circle-outline" label="Overdue" value={String(data.repairs_summary.overdue)} accent={colors.onError} danger={data.repairs_summary.overdue > 0} testID="repairs-overdue" onPress={() => router.push('/repairs?filter=overdue' as any)} />
+                    <StatCard basis={tileBasis} icon="cube-outline" label="Received · awaiting action" value={String(data.repairs_summary.received)} tone="info" testID="repairs-received" onPress={() => router.push('/repairs?filter=received' as any)} />
+                    <StatCard basis={tileBasis} icon="hammer-outline" label="With Karigar" value={String(data.repairs_summary.with_karigar)} tone="brand" testID="repairs-with-karigar" onPress={() => router.push('/repairs?filter=with_karigar' as any)} />
+                    <StatCard basis={tileBasis} icon="pricetag-outline" label="Pending to Bill" value={String(data.repairs_summary.ready)} tone="success" testID="repairs-ready" onPress={() => router.push('/repairs?filter=ready' as any)} />
                   </View>
                 </View>
               )}
@@ -196,8 +186,8 @@ export default function DashboardScreen() {
                 <View style={{ flexBasis: sectionBasis, flexGrow: 1 }}>
                   <SectionHeader title="Tasks" icon="checkbox-outline" testID="section-tasks" />
                   <View style={styles.tileGrid}>
-                    <StatCard basis={tileBasis} icon="today-outline" label="Due Today" value={String(data.tasks_summary.due_today)} accent={colors.brandSecondary} testID="tasks-due-today" onPress={() => router.push('/tasks' as any)} />
-                    <StatCard basis={tileBasis} icon="alert-circle-outline" label="Overdue" value={String(data.tasks_summary.overdue)} accent={colors.onError} danger={data.tasks_summary.overdue > 0} testID="tasks-overdue" onPress={() => router.push('/tasks' as any)} />
+                    <StatCard basis={tileBasis} icon="today-outline" label="Due Today" value={String(data.tasks_summary.due_today)} tone="info" testID="tasks-due-today" onPress={() => router.push('/tasks' as any)} />
+                    <StatCard basis={tileBasis} icon="alert-circle-outline" label="Overdue" value={String(data.tasks_summary.overdue)} tone="error" testID="tasks-overdue" onPress={() => router.push('/tasks' as any)} />
                   </View>
                 </View>
               )}
@@ -225,27 +215,42 @@ function SectionHeader({ title, icon, testID }: { title: string; icon?: any; tes
 }
 
 function StatCard({
-  icon, label, value, accent, danger, testID, onPress, basis,
+  icon, label, value, tone, testID, onPress, basis,
 }: {
-  icon: any; label: string; value: string; accent: string; danger?: boolean;
+  icon: any; label: string; value: string; tone: Tone;
   testID?: string; onPress?: () => void; basis: string;
 }) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+  const t = TONE_COLORS(colors)[tone];
   return (
     <Pressable
-      style={({ pressed }) => [styles.statCard, { flexBasis: basis } as any, danger && styles.statCardDanger, pressed && { opacity: 0.75 }]}
+      style={({ pressed }) => [
+        styles.statCard, { flexBasis: basis, backgroundColor: t.bg, borderColor: t.border } as any,
+        pressed && { opacity: 0.8 },
+      ]}
       testID={testID}
       onPress={onPress}
     >
-      <View style={[styles.statIconWrap, danger && { backgroundColor: colors.error }]}>
-        <Ionicons name={icon} size={16} color={danger ? colors.onError : accent} />
+      <View style={[styles.statIconWrap, { backgroundColor: t.iconBg }]}>
+        <Ionicons name={icon} size={16} color={t.fg} />
       </View>
-      <Text style={[styles.statValue, danger && { color: colors.onError }]} numberOfLines={1}>{value}</Text>
-      <Text style={styles.statLabel} numberOfLines={2}>{label}</Text>
+      <Text style={[styles.statValue, { color: t.fg }]} numberOfLines={1}>{value}</Text>
+      <Text style={[styles.statLabel, { color: t.fg }]} numberOfLines={2}>{label}</Text>
     </Pressable>
   );
 }
+
+// Colorful tile backgrounds — each tone uses the theme's existing light-bg +
+// dark-text token pair (e.g. success/onSuccess) so tiles stay readable and
+// theme-aware (light/dark mode) without inventing new palette colors.
+const TONE_COLORS = (colors: ThemeColors): Record<Tone, { bg: string; border: string; iconBg: string; fg: string }> => ({
+  brand: { bg: colors.brandTertiary, border: colors.brand, iconBg: colors.surface, fg: colors.brandSecondary },
+  success: { bg: colors.success, border: colors.success, iconBg: colors.surface, fg: colors.onSuccess },
+  warning: { bg: colors.warning, border: colors.warning, iconBg: colors.surface, fg: colors.onWarning },
+  error: { bg: colors.error, border: colors.error, iconBg: colors.surface, fg: colors.onError },
+  info: { bg: colors.info, border: colors.info, iconBg: colors.surface, fg: colors.onInfo },
+});
 
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
@@ -303,7 +308,6 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.sm,
     borderWidth: 1, borderColor: colors.border, padding: spacing.sm,
   },
-  statCardDanger: { borderColor: colors.error },
   statIconWrap: {
     width: 22, height: 22, borderRadius: 11, backgroundColor: colors.brandTertiary,
     alignItems: 'center', justifyContent: 'center', marginBottom: spacing.xs,
