@@ -28,6 +28,7 @@ const SECTIONS: { title: string; tiles: TileDef[] }[] = [
       { key: 'store', label: 'Store Settings', icon: 'storefront-outline', route: '/store-settings', ownerOnly: true },
       { key: 'user-roles', label: 'User Roles', icon: 'shield-outline', route: '/settings/user-roles', ownerOnly: true },
       { key: 'staff', label: 'Staff Accounts', icon: 'people-circle-outline', route: '/settings/users', ownerOnly: true },
+      { key: 'notifications', label: 'Notification Settings', icon: 'notifications-outline', route: '/settings/notifications', ownerOnly: true },
     ],
   },
   {

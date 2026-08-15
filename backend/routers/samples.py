@@ -22,6 +22,7 @@ from server import (
     SampleUpdateIn,
     SampleReceiveIn,
     log_audit,
+    _notify_module,
 )
 
 router = APIRouter()
@@ -75,6 +76,8 @@ async def create_samples(body: SampleIn, user=Depends(require_admin_or_module('s
 
     await log_audit(user, 'sample.issue', 'sample', created[0]['id'], f"{len(created)} sample(s)",
                      {'karigar': karigar['name'], 'count': len(created)})
+    await _notify_module('samples', f"{len(created)} sample(s) issued",
+                          f"Issued to {karigar['name']} by {user['name']}", '/samples')
     return created
 
 
@@ -166,4 +169,7 @@ async def receive_sample(sample_id: str, body: SampleReceiveIn, user=Depends(req
         'note': (sample.get('note') or '') + (f"\n{body.note}" if body.note else ''),
     }})
     await log_audit(user, 'sample.receive', 'sample', sample_id, sample['sample_code'], {'weight_diff': weight_diff})
+    diff_note = f" (diff {weight_diff:+.3f}g)" if weight_diff else ''
+    await _notify_module('samples', 'Sample received back',
+                          f"{sample['sample_code']} · {sample['description']} from {sample['karigar_name']}{diff_note}", '/samples')
     return await db.samples.find_one({'id': sample_id}, {'_id': 0})

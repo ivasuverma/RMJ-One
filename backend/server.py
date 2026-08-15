@@ -365,6 +365,24 @@ class StoreSettingsIn(BaseModel):
     biometric_webhook_secret: Optional[str] = None
 
 
+class NotificationModuleSettingsIn(BaseModel):
+    enabled: bool = True
+    # Broad recipients by role. `None` (the default, when a module hasn't
+    # been touched yet) means "use that module's built-in default roles" —
+    # an explicit [] means the owner deliberately cleared all roles (e.g.
+    # relying on user_ids alone, or just muting it for everyone but keeping
+    # it enabled=false would achieve the same thing more simply).
+    roles: Optional[List[Literal['owner', 'admin', 'accountant', 'employee']]] = None
+    # Specific staff/employee ids to notify in addition to the role-matched
+    # set above — lets an owner say "always also ping Rahul" without having
+    # to make Rahul an admin.
+    user_ids: List[str] = []
+
+
+class NotificationSettingsIn(BaseModel):
+    modules: Dict[str, NotificationModuleSettingsIn] = {}
+
+
 class PunchIn(BaseModel):
     latitude: float
     longitude: float
@@ -1114,6 +1132,8 @@ async def notify_user(user_id: str, title: str, body: str, url: str = '/'):
 
 async def notify_roles(roles: list, title: str, body: str, url: str = '/'):
     try:
+        if not roles:
+            return
         # In-app notification history — resolve which actual accounts match
         # these roles so each one gets a durable, listable record, not just
         # a fire-and-forget browser push.
@@ -1129,6 +1149,56 @@ async def notify_roles(roles: list, title: str, body: str, url: str = '/'):
         await _send_push_to_subs(subs, title, body, url)
     except Exception as e:
         logger.warning(f'notify_roles failed: {e}')
+
+
+# ---------------- Notification Settings (per-module on/off + recipients) ----------------
+# Lets an owner turn off the admin-facing "broadcast" notifications a given
+# business module fires (e.g. "someone checked in", "a repair was created"),
+# and/or redirect them to a specific set of staff/employees instead of the
+# hardcoded default roles. Deliberately does NOT gate the personal notify_user
+# calls that tell an individual about their own record (leave decided, salary
+# paid, task assigned to them, etc.) — those should never be silenced by an
+# admin's module preference since they're informing the affected person, not
+# broadcasting to staff.
+NOTIFICATION_MODULES = [
+    {'key': 'attendance', 'label': 'Attendance', 'default_roles': ['owner', 'admin']},
+    {'key': 'tasks', 'label': 'Tasks', 'default_roles': ['owner', 'admin']},
+    {'key': 'payroll', 'label': 'Payroll', 'default_roles': ['owner', 'admin']},
+    {'key': 'repairs', 'label': 'Repair', 'default_roles': ['owner', 'admin']},
+    {'key': 'samples', 'label': 'Sample Issue/Receive', 'default_roles': ['owner', 'admin']},
+]
+NOTIFICATION_MODULE_KEYS = {m['key'] for m in NOTIFICATION_MODULES}
+NOTIFICATION_MODULE_DEFAULT_ROLES = {m['key']: m['default_roles'] for m in NOTIFICATION_MODULES}
+
+
+async def _notify_module(module: str, title: str, body: str, url: str = '/'):
+    """Broadcast a module event to whichever staff/employees are configured to
+    receive it, honoring the admin's Notification Settings (Settings >
+    Notifications). Falls back to the module's default roles if unconfigured."""
+    try:
+        settings = await db.settings.find_one({'id': 'notifications'}, {'_id': 0})
+        cfg = ((settings or {}).get('modules') or {}).get(module) or {}
+        if not cfg.get('enabled', True):
+            return
+        roles = cfg.get('roles')
+        if roles is None:
+            roles = NOTIFICATION_MODULE_DEFAULT_ROLES.get(module, ['owner', 'admin'])
+        role_recipient_ids = set()
+        if roles:
+            async for u in db.users.find({'role': {'$in': roles}}, {'_id': 0, 'id': 1}):
+                role_recipient_ids.add(u['id'])
+            if 'employee' in roles:
+                async for e in db.employees.find({'status': {'$ne': 'inactive'}}, {'_id': 0, 'id': 1}):
+                    role_recipient_ids.add(e['id'])
+            await notify_roles(roles, title, body, url)
+        # Specific individuals picked in addition to (or instead of) roles —
+        # skip anyone already covered by the role broadcast above to avoid a
+        # duplicate notification.
+        for uid in (cfg.get('user_ids') or []):
+            if uid not in role_recipient_ids:
+                await notify_user(uid, title, body, url)
+    except Exception as e:
+        logger.warning(f'_notify_module failed for {module}: {e}')
 
 
 MISSED_ATTENDANCE_GRACE_MIN = 30  # keep in sync with attendance.py's NOT_CHECKED_IN_GRACE_MIN (same criteria, UI filter vs push reminder)
@@ -1212,8 +1282,8 @@ async def _check_daily_absentee_summary():
         shown = ', '.join(absent_names[:10])
         if len(absent_names) > 10:
             shown += f' +{len(absent_names) - 10} more'
-        await notify_roles(
-            ['owner', 'admin'],
+        await _notify_module(
+            'attendance',
             f"{len(absent_names)} absent today",
             shown, '/(tabs)/attendance',
         )
@@ -1268,8 +1338,8 @@ async def _check_auto_advances():
         )
         await notify_user(emp['id'], 'Advance credited',
                            f"₹{amount:.0f} advance has been recorded for you this month.", '/')
-        await notify_roles(['owner', 'admin'], 'Auto advance recorded',
-                            f"₹{amount:.0f} auto-advance recorded for {emp['name']}", '/(tabs)/payroll')
+        await _notify_module('payroll', 'Auto advance recorded',
+                              f"₹{amount:.0f} auto-advance recorded for {emp['name']}", '/(tabs)/payroll')
 
 
 async def _check_recurring_tasks():
@@ -1327,8 +1397,8 @@ async def _check_overdue_tasks():
         {'_id': 0},
     ):
         await db.tasks.update_one({'id': t['id']}, {'$set': {'overdue_notified_at': now_utc().isoformat()}})
-        await notify_roles(['owner', 'admin'], 'Task overdue',
-                            f"{t.get('assigned_to_name', 'Someone')}: {t['title']} was due {t['due_date']}", '/tasks')
+        await _notify_module('tasks', 'Task overdue',
+                              f"{t.get('assigned_to_name', 'Someone')}: {t['title']} was due {t['due_date']}", '/tasks')
 
 
 async def _attendance_reminder_loop():

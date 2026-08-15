@@ -34,7 +34,7 @@ from server import (
     _iter_month_dates,
     log_audit,
     notify_user,
-    notify_roles,
+    _notify_module,
     IST,
 )
 
@@ -60,8 +60,8 @@ async def check_in(body: PunchIn, user=Depends(require_employee)):
         raise HTTPException(status_code=400, detail='Already checked in today')
 
     now_local = now.astimezone(IST)
-    await notify_roles(['owner', 'admin'], f"{user['name']} checked in",
-                        f"{now_local.strftime('%I:%M %p')}{' · Late' if result['is_late'] else ''}", '/(tabs)/attendance')
+    await _notify_module('attendance', f"{user['name']} checked in",
+                          f"{now_local.strftime('%I:%M %p')}{' · Late' if result['is_late'] else ''}", '/(tabs)/attendance')
 
     return {'ok': True, 'attendance_id': result['attendance_id'], 'is_late': result['is_late'], 'timestamp': result['timestamp']}
 
@@ -87,8 +87,8 @@ async def check_out(body: PunchIn, user=Depends(require_employee)):
         raise HTTPException(status_code=400, detail=detail)
 
     hours = result['working_hours']
-    await notify_roles(['owner', 'admin'], f"{user['name']} checked out",
-                        f"Worked {hours}h today" + (' · Half day' if result['status'] == 'half_day' else ''), '/(tabs)/attendance')
+    await _notify_module('attendance', f"{user['name']} checked out",
+                          f"Worked {hours}h today" + (' · Half day' if result['status'] == 'half_day' else ''), '/(tabs)/attendance')
     return {'ok': True, 'working_hours': hours, 'timestamp': result['timestamp']}
 
 
@@ -356,8 +356,8 @@ async def create_correction(body: CorrectionIn, user=Depends(require_employee)):
         'status': 'pending', 'created_at': iso, 'decided_by': None, 'decided_at': None, 'decision_note': '',
     }
     await db.corrections.insert_one(dict(doc))
-    await notify_roles(['owner', 'admin'], 'New attendance correction request',
-                        f"{user['name']} requested a correction for {doc['date']}", '/approvals')
+    await _notify_module('attendance', 'New attendance correction request',
+                          f"{user['name']} requested a correction for {doc['date']}", '/approvals')
     return {k: v for k, v in doc.items() if k != '_id'}
 
 
@@ -433,8 +433,8 @@ async def create_leave(body: LeaveIn, user=Depends(require_employee)):
     }
     await db.leaves.insert_one(dict(doc))
     await log_audit(user, 'leave.create', 'leave', doc['id'], user['name'], {'from': doc['from_date'], 'to': doc['to_date']})
-    await notify_roles(['owner', 'admin'], 'New leave request',
-                        f"{user['name']} requested leave {doc['from_date']} to {doc['to_date']}", '/approvals')
+    await _notify_module('attendance', 'New leave request',
+                          f"{user['name']} requested leave {doc['from_date']} to {doc['to_date']}", '/approvals')
     return {k: v for k, v in doc.items() if k != '_id'}
 
 

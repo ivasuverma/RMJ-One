@@ -32,6 +32,7 @@ from server import (
     _karigar_ledger_balances,
     log_audit,
     notify_user,
+    _notify_module,
     _report_pdf,
     _pdf_response,
 )
@@ -291,6 +292,8 @@ async def create_repair_order(body: RepairOrderIn, user=Depends(require_admin_or
 
     await log_audit(user, 'repair_order.create', 'repair_order', order_id, order_no,
                      {'customer': customer['name'], 'items': len(items_out)})
+    await _notify_module('repairs', f'New repair order #{order_no}',
+                          f"{customer['name']} · {len(items_out)} item(s) · by {user['name']}", '/(tabs)/transactions')
     return {'order': {k: v for k, v in order.items() if k != '_id'}, 'items': items_out}
 
 
@@ -642,6 +645,8 @@ async def receive_from_karigar(item_id: str, body: ReceiveFromKarigarIn, user=De
         'balance_fine_weight': calc['balance_fine_weight'], 'updated_by': user['name'],
     }})
     await log_audit(user, 'repair_item.receive', 'repair_item', item_id, item['item_code'], {'weight_diff': calc['diff'], 'fine_weight_diff': calc['fine_diff']})
+    await _notify_module('repairs', 'Repair item ready',
+                          f"{item['item_code']} ({item.get('customer_name', '')}) is back from the karigar and ready for delivery", '/(tabs)/transactions')
     return await db.repair_items.find_one({'id': item_id}, {'_id': 0})
 
 
@@ -653,6 +658,8 @@ async def mark_item_ready(item_id: str, user=Depends(require_admin_or_module('re
         raise HTTPException(status_code=400, detail='Only a freshly received item can bypass the karigar step')
     await db.repair_items.update_one({'id': item_id}, {'$set': {'status': 'ready', 'updated_by': user['name']}})
     await log_audit(user, 'repair_item.ready', 'repair_item', item_id, item['item_code'])
+    await _notify_module('repairs', 'Repair item ready',
+                          f"{item['item_code']} ({item.get('customer_name', '')}) is ready for delivery", '/(tabs)/transactions')
     return await db.repair_items.find_one({'id': item_id}, {'_id': 0})
 
 
