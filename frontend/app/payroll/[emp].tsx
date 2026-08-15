@@ -4,6 +4,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { api } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthContext';
@@ -103,7 +104,11 @@ export default function PayrollDetail() {
 
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 140 }} showsVerticalScrollIndicator={false}>
         <View style={styles.head}>
-          <View style={styles.avatar}><Text style={styles.avatarText}>{initials(row.name)}</Text></View>
+          {row.photo ? (
+            <Image source={{ uri: row.photo }} style={styles.avatarPhoto} />
+          ) : (
+            <View style={styles.avatar}><Text style={styles.avatarText}>{initials(row.name)}</Text></View>
+          )}
           <View style={{ flex: 1 }}>
             <Text style={styles.name}>{row.name}</Text>
             <Text style={styles.meta}>{row.employee_code} · {row.designation || '—'}</Text>
@@ -520,6 +525,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   avatarText: { color: colors.onBrandPrimary, fontSize: 18, fontWeight: '800' },
+  avatarPhoto: { width: 48, height: 48, borderRadius: 24, backgroundColor: colors.surfaceTertiary },
   name: { color: colors.onSurface, fontSize: 18, fontWeight: '700' },
   meta: { color: colors.onSurfaceTertiary, fontSize: 12, marginTop: 2 },
 

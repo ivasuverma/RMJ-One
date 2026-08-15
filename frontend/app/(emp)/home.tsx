@@ -100,7 +100,11 @@ export default function EmployeeHome() {
           <LinearGradient colors={heroGradient} style={StyleSheet.absoluteFill} />
           <View style={styles.heroInner}>
             <View style={styles.heroTopRow}>
-              <View style={styles.avatar}><Text style={styles.avatarText}>{(user?.name || 'E')[0]?.toUpperCase()}</Text></View>
+              {user?.photo ? (
+                <Image source={{ uri: user.photo }} style={styles.avatarPhoto} />
+              ) : (
+                <View style={styles.avatar}><Text style={styles.avatarText}>{(user?.name || 'E')[0]?.toUpperCase()}</Text></View>
+              )}
               <View style={{ flex: 1 }}>
                 <Text style={styles.heroLabel}>WELCOME</Text>
                 <Text style={styles.heroName} numberOfLines={1}>{user?.name}</Text>
@@ -292,6 +296,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   avatarText: { color: colors.onBrandPrimary, fontWeight: '800', fontSize: 22 },
+  avatarPhoto: { width: 56, height: 56, borderRadius: 28, backgroundColor: colors.surfaceTertiary },
   heroLabel: { color: colors.brandSecondary, fontSize: 10, letterSpacing: 1 },
   heroName: {
     color: colors.onSurface, fontSize: 22, fontWeight: '700',

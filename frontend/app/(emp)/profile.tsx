@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, Platform, ActivityIndicator, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { Image } from 'expo-image';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useAuth } from '@/src/auth/AuthContext';
 import { api } from '@/src/api/client';
@@ -60,7 +61,11 @@ export default function EmployeeProfile() {
         <Text style={styles.title}>Profile</Text>
 
         <Pressable style={styles.card} onPress={() => router.push('/settings/account' as any)} testID="emp-profile-card">
-          <View style={styles.avatar}><Text style={styles.avatarText}>{(user?.name || 'E')[0]?.toUpperCase()}</Text></View>
+          {details?.photo ? (
+            <Image source={{ uri: details.photo }} style={styles.avatarPhoto} />
+          ) : (
+            <View style={styles.avatar}><Text style={styles.avatarText}>{(user?.name || 'E')[0]?.toUpperCase()}</Text></View>
+          )}
           <Text style={styles.name}>{user?.name}</Text>
           <Text style={styles.subtitle}>{user?.employee_code} · {user?.designation || '—'}</Text>
           <Text style={styles.dept}>{user?.department || '—'}</Text>
@@ -195,6 +200,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   avatar: { width: 72, height: 72, borderRadius: 36, backgroundColor: colors.brandPrimary, alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: colors.onBrandPrimary, fontWeight: '800', fontSize: 28 },
+  avatarPhoto: { width: 72, height: 72, borderRadius: 36, backgroundColor: colors.surfaceTertiary },
   name: {
     color: colors.onSurface, fontSize: 20, fontWeight: '700', marginTop: spacing.md,
     fontFamily: fonts.display,
