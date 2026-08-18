@@ -93,6 +93,16 @@ async def list_cashbook_counters(user: dict = Depends(require_staff_or_module('c
     return counters
 
 
+@router.get('/cashbook/counters/transfer-options')
+async def list_transfer_counter_options(_: dict = Depends(require_staff_or_module('cash_book'))):
+    """Id + name only, for every active counter — deliberately NOT filtered
+    by an employee's own cashbook_counter_ids (unlike GET /cashbook/counters
+    above). Picking a counter as a transfer partner is allowed even for a
+    counter the employee can't otherwise view; this endpoint exposes just
+    enough (its name) to let them pick it, with no balances or entries."""
+    return await db.cashbook_counters.find({'active': True}, {'_id': 0, 'id': 1, 'name': 1}).sort('name', 1).to_list(200)
+
+
 @router.post('/cashbook/counters')
 async def create_cashbook_counter(body: CashBookCounterIn, user=Depends(require_owner)):
     if not body.name.strip():
@@ -193,14 +203,15 @@ async def create_cashbook_entry(body: CashBookEntryIn, user=Depends(require_admi
     _assert_counter_allowed(user, body.counter_id)
     counter = await _get_counter(body.counter_id)
 
-    # A transfer needs write access on both counters — it's effectively one
-    # action against two books at once, so an employee assigned only one
-    # side of it can't use the other as a back door.
+    # The transfer counterparty is deliberately NOT access-checked: an
+    # employee can complete a transfer to/from a counter they aren't
+    # otherwise assigned to (e.g. handing cash to the locker) without that
+    # granting them any ability to browse the locker's own day ledger —
+    # naming a counter as a transfer partner isn't the same as viewing it.
     other_counter = None
     if body.transfer_counter_id:
         if body.transfer_counter_id == body.counter_id:
             raise HTTPException(status_code=400, detail='Transfer counter must be different from this entry\'s counter')
-        _assert_counter_allowed(user, body.transfer_counter_id)
         other_counter = await _get_counter(body.transfer_counter_id)
 
     iso = now_utc().isoformat()
@@ -280,11 +291,10 @@ async def delete_cashbook_entry(entry_id: str, user=Depends(require_admin_or_mod
     if not entry:
         raise HTTPException(status_code=404, detail='Entry not found')
     _assert_counter_allowed(user, entry['counter_id'])
+    # No access check on the linked entry's counter here either, for the
+    # same reason as on create — undoing a transfer to/from a counter this
+    # employee can't browse must still be possible from this side.
     linked_id = entry.get('linked_entry_id')
-    if linked_id:
-        linked = await db.cashbook_entries.find_one({'id': linked_id}, {'_id': 0})
-        if linked:
-            _assert_counter_allowed(user, linked['counter_id'])
     await db.cashbook_entries.delete_one({'id': entry_id})
     if linked_id:
         # A transfer is one action against two books — deleting one side

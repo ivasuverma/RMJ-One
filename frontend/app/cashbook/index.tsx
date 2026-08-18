@@ -25,6 +25,11 @@ type DayData = {
   total_received: number; total_paid: number; closing_balance: number;
 };
 type Counter = { id: string; name: string; opening_balance: number; active: boolean; created_at: string; created_by?: string };
+// Id+name only, for every active counter regardless of this employee's own
+// assigned counters — used solely to pick a transfer partner (see
+// /cashbook/counters/transfer-options: naming a counter as a transfer
+// counterparty is allowed even without view access to its ledger).
+type CounterLite = { id: string; name: string };
 type Emp = { id: string; name: string; employee_code: string; designation?: string };
 type QuickName = { id: string; name: string };
 
@@ -56,6 +61,10 @@ export default function CashBookScreen() {
   const [countersLoading, setCountersLoading] = useState(true);
   // null = counter list view (inside Manage mode); non-null = add/edit form for one counter
   const [counterForm, setCounterForm] = useState<{ id: string | null; name: string; opening_balance: string } | null>(null);
+  // Unrestricted list of every active counter (id+name), for the transfer
+  // picker — deliberately separate from `counters` above, which is
+  // filtered down to whatever this employee is assigned to.
+  const [transferOptions, setTransferOptions] = useState<CounterLite[]>([]);
 
   // Entry form
   const [editing, setEditing] = useState<Entry | null>(null);
@@ -93,6 +102,7 @@ export default function CashBookScreen() {
   const loadRefs = useCallback(async () => {
     try { setEmployees(await api.get<Emp[]>('/employees?status=active')); } catch { /* ignore */ }
     try { setQuickNames(await api.get<QuickName[]>('/cashbook/quick-names')); } catch { /* ignore */ }
+    try { setTransferOptions(await api.get<CounterLite[]>('/cashbook/counters/transfer-options')); } catch { /* ignore */ }
   }, []);
   useFocusEffect(useCallback(() => { loadRefs(); }, [loadRefs]));
 
@@ -144,7 +154,7 @@ export default function CashBookScreen() {
   // editable afterward.
   const pickTransferCounter = (cid: string) => {
     setTransferCounterId(cid);
-    const other = counters.find((c) => c.id === cid);
+    const other = transferOptions.find((c) => c.id === cid);
     if (other) setName(`Transfer ${entryType === 'paid' ? 'to' : 'from'} ${other.name}`);
   };
 
@@ -170,7 +180,7 @@ export default function CashBookScreen() {
   };
 
   const confirmDeleteEntry = (e: Entry) => {
-    const linkedCounterName = e.linked_entry_id ? counters.find((c) => c.id === e.transfer_counter_id)?.name : null;
+    const linkedCounterName = e.linked_entry_id ? transferOptions.find((c) => c.id === e.transfer_counter_id)?.name : null;
     confirmAction(
       'Delete entry?',
       linkedCounterName
@@ -389,7 +399,7 @@ export default function CashBookScreen() {
               <View style={styles.transferInfoBox} testID="cashbook-linked-info">
                 <Ionicons name="swap-horizontal-outline" size={14} color={colors.brandSecondary} />
                 <Text style={styles.transferInfoText}>
-                  Linked to a transfer with {counters.find((c) => c.id === editing.transfer_counter_id)?.name || 'another counter'} —
+                  Linked to a transfer with {transferOptions.find((c) => c.id === editing.transfer_counter_id)?.name || 'another counter'} —
                   amount/date/note changes update both sides; deleting removes both.
                 </Text>
               </View>
@@ -415,7 +425,7 @@ export default function CashBookScreen() {
               ))}
             </View>
 
-            {!editing && counters.length > 1 && (
+            {!editing && transferOptions.length > 1 && (
               <>
                 <Pressable onPress={() => { setIsTransfer((v) => !v); setTransferCounterId(''); }} style={styles.transferToggleRow} testID="cashbook-transfer-toggle">
                   <View style={[styles.checkbox, isTransfer && styles.checkboxOn]}>
@@ -427,7 +437,7 @@ export default function CashBookScreen() {
                   <>
                     <Text style={styles.label}>{entryType === 'paid' ? 'Transfer to' : 'Transfer from'}</Text>
                     <View style={styles.chipRow}>
-                      {counters.filter((c) => c.id !== counterId).map((c) => (
+                      {transferOptions.filter((c) => c.id !== counterId).map((c) => (
                         <Pressable key={c.id} onPress={() => pickTransferCounter(c.id)} style={[styles.typeChip, transferCounterId === c.id && styles.typeChipReceived]} testID={`cashbook-transfer-counter-${c.id}`}>
                           <Text style={[styles.typeChipText, transferCounterId === c.id && styles.typeChipTextActive]}>{c.name}</Text>
                         </Pressable>
@@ -435,8 +445,8 @@ export default function CashBookScreen() {
                     </View>
                     <Text style={styles.hint}>
                       {entryType === 'paid'
-                        ? `This counter records a paid entry; ${transferCounterId ? counters.find((c) => c.id === transferCounterId)?.name : 'the other counter'} automatically gets a matching received entry.`
-                        : `This counter records a received entry; ${transferCounterId ? counters.find((c) => c.id === transferCounterId)?.name : 'the other counter'} automatically gets a matching paid entry.`}
+                        ? `This counter records a paid entry; ${transferCounterId ? transferOptions.find((c) => c.id === transferCounterId)?.name : 'the other counter'} automatically gets a matching received entry.`
+                        : `This counter records a received entry; ${transferCounterId ? transferOptions.find((c) => c.id === transferCounterId)?.name : 'the other counter'} automatically gets a matching paid entry.`}
                     </Text>
                   </>
                 )}
