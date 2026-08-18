@@ -615,7 +615,11 @@ class RepairItemUpdateIn(BaseModel):
 
 
 class IssueToKarigarIn(BaseModel):
-    karigar_id: str
+    # Optional — leaving this blank means the tag doesn't need a karigar at
+    # all (in-house work, or nothing further to do) and skips straight to
+    # Pending to Bill, the same effect the old separate "Mark Ready" action
+    # had. Picking a karigar behaves exactly as issuing always has.
+    karigar_id: Optional[str] = None
     # No weight field — the whole tag goes out, so weight issued always equals
     # the item's own gross_weight. Server derives it; never trust client input here.
     note: Optional[str] = ''
@@ -695,6 +699,14 @@ class DeliverIn(BaseModel):
     # edit it (previously only the resulting ₹ figure was kept).
     weight_rate: Optional[float] = 0
     value_add: Optional[float] = 0
+
+
+class CloseDeliveryIn(BaseModel):
+    # Closing a repair (customer physically picks the item up) is now a
+    # separate step from billing it — see repairs.py's close_delivery.
+    # Both default sensibly so a quick "just close it" tap still works.
+    delivered_at: Optional[str] = None  # date YYYY-MM-DD; defaults to today
+    delivered_by: Optional[str] = ''    # defaults to the acting staff member's name
 
 
 class KarigarLedgerEntryIn(BaseModel):

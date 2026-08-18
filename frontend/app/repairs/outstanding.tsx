@@ -11,7 +11,7 @@ import { useTheme } from '@/src/theme/ThemeContext';
 
 type Item = {
   id: string; item_code: string; customer_name: string; description: string;
-  status: 'received' | 'with_karigar' | 'ready'; karigar_name: string | null;
+  status: 'received' | 'with_karigar' | 'ready' | 'pending_delivery'; karigar_name: string | null;
   gross_weight: number; due_date: string | null; created_at: string; created_by?: string;
 };
 

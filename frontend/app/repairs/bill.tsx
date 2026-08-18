@@ -9,24 +9,36 @@ import { api, TOKEN_KEY } from '@/src/api/client';
 import { storage } from '@/src/utils/storage';
 import { confirmAction } from '@/src/utils/confirm';
 import { PhotoCaptureModal } from '@/src/components/PhotoCaptureModal';
+import { DateField } from '@/src/components/DateField';
+import { REPAIR_STATUS_LABEL, repairStatusColors, RepairItemStatus } from '@/src/utils/repairStatus';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { useAuth } from '@/src/auth/AuthContext';
 
 type Item = {
   id: string; item_code: string; customer_name: string; description: string;
-  status: 'received' | 'with_karigar' | 'ready' | 'delivered';
+  status: RepairItemStatus;
   labour_charge: number; customer_adjustment?: number;
   fine_weight_diff?: number | null; weight_diff?: number | null;
   current_issue_weight?: number | null; process_loss?: number | null;
-  billed_amount: number | null; payment_mode: string | null; delivered_at?: string;
+  billed_amount: number | null; payment_mode: string | null; delivered_at?: string | null;
+  delivered_by?: string | null;
   bill_labour_charge?: number | null; bill_material_adjustment?: number | null;
   bill_extra_charges?: number | null; bill_extra_charges_note?: string | null;
   bill_previous_balance?: number | null; final_photo?: string | null;
   bill_weight_rate?: number | null; bill_value_add?: number | null;
 };
 
-type Mode = 'list' | 'pick' | 'form';
+type Mode = 'list' | 'pick' | 'form' | 'close';
+type BillFilterKey = 'all' | 'ready' | 'pending_delivery' | 'delivered';
+
+const BILL_FILTERS: { key: BillFilterKey; label: string; icon: any }[] = [
+  { key: 'all', label: 'All', icon: 'apps-outline' },
+  { key: 'ready', label: 'Pending to Bill', icon: 'pricetag-outline' },
+  { key: 'pending_delivery', label: 'Pending Delivery', icon: 'time-outline' },
+  { key: 'delivered', label: 'Delivered', icon: 'checkmark-done-outline' },
+];
+const billFilterQuery = (f: BillFilterKey) => (f === 'all' ? 'ready,pending_delivery,delivered' : f);
 
 function round3(n: number) { return Math.round(n * 1000) / 1000; }
 
@@ -35,14 +47,18 @@ export default function RepairBillScreen() {
   const router = useRouter();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
-  const { hasRight } = useAuth();
+  const { hasRight, user } = useAuth();
   const canEditBill = hasRight('repair_bill', 'edit');
   const canDeleteBill = hasRight('repair_bill', 'delete');
 
   const [mode, setMode] = useState<Mode>(routeItemId ? 'form' : 'list');
+  const [filter, setFilter] = useState<BillFilterKey>('all');
   const [bills, setBills] = useState<Item[]>([]);
   const [readyItems, setReadyItems] = useState<Item[]>([]);
   const [picked, setPicked] = useState<Item | null>(null);
+  const [closeItem, setCloseItem] = useState<Item | null>(null);
+  const [closeDate, setCloseDate] = useState('');
+  const [closeBy, setCloseBy] = useState('');
   const [loading, setLoading] = useState(!!routeItemId);
   const [refreshing, setRefreshing] = useState(false);
   const [printingId, setPrintingId] = useState('');
@@ -68,12 +84,33 @@ export default function RepairBillScreen() {
   const [materialAdjManual, setMaterialAdjManual] = useState('');
   const isEditingBill = picked?.status === 'delivered';
 
-  const loadBills = useCallback(async () => {
-    try { setBills(await api.get<Item[]>('/repair-items?status=delivered')); }
+  const loadBills = useCallback(async (f: BillFilterKey) => {
+    try { setBills(await api.get<Item[]>(`/repair-items?status=${billFilterQuery(f)}`)); }
     catch (_e) { setBills([]); }
     finally { setLoading(false); setRefreshing(false); }
   }, []);
-  useFocusEffect(useCallback(() => { if (mode === 'list') loadBills(); }, [loadBills, mode]));
+  useFocusEffect(useCallback(() => { if (mode === 'list') loadBills(filter); }, [loadBills, mode, filter]));
+
+  const openCloseForm = (it: Item) => {
+    setCloseItem(it);
+    setCloseDate(new Date().toISOString().slice(0, 10));
+    setCloseBy(user?.name || '');
+    setMode('close');
+  };
+
+  const submitClose = async () => {
+    if (submittingRef.current || !closeItem) return;
+    submittingRef.current = true; setBusy(true);
+    try {
+      await api.post(`/repair-items/${closeItem.id}/close-delivery`, {
+        delivered_at: closeDate || null, delivered_by: closeBy || null,
+      });
+      if (routeItemId) { router.back(); return; }
+      setCloseItem(null); setMode('list'); setLoading(true);
+      await loadBills(filter);
+    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+    finally { setBusy(false); submittingRef.current = false; }
+  };
 
   const pickItem = (item: Item) => {
     setPicked(item);
@@ -97,6 +134,12 @@ export default function RepairBillScreen() {
     setMode('form');
   };
 
+  const cardPress = (b: Item) => {
+    if (b.status === 'ready') pickItem(b);
+    else if (b.status === 'pending_delivery') openCloseForm(b);
+    else router.push(`/repairs/item/${b.id}` as any);
+  };
+
   const openPicker = async () => {
     setMode('pick');
     setLoading(true);
@@ -106,16 +149,17 @@ export default function RepairBillScreen() {
   };
 
   // Deep-linked straight into the form for one item (e.g. from the tag detail
-  // screen's "Bill Repair" button) — skip the list/pick steps entirely.
+  // screen's "Bill Repair" / "Close Delivery" buttons) — skip the list/pick
+  // steps entirely. Which form opens depends on the tag's current status.
   useFocusEffect(useCallback(() => {
-    if (!routeItemId || picked) return;
+    if (!routeItemId || picked || closeItem) return;
     setLoading(true);
     api.get<{ item: Item }>(`/repair-items/${routeItemId}`)
-      .then((res) => pickItem(res.item))
+      .then((res) => (res.item.status === 'pending_delivery' ? openCloseForm(res.item) : pickItem(res.item)))
       .catch(() => Alert.alert('Failed', 'Could not load this tag.'))
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [routeItemId, picked]));
+  }, [routeItemId, picked, closeItem]));
 
   const issuedWeight = picked?.current_issue_weight || 0;
   const receivedWeight = issuedWeight + (picked?.weight_diff || 0);
@@ -166,7 +210,7 @@ export default function RepairBillScreen() {
       }
       if (routeItemId) { router.back(); return; }
       setPicked(null); setMode('list'); setLoading(true);
-      await loadBills();
+      await loadBills(filter);
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
     finally { setBusy(false); submittingRef.current = false; }
   };
@@ -184,7 +228,7 @@ export default function RepairBillScreen() {
     setDeletingId(item.id);
     try {
       await api.del(`/repair-items/${item.id}/bill`);
-      await loadBills();
+      await loadBills(filter);
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
     finally { setDeletingId(''); }
   };
@@ -218,8 +262,9 @@ export default function RepairBillScreen() {
     finally { setThermalPrintingId(''); }
   };
 
-  const headerTitle = mode === 'list' ? 'Repair Bills' : mode === 'pick' ? 'Select Item to Bill' : isEditingBill ? 'Edit Bill' : 'Create Bill';
+  const headerTitle = mode === 'list' ? 'Repair Bills' : mode === 'pick' ? 'Select Item to Bill' : mode === 'close' ? 'Close Delivery' : isEditingBill ? 'Edit Bill' : 'Create Bill';
   const onBack = () => {
+    if (mode === 'close' && !routeItemId) { setCloseItem(null); setMode('list'); return; }
     if (mode === 'form' && !routeItemId) { setMode(isEditingBill ? 'list' : 'pick'); return; }
     if (mode === 'pick') { setMode('list'); return; }
     router.back();
@@ -240,44 +285,75 @@ export default function RepairBillScreen() {
       </View>
 
       {mode === 'list' && (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll} contentContainerStyle={styles.filterRow}>
+          {BILL_FILTERS.map((f) => (
+            <Pressable
+              key={f.key}
+              onPress={() => { setLoading(true); setFilter(f.key); }}
+              style={[styles.filterChip, filter === f.key && styles.filterChipActive]}
+              testID={`bill-filter-${f.key}`}
+            >
+              <Ionicons name={f.icon} size={13} color={filter === f.key ? colors.onBrandPrimary : colors.onSurfaceSecondary} />
+              <Text style={[styles.filterText, filter === f.key && styles.filterTextActive]}>{f.label}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+      )}
+
+      {mode === 'list' && (
         <ScrollView
-          contentContainerStyle={{ padding: spacing.lg }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadBills(); }} tintColor={colors.brandPrimary} />}
+          contentContainerStyle={{ padding: spacing.lg, paddingTop: spacing.sm }}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadBills(filter); }} tintColor={colors.brandPrimary} />}
         >
           {loading ? (
             <ActivityIndicator color={colors.brandPrimary} style={{ marginTop: 40 }} />
           ) : bills.length === 0 ? (
             <View style={styles.empty}>
               <Ionicons name="receipt-outline" size={36} color={colors.mutedText} />
-              <Text style={styles.emptyText}>No bills yet — tap + to bill a ready item</Text>
+              <Text style={styles.emptyText}>Nothing here — tap + to bill a ready item</Text>
             </View>
-          ) : bills.map((b) => (
-            <View key={b.id} style={styles.itemRow} testID={`bill-${b.id}`}>
-              <View style={styles.iconBox}><Ionicons name="receipt-outline" size={18} color={colors.brandSecondary} /></View>
-              <Pressable style={{ flex: 1 }} onPress={() => router.push(`/repairs/item/${b.id}` as any)}>
-                <Text style={styles.cName}>{b.item_code} · {b.customer_name}</Text>
-                <Text style={styles.cMeta}>
-                  {b.description}{b.billed_amount != null ? ` · ₹${b.billed_amount.toFixed(0)}` : ''}{b.payment_mode ? ` · ${b.payment_mode}` : ''}{b.delivered_at ? ` · ${b.delivered_at.slice(0, 10)}` : ''}
-                </Text>
-              </Pressable>
-              {canEditBill && (
-                <Pressable onPress={() => pickItem(b)} style={styles.editBtn} testID={`edit-bill-${b.id}`}>
-                  <Ionicons name="pencil-outline" size={16} color={colors.onSurfaceSecondary} />
+          ) : bills.map((b) => {
+            const sc = repairStatusColors(b.status, colors);
+            return (
+              <View key={b.id} style={styles.itemRow} testID={`bill-${b.id}`}>
+                <View style={styles.iconBox}><Ionicons name="receipt-outline" size={18} color={colors.brandSecondary} /></View>
+                <Pressable style={{ flex: 1 }} onPress={() => cardPress(b)}>
+                  <Text style={styles.cName} numberOfLines={1}>{b.item_code} · {b.customer_name}</Text>
+                  <Text style={styles.cMeta} numberOfLines={1}>
+                    {b.description}{b.billed_amount != null ? ` · ₹${b.billed_amount.toFixed(0)}` : ''}{b.payment_mode ? ` · ${b.payment_mode}` : ''}{b.delivered_at ? ` · delivered ${b.delivered_at.slice(0, 10)}` : ''}
+                  </Text>
                 </Pressable>
-              )}
-              <Pressable onPress={() => printBill(b)} disabled={printingId === b.id} style={styles.editBtn} testID={`print-bill-pdf-${b.id}`}>
-                {printingId === b.id ? <ActivityIndicator size="small" color={colors.onSurfaceSecondary} /> : <Ionicons name="document-text-outline" size={16} color={colors.onSurfaceSecondary} />}
-              </Pressable>
-              <Pressable onPress={() => printThermalBill(b)} disabled={thermalPrintingId === b.id} style={styles.printBtn} testID={`print-bill-${b.id}`}>
-                {thermalPrintingId === b.id ? <ActivityIndicator size="small" color={colors.onBrandPrimary} /> : <Ionicons name="print-outline" size={16} color={colors.onBrandPrimary} />}
-              </Pressable>
-              {canDeleteBill && (
-                <Pressable onPress={() => confirmDeleteBill(b)} disabled={deletingId === b.id} style={styles.deleteBtn} testID={`delete-bill-${b.id}`}>
-                  {deletingId === b.id ? <ActivityIndicator size="small" color={colors.onError} /> : <Ionicons name="trash-outline" size={16} color={colors.onError} />}
-                </Pressable>
-              )}
-            </View>
-          ))}
+                <View style={[styles.statusBadgeSm, { backgroundColor: sc.bg, borderColor: sc.border }]}>
+                  <Text style={[styles.statusTextSm, { color: sc.fg }]}>{REPAIR_STATUS_LABEL[b.status]}</Text>
+                </View>
+                {b.status === 'pending_delivery' && (
+                  <Pressable onPress={() => openCloseForm(b)} style={styles.printBtn} testID={`close-delivery-${b.id}`}>
+                    <Ionicons name="checkmark-done-outline" size={16} color={colors.onBrandPrimary} />
+                  </Pressable>
+                )}
+                {b.status === 'delivered' && (
+                  <>
+                    {canEditBill && (
+                      <Pressable onPress={() => pickItem(b)} style={styles.editBtn} testID={`edit-bill-${b.id}`}>
+                        <Ionicons name="pencil-outline" size={16} color={colors.onSurfaceSecondary} />
+                      </Pressable>
+                    )}
+                    <Pressable onPress={() => printBill(b)} disabled={printingId === b.id} style={styles.editBtn} testID={`print-bill-pdf-${b.id}`}>
+                      {printingId === b.id ? <ActivityIndicator size="small" color={colors.onSurfaceSecondary} /> : <Ionicons name="document-text-outline" size={16} color={colors.onSurfaceSecondary} />}
+                    </Pressable>
+                    <Pressable onPress={() => printThermalBill(b)} disabled={thermalPrintingId === b.id} style={styles.printBtn} testID={`print-bill-${b.id}`}>
+                      {thermalPrintingId === b.id ? <ActivityIndicator size="small" color={colors.onBrandPrimary} /> : <Ionicons name="print-outline" size={16} color={colors.onBrandPrimary} />}
+                    </Pressable>
+                    {canDeleteBill && (
+                      <Pressable onPress={() => confirmDeleteBill(b)} disabled={deletingId === b.id} style={styles.deleteBtn} testID={`delete-bill-${b.id}`}>
+                        {deletingId === b.id ? <ActivityIndicator size="small" color={colors.onError} /> : <Ionicons name="trash-outline" size={16} color={colors.onError} />}
+                      </Pressable>
+                    )}
+                  </>
+                )}
+              </View>
+            );
+          })}
         </ScrollView>
       )}
 
@@ -302,6 +378,28 @@ export default function RepairBillScreen() {
             </Pressable>
           ))}
         </ScrollView>
+      )}
+
+      {mode === 'close' && !closeItem && (
+        <View style={styles.loader}><ActivityIndicator color={colors.brandPrimary} /></View>
+      )}
+
+      {mode === 'close' && closeItem && (
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+          <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 60 }} keyboardShouldPersistTaps="handled">
+            <View style={styles.pickedCard}>
+              <Text style={styles.cName}>{closeItem.item_code} · {closeItem.customer_name}</Text>
+              <Text style={styles.cMeta}>{closeItem.description}{closeItem.billed_amount != null ? ` · Billed ₹${closeItem.billed_amount.toFixed(0)}` : ''}</Text>
+            </View>
+            <Text style={styles.hint}>Record when the customer actually picked up the item and who handed it over.</Text>
+            <DateField label="Date Delivered" value={closeDate} onChange={setCloseDate} testID="close-delivered-at" />
+            <Text style={styles.label}>Delivered By</Text>
+            <TextInput testID="close-delivered-by" value={closeBy} onChangeText={setCloseBy} placeholder="Who handed over the item" placeholderTextColor={colors.mutedText} style={styles.input} />
+            <Pressable onPress={submitClose} disabled={busy} style={[styles.saveBtn, busy && { opacity: 0.6 }]} testID="close-delivery-save-btn">
+              {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.saveBtnText}>Close Delivery</Text>}
+            </Pressable>
+          </ScrollView>
+        </KeyboardAvoidingView>
       )}
 
       {mode === 'form' && !picked && (
@@ -451,6 +549,19 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   addBtn: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
   title: { flex: 1, color: colors.onSurface, fontSize: 18, fontWeight: '600', fontFamily: fonts.display },
+
+  filterScroll: { flexGrow: 0, flexShrink: 0 },
+  filterRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: 2 },
+  filterChip: {
+    flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 5,
+    paddingHorizontal: spacing.md, paddingVertical: 8, borderRadius: radius.pill,
+    backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border,
+  },
+  filterChipActive: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
+  filterText: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '700' },
+  filterTextActive: { color: colors.onBrandPrimary },
+  statusBadgeSm: { borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1 },
+  statusTextSm: { fontSize: 9, fontWeight: '700', textTransform: 'uppercase' },
 
   hint: { color: colors.mutedText, fontSize: 12, marginBottom: spacing.md },
   empty: { alignItems: 'center', paddingVertical: 40, gap: spacing.sm },

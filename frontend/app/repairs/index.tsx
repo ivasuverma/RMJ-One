@@ -18,11 +18,9 @@ type FilterKey = 'all' | RepairItemStatus | 'overdue';
 
 const FILTERS: { key: FilterKey; label: string; icon: any }[] = [
   { key: 'all', label: 'All', icon: 'apps-outline' },
-  { key: 'received', label: 'Received', icon: 'cube-outline' },
+  { key: 'received', label: 'Issue Pending', icon: 'cube-outline' },
   { key: 'with_karigar', label: 'With Karigar', icon: 'hammer-outline' },
-  { key: 'ready', label: 'Pending to Bill', icon: 'pricetag-outline' },
   { key: 'overdue', label: 'Overdue', icon: 'alert-circle-outline' },
-  { key: 'delivered', label: 'Delivered', icon: 'checkmark-done-outline' },
 ];
 
 const FILTER_KEYS = new Set(FILTERS.map((f) => f.key));
@@ -33,7 +31,7 @@ export default function RepairOrdersScreen() {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [items, setItems] = useState<Item[]>([]);
-  const initialFilter = (routeFilter && FILTER_KEYS.has(routeFilter as FilterKey) ? routeFilter : 'all') as FilterKey;
+  const initialFilter = (routeFilter && FILTER_KEYS.has(routeFilter as FilterKey) ? routeFilter : 'received') as FilterKey;
   const [filter, setFilter] = useState<FilterKey>(initialFilter);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -117,9 +115,16 @@ export default function RepairOrdersScreen() {
         ) : items.length === 0 ? (
           <View style={styles.empty}><Ionicons name="construct-outline" size={36} color={colors.mutedText} /><Text style={styles.emptyText}>No repairs found for this filter</Text></View>
         ) : items.map((i) => {
-          const isOverdue = !!i.due_date && i.due_date < todayISO && i.status !== 'delivered';
+          const isOverdue = !!i.due_date && i.due_date < todayISO && i.status !== 'delivered' && i.status !== 'pending_delivery';
           const sc = repairStatusColors(i.status, colors);
           const checked = selectedIds.has(i.id);
+          const createdDate = i.created_at ? i.created_at.slice(0, 10) : '';
+          const metaBits = [
+            `Created ${createdDate}`,
+            i.due_date ? `Due ${i.due_date}` : null,
+            i.karigar_name || null,
+            `${i.gross_weight.toFixed(3)}g`,
+          ].filter(Boolean);
           return (
             <Pressable
               key={i.id}
@@ -128,39 +133,25 @@ export default function RepairOrdersScreen() {
               testID={`item-${i.id}`}
             >
               <View style={styles.cardTopRow}>
-                {selectMode ? (
+                {selectMode && (
                   <View style={[styles.checkbox, checked && styles.checkboxOn]}>
                     {checked && <Ionicons name="checkmark" size={14} color={colors.onBrandPrimary} />}
                   </View>
-                ) : (
-                  <View style={styles.iconBox}><Ionicons name="pricetag-outline" size={16} color={colors.brandSecondary} /></View>
                 )}
-                <Text style={styles.cName} numberOfLines={1}>{i.item_code} · {i.customer_name}</Text>
+                <Text style={styles.cName} numberOfLines={1}>{i.customer_name}</Text>
                 <View style={[styles.statusBadge, isOverdue ? { backgroundColor: colors.error, borderColor: colors.onError } : { backgroundColor: sc.bg, borderColor: sc.border }]}>
                   <Text style={[styles.statusText, isOverdue ? { color: colors.onError } : { color: sc.fg }]}>{isOverdue ? 'Overdue' : REPAIR_STATUS_LABEL[i.status]}</Text>
                 </View>
               </View>
 
-              <Text style={styles.cDesc} numberOfLines={1}>{i.description}</Text>
-
-              <View style={styles.pillRow}>
-                <View style={styles.pill}>
-                  <Ionicons name="scale-outline" size={11} color={colors.onSurfaceTertiary} />
-                  <Text style={styles.pillText}>{i.gross_weight.toFixed(3)}g</Text>
-                </View>
-                {!!i.karigar_name && (
-                  <View style={styles.pill}>
-                    <Ionicons name="hammer-outline" size={11} color={colors.onSurfaceTertiary} />
-                    <Text style={styles.pillText}>{i.karigar_name}</Text>
-                  </View>
-                )}
-                {!!i.due_date && (
-                  <View style={[styles.pill, isOverdue && styles.pillDanger]}>
-                    <Ionicons name="calendar-outline" size={11} color={isOverdue ? colors.onError : colors.onSurfaceTertiary} />
-                    <Text style={[styles.pillText, isOverdue && { color: colors.onError, fontWeight: '700' }]}>Due {i.due_date}</Text>
-                  </View>
-                )}
+              <View style={styles.cardSubRow}>
+                <Text style={styles.cTag} numberOfLines={1}>{i.item_code} · {i.description}</Text>
+                {!!i.created_by && <Text style={styles.cReceiver} numberOfLines={1}>by {i.created_by}</Text>}
               </View>
+
+              <Text style={[styles.cMeta, isOverdue && { color: colors.onError, fontWeight: '700' }]} numberOfLines={1}>
+                {metaBits.join('  ·  ')}
+              </Text>
             </Pressable>
           );
         })}
@@ -209,31 +200,22 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   emptyText: { color: colors.onSurfaceTertiary },
   card: {
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md,
-    borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.sm,
+    borderWidth: 1, borderColor: colors.border, paddingHorizontal: spacing.md, paddingVertical: 9, marginBottom: 6,
   },
   cardSelected: { borderColor: colors.brandPrimary, backgroundColor: colors.brandTertiary },
   cardTopRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   checkbox: {
-    width: 22, height: 22, borderRadius: 6, borderWidth: 1.5, borderColor: colors.border,
+    width: 20, height: 20, borderRadius: 6, borderWidth: 1.5, borderColor: colors.border,
     alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface,
   },
   checkboxOn: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
-  iconBox: {
-    width: 30, height: 30, borderRadius: 15, backgroundColor: colors.brandTertiary,
-    alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.brand,
-  },
   cName: { flex: 1, color: colors.onSurface, fontWeight: '700', fontSize: 14 },
-  cDesc: { color: colors.onSurfaceTertiary, fontSize: 12, marginTop: 6, marginLeft: 38 },
-  statusBadge: { borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1 },
-  statusText: { fontSize: 10, fontWeight: '700', textTransform: 'uppercase' },
-
-  pillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, marginTop: spacing.sm, marginLeft: 38 },
-  pill: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: colors.surfaceTertiary, borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 4,
-  },
-  pillDanger: { backgroundColor: colors.error },
-  pillText: { color: colors.onSurfaceTertiary, fontSize: 11 },
+  cardSubRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm, marginTop: 3 },
+  cTag: { flex: 1, color: colors.onSurfaceSecondary, fontSize: 12 },
+  cReceiver: { color: colors.mutedText, fontSize: 11 },
+  cMeta: { color: colors.onSurfaceTertiary, fontSize: 10.5, marginTop: 3 },
+  statusBadge: { borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1 },
+  statusText: { fontSize: 9, fontWeight: '700', textTransform: 'uppercase' },
 
   bulkBar: {
     position: 'absolute', left: 0, right: 0, bottom: 0, flexDirection: 'row', alignItems: 'center',

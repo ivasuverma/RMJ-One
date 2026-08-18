@@ -71,13 +71,16 @@ export default function IssueToKarigarScreen() {
 
   const submit = async () => {
     if (submittingRef.current || !item) return;
-    if (!pickedKarigar) { Alert.alert('Missing', 'Pick a karigar'); return; }
+    // Editing an existing issue transaction always needs a karigar (it's a real
+    // record of who has the item). A fresh issue can skip the karigar entirely —
+    // the backend then moves the tag straight to "Pending to Bill".
+    if (isEdit && !pickedKarigar) { Alert.alert('Missing', 'Pick a karigar'); return; }
     submittingRef.current = true; setBusy(true);
     try {
       if (isEdit) {
-        await api.put(`/repair-items/${item.id}/transactions/${txnId}`, { karigar_id: pickedKarigar.id, note });
+        await api.put(`/repair-items/${item.id}/transactions/${txnId}`, { karigar_id: pickedKarigar!.id, note });
       } else {
-        await api.post(`/repair-items/${item.id}/issue`, { karigar_id: pickedKarigar.id, note });
+        await api.post(`/repair-items/${item.id}/issue`, { karigar_id: pickedKarigar?.id ?? null, note });
       }
       router.back();
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
@@ -205,7 +208,7 @@ export default function IssueToKarigarScreen() {
               </View>
             </View>
 
-            <Text style={styles.label}>Karigar</Text>
+            <Text style={styles.label}>{isEdit ? 'Karigar' : 'Karigar (optional)'}</Text>
             <Pressable onPress={() => setKPickerOpen((v) => !v)} style={styles.picker} testID="issue-karigar-toggle">
               <Text style={pickedKarigar ? styles.pickerValue : styles.pickerPlaceholder}>{pickedKarigar ? pickedKarigar.name : 'Choose a karigar'}</Text>
               <Ionicons name={kPickerOpen ? 'chevron-up' : 'chevron-down'} size={16} color={colors.mutedText} />
@@ -220,10 +223,15 @@ export default function IssueToKarigarScreen() {
                 ))}
               </View>
             )}
+            {!isEdit && !pickedKarigar && (
+              <Text style={styles.hint}>No karigar needed on this job? Leave this blank and the tag will go straight to "Pending to Bill".</Text>
+            )}
             <Text style={styles.label}>Note (optional)</Text>
             <TextInput testID="issue-note" value={note} onChangeText={setNote} placeholder="Instructions for the karigar" placeholderTextColor={colors.mutedText} style={styles.input} />
             <Pressable onPress={submit} disabled={busy} style={[styles.saveBtn, busy && { opacity: 0.6 }]} testID="issue-save-btn">
-              {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.saveBtnText}>{isEdit ? 'Save Changes' : 'Issue'}</Text>}
+              {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : (
+                <Text style={styles.saveBtnText}>{isEdit ? 'Save Changes' : pickedKarigar ? 'Issue to Karigar' : 'Mark Pending to Bill'}</Text>
+              )}
             </Pressable>
           </ScrollView>
         </KeyboardAvoidingView>

@@ -6,6 +6,7 @@ server.py and is imported from here — nothing about behavior changed,
 only where the code lives."""
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Optional
+from datetime import datetime, date, timezone
 import uuid
 import re
 import asyncio
@@ -28,6 +29,7 @@ from server import (
     ReceiveFromKarigarIn,
     KarigarTransactionEditIn,
     DeliverIn,
+    CloseDeliveryIn,
     KarigarLedgerEntryIn,
     _karigar_ledger_balances,
     log_audit,
@@ -122,6 +124,7 @@ async def list_karigars(_: dict = Depends(require_staff_or_module(['repairs', 'k
     bal = _karigar_ledger_balances(entries)
     for k in karigars:
         b = bal.get(k['id'], {})
+        k['weight_balance'] = round(b.get('weight_bal', 0), 3)
         k['fine_weight_balance'] = round(b.get('fine_bal', 0), 3)
         k['amount_due'] = round(b.get('amt_due', 0), 2)
     return karigars
@@ -288,6 +291,7 @@ async def create_repair_order(body: RepairOrderIn, user=Depends(require_admin_or
             'current_issue_weight': None, 'billed_amount': None, 'payment_mode': None,
             'created_at': iso, 'created_by': user['name'], 'created_by_id': user['id'],
             'updated_by': user['name'], 'delivered_at': None,
+            'delivered_by': None, 'delivered_by_id': None,
             'issued_by': None, 'issued_by_id': None,
         }
         await db.repair_items.insert_one(dict(item))
@@ -385,9 +389,17 @@ async def list_repair_items(
     if status_ == 'overdue':
         today = today_str()
         query['due_date'] = {'$ne': None, '$lt': today}
-        query['status'] = {'$ne': 'delivered'}
+        # Overdue only makes sense while a tag is still actively being
+        # worked (received or with a karigar) — once it's billed, being
+        # "overdue" no longer describes anything actionable.
+        query['status'] = {'$nin': ['delivered', 'pending_delivery']}
     elif status_ and status_ != 'all':
-        query['status'] = status_
+        # A comma-separated list (e.g. the Repair Bill tab's "All" filter,
+        # which spans ready/pending_delivery/delivered) matches any of them.
+        if ',' in status_:
+            query['status'] = {'$in': [s.strip() for s in status_.split(',') if s.strip()]}
+        else:
+            query['status'] = status_
     elif not q and status_ != 'all':
         # Default view (no filters at all) is the outstanding worklist.
         query['status'] = {'$ne': 'delivered'}
@@ -422,10 +434,10 @@ async def update_repair_item(item_id: str, body: RepairItemUpdateIn, user=Depend
     if 'gross_weight' in upd:
         purity = item.get('purity') or 100.0
         upd['fine_weight'] = round(upd['gross_weight'] * purity / 100, 3)
-    # Labour charge is frozen into bill_labour_charge at delivery time, so
+    # Labour charge is frozen into bill_labour_charge at billing time, so
     # editing the live field afterward would just be confusing, not harmful —
     # block it anyway so the displayed value can't drift from what was billed.
-    if 'labour_charge' in upd and item['status'] == 'delivered':
+    if 'labour_charge' in upd and item['status'] in ('pending_delivery', 'delivered'):
         raise HTTPException(status_code=400, detail='This tag has already been billed — labour charge is locked. Delete the bill first if it needs correcting.')
     if upd:
         await db.repair_items.update_one({'id': item_id}, {'$set': upd})
@@ -452,6 +464,17 @@ async def issue_to_karigar(item_id: str, body: IssueToKarigarIn, user=Depends(re
     # reissued — only a freshly received item (never yet sent out) can be issued.
     if item['status'] != 'received':
         raise HTTPException(status_code=400, detail=f"Cannot issue an item that is {item['status']}")
+
+    if not body.karigar_id:
+        # No karigar picked — this tag doesn't need one (in-house work, or
+        # nothing further to do). Skip straight to Pending to Bill, same
+        # effect the old standalone "Mark Ready" action had.
+        await db.repair_items.update_one({'id': item_id}, {'$set': {'status': 'ready', 'updated_by': user['name']}})
+        await log_audit(user, 'repair_item.ready', 'repair_item', item_id, item['item_code'], {'skipped_karigar': True})
+        await _notify_module('repairs', 'Repair item ready',
+                              f"{item['item_code']} ({item.get('customer_name', '')}) is ready for delivery", '/(tabs)/transactions')
+        return await db.repair_items.find_one({'id': item_id}, {'_id': 0})
+
     karigar = await db.karigars.find_one({'id': body.karigar_id}, {'_id': 0})
     if not karigar: raise HTTPException(status_code=404, detail='Karigar not found')
 
@@ -654,16 +677,35 @@ async def receive_from_karigar(item_id: str, body: ReceiveFromKarigarIn, user=De
     return await db.repair_items.find_one({'id': item_id}, {'_id': 0})
 
 
-@router.post('/repair-items/{item_id}/ready')
-async def mark_item_ready(item_id: str, user=Depends(require_admin_or_module('repairs'))):
+@router.post('/repair-items/{item_id}/unready')
+async def undo_ready(item_id: str, user=Depends(require_admin_or_module_right('repairs', 'edit'))):
+    """Undoes whatever put this tag into 'ready' (Pending to Bill) —
+    whichever path it took. If it came back from a karigar, this undoes
+    that receive (same effect as deleting the most recent receive
+    transaction, just one tap). If it skipped the karigar step entirely
+    (Issue to Karigar left blank), it just goes back to 'received'."""
     item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
     if not item: raise HTTPException(status_code=404, detail='Item not found')
-    if item['status'] != 'received':
-        raise HTTPException(status_code=400, detail='Only a freshly received item can bypass the karigar step')
-    await db.repair_items.update_one({'id': item_id}, {'$set': {'status': 'ready', 'updated_by': user['name']}})
-    await log_audit(user, 'repair_item.ready', 'repair_item', item_id, item['item_code'])
-    await _notify_module('repairs', 'Repair item ready',
-                          f"{item['item_code']} ({item.get('customer_name', '')}) is ready for delivery", '/(tabs)/transactions')
+    if item['status'] != 'ready':
+        raise HTTPException(status_code=400, detail='Only a tag that is Pending to Bill can be undone')
+
+    if item.get('karigar_id'):
+        txn = await db.karigar_transactions.find_one(
+            {'item_id': item_id, 'direction': 'receive'}, {'_id': 0}, sort=[('created_at', -1)],
+        )
+        if not txn:
+            raise HTTPException(status_code=400, detail='No receive transaction found to undo')
+        await db.karigar_transactions.delete_one({'id': txn['id']})
+        await db.karigar_ledger.delete_many({'txn_id': txn['id']})
+        await db.repair_items.update_one({'id': item_id}, {'$set': {
+            'status': 'with_karigar', 'weight_diff': None, 'fine_weight_diff': None,
+            'process_loss': None, 'wastage_weight': None, 'recv_purity': None, 'balance_fine_weight': None,
+            'updated_by': user['name'],
+        }})
+    else:
+        await db.repair_items.update_one({'id': item_id}, {'$set': {'status': 'received', 'updated_by': user['name']}})
+
+    await log_audit(user, 'repair_item.unready', 'repair_item', item_id, item['item_code'], {})
     return await db.repair_items.find_one({'id': item_id}, {'_id': 0})
 
 
@@ -779,11 +821,16 @@ async def _sync_cash_ledger_entry(item: dict, billed_amount: float, payment_mode
 
 
 @router.post('/repair-items/{item_id}/deliver')
-async def deliver_item(item_id: str, body: DeliverIn, user=Depends(require_admin_or_module(['repairs', 'repair_bill']))):
+async def bill_item(item_id: str, body: DeliverIn, user=Depends(require_admin_or_module(['repairs', 'repair_bill']))):
+    """Bills a Pending-to-Bill tag — this used to also mark it delivered in
+    the same step, but billing and the customer actually walking out with
+    the item are now two separate moments: this moves the tag to
+    'pending_delivery' (billed, waiting to be picked up); close_delivery()
+    below is the second, separate step that actually closes it out."""
     item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
     if not item: raise HTTPException(status_code=404, detail='Item not found')
     if item['status'] != 'ready':
-        raise HTTPException(status_code=400, detail='Item must be ready before delivery')
+        raise HTTPException(status_code=400, detail='Item must be ready before billing')
     iso = now_utc().isoformat()
     labour = body.labour_charge if body.labour_charge is not None else item.get('labour_charge', 0)
     material_adj = body.material_adjustment if body.material_adjustment is not None else item.get('customer_adjustment', 0) or 0
@@ -791,7 +838,7 @@ async def deliver_item(item_id: str, body: DeliverIn, user=Depends(require_admin
     prev_balance = body.previous_balance or 0
     billed_amount = round(prev_balance + labour + material_adj + extra, 2)
     await db.repair_items.update_one({'id': item_id}, {'$set': {
-        'status': 'delivered', 'delivered_at': iso,
+        'status': 'pending_delivery',
         'bill_labour_charge': labour, 'bill_material_adjustment': material_adj,
         'bill_extra_charges': extra, 'bill_extra_charges_note': body.extra_charges_note or '',
         'bill_previous_balance': prev_balance,
@@ -802,18 +849,44 @@ async def deliver_item(item_id: str, body: DeliverIn, user=Depends(require_admin
     }})
     updated = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
     await _sync_cash_ledger_entry(updated, billed_amount, body.payment_mode, user, iso)
-    await log_audit(user, 'repair_item.deliver', 'repair_item', item_id, item['item_code'], {'billed_amount': billed_amount})
+    await log_audit(user, 'repair_item.bill', 'repair_item', item_id, item['item_code'], {'billed_amount': billed_amount})
     return updated
+
+
+@router.post('/repair-items/{item_id}/close-delivery')
+async def close_delivery(item_id: str, body: CloseDeliveryIn, user=Depends(require_admin_or_module(['repairs', 'repair_bill']))):
+    """Second, separate step from billing: the customer has actually picked
+    the item up. Records who handed it over and on what date, then marks it
+    delivered."""
+    item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
+    if not item: raise HTTPException(status_code=404, detail='Item not found')
+    if item['status'] != 'pending_delivery':
+        raise HTTPException(status_code=400, detail='This tag is not pending delivery')
+    delivered_by = (body.delivered_by or '').strip() or user['name']
+    if body.delivered_at:
+        try:
+            delivered_iso = datetime.combine(date.fromisoformat(body.delivered_at), datetime.min.time()).replace(tzinfo=timezone.utc).isoformat()
+        except Exception:
+            delivered_iso = now_utc().isoformat()
+    else:
+        delivered_iso = now_utc().isoformat()
+    await db.repair_items.update_one({'id': item_id}, {'$set': {
+        'status': 'delivered', 'delivered_at': delivered_iso,
+        'delivered_by': delivered_by, 'delivered_by_id': user['id'], 'updated_by': user['name'],
+    }})
+    await log_audit(user, 'repair_item.close_delivery', 'repair_item', item_id, item['item_code'], {'delivered_by': delivered_by})
+    return await db.repair_items.find_one({'id': item_id}, {'_id': 0})
 
 
 @router.put('/repair-items/{item_id}/bill')
 async def edit_bill(item_id: str, body: DeliverIn, user=Depends(require_admin_or_module_right('repair_bill', 'edit'))):
-    """Corrects an already-delivered bill in place — same full form as creating
-    one, rather than the old delete-then-recreate dance. Doesn't touch status,
-    delivered_at, or the karigar side of the job; only the bill numbers."""
+    """Corrects a bill in place (whether it's still pending delivery or
+    already fully delivered) — same full form as creating one, rather than
+    the old delete-then-recreate dance. Doesn't touch status, delivered_at,
+    or the karigar side of the job; only the bill numbers."""
     item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
     if not item: raise HTTPException(status_code=404, detail='Item not found')
-    if item['status'] != 'delivered':
+    if item['status'] not in ('pending_delivery', 'delivered'):
         raise HTTPException(status_code=400, detail='This tag has not been billed yet')
     labour = body.labour_charge if body.labour_charge is not None else item.get('bill_labour_charge', 0) or 0
     material_adj = body.material_adjustment if body.material_adjustment is not None else item.get('bill_material_adjustment', 0) or 0
@@ -840,14 +913,14 @@ async def edit_bill(item_id: str, body: DeliverIn, user=Depends(require_admin_or
 
 @router.delete('/repair-items/{item_id}/bill')
 async def delete_bill(item_id: str, user=Depends(require_admin_or_module_right('repair_bill', 'delete'))):
-    # Undoes a bill — puts the tag back to "ready" so it can be re-billed
-    # correctly. Does not touch the tag/intake record itself.
+    # Undoes a bill — puts the tag back to "ready" (Pending to Bill) so it
+    # can be re-billed correctly. Does not touch the tag/intake record itself.
     item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
     if not item: raise HTTPException(status_code=404, detail='Item not found')
-    if item['status'] != 'delivered':
+    if item['status'] not in ('pending_delivery', 'delivered'):
         raise HTTPException(status_code=400, detail='This item has not been billed')
     await db.repair_items.update_one({'id': item_id}, {'$set': {
-        'status': 'ready', 'delivered_at': None,
+        'status': 'ready', 'delivered_at': None, 'delivered_by': None, 'delivered_by_id': None,
         'bill_labour_charge': None, 'bill_material_adjustment': None,
         'bill_extra_charges': None, 'bill_extra_charges_note': '', 'bill_previous_balance': None,
         'bill_weight_rate': None, 'bill_value_add': None,

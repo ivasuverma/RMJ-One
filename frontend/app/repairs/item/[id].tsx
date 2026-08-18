@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, Platform, KeyboardAvoidingView, Image,
+  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, Platform, KeyboardAvoidingView, Image, Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -25,8 +25,9 @@ type Item = {
   weight_diff?: number; fine_weight_diff?: number; customer_adjustment?: number;
   bill_labour_charge?: number; bill_material_adjustment?: number; bill_extra_charges?: number; bill_extra_charges_note?: string;
   billed_amount: number | null; payment_mode: string | null;
+  delivered_at?: string | null; delivered_by?: string | null;
   intake_photo?: string; final_photo?: string;
-  created_by?: string; updated_by?: string;
+  created_by?: string; updated_by?: string; created_at?: string;
 };
 type Txn = {
   id: string; direction: 'issue' | 'receive'; karigar_name: string; weight: number; fine_weight?: number;
@@ -104,13 +105,22 @@ export default function RepairItemDetailScreen() {
     finally { setBusy(false); submittingRef.current = false; }
   };
 
-  const doReady = async () => {
-    if (submittingRef.current) return;
-    submittingRef.current = true; setBusy(true);
-    try { await api.post(`/repair-items/${id}/ready`, {}); await load(); }
-    catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
-    finally { setBusy(false); submittingRef.current = false; }
+  const doUnready = () => {
+    confirmAction(
+      'Undo Pending to Bill',
+      'This sends the tag back a step — to "With Karigar" if it was received back from one, otherwise straight to "Issue Pending". Continue?',
+      'Undo',
+      async () => {
+        if (submittingRef.current) return;
+        submittingRef.current = true; setBusy(true);
+        try { await api.post(`/repair-items/${id}/unready`, {}); await load(); }
+        catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+        finally { setBusy(false); submittingRef.current = false; }
+      },
+    );
   };
+
+  const [previewPhoto, setPreviewPhoto] = useState<string | null>(null);
 
   const doDeleteItem = () => {
     if (!item) return;
@@ -226,7 +236,8 @@ export default function RepairItemDetailScreen() {
             {item.karigar_name && <MetaRow icon="hammer-outline" label="Karigar" value={item.karigar_name} colors={colors} />}
             {item.weight_diff != null && <MetaRow icon="swap-vertical-outline" label="Weight diff" value={`${item.weight_diff >= 0 ? '+' : ''}${item.weight_diff.toFixed(3)}g${item.fine_weight_diff != null ? ` (fine ${item.fine_weight_diff >= 0 ? '+' : ''}${item.fine_weight_diff.toFixed(3)}g)` : ''}`} colors={colors} />}
             {item.billed_amount != null && <MetaRow icon="receipt-outline" label="Billed" value={`₹${item.billed_amount.toFixed(0)} · ${item.payment_mode}`} colors={colors} />}
-            {item.created_by && <MetaRow icon="person-add-outline" label="Intake by" value={item.created_by} colors={colors} />}
+            {item.delivered_at && <MetaRow icon="checkmark-done-outline" label="Delivered" value={`${item.delivered_at.slice(0, 10)}${item.delivered_by ? ` · by ${item.delivered_by}` : ''}`} colors={colors} />}
+            {item.created_by && <MetaRow icon="person-add-outline" label="Intake by" value={`${item.created_by}${item.created_at ? ` · ${item.created_at.slice(0, 10)} ${item.created_at.slice(11, 16)}` : ''}`} colors={colors} />}
             {item.updated_by && <MetaRow icon="pencil-outline" label="Last by" value={item.updated_by} colors={colors} />}
           </View>
 
@@ -265,16 +276,16 @@ export default function RepairItemDetailScreen() {
           {(item.intake_photo || item.final_photo) && (
             <View style={styles.photosRow}>
               {item.intake_photo && (
-                <View style={{ alignItems: 'center' }}>
+                <Pressable style={{ alignItems: 'center' }} onPress={() => setPreviewPhoto(item.intake_photo!)} testID="intake-photo-thumb">
                   <Image source={{ uri: item.intake_photo }} style={styles.photoLarge} />
                   <Text style={styles.photoCaption}>Intake</Text>
-                </View>
+                </Pressable>
               )}
               {item.final_photo && (
-                <View style={{ alignItems: 'center' }}>
+                <Pressable style={{ alignItems: 'center' }} onPress={() => setPreviewPhoto(item.final_photo!)} testID="final-photo-thumb">
                   <Image source={{ uri: item.final_photo }} style={styles.photoLarge} />
                   <Text style={styles.photoCaption}>Delivery</Text>
-                </View>
+                </Pressable>
               )}
             </View>
           )}
@@ -289,11 +300,8 @@ export default function RepairItemDetailScreen() {
           {item.status === 'received' && (
             <>
               <View style={styles.actionsRow}>
-                <Pressable onPress={() => router.push({ pathname: '/repairs/item/issue', params: { itemId: id } } as any)} style={styles.actionBtn} testID="show-issue-form">
-                  <Ionicons name="arrow-redo-outline" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>Issue to Karigar</Text>
-                </Pressable>
-                <Pressable onPress={doReady} disabled={busy} style={[styles.actionBtn, styles.actionBtnPrimary]} testID="mark-ready-btn">
-                  {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <><Ionicons name="checkmark" size={16} color={colors.onBrandPrimary} /><Text style={styles.actionBtnPrimaryText}>Mark Ready</Text></>}
+                <Pressable onPress={() => router.push({ pathname: '/repairs/item/issue', params: { itemId: id } } as any)} style={[styles.actionBtn, styles.actionBtnPrimary, { flex: 1 }]} testID="show-issue-form">
+                  <Ionicons name="arrow-redo-outline" size={16} color={colors.onBrandPrimary} /><Text style={styles.actionBtnPrimaryText}>Issue to Karigar</Text>
                 </Pressable>
               </View>
               {canDeleteRepair && (
@@ -305,6 +313,9 @@ export default function RepairItemDetailScreen() {
           )}
           {item.status === 'ready' && (
             <View style={styles.actionsRow}>
+              <Pressable onPress={doUnready} disabled={busy} style={styles.actionBtn} testID="unready-btn">
+                {busy ? <ActivityIndicator color={colors.onSurfaceSecondary} /> : <><Ionicons name="arrow-undo-outline" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>Undo</Text></>}
+              </Pressable>
               <Pressable onPress={() => router.push({ pathname: '/repairs/bill', params: { itemId: id } } as any)} style={[styles.actionBtn, styles.actionBtnPrimary, { flex: 1 }]} testID="show-deliver-form">
                 <Ionicons name="cart-outline" size={16} color={colors.onBrandPrimary} /><Text style={styles.actionBtnPrimaryText}>Bill Repair</Text>
               </Pressable>
@@ -315,6 +326,18 @@ export default function RepairItemDetailScreen() {
               <Pressable onPress={() => router.push({ pathname: '/repairs/item/receive', params: { itemId: id } } as any)} style={[styles.actionBtn, styles.actionBtnPrimary, { flex: 1 }]} testID="show-receive-form">
                 <Ionicons name="arrow-undo-outline" size={16} color={colors.onBrandPrimary} /><Text style={styles.actionBtnPrimaryText}>Receive from Karigar</Text>
               </Pressable>
+            </View>
+          )}
+          {item.status === 'pending_delivery' && (
+            <View style={[styles.actionsRow, { marginBottom: spacing.lg }]}>
+              <Pressable onPress={() => router.push({ pathname: '/repairs/bill', params: { itemId: id } } as any)} style={[styles.actionBtn, styles.actionBtnPrimary, { flex: 1 }]} testID="close-delivery-btn">
+                <Ionicons name="checkmark-done-outline" size={16} color={colors.onBrandPrimary} /><Text style={styles.actionBtnPrimaryText}>Close Delivery</Text>
+              </Pressable>
+              {hasRight('repair_bill', 'edit') && (
+                <Pressable onPress={() => router.push({ pathname: '/repairs/bill', params: { itemId: id } } as any)} style={styles.actionBtn} testID="edit-pending-bill-btn">
+                  <Ionicons name="pencil-outline" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>Edit Bill</Text>
+                </Pressable>
+              )}
             </View>
           )}
           {item.status === 'delivered' && (
@@ -372,6 +395,15 @@ export default function RepairItemDetailScreen() {
           })}
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <Modal visible={!!previewPhoto} transparent animationType="fade" onRequestClose={() => setPreviewPhoto(null)}>
+        <Pressable style={styles.lightboxBackdrop} onPress={() => setPreviewPhoto(null)} testID="photo-lightbox">
+          {previewPhoto && <Image source={{ uri: previewPhoto }} style={styles.lightboxImage} resizeMode="contain" />}
+          <Pressable style={styles.lightboxClose} onPress={() => setPreviewPhoto(null)} hitSlop={12}>
+            <Ionicons name="close" size={24} color="#fff" />
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -502,4 +534,11 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   smallIconBtnDanger: { backgroundColor: colors.error, borderColor: colors.onError },
   editTxnBox: { marginTop: spacing.sm, paddingTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.divider },
+
+  lightboxBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', alignItems: 'center', justifyContent: 'center' },
+  lightboxImage: { width: '92%', height: '80%' },
+  lightboxClose: {
+    position: 'absolute', top: 50, right: 20, width: 40, height: 40, borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center',
+  },
 });

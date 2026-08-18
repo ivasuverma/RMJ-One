@@ -39,6 +39,7 @@ export default function KarigarLedgerScreen() {
   const [karigar, setKarigar] = useState<Karigar | null>(null);
   const [entries, setEntries] = useState<Entry[]>([]);
   const [weightBalance, setWeightBalance] = useState(0);
+  const [fineWeightBalance, setFineWeightBalance] = useState(0);
   const [amountDue, setAmountDue] = useState(0);
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState('');
@@ -47,8 +48,8 @@ export default function KarigarLedgerScreen() {
 
   const load = useCallback(async () => {
     try {
-      const res = await api.get<{ karigar: Karigar; entries: Entry[]; weight_balance: number; amount_due: number }>(`/karigars/${id}/ledger`);
-      setKarigar(res.karigar); setEntries(res.entries); setWeightBalance(res.weight_balance); setAmountDue(res.amount_due);
+      const res = await api.get<{ karigar: Karigar; entries: Entry[]; weight_balance: number; fine_weight_balance?: number; amount_due: number }>(`/karigars/${id}/ledger`);
+      setKarigar(res.karigar); setEntries(res.entries); setWeightBalance(res.weight_balance); setFineWeightBalance(res.fine_weight_balance ?? 0); setAmountDue(res.amount_due);
     } catch (_e) { /* ignore */ }
     finally { setLoading(false); }
   }, [id]);
@@ -166,7 +167,11 @@ export default function KarigarLedgerScreen() {
         <View style={styles.summaryRow}>
             <View style={styles.summaryTile}>
               <Text style={styles.summaryValue}>{weightBalance.toFixed(3)}g</Text>
-              <Text style={styles.summaryLabel}>Gold with karigar</Text>
+              <Text style={styles.summaryLabel}>Gross wt with karigar</Text>
+            </View>
+            <View style={styles.summaryTile}>
+              <Text style={styles.summaryValue}>{fineWeightBalance.toFixed(3)}g</Text>
+              <Text style={styles.summaryLabel}>Fine wt with karigar</Text>
             </View>
             <View style={styles.summaryTile}>
               <Text style={[styles.summaryValue, amountDue > 0 && { color: colors.onWarning }]}>₹{amountDue.toFixed(0)}</Text>
