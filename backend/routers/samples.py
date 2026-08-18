@@ -24,11 +24,12 @@ from server import (
     SampleReceiveIn,
     log_audit,
     _notify_module,
+    _pdf_response,
 )
 # Thermal-printer helpers live in routers/repairs.py (where they were first
 # built) rather than the shared core — reused here as-is instead of
 # duplicating the ESC/POS builder for a second module.
-from routers.repairs import _escpos_receipt, _print_escpos
+from routers.repairs import _escpos_receipt, _print_escpos, _thermal_slip_pdf
 
 router = APIRouter()
 
@@ -205,6 +206,21 @@ def _sample_issue_slip_lines(sample: dict) -> list:
     if sample.get('note'):
         lines.append(('Note', sample['note']))
     return lines
+
+
+@router.get('/samples/{sample_id}/issue-slip/pdf')
+async def sample_issue_slip_pdf(sample_id: str, _: dict = Depends(require_staff_or_module('samples'))):
+    """Downloadable version of the same karigar issue challan — same narrow
+    label-style layout as the repairs module's issue-slip/bill/intake PDFs,
+    so every printout in the app (Repair and Stock In-Out alike) looks the same."""
+    sample = await db.samples.find_one({'id': sample_id}, {'_id': 0})
+    if not sample:
+        raise HTTPException(status_code=404, detail='Sample not found')
+    store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
+    pdf = _thermal_slip_pdf(
+        store.get('name') or 'Ram Murti Jewellers', 'Sample Issue Challan', _sample_issue_slip_lines(sample),
+    )
+    return _pdf_response(pdf, f'sample-issue-{sample["sample_code"]}.pdf')
 
 
 @router.post('/samples/{sample_id}/issue-slip/print')

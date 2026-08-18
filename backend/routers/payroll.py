@@ -201,7 +201,10 @@ async def _compute_payroll(year: int, month: int) -> list:
         ledger_by_emp.setdefault(t['employee_id'], []).append(t)
 
     rows = []
-    async for e in db.employees.find({}, {'_id': 0, 'password_hash': 0}):
+    # 'photo' excluded in favor of photo_thumb (small avatar) — this list is
+    # recomputed on every Payroll screen visit, same reasoning as
+    # GET /employees and GET /attendance/today.
+    async for e in db.employees.find({}, {'_id': 0, 'password_hash': 0, 'photo': 0}):
         att_by_date = att_by_emp.get(e['id'], {})
         shift = shifts_by_name.get(e.get('shift'))
 
@@ -316,7 +319,7 @@ async def _compute_payroll(year: int, month: int) -> list:
         net_rounded = round(net_with_opening / 10) * 10 if round_nearest_10 else net_with_opening
         rows.append({
             'employee_id': e['id'], 'employee_code': e.get('employee_code'), 'name': e['name'],
-            'designation': e.get('designation'), 'department': e.get('department'), 'photo': e.get('photo') or '',
+            'designation': e.get('designation'), 'department': e.get('department'), 'photo': e.get('photo_thumb') or '',
             'base_salary': base, 'present_days': present, 'half_days': half,
             'absent_days': absent, 'missing_punch_days': missing_punch,
             'sunday_work': sunday_work, 'leave_days': leave_days,

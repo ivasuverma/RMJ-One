@@ -34,6 +34,9 @@ type DashboardData = {
   tasks_summary: {
     due_today: number; overdue: number; done_today: number; open_total: number;
   };
+  samples_summary: {
+    with_karigar: number; overdue: number; received_today: number;
+  };
 };
 
 const AUTO_REFRESH_MS = 45000;
@@ -189,6 +192,17 @@ export default function DashboardScreen() {
                   <View style={styles.tileGrid}>
                     <StatCard basis={tileBasis} icon="today-outline" label="Due Today" value={String(data.tasks_summary.due_today)} tone="info" testID="tasks-due-today" onPress={() => router.push('/tasks' as any)} />
                     <StatCard basis={tileBasis} icon="alert-circle-outline" label="Overdue" value={String(data.tasks_summary.overdue)} tone="error" testID="tasks-overdue" onPress={() => router.push('/tasks' as any)} />
+                  </View>
+                </View>
+              )}
+
+              {hasModule('samples') && (
+                <View style={{ flexBasis: sectionBasis, flexGrow: 1 }}>
+                  <SectionHeader title="Stock In/Out" icon="swap-horizontal-outline" testID="section-samples" />
+                  <View style={styles.tileGrid}>
+                    <StatCard basis={tileBasis} icon="hammer-outline" label="With Karigar" value={String(data.samples_summary.with_karigar)} tone="brand" testID="samples-with-karigar" onPress={() => router.push('/samples?status=with_karigar' as any)} />
+                    <StatCard basis={tileBasis} icon="alert-circle-outline" label="Overdue" value={String(data.samples_summary.overdue)} tone="error" testID="samples-overdue" onPress={() => router.push('/samples?status=overdue' as any)} />
+                    <StatCard basis={tileBasis} icon="checkmark-circle-outline" label="Received Today" value={String(data.samples_summary.received_today)} tone="success" testID="samples-received-today" onPress={() => router.push('/samples?status=received' as any)} />
                   </View>
                 </View>
               )}

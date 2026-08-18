@@ -794,6 +794,18 @@ async def seed():
     await db.push_subscriptions.create_index('role')
     await db.samples.create_index('status')
 
+    # One-time backfill: any employee with a full-size photo but no thumb yet
+    # (i.e. saved before photo_thumb existed) gets one generated now, so
+    # every list screen benefits immediately on this restart rather than only
+    # once each employee's photo happens to be re-saved.
+    async for emp in db.employees.find(
+        {'photo': {'$nin': [None, '']}, '$or': [{'photo_thumb': {'$exists': False}}, {'photo_thumb': ''}]},
+        {'_id': 0, 'id': 1, 'photo': 1},
+    ):
+        thumb = _make_photo_thumb(emp.get('photo'))
+        if thumb:
+            await db.employees.update_one({'id': emp['id']}, {'$set': {'photo_thumb': thumb}})
+
     if not await db.users.find_one({'username': 'owner'}):
         uid = str(uuid.uuid4())
         await db.users.insert_one({
@@ -1787,6 +1799,37 @@ def _pdf_response(pdf: bytes, filename: str):
     from starlette.responses import Response as SR
     return SR(content=pdf, media_type='application/pdf',
               headers={'Content-Disposition': f'inline; filename="{filename}"'})
+
+
+# ---------------- Employee photo thumbnails ----------------
+# Employee photos (captured at ~720px wide, per PhotoCaptureModal) are shown
+# as small avatars in several list screens — Employees, Attendance, Payroll —
+# every one of which re-fetches its whole list on every visit. Shipping the
+# full-size photo for every row on every one of those loads was the single
+# largest remaining payload on those screens. photo_thumb is a ~96px, heavily
+# compressed copy generated once (on save, or backfilled for existing
+# employees below) and is what every *list* response actually sends; the
+# full-size photo is still stored and used on the employee's own detail page.
+_PHOTO_THUMB_SIZE = 96
+
+
+def _make_photo_thumb(photo_data_uri: Optional[str]) -> str:
+    if not photo_data_uri or not photo_data_uri.startswith('data:'):
+        return ''
+    try:
+        import base64
+        from io import BytesIO
+        from PIL import Image
+        header, b64 = photo_data_uri.split(',', 1)
+        img = Image.open(BytesIO(base64.b64decode(b64)))
+        img = img.convert('RGB')
+        img.thumbnail((_PHOTO_THUMB_SIZE, _PHOTO_THUMB_SIZE))
+        out = BytesIO()
+        img.save(out, format='JPEG', quality=55)
+        return f"data:image/jpeg;base64,{base64.b64encode(out.getvalue()).decode('ascii')}"
+    except Exception as e:
+        logger.warning(f'photo thumb generation failed: {e}')
+        return ''
 
 
 # ---------------- Routers (§2.1 split — see backend/routers/) ----------------

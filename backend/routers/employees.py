@@ -22,6 +22,7 @@ from server import (
     IdProofIn,
     log_audit,
     _ledger_sign,
+    _make_photo_thumb,
 )
 
 router = APIRouter()
@@ -48,7 +49,13 @@ async def list_employees(
         ]
     if department: query['department'] = department
     if status_: query['status'] = status_
-    docs = await db.employees.find(query, {'_id': 0, 'password_hash': 0, 'id_proofs': 0}).sort('name', 1).to_list(1000)
+    # 'photo' excluded — this list only ever shows a small avatar, so it gets
+    # photo_thumb (~5-10KB) swapped in as `photo` below instead of the full
+    # ~50-150KB capture. The employee's own detail page still fetches the
+    # full photo via GET /employees/{id}, which is untouched.
+    docs = await db.employees.find(query, {'_id': 0, 'password_hash': 0, 'id_proofs': 0, 'photo': 0}).sort('name', 1).to_list(1000)
+    for d in docs:
+        d['photo'] = d.pop('photo_thumb', '') or ''
     events = await db.timeline.find(
         {'type': {'$in': ['advance', 'bonus', 'fine', 'deduction', 'salary']}},
         {'_id': 0, 'employee_id': 1, 'type': 1, 'amount': 1, 'sign': 1},
@@ -94,7 +101,7 @@ async def create_employee(body: EmployeeIn, user: dict = Depends(require_admin),
     # to think to change it themselves.
     doc = {'id': eid, 'created_at': iso, 'updated_at': iso,
            'username': default_username, 'password_hash': hash_secret(default_password),
-           'must_change_password': True, **data}
+           'must_change_password': True, 'photo_thumb': _make_photo_thumb(data.get('photo')), **data}
     await db.employees.insert_one(dict(doc))
     await db.timeline.insert_one({
         'id': str(uuid.uuid4()), 'employee_id': eid, 'type': 'joined',
@@ -115,7 +122,12 @@ async def update_employee(emp_id: str, body: EmployeeIn, user: dict = Depends(re
     if not existing: raise HTTPException(status_code=404, detail='Employee not found')
     data = body.model_dump()
     if data.get('employee_code'): data['employee_code'] = data['employee_code'].upper()
-    await db.employees.update_one({'id': emp_id}, {'$set': {**data, 'updated_at': iso}})
+    # Regenerate the thumbnail whenever the photo actually changed — cheap
+    # (a few ms), and avoids ever serving a stale avatar in list screens.
+    photo_thumb = existing.get('photo_thumb', '')
+    if data.get('photo') != existing.get('photo'):
+        photo_thumb = _make_photo_thumb(data.get('photo'))
+    await db.employees.update_one({'id': emp_id}, {'$set': {**data, 'photo_thumb': photo_thumb, 'updated_at': iso}})
     if float(existing.get('salary') or 0) != float(data.get('salary') or 0):
         await db.timeline.insert_one({
             'id': str(uuid.uuid4()), 'employee_id': emp_id, 'type': 'salary_revised',

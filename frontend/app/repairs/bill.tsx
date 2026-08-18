@@ -18,7 +18,7 @@ import { useAuth } from '@/src/auth/AuthContext';
 
 type Item = {
   id: string; item_code: string; customer_name: string; description: string;
-  status: RepairItemStatus;
+  status: RepairItemStatus; gross_weight: number;
   labour_charge: number; customer_adjustment?: number;
   fine_weight_diff?: number | null; weight_diff?: number | null;
   current_issue_weight?: number | null; process_loss?: number | null;
@@ -52,9 +52,10 @@ export default function RepairBillScreen() {
   const { hasRight, user } = useAuth();
   const canEditBill = hasRight('repair_bill', 'edit');
   const canDeleteBill = hasRight('repair_bill', 'delete');
+  const canEditReceive = hasRight('repairs', 'edit');
 
   const [mode, setMode] = useState<Mode>(routeItemId ? 'form' : 'list');
-  const initialFilter = (routeFilter && BILL_FILTER_KEYS.has(routeFilter as BillFilterKey) ? routeFilter : 'all') as BillFilterKey;
+  const initialFilter = (routeFilter && BILL_FILTER_KEYS.has(routeFilter as BillFilterKey) ? routeFilter : 'ready') as BillFilterKey;
   const [filter, setFilter] = useState<BillFilterKey>(initialFilter);
   const [bills, setBills] = useState<Item[]>([]);
   const [readyItems, setReadyItems] = useState<Item[]>([]);
@@ -149,6 +150,30 @@ export default function RepairBillScreen() {
     else if (b.status === 'pending_delivery') openCloseForm(b);
     else router.push(`/repairs/item/${b.id}` as any);
   };
+
+  // Loss Wt / Received (g) above come straight off the most recent
+  // receive-from-karigar transaction — correcting them here re-uses that
+  // same edit screen (which also carries karigar payment fields we don't
+  // show on the bill) rather than re-deriving karigar-ledger math inline.
+  // Only reachable while the tag is still 'ready' (pre-bill) since the
+  // backend locks a receive transaction once the tag is billed/delivered.
+  const editReceivedWeight = async () => {
+    if (!picked) return;
+    try {
+      const res = await api.get<{ item: Item; history: { id: string; direction: string }[] }>(`/repair-items/${picked.id}`);
+      const lastReceive = [...res.history].reverse().find((h) => h.direction === 'receive');
+      if (!lastReceive) { Alert.alert('No receive record', 'This tag has no karigar receive to correct.'); return; }
+      router.push({ pathname: '/repairs/item/receive', params: { itemId: picked.id, txnId: lastReceive.id } } as any);
+    } catch { Alert.alert('Failed', 'Could not open the receive record.'); }
+  };
+
+  // Coming back from that edit screen, refresh the picked item so Loss
+  // Wt/Received/New Wt reflect whatever was just corrected.
+  useFocusEffect(useCallback(() => {
+    if (mode !== 'form' || !picked || picked.status !== 'ready') return;
+    api.get<{ item: Item }>(`/repair-items/${picked.id}`).then((res) => setPicked(res.item)).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, picked?.id, picked?.status]));
 
   const openPicker = async () => {
     setMode('pick');
@@ -329,21 +354,28 @@ export default function RepairBillScreen() {
             </View>
           ) : bills.map((b) => {
             const sc = repairStatusColors(b.status, colors);
+            const billMetaBits = [
+              b.billed_amount != null ? `₹${b.billed_amount.toFixed(0)}` : null,
+              b.payment_mode || null,
+              b.delivered_at ? `delivered ${istDate(b.delivered_at)}` : null,
+            ].filter(Boolean);
             return (
-              <View key={b.id} style={styles.itemRow} testID={`bill-${b.id}`}>
-                <Pressable style={styles.itemRowMain} onPress={() => cardPress(b)}>
-                  <View style={styles.iconBox}><Ionicons name="receipt-outline" size={18} color={colors.brandSecondary} /></View>
-                  <View style={{ flex: 1 }}>
-                    <View style={styles.rowTopLine}>
-                      <Text style={styles.cName} numberOfLines={1}>{b.item_code} · {b.customer_name}</Text>
-                      <View style={[styles.statusBadgeSm, { backgroundColor: sc.bg, borderColor: sc.border }]}>
-                        <Text style={[styles.statusTextSm, { color: sc.fg }]}>{REPAIR_STATUS_LABEL[b.status]}</Text>
-                      </View>
+              <View key={b.id} style={styles.billCard} testID={`bill-${b.id}`}>
+                <Pressable style={{ flex: 1 }} onPress={() => cardPress(b)}>
+                  <View style={styles.billTopRow}>
+                    <Text style={styles.billName} numberOfLines={1}>{b.customer_name}</Text>
+                    <View style={[styles.statusBadgeSm, { backgroundColor: sc.bg, borderColor: sc.border }]}>
+                      <Text style={[styles.statusTextSm, { color: sc.fg }]}>{REPAIR_STATUS_LABEL[b.status]}</Text>
                     </View>
-                    <Text style={styles.cMeta} numberOfLines={2}>
-                      {b.description}{b.billed_amount != null ? ` · ₹${b.billed_amount.toFixed(0)}` : ''}{b.payment_mode ? ` · ${b.payment_mode}` : ''}{b.delivered_at ? ` · delivered ${istDate(b.delivered_at)}` : ''}
-                    </Text>
                   </View>
+                  <Text style={styles.billItem} numberOfLines={1}>{b.description}</Text>
+                  <View style={styles.billSubRow}>
+                    <Text style={styles.billTag} numberOfLines={1}>{b.item_code}</Text>
+                    <Text style={styles.billWeight}>{b.gross_weight.toFixed(3)}g</Text>
+                  </View>
+                  {billMetaBits.length > 0 && (
+                    <Text style={styles.billMeta} numberOfLines={1}>{billMetaBits.join('  ·  ')}</Text>
+                  )}
                 </Pressable>
                 {b.status === 'delivered' && canEditBill && (
                   <Pressable onPress={() => pickItem(b)} style={styles.editBtn} testID={`edit-bill-${b.id}`}>
@@ -451,6 +483,12 @@ export default function RepairBillScreen() {
                 <View style={styles.readonlyBox}><Text style={styles.readonlyBoxText}>{receivedWeight.toFixed(3)}</Text></View>
               </View>
             </View>
+            {!isEditingBill && canEditReceive && (
+              <Pressable onPress={editReceivedWeight} style={styles.editReceiveLink} testID="edit-received-weight-btn">
+                <Ionicons name="create-outline" size={13} color={colors.brandSecondary} />
+                <Text style={styles.editReceiveLinkText}>Correct loss / received weight from karigar</Text>
+              </Pressable>
+            )}
 
             {/* New Wt · Value Add · Rate · Total */}
             <View style={[styles.fieldGrid, { marginTop: spacing.sm }]} testID="bill-charge-grid">
@@ -584,6 +622,23 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   statusTextSm: { fontSize: 9, fontWeight: '700', textTransform: 'uppercase' },
 
   hint: { color: colors.mutedText, fontSize: 12, marginBottom: spacing.md },
+  editReceiveLink: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: spacing.sm, alignSelf: 'flex-start' },
+  editReceiveLinkText: { color: colors.brandSecondary, fontSize: 12, fontWeight: '700' },
+
+  // Bills list row — larger tile, same customer/item/tag+weight ordering as
+  // the Repair list for a consistent scan pattern across both screens.
+  billCard: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+    backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg,
+    borderWidth: 1, borderColor: colors.border, paddingHorizontal: spacing.lg, paddingVertical: 14, marginBottom: 10,
+  },
+  billTopRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  billName: { flex: 1, color: colors.onSurface, fontWeight: '800', fontSize: 17 },
+  billItem: { color: colors.onSurfaceSecondary, fontSize: 14, fontWeight: '600', marginTop: 4 },
+  billSubRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm, marginTop: 4 },
+  billTag: { flex: 1, color: colors.mutedText, fontSize: 12.5 },
+  billWeight: { color: colors.brandSecondary, fontSize: 14, fontWeight: '800' },
+  billMeta: { color: colors.onSurfaceTertiary, fontSize: 11, marginTop: 6 },
   empty: { alignItems: 'center', paddingVertical: 40, gap: spacing.sm },
   emptyText: { color: colors.onSurfaceTertiary, textAlign: 'center', paddingHorizontal: spacing.xl },
   itemRow: {

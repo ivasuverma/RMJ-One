@@ -5,7 +5,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import { api } from '@/src/api/client';
+import { api, TOKEN_KEY } from '@/src/api/client';
+import { storage } from '@/src/utils/storage';
 import { useAuth } from '@/src/auth/AuthContext';
 import { confirmAction } from '@/src/utils/confirm';
 import { istDateTime } from '@/src/utils/datetime';
@@ -89,6 +90,25 @@ export default function SampleDetailScreen() {
     try { await api.post(`/samples/${id}/issue-slip/print`, {}); }
     catch (e: any) { Alert.alert('Print failed', e?.detail || 'Could not reach the printer. Check Store Settings.'); }
     finally { setPrinting(false); }
+  };
+
+  const [printingPdf, setPrintingPdf] = useState(false);
+  const printPdf = async () => {
+    setPrintingPdf(true);
+    try {
+      const base = process.env.EXPO_PUBLIC_BACKEND_URL || '';
+      const url = `${base}/api/samples/${id}/issue-slip/pdf`;
+      const token = (await storage.secureGet<string>(TOKEN_KEY, '')) || '';
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) throw new Error(`Print failed (${res.status})`);
+      if (Platform.OS === 'web') {
+        const blob = await res.blob();
+        window.open(URL.createObjectURL(blob), '_blank');
+      } else {
+        Alert.alert('Ready', 'PDF preview is available on the web app.');
+      }
+    } catch (e: any) { Alert.alert('Failed', e?.message || 'Please try again'); }
+    finally { setPrintingPdf(false); }
   };
 
   const remove = () => {
@@ -254,9 +274,14 @@ export default function SampleDetailScreen() {
           />
 
           {!showEdit && (
-            <Pressable onPress={printThermal} disabled={printing} style={styles.actionBtn} testID="print-sample-issue-slip-btn">
-              {printing ? <ActivityIndicator color={colors.onSurfaceSecondary} /> : <><Ionicons name="print-outline" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>Print Thermal Slip (Karigar Issue)</Text></>}
-            </Pressable>
+            <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+              <Pressable onPress={printPdf} disabled={printingPdf} style={[styles.actionBtn, { flex: 1 }]} testID="print-sample-issue-slip-pdf-btn">
+                {printingPdf ? <ActivityIndicator color={colors.onSurfaceSecondary} /> : <><Ionicons name="document-text-outline" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>Print PDF</Text></>}
+              </Pressable>
+              <Pressable onPress={printThermal} disabled={printing} style={[styles.actionBtn, { flex: 1 }]} testID="print-sample-issue-slip-btn">
+                {printing ? <ActivityIndicator color={colors.onSurfaceSecondary} /> : <><Ionicons name="print-outline" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>Print Receipt</Text></>}
+              </Pressable>
+            </View>
           )}
 
           {isWithKarigar && !showEdit && (

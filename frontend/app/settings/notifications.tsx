@@ -23,6 +23,23 @@ const ROLES: { key: string; label: string }[] = [
   { key: 'employee', label: 'Employee' },
 ];
 
+// Every script this screen's API returns is a staff-broadcast alert (an
+// admin/owner learning about something an employee did) — the module toggle,
+// roles, and "also notify" people picker below all govern that side only.
+// The Attendance module ALSO sends two personal notifications straight to
+// the employee about their own record (their correction/leave being
+// decided) — those are deliberately not run through the suppression system
+// above (see _notify_module/notify_user in server.py: a person should always
+// hear about a decision on their own record, regardless of an admin's
+// module preference), so they're listed here as a separate, read-only
+// section for visibility rather than as togglable entries.
+const EMPLOYEE_FACING_NOTICES: Record<string, { label: string; sub: string }[]> = {
+  attendance: [
+    { label: 'Correction decided', sub: 'Employee is told when their attendance correction request is approved or rejected' },
+    { label: 'Leave decided', sub: 'Employee is told when their leave request is approved or rejected' },
+  ],
+};
+
 export default function NotificationSettingsScreen() {
   const router = useRouter();
   const { colors } = useTheme();
@@ -134,7 +151,7 @@ export default function NotificationSettingsScreen() {
                   <View style={styles.body}>
                     {m.scripts.length > 0 && (
                       <>
-                        <Text style={styles.subhead}>Notification types</Text>
+                        <Text style={styles.subhead}>Notifications to Owner/Admin</Text>
                         <View style={styles.scriptList}>
                           {m.scripts.map((s) => {
                             const on = !(m.disabled_scripts || []).includes(s.key);
@@ -152,6 +169,23 @@ export default function NotificationSettingsScreen() {
                               </Pressable>
                             );
                           })}
+                        </View>
+                      </>
+                    )}
+
+                    {!!EMPLOYEE_FACING_NOTICES[key] && (
+                      <>
+                        <Text style={styles.subhead}>Notifications to Employees</Text>
+                        <View style={styles.scriptList}>
+                          {EMPLOYEE_FACING_NOTICES[key].map((n) => (
+                            <View key={n.label} style={styles.scriptRow} testID={`notif-employee-${key}-${n.label}`}>
+                              <View style={{ flex: 1 }}>
+                                <Text style={styles.scriptLabel}>{n.label}</Text>
+                                <Text style={styles.scriptSub}>{n.sub}</Text>
+                              </View>
+                              <View style={styles.alwaysOnTag}><Text style={styles.alwaysOnTagText}>Always on</Text></View>
+                            </View>
+                          ))}
                         </View>
                       </>
                     )}
@@ -258,6 +292,9 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     paddingHorizontal: spacing.md, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.divider,
   },
   scriptLabel: { flex: 1, color: colors.onSurface, fontSize: 12 },
+  scriptSub: { color: colors.mutedText, fontSize: 10.5, marginTop: 2 },
+  alwaysOnTag: { backgroundColor: colors.brandTertiary, borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 3 },
+  alwaysOnTagText: { color: colors.brandSecondary, fontSize: 9.5, fontWeight: '700', textTransform: 'uppercase' },
   switchSm: {
     width: 36, height: 21, borderRadius: 11, backgroundColor: colors.surfaceTertiary,
     borderWidth: 1, borderColor: colors.border, padding: 2, justifyContent: 'center',

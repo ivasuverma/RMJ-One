@@ -107,7 +107,10 @@ async def attendance_today(date_: Optional[str] = Query(default=None, alias='dat
     'still mid-shift' leniency); for today it stays live."""
     d = date_ or today_str()
     is_today = d == today_str()
-    employees = await db.employees.find({}, {'_id': 0, 'password_hash': 0}).sort('name', 1).to_list(1000)
+    # 'photo' excluded in favor of photo_thumb (small avatar) — same
+    # reasoning as GET /employees, and this endpoint is refetched on nearly
+    # every Attendance screen visit.
+    employees = await db.employees.find({}, {'_id': 0, 'password_hash': 0, 'photo': 0}).sort('name', 1).to_list(1000)
     att_map = {}
     async for a in db.attendance.find({'date': d}, {'_id': 0, 'check_in.selfie': 0, 'check_out.selfie': 0}):
         att_map[a['employee_id']] = a
@@ -137,7 +140,7 @@ async def attendance_today(date_: Optional[str] = Query(default=None, alias='dat
             'employee_id': e['id'], 'employee_code': e.get('employee_code'), 'name': e['name'],
             'department': e.get('department', ''), 'designation': e.get('designation', ''),
             'shift': e.get('shift', ''), 'employee_status': e.get('status', 'active'),
-            'photo': e.get('photo') or '',
+            'photo': e.get('photo_thumb') or '',
         }
         if not a and (leave_map.get(e['id']) or (is_today and e.get('status') == 'on_leave')):
             row.update({'status': 'leave', 'check_in': None, 'check_out': None, 'is_late': False,

@@ -129,6 +129,13 @@ async def dashboard(_: dict = Depends(get_current)):
     karigar_bal = _karigar_ledger_balances(karigar_entries)
     karigars_open = sum(1 for b in karigar_bal.values() if round(b.get('fine_bal', 0), 3) or round(b.get('amt_due', 0), 2))
 
+    # Stock In/Out (samples) at-a-glance — same two buckets as the employee
+    # Transactions screen's own samples dashboard tile (GET /samples/dashboard),
+    # so the two never disagree.
+    samples_out = await db.samples.find({'status': 'with_karigar'}, {'_id': 0, 'due_date': 1}).to_list(5000)
+    samples_overdue = sum(1 for s in samples_out if s.get('due_date') and s['due_date'] < d)
+    samples_received_today = await db.samples.count_documents({'status': 'received', 'received_at': {'$regex': f'^{d}'}})
+
     return {
         'todays_attendance': {
             'present': present, 'absent': absent, 'late': late, 'half_day': half_day,
@@ -147,6 +154,9 @@ async def dashboard(_: dict = Depends(get_current)):
         'tasks_summary': {
             'due_today': tasks_due_today, 'overdue': tasks_overdue,
             'done_today': tasks_done_today, 'open_total': len(open_tasks),
+        },
+        'samples_summary': {
+            'with_karigar': len(samples_out), 'overdue': samples_overdue, 'received_today': samples_received_today,
         },
         'business_summary': {
             'revenue_today': round(revenue_today, 2), 'revenue_month': round(revenue_month, 2),

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -38,11 +38,24 @@ export default function RepairOrdersScreen() {
   const [loading, setLoading] = useState(true);
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  // Only auto-fall-back from the default "Issue Pending" tab to "With
+  // Karigar" once, the first time the screen opens with no explicit
+  // ?filter= — a user who deliberately taps back to "Issue Pending" and
+  // finds it empty should just see the empty state, not get bounced away.
+  const triedFallbackRef = useRef(!!routeFilter);
 
   const load = useCallback(async (f: FilterKey) => {
-    try { setItems(await api.get<Item[]>(`/repair-items?status=${f}`)); }
-    catch (_e) { setItems([]); }
-    finally { setRefreshing(false); setLoading(false); }
+    try {
+      const res = await api.get<Item[]>(`/repair-items?status=${f}`);
+      if (f === 'received' && res.length === 0 && !triedFallbackRef.current) {
+        triedFallbackRef.current = true;
+        setFilter('with_karigar'); // triggers the focus effect to reload; stay in the loading state until then
+        return;
+      }
+      setItems(res);
+      setRefreshing(false); setLoading(false);
+    }
+    catch (_e) { setItems([]); setRefreshing(false); setLoading(false); }
   }, []);
   useFocusEffect(useCallback(() => { load(filter); }, [load, filter]));
 
@@ -145,8 +158,10 @@ export default function RepairOrdersScreen() {
                 </View>
               </View>
 
+              <Text style={styles.cItem} numberOfLines={1}>{i.description}</Text>
+
               <View style={styles.cardSubRow}>
-                <Text style={styles.cTag} numberOfLines={1}>{i.item_code} · {i.description}</Text>
+                <Text style={styles.cTag} numberOfLines={1}>{i.item_code}</Text>
                 <Text style={styles.cWeight}>{i.gross_weight.toFixed(3)}g</Text>
               </View>
 
@@ -200,8 +215,8 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   empty: { alignItems: 'center', paddingVertical: 40, gap: spacing.sm },
   emptyText: { color: colors.onSurfaceTertiary },
   card: {
-    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md,
-    borderWidth: 1, borderColor: colors.border, paddingHorizontal: spacing.md, paddingVertical: 9, marginBottom: 6,
+    backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg,
+    borderWidth: 1, borderColor: colors.border, paddingHorizontal: spacing.lg, paddingVertical: 14, marginBottom: 10,
   },
   cardSelected: { borderColor: colors.brandPrimary, backgroundColor: colors.brandTertiary },
   cardTopRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
@@ -210,13 +225,14 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface,
   },
   checkboxOn: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
-  cName: { flex: 1, color: colors.onSurface, fontWeight: '700', fontSize: 14 },
-  cardSubRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm, marginTop: 3 },
-  cTag: { flex: 1, color: colors.onSurfaceSecondary, fontSize: 12 },
-  cWeight: { color: colors.brandSecondary, fontSize: 12, fontWeight: '700' },
-  cMeta: { color: colors.onSurfaceTertiary, fontSize: 10.5, marginTop: 3 },
-  statusBadge: { borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1 },
-  statusText: { fontSize: 9, fontWeight: '700', textTransform: 'uppercase' },
+  cName: { flex: 1, color: colors.onSurface, fontWeight: '800', fontSize: 17 },
+  cItem: { color: colors.onSurfaceSecondary, fontSize: 14, fontWeight: '600', marginTop: 4 },
+  cardSubRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm, marginTop: 4 },
+  cTag: { flex: 1, color: colors.mutedText, fontSize: 12.5 },
+  cWeight: { color: colors.brandSecondary, fontSize: 14, fontWeight: '800' },
+  cMeta: { color: colors.onSurfaceTertiary, fontSize: 11, marginTop: 6 },
+  statusBadge: { borderRadius: radius.pill, paddingHorizontal: 9, paddingVertical: 4, borderWidth: 1 },
+  statusText: { fontSize: 9.5, fontWeight: '700', textTransform: 'uppercase' },
 
   bulkBar: {
     position: 'absolute', left: 0, right: 0, bottom: 0, flexDirection: 'row', alignItems: 'center',

@@ -332,12 +332,14 @@ async def repair_order_slip_pdf(order_id: str, _: dict = Depends(require_staff_o
     order = await db.repair_orders.find_one({'id': order_id}, {'_id': 0})
     if not order: raise HTTPException(status_code=404, detail='Order not found')
     items = await db.repair_items.find({'order_id': order_id}, {'_id': 0}).sort('created_at', 1).to_list(200)
-    rows = [[i['item_code'], i['description'], i['repair_type'] or '—', f"{i['gross_weight']:.3f}g",
-             i['pc_count'], i['due_date'] or '—'] for i in items]
-    pdf = _report_pdf(
-        f"Repair Intake — {order['order_no']}",
-        f"{order['customer_name']} · {order.get('customer_mobile', '')} · Received {order['created_at'][:10]}",
-        ['Tag', 'Item', 'Repair Type', 'Weight', 'Pcs', 'Due Date'], rows,
+    store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
+    # Same narrow label-style layout as the issue-slip PDF and every thermal
+    # print, instead of the old wide A4 report table — one look across every
+    # Repair/Stock In-Out printout, matching what actually comes out of the
+    # receipt printer.
+    pdf = _thermal_slip_pdf(
+        store.get('name') or 'Ram Murti Jewellers', f"Repair Intake — {order['order_no']}",
+        _intake_receipt_lines(order, items),
     )
     return _pdf_response(pdf, f'repair-slip-{order["order_no"]}.pdf')
 
@@ -996,9 +998,14 @@ def _bill_receipt_lines(item: dict) -> list:
 async def repair_item_bill_pdf(item_id: str, _: dict = Depends(require_staff_or_module(['repairs', 'repair_bill']))):
     item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
     if not item: raise HTTPException(status_code=404, detail='Item not found')
-    rows = [[label, value] for label, value in _bill_receipt_lines(item)]
-    pdf = _report_pdf(f"Repair Bill — {item['item_code']}", f"{item.get('customer_name', '')} · {item.get('order_no', '')}",
-                       ['Field', 'Value'], rows)
+    store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
+    # Same narrow label-style layout as every other Repair/Stock In-Out
+    # printout (see repair_order_slip_pdf above) instead of the old wide A4
+    # Field/Value report table.
+    pdf = _thermal_slip_pdf(
+        store.get('name') or 'Ram Murti Jewellers', f"Repair Bill — {item['item_code']}",
+        _bill_receipt_lines(item),
+    )
     return _pdf_response(pdf, f'repair-bill-{item["item_code"]}.pdf')
 
 
