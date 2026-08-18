@@ -109,7 +109,10 @@ async def list_samples(
             {'description': {'$regex': q_esc, '$options': 'i'}},
             {'karigar_name': {'$regex': q_esc, '$options': 'i'}},
         ]
-    return await db.samples.find(query, {'_id': 0}).sort('created_at', -1).to_list(1000)
+    # The list screen never renders the photo thumbnail (only the detail
+    # screen does, via GET /samples/{id}) — excluding it here avoids shipping
+    # a base64 image blob per row on every list load.
+    return await db.samples.find(query, {'_id': 0, 'photo': 0}).sort('created_at', -1).to_list(1000)
 
 
 @router.get('/samples/{sample_id}')
