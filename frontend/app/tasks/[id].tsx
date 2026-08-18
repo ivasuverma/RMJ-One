@@ -16,8 +16,9 @@ import { useTheme } from '@/src/theme/ThemeContext';
 type Comment = { id: string; author_name: string; author_role: string; text: string; created_at: string };
 type Task = {
   id: string; title: string; description: string; assigned_to: string; assigned_to_name: string;
-  assigned_by: string; priority: 'low' | 'normal' | 'urgent'; due_date: string | null;
+  assigned_by: string; priority: 'low' | 'normal' | 'urgent'; due_date: string | null; due_time: string | null;
   status: 'open' | 'done'; comments: Comment[]; recurring_template_id: string | null;
+  points?: number; points_awarded?: number | null; repeat_reminder?: boolean;
 };
 type Emp = { id: string; name: string; employee_code: string };
 
@@ -42,6 +43,9 @@ export default function TaskDetailScreen() {
   const [eDesc, setEDesc] = useState('');
   const [ePriority, setEPriority] = useState<Task['priority']>('normal');
   const [eDue, setEDue] = useState('');
+  const [eDueTime, setEDueTime] = useState('');
+  const [ePoints, setEPoints] = useState('');
+  const [eRepeatReminder, setERepeatReminder] = useState(false);
   const [reassignOpen, setReassignOpen] = useState(false);
   const [employees, setEmployees] = useState<Emp[]>([]);
 
@@ -52,6 +56,7 @@ export default function TaskDetailScreen() {
       const t = await api.get<Task>(`/tasks/${id}`);
       setTask(t);
       setETitle(t.title); setEDesc(t.description || ''); setEPriority(t.priority); setEDue(t.due_date || '');
+      setEDueTime(t.due_time || ''); setEPoints(t.points ? String(t.points) : ''); setERepeatReminder(!!t.repeat_reminder);
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Could not load this task'); router.back(); }
     finally { setLoading(false); }
   }, [id, router]);
@@ -83,7 +88,11 @@ export default function TaskDetailScreen() {
     if (!eTitle.trim()) { Alert.alert('Missing', 'Title is required'); return; }
     setBusy(true);
     try {
-      await api.put(`/tasks/${id}`, { title: eTitle.trim(), description: eDesc, priority: ePriority, due_date: eDue || null });
+      await api.put(`/tasks/${id}`, {
+        title: eTitle.trim(), description: eDesc, priority: ePriority, due_date: eDue || null,
+        due_time: eDue ? (eDueTime || null) : null, points: parseInt(ePoints, 10) || 0,
+        repeat_reminder: eRepeatReminder,
+      });
       setEditing(false);
       await load();
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
@@ -162,7 +171,30 @@ export default function TaskDetailScreen() {
                   </Pressable>
                 ))}
               </View>
-              <DateField label="Due date (optional)" value={eDue} onChange={setEDue} testID="edit-due" />
+              <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+                <View style={{ flex: 1 }}>
+                  <DateField label="Due date (optional)" value={eDue} onChange={setEDue} testID="edit-due" />
+                </View>
+                {!!eDue && (
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.label}>Due time</Text>
+                    <TextInput testID="edit-due-time" value={eDueTime} onChangeText={(v) => setEDueTime(v.replace(/[^0-9:]/g, ''))} placeholder="18:00" placeholderTextColor={colors.mutedText} style={styles.input} />
+                  </View>
+                )}
+              </View>
+
+              <Text style={styles.label}>Points (optional)</Text>
+              <TextInput testID="edit-points" value={ePoints} onChangeText={(v) => setEPoints(v.replace(/[^0-9]/g, ''))} keyboardType="number-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />
+
+              <Pressable onPress={() => setERepeatReminder((v) => !v)} style={styles.toggleRow} testID="edit-repeat-reminder-toggle">
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.toggleLabel}>Repeat reminder until done</Text>
+                  <Text style={styles.toggleSub}>Nudges the employee every few hours until marked done</Text>
+                </View>
+                <View style={[styles.switch, eRepeatReminder && styles.switchOn]}>
+                  <View style={[styles.switchKnob, eRepeatReminder && styles.switchKnobOn]} />
+                </View>
+              </Pressable>
 
               <View style={styles.editActions}>
                 <Pressable onPress={() => { setEditing(false); load(); }} style={styles.cancelBtn} testID="edit-cancel"><Text style={styles.cancelBtnText}>Cancel</Text></Pressable>
@@ -183,11 +215,18 @@ export default function TaskDetailScreen() {
 
               <View style={styles.metaCard}>
                 <MetaRow icon="flag-outline" label="Priority" value={task.priority[0].toUpperCase() + task.priority.slice(1)} />
-                <MetaRow icon="calendar-outline" label="Due date" value={task.due_date || 'No due date'} />
+                <MetaRow icon="calendar-outline" label="Due date" value={task.due_date ? `${task.due_date}${task.due_time ? ` ${task.due_time}` : ''}` : 'No due date'} />
                 <Pressable disabled={!isStaff} onPress={openReassign} testID="reassign-toggle">
                   <MetaRow icon="person-outline" label="Assigned to" value={task.assigned_to_name} trailing={isStaff ? 'chevron-down' : undefined} />
                 </Pressable>
                 <MetaRow icon="person-add-outline" label="Assigned by" value={task.assigned_by} />
+                {!!task.points && (
+                  <MetaRow
+                    icon="star-outline" label="Points"
+                    value={task.status === 'done' ? `${task.points_awarded ?? 0} of ${task.points} earned` : `${task.points} on time`}
+                  />
+                )}
+                {task.repeat_reminder && task.status === 'open' && <MetaRow icon="notifications-outline" label="Reminders" value="Repeating until done" />}
                 {task.recurring_template_id && <MetaRow icon="repeat-outline" label="Source" value="Recurring task" />}
               </View>
 
@@ -334,6 +373,20 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   chipActive: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
   chipText: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '700' },
   chipTextActive: { color: colors.onBrandPrimary },
+  toggleRow: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1,
+    borderColor: colors.border, padding: spacing.md, marginTop: spacing.md,
+  },
+  toggleLabel: { color: colors.onSurface, fontSize: 14, fontWeight: '600' },
+  toggleSub: { color: colors.mutedText, fontSize: 11, marginTop: 2 },
+  switch: {
+    width: 44, height: 26, borderRadius: 13, backgroundColor: colors.surfaceTertiary,
+    borderWidth: 1, borderColor: colors.border, padding: 2, justifyContent: 'center',
+  },
+  switchOn: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
+  switchKnob: { width: 20, height: 20, borderRadius: 10, backgroundColor: colors.onSurfaceTertiary },
+  switchKnobOn: { backgroundColor: colors.onBrandPrimary, transform: [{ translateX: 18 }] },
   editActions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.xl },
   cancelBtn: { flex: 1, alignItems: 'center', paddingVertical: 12, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border },
   cancelBtnText: { color: colors.onSurfaceSecondary, fontWeight: '700' },

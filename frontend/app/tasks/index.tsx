@@ -8,8 +8,9 @@ import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
 type Task = {
-  id: string; title: string; priority: 'low' | 'normal' | 'urgent'; due_date: string | null;
+  id: string; title: string; priority: 'low' | 'normal' | 'urgent'; due_date: string | null; due_time: string | null;
   status: 'open' | 'done'; assigned_to_name: string; recurring_template_id: string | null;
+  points?: number; points_awarded?: number | null; repeat_reminder?: boolean;
 };
 
 type Filter = 'open' | 'done' | 'all';
@@ -85,9 +86,18 @@ export default function TasksListScreen() {
                 <View style={{ flex: 1 }}>
                   <Text style={styles.cardTitle} numberOfLines={1}>{t.title}</Text>
                   <Text style={styles.cardMeta}>
-                    {t.assigned_to_name}{t.due_date ? ` · Due ${t.due_date}` : ''}{t.recurring_template_id ? ' · Recurring' : ''}
+                    {t.assigned_to_name}
+                    {t.due_date ? ` · Due ${t.due_date}${t.due_time ? ` ${t.due_time}` : ''}` : ''}
+                    {t.recurring_template_id ? ' · Recurring' : ''}
+                    {t.repeat_reminder && t.status === 'open' ? ' · Repeats reminder' : ''}
                   </Text>
                 </View>
+                {!!t.points && (
+                  <View style={styles.pointsBadge}>
+                    <Ionicons name="star" size={11} color={colors.onWarning} />
+                    <Text style={styles.pointsText}>{t.status === 'done' ? (t.points_awarded ?? 0) : t.points}</Text>
+                  </View>
+                )}
                 {overdue && <View style={styles.overdueBadge}><Text style={styles.overdueText}>Overdue</Text></View>}
                 <Ionicons name="chevron-forward" size={16} color={colors.mutedText} />
               </Pressable>
@@ -139,4 +149,10 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   cardMeta: { color: colors.mutedText, fontSize: 11, marginTop: 2 },
   overdueBadge: { backgroundColor: colors.error, borderColor: colors.onError, borderWidth: 1, borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 3 },
   overdueText: { color: colors.onError, fontSize: 10, fontWeight: '700' },
+  pointsBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    backgroundColor: colors.warning, borderColor: colors.onWarning, borderWidth: 1,
+    borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 3,
+  },
+  pointsText: { color: colors.onWarning, fontSize: 11, fontWeight: '700' },
 });

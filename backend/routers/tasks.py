@@ -6,10 +6,12 @@ server.py and is imported from here — nothing about behavior changed,
 only where the code lives."""
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Optional
+from datetime import datetime
 import uuid
 from server import (
     db,
     now_utc,
+    IST,
     get_current,
     require_admin,
     require_module,
@@ -35,7 +37,9 @@ async def create_task(body: TaskIn, user=Depends(require_admin_or_module('tasks'
     doc = {
         'id': str(uuid.uuid4()), 'title': body.title.strip(), 'description': body.description or '',
         'assigned_to': body.assigned_to, 'assigned_to_name': emp['name'], 'assigned_by': user['name'],
-        'priority': body.priority, 'due_date': body.due_date, 'status': 'open',
+        'priority': body.priority, 'due_date': body.due_date, 'due_time': body.due_time, 'status': 'open',
+        'points': max(0, body.points or 0), 'points_awarded': None,
+        'repeat_reminder': body.repeat_reminder, 'last_reminded_at': None,
         'comments': [], 'recurring_template_id': None, 'overdue_notified_at': None,
         'created_at': iso, 'completed_at': None,
     }
@@ -57,6 +61,42 @@ async def list_tasks(
         query['assigned_to'] = employee_id
     if status_: query['status'] = status_
     return await db.tasks.find(query, {'_id': 0}).sort('created_at', -1).to_list(1000)
+
+
+@router.get('/tasks/my-performance')
+async def my_task_performance(user=Depends(get_current)):
+    """Points earned + a quick performance overview for the logged-in
+    employee's own Tasks tab — total points, on-time vs late completions,
+    and what's still open."""
+    emp_id = user['id']
+    total_points = 0
+    completed = 0
+    on_time = 0
+    late = 0
+    async for t in db.tasks.find({'assigned_to': emp_id, 'status': 'done'}, {'_id': 0}):
+        completed += 1
+        awarded = t.get('points_awarded') or 0
+        total_points += awarded
+        if (t.get('points') or 0) > 0:
+            if awarded > 0: on_time += 1
+            else: late += 1
+    open_count = await db.tasks.count_documents({'assigned_to': emp_id, 'status': 'open'})
+    today_iso = now_utc().astimezone(IST).date().isoformat()
+    overdue_open = await db.tasks.count_documents({
+        'assigned_to': emp_id, 'status': 'open', 'due_date': {'$ne': None, '$lt': today_iso},
+    })
+    return {
+        'total_points': total_points, 'completed': completed,
+        'on_time': on_time, 'late': late, 'open': open_count, 'overdue_open': overdue_open,
+    }
+
+
+@router.get('/tasks/templates')
+async def list_task_templates(_: dict = Depends(require_admin), _mod=Depends(require_module('tasks'))):
+    # Registered ahead of the /tasks/{task_id} catch-all below — Starlette
+    # matches routes in registration order, and a static "templates" segment
+    # would otherwise always be swallowed as if it were a task_id.
+    return await db.task_templates.find({}, {'_id': 0}).sort('created_at', -1).to_list(500)
 
 
 @router.get('/tasks/{task_id}')
@@ -94,6 +134,25 @@ async def delete_task(task_id: str, user=Depends(require_admin_or_module_right('
     return {'ok': True}
 
 
+def _points_for_completion(t: dict, completed_at_iso: str) -> int:
+    """Full points only if the task is completed on or before its due
+    date/time (if one was set); no due date means no deadline to miss, so it
+    still counts. Not on time — or no points configured — earns nothing."""
+    points = t.get('points') or 0
+    if points <= 0:
+        return 0
+    due_date = t.get('due_date')
+    if not due_date:
+        return points
+    due_time = t.get('due_time') or '23:59'
+    try:
+        deadline = datetime.fromisoformat(f'{due_date}T{due_time}:00').replace(tzinfo=IST)
+    except ValueError:
+        return points
+    completed_at = datetime.fromisoformat(completed_at_iso).astimezone(IST)
+    return points if completed_at <= deadline else 0
+
+
 @router.post('/tasks/{task_id}/complete')
 async def complete_task(task_id: str, user=Depends(get_current)):
     t = await db.tasks.find_one({'id': task_id}, {'_id': 0})
@@ -103,7 +162,8 @@ async def complete_task(task_id: str, user=Depends(get_current)):
     if t['status'] == 'done':
         return t
     iso = now_utc().isoformat()
-    await db.tasks.update_one({'id': task_id}, {'$set': {'status': 'done', 'completed_at': iso}})
+    points_awarded = _points_for_completion(t, iso)
+    await db.tasks.update_one({'id': task_id}, {'$set': {'status': 'done', 'completed_at': iso, 'points_awarded': points_awarded}})
     await log_audit(user, 'task.complete', 'task', task_id, t.get('title', ''))
     return await db.tasks.find_one({'id': task_id}, {'_id': 0})
 
@@ -147,11 +207,6 @@ async def create_task_template(body: TaskTemplateIn, user=Depends(require_admin)
     await db.task_templates.insert_one(dict(doc))
     await log_audit(user, 'task_template.create', 'task_template', doc['id'], body.title)
     return {k: v for k, v in doc.items() if k != '_id'}
-
-
-@router.get('/tasks/templates')
-async def list_task_templates(_: dict = Depends(require_admin), _mod=Depends(require_module('tasks'))):
-    return await db.task_templates.find({}, {'_id': 0}).sort('created_at', -1).to_list(500)
 
 
 @router.put('/tasks/templates/{template_id}')

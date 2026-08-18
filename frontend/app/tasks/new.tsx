@@ -25,6 +25,9 @@ export default function NewTaskScreen() {
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState<Priority>('normal');
   const [dueDate, setDueDate] = useState('');
+  const [dueTime, setDueTime] = useState('');
+  const [points, setPoints] = useState('');
+  const [repeatReminder, setRepeatReminder] = useState(false);
   const [assignedTo, setAssignedTo] = useState<Emp | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -44,6 +47,9 @@ export default function NewTaskScreen() {
     try {
       await api.post('/tasks', {
         title: title.trim(), description, assigned_to: assignedTo.id, priority, due_date: dueDate || null,
+        due_time: dueDate ? (dueTime || null) : null,
+        points: parseInt(points, 10) || 0,
+        repeat_reminder: repeatReminder,
       });
       router.back();
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
@@ -93,7 +99,38 @@ export default function NewTaskScreen() {
             ))}
           </View>
 
-          <DateField label="Due date (optional)" value={dueDate} onChange={setDueDate} testID="task-due" />
+          <View style={styles.row2}>
+            <View style={{ flex: 1 }}>
+              <DateField label="Due date (optional)" value={dueDate} onChange={setDueDate} testID="task-due" />
+            </View>
+            {!!dueDate && (
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>Due time (HH:MM)</Text>
+                <TextInput
+                  testID="task-due-time" value={dueTime}
+                  onChangeText={(v) => setDueTime(v.replace(/[^0-9:]/g, ''))}
+                  placeholder="18:00" placeholderTextColor={colors.mutedText} style={styles.input}
+                />
+              </View>
+            )}
+          </View>
+
+          <Text style={styles.label}>Points (optional)</Text>
+          <TextInput
+            testID="task-points" value={points} onChangeText={(v) => setPoints(v.replace(/[^0-9]/g, ''))}
+            keyboardType="number-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input}
+          />
+          <Text style={styles.hintText}>Awarded to the employee only if this task is completed by the due date/time. Leave 0 for routine tasks with no scoring.</Text>
+
+          <Pressable onPress={() => setRepeatReminder((v) => !v)} style={styles.toggleRow} testID="task-repeat-reminder-toggle">
+            <View style={{ flex: 1 }}>
+              <Text style={styles.toggleLabel}>Repeat reminder until done</Text>
+              <Text style={styles.toggleSub}>Nudges the employee every few hours until the task is marked done, instead of just once</Text>
+            </View>
+            <View style={[styles.switch, repeatReminder && styles.switchOn]}>
+              <View style={[styles.switchKnob, repeatReminder && styles.switchKnobOn]} />
+            </View>
+          </Pressable>
 
           <View style={styles.info}>
             <Ionicons name="information-circle-outline" size={16} color={colors.brandSecondary} />
@@ -151,6 +188,22 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   chipActive: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
   chipText: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '700' },
   chipTextActive: { color: colors.onBrandPrimary },
+  row2: { flexDirection: 'row', gap: spacing.sm },
+  hintText: { color: colors.mutedText, fontSize: 11, marginTop: 6 },
+  toggleRow: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1,
+    borderColor: colors.border, padding: spacing.md, marginTop: spacing.lg,
+  },
+  toggleLabel: { color: colors.onSurface, fontSize: 14, fontWeight: '600' },
+  toggleSub: { color: colors.mutedText, fontSize: 11, marginTop: 2 },
+  switch: {
+    width: 44, height: 26, borderRadius: 13, backgroundColor: colors.surfaceTertiary,
+    borderWidth: 1, borderColor: colors.border, padding: 2, justifyContent: 'center',
+  },
+  switchOn: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
+  switchKnob: { width: 20, height: 20, borderRadius: 10, backgroundColor: colors.onSurfaceTertiary },
+  switchKnobOn: { backgroundColor: colors.onBrandPrimary, transform: [{ translateX: 18 }] },
   info: {
     flexDirection: 'row', gap: spacing.sm, alignItems: 'center',
     backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, padding: spacing.md,

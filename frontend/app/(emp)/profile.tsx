@@ -82,8 +82,6 @@ export default function EmployeeProfile() {
               <Row label="Shift" value={details.shift || '—'} />
               <Divider />
               <Row label="Joined" value={details.joining_date || '—'} />
-              <Divider />
-              <Row label="Salary" value={`₹${(details.salary || 0).toLocaleString('en-IN')}`} />
             </View>
 
             <SectionLabel text="Contact" />

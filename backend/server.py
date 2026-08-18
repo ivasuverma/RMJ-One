@@ -526,6 +526,14 @@ class TaskIn(BaseModel):
     assigned_to: str  # employee_id
     priority: Literal['low', 'normal', 'urgent'] = 'normal'
     due_date: Optional[str] = None  # YYYY-MM-DD
+    due_time: Optional[str] = None  # HH:MM, optional — paired with due_date
+    # Points earned by the assignee if this task is completed by its due
+    # date/time. 0 = no points system on this task (e.g. routine work).
+    points: int = 0
+    # When true, the assignee gets a repeating nudge notification every few
+    # hours until the task is marked done — not extra recipients, just
+    # persistence, for tasks that tend to get forgotten.
+    repeat_reminder: bool = False
 
 
 class TaskUpdateIn(BaseModel):
@@ -534,6 +542,9 @@ class TaskUpdateIn(BaseModel):
     assigned_to: Optional[str] = None
     priority: Optional[Literal['low', 'normal', 'urgent']] = None
     due_date: Optional[str] = None
+    due_time: Optional[str] = None
+    points: Optional[int] = None
+    repeat_reminder: Optional[bool] = None
 
 
 class TaskCommentIn(BaseModel):
@@ -1578,7 +1589,8 @@ async def _check_recurring_tasks():
         await db.tasks.insert_one({
             'id': task_id, 'title': title, 'description': tpl.get('description', ''),
             'assigned_to': tpl['assigned_to'], 'assigned_to_name': emp['name'], 'assigned_by': 'Recurring',
-            'priority': tpl.get('priority', 'normal'), 'due_date': today_iso, 'status': 'open',
+            'priority': tpl.get('priority', 'normal'), 'due_date': today_iso, 'due_time': None, 'status': 'open',
+            'points': 0, 'points_awarded': None, 'repeat_reminder': False, 'last_reminded_at': None,
             'comments': [], 'recurring_template_id': tpl['id'], 'overdue_notified_at': None,
             'created_at': iso, 'completed_at': None,
         })
@@ -1599,6 +1611,28 @@ async def _check_overdue_tasks():
                               f"{t.get('assigned_to_name', 'Someone')}: {t['title']} was due {t['due_date']}", '/tasks')
 
 
+TASK_REPEAT_REMINDER_MIN = 180  # how often to re-nudge an assignee on a repeat_reminder task
+
+
+async def _check_task_repeat_reminders():
+    """For tasks created with 'repeat_reminder' on, keep nudging the assignee
+    every TASK_REPEAT_REMINDER_MIN minutes until it's marked done — separate
+    from (and in addition to) the one-time owner/admin overdue alert."""
+    cutoff = (now_utc() - timedelta(minutes=TASK_REPEAT_REMINDER_MIN)).isoformat()
+    async for t in db.tasks.find(
+        {'status': 'open', 'repeat_reminder': True,
+         '$or': [{'last_reminded_at': None}, {'last_reminded_at': {'$lt': cutoff}}]},
+        {'_id': 0},
+    ):
+        # Don't start nudging before the task even existed for one interval —
+        # avoids an immediate duplicate of the "New task assigned" push.
+        reference = t.get('last_reminded_at') or t.get('created_at')
+        if reference and reference > cutoff:
+            continue
+        await db.tasks.update_one({'id': t['id']}, {'$set': {'last_reminded_at': now_utc().isoformat()}})
+        await notify_user(t['assigned_to'], 'Task reminder', f"Still pending: {t['title']}", '/(emp)/tasks')
+
+
 async def _attendance_reminder_loop():
     while True:
         try:
@@ -1611,6 +1645,7 @@ async def _attendance_reminder_loop():
             await _check_auto_advances()
             await _check_recurring_tasks()
             await _check_overdue_tasks()
+            await _check_task_repeat_reminders()
         except Exception as e:
             logger.warning(f'attendance reminder loop error: {e}')
 
