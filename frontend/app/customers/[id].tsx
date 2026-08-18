@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
+import { istDate } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
@@ -66,7 +67,7 @@ export default function CustomerDetailScreen() {
           <Pressable key={o.id} onPress={() => router.push(`/repairs/${o.id}` as any)} style={styles.orderRow} testID={`customer-order-${o.id}`}>
             <View style={{ flex: 1 }}>
               <Text style={styles.orderNo}>{o.order_no}</Text>
-              <Text style={styles.orderMeta}>{o.created_at?.slice(0, 10)} · {o.item_count ?? ''} item{o.item_count === 1 ? '' : 's'}</Text>
+              <Text style={styles.orderMeta}>{istDate(o.created_at)} · {o.item_count ?? ''} item{o.item_count === 1 ? '' : 's'}</Text>
             </View>
             <View style={[styles.statusBadge, o.status === 'completed' ? styles.statusDone : styles.statusOpen]}>
               <Text style={styles.statusText}>{o.status}</Text>

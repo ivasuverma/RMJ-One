@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
+import { todayIST } from '@/src/utils/datetime';
 import { DateField } from '@/src/components/DateField';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
@@ -17,7 +18,7 @@ export default function NewLeave() {
   const router = useRouter();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIST();
   const [type, setType] = useState<typeof TYPES[number]>('casual');
   const [from, setFrom] = useState(today);
   const [to, setTo] = useState(today);

@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { api } from '@/src/api/client';
+import { istDate } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
@@ -115,7 +116,7 @@ export default function CashLedgerScreen() {
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.cName}>{e.customer_name}{e.item_code ? ` · ${e.item_code}` : ''}</Text>
-                <Text style={styles.cMeta}>{(e.payment_mode || 'cash').toUpperCase()} · {e.created_at?.slice(0, 10)} · {e.created_by}</Text>
+                <Text style={styles.cMeta}>{(e.payment_mode || 'cash').toUpperCase()} · {istDate(e.created_at)} · {e.created_by}</Text>
               </View>
               <Text style={[styles.entryValue, { color: e.type === 'receipt' ? colors.onSuccess : colors.onWarning }]}>
                 {e.type === 'receipt' ? '+' : '-'}₹{e.amount.toFixed(0)}

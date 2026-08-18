@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { api, TOKEN_KEY } from '@/src/api/client';
 import { storage } from '@/src/utils/storage';
+import { istDate, todayIST } from '@/src/utils/datetime';
 import { REPAIR_STATUS_LABEL, repairStatusColors } from '@/src/utils/repairStatus';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
@@ -15,10 +16,14 @@ type Item = {
   gross_weight: number; due_date: string | null; created_at: string; created_by?: string;
 };
 
+// Pure IST-calendar-date diff — both ends anchored to UTC midnight of their
+// IST date string so the day count is stable regardless of device
+// timezone or time of day (mixing a UTC-midnight start with device-local
+// `now` used to drift by however far the device clock sits from midnight).
 function daysPending(createdAt: string) {
-  const start = new Date(createdAt?.slice(0, 10));
-  const now = new Date();
-  return Math.max(0, Math.round((now.getTime() - start.getTime()) / 86400000));
+  const start = new Date(`${istDate(createdAt)}T00:00:00Z`);
+  const end = new Date(`${todayIST()}T00:00:00Z`);
+  return Math.max(0, Math.round((end.getTime() - start.getTime()) / 86400000));
 }
 
 export default function OutstandingRepairsScreen() {
@@ -54,7 +59,7 @@ export default function OutstandingRepairsScreen() {
     finally { setPrinting(false); }
   };
 
-  const overdue = items.filter((i) => i.due_date && i.due_date < new Date().toISOString().slice(0, 10));
+  const overdue = items.filter((i) => i.due_date && i.due_date < todayIST());
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="outstanding-screen">
@@ -89,7 +94,7 @@ export default function OutstandingRepairsScreen() {
           <View style={styles.empty}><Ionicons name="checkmark-done-outline" size={36} color={colors.mutedText} /><Text style={styles.emptyText}>Nothing outstanding — all caught up</Text></View>
         ) : items.map((i) => {
           const dp = daysPending(i.created_at);
-          const isOverdue = !!i.due_date && i.due_date < new Date().toISOString().slice(0, 10);
+          const isOverdue = !!i.due_date && i.due_date < todayIST();
           const sc = repairStatusColors(i.status as any, colors);
           return (
             <Pressable key={i.id} onPress={() => router.push(`/repairs/item/${i.id}` as any)} style={styles.itemRow} testID={`outstanding-${i.id}`}>

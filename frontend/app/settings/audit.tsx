@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
+import { istDisplayDateTime } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
@@ -20,10 +21,7 @@ const ICON: Record<string, any> = {
   employee: 'person-outline', leave: 'calendar-outline', user: 'people-outline',
 };
 
-const fmtWhen = (iso: string) => {
-  try { return new Date(iso).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }); }
-  catch { return iso; }
-};
+const fmtWhen = (iso: string) => istDisplayDateTime(iso);
 
 export default function AuditLogsScreen() {
   const router = useRouter();

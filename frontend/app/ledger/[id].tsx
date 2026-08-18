@@ -9,15 +9,12 @@ import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { api } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthContext';
 import { confirmAction } from '@/src/utils/confirm';
+import { istDisplayDate } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
 const fmtINR = (n: number) => `₹${(Math.abs(n) || 0).toLocaleString('en-IN')}`;
-const fmtDate = (s?: string) => {
-  if (!s) return '';
-  try { return new Date(s).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }); }
-  catch { return s; }
-};
+const fmtDate = (s?: string) => istDisplayDate(s);
 
 const ICON: Record<string, any> = {
   advance: 'cash-outline', bonus: 'gift-outline', fine: 'warning-outline',

@@ -11,6 +11,7 @@ import { confirmAction } from '@/src/utils/confirm';
 import { PhotoCaptureModal } from '@/src/components/PhotoCaptureModal';
 import { DateField } from '@/src/components/DateField';
 import { REPAIR_STATUS_LABEL, repairStatusColors, RepairItemStatus } from '@/src/utils/repairStatus';
+import { istDate, todayIST } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { useAuth } from '@/src/auth/AuthContext';
@@ -95,7 +96,7 @@ export default function RepairBillScreen() {
 
   const openCloseForm = (it: Item) => {
     setCloseItem(it);
-    setCloseDate(new Date().toISOString().slice(0, 10));
+    setCloseDate(todayIST());
     setCloseBy(user?.name || '');
     setMode('close');
   };
@@ -333,7 +334,7 @@ export default function RepairBillScreen() {
                       </View>
                     </View>
                     <Text style={styles.cMeta} numberOfLines={2}>
-                      {b.description}{b.billed_amount != null ? ` · ₹${b.billed_amount.toFixed(0)}` : ''}{b.payment_mode ? ` · ${b.payment_mode}` : ''}{b.delivered_at ? ` · delivered ${b.delivered_at.slice(0, 10)}` : ''}
+                      {b.description}{b.billed_amount != null ? ` · ₹${b.billed_amount.toFixed(0)}` : ''}{b.payment_mode ? ` · ${b.payment_mode}` : ''}{b.delivered_at ? ` · delivered ${istDate(b.delivered_at)}` : ''}
                     </Text>
                   </View>
                 </Pressable>

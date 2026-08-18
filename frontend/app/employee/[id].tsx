@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '@/src/api/client';
 import { confirmAction } from '@/src/utils/confirm';
+import { istDisplayDate, displayDateOnly } from '@/src/utils/datetime';
 import { spacing, radius, images, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
@@ -52,11 +53,12 @@ const TABS = ['Details', 'Payroll', 'Timeline'] as const;
 type TabKey = typeof TABS[number];
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-const fmtDate = (iso?: string) => {
-  if (!iso) return '—';
-  try { return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }); }
-  catch { return iso; }
-};
+// Timeline entries carry a real UTC timestamp (needs IST conversion);
+// joining_date is a bare 'YYYY-MM-DD' the owner picked (no timezone
+// conversion applicable — see displayDateOnly for why these are handled
+// differently instead of sharing one formatter).
+const fmtDate = (iso?: string) => (iso ? istDisplayDate(iso) : '—');
+const fmtJoinDate = (ds?: string) => (ds ? displayDateOnly(ds) : '—');
 const fmtINR = (n: number) => `₹${(n || 0).toLocaleString('en-IN')}`;
 
 const TL_ICONS: Record<string, any> = {
@@ -317,7 +319,7 @@ function DetailsCard({ emp, onReload }: { emp: Emp; onReload: () => void }) {
       <DetailRow label="Designation" value={emp.designation || '—'} />
       <DetailRow label="Department" value={emp.department || '—'} />
       <DetailRow label="Shift" value={emp.shift || '—'} />
-      <DetailRow label="Joined" value={fmtDate(emp.joining_date)} />
+      <DetailRow label="Joined" value={fmtJoinDate(emp.joining_date)} />
 
       <SectionTitle text="Bank" />
       <DetailRow label="Bank" value={emp.bank_name || '—'} />
@@ -448,7 +450,7 @@ function PayrollCard({ emp }: { emp: Emp }) {
       </View>
       <View style={{ height: spacing.md }} />
       <DetailRow label="Shift" value={emp.shift || 'General'} />
-      <DetailRow label="Joined" value={fmtDate(emp.joining_date)} />
+      <DetailRow label="Joined" value={fmtJoinDate(emp.joining_date)} />
       {!!emp.auto_advance_amount && !!emp.auto_advance_day && (
         <DetailRow
           label="Auto Advance"

@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
+import { displayDateOnly } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
@@ -15,10 +16,9 @@ type Leave = {
   decision_note?: string;
 };
 
-const fmtDate = (s: string) => {
-  try { return new Date(s).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }); }
-  catch { return s; }
-};
+// from_date/to_date are bare 'YYYY-MM-DD' dates the employee picked — no
+// timestamp, no timezone conversion needed.
+const fmtDate = (s: string) => displayDateOnly(s);
 
 export default function EmployeeLeaves() {
   const { colors } = useTheme();

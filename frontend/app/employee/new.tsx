@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { api } from '@/src/api/client';
+import { todayIST } from '@/src/utils/datetime';
 import { DateField } from '@/src/components/DateField';
 import { PhotoCaptureModal } from '@/src/components/PhotoCaptureModal';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
@@ -26,7 +27,7 @@ type EmployeeForm = {
 
 const EMPTY: EmployeeForm = {
   name: '', employee_code: '', biometric_id: '', department: '', designation: '', shift: 'General', salary: '',
-  joining_date: new Date().toISOString().slice(0, 10), mobile: '', address: '',
+  joining_date: todayIST(), mobile: '', address: '',
   aadhaar: '', pan: '', bank_account: '', bank_ifsc: '', bank_name: '', status: 'active', notes: '',
   auto_advance_amount: '', auto_advance_day: '', photo: '',
 };

@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
 import { confirmAction } from '@/src/utils/confirm';
+import { istDate } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { useAuth } from '@/src/auth/AuthContext';
@@ -120,7 +121,7 @@ export default function KarigarLedgerScreen() {
       <View style={styles.entryIcon}><Ionicons name={ENTRY_ICON[e.type]} size={16} color={colors.brandSecondary} /></View>
       <View style={{ flex: 1 }}>
         <Text style={styles.entryTitle}>{ENTRY_LABEL[e.type]}{showItemCode && e.item_code ? ` · ${e.item_code}` : ''}</Text>
-        <Text style={styles.entryMeta}>{e.note || '—'} · {e.created_at?.slice(0, 10)} · {e.created_by}</Text>
+        <Text style={styles.entryMeta}>{e.note || '—'} · {istDate(e.created_at)} · {e.created_by}</Text>
       </View>
       <Text style={styles.entryValue}>
         {e.weight != null ? `${e.weight.toFixed(3)}g` : e.amount != null ? `₹${Math.abs(e.amount).toFixed(0)}` : ''}

@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { api } from '@/src/api/client';
+import { istDateTime, todayIST } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
@@ -83,7 +84,7 @@ export default function SamplesScreen() {
         {samples.length === 0 ? (
           <View style={styles.empty}><Ionicons name="diamond-outline" size={36} color={colors.mutedText} /><Text style={styles.emptyText}>No samples here</Text></View>
         ) : samples.map((s) => {
-          const isOverdue = s.status === 'with_karigar' && !!s.due_date && s.due_date < new Date().toISOString().slice(0, 10);
+          const isOverdue = s.status === 'with_karigar' && !!s.due_date && s.due_date < todayIST();
           const at = s.status === 'received' ? s.received_at : s.issued_at;
           return (
             <Pressable key={s.id} onPress={() => router.push(`/samples/${s.id}` as any)} style={styles.card} testID={`sample-${s.id}`}>
@@ -96,7 +97,7 @@ export default function SamplesScreen() {
                 <Text style={styles.cMeta2}>
                   {s.weight.toFixed(3)}g
                   {s.status === 'received' && s.weight_diff ? ` · diff ${s.weight_diff > 0 ? '+' : ''}${s.weight_diff.toFixed(3)}g` : ''}
-                  {at ? ` · ${at.slice(0, 10)} ${at.slice(11, 16)}` : ''}
+                  {at ? ` · ${istDateTime(at)}` : ''}
                   {s.issued_by ? ` · by ${s.issued_by}` : ''}
                 </Text>
               </View>

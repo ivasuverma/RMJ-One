@@ -7,17 +7,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { api } from '@/src/api/client';
 import { confirmAction } from '@/src/utils/confirm';
+import { istDisplayDateTime } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
 type Device = { id: string; serial: string; label: string; last_seen: string | null; status: string };
 type Log = { id: string; serial: string; user_id: string; timestamp: string; event_type: string; result: string; reason?: string; employee_name?: string; action?: string };
 
-const fmtWhen = (iso?: string | null) => {
-  if (!iso) return '—';
-  try { return new Date(iso).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }); }
-  catch { return iso; }
-};
+const fmtWhen = (iso?: string | null) => (iso ? istDisplayDateTime(iso) : '—');
 
 export default function BiometricScreen() {
   const router = useRouter();

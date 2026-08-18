@@ -8,6 +8,7 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthContext';
 import { confirmAction } from '@/src/utils/confirm';
+import { istDateTime } from '@/src/utils/datetime';
 import { PhotoCaptureModal } from '@/src/components/PhotoCaptureModal';
 import { DateField } from '@/src/components/DateField';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
@@ -182,9 +183,9 @@ export default function SampleDetailScreen() {
             {!!sample.due_date && (
               <View style={styles.detailRow}><Text style={styles.detailLabel}>Due Back</Text><Text style={styles.detailValue}>{sample.due_date}</Text></View>
             )}
-            <View style={styles.detailRow}><Text style={styles.detailLabel}>Issued</Text><Text style={styles.detailValue}>{sample.issued_at?.slice(0, 10)} {sample.issued_at?.slice(11, 16)} · {sample.issued_by}</Text></View>
+            <View style={styles.detailRow}><Text style={styles.detailLabel}>Issued</Text><Text style={styles.detailValue}>{istDateTime(sample.issued_at)} · {sample.issued_by}</Text></View>
             {sample.received_at && (
-              <View style={styles.detailRow}><Text style={styles.detailLabel}>Received</Text><Text style={styles.detailValue}>{sample.received_at.slice(0, 10)} {sample.received_at.slice(11, 16)} · {sample.received_by}</Text></View>
+              <View style={styles.detailRow}><Text style={styles.detailLabel}>Received</Text><Text style={styles.detailValue}>{istDateTime(sample.received_at)} · {sample.received_by}</Text></View>
             )}
             {!!sample.note && (
               <View style={[styles.detailRow, { flexDirection: 'column', alignItems: 'flex-start', gap: 4 }]}>

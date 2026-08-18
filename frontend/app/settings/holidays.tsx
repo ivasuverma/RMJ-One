@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { api } from '@/src/api/client';
 import { confirmAction } from '@/src/utils/confirm';
+import { displayDateOnly } from '@/src/utils/datetime';
 import { DateField } from '@/src/components/DateField';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
@@ -15,10 +16,7 @@ type H = { id: string; date: string; name: string; type: 'public' | 'festival' |
 
 const TYPES: H['type'][] = ['public', 'festival', 'store_closed'];
 
-const fmtDate = (s: string) => {
-  try { return new Date(s).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }); }
-  catch { return s; }
-};
+const fmtDate = (s: string) => displayDateOnly(s);
 
 export default function HolidaysScreen() {
   const router = useRouter();

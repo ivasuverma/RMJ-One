@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { api } from '@/src/api/client';
+import { istDate } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
@@ -102,7 +103,7 @@ export default function LossLedgerScreen() {
               <View style={styles.entryIcon}><Ionicons name="trending-down-outline" size={16} color={colors.brandSecondary} /></View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.cName}>{e.karigar_name}{e.item_code ? ` · ${e.item_code}` : ''}</Text>
-                <Text style={styles.cMeta}>{e.note || '—'} · {e.created_at?.slice(0, 10)} · {e.created_by}</Text>
+                <Text style={styles.cMeta}>{e.note || '—'} · {istDate(e.created_at)} · {e.created_by}</Text>
               </View>
               <View style={{ alignItems: 'flex-end' }}>
                 <Text style={styles.entryValue}>{e.weight.toFixed(3)}g</Text>

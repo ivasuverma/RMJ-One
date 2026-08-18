@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { api, TOKEN_KEY } from '@/src/api/client';
 import { storage } from '@/src/utils/storage';
+import { istDate } from '@/src/utils/datetime';
 import { REPAIR_STATUS_LABEL, repairStatusColors } from '@/src/utils/repairStatus';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
@@ -94,7 +95,7 @@ export default function RepairOrderDetailScreen() {
         <View style={styles.card}>
           <MetaRow icon="person-outline" label="Customer" value={order.customer_name} colors={colors} />
           <MetaRow icon="call-outline" label="Mobile" value={order.customer_mobile || '—'} colors={colors} />
-          <MetaRow icon="calendar-outline" label="Received" value={order.created_at?.slice(0, 10)} colors={colors} />
+          <MetaRow icon="calendar-outline" label="Received" value={istDate(order.created_at)} colors={colors} />
           <MetaRow icon="person-circle-outline" label="Taken by" value={order.created_by} colors={colors} />
         </View>
 

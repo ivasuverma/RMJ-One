@@ -7,6 +7,7 @@ import { useFocusEffect } from 'expo-router';
 import { api } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthContext';
 import { confirmAction } from '@/src/utils/confirm';
+import { istTime, displayDateOnly, displayDateOnlyWithWeekday } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
@@ -201,8 +202,8 @@ function DayDetail({ day, empId, canEdit, shifts, onClose, onSaved }: {
 }) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
-  const [inTime, setInTime] = useState(day.check_in ? new Date(day.check_in).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false }) : '');
-  const [outTime, setOutTime] = useState(day.check_out ? new Date(day.check_out).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false }) : '');
+  const [inTime, setInTime] = useState(day.check_in ? istTime(day.check_in) : '');
+  const [outTime, setOutTime] = useState(day.check_out ? istTime(day.check_out) : '');
   const initialOff = OFF_STATUSES.includes(day.status as any) ? (day.status as typeof OFF_STATUSES[number]) : null;
   const [offStatus, setOffStatus] = useState<typeof OFF_STATUSES[number] | null>(initialOff);
   const [selectedShift, setSelectedShift] = useState<Shift | null>(null);
@@ -258,7 +259,7 @@ function DayDetail({ day, empId, canEdit, shifts, onClose, onSaved }: {
   const confirmDelete = () => {
     confirmAction(
       'Delete entry?',
-      `This removes the attendance record for ${new Date(day.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}. This cannot be undone.`,
+      `This removes the attendance record for ${displayDateOnly(day.date)}. This cannot be undone.`,
       'Delete',
       doDelete,
     );
@@ -296,7 +297,7 @@ function DayDetail({ day, empId, canEdit, shifts, onClose, onSaved }: {
         <ScrollView style={styles.sheet} contentContainerStyle={{ paddingBottom: 36 }} testID="day-detail-sheet" keyboardShouldPersistTaps="handled">
           <View style={styles.sheetGrip} />
           <View style={styles.sheetTitleRow}>
-            <Text style={styles.sheetTitle}>{new Date(day.date).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}</Text>
+            <Text style={styles.sheetTitle}>{displayDateOnlyWithWeekday(day.date)}</Text>
             {canEdit && day.has_record && (
               <Pressable
                 onPress={confirmDelete}

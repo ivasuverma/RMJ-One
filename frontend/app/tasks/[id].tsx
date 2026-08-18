@@ -9,6 +9,7 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthContext';
 import { confirmAction } from '@/src/utils/confirm';
+import { todayIST } from '@/src/utils/datetime';
 import { DateField } from '@/src/components/DateField';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
@@ -138,7 +139,7 @@ export default function TaskDetailScreen() {
   }
 
   const canMarkDone = task.status === 'open' && (isStaff || task.assigned_to === user?.id);
-  const overdue = !!task.due_date && task.status === 'open' && task.due_date < new Date().toISOString().slice(0, 10);
+  const overdue = !!task.due_date && task.status === 'open' && task.due_date < todayIST();
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="task-detail-screen">

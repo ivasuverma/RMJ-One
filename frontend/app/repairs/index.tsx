@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { api } from '@/src/api/client';
 import { REPAIR_STATUS_LABEL, repairStatusColors, RepairItemStatus } from '@/src/utils/repairStatus';
+import { istDate, todayIST } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
@@ -45,7 +46,7 @@ export default function RepairOrdersScreen() {
   }, []);
   useFocusEffect(useCallback(() => { load(filter); }, [load, filter]));
 
-  const todayISO = new Date().toISOString().slice(0, 10);
+  const todayISO = todayIST();
   const activeFilter = FILTERS.find((f) => f.key === filter)!;
 
   // Bulk issue/receive is only meaningful for a single, unambiguous action —
@@ -118,7 +119,7 @@ export default function RepairOrdersScreen() {
           const isOverdue = !!i.due_date && i.due_date < todayISO && i.status !== 'delivered' && i.status !== 'pending_delivery';
           const sc = repairStatusColors(i.status, colors);
           const checked = selectedIds.has(i.id);
-          const createdDate = i.created_at ? i.created_at.slice(0, 10) : '';
+          const createdDate = istDate(i.created_at);
           const metaBits = [
             `Created ${createdDate}`,
             i.due_date ? `Due ${i.due_date}` : null,

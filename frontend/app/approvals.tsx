@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
+import { displayDateOnly } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
@@ -27,7 +28,8 @@ const reasonLabel = (r: string) => ({
   machine_error: 'Machine Error', other: 'Other',
 } as any)[r] || r;
 
-const fmtDate = (s?: string) => s ? new Date(s).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : '—';
+// date/from_date/to_date here are all bare 'YYYY-MM-DD' — no timestamp.
+const fmtDate = (s?: string) => (s ? displayDateOnly(s) : '—');
 
 export default function Approvals() {
   const router = useRouter();

@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
+import { todayIST } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
@@ -42,7 +43,7 @@ export default function EmployeeTasksScreen() {
     .sort((a, b) => (a.due_date || '9999').localeCompare(b.due_date || '9999'));
   const done = tasks.filter((t) => t.status === 'done');
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIST();
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="emp-tasks-screen">

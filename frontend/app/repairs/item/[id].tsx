@@ -8,6 +8,7 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { api, TOKEN_KEY } from '@/src/api/client';
 import { storage } from '@/src/utils/storage';
 import { confirmAction } from '@/src/utils/confirm';
+import { istDate, istDateTime } from '@/src/utils/datetime';
 import { DateField } from '@/src/components/DateField';
 import { REPAIR_STATUS_LABEL, repairStatusColors, RepairItemStatus } from '@/src/utils/repairStatus';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
@@ -234,11 +235,11 @@ export default function RepairItemDetailScreen() {
             <MetaCell icon="calendar-outline" label="Due" value={item.due_date || '—'} colors={colors} />
             {item.karigar_name && <MetaCell icon="hammer-outline" label="Karigar" value={item.karigar_name} colors={colors} />}
             {item.billed_amount != null && <MetaCell icon="receipt-outline" label="Billed" value={`₹${item.billed_amount.toFixed(0)} · ${item.payment_mode}`} colors={colors} />}
-            {item.delivered_at && <MetaCell icon="checkmark-done-outline" label="Delivered" value={`${item.delivered_at.slice(0, 10)}${item.delivered_by ? ` · by ${item.delivered_by}` : ''}`} colors={colors} />}
+            {item.delivered_at && <MetaCell icon="checkmark-done-outline" label="Delivered" value={`${istDate(item.delivered_at)}${item.delivered_by ? ` · by ${item.delivered_by}` : ''}`} colors={colors} />}
             {item.updated_by && <MetaCell icon="pencil-outline" label="Last by" value={item.updated_by} colors={colors} />}
             <MetaCell icon="person-outline" label="Customer" value={`${item.customer_name} · ${item.order_no}`} colors={colors} wide />
             {item.weight_diff != null && <MetaCell icon="swap-vertical-outline" label="Weight diff" value={`${item.weight_diff >= 0 ? '+' : ''}${item.weight_diff.toFixed(3)}g${item.fine_weight_diff != null ? ` (fine ${item.fine_weight_diff >= 0 ? '+' : ''}${item.fine_weight_diff.toFixed(3)}g)` : ''}`} colors={colors} wide />}
-            {item.created_by && <MetaCell icon="person-add-outline" label="Intake by" value={`${item.created_by}${item.created_at ? ` · ${item.created_at.slice(0, 10)} ${item.created_at.slice(11, 16)}` : ''}`} colors={colors} wide />}
+            {item.created_by && <MetaCell icon="person-add-outline" label="Intake by" value={`${item.created_by}${item.created_at ? ` · ${istDateTime(item.created_at)}` : ''}`} colors={colors} wide />}
           </View>
 
           {form === 'edit' && (
@@ -373,7 +374,7 @@ export default function RepairItemDetailScreen() {
                   <View style={{ flex: 1 }}>
                     <Text style={styles.cName}>{h.direction === 'issue' ? 'Issued to' : 'Received from'} {h.karigar_name} · {h.challan_no}</Text>
                     <Text style={styles.cMeta}>{h.weight.toFixed(3)}g{h.fine_weight != null ? ` (fine ${h.fine_weight.toFixed(3)}g)` : ''}{h.weight_diff != null ? ` · diff ${h.weight_diff >= 0 ? '+' : ''}${h.weight_diff.toFixed(3)}g` : ''}</Text>
-                    <Text style={styles.cMeta}>{h.note || '—'} · {h.created_at?.slice(0, 10)} · {h.created_by}{h.edited_by ? ` · edited by ${h.edited_by}` : ''}</Text>
+                    <Text style={styles.cMeta}>{h.note || '—'} · {istDate(h.created_at)} · {h.created_by}{h.edited_by ? ` · edited by ${h.edited_by}` : ''}</Text>
                   </View>
                   {canEdit && (canEditRepair || canDeleteRepair) && (
                     <View style={{ flexDirection: 'row', gap: 6 }}>

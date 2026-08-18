@@ -10,6 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthContext';
+import { istTime, nowISTLongLabel } from '@/src/utils/datetime';
 import { spacing, radius, images, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { PunchCaptureModal, PunchResult } from '@/src/components/PunchCaptureModal';
@@ -27,8 +28,8 @@ type Store = { work_start?: string; work_end?: string; grace_min?: number; name?
 
 const fmtTime = (iso?: string) => {
   if (!iso) return '—';
-  try { return new Date(iso).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }); }
-  catch { return iso; }
+  const t = istTime(iso);
+  return t || iso;
 };
 
 export default function EmployeeHome() {
@@ -118,7 +119,7 @@ export default function EmployeeHome() {
                 <Ionicons name="log-out-outline" size={20} color={colors.onSurface} />
               </Pressable>
             </View>
-            <Text style={styles.dateText}>{now.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}</Text>
+            <Text style={styles.dateText}>{nowISTLongLabel()}</Text>
           </View>
         </View>
 

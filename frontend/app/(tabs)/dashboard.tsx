@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthContext';
+import { nowISTLongLabel } from '@/src/utils/datetime';
 import { spacing, radius, images, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
@@ -93,7 +94,7 @@ export default function DashboardScreen() {
 
   const onRefresh = () => { setRefreshing(true); load(); };
 
-  const today = new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' });
+  const today = nowISTLongLabel();
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="dashboard-screen">

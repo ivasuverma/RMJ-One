@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { api, TOKEN_KEY } from '@/src/api/client';
 import { storage } from '@/src/utils/storage';
+import { todayIST } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
@@ -22,7 +23,7 @@ const KINDS: {
   { key: 'ledger', label: 'Ledger (per employee)', icon: 'book-outline', needsEmp: true },
 ];
 
-const today = new Date().toISOString().slice(0, 10);
+const today = todayIST();
 const monthStart = today.slice(0, 7) + '-01';
 
 export default function Reports() {

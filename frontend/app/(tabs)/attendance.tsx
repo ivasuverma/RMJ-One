@@ -7,6 +7,7 @@ import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
+import { istTime, todayIST, shiftedISTDate, displayDateOnly, localDateStr } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
@@ -51,22 +52,16 @@ function statusKeyOf(row: Row): StatusKey {
 
 const fmtTime = (iso?: string | null) => {
   if (!iso) return '—:—';
-  try { return new Date(iso).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }); }
-  catch { return '—:—'; }
+  const t = istTime(iso);
+  return t || '—:—';
 };
 
 const VALID_STATUS_KEYS = new Set(STATUS_FILTERS.map((f) => f.key));
 
-const isoDate = (dt: Date) => dt.toISOString().slice(0, 10);
 const fmtDateLabel = (ds: string) => {
-  try {
-    const d = new Date(`${ds}T00:00:00`);
-    const today = isoDate(new Date());
-    const yest = isoDate(new Date(Date.now() - 86400000));
-    if (ds === today) return 'Today';
-    if (ds === yest) return 'Yesterday';
-    return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
-  } catch { return ds; }
+  if (ds === todayIST()) return 'Today';
+  if (ds === shiftedISTDate(-1)) return 'Yesterday';
+  return displayDateOnly(ds);
 };
 
 export default function OwnerAttendance() {
@@ -86,8 +81,8 @@ export default function OwnerAttendance() {
   );
   const [deptFilter, setDeptFilter] = useState('all');
   const [query, setQuery] = useState('');
-  const [date, setDate] = useState(() => isoDate(new Date()));
-  const isToday = date === isoDate(new Date());
+  const [date, setDate] = useState(() => todayIST());
+  const isToday = date === todayIST();
 
   // Coming in from a dashboard tile (e.g. tapping "Present") should re-apply
   // that filter even if this screen was already mounted from a previous visit.
@@ -116,8 +111,8 @@ export default function OwnerAttendance() {
   const stepDate = (deltaDays: number) => {
     const d = new Date(`${date}T00:00:00`);
     d.setDate(d.getDate() + deltaDays);
-    const next = isoDate(d);
-    if (next > isoDate(new Date())) return; // no future dates
+    const next = localDateStr(d);
+    if (next > todayIST()) return; // no future dates
     setLoading(true);
     setDate(next);
   };

@@ -4,12 +4,15 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
+import { istDisplayDate } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
 type Notif = { id: string; title: string; body: string; url: string; read: boolean; created_at: string };
 
 function timeAgo(iso: string) {
+  // Relative buckets diff two absolute instants, so they're timezone-agnostic
+  // — only the >=7-day fallback needs an IST-correct absolute date.
   const then = new Date(iso).getTime();
   const diffMin = Math.max(0, Math.round((Date.now() - then) / 60000));
   if (diffMin < 1) return 'just now';
@@ -18,7 +21,7 @@ function timeAgo(iso: string) {
   if (diffHr < 24) return `${diffHr}h ago`;
   const diffDay = Math.round(diffHr / 24);
   if (diffDay < 7) return `${diffDay}d ago`;
-  return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+  return istDisplayDate(iso);
 }
 
 export default function NotificationsScreen() {
