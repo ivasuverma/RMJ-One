@@ -16,13 +16,14 @@ import { useAuth } from '@/src/auth/AuthContext';
 
 type EntryType = 'received' | 'paid';
 type Entry = {
-  id: string; date: string; type: EntryType; amount: number; name: string; note?: string;
-  created_at: string; created_by?: string;
+  id: string; date: string; counter_id: string; type: EntryType; amount: number; name: string; note?: string;
+  created_at: string; created_by?: string; updated_at?: string; updated_by?: string;
 };
 type DayData = {
-  date: string; opening_balance: number; entries: Entry[];
+  date: string; counter_id: string; counter_name: string; opening_balance: number; entries: Entry[];
   total_received: number; total_paid: number; closing_balance: number;
 };
+type Counter = { id: string; name: string; opening_balance: number; active: boolean; created_at: string; created_by?: string };
 
 type Mode = 'view' | 'form' | 'settings';
 
@@ -45,6 +46,14 @@ export default function CashBookScreen() {
   const [busy, setBusy] = useState(false);
   const [deletingId, setDeletingId] = useState('');
 
+  // Counters — each is its own cash book with its own entries/running
+  // balance. counterId is whichever one is currently selected.
+  const [counters, setCounters] = useState<Counter[]>([]);
+  const [counterId, setCounterId] = useState('');
+  const [countersLoading, setCountersLoading] = useState(true);
+  // null = counter list view (inside Manage mode); non-null = add/edit form for one counter
+  const [counterForm, setCounterForm] = useState<{ id: string | null; name: string; opening_balance: string } | null>(null);
+
   // Entry form
   const [editing, setEditing] = useState<Entry | null>(null);
   const [entryType, setEntryType] = useState<EntryType>('received');
@@ -52,18 +61,32 @@ export default function CashBookScreen() {
   const [name, setName] = useState('');
   const [note, setNote] = useState('');
 
-  // Owner-only opening balance settings
-  const [baseOpening, setBaseOpening] = useState('');
-  const [settingsLoading, setSettingsLoading] = useState(false);
-
-  const load = useCallback(async (d: string) => {
+  const loadCounters = useCallback(async (selectId?: string) => {
     try {
-      const res = await api.get<DayData>(`/cashbook/day?date=${d}`);
+      const res = await api.get<Counter[]>('/cashbook/counters');
+      setCounters(res);
+      setCounterId((prev) => {
+        if (selectId && res.some((c) => c.id === selectId)) return selectId;
+        if (prev && res.some((c) => c.id === prev)) return prev;
+        return res[0]?.id || '';
+      });
+    } catch (_e) { setCounters([]); }
+    finally { setCountersLoading(false); }
+  }, []);
+  useFocusEffect(useCallback(() => { loadCounters(); }, [loadCounters]));
+
+  const load = useCallback(async (d: string, cid: string) => {
+    if (!cid) { setDay(null); setLoading(false); setRefreshing(false); return; }
+    try {
+      const res = await api.get<DayData>(`/cashbook/day?date=${d}&counter_id=${cid}`);
       setDay(res);
     } catch (_e) { setDay(null); }
     finally { setLoading(false); setRefreshing(false); }
   }, []);
-  useFocusEffect(useCallback(() => { if (mode === 'view') { setLoading(true); load(date); } }, [load, date, mode]));
+  useFocusEffect(useCallback(() => {
+    if (mode !== 'view' || countersLoading) return;
+    setLoading(true); load(date, counterId);
+  }, [load, date, counterId, mode, countersLoading]));
 
   const shiftDay = (delta: number) => {
     const d = new Date(date + 'T00:00:00');
@@ -84,8 +107,9 @@ export default function CashBookScreen() {
     const amt = parseFloat(amount);
     if (!amt || amt <= 0) { Alert.alert('Invalid', 'Enter an amount greater than 0'); return; }
     if (!name.trim()) { Alert.alert('Invalid', 'Enter a name / description'); return; }
+    if (!counterId) { Alert.alert('No counter selected', 'Add a Cash Book counter first.'); return; }
     setBusy(true);
-    const payload = { date, type: entryType, amount: amt, name: name.trim(), note };
+    const payload = { date, counter_id: counterId, type: entryType, amount: amt, name: name.trim(), note };
     try {
       if (editing) {
         await api.put(`/cashbook/entries/${editing.id}`, payload);
@@ -93,7 +117,7 @@ export default function CashBookScreen() {
         await api.post('/cashbook/entries', payload);
       }
       setMode('view'); setLoading(true);
-      await load(date);
+      await load(date, counterId);
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
     finally { setBusy(false); }
   };
@@ -105,27 +129,48 @@ export default function CashBookScreen() {
     setDeletingId(e.id);
     try {
       await api.del(`/cashbook/entries/${e.id}`);
-      await load(date);
+      await load(date, counterId);
     } catch (err: any) { Alert.alert('Failed', err?.detail || 'Please try again'); }
     finally { setDeletingId(''); }
   };
 
-  const openSettings = async () => {
-    setMode('settings'); setSettingsLoading(true);
-    try {
-      const res = await api.get<{ opening_balance: number }>('/cashbook/settings');
-      setBaseOpening(String(res.opening_balance ?? 0));
-    } catch (_e) { setBaseOpening('0'); }
-    finally { setSettingsLoading(false); }
-  };
-  const saveSettings = async () => {
+  const openManageCounters = () => { setCounterForm(null); setMode('settings'); };
+  const saveCounter = async () => {
+    if (!counterForm) return;
+    if (!counterForm.name.trim()) { Alert.alert('Invalid', 'Enter a name'); return; }
     setBusy(true);
     try {
-      await api.put('/cashbook/settings', { opening_balance: parseFloat(baseOpening) || 0 });
-      setMode('view'); setLoading(true);
-      await load(date);
+      let selectId: string | undefined = counterForm.id || undefined;
+      if (counterForm.id) {
+        await api.put(`/cashbook/counters/${counterForm.id}`, {
+          name: counterForm.name.trim(), opening_balance: parseFloat(counterForm.opening_balance) || 0,
+        });
+      } else {
+        const created = await api.post<Counter>('/cashbook/counters', {
+          name: counterForm.name.trim(), opening_balance: parseFloat(counterForm.opening_balance) || 0,
+        });
+        selectId = created.id;
+      }
+      setCounterForm(null);
+      await loadCounters(selectId);
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
     finally { setBusy(false); }
+  };
+  const deactivateCounter = (c: Counter) => {
+    confirmAction(
+      'Deactivate counter?',
+      `"${c.name}" will no longer appear in the counter list. Its recorded entries are kept, not deleted.`,
+      'Deactivate',
+      async () => {
+        setBusy(true);
+        try {
+          await api.put(`/cashbook/counters/${c.id}`, { active: false });
+          setCounterForm(null);
+          await loadCounters();
+        } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+        finally { setBusy(false); }
+      },
+    );
   };
 
   const received = day?.entries.filter((e) => e.type === 'received') || [];
@@ -134,31 +179,24 @@ export default function CashBookScreen() {
 
   const renderEntry = (e: Entry, amountColor: string) => (
     <View key={e.id} style={styles.entryRow} testID={`cashbook-entry-${e.id}`}>
-      <View style={{ flex: 1, minWidth: 0 }}>
-        <Text style={styles.entryName} numberOfLines={2}>{e.name}</Text>
-        {!!e.note && <Text style={styles.entryNote} numberOfLines={2}>{e.note}</Text>}
-        {!!e.created_by && <Text style={styles.entryBy} numberOfLines={1}>by {e.created_by}</Text>}
-      </View>
-      <Text style={[styles.entryAmount, { color: amountColor }]}>{fmtINR(e.amount)}</Text>
-      {(canEdit || canDelete) && (
-        <View style={styles.entryActions}>
-          {canEdit && (
-            <Pressable onPress={() => openEdit(e)} style={styles.entryActionIcon} hitSlop={8} testID={`cashbook-edit-${e.id}`}>
-              <Ionicons name="pencil-outline" size={13} color={colors.mutedText} />
-            </Pressable>
-          )}
-          {canDelete && (
-            <Pressable onPress={() => confirmDeleteEntry(e)} disabled={deletingId === e.id} style={styles.entryActionIcon} hitSlop={8} testID={`cashbook-delete-${e.id}`}>
-              {deletingId === e.id ? <ActivityIndicator size="small" color={colors.onError} /> : <Ionicons name="trash-outline" size={13} color={colors.mutedText} />}
-            </Pressable>
-          )}
+      <Pressable disabled={!canEdit} onPress={() => openEdit(e)} style={styles.entryMain}>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={styles.entryName} numberOfLines={2}>{e.name}</Text>
+          {!!e.note && <Text style={styles.entryNote} numberOfLines={2}>{e.note}</Text>}
         </View>
+        <Text style={[styles.entryAmount, { color: amountColor }]}>{fmtINR(e.amount)}</Text>
+      </Pressable>
+      {canDelete && (
+        <Pressable onPress={() => confirmDeleteEntry(e)} disabled={deletingId === e.id} style={styles.entryActionIcon} hitSlop={8} testID={`cashbook-delete-${e.id}`}>
+          {deletingId === e.id ? <ActivityIndicator size="small" color={colors.onError} /> : <Ionicons name="trash-outline" size={13} color={colors.mutedText} />}
+        </Pressable>
       )}
     </View>
   );
 
-  const headerTitle = mode === 'settings' ? 'Opening Balance' : mode === 'form' ? (editing ? 'Edit Entry' : entryType === 'received' ? 'Cash Received' : 'Cash Paid') : 'Cash Book';
+  const headerTitle = mode === 'settings' ? (counterForm ? (counterForm.id ? 'Edit Counter' : 'Add Counter') : 'Cash Book Counters') : mode === 'form' ? (editing ? 'Edit Entry' : entryType === 'received' ? 'Cash Received' : 'Cash Paid') : 'Cash Book';
   const onBack = () => {
+    if (mode === 'settings' && counterForm) { setCounterForm(null); return; }
     if (mode !== 'view') { setMode('view'); return; }
     router.back();
   };
@@ -171,7 +209,7 @@ export default function CashBookScreen() {
         </Pressable>
         <Text style={styles.title}>{headerTitle}</Text>
         {mode === 'view' && isOwner ? (
-          <Pressable onPress={openSettings} style={styles.iconBtn} testID="cashbook-settings-btn" hitSlop={12}>
+          <Pressable onPress={openManageCounters} style={styles.iconBtn} testID="cashbook-settings-btn" hitSlop={12}>
             <Ionicons name="settings-outline" size={19} color={colors.onSurface} />
           </Pressable>
         ) : <View style={{ width: 40 }} />}
@@ -179,6 +217,16 @@ export default function CashBookScreen() {
 
       {mode === 'view' && (
         <>
+          {counters.length > 1 && (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.counterScroll} contentContainerStyle={styles.counterChipsRow}>
+              {counters.map((c) => (
+                <Pressable key={c.id} onPress={() => setCounterId(c.id)} style={[styles.counterChip, counterId === c.id && styles.counterChipActive]} testID={`cashbook-counter-${c.id}`}>
+                  <Text style={[styles.counterChipText, counterId === c.id && styles.counterChipTextActive]}>{c.name}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+          )}
+
           <View style={styles.dayNav}>
             <Pressable onPress={() => shiftDay(-1)} style={styles.navBtn} testID="cashbook-prev-day" hitSlop={10}>
               <Ionicons name="chevron-back" size={18} color={colors.onSurface} />
@@ -195,14 +243,29 @@ export default function CashBookScreen() {
               </Pressable>
             )}
           </View>
-          <Text style={styles.dayLabel}>{displayDateOnlyWithWeekday(date)}</Text>
+          <Text style={styles.dayLabel}>
+            {displayDateOnlyWithWeekday(date)}{counters.length === 1 ? ` · ${counters[0].name}` : ''}
+          </Text>
 
-          {loading ? (
+          {countersLoading || loading ? (
             <View style={styles.loader}><ActivityIndicator color={colors.brandPrimary} /></View>
+          ) : counters.length === 0 ? (
+            <View style={styles.empty}>
+              <Ionicons name="wallet-outline" size={36} color={colors.mutedText} />
+              <Text style={styles.emptyText}>
+                {isOwner ? 'No Cash Book counters yet — add one to start recording entries.' : 'No Cash Book counters have been set up yet.'}
+              </Text>
+              {isOwner && (
+                <Pressable onPress={() => { setMode('settings'); setCounterForm({ id: null, name: '', opening_balance: '0' }); }} style={styles.addCounterBtn} testID="cashbook-add-first-counter">
+                  <Ionicons name="add" size={16} color={colors.onBrandPrimary} />
+                  <Text style={styles.addCounterBtnText}>Add Counter</Text>
+                </Pressable>
+              )}
+            </View>
           ) : (
             <ScrollView
               contentContainerStyle={{ padding: spacing.lg, paddingTop: spacing.sm, paddingBottom: 100 }}
-              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(date); }} tintColor={colors.brandPrimary} />}
+              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(date, counterId); }} tintColor={colors.brandPrimary} />}
             >
               <View style={styles.openingRow} testID="cashbook-opening">
                 <Text style={styles.openingLabel}>Opening Balance</Text>
@@ -246,22 +309,43 @@ export default function CashBookScreen() {
             </ScrollView>
           )}
 
-          <View style={styles.fabRow}>
-            <Pressable onPress={() => openAdd('received')} style={[styles.fab, { backgroundColor: colors.brandPrimary }]} testID="cashbook-add-received">
-              <Ionicons name="add" size={18} color={colors.onBrandPrimary} />
-              <Text style={styles.fabText}>Received</Text>
-            </Pressable>
-            <Pressable onPress={() => openAdd('paid')} style={[styles.fab, styles.fabSecondary]} testID="cashbook-add-paid">
-              <Ionicons name="add" size={18} color={colors.onSurface} />
-              <Text style={[styles.fabText, { color: colors.onSurface }]}>Paid</Text>
-            </Pressable>
-          </View>
+          {counters.length > 0 && (
+            <View style={styles.fabRow}>
+              <Pressable onPress={() => openAdd('received')} style={[styles.fab, { backgroundColor: colors.brandPrimary }]} testID="cashbook-add-received">
+                <Ionicons name="add" size={18} color={colors.onBrandPrimary} />
+                <Text style={styles.fabText}>Received</Text>
+              </Pressable>
+              <Pressable onPress={() => openAdd('paid')} style={[styles.fab, styles.fabSecondary]} testID="cashbook-add-paid">
+                <Ionicons name="add" size={18} color={colors.onSurface} />
+                <Text style={[styles.fabText, { color: colors.onSurface }]}>Paid</Text>
+              </Pressable>
+            </View>
+          )}
         </>
       )}
 
       {mode === 'form' && (
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
           <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 60 }} keyboardShouldPersistTaps="handled">
+            {!!editing && (
+              <Text style={styles.hint}>
+                Added by {editing.created_by || 'unknown'}
+                {editing.updated_by ? ` · last edited by ${editing.updated_by}` : ''}
+              </Text>
+            )}
+            {counters.length > 1 && (
+              <>
+                <Text style={styles.label}>Counter</Text>
+                <View style={styles.chipRow}>
+                  {counters.map((c) => (
+                    <Pressable key={c.id} onPress={() => setCounterId(c.id)} style={[styles.typeChip, counterId === c.id && styles.typeChipReceived]} testID={`cashbook-form-counter-${c.id}`}>
+                      <Text style={[styles.typeChipText, counterId === c.id && styles.typeChipTextActive]}>{c.name}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </>
+            )}
+
             <View style={styles.chipRow}>
               {(['received', 'paid'] as const).map((t) => (
                 <Pressable key={t} onPress={() => setEntryType(t)} style={[styles.typeChip, entryType === t && (t === 'received' ? styles.typeChipReceived : styles.typeChipPaid)]} testID={`cashbook-type-${t}`}>
@@ -288,17 +372,51 @@ export default function CashBookScreen() {
 
       {mode === 'settings' && (
         <ScrollView contentContainerStyle={{ padding: spacing.lg }}>
-          <Text style={styles.hint}>
-            One-time starting cash balance — used only as the base for the very first day recorded here. Every day after that carries forward automatically from entries.
-          </Text>
-          {settingsLoading ? (
-            <ActivityIndicator color={colors.brandPrimary} style={{ marginTop: 20 }} />
+          {counterForm ? (
+            <>
+              <Text style={styles.label}>Name</Text>
+              <TextInput testID="counter-name" value={counterForm.name} onChangeText={(v) => setCounterForm((f) => (f ? { ...f, name: v } : f))} placeholder="e.g. Counter 1, Showroom" placeholderTextColor={colors.mutedText} style={styles.input} autoFocus />
+
+              <Text style={styles.label}>Opening Balance (₹)</Text>
+              <TextInput testID="counter-opening" value={counterForm.opening_balance} onChangeText={(v) => setCounterForm((f) => (f ? { ...f, opening_balance: v.replace(/[^0-9.]/g, '') } : f))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />
+              <Text style={styles.hint}>
+                {counterForm.id
+                  ? 'This is a one-time base — every day after the first still carries forward automatically from entries.'
+                  : 'One-time starting balance for this counter — used only as the base for its very first day. Every day after that carries forward automatically.'}
+              </Text>
+
+              <Pressable onPress={saveCounter} disabled={busy} style={[styles.saveBtn, busy && { opacity: 0.6 }]} testID="counter-form-save">
+                {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.saveBtnText}>{counterForm.id ? 'Save Changes' : 'Add Counter'}</Text>}
+              </Pressable>
+
+              {!!counterForm.id && (
+                <Pressable
+                  onPress={() => {
+                    const c = counters.find((x) => x.id === counterForm.id);
+                    if (c) deactivateCounter(c);
+                  }}
+                  style={styles.deactivateBtn}
+                  testID="counter-form-deactivate"
+                >
+                  <Text style={styles.deactivateBtnText}>Deactivate this counter</Text>
+                </Pressable>
+              )}
+            </>
           ) : (
             <>
-              <Text style={styles.label}>Opening Balance (₹)</Text>
-              <TextInput testID="cashbook-base-opening" value={baseOpening} onChangeText={(v) => setBaseOpening(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />
-              <Pressable onPress={saveSettings} disabled={busy} style={[styles.saveBtn, busy && { opacity: 0.6 }]} testID="cashbook-save-settings">
-                {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.saveBtnText}>Save</Text>}
+              <Text style={styles.hint}>Each counter keeps its own entries and its own running balance — use this for separate cash registers or tills.</Text>
+              {counters.map((c) => (
+                <Pressable key={c.id} onPress={() => setCounterForm({ id: c.id, name: c.name, opening_balance: String(c.opening_balance) })} style={styles.counterManageRow} testID={`counter-manage-${c.id}`}>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={styles.entryName}>{c.name}</Text>
+                    <Text style={styles.entryNote}>Opening balance {fmtINR(c.opening_balance)}</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={16} color={colors.mutedText} />
+                </Pressable>
+              ))}
+              <Pressable onPress={() => setCounterForm({ id: null, name: '', opening_balance: '0' })} style={styles.addCounterBtn} testID="add-counter-btn">
+                <Ionicons name="add" size={16} color={colors.onBrandPrimary} />
+                <Text style={styles.addCounterBtnText}>Add Counter</Text>
               </Pressable>
             </>
           )}
@@ -320,6 +438,16 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   title: { flex: 1, color: colors.onSurface, fontSize: 18, fontWeight: '600', fontFamily: fonts.display },
 
+  counterScroll: { flexGrow: 0, flexShrink: 0 },
+  counterChipsRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: 2 },
+  counterChip: {
+    alignSelf: 'flex-start', paddingHorizontal: spacing.md, paddingVertical: 8, borderRadius: radius.pill,
+    backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border,
+  },
+  counterChipActive: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
+  counterChipText: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '700' },
+  counterChipTextActive: { color: colors.onBrandPrimary },
+
   dayNav: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.lg, paddingTop: spacing.md },
   navBtn: {
     width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center',
@@ -330,6 +458,8 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   dayLabel: { color: colors.onSurfaceSecondary, fontSize: 12, paddingHorizontal: spacing.lg, marginTop: 6 },
 
   loader: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.sm, paddingHorizontal: spacing.xl },
+  emptyText: { color: colors.onSurfaceTertiary, textAlign: 'center' },
 
   openingRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
@@ -349,11 +479,10 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
     paddingHorizontal: spacing.sm, paddingVertical: 9, marginBottom: 6,
   },
+  entryMain: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 6 },
   entryName: { color: colors.onSurface, fontSize: 12.5, fontWeight: '700' },
   entryNote: { color: colors.mutedText, fontSize: 10.5, marginTop: 2 },
-  entryBy: { color: colors.onSurfaceTertiary, fontSize: 10, marginTop: 2 },
   entryAmount: { fontSize: 12.5, fontWeight: '800' },
-  entryActions: { flexDirection: 'row', gap: 4 },
   entryActionIcon: { padding: 3 },
   colTotalRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
@@ -380,7 +509,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   fabSecondary: { backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border },
   fabText: { color: colors.onBrandPrimary, fontWeight: '700', fontSize: 13 },
 
-  chipRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.md },
   typeChip: { flex: 1, alignItems: 'center', paddingVertical: 12, borderRadius: radius.md, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border },
   typeChipReceived: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
   typeChipPaid: { backgroundColor: colors.error, borderColor: colors.error },
@@ -395,4 +524,17 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   hint: { color: colors.mutedText, fontSize: 12, marginBottom: spacing.md },
   saveBtn: { backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: 14, alignItems: 'center', marginTop: spacing.md },
   saveBtnText: { color: colors.onBrandPrimary, fontWeight: '700' },
+
+  counterManageRow: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    padding: spacing.md, marginBottom: spacing.sm,
+  },
+  addCounterBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: 12, marginTop: spacing.sm,
+  },
+  addCounterBtnText: { color: colors.onBrandPrimary, fontWeight: '700', fontSize: 13 },
+  deactivateBtn: { alignItems: 'center', paddingVertical: 12, marginTop: spacing.sm },
+  deactivateBtnText: { color: colors.onError, fontWeight: '700', fontSize: 12 },
 });

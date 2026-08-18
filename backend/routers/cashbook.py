@@ -5,15 +5,23 @@ cash_ledger (routers/repairs.py's collection, auto-populated from repair
 bill cash payments) — entries here are always entered by hand and never
 auto-synced from repairs, so the two never mix.
 
-Opening balance for a given day auto-carries forward from the running total
-of every earlier entry (plus a one-time base `opening_balance` set via Cash
-Book settings, for seeding the ledger with a real-world starting cash
-position when the shop switches over from the paper book). There's no
-stored "opening" row — it's computed fresh on every read, so it can never
-drift out of sync if an old entry is later edited or deleted.
+Supports multiple named "counters" — separate cash registers/books (e.g.
+one per counter or till) each with their own entries and their own running
+balance. Every entry belongs to exactly one counter (cashbook_counters
+collection: id, name, opening_balance, active).
+
+Opening balance for a given day, on a given counter, auto-carries forward
+from the running total of every earlier entry on that same counter (plus
+the counter's own one-time base `opening_balance`, for seeding it with a
+real-world starting cash position). There's no stored "opening" row — it's
+computed fresh on every read, so it can never drift out of sync if an old
+entry is later edited or deleted.
 
 New module — see server.py's 'cash_book' entry in MODULE_DEFS
-(employee_assignable, same pattern as samples/repair_bill)."""
+(employee_assignable, same pattern as samples/repair_bill). Counter
+management (create/rename/deactivate) is owner-only — entry CRUD follows
+the usual module/right checks and applies across whichever counter the
+caller is working in."""
 from fastapi import APIRouter, Depends, HTTPException, Query
 import uuid
 from server import (
@@ -25,26 +33,31 @@ from server import (
     require_admin_or_module_right,
     CashBookEntryIn,
     CashBookEntryUpdateIn,
-    CashBookSettingsIn,
+    CashBookCounterIn,
+    CashBookCounterUpdateIn,
     log_audit,
 )
 
 router = APIRouter()
 
 
-async def _base_opening_balance() -> float:
-    doc = await db.settings.find_one({'id': 'cash_book'}, {'_id': 0})
-    return (doc or {}).get('opening_balance') or 0
+async def _get_counter(counter_id: str) -> dict:
+    counter = await db.cashbook_counters.find_one({'id': counter_id}, {'_id': 0})
+    if not counter:
+        raise HTTPException(status_code=404, detail='Cash Book counter not found')
+    return counter
 
 
-async def _opening_balance_for(date: str) -> float:
-    """Base opening balance plus the net (received − paid) of every entry
-    dated strictly before `date` — i.e. yesterday's closing Counter Bal,
+async def _opening_balance_for(counter_id: str, date: str) -> float:
+    """This counter's own base opening balance plus the net (received −
+    paid) of every entry on this counter dated strictly before `date` —
+    i.e. yesterday's closing Counter Bal for this counter specifically,
     recomputed every time rather than stored, so a later edit/delete to an
     old day can never leave a later day's opening balance stale."""
-    base = await _base_opening_balance()
+    counter = await db.cashbook_counters.find_one({'id': counter_id}, {'_id': 0, 'opening_balance': 1})
+    base = (counter or {}).get('opening_balance') or 0
     agg = await db.cashbook_entries.aggregate([
-        {'$match': {'date': {'$lt': date}}},
+        {'$match': {'counter_id': counter_id, 'date': {'$lt': date}}},
         {'$group': {'_id': '$type', 'total': {'$sum': '$amount'}}},
     ]).to_list(10)
     received = sum(a['total'] for a in agg if a['_id'] == 'received')
@@ -52,15 +65,67 @@ async def _opening_balance_for(date: str) -> float:
     return round(base + received - paid, 2)
 
 
+# ---------------- Counters ----------------
+@router.get('/cashbook/counters')
+async def list_cashbook_counters(_: dict = Depends(require_staff_or_module('cash_book'))):
+    return await db.cashbook_counters.find({'active': True}, {'_id': 0}).sort('created_at', 1).to_list(200)
+
+
+@router.post('/cashbook/counters')
+async def create_cashbook_counter(body: CashBookCounterIn, user=Depends(require_owner)):
+    if not body.name.strip():
+        raise HTTPException(status_code=400, detail='Name is required')
+    counter_id = str(uuid.uuid4())
+    counter = {
+        'id': counter_id, 'name': body.name.strip(), 'opening_balance': body.opening_balance or 0,
+        'active': True, 'created_at': now_utc().isoformat(), 'created_by': user['name'],
+    }
+    await db.cashbook_counters.insert_one(dict(counter))
+    await log_audit(user, 'cashbook.counter.create', 'cashbook_counter', counter_id, counter['name'])
+    return {k: v for k, v in counter.items() if k != '_id'}
+
+
+@router.put('/cashbook/counters/{counter_id}')
+async def update_cashbook_counter(counter_id: str, body: CashBookCounterUpdateIn, user=Depends(require_owner)):
+    counter = await _get_counter(counter_id)
+    upd: dict = {}
+    if body.name is not None:
+        if not body.name.strip():
+            raise HTTPException(status_code=400, detail='Name is required')
+        upd['name'] = body.name.strip()
+    if body.opening_balance is not None:
+        upd['opening_balance'] = body.opening_balance
+    if body.active is not None:
+        upd['active'] = body.active
+    if upd:
+        await db.cashbook_counters.update_one({'id': counter_id}, {'$set': upd})
+        await log_audit(user, 'cashbook.counter.update', 'cashbook_counter', counter_id, counter['name'], upd)
+    return await db.cashbook_counters.find_one({'id': counter_id}, {'_id': 0})
+
+
+@router.delete('/cashbook/counters/{counter_id}')
+async def delete_cashbook_counter(counter_id: str, user=Depends(require_owner)):
+    counter = await _get_counter(counter_id)
+    count = await db.cashbook_entries.count_documents({'counter_id': counter_id})
+    if count > 0:
+        raise HTTPException(status_code=400, detail=f"This counter has {count} entr{'y' if count == 1 else 'ies'} — deactivate it instead of deleting")
+    await db.cashbook_counters.delete_one({'id': counter_id})
+    await log_audit(user, 'cashbook.counter.delete', 'cashbook_counter', counter_id, counter['name'])
+    return {'ok': True}
+
+
+# ---------------- Entries ----------------
 @router.get('/cashbook/day')
-async def get_cashbook_day(date: str = Query(...), _: dict = Depends(require_staff_or_module('cash_book'))):
-    entries = await db.cashbook_entries.find({'date': date}, {'_id': 0}).sort('created_at', 1).to_list(1000)
-    opening = await _opening_balance_for(date)
+async def get_cashbook_day(date: str = Query(...), counter_id: str = Query(...), _: dict = Depends(require_staff_or_module('cash_book'))):
+    counter = await _get_counter(counter_id)
+    entries = await db.cashbook_entries.find({'date': date, 'counter_id': counter_id}, {'_id': 0}).sort('created_at', 1).to_list(1000)
+    opening = await _opening_balance_for(counter_id, date)
     total_received = round(sum(e['amount'] for e in entries if e['type'] == 'received'), 2)
     total_paid = round(sum(e['amount'] for e in entries if e['type'] == 'paid'), 2)
     closing = round(opening + total_received - total_paid, 2)
     return {
-        'date': date, 'opening_balance': opening, 'entries': entries,
+        'date': date, 'counter_id': counter_id, 'counter_name': counter['name'],
+        'opening_balance': opening, 'entries': entries,
         'total_received': total_received, 'total_paid': total_paid, 'closing_balance': closing,
     }
 
@@ -71,16 +136,17 @@ async def create_cashbook_entry(body: CashBookEntryIn, user=Depends(require_admi
         raise HTTPException(status_code=400, detail='Amount must be greater than 0')
     if not body.name.strip():
         raise HTTPException(status_code=400, detail='Name / description is required')
+    counter = await _get_counter(body.counter_id)
     iso = now_utc().isoformat()
     entry_id = str(uuid.uuid4())
     entry = {
-        'id': entry_id, 'date': body.date, 'type': body.type, 'amount': body.amount,
+        'id': entry_id, 'date': body.date, 'counter_id': counter['id'], 'type': body.type, 'amount': body.amount,
         'name': body.name.strip(), 'note': body.note or '',
         'created_at': iso, 'created_by': user['name'], 'created_by_id': user['id'],
     }
     await db.cashbook_entries.insert_one(dict(entry))
     await log_audit(user, 'cashbook.create', 'cashbook_entry', entry_id, f"{body.type} {body.amount} - {body.name}",
-                     {'date': body.date})
+                     {'date': body.date, 'counter': counter['name']})
     return {k: v for k, v in entry.items() if k != '_id'}
 
 
@@ -91,6 +157,9 @@ async def update_cashbook_entry(entry_id: str, body: CashBookEntryUpdateIn, user
         raise HTTPException(status_code=404, detail='Entry not found')
     upd: dict = {}
     if body.date is not None: upd['date'] = body.date
+    if body.counter_id is not None:
+        await _get_counter(body.counter_id)  # 404s if it doesn't exist
+        upd['counter_id'] = body.counter_id
     if body.type is not None: upd['type'] = body.type
     if body.amount is not None:
         if body.amount <= 0:
@@ -117,20 +186,3 @@ async def delete_cashbook_entry(entry_id: str, user=Depends(require_admin_or_mod
     await db.cashbook_entries.delete_one({'id': entry_id})
     await log_audit(user, 'cashbook.delete', 'cashbook_entry', entry_id, entry.get('name', ''), {'date': entry.get('date')})
     return {'ok': True}
-
-
-@router.get('/cashbook/settings')
-async def get_cashbook_settings(_: dict = Depends(require_owner)):
-    doc = await db.settings.find_one({'id': 'cash_book'}, {'_id': 0})
-    return {'opening_balance': (doc or {}).get('opening_balance') or 0}
-
-
-@router.put('/cashbook/settings')
-async def update_cashbook_settings(body: CashBookSettingsIn, user=Depends(require_owner)):
-    await db.settings.update_one(
-        {'id': 'cash_book'},
-        {'$set': {'id': 'cash_book', 'opening_balance': body.opening_balance, 'updated_at': now_utc().isoformat()}},
-        upsert=True,
-    )
-    await log_audit(user, 'cashbook.settings.update', 'settings', 'cash_book', 'Cash Book opening balance')
-    return {'opening_balance': body.opening_balance}

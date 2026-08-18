@@ -140,12 +140,18 @@ async def dashboard(_: dict = Depends(get_current)):
     samples_overdue = sum(1 for s in samples_out if s.get('due_date') and s['due_date'] < d)
     samples_received_today = await db.samples.count_documents({'status': 'received', 'received_at': {'$regex': f'^{d}'}})
 
-    # Cash Book at-a-glance — today's manual cash in/out. Kept separate from
-    # cash_ledger (repair-bill cash payments) throughout, including here.
-    cb_entries_today = await db.cashbook_entries.find({'date': d}, {'_id': 0, 'type': 1, 'amount': 1}).to_list(2000)
+    # Cash Book at-a-glance — today's manual cash in/out, summed across every
+    # active counter (kept separate from cash_ledger / repair-bill cash
+    # payments throughout, including here). Counter Bal here is the shop's
+    # total cash position across all counters combined.
+    cb_counters = await db.cashbook_counters.find({'active': True}, {'_id': 0, 'id': 1}).to_list(200)
+    cb_entries_today = await db.cashbook_entries.find({'date': d}, {'_id': 0, 'type': 1, 'amount': 1}).to_list(5000)
     cb_received_today = sum(e['amount'] for e in cb_entries_today if e['type'] == 'received')
     cb_paid_today = sum(e['amount'] for e in cb_entries_today if e['type'] == 'paid')
-    cb_closing = round((await _opening_balance_for(d)) + cb_received_today - cb_paid_today, 2)
+    cb_opening_total = 0.0
+    for c in cb_counters:
+        cb_opening_total += await _opening_balance_for(c['id'], d)
+    cb_closing = round(cb_opening_total + cb_received_today - cb_paid_today, 2)
 
     return {
         'todays_attendance': {

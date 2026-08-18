@@ -771,9 +771,12 @@ class SampleReceiveIn(BaseModel):
 
 # ---------------- Cash Book (manual daily cash in/out ledger — see
 # routers/cashbook.py; deliberately kept separate from cash_ledger, which is
-# auto-populated from repair bill cash payments) ----------------
+# auto-populated from repair bill cash payments). Supports multiple named
+# "counters" (separate cash registers/books), each with its own entries and
+# its own auto-carried-forward running balance. ----------------
 class CashBookEntryIn(BaseModel):
     date: str  # YYYY-MM-DD
+    counter_id: str
     type: Literal['received', 'paid']
     amount: float
     name: str  # who/what — matches the paper cash book's NAME column
@@ -782,17 +785,25 @@ class CashBookEntryIn(BaseModel):
 
 class CashBookEntryUpdateIn(BaseModel):
     date: Optional[str] = None
+    counter_id: Optional[str] = None
     type: Optional[Literal['received', 'paid']] = None
     amount: Optional[float] = None
     name: Optional[str] = None
     note: Optional[str] = None
 
 
-class CashBookSettingsIn(BaseModel):
-    # One-time base balance for seeding the ledger with a real starting cash
-    # position when the shop switches over from the paper book — every day
-    # after that carries forward automatically from entries alone.
-    opening_balance: float = 0
+class CashBookCounterIn(BaseModel):
+    name: str
+    # One-time base balance for seeding this counter with a real starting
+    # cash position when the shop switches over from the paper book — every
+    # day after that carries forward automatically from entries alone.
+    opening_balance: Optional[float] = 0
+
+
+class CashBookCounterUpdateIn(BaseModel):
+    name: Optional[str] = None
+    opening_balance: Optional[float] = None
+    active: Optional[bool] = None
 
 
 # ---------------- Seed ----------------
@@ -820,7 +831,24 @@ async def seed():
     await db.push_subscriptions.create_index('user_id')
     await db.push_subscriptions.create_index('role')
     await db.samples.create_index('status')
-    await db.cashbook_entries.create_index('date')
+    await db.cashbook_entries.create_index([('counter_id', 1), ('date', 1)])
+
+    # One-time setup/migration: every shop needs at least one Cash Book
+    # counter to have anywhere to record entries. If none exist yet, create
+    # a default "Main" one — carrying forward any balance from the old
+    # single-cashbook 'settings' doc (pre-multi-counter) and backfilling any
+    # entries created before counter_id existed, so nothing is orphaned.
+    if await db.cashbook_counters.count_documents({}) == 0:
+        legacy_settings = await db.settings.find_one({'id': 'cash_book'}, {'_id': 0})
+        default_counter_id = str(uuid.uuid4())
+        await db.cashbook_counters.insert_one({
+            'id': default_counter_id, 'name': 'Main', 'active': True,
+            'opening_balance': (legacy_settings or {}).get('opening_balance') or 0,
+            'created_at': now_utc().isoformat(), 'created_by': 'system',
+        })
+        await db.cashbook_entries.update_many(
+            {'counter_id': {'$exists': False}}, {'$set': {'counter_id': default_counter_id}},
+        )
 
     # One-time backfill: any employee with a full-size photo but no thumb yet
     # (i.e. saved before photo_thumb existed) gets one generated now, so
