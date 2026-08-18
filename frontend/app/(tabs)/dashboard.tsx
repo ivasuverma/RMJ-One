@@ -37,9 +37,13 @@ type DashboardData = {
   samples_summary: {
     with_karigar: number; overdue: number; received_today: number;
   };
+  cashbook_summary: {
+    received_today: number; paid_today: number; closing_balance: number;
+  };
 };
 
 const AUTO_REFRESH_MS = 45000;
+const fmtINR = (n: number) => `₹${Math.round(n || 0).toLocaleString('en-IN')}`;
 
 type Tone = 'brand' | 'success' | 'warning' | 'error' | 'info';
 
@@ -203,6 +207,17 @@ export default function DashboardScreen() {
                     <StatCard basis={tileBasis} icon="hammer-outline" label="With Karigar" value={String(data.samples_summary.with_karigar)} tone="brand" testID="samples-with-karigar" onPress={() => router.push('/samples?status=with_karigar' as any)} />
                     <StatCard basis={tileBasis} icon="alert-circle-outline" label="Overdue" value={String(data.samples_summary.overdue)} tone="error" testID="samples-overdue" onPress={() => router.push('/samples?status=overdue' as any)} />
                     <StatCard basis={tileBasis} icon="checkmark-circle-outline" label="Received Today" value={String(data.samples_summary.received_today)} tone="success" testID="samples-received-today" onPress={() => router.push('/samples?status=received' as any)} />
+                  </View>
+                </View>
+              )}
+
+              {hasModule('cash_book') && (
+                <View style={{ flexBasis: sectionBasis, flexGrow: 1 }}>
+                  <SectionHeader title="Cash Book" icon="wallet-outline" testID="section-cashbook" />
+                  <View style={styles.tileGrid}>
+                    <StatCard basis={tileBasis} icon="trending-up-outline" label="Received Today" value={fmtINR(data.cashbook_summary.received_today)} tone="success" testID="cashbook-received-today" onPress={() => router.push('/cashbook' as any)} />
+                    <StatCard basis={tileBasis} icon="trending-down-outline" label="Paid Today" value={fmtINR(data.cashbook_summary.paid_today)} tone="error" testID="cashbook-paid-today" onPress={() => router.push('/cashbook' as any)} />
+                    <StatCard basis={tileBasis} icon="wallet-outline" label="Counter Bal" value={fmtINR(data.cashbook_summary.closing_balance)} tone="brand" testID="cashbook-counter-bal" onPress={() => router.push('/cashbook' as any)} />
                   </View>
                 </View>
               )}

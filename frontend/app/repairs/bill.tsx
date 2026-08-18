@@ -31,6 +31,13 @@ type Item = {
   bill_weight_rate?: number | null; bill_value_add?: number | null;
 };
 
+type Txn = {
+  id: string; direction: 'issue' | 'receive'; weight: number; note: string; slip_photo?: string;
+  process_loss?: number; wastage_weight?: number; recv_purity?: number;
+  labour_amount?: number; pay_cash?: number; pay_metal_weight?: number; pay_metal_value?: number;
+  recv_cash?: number; recv_metal_weight?: number;
+};
+
 type Mode = 'list' | 'pick' | 'form' | 'close';
 type BillFilterKey = 'all' | 'ready' | 'pending_delivery' | 'delivered';
 
@@ -70,6 +77,17 @@ export default function RepairBillScreen() {
   const [deletingId, setDeletingId] = useState('');
   const [busy, setBusy] = useState(false);
   const submittingRef = useRef(false);
+
+  // Loss Wt / Received (g) — editable directly on this form for a not-yet-
+  // billed tag (prefilled from the karigar receive record, but no longer
+  // locked to it). lastTxnId/lastTxn hold the underlying receive transaction
+  // so a correction can be persisted back to it (preserving every other
+  // field — labour/cash/metal settlement — untouched) right before the bill
+  // is created.
+  const [lossWeightStr, setLossWeightStr] = useState('');
+  const [receivedWeightStr, setReceivedWeightStr] = useState('');
+  const [lastTxnId, setLastTxnId] = useState('');
+  const [lastTxn, setLastTxn] = useState<Txn | null>(null);
 
   // Bill form fields
   const [billLabour, setBillLabour] = useState('');
@@ -161,6 +179,14 @@ export default function RepairBillScreen() {
       setBillLabour(String(item.labour_charge || 0));
       setBillExtra(''); setBillExtraNote(''); setPaymentMode('cash'); setWeightRate(''); setPrevBalance(''); setValueAdd(''); setFinalPhoto('');
       setMaterialAdjManual('');
+      setLossWeightStr(String(item.process_loss ?? 0));
+      setReceivedWeightStr(String((item.current_issue_weight || 0) + (item.weight_diff || 0)));
+      setLastTxnId(''); setLastTxn(null);
+      try {
+        const res = await api.get<{ item: Item; history: Txn[] }>(`/repair-items/${item.id}`);
+        const last = [...res.history].reverse().find((h) => h.direction === 'receive');
+        if (last) { setLastTxnId(last.id); setLastTxn(last); }
+      } catch { /* ignore — weight fields stay editable, just won't persist a karigar-side correction */ }
     }
     setMode('form');
   };
@@ -170,30 +196,6 @@ export default function RepairBillScreen() {
     else if (b.status === 'pending_delivery') openCloseForm(b);
     else router.push(`/repairs/item/${b.id}` as any);
   };
-
-  // Loss Wt / Received (g) above come straight off the most recent
-  // receive-from-karigar transaction — correcting them here re-uses that
-  // same edit screen (which also carries karigar payment fields we don't
-  // show on the bill) rather than re-deriving karigar-ledger math inline.
-  // Only reachable while the tag is still 'ready' (pre-bill) since the
-  // backend locks a receive transaction once the tag is billed/delivered.
-  const editReceivedWeight = async () => {
-    if (!picked) return;
-    try {
-      const res = await api.get<{ item: Item; history: { id: string; direction: string }[] }>(`/repair-items/${picked.id}`);
-      const lastReceive = [...res.history].reverse().find((h) => h.direction === 'receive');
-      if (!lastReceive) { Alert.alert('No receive record', 'This tag has no karigar receive to correct.'); return; }
-      router.push({ pathname: '/repairs/item/receive', params: { itemId: picked.id, txnId: lastReceive.id } } as any);
-    } catch { Alert.alert('Failed', 'Could not open the receive record.'); }
-  };
-
-  // Coming back from that edit screen, refresh the picked item so Loss
-  // Wt/Received/New Wt reflect whatever was just corrected.
-  useFocusEffect(useCallback(() => {
-    if (mode !== 'form' || !picked || picked.status !== 'ready') return;
-    api.get<{ item: Item }>(`/repair-items/${picked.id}`).then((res) => setPicked(res.item)).catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, picked?.id, picked?.status]));
 
   const openPicker = async () => {
     setMode('pick');
@@ -220,8 +222,13 @@ export default function RepairBillScreen() {
   }, [routeItemId, routeMode, picked, closeItem]));
 
   const issuedWeight = picked?.current_issue_weight || 0;
-  const receivedWeight = issuedWeight + (picked?.weight_diff || 0);
-  const lossWeight = picked?.process_loss || 0;
+  // Loss Wt / Received (g) are editable right on this form while the tag is
+  // still not-yet-billed (see the loss/receivedWeightStr inputs below) —
+  // once a bill exists the underlying receive transaction is locked
+  // server-side, so those fall back to whatever was actually recorded.
+  const canEditWeights = !isEditingBill && canEditReceive;
+  const receivedWeight = canEditWeights ? (parseFloat(receivedWeightStr) || 0) : issuedWeight + (picked?.weight_diff || 0);
+  const lossWeight = canEditWeights ? (parseFloat(lossWeightStr) || 0) : (picked?.process_loss || 0);
   // New Wt = Issue − Loss − Received (gross grams, not fine) — positive when
   // less metal came back than expected once loss is forgiven, i.e. the
   // customer's item lost material during repair.
@@ -252,7 +259,32 @@ export default function RepairBillScreen() {
     // customer when the item's weight decreased (see New Wt above). Only
     // block on a genuinely broken number, not on sign.
     if (Number.isNaN(billTotal)) { Alert.alert('Invalid', 'Check the amounts entered — the total is not a valid number.'); return; }
+    if (canEditWeights && lastTxnId && (!receivedWeightStr || receivedWeight <= 0)) {
+      Alert.alert('Invalid', 'Received weight must be greater than 0.'); return;
+    }
     submittingRef.current = true; setBusy(true);
+    try {
+      // Loss Wt / Received were editable above — persist any correction to
+      // the underlying karigar receive transaction first, preserving every
+      // other field of that transaction (labour/cash/metal settlement)
+      // untouched, so the karigar ledger and this bill's weight math always
+      // agree. Safe to send even when nothing changed (idempotent).
+      if (canEditWeights && lastTxnId && lastTxn) {
+        await api.put(`/repair-items/${picked.id}/transactions/${lastTxnId}`, {
+          weight: receivedWeight,
+          process_loss: lossWeight,
+          note: lastTxn.note || '',
+          slip_photo: lastTxn.slip_photo || '',
+          wastage_weight: lastTxn.wastage_weight || 0,
+          purity_override: lastTxn.recv_purity || undefined,
+          labour_amount: lastTxn.labour_amount || 0,
+          pay_cash: lastTxn.pay_cash || 0,
+          pay_metal_weight: lastTxn.pay_metal_weight || 0,
+          recv_cash: lastTxn.recv_cash || 0,
+          recv_metal_weight: lastTxn.recv_metal_weight || 0,
+        });
+      }
+    } catch (e: any) { setBusy(false); submittingRef.current = false; Alert.alert('Failed', e?.detail || 'Could not save the weight correction.'); return; }
     const payload = {
       labour_charge: parseFloat(billLabour) || 0, material_adjustment: weightCharge,
       extra_charges: parseFloat(billExtra) || 0, extra_charges_note: billExtraNote,
@@ -404,9 +436,9 @@ export default function RepairBillScreen() {
                     <Text style={styles.billTag} numberOfLines={1}>{b.item_code}</Text>
                     <Text style={styles.billWeight}>{b.gross_weight.toFixed(3)}g</Text>
                   </View>
-                  <Text style={styles.billMeta} numberOfLines={1}>{repairMetaBits.join('  ·  ')}</Text>
+                  <Text style={styles.billMeta}>{repairMetaBits.join('  ·  ')}</Text>
                   {billMetaBits.length > 0 && (
-                    <Text style={styles.billMeta} numberOfLines={1}>{billMetaBits.join('  ·  ')}</Text>
+                    <Text style={styles.billMeta}>{billMetaBits.join('  ·  ')}</Text>
                   )}
                 </Pressable>
                 {(b.status === 'delivered' || b.status === 'pending_delivery') && canEditBill && (
@@ -507,19 +539,24 @@ export default function RepairBillScreen() {
               <Text style={styles.opText}>−</Text>
               <View style={styles.fieldColFlex}>
                 <Text style={styles.label}>Loss Wt (g)</Text>
-                <View style={styles.readonlyBox}><Text style={styles.readonlyBoxText}>{lossWeight.toFixed(3)}</Text></View>
+                {canEditWeights ? (
+                  <TextInput testID="bill-loss-weight" value={lossWeightStr} onChangeText={(v) => setLossWeightStr(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0.000" placeholderTextColor={colors.mutedText} style={styles.input} />
+                ) : (
+                  <View style={styles.readonlyBox}><Text style={styles.readonlyBoxText}>{lossWeight.toFixed(3)}</Text></View>
+                )}
               </View>
               <Text style={styles.opText}>−</Text>
               <View style={styles.fieldColFlex}>
                 <Text style={styles.label}>Received (g)</Text>
-                <View style={styles.readonlyBox}><Text style={styles.readonlyBoxText}>{receivedWeight.toFixed(3)}</Text></View>
+                {canEditWeights ? (
+                  <TextInput testID="bill-received-weight" value={receivedWeightStr} onChangeText={(v) => setReceivedWeightStr(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0.000" placeholderTextColor={colors.mutedText} style={styles.input} />
+                ) : (
+                  <View style={styles.readonlyBox}><Text style={styles.readonlyBoxText}>{receivedWeight.toFixed(3)}</Text></View>
+                )}
               </View>
             </View>
-            {!isEditingBill && canEditReceive && (
-              <Pressable onPress={editReceivedWeight} style={styles.editReceiveLink} testID="edit-received-weight-btn">
-                <Ionicons name="create-outline" size={13} color={colors.brandSecondary} />
-                <Text style={styles.editReceiveLinkText}>Correct loss / received weight from karigar</Text>
-              </Pressable>
+            {canEditWeights && (
+              <Text style={styles.hint}>Loss Wt / Received are pulled from the karigar receive record — edit here if they need correcting.</Text>
             )}
 
             {/* New Wt · Value Add · Rate · Total */}
@@ -654,8 +691,6 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   statusTextSm: { fontSize: 9, fontWeight: '700', textTransform: 'uppercase' },
 
   hint: { color: colors.mutedText, fontSize: 12, marginBottom: spacing.md },
-  editReceiveLink: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: spacing.sm, alignSelf: 'flex-start' },
-  editReceiveLinkText: { color: colors.brandSecondary, fontSize: 12, fontWeight: '700' },
 
   // Bills list row — larger tile, same customer/item/tag+weight ordering as
   // the Repair list for a consistent scan pattern across both screens.

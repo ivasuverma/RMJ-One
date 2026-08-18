@@ -14,10 +14,10 @@ type TileDef = { key: string; label: string; icon: keyof typeof Ionicons.glyphMa
 // grants access per module in User Roles, and this screen only shows what's
 // actually been handed to this employee. If none are granted the whole
 // Transactions tab is hidden by the tab layout, so this screen never renders empty.
-// Only four modules are ever grantable to an employee: repairs, repair_bill,
-// customer_ledger, karigar_ledger — Tasks/Approvals management is owner/admin
-// only now (an employee's personal task list on the Tasks tab is unaffected;
-// that's a separate, always-available feature, not this module).
+// Employee-assignable modules: repairs, repair_bill, customer_ledger,
+// karigar_ledger, samples, cash_book — Tasks/Approvals management is
+// owner/admin only (an employee's personal task list on the Tasks tab is
+// unaffected; that's a separate, always-available feature, not this module).
 const SECTIONS: { title: string; tiles: TileDef[] }[] = [
   {
     title: 'Repairs',
@@ -25,6 +25,12 @@ const SECTIONS: { title: string; tiles: TileDef[] }[] = [
       { key: 'repair-orders', label: 'Repair', icon: 'construct-outline', route: '/repairs', module: 'repairs' },
       { key: 'repair-bill', label: 'Repair Bill', icon: 'receipt-outline', route: '/repairs/bill', module: 'repair_bill' },
       { key: 'samples', label: 'Stock In/Out', icon: 'diamond-outline', route: '/samples', module: 'samples' },
+    ],
+  },
+  {
+    title: 'Accounts',
+    tiles: [
+      { key: 'cash-book', label: 'Cash Book', icon: 'wallet-outline', route: '/cashbook', module: 'cash_book' },
     ],
   },
   {

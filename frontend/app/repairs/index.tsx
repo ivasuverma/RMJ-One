@@ -165,7 +165,7 @@ export default function RepairOrdersScreen() {
                 <Text style={styles.cWeight}>{i.gross_weight.toFixed(3)}g</Text>
               </View>
 
-              <Text style={[styles.cMeta, isOverdue && { color: colors.onError, fontWeight: '700' }]} numberOfLines={1}>
+              <Text style={[styles.cMeta, isOverdue && { color: colors.onError, fontWeight: '700' }]}>
                 {metaBits.join('  ·  ')}
               </Text>
             </Pressable>

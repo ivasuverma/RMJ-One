@@ -185,6 +185,7 @@ MODULE_DEFS = [
     {'key': 'customer_ledger', 'label': 'Customer Ledger', 'default_roles': ['owner', 'admin', 'accountant'], 'employee_assignable': True},
     {'key': 'karigar_ledger', 'label': 'Karigar Ledger', 'default_roles': ['owner', 'admin', 'accountant'], 'employee_assignable': True},
     {'key': 'samples', 'label': 'Stock In/Out', 'default_roles': ['owner', 'admin'], 'employee_assignable': True},
+    {'key': 'cash_book', 'label': 'Cash Book', 'default_roles': ['owner', 'admin', 'accountant'], 'employee_assignable': True},
 ]
 MODULE_KEYS = {m['key'] for m in MODULE_DEFS}
 MODULE_DEFAULT_ROLES = {m['key']: set(m['default_roles']) for m in MODULE_DEFS}
@@ -768,6 +769,32 @@ class SampleReceiveIn(BaseModel):
     note: Optional[str] = ''
 
 
+# ---------------- Cash Book (manual daily cash in/out ledger — see
+# routers/cashbook.py; deliberately kept separate from cash_ledger, which is
+# auto-populated from repair bill cash payments) ----------------
+class CashBookEntryIn(BaseModel):
+    date: str  # YYYY-MM-DD
+    type: Literal['received', 'paid']
+    amount: float
+    name: str  # who/what — matches the paper cash book's NAME column
+    note: Optional[str] = ''
+
+
+class CashBookEntryUpdateIn(BaseModel):
+    date: Optional[str] = None
+    type: Optional[Literal['received', 'paid']] = None
+    amount: Optional[float] = None
+    name: Optional[str] = None
+    note: Optional[str] = None
+
+
+class CashBookSettingsIn(BaseModel):
+    # One-time base balance for seeding the ledger with a real starting cash
+    # position when the shop switches over from the paper book — every day
+    # after that carries forward automatically from entries alone.
+    opening_balance: float = 0
+
+
 # ---------------- Seed ----------------
 async def seed():
     await db.users.create_index('username', unique=True)
@@ -793,6 +820,7 @@ async def seed():
     await db.push_subscriptions.create_index('user_id')
     await db.push_subscriptions.create_index('role')
     await db.samples.create_index('status')
+    await db.cashbook_entries.create_index('date')
 
     # One-time backfill: any employee with a full-size photo but no thumb yet
     # (i.e. saved before photo_thumb existed) gets one generated now, so
@@ -1841,6 +1869,7 @@ def _make_photo_thumb(photo_data_uri: Optional[str]) -> str:
 from routers import (
     auth, employees, settings as settings_router, attendance, tasks, repairs,
     users, payroll, notifications, biometric, reports, assistant, samples,
+    cashbook,
 )
 
 # ---------------- Mount ----------------
@@ -1857,6 +1886,7 @@ api.include_router(biometric.router)
 api.include_router(reports.router)
 api.include_router(assistant.router)
 api.include_router(samples.router)
+api.include_router(cashbook.router)
 
 app.include_router(api)
 app.include_router(biometric.iclock_router)  # /iclock/* — real device protocol, no /api prefix

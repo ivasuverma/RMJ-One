@@ -23,6 +23,10 @@ from server import (
     _resolve_attendance_state,
     IST,
 )
+# Shares the same "opening balance carries forward from prior entries" math
+# as the Cash Book screen itself — reused here rather than duplicated so the
+# dashboard tile and the module's own day view always agree.
+from routers.cashbook import _opening_balance_for
 
 router = APIRouter()
 
@@ -136,6 +140,13 @@ async def dashboard(_: dict = Depends(get_current)):
     samples_overdue = sum(1 for s in samples_out if s.get('due_date') and s['due_date'] < d)
     samples_received_today = await db.samples.count_documents({'status': 'received', 'received_at': {'$regex': f'^{d}'}})
 
+    # Cash Book at-a-glance — today's manual cash in/out. Kept separate from
+    # cash_ledger (repair-bill cash payments) throughout, including here.
+    cb_entries_today = await db.cashbook_entries.find({'date': d}, {'_id': 0, 'type': 1, 'amount': 1}).to_list(2000)
+    cb_received_today = sum(e['amount'] for e in cb_entries_today if e['type'] == 'received')
+    cb_paid_today = sum(e['amount'] for e in cb_entries_today if e['type'] == 'paid')
+    cb_closing = round((await _opening_balance_for(d)) + cb_received_today - cb_paid_today, 2)
+
     return {
         'todays_attendance': {
             'present': present, 'absent': absent, 'late': late, 'half_day': half_day,
@@ -157,6 +168,10 @@ async def dashboard(_: dict = Depends(get_current)):
         },
         'samples_summary': {
             'with_karigar': len(samples_out), 'overdue': samples_overdue, 'received_today': samples_received_today,
+        },
+        'cashbook_summary': {
+            'received_today': round(cb_received_today, 2), 'paid_today': round(cb_paid_today, 2),
+            'closing_balance': cb_closing,
         },
         'business_summary': {
             'revenue_today': round(revenue_today, 2), 'revenue_month': round(revenue_month, 2),

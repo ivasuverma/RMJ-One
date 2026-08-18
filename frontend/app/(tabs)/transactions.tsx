@@ -30,6 +30,12 @@ const SECTIONS: { title: string; tiles: TileDef[] }[] = [
     ],
   },
   {
+    title: 'Accounts',
+    tiles: [
+      { key: 'cash-book', label: 'Cash Book', icon: 'wallet-outline', route: '/cashbook' },
+    ],
+  },
+  {
     title: 'Tasks',
     tiles: [
       { key: 'tasks', label: 'Tasks', icon: 'checkbox-outline', route: '/tasks' },
