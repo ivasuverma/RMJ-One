@@ -155,6 +155,7 @@ async def list_access_accounts(_: dict = Depends(require_owner), _mod=Depends(re
             'id': e['id'], 'name': e['name'], 'username': e.get('username'), 'role': 'employee',
             'account_type': 'employee', 'designation': e.get('designation'), 'status': e.get('status'),
             'module_access': e.get('module_access'), 'module_rights': e.get('module_rights') or {},
+            'cashbook_counter_ids': e.get('cashbook_counter_ids') or [],
             'resolved_modules': resolve_modules({'role': 'employee', 'module_access': e.get('module_access')}),
         })
     return out
@@ -185,7 +186,9 @@ async def update_access(account_id: str, body: ModuleAccessUpdateIn, user=Depend
             raise HTTPException(status_code=400, detail=f'Not an employee-assignable module: {", ".join(sorted(bad_access))}')
         await db.employees.update_one({'id': account_id}, {'$set': {
             'module_access': body.module_access, 'module_rights': body.module_rights or {},
+            'cashbook_counter_ids': body.cashbook_counter_ids or [],
         }})
-        await log_audit(user, 'access.update', 'employee', account_id, e.get('name', ''), {'module_access': body.module_access, 'module_rights': body.module_rights})
+        await log_audit(user, 'access.update', 'employee', account_id, e.get('name', ''),
+                         {'module_access': body.module_access, 'module_rights': body.module_rights, 'cashbook_counter_ids': body.cashbook_counter_ids})
         return {'ok': True}
     raise HTTPException(status_code=404, detail='Account not found')

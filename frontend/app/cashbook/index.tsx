@@ -129,6 +129,7 @@ export default function CashBookScreen() {
     setDeletingId(e.id);
     try {
       await api.del(`/cashbook/entries/${e.id}`);
+      setMode('view'); setLoading(true);
       await load(date, counterId);
     } catch (err: any) { Alert.alert('Failed', err?.detail || 'Please try again'); }
     finally { setDeletingId(''); }
@@ -178,20 +179,13 @@ export default function CashBookScreen() {
   const isToday = date === todayIST();
 
   const renderEntry = (e: Entry, amountColor: string) => (
-    <View key={e.id} style={styles.entryRow} testID={`cashbook-entry-${e.id}`}>
-      <Pressable disabled={!canEdit} onPress={() => openEdit(e)} style={styles.entryMain}>
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={styles.entryName} numberOfLines={2}>{e.name}</Text>
-          {!!e.note && <Text style={styles.entryNote} numberOfLines={2}>{e.note}</Text>}
-        </View>
-        <Text style={[styles.entryAmount, { color: amountColor }]}>{fmtINR(e.amount)}</Text>
-      </Pressable>
-      {canDelete && (
-        <Pressable onPress={() => confirmDeleteEntry(e)} disabled={deletingId === e.id} style={styles.entryActionIcon} hitSlop={8} testID={`cashbook-delete-${e.id}`}>
-          {deletingId === e.id ? <ActivityIndicator size="small" color={colors.onError} /> : <Ionicons name="trash-outline" size={13} color={colors.mutedText} />}
-        </Pressable>
-      )}
-    </View>
+    <Pressable key={e.id} disabled={!canEdit} onPress={() => openEdit(e)} style={styles.entryRow} testID={`cashbook-entry-${e.id}`}>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={styles.entryName} numberOfLines={2}>{e.name}</Text>
+        {!!e.note && <Text style={styles.entryNote} numberOfLines={2}>{e.note}</Text>}
+      </View>
+      <Text style={[styles.entryAmount, { color: amountColor }]}>{fmtINR(e.amount)}</Text>
+    </Pressable>
   );
 
   const headerTitle = mode === 'settings' ? (counterForm ? (counterForm.id ? 'Edit Counter' : 'Add Counter') : 'Cash Book Counters') : mode === 'form' ? (editing ? 'Edit Entry' : entryType === 'received' ? 'Cash Received' : 'Cash Paid') : 'Cash Book';
@@ -366,6 +360,22 @@ export default function CashBookScreen() {
             <Pressable onPress={submitEntry} disabled={busy} style={[styles.saveBtn, busy && { opacity: 0.6 }]} testID="cashbook-save-entry">
               {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.saveBtnText}>{editing ? 'Save Changes' : 'Add Entry'}</Text>}
             </Pressable>
+
+            {!!editing && canDelete && (
+              <Pressable
+                onPress={() => confirmDeleteEntry(editing)}
+                disabled={deletingId === editing.id}
+                style={[styles.deleteEntryBtn, deletingId === editing.id && { opacity: 0.6 }]}
+                testID="cashbook-delete-entry"
+              >
+                {deletingId === editing.id ? <ActivityIndicator size="small" color={colors.onError} /> : (
+                  <>
+                    <Ionicons name="trash-outline" size={15} color={colors.onError} />
+                    <Text style={styles.deleteEntryBtnText}>Delete Entry</Text>
+                  </>
+                )}
+              </Pressable>
+            )}
           </ScrollView>
         </KeyboardAvoidingView>
       )}
@@ -479,11 +489,9 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
     paddingHorizontal: spacing.sm, paddingVertical: 9, marginBottom: 6,
   },
-  entryMain: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 6 },
   entryName: { color: colors.onSurface, fontSize: 12.5, fontWeight: '700' },
   entryNote: { color: colors.mutedText, fontSize: 10.5, marginTop: 2 },
   entryAmount: { fontSize: 12.5, fontWeight: '800' },
-  entryActionIcon: { padding: 3 },
   colTotalRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: 8, marginTop: 4,
@@ -524,6 +532,11 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   hint: { color: colors.mutedText, fontSize: 12, marginBottom: spacing.md },
   saveBtn: { backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: 14, alignItems: 'center', marginTop: spacing.md },
   saveBtnText: { color: colors.onBrandPrimary, fontWeight: '700' },
+  deleteEntryBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    borderRadius: radius.md, borderWidth: 1, borderColor: colors.error, paddingVertical: 13, marginTop: spacing.sm,
+  },
+  deleteEntryBtnText: { color: colors.onError, fontWeight: '700', fontSize: 13 },
 
   counterManageRow: {
     flexDirection: 'row', alignItems: 'center', gap: spacing.sm,

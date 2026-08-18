@@ -12,10 +12,11 @@ import { useTheme } from '@/src/theme/ThemeContext';
 
 type ModuleDef = { key: string; label: string; default_roles: string[]; employee_assignable?: boolean };
 type Rights = { edit?: boolean; delete?: boolean };
+type Counter = { id: string; name: string };
 type Account = {
   id: string; name: string; username?: string; role: string; account_type: 'user' | 'employee';
   designation?: string; status?: string; module_access: string[] | null; resolved_modules: string[];
-  module_rights?: Record<string, Rights>;
+  module_rights?: Record<string, Rights>; cashbook_counter_ids?: string[];
 };
 
 const ROLE_LABEL: Record<string, string> = { owner: 'Owner', admin: 'Admin', accountant: 'Accountant', employee: 'Employee' };
@@ -36,15 +37,22 @@ export default function UserRolesScreen() {
   // them edit or delete records that already exist.
   const [rights, setRights] = useState<Record<string, Record<string, Rights>>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
+  // Cash Book counters (routers/cashbook.py) — a further sub-permission
+  // within the 'cash_book' module: an employee only sees whichever
+  // counters are explicitly checked here, not every counter in the shop.
+  const [counters, setCounters] = useState<Counter[]>([]);
+  const [counterSel, setCounterSel] = useState<Record<string, Set<string>>>({});
 
   const load = useCallback(async () => {
     try {
-      const [m, a] = await Promise.all([
+      const [m, a, c] = await Promise.all([
         api.get<ModuleDef[]>('/access/modules'),
         api.get<Account[]>('/access/accounts'),
+        api.get<Counter[]>('/cashbook/counters').catch(() => []),
       ]);
       setModules(m);
       setAccounts(a);
+      setCounters(c);
     } catch (_e) { /* owner-only endpoint; non-owners just see nothing */ }
     finally { setLoading(false); setRefreshing(false); }
   }, []);
@@ -57,6 +65,7 @@ export default function UserRolesScreen() {
     setExpandedId(acc.id);
     setSelection((prev) => ({ ...prev, [acc.id]: new Set(acc.resolved_modules) }));
     setRights((prev) => ({ ...prev, [acc.id]: { ...(acc.module_rights || {}) } }));
+    setCounterSel((prev) => ({ ...prev, [acc.id]: new Set(acc.cashbook_counter_ids || []) }));
   };
 
   const [resettingAll, setResettingAll] = useState(false);
@@ -70,7 +79,7 @@ export default function UserRolesScreen() {
       async () => {
         setResettingAll(true);
         try {
-          await Promise.all(customizable.map((a) => api.put(`/access/accounts/${a.id}`, { module_access: null, module_rights: null })));
+          await Promise.all(customizable.map((a) => api.put(`/access/accounts/${a.id}`, { module_access: null, module_rights: null, cashbook_counter_ids: null })));
           await load();
         } catch (e: any) { Alert.alert('Failed', e?.detail || 'Some accounts could not be reset.'); }
         finally { setResettingAll(false); }
@@ -82,6 +91,14 @@ export default function UserRolesScreen() {
     setSelection((prev) => {
       const next = new Set(prev[accId] || []);
       if (next.has(key)) next.delete(key); else next.add(key);
+      return { ...prev, [accId]: next };
+    });
+  };
+
+  const toggleCounter = (accId: string, counterId: string) => {
+    setCounterSel((prev) => {
+      const next = new Set(prev[accId] || []);
+      if (next.has(counterId)) next.delete(counterId); else next.add(counterId);
       return { ...prev, [accId]: next };
     });
   };
@@ -110,7 +127,13 @@ export default function UserRolesScreen() {
           if (r) moduleRights[m.key] = { edit: !!r.edit, delete: !!r.delete };
         }
       }
-      await api.put(`/access/accounts/${acc.id}`, { module_access: Array.from(sel), module_rights: moduleRights });
+      // Counters are a further sub-permission of cash_book specifically —
+      // only meaningful (and only sent) for an employee who still has that
+      // module checked; dropping the module clears the counter grants too.
+      const cashbookCounterIds = acc.account_type === 'employee' && sel.has('cash_book')
+        ? Array.from(counterSel[acc.id] || [])
+        : [];
+      await api.put(`/access/accounts/${acc.id}`, { module_access: Array.from(sel), module_rights: moduleRights, cashbook_counter_ids: cashbookCounterIds });
       await load();
       setExpandedId(null);
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Could not save. Please try again.'); }
@@ -120,7 +143,7 @@ export default function UserRolesScreen() {
   const resetToDefault = async (acc: Account) => {
     setSavingId(acc.id);
     try {
-      await api.put(`/access/accounts/${acc.id}`, { module_access: null, module_rights: null });
+      await api.put(`/access/accounts/${acc.id}`, { module_access: null, module_rights: null, cashbook_counter_ids: null });
       await load();
       setExpandedId(null);
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Could not save. Please try again.'); }
@@ -151,7 +174,8 @@ export default function UserRolesScreen() {
             them here — a custom list always overrides the default, even if you uncheck everything. For an
             employee, ticking Repairs, Tasks, or Approvals lets them do that module's everyday work — Edit and
             Delete are separate switches, off by default, so they can't change or remove existing records unless
-            you turn them on.
+            you turn them on. For Cash Book specifically, having the module alone isn't enough — an employee
+            only sees the counters you check for them below it.
           </Text>
 
           {accounts.length === 0 ? (
@@ -215,6 +239,31 @@ export default function UserRolesScreen() {
                                 <Ionicons name={modRights.delete ? 'checkmark-circle' : 'ellipse-outline'} size={13} color={modRights.delete ? colors.onBrandPrimary : colors.mutedText} />
                                 <Text style={[styles.rightChipText, modRights.delete && styles.rightChipTextOn]}>Delete</Text>
                               </Pressable>
+                            </View>
+                          )}
+                          {checked && m.key === 'cash_book' && acc.account_type === 'employee' && (
+                            <View style={styles.countersBox} testID={`cashbook-counters-${acc.id}`}>
+                              <Text style={styles.countersLabel}>
+                                {counters.length === 0 ? 'No Cash Book counters exist yet' : 'Counters this employee can see and use'}
+                              </Text>
+                              {counters.length > 0 && (
+                                <View style={styles.countersChipsRow}>
+                                  {counters.map((c) => {
+                                    const on = (counterSel[acc.id] || new Set()).has(c.id);
+                                    return (
+                                      <Pressable
+                                        key={c.id}
+                                        onPress={() => toggleCounter(acc.id, c.id)}
+                                        style={[styles.rightChip, on && styles.rightChipOn]}
+                                        testID={`counter-${acc.id}-${c.id}`}
+                                      >
+                                        <Ionicons name={on ? 'checkmark-circle' : 'ellipse-outline'} size={13} color={on ? colors.onBrandPrimary : colors.mutedText} />
+                                        <Text style={[styles.rightChipText, on && styles.rightChipTextOn]}>{c.name}</Text>
+                                      </Pressable>
+                                    );
+                                  })}
+                                </View>
+                              )}
                             </View>
                           )}
                         </View>
@@ -288,7 +337,10 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   checkboxOn: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
   modLabel: { color: colors.onSurfaceSecondary, fontSize: 13 },
-  rightsRow: { flexDirection: 'row', gap: spacing.sm, paddingLeft: 28, paddingBottom: 8, marginTop: -2 },
+  rightsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, paddingLeft: 28, paddingBottom: 8, marginTop: -2 },
+  countersBox: { paddingLeft: 28, paddingBottom: 8 },
+  countersLabel: { color: colors.mutedText, fontSize: 10.5, fontWeight: '600', marginBottom: 6 },
+  countersChipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   rightChip: {
     flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5,
     borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface,

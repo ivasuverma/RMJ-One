@@ -48,6 +48,23 @@ async def _get_counter(counter_id: str) -> dict:
     return counter
 
 
+def _employee_allowed_counter_ids(user: dict):
+    """None means no restriction (owner/admin/accountant see every active
+    counter, same as every other module). An employee only ever sees
+    counters the owner has explicitly assigned in User Roles — having the
+    'cash_book' module alone is not enough, since a counter is a further
+    sub-resource within it."""
+    if user.get('role') == 'employee':
+        return set(user.get('cashbook_counter_ids') or [])
+    return None
+
+
+def _assert_counter_allowed(user: dict, counter_id: str):
+    allowed = _employee_allowed_counter_ids(user)
+    if allowed is not None and counter_id not in allowed:
+        raise HTTPException(status_code=403, detail='You do not have access to this Cash Book counter')
+
+
 async def _opening_balance_for(counter_id: str, date: str) -> float:
     """This counter's own base opening balance plus the net (received −
     paid) of every entry on this counter dated strictly before `date` —
@@ -67,8 +84,12 @@ async def _opening_balance_for(counter_id: str, date: str) -> float:
 
 # ---------------- Counters ----------------
 @router.get('/cashbook/counters')
-async def list_cashbook_counters(_: dict = Depends(require_staff_or_module('cash_book'))):
-    return await db.cashbook_counters.find({'active': True}, {'_id': 0}).sort('created_at', 1).to_list(200)
+async def list_cashbook_counters(user: dict = Depends(require_staff_or_module('cash_book'))):
+    counters = await db.cashbook_counters.find({'active': True}, {'_id': 0}).sort('created_at', 1).to_list(200)
+    allowed = _employee_allowed_counter_ids(user)
+    if allowed is not None:
+        counters = [c for c in counters if c['id'] in allowed]
+    return counters
 
 
 @router.post('/cashbook/counters')
@@ -116,7 +137,8 @@ async def delete_cashbook_counter(counter_id: str, user=Depends(require_owner)):
 
 # ---------------- Entries ----------------
 @router.get('/cashbook/day')
-async def get_cashbook_day(date: str = Query(...), counter_id: str = Query(...), _: dict = Depends(require_staff_or_module('cash_book'))):
+async def get_cashbook_day(date: str = Query(...), counter_id: str = Query(...), user: dict = Depends(require_staff_or_module('cash_book'))):
+    _assert_counter_allowed(user, counter_id)
     counter = await _get_counter(counter_id)
     entries = await db.cashbook_entries.find({'date': date, 'counter_id': counter_id}, {'_id': 0}).sort('created_at', 1).to_list(1000)
     opening = await _opening_balance_for(counter_id, date)
@@ -136,6 +158,7 @@ async def create_cashbook_entry(body: CashBookEntryIn, user=Depends(require_admi
         raise HTTPException(status_code=400, detail='Amount must be greater than 0')
     if not body.name.strip():
         raise HTTPException(status_code=400, detail='Name / description is required')
+    _assert_counter_allowed(user, body.counter_id)
     counter = await _get_counter(body.counter_id)
     iso = now_utc().isoformat()
     entry_id = str(uuid.uuid4())
@@ -155,10 +178,12 @@ async def update_cashbook_entry(entry_id: str, body: CashBookEntryUpdateIn, user
     entry = await db.cashbook_entries.find_one({'id': entry_id}, {'_id': 0})
     if not entry:
         raise HTTPException(status_code=404, detail='Entry not found')
+    _assert_counter_allowed(user, entry['counter_id'])
     upd: dict = {}
     if body.date is not None: upd['date'] = body.date
     if body.counter_id is not None:
         await _get_counter(body.counter_id)  # 404s if it doesn't exist
+        _assert_counter_allowed(user, body.counter_id)
         upd['counter_id'] = body.counter_id
     if body.type is not None: upd['type'] = body.type
     if body.amount is not None:
@@ -183,6 +208,7 @@ async def delete_cashbook_entry(entry_id: str, user=Depends(require_admin_or_mod
     entry = await db.cashbook_entries.find_one({'id': entry_id}, {'_id': 0})
     if not entry:
         raise HTTPException(status_code=404, detail='Entry not found')
+    _assert_counter_allowed(user, entry['counter_id'])
     await db.cashbook_entries.delete_one({'id': entry_id})
     await log_audit(user, 'cashbook.delete', 'cashbook_entry', entry_id, entry.get('name', ''), {'date': entry.get('date')})
     return {'ok': True}

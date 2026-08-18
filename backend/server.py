@@ -456,6 +456,12 @@ class ModuleAccessUpdateIn(BaseModel):
     # entry here (or entries left False) means the employee can do the module's
     # everyday actions but cannot edit or delete existing records.
     module_rights: Optional[Dict[str, Dict[str, bool]]] = None
+    # Which Cash Book counters (routers/cashbook.py) this employee can see and
+    # use — a sub-permission of the 'cash_book' module itself. None/omitted or
+    # [] means none assigned yet; having the module alone is not enough, the
+    # owner must explicitly pick counters here (unlike other employee-assignable
+    # modules, which don't have a further sub-resource to restrict).
+    cashbook_counter_ids: Optional[List[str]] = None
 
 
 class ShiftIn(BaseModel):
