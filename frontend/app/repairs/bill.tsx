@@ -19,6 +19,7 @@ import { useAuth } from '@/src/auth/AuthContext';
 type Item = {
   id: string; item_code: string; customer_name: string; description: string;
   status: RepairItemStatus; gross_weight: number;
+  created_at: string; due_date: string | null; karigar_name: string | null; created_by?: string;
   labour_charge: number; customer_adjustment?: number;
   fine_weight_diff?: number | null; weight_diff?: number | null;
   current_issue_weight?: number | null; process_loss?: number | null;
@@ -87,11 +88,24 @@ export default function RepairBillScreen() {
   // was actually billed.
   const [materialAdjManual, setMaterialAdjManual] = useState('');
   const isEditingBill = picked?.status === 'delivered';
+  // Same one-shot auto-fallback pattern as the Repair list: if the default
+  // "Pending to Bill" tab is empty the first time this screen opens, jump to
+  // "Pending Delivery" instead of showing a dead end — but only once, and
+  // never when the user explicitly picked a tab (route param, or tapped one
+  // themselves — see the guard on that path below).
+  const triedFallbackRef = useRef(!!routeFilter);
 
   const loadBills = useCallback(async (f: BillFilterKey) => {
-    try { setBills(await api.get<Item[]>(`/repair-items?status=${billFilterQuery(f)}`)); }
-    catch (_e) { setBills([]); }
-    finally { setLoading(false); setRefreshing(false); }
+    try {
+      const res = await api.get<Item[]>(`/repair-items?status=${billFilterQuery(f)}`);
+      if (f === 'ready' && res.length === 0 && !triedFallbackRef.current) {
+        triedFallbackRef.current = true;
+        setFilter('pending_delivery');
+        return; // the filter-change effect below reloads for the new tab
+      }
+      setBills(res);
+      setLoading(false); setRefreshing(false);
+    } catch (_e) { setBills([]); setLoading(false); setRefreshing(false); }
   }, []);
   useFocusEffect(useCallback(() => { if (mode === 'list') loadBills(filter); }, [loadBills, mode, filter]));
 
@@ -354,6 +368,14 @@ export default function RepairBillScreen() {
             </View>
           ) : bills.map((b) => {
             const sc = repairStatusColors(b.status, colors);
+            // Same fields as the Repair list card's meta line, so a tag
+            // looks the same whether you're looking at it there or here.
+            const repairMetaBits = [
+              `Created ${istDate(b.created_at)}`,
+              b.due_date ? `Due ${b.due_date}` : null,
+              b.karigar_name || null,
+              b.created_by ? `by ${b.created_by}` : null,
+            ].filter(Boolean);
             const billMetaBits = [
               b.billed_amount != null ? `₹${b.billed_amount.toFixed(0)}` : null,
               b.payment_mode || null,
@@ -373,6 +395,7 @@ export default function RepairBillScreen() {
                     <Text style={styles.billTag} numberOfLines={1}>{b.item_code}</Text>
                     <Text style={styles.billWeight}>{b.gross_weight.toFixed(3)}g</Text>
                   </View>
+                  <Text style={styles.billMeta} numberOfLines={1}>{repairMetaBits.join('  ·  ')}</Text>
                   {billMetaBits.length > 0 && (
                     <Text style={styles.billMeta} numberOfLines={1}>{billMetaBits.join('  ·  ')}</Text>
                   )}
