@@ -132,6 +132,31 @@ export default function CashBookScreen() {
   const paid = day?.entries.filter((e) => e.type === 'paid') || [];
   const isToday = date === todayIST();
 
+  const renderEntry = (e: Entry, amountColor: string) => (
+    <View key={e.id} style={styles.entryRow} testID={`cashbook-entry-${e.id}`}>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={styles.entryName} numberOfLines={2}>{e.name}</Text>
+        {!!e.note && <Text style={styles.entryNote} numberOfLines={2}>{e.note}</Text>}
+        {!!e.created_by && <Text style={styles.entryBy} numberOfLines={1}>by {e.created_by}</Text>}
+      </View>
+      <Text style={[styles.entryAmount, { color: amountColor }]}>{fmtINR(e.amount)}</Text>
+      {(canEdit || canDelete) && (
+        <View style={styles.entryActions}>
+          {canEdit && (
+            <Pressable onPress={() => openEdit(e)} style={styles.entryActionIcon} hitSlop={8} testID={`cashbook-edit-${e.id}`}>
+              <Ionicons name="pencil-outline" size={13} color={colors.mutedText} />
+            </Pressable>
+          )}
+          {canDelete && (
+            <Pressable onPress={() => confirmDeleteEntry(e)} disabled={deletingId === e.id} style={styles.entryActionIcon} hitSlop={8} testID={`cashbook-delete-${e.id}`}>
+              {deletingId === e.id ? <ActivityIndicator size="small" color={colors.onError} /> : <Ionicons name="trash-outline" size={13} color={colors.mutedText} />}
+            </Pressable>
+          )}
+        </View>
+      )}
+    </View>
+  );
+
   const headerTitle = mode === 'settings' ? 'Opening Balance' : mode === 'form' ? (editing ? 'Edit Entry' : entryType === 'received' ? 'Cash Received' : 'Cash Paid') : 'Cash Book';
   const onBack = () => {
     if (mode !== 'view') { setMode('view'); return; }
@@ -192,20 +217,7 @@ export default function CashBookScreen() {
                   </View>
                   {received.length === 0 ? (
                     <Text style={styles.colEmpty}>No entries</Text>
-                  ) : received.map((e) => (
-                    <Pressable key={e.id} onPress={() => canEdit && openEdit(e)} style={styles.entryRow} testID={`cashbook-entry-${e.id}`}>
-                      <View style={{ flex: 1, minWidth: 0 }}>
-                        <Text style={styles.entryName} numberOfLines={2}>{e.name}</Text>
-                        {!!e.note && <Text style={styles.entryNote} numberOfLines={2}>{e.note}</Text>}
-                      </View>
-                      <Text style={[styles.entryAmount, { color: colors.onSuccess }]}>{fmtINR(e.amount)}</Text>
-                      {canDelete && (
-                        <Pressable onPress={() => confirmDeleteEntry(e)} disabled={deletingId === e.id} style={styles.delIcon} hitSlop={8} testID={`cashbook-delete-${e.id}`}>
-                          {deletingId === e.id ? <ActivityIndicator size="small" color={colors.onError} /> : <Ionicons name="trash-outline" size={13} color={colors.mutedText} />}
-                        </Pressable>
-                      )}
-                    </Pressable>
-                  ))}
+                  ) : received.map((e) => renderEntry(e, colors.onSuccess))}
                   <View style={styles.colTotalRow}>
                     <Text style={styles.colTotalLabel}>Total</Text>
                     <Text style={[styles.colTotalValue, { color: colors.onSuccess }]}>{fmtINR(day?.total_received || 0)}</Text>
@@ -219,20 +231,7 @@ export default function CashBookScreen() {
                   </View>
                   {paid.length === 0 ? (
                     <Text style={styles.colEmpty}>No entries</Text>
-                  ) : paid.map((e) => (
-                    <Pressable key={e.id} onPress={() => canEdit && openEdit(e)} style={styles.entryRow} testID={`cashbook-entry-${e.id}`}>
-                      <View style={{ flex: 1, minWidth: 0 }}>
-                        <Text style={styles.entryName} numberOfLines={2}>{e.name}</Text>
-                        {!!e.note && <Text style={styles.entryNote} numberOfLines={2}>{e.note}</Text>}
-                      </View>
-                      <Text style={[styles.entryAmount, { color: colors.onError }]}>{fmtINR(e.amount)}</Text>
-                      {canDelete && (
-                        <Pressable onPress={() => confirmDeleteEntry(e)} disabled={deletingId === e.id} style={styles.delIcon} hitSlop={8} testID={`cashbook-delete-${e.id}`}>
-                          {deletingId === e.id ? <ActivityIndicator size="small" color={colors.onError} /> : <Ionicons name="trash-outline" size={13} color={colors.mutedText} />}
-                        </Pressable>
-                      )}
-                    </Pressable>
-                  ))}
+                  ) : paid.map((e) => renderEntry(e, colors.onError))}
                   <View style={styles.colTotalRow}>
                     <Text style={styles.colTotalLabel}>Total</Text>
                     <Text style={[styles.colTotalValue, { color: colors.onError }]}>{fmtINR(day?.total_paid || 0)}</Text>
@@ -352,8 +351,10 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   entryName: { color: colors.onSurface, fontSize: 12.5, fontWeight: '700' },
   entryNote: { color: colors.mutedText, fontSize: 10.5, marginTop: 2 },
+  entryBy: { color: colors.onSurfaceTertiary, fontSize: 10, marginTop: 2 },
   entryAmount: { fontSize: 12.5, fontWeight: '800' },
-  delIcon: { padding: 2 },
+  entryActions: { flexDirection: 'row', gap: 4 },
+  entryActionIcon: { padding: 3 },
   colTotalRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: 8, marginTop: 4,
