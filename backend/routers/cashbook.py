@@ -160,16 +160,44 @@ async def create_cashbook_entry(body: CashBookEntryIn, user=Depends(require_admi
         raise HTTPException(status_code=400, detail='Name / description is required')
     _assert_counter_allowed(user, body.counter_id)
     counter = await _get_counter(body.counter_id)
+
+    # A transfer needs write access on both counters — it's effectively one
+    # action against two books at once, so an employee assigned only one
+    # side of it can't use the other as a back door.
+    other_counter = None
+    if body.transfer_counter_id:
+        if body.transfer_counter_id == body.counter_id:
+            raise HTTPException(status_code=400, detail='Transfer counter must be different from this entry\'s counter')
+        _assert_counter_allowed(user, body.transfer_counter_id)
+        other_counter = await _get_counter(body.transfer_counter_id)
+
     iso = now_utc().isoformat()
     entry_id = str(uuid.uuid4())
     entry = {
         'id': entry_id, 'date': body.date, 'counter_id': counter['id'], 'type': body.type, 'amount': body.amount,
         'name': body.name.strip(), 'note': body.note or '',
         'created_at': iso, 'created_by': user['name'], 'created_by_id': user['id'],
+        'linked_entry_id': None, 'transfer_counter_id': other_counter['id'] if other_counter else None,
     }
+
+    mirror = None
+    if other_counter:
+        mirror_id = str(uuid.uuid4())
+        mirror_type = 'paid' if body.type == 'received' else 'received'
+        mirror = {
+            'id': mirror_id, 'date': body.date, 'counter_id': other_counter['id'], 'type': mirror_type, 'amount': body.amount,
+            'name': f"Transfer {'to' if mirror_type == 'paid' else 'from'} {counter['name']}", 'note': body.note or '',
+            'created_at': iso, 'created_by': user['name'], 'created_by_id': user['id'],
+            'linked_entry_id': entry_id, 'transfer_counter_id': counter['id'],
+        }
+        entry['linked_entry_id'] = mirror_id
+
     await db.cashbook_entries.insert_one(dict(entry))
+    if mirror:
+        await db.cashbook_entries.insert_one(dict(mirror))
+
     await log_audit(user, 'cashbook.create', 'cashbook_entry', entry_id, f"{body.type} {body.amount} - {body.name}",
-                     {'date': body.date, 'counter': counter['name']})
+                     {'date': body.date, 'counter': counter['name'], 'transfer_to': other_counter['name'] if other_counter else None})
     return {k: v for k, v in entry.items() if k != '_id'}
 
 
@@ -179,6 +207,9 @@ async def update_cashbook_entry(entry_id: str, body: CashBookEntryUpdateIn, user
     if not entry:
         raise HTTPException(status_code=404, detail='Entry not found')
     _assert_counter_allowed(user, entry['counter_id'])
+    linked_id = entry.get('linked_entry_id')
+    if linked_id and (body.type is not None or body.counter_id is not None):
+        raise HTTPException(status_code=400, detail='This entry is linked to a transfer — delete and re-add it to change its type or counter')
     upd: dict = {}
     if body.date is not None: upd['date'] = body.date
     if body.counter_id is not None:
@@ -200,6 +231,14 @@ async def update_cashbook_entry(entry_id: str, body: CashBookEntryUpdateIn, user
         upd['updated_by'] = user['name']
         await db.cashbook_entries.update_one({'id': entry_id}, {'$set': upd})
         await log_audit(user, 'cashbook.update', 'cashbook_entry', entry_id, entry.get('name', ''), upd)
+        # Keep a linked transfer's other side in sync on whatever actually
+        # changed here (date/amount/note) — name is deliberately NOT synced,
+        # since each side legitimately describes itself differently
+        # ("Transfer to X" vs whatever the user typed on this side).
+        if linked_id:
+            mirror_upd = {k: v for k, v in upd.items() if k in ('date', 'amount', 'note')}
+            if mirror_upd:
+                await db.cashbook_entries.update_one({'id': linked_id}, {'$set': mirror_upd})
     return await db.cashbook_entries.find_one({'id': entry_id}, {'_id': 0})
 
 
@@ -209,6 +248,15 @@ async def delete_cashbook_entry(entry_id: str, user=Depends(require_admin_or_mod
     if not entry:
         raise HTTPException(status_code=404, detail='Entry not found')
     _assert_counter_allowed(user, entry['counter_id'])
+    linked_id = entry.get('linked_entry_id')
+    if linked_id:
+        linked = await db.cashbook_entries.find_one({'id': linked_id}, {'_id': 0})
+        if linked:
+            _assert_counter_allowed(user, linked['counter_id'])
     await db.cashbook_entries.delete_one({'id': entry_id})
-    await log_audit(user, 'cashbook.delete', 'cashbook_entry', entry_id, entry.get('name', ''), {'date': entry.get('date')})
+    if linked_id:
+        # A transfer is one action against two books — deleting one side
+        # without the other would leave a phantom, unbalanced entry behind.
+        await db.cashbook_entries.delete_one({'id': linked_id})
+    await log_audit(user, 'cashbook.delete', 'cashbook_entry', entry_id, entry.get('name', ''), {'date': entry.get('date'), 'linked_entry_id': linked_id})
     return {'ok': True}

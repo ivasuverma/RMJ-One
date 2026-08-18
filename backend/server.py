@@ -787,6 +787,11 @@ class CashBookEntryIn(BaseModel):
     amount: float
     name: str  # who/what — matches the paper cash book's NAME column
     note: Optional[str] = ''
+    # If set, this entry is one side of a transfer between two counters —
+    # the backend auto-creates the mirrored opposite-type entry on this
+    # counter (e.g. this counter pays out, the other counter automatically
+    # receives the same amount), linked via linked_entry_id on both.
+    transfer_counter_id: Optional[str] = None
 
 
 class CashBookEntryUpdateIn(BaseModel):
