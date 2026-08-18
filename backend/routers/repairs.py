@@ -413,6 +413,31 @@ async def list_repair_items(
     return await db.repair_items.find(query, {'_id': 0}).sort('created_at', -1).to_list(1000)
 
 
+@router.get('/repairs/dashboard')
+async def repairs_dashboard(_: dict = Depends(require_staff_or_module(['repairs', 'repair_bill']))):
+    """Compact repair-pipeline stats for the employee Transactions screen —
+    same status buckets the list/bill screens filter by, so each tile can
+    deep-link straight into a matching pre-filtered list. Anyone holding
+    either the repairs or repair_bill right can see this (a bill-only
+    biller still cares about what's pending to bill/deliver)."""
+    today = today_str()
+    items = await db.repair_items.find(
+        {'status': {'$ne': 'delivered'}}, {'_id': 0, 'status': 1, 'due_date': 1},
+    ).to_list(5000)
+    received = sum(1 for i in items if i['status'] == 'received')
+    with_karigar = sum(1 for i in items if i['status'] == 'with_karigar')
+    ready = sum(1 for i in items if i['status'] == 'ready')
+    pending_delivery = sum(1 for i in items if i['status'] == 'pending_delivery')
+    # Same "overdue" definition as the list endpoint's own overdue filter —
+    # a tag can only be overdue while still actively being worked.
+    overdue = sum(1 for i in items if i.get('due_date') and i['due_date'] < today and i['status'] not in ('pending_delivery',))
+    delivered_today = await db.repair_items.count_documents({'status': 'delivered', 'delivered_at': {'$regex': f'^{today}'}})
+    return {
+        'received': received, 'with_karigar': with_karigar, 'ready': ready,
+        'pending_delivery': pending_delivery, 'overdue': overdue, 'delivered_today': delivered_today,
+    }
+
+
 @router.get('/repair-items/{item_id}')
 async def get_repair_item(item_id: str, _: dict = Depends(require_staff_or_module(['repairs', 'repair_bill']))):
     item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})

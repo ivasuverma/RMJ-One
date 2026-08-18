@@ -1,8 +1,9 @@
-import { useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
+import { api } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthContext';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
@@ -35,11 +36,49 @@ const SECTIONS: { title: string; tiles: TileDef[] }[] = [
   },
 ];
 
+type RepairDashboard = {
+  received: number; with_karigar: number; ready: number;
+  pending_delivery: number; overdue: number; delivered_today: number;
+};
+
+type StatDef = {
+  key: keyof RepairDashboard; label: string; icon: keyof typeof Ionicons.glyphMap;
+  bg: (c: ThemeColors) => string; fg: (c: ThemeColors) => string; route: string;
+};
+
+// Each tile's route lands on the matching screen pre-filtered to that exact
+// bucket — repairs/index.tsx and repairs/bill.tsx both read an initial
+// `filter` param, so tapping a count here is a shortcut straight into the
+// worklist behind it, not just a static number. bg/fg pairs reuse the
+// theme's existing tint tokens (same pattern as success/warning/error
+// banners elsewhere) rather than inventing new colors.
+const STAT_DEFS: StatDef[] = [
+  { key: 'received', label: 'Issue Pending', icon: 'cube-outline', bg: (c) => c.brandTertiary, fg: (c) => c.brandPrimary, route: '/repairs?filter=received' },
+  { key: 'with_karigar', label: 'With Karigar', icon: 'hammer-outline', bg: (c) => c.info, fg: (c) => c.onInfo, route: '/repairs?filter=with_karigar' },
+  { key: 'ready', label: 'Pending to Bill', icon: 'pricetag-outline', bg: (c) => c.warning, fg: (c) => c.onWarning, route: '/repairs/bill?filter=ready' },
+  { key: 'pending_delivery', label: 'Pending Delivery', icon: 'time-outline', bg: (c) => c.warning, fg: (c) => c.onWarning, route: '/repairs/bill?filter=pending_delivery' },
+  { key: 'overdue', label: 'Overdue', icon: 'alert-circle-outline', bg: (c) => c.error, fg: (c) => c.onError, route: '/repairs?filter=overdue' },
+  { key: 'delivered_today', label: 'Delivered Today', icon: 'checkmark-done-outline', bg: (c) => c.success, fg: (c) => c.onSuccess, route: '/repairs/bill?filter=delivered' },
+];
+
 export default function EmployeeTransactionsScreen() {
   const router = useRouter();
   const { colors } = useTheme();
   const { hasModule } = useAuth();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+
+  const [dash, setDash] = useState<RepairDashboard | null>(null);
+  // Either right is enough to see this — a bill-only biller still cares
+  // about what's pending to bill/deliver, not just full repair access.
+  const showRepairDash = hasModule('repairs') || hasModule('repair_bill');
+
+  const loadDash = useCallback(async () => {
+    if (!showRepairDash) { setDash(null); return; }
+    try { setDash(await api.get<RepairDashboard>('/repairs/dashboard')); }
+    catch (_e) { setDash(null); }
+  }, [showRepairDash]);
+
+  useFocusEffect(useCallback(() => { loadDash(); }, [loadDash]));
 
   const sections = SECTIONS
     .map((s) => ({ ...s, tiles: s.tiles.filter((t) => hasModule(t.module)) }))
@@ -50,6 +89,28 @@ export default function EmployeeTransactionsScreen() {
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         <Text style={styles.title}>Transactions</Text>
         <Text style={styles.subtitle}>Where you record something happening.</Text>
+
+        {showRepairDash && dash && (
+          <View testID="emp-repair-dashboard">
+            <Text style={styles.sectionLabel}>Repair Dashboard</Text>
+            <View style={styles.statGrid}>
+              {STAT_DEFS.map((s) => (
+                <Pressable
+                  key={s.key}
+                  testID={`repair-dash-stat-${s.key}`}
+                  onPress={() => router.push(s.route as any)}
+                  style={({ pressed }) => [styles.statTile, pressed && { opacity: 0.8 }]}
+                >
+                  <View style={[styles.statIcon, { backgroundColor: s.bg(colors), borderColor: s.fg(colors) }]}>
+                    <Ionicons name={s.icon} size={18} color={s.fg(colors)} />
+                  </View>
+                  <Text style={styles.statValue}>{dash[s.key]}</Text>
+                  <Text style={styles.statLabel}>{s.label}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        )}
 
         {sections.length === 0 ? (
           <View style={styles.empty}><Text style={styles.emptyText}>Nothing assigned to you yet.</Text></View>
@@ -101,4 +162,16 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     borderWidth: 1, borderColor: colors.brand,
   },
   tileLabel: { color: colors.onSurface, fontSize: 13, fontWeight: '700', textAlign: 'center' },
+  statGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  statTile: {
+    flexBasis: '31%', flexGrow: 0, maxWidth: '31%', minWidth: 96,
+    backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg,
+    borderWidth: 1, borderColor: colors.border, padding: spacing.md, alignItems: 'center',
+  },
+  statIcon: {
+    width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center',
+    marginBottom: spacing.xs, borderWidth: 1,
+  },
+  statValue: { color: colors.onSurface, fontSize: 20, fontWeight: '800' },
+  statLabel: { color: colors.mutedText, fontSize: 11, fontWeight: '600', textAlign: 'center', marginTop: 2 },
 });

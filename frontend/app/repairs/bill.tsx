@@ -39,11 +39,12 @@ const BILL_FILTERS: { key: BillFilterKey; label: string; icon: any }[] = [
   { key: 'delivered', label: 'Delivered', icon: 'checkmark-done-outline' },
 ];
 const billFilterQuery = (f: BillFilterKey) => (f === 'all' ? 'ready,pending_delivery,delivered' : f);
+const BILL_FILTER_KEYS = new Set(BILL_FILTERS.map((f) => f.key));
 
 function round3(n: number) { return Math.round(n * 1000) / 1000; }
 
 export default function RepairBillScreen() {
-  const { itemId: routeItemId } = useLocalSearchParams<{ itemId?: string }>();
+  const { itemId: routeItemId, filter: routeFilter } = useLocalSearchParams<{ itemId?: string; filter?: string }>();
   const router = useRouter();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
@@ -52,7 +53,8 @@ export default function RepairBillScreen() {
   const canDeleteBill = hasRight('repair_bill', 'delete');
 
   const [mode, setMode] = useState<Mode>(routeItemId ? 'form' : 'list');
-  const [filter, setFilter] = useState<BillFilterKey>('all');
+  const initialFilter = (routeFilter && BILL_FILTER_KEYS.has(routeFilter as BillFilterKey) ? routeFilter : 'all') as BillFilterKey;
+  const [filter, setFilter] = useState<BillFilterKey>(initialFilter);
   const [bills, setBills] = useState<Item[]>([]);
   const [readyItems, setReadyItems] = useState<Item[]>([]);
   const [picked, setPicked] = useState<Item | null>(null);
