@@ -410,7 +410,13 @@ async def list_repair_items(
             {'description': {'$regex': q_esc, '$options': 'i'}},
             {'customer_name': {'$regex': q_esc, '$options': 'i'}},
         ]
-    return await db.repair_items.find(query, {'_id': 0}).sort('created_at', -1).to_list(1000)
+    # intake_photo/final_photo are base64 JPEGs (~50-150KB each) — no list
+    # row ever renders them (only the item detail page and the "reopen a
+    # delivered bill" edit form do, both of which fetch the single item
+    # fresh via GET /repair-items/{id}). Stripping them here is the biggest
+    # single cut to this endpoint's payload size, since it's re-fetched on
+    # nearly every Repair screen focus.
+    return await db.repair_items.find(query, {'_id': 0, 'intake_photo': 0, 'final_photo': 0}).sort('created_at', -1).to_list(1000)
 
 
 @router.get('/repairs/dashboard')

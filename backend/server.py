@@ -1,6 +1,7 @@
 from fastapi import FastAPI, APIRouter, Depends, HTTPException, Header
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
+from starlette.middleware.gzip import GZipMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
@@ -774,6 +775,24 @@ async def seed():
     await db.employees.create_index('biometric_id')
     await db.attendance.create_index([('employee_id', 1), ('date', 1)], unique=True)
     await db.attendance_events.create_index('created_at')
+    # Added as part of the perf pass — these collections are filtered by
+    # these exact fields on nearly every list/lookup call above, but had no
+    # index (full collection scan every time). Cheap to create, index_exists
+    # is idempotent so this is safe to run on every startup.
+    await db.repair_items.create_index('order_id')
+    await db.repair_items.create_index('status')
+    await db.karigar_ledger.create_index('karigar_id')
+    await db.karigar_transactions.create_index('item_id')
+    await db.timeline.create_index('employee_id')
+    await db.notifications.create_index([('user_id', 1), ('created_at', -1)])
+    await db.corrections.create_index('status')
+    await db.corrections.create_index('employee_id')
+    await db.leaves.create_index('employee_id')
+    await db.leaves.create_index('status')
+    await db.payroll_entries.create_index([('year', 1), ('month', 1)])
+    await db.push_subscriptions.create_index('user_id')
+    await db.push_subscriptions.create_index('role')
+    await db.samples.create_index('status')
 
     if not await db.users.find_one({'username': 'owner'}):
         uid = str(uuid.uuid4())
@@ -1200,7 +1219,7 @@ async def _store_notification(user_id: str, title: str, body: str, url: str):
     })
 
 
-async def notify_user(user_id: str, title: str, body: str, url: str = '/'):
+async def _notify_user_impl(user_id: str, title: str, body: str, url: str = '/'):
     try:
         await _store_notification(user_id, title, body, url)
         subs = await db.push_subscriptions.find({'user_id': user_id}, {'_id': 0}).to_list(20)
@@ -1209,7 +1228,16 @@ async def notify_user(user_id: str, title: str, body: str, url: str = '/'):
         logger.warning(f'notify_user failed: {e}')
 
 
-async def notify_roles(roles: list, title: str, body: str, url: str = '/'):
+async def notify_user(user_id: str, title: str, body: str, url: str = '/'):
+    # Fire-and-forget: notification storage + web-push delivery involve
+    # several sequential DB writes and outbound HTTP calls to push services,
+    # none of which the caller (a form-save request handler) should have to
+    # wait on. Scheduling as a background task lets the API response return
+    # the instant the actual record is saved instead of blocking on this.
+    asyncio.create_task(_notify_user_impl(user_id, title, body, url))
+
+
+async def _notify_roles_impl(roles: list, title: str, body: str, url: str = '/'):
     try:
         if not roles:
             return
@@ -1228,6 +1256,12 @@ async def notify_roles(roles: list, title: str, body: str, url: str = '/'):
         await _send_push_to_subs(subs, title, body, url)
     except Exception as e:
         logger.warning(f'notify_roles failed: {e}')
+
+
+async def notify_roles(roles: list, title: str, body: str, url: str = '/'):
+    # Same rationale as notify_user: don't block the caller on the recipient
+    # resolution + per-recipient inserts + push delivery below.
+    asyncio.create_task(_notify_roles_impl(roles, title, body, url))
 
 
 # ---------------- Notification Settings (per-module on/off + recipients) ----------------
@@ -1276,7 +1310,7 @@ for _s in NOTIFICATION_SCRIPTS:
 NOTIFICATION_SCRIPT_KEYS = {s['key'] for s in NOTIFICATION_SCRIPTS}
 
 
-async def _notify_module(module: str, title: str, body: str, url: str = '/', script: Optional[str] = None):
+async def _notify_module_impl(module: str, title: str, body: str, url: str = '/', script: Optional[str] = None):
     """Broadcast a module event to whichever staff/employees are configured to
     receive it, honoring the admin's Notification Settings (Settings >
     Notifications). Falls back to the module's default roles if unconfigured.
@@ -1309,6 +1343,15 @@ async def _notify_module(module: str, title: str, body: str, url: str = '/', scr
                 await notify_user(uid, title, body, url)
     except Exception as e:
         logger.warning(f'_notify_module failed for {module}: {e}')
+
+
+async def _notify_module(module: str, title: str, body: str, url: str = '/', script: Optional[str] = None):
+    # Same rationale as notify_user/notify_roles above — this is the entry
+    # point ~30 write endpoints call synchronously; without backgrounding it,
+    # every repair/sample/task/leave save waits on a settings lookup, a
+    # per-recipient notification insert loop, and sequential outbound
+    # web-push HTTP calls before the client sees "saved".
+    asyncio.create_task(_notify_module_impl(module, title, body, url, script))
 
 
 MISSED_ATTENDANCE_GRACE_MIN = 30  # keep in sync with attendance.py's NOT_CHECKED_IN_GRACE_MIN (same criteria, UI filter vs push reminder)
@@ -1779,3 +1822,7 @@ app.add_middleware(
     CORSMiddleware, allow_credentials=True, allow_origins=ALLOWED_ORIGINS,
     allow_methods=['*'], allow_headers=['*'],
 )
+# Compresses every response over 500 bytes — plain JSON list payloads
+# (the bulk of this API's traffic) typically shrink 70-80%, so this is a
+# free win on every page load with zero endpoint-level changes.
+app.add_middleware(GZipMiddleware, minimum_size=500)

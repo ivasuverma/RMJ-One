@@ -115,7 +115,7 @@ export default function RepairBillScreen() {
     finally { setBusy(false); submittingRef.current = false; }
   };
 
-  const pickItem = (item: Item) => {
+  const pickItem = async (item: Item) => {
     setPicked(item);
     if (item.status === 'delivered') {
       // Re-opening an existing bill for correction — prefill from what was
@@ -128,7 +128,14 @@ export default function RepairBillScreen() {
       setPrevBalance(item.bill_previous_balance ? String(item.bill_previous_balance) : '');
       setValueAdd(item.bill_value_add ? String(item.bill_value_add) : '');
       setMaterialAdjManual(item.bill_material_adjustment ? String(item.bill_material_adjustment) : '');
-      setFinalPhoto(item.final_photo || '');
+      // The list endpoint no longer ships intake_photo/final_photo (they're
+      // stripped to keep list loads fast) — fetch this one item's full
+      // record to get the actual final photo for the edit form.
+      setFinalPhoto('');
+      try {
+        const res = await api.get<{ item: Item }>(`/repair-items/${item.id}`);
+        setFinalPhoto(res.item.final_photo || '');
+      } catch { /* ignore — form still works without the photo prefilled */ }
     } else {
       setBillLabour(String(item.labour_charge || 0));
       setBillExtra(''); setBillExtraNote(''); setPaymentMode('cash'); setWeightRate(''); setPrevBalance(''); setValueAdd(''); setFinalPhoto('');
