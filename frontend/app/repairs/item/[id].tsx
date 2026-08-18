@@ -335,7 +335,7 @@ export default function RepairItemDetailScreen() {
                 <Ionicons name="checkmark-done-outline" size={16} color={colors.onBrandPrimary} /><Text style={styles.actionBtnPrimaryText}>Close Delivery</Text>
               </Pressable>
               {hasRight('repair_bill', 'edit') && (
-                <Pressable onPress={() => router.push({ pathname: '/repairs/bill', params: { itemId: id } } as any)} style={styles.actionBtn} testID="edit-pending-bill-btn">
+                <Pressable onPress={() => router.push({ pathname: '/repairs/bill', params: { itemId: id, mode: 'edit' } } as any)} style={styles.actionBtn} testID="edit-pending-bill-btn">
                   <Ionicons name="pencil-outline" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>Edit Bill</Text>
                 </Pressable>
               )}

@@ -46,7 +46,7 @@ const BILL_FILTER_KEYS = new Set(BILL_FILTERS.map((f) => f.key));
 function round3(n: number) { return Math.round(n * 1000) / 1000; }
 
 export default function RepairBillScreen() {
-  const { itemId: routeItemId, filter: routeFilter } = useLocalSearchParams<{ itemId?: string; filter?: string }>();
+  const { itemId: routeItemId, filter: routeFilter, mode: routeMode } = useLocalSearchParams<{ itemId?: string; filter?: string; mode?: string }>();
   const router = useRouter();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
@@ -87,7 +87,11 @@ export default function RepairBillScreen() {
   // entered falls back to this manually-editable total, pre-filled from what
   // was actually billed.
   const [materialAdjManual, setMaterialAdjManual] = useState('');
-  const isEditingBill = picked?.status === 'delivered';
+  // Editing an already-billed tag — whether it's fully delivered or still
+  // pending delivery — vs. creating a fresh bill for a 'ready' tag. The
+  // backend allows correcting or deleting a bill in either of those two
+  // billed states (PUT/DELETE .../bill both accept pending_delivery too).
+  const isEditingBill = picked?.status === 'delivered' || picked?.status === 'pending_delivery';
   // Same one-shot auto-fallback pattern as the Repair list: if the default
   // "Pending to Bill" tab is empty the first time this screen opens, jump to
   // "Pending Delivery" instead of showing a dead end — but only once, and
@@ -132,8 +136,10 @@ export default function RepairBillScreen() {
 
   const pickItem = async (item: Item) => {
     setPicked(item);
-    if (item.status === 'delivered') {
-      // Re-opening an existing bill for correction — prefill from what was
+    if (item.status === 'delivered' || item.status === 'pending_delivery') {
+      // Re-opening an existing bill for correction (whether it's already
+      // been picked up or is still pending delivery — the backend allows
+      // editing/deleting a bill in either state) — prefill from what was
       // actually billed rather than the item's live (possibly since-changed) fields.
       setBillLabour(String(item.bill_labour_charge ?? item.labour_charge ?? 0));
       setBillExtra(item.bill_extra_charges ? String(item.bill_extra_charges) : '');
@@ -198,17 +204,20 @@ export default function RepairBillScreen() {
   };
 
   // Deep-linked straight into the form for one item (e.g. from the tag detail
-  // screen's "Bill Repair" / "Close Delivery" buttons) — skip the list/pick
-  // steps entirely. Which form opens depends on the tag's current status.
+  // screen's "Bill Repair" / "Close Delivery" / "Edit Bill" buttons) — skip
+  // the list/pick steps entirely. A pending_delivery tag defaults to the
+  // Close Delivery form (the common case — confirming pickup), unless the
+  // caller explicitly asked to edit the bill instead (?mode=edit, used by
+  // the tag detail screen's separate "Edit Bill" button for that status).
   useFocusEffect(useCallback(() => {
     if (!routeItemId || picked || closeItem) return;
     setLoading(true);
     api.get<{ item: Item }>(`/repair-items/${routeItemId}`)
-      .then((res) => (res.item.status === 'pending_delivery' ? openCloseForm(res.item) : pickItem(res.item)))
+      .then((res) => (res.item.status === 'pending_delivery' && routeMode !== 'edit' ? openCloseForm(res.item) : pickItem(res.item)))
       .catch(() => Alert.alert('Failed', 'Could not load this tag.'))
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [routeItemId, picked, closeItem]));
+  }, [routeItemId, routeMode, picked, closeItem]));
 
   const issuedWeight = picked?.current_issue_weight || 0;
   const receivedWeight = issuedWeight + (picked?.weight_diff || 0);
@@ -400,7 +409,7 @@ export default function RepairBillScreen() {
                     <Text style={styles.billMeta} numberOfLines={1}>{billMetaBits.join('  ·  ')}</Text>
                   )}
                 </Pressable>
-                {b.status === 'delivered' && canEditBill && (
+                {(b.status === 'delivered' || b.status === 'pending_delivery') && canEditBill && (
                   <Pressable onPress={() => pickItem(b)} style={styles.editBtn} testID={`edit-bill-${b.id}`}>
                     <Ionicons name="pencil-outline" size={16} color={colors.onSurfaceSecondary} />
                   </Pressable>
