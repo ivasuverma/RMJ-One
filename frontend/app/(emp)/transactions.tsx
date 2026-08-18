@@ -40,26 +40,84 @@ type RepairDashboard = {
   received: number; with_karigar: number; ready: number;
   pending_delivery: number; overdue: number; delivered_today: number;
 };
+type SamplesDashboard = { with_karigar: number; overdue: number; received_today: number };
 
-type StatDef = {
-  key: keyof RepairDashboard; label: string; icon: keyof typeof Ionicons.glyphMap;
-  bg: (c: ThemeColors) => string; fg: (c: ThemeColors) => string; route: string;
+type Tone = 'alert' | 'warn' | 'info' | 'neutral';
+const toneColors = (t: Tone, c: ThemeColors): { bg: string; fg: string } => {
+  if (t === 'alert') return { bg: c.error, fg: c.onError };
+  if (t === 'warn') return { bg: c.warning, fg: c.onWarning };
+  if (t === 'info') return { bg: c.info, fg: c.onInfo };
+  return { bg: c.brandTertiary, fg: c.brandPrimary };
 };
 
-// Each tile's route lands on the matching screen pre-filtered to that exact
-// bucket — repairs/index.tsx and repairs/bill.tsx both read an initial
-// `filter` param, so tapping a count here is a shortcut straight into the
-// worklist behind it, not just a static number. bg/fg pairs reuse the
-// theme's existing tint tokens (same pattern as success/warning/error
-// banners elsewhere) rather than inventing new colors.
-const STAT_DEFS: StatDef[] = [
-  { key: 'received', label: 'Issue Pending', icon: 'cube-outline', bg: (c) => c.brandTertiary, fg: (c) => c.brandPrimary, route: '/repairs?filter=received' },
-  { key: 'with_karigar', label: 'With Karigar', icon: 'hammer-outline', bg: (c) => c.info, fg: (c) => c.onInfo, route: '/repairs?filter=with_karigar' },
-  { key: 'ready', label: 'Pending to Bill', icon: 'pricetag-outline', bg: (c) => c.warning, fg: (c) => c.onWarning, route: '/repairs/bill?filter=ready' },
-  { key: 'pending_delivery', label: 'Pending Delivery', icon: 'time-outline', bg: (c) => c.warning, fg: (c) => c.onWarning, route: '/repairs/bill?filter=pending_delivery' },
-  { key: 'overdue', label: 'Overdue', icon: 'alert-circle-outline', bg: (c) => c.error, fg: (c) => c.onError, route: '/repairs?filter=overdue' },
-  { key: 'delivered_today', label: 'Delivered Today', icon: 'checkmark-done-outline', bg: (c) => c.success, fg: (c) => c.onSuccess, route: '/repairs/bill?filter=delivered' },
-];
+type StatRow = {
+  key: string; label: string; icon: keyof typeof Ionicons.glyphMap; tone: Tone; route: string; count: number;
+};
+
+// A dashboard "card" is a labeled group of stat rows, ordered most-urgent
+// first, plus an optional small at-a-glance caption (today's throughput —
+// informational only, not something that needs action so it isn't its own
+// row). Every row deep-links into the exact pre-filtered worklist behind
+// it — repairs/index.tsx, repairs/bill.tsx, and samples/index.tsx all read
+// an initial filter/status param — so a count here is never a dead end.
+function buildRepairRows(d: RepairDashboard): StatRow[] {
+  return [
+    { key: 'overdue', label: 'Overdue', icon: 'alert-circle-outline', tone: 'alert', route: '/repairs?filter=overdue', count: d.overdue },
+    { key: 'received', label: 'Issue Pending', icon: 'cube-outline', tone: 'neutral', route: '/repairs?filter=received', count: d.received },
+    { key: 'ready', label: 'Pending to Bill', icon: 'pricetag-outline', tone: 'warn', route: '/repairs/bill?filter=ready', count: d.ready },
+    { key: 'pending_delivery', label: 'Pending Delivery', icon: 'time-outline', tone: 'warn', route: '/repairs/bill?filter=pending_delivery', count: d.pending_delivery },
+    { key: 'with_karigar', label: 'With Karigar', icon: 'hammer-outline', tone: 'info', route: '/repairs?filter=with_karigar', count: d.with_karigar },
+  ];
+}
+function buildSampleRows(d: SamplesDashboard): StatRow[] {
+  return [
+    { key: 'overdue', label: 'Overdue', icon: 'alert-circle-outline', tone: 'alert', route: '/samples?status=overdue', count: d.overdue },
+    { key: 'with_karigar', label: 'With Karigar', icon: 'hammer-outline', tone: 'info', route: '/samples?status=with_karigar', count: d.with_karigar },
+  ];
+}
+
+function DashCard({
+  testID, title, caption, rows, colors, onPress,
+}: {
+  testID: string; title: string; caption?: string; rows: StatRow[]; colors: ThemeColors; onPress: (route: string) => void;
+}) {
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+  return (
+    <View testID={testID}>
+      <View style={styles.dashHeaderRow}>
+        <Text style={styles.sectionLabel}>{title}</Text>
+        {!!caption && <Text style={styles.dashCaption}>{caption}</Text>}
+      </View>
+      <View style={styles.dashCard}>
+        {rows.map((r, i) => {
+          // A zero count isn't something to act on — mute the row so an
+          // "Overdue" tile doesn't read as an alarm when there's nothing
+          // actually overdue, while keeping every row in the same place
+          // every time (predictable scanning beats hiding rows).
+          const tone: Tone = r.count === 0 ? 'neutral' : r.tone;
+          const { bg, fg } = toneColors(tone, colors);
+          return (
+            <Pressable
+              key={r.key}
+              testID={`dash-row-${testID}-${r.key}`}
+              onPress={() => onPress(r.route)}
+              style={({ pressed }) => [
+                styles.dashRow, i === rows.length - 1 && styles.dashRowLast, pressed && { opacity: 0.7 },
+              ]}
+            >
+              <View style={[styles.dashIcon, { backgroundColor: bg }]}>
+                <Ionicons name={r.icon} size={17} color={fg} />
+              </View>
+              <Text style={styles.dashLabel}>{r.label}</Text>
+              <Text style={[styles.dashCount, r.count > 0 && r.tone === 'alert' && { color: colors.onError }]}>{r.count}</Text>
+              <Ionicons name="chevron-forward" size={16} color={colors.mutedText} />
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
 
 export default function EmployeeTransactionsScreen() {
   const router = useRouter();
@@ -67,16 +125,23 @@ export default function EmployeeTransactionsScreen() {
   const { hasModule } = useAuth();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
-  const [dash, setDash] = useState<RepairDashboard | null>(null);
-  // Either right is enough to see this — a bill-only biller still cares
-  // about what's pending to bill/deliver, not just full repair access.
+  const [repairDash, setRepairDash] = useState<RepairDashboard | null>(null);
+  const [sampleDash, setSampleDash] = useState<SamplesDashboard | null>(null);
+  // Either right is enough to see the repair card — a bill-only biller still
+  // cares about what's pending to bill/deliver, not just full repair access.
   const showRepairDash = hasModule('repairs') || hasModule('repair_bill');
+  const showSampleDash = hasModule('samples');
 
   const loadDash = useCallback(async () => {
-    if (!showRepairDash) { setDash(null); return; }
-    try { setDash(await api.get<RepairDashboard>('/repairs/dashboard')); }
-    catch (_e) { setDash(null); }
-  }, [showRepairDash]);
+    if (showRepairDash) {
+      try { setRepairDash(await api.get<RepairDashboard>('/repairs/dashboard')); }
+      catch (_e) { setRepairDash(null); }
+    } else setRepairDash(null);
+    if (showSampleDash) {
+      try { setSampleDash(await api.get<SamplesDashboard>('/samples/dashboard')); }
+      catch (_e) { setSampleDash(null); }
+    } else setSampleDash(null);
+  }, [showRepairDash, showSampleDash]);
 
   useFocusEffect(useCallback(() => { loadDash(); }, [loadDash]));
 
@@ -84,32 +149,28 @@ export default function EmployeeTransactionsScreen() {
     .map((s) => ({ ...s, tiles: s.tiles.filter((t) => hasModule(t.module)) }))
     .filter((s) => s.tiles.length > 0);
 
+  const goTo = (route: string) => router.push(route as any);
+
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="emp-transactions-screen">
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         <Text style={styles.title}>Transactions</Text>
         <Text style={styles.subtitle}>Where you record something happening.</Text>
 
-        {showRepairDash && dash && (
-          <View testID="emp-repair-dashboard">
-            <Text style={styles.sectionLabel}>Repair Dashboard</Text>
-            <View style={styles.statGrid}>
-              {STAT_DEFS.map((s) => (
-                <Pressable
-                  key={s.key}
-                  testID={`repair-dash-stat-${s.key}`}
-                  onPress={() => router.push(s.route as any)}
-                  style={({ pressed }) => [styles.statTile, pressed && { opacity: 0.8 }]}
-                >
-                  <View style={[styles.statIcon, { backgroundColor: s.bg(colors), borderColor: s.fg(colors) }]}>
-                    <Ionicons name={s.icon} size={18} color={s.fg(colors)} />
-                  </View>
-                  <Text style={styles.statValue}>{dash[s.key]}</Text>
-                  <Text style={styles.statLabel}>{s.label}</Text>
-                </Pressable>
-              ))}
-            </View>
-          </View>
+        {showRepairDash && repairDash && (
+          <DashCard
+            testID="emp-repair-dashboard" title="Repairs" colors={colors} onPress={goTo}
+            rows={buildRepairRows(repairDash)}
+            caption={repairDash.delivered_today > 0 ? `${repairDash.delivered_today} delivered today` : undefined}
+          />
+        )}
+
+        {showSampleDash && sampleDash && (
+          <DashCard
+            testID="emp-samples-dashboard" title="Stock In/Out" colors={colors} onPress={goTo}
+            rows={buildSampleRows(sampleDash)}
+            caption={sampleDash.received_today > 0 ? `${sampleDash.received_today} returned today` : undefined}
+          />
         )}
 
         {sections.length === 0 ? (
@@ -162,16 +223,26 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     borderWidth: 1, borderColor: colors.brand,
   },
   tileLabel: { color: colors.onSurface, fontSize: 13, fontWeight: '700', textAlign: 'center' },
-  statGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  statTile: {
-    flexBasis: '31%', flexGrow: 0, maxWidth: '31%', minWidth: 96,
+  // Dashboard cards: a full-width row list reads faster than a grid of
+  // squares once there are 4-5 metrics, and gives each row a big, easy
+  // touch target (>44pt tall) without needing hitSlop.
+  dashHeaderRow: {
+    flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between',
+    marginTop: spacing.lg, marginBottom: spacing.md,
+  },
+  dashCaption: { color: colors.mutedText, fontSize: 11, fontWeight: '600' },
+  dashCard: {
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg,
-    borderWidth: 1, borderColor: colors.border, padding: spacing.md, alignItems: 'center',
+    borderWidth: 1, borderColor: colors.border, overflow: 'hidden',
   },
-  statIcon: {
-    width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center',
-    marginBottom: spacing.xs, borderWidth: 1,
+  dashRow: {
+    flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: spacing.md,
+    borderBottomWidth: 1, borderBottomColor: colors.divider, gap: spacing.sm, minHeight: 48,
   },
-  statValue: { color: colors.onSurface, fontSize: 20, fontWeight: '800' },
-  statLabel: { color: colors.mutedText, fontSize: 11, fontWeight: '600', textAlign: 'center', marginTop: 2 },
+  dashRowLast: { borderBottomWidth: 0 },
+  dashIcon: {
+    width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center',
+  },
+  dashLabel: { flex: 1, color: colors.onSurface, fontSize: 14, fontWeight: '600' },
+  dashCount: { color: colors.onSurface, fontSize: 16, fontWeight: '800', marginRight: 2, minWidth: 20, textAlign: 'right' },
 });

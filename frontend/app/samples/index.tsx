@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter, useFocusEffect } from 'expo-router';
+import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { api } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthContext';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
@@ -22,16 +22,19 @@ const STATUS_TABS: { key: string; label: string }[] = [
   { key: 'overdue', label: 'Overdue' },
   { key: 'all', label: 'All' },
 ];
+const STATUS_TAB_KEYS = new Set(STATUS_TABS.map((t) => t.key));
 
 export default function SamplesScreen() {
   const router = useRouter();
+  const { status: routeStatus } = useLocalSearchParams<{ status?: string }>();
   const { colors } = useTheme();
   const { hasRight } = useAuth();
   const canIssue = hasRight('samples', 'edit'); // issuing is the "do the job" action, same tier as edit
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const [samples, setSamples] = useState<Sample[]>([]);
-  const [statusTab, setStatusTab] = useState('with_karigar');
+  const initialStatus = routeStatus && STATUS_TAB_KEYS.has(routeStatus) ? routeStatus : 'with_karigar';
+  const [statusTab, setStatusTab] = useState(initialStatus);
   const [query, setQuery] = useState('');
   const [refreshing, setRefreshing] = useState(false);
 

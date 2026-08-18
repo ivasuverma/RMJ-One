@@ -115,6 +115,21 @@ async def list_samples(
     return await db.samples.find(query, {'_id': 0, 'photo': 0}).sort('created_at', -1).to_list(1000)
 
 
+@router.get('/samples/dashboard')
+async def samples_dashboard(_: dict = Depends(require_staff_or_module('samples'))):
+    """Compact stock-in/out stats for the employee Transactions screen — just
+    the two buckets that need a glance: what's currently out, and what's
+    overdue within that. Same overdue definition as list_samples's own
+    overdue filter, so the tile and the list it links to always agree."""
+    today = today_str()
+    out = await db.samples.find(
+        {'status': 'with_karigar'}, {'_id': 0, 'due_date': 1},
+    ).to_list(5000)
+    overdue = sum(1 for s in out if s.get('due_date') and s['due_date'] < today)
+    received_today = await db.samples.count_documents({'status': 'received', 'received_at': {'$regex': f'^{today}'}})
+    return {'with_karigar': len(out), 'overdue': overdue, 'received_today': received_today}
+
+
 @router.get('/samples/{sample_id}')
 async def get_sample(sample_id: str, _: dict = Depends(require_staff_or_module('samples'))):
     sample = await db.samples.find_one({'id': sample_id}, {'_id': 0})
