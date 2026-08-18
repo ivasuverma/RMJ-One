@@ -7,13 +7,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
 import { PhotoCaptureModal } from '@/src/components/PhotoCaptureModal';
+import { DateField } from '@/src/components/DateField';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
 type Karigar = { id: string; name: string; active: boolean };
 
-type DraftSample = { key: string; description: string; tag_number: string; weight: string; photo: string };
-const blankDraft = (): DraftSample => ({ key: String(Date.now() + Math.random()), description: '', tag_number: '', weight: '', photo: '' });
+type DraftSample = { key: string; description: string; tag_number: string; weight: string; pc_count: string; photo: string };
+const blankDraft = (): DraftSample => ({ key: String(Date.now() + Math.random()), description: '', tag_number: '', weight: '', pc_count: '1', photo: '' });
 
 export default function NewSampleScreen() {
   const router = useRouter();
@@ -32,6 +33,8 @@ export default function NewSampleScreen() {
   const pickedKarigar = karigars.find((k) => k.id === karigarId) || null;
 
   const [note, setNote] = useState('');
+  const [issueType, setIssueType] = useState('');
+  const [dueDate, setDueDate] = useState('');
   const [items, setItems] = useState<DraftSample[]>([]);
   const [draft, setDraft] = useState<DraftSample>(blankDraft());
   const [cameraOpen, setCameraOpen] = useState(false);
@@ -57,9 +60,10 @@ export default function NewSampleScreen() {
     try {
       await api.post('/samples', {
         karigar_id: karigarId, note: note.trim(),
+        issue_type: issueType.trim(), due_date: dueDate || null,
         items: items.map((i) => ({
           description: i.description.trim(), tag_number: i.tag_number.trim(),
-          weight: parseFloat(i.weight) || 0, photo: i.photo,
+          weight: parseFloat(i.weight) || 0, pc_count: parseInt(i.pc_count, 10) || 1, photo: i.photo,
         })),
       });
       router.replace('/samples' as any);
@@ -103,8 +107,16 @@ export default function NewSampleScreen() {
             <Text style={styles.label}>Tag Number (optional)</Text>
             <TextInput testID="sample-tag-number" value={draft.tag_number} onChangeText={(v) => setDraft((d) => ({ ...d, tag_number: v }))} placeholder="e.g. T-104" placeholderTextColor={colors.mutedText} style={styles.input} />
 
-            <Text style={styles.label}>Weight (g)</Text>
-            <TextInput testID="sample-weight" value={draft.weight} onChangeText={(v) => setDraft((d) => ({ ...d, weight: v.replace(/[^0-9.]/g, '') }))} keyboardType="decimal-pad" placeholder="0.000" placeholderTextColor={colors.mutedText} style={styles.input} />
+            <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>Weight (g)</Text>
+                <TextInput testID="sample-weight" value={draft.weight} onChangeText={(v) => setDraft((d) => ({ ...d, weight: v.replace(/[^0-9.]/g, '') }))} keyboardType="decimal-pad" placeholder="0.000" placeholderTextColor={colors.mutedText} style={styles.input} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>Pieces</Text>
+                <TextInput testID="sample-pc-count" value={draft.pc_count} onChangeText={(v) => setDraft((d) => ({ ...d, pc_count: v.replace(/[^0-9]/g, '') }))} keyboardType="number-pad" placeholder="1" placeholderTextColor={colors.mutedText} style={styles.input} />
+              </View>
+            </View>
 
             <Text style={styles.label}>Photo (optional)</Text>
             {draft.photo ? (
@@ -138,7 +150,7 @@ export default function NewSampleScreen() {
                   {i.photo ? <Image source={{ uri: i.photo }} style={styles.itemThumb} /> : null}
                   <View style={{ flex: 1 }}>
                     <Text style={styles.cName}>{i.tag_number ? `Tag ${i.tag_number} · ` : ''}{i.description}</Text>
-                    <Text style={styles.cMeta}>{i.weight || '0'}g</Text>
+                    <Text style={styles.cMeta}>{i.weight || '0'}g · {i.pc_count || '1'} pc{(parseInt(i.pc_count, 10) || 1) === 1 ? '' : 's'}</Text>
                   </View>
                   <Pressable onPress={() => removeItem(i.key)} style={styles.delBtn} hitSlop={10} testID={`remove-sample-${i.key}`}>
                     <Ionicons name="close" size={16} color={colors.onError} />
@@ -148,7 +160,12 @@ export default function NewSampleScreen() {
             </>
           )}
 
-          <Text style={[styles.section, { marginTop: spacing.xl }]}>Note (optional, applies to this batch)</Text>
+          <Text style={[styles.section, { marginTop: spacing.xl }]}>Batch Details</Text>
+          <Text style={styles.label}>Type of Issue (optional)</Text>
+          <TextInput testID="sample-issue-type" value={issueType} onChangeText={setIssueType} placeholder="e.g. Quoting, Reference, Exhibition" placeholderTextColor={colors.mutedText} style={styles.input} />
+          <DateField label="Due back (optional)" value={dueDate} onChange={setDueDate} testID="sample-due-date" />
+
+          <Text style={styles.label}>Note (optional)</Text>
           <TextInput testID="sample-batch-note" value={note} onChangeText={setNote} placeholder="Anything worth remembering" placeholderTextColor={colors.mutedText} style={styles.input} multiline />
 
           <Pressable onPress={submit} disabled={saving} style={[styles.submitBtn, saving && { opacity: 0.6 }]} testID="submit-samples-btn">

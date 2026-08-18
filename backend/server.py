@@ -183,7 +183,7 @@ MODULE_DEFS = [
     {'key': 'repair_bill', 'label': 'Repair Bill', 'default_roles': ['owner', 'admin'], 'employee_assignable': True},
     {'key': 'customer_ledger', 'label': 'Customer Ledger', 'default_roles': ['owner', 'admin', 'accountant'], 'employee_assignable': True},
     {'key': 'karigar_ledger', 'label': 'Karigar Ledger', 'default_roles': ['owner', 'admin', 'accountant'], 'employee_assignable': True},
-    {'key': 'samples', 'label': 'Sample Issue/Receive', 'default_roles': ['owner', 'admin'], 'employee_assignable': True},
+    {'key': 'samples', 'label': 'Stock In/Out', 'default_roles': ['owner', 'admin'], 'employee_assignable': True},
 ]
 MODULE_KEYS = {m['key'] for m in MODULE_DEFS}
 MODULE_DEFAULT_ROLES = {m['key']: set(m['default_roles']) for m in MODULE_DEFS}
@@ -732,18 +732,28 @@ class SampleItemSpec(BaseModel):
     description: str
     tag_number: Optional[str] = ''
     weight: float
+    pc_count: int = 1
     photo: Optional[str] = ''
 
 
 class SampleIn(BaseModel):
     karigar_id: str
     note: Optional[str] = ''
+    # What the sample is going out for (e.g. "quoting", "reference",
+    # "exhibition") — free text, voucher-level, same for every item in the batch.
+    issue_type: Optional[str] = ''
+    due_date: Optional[str] = None  # when it's expected back, for the Overdue filter
     items: List[SampleItemSpec]
 
 
 class SampleUpdateIn(BaseModel):
     description: Optional[str] = None
     tag_number: Optional[str] = None
+    weight: Optional[float] = None
+    pc_count: Optional[int] = None
+    issue_type: Optional[str] = None
+    due_date: Optional[str] = None
+    photo: Optional[str] = None
     note: Optional[str] = None
 
 
@@ -1229,7 +1239,7 @@ NOTIFICATION_MODULES = [
     {'key': 'tasks', 'label': 'Tasks', 'default_roles': ['owner', 'admin']},
     {'key': 'payroll', 'label': 'Payroll', 'default_roles': ['owner', 'admin']},
     {'key': 'repairs', 'label': 'Repair', 'default_roles': ['owner', 'admin']},
-    {'key': 'samples', 'label': 'Sample Issue/Receive', 'default_roles': ['owner', 'admin']},
+    {'key': 'samples', 'label': 'Stock In/Out', 'default_roles': ['owner', 'admin']},
 ]
 NOTIFICATION_MODULE_KEYS = {m['key'] for m in NOTIFICATION_MODULES}
 NOTIFICATION_MODULE_DEFAULT_ROLES = {m['key']: m['default_roles'] for m in NOTIFICATION_MODULES}

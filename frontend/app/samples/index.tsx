@@ -10,14 +10,16 @@ import { useTheme } from '@/src/theme/ThemeContext';
 
 type Sample = {
   id: string; sample_code: string; description: string; tag_number: string;
-  weight: number; karigar_id: string; karigar_name: string;
+  weight: number; pc_count?: number; karigar_id: string; karigar_name: string;
   status: 'with_karigar' | 'received'; weight_diff: number | null;
+  due_date: string | null; issue_type?: string;
   issued_at: string; received_at: string | null;
 };
 
 const STATUS_TABS: { key: string; label: string }[] = [
   { key: 'with_karigar', label: 'With Karigar' },
   { key: 'received', label: 'Received' },
+  { key: 'overdue', label: 'Overdue' },
   { key: 'all', label: 'All' },
 ];
 
@@ -50,7 +52,7 @@ export default function SamplesScreen() {
         <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
-        <Text style={styles.title}>Sample Issue/Receive</Text>
+        <Text style={styles.title}>Stock In/Out</Text>
         {canIssue && (
           <Pressable onPress={() => router.push('/samples/new' as any)} style={[styles.iconBtn, styles.addBtn]} testID="new-sample-btn" hitSlop={12}>
             <Ionicons name="add" size={22} color={colors.onBrandPrimary} />
@@ -78,23 +80,31 @@ export default function SamplesScreen() {
 
         {samples.length === 0 ? (
           <View style={styles.empty}><Ionicons name="diamond-outline" size={36} color={colors.mutedText} /><Text style={styles.emptyText}>No samples here</Text></View>
-        ) : samples.map((s) => (
-          <Pressable key={s.id} onPress={() => router.push(`/samples/${s.id}` as any)} style={styles.card} testID={`sample-${s.id}`}>
-            <View style={styles.iconBox}><Ionicons name="diamond-outline" size={18} color={colors.brandSecondary} /></View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.cName}>{s.sample_code}{s.tag_number ? ` · Tag ${s.tag_number}` : ''} · {s.description}</Text>
-              <Text style={styles.cMeta}>
-                {s.karigar_name} · {s.weight.toFixed(3)}g
-                {s.status === 'received' && s.weight_diff ? ` · diff ${s.weight_diff > 0 ? '+' : ''}${s.weight_diff.toFixed(3)}g` : ''}
-              </Text>
-            </View>
-            <View style={[styles.badge, s.status === 'received' ? styles.badgeReceived : styles.badgeOut]}>
-              <Text style={[styles.badgeText, s.status === 'received' ? styles.badgeTextReceived : styles.badgeTextOut]}>
-                {s.status === 'received' ? 'Received' : 'With Karigar'}
-              </Text>
-            </View>
-          </Pressable>
-        ))}
+        ) : samples.map((s) => {
+          const isOverdue = s.status === 'with_karigar' && !!s.due_date && s.due_date < new Date().toISOString().slice(0, 10);
+          const at = s.status === 'received' ? s.received_at : s.issued_at;
+          return (
+            <Pressable key={s.id} onPress={() => router.push(`/samples/${s.id}` as any)} style={styles.card} testID={`sample-${s.id}`}>
+              <View style={styles.iconBox}><Ionicons name="diamond-outline" size={18} color={colors.brandSecondary} /></View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.cName}>{s.karigar_name}</Text>
+                <Text style={styles.cMeta} numberOfLines={1}>
+                  {s.sample_code}{s.tag_number ? ` · Tag ${s.tag_number}` : ''} · {s.description}
+                </Text>
+                <Text style={styles.cMeta2}>
+                  {s.weight.toFixed(3)}g
+                  {s.status === 'received' && s.weight_diff ? ` · diff ${s.weight_diff > 0 ? '+' : ''}${s.weight_diff.toFixed(3)}g` : ''}
+                  {at ? ` · ${at.slice(0, 10)} ${at.slice(11, 16)}` : ''}
+                </Text>
+              </View>
+              <View style={[styles.badge, isOverdue ? styles.badgeOverdue : s.status === 'received' ? styles.badgeReceived : styles.badgeOut]}>
+                <Text style={[styles.badgeText, isOverdue ? styles.badgeTextOverdue : s.status === 'received' ? styles.badgeTextReceived : styles.badgeTextOut]}>
+                  {isOverdue ? 'Overdue' : s.status === 'received' ? 'Received' : 'With Karigar'}
+                </Text>
+              </View>
+            </Pressable>
+          );
+        })}
       </ScrollView>
     </SafeAreaView>
   );
@@ -137,10 +147,13 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   cName: { color: colors.onSurface, fontWeight: '700', fontSize: 14 },
   cMeta: { color: colors.onSurfaceTertiary, fontSize: 12, marginTop: 2 },
+  cMeta2: { color: colors.mutedText, fontSize: 11, marginTop: 2 },
   badge: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: radius.sm },
   badgeOut: { backgroundColor: colors.brandTertiary },
   badgeReceived: { backgroundColor: colors.success },
+  badgeOverdue: { backgroundColor: colors.error },
   badgeText: { fontSize: 10, fontWeight: '700' },
   badgeTextOut: { color: colors.brandSecondary },
   badgeTextReceived: { color: colors.onSuccess },
+  badgeTextOverdue: { color: colors.onError },
 });

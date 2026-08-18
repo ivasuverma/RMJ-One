@@ -15,6 +15,7 @@ import uuid
 from server import (
     db,
     now_utc,
+    today_str,
     require_staff_or_module,
     require_admin_or_module,
     require_admin_or_module_right,
@@ -60,7 +61,8 @@ async def create_samples(body: SampleIn, user=Depends(require_admin_or_module('s
         sample_code = await _next_sample_code()
         sample = {
             'id': sample_id, 'sample_code': sample_code, 'description': spec.description,
-            'tag_number': spec.tag_number or '', 'weight': spec.weight, 'photo': spec.photo or '',
+            'tag_number': spec.tag_number or '', 'weight': spec.weight, 'pc_count': spec.pc_count or 1,
+            'photo': spec.photo or '', 'issue_type': body.issue_type or '', 'due_date': body.due_date,
             'karigar_id': karigar['id'], 'karigar_name': karigar['name'],
             'status': 'with_karigar',
             'issued_at': iso, 'issued_by': user['name'], 'issued_by_id': user['id'],
@@ -92,7 +94,12 @@ async def list_samples(
     _: dict = Depends(require_staff_or_module('samples')),
 ):
     query: dict = {}
-    if status_ and status_ != 'all':
+    if status_ == 'overdue':
+        query['due_date'] = {'$ne': None, '$lt': today_str()}
+        # Only a piece still out with the karigar can be "overdue" — once it's
+        # back, the due date no longer describes anything actionable.
+        query['status'] = 'with_karigar'
+    elif status_ and status_ != 'all':
         query['status'] = status_
     if q:
         q_esc = re.escape(q)
@@ -124,7 +131,19 @@ async def update_sample(sample_id: str, body: SampleUpdateIn, user=Depends(requi
     upd: dict = {}
     if body.description is not None: upd['description'] = body.description
     if body.tag_number is not None: upd['tag_number'] = body.tag_number
+    if body.pc_count is not None: upd['pc_count'] = max(1, body.pc_count)
+    if body.issue_type is not None: upd['issue_type'] = body.issue_type
+    if body.due_date is not None: upd['due_date'] = body.due_date or None
+    if body.photo is not None: upd['photo'] = body.photo
     if body.note is not None: upd['note'] = body.note
+    if body.weight is not None and body.weight > 0 and round(body.weight, 3) != round(sample['weight'], 3):
+        upd['weight'] = body.weight
+        # The weight was already booked to the karigar's gold-out ledger entry
+        # at issue time — keep that entry in sync so the balance stays right,
+        # instead of silently drifting from what the edited voucher now says.
+        await db.karigar_ledger.update_many(
+            {'item_id': sample_id, 'type': 'gold_out'}, {'$set': {'weight': body.weight}},
+        )
     if upd:
         await db.samples.update_one({'id': sample_id}, {'$set': upd})
         await log_audit(user, 'sample.update', 'sample', sample_id, sample['sample_code'])
@@ -157,9 +176,14 @@ def _sample_issue_slip_lines(sample: dict) -> list:
         lines.append(('Tag', sample['tag_number']))
     lines += [
         ('Item', sample['description']),
+        ('Pieces', str(sample.get('pc_count') or 1)),
         ('Weight Issued', f"{sample['weight']:.3f}g"),
-        ('Issued By', sample.get('issued_by') or ''),
     ]
+    if sample.get('issue_type'):
+        lines.append(('Issue Type', sample['issue_type']))
+    if sample.get('due_date'):
+        lines.append(('Due Back', sample['due_date']))
+    lines.append(('Issued By', sample.get('issued_by') or ''))
     if sample.get('note'):
         lines.append(('Note', sample['note']))
     return lines
