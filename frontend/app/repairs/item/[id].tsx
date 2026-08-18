@@ -225,20 +225,20 @@ export default function RepairItemDetailScreen() {
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 60 }} keyboardShouldPersistTaps="handled">
           <View style={styles.card}>
-            {item.item_type_name ? <MetaRow icon="diamond-outline" label="Item Type" value={`${item.item_type_name} · ${purity}%`} colors={colors} /> : null}
-            <MetaRow icon="document-text-outline" label="Item" value={item.description} colors={colors} />
-            <MetaRow icon="construct-outline" label="Type" value={item.repair_type || '—'} colors={colors} />
-            <MetaRow icon="scale-outline" label="Weight" value={`${item.gross_weight.toFixed(3)}g · ${item.pc_count} pc${item.pc_count === 1 ? '' : 's'}`} colors={colors} />
-            {item.fine_weight != null && <MetaRow icon="water-outline" label="Fine Weight" value={`${item.fine_weight.toFixed(3)}g`} colors={colors} />}
-            <MetaRow icon="cash-outline" label="Labour" value={`₹${(item.status === 'delivered' ? (item.bill_labour_charge ?? item.labour_charge) : item.labour_charge).toFixed(0)}`} colors={colors} />
-            <MetaRow icon="calendar-outline" label="Due" value={item.due_date || '—'} colors={colors} />
-            <MetaRow icon="person-outline" label="Customer" value={`${item.customer_name} · ${item.order_no}`} colors={colors} />
-            {item.karigar_name && <MetaRow icon="hammer-outline" label="Karigar" value={item.karigar_name} colors={colors} />}
-            {item.weight_diff != null && <MetaRow icon="swap-vertical-outline" label="Weight diff" value={`${item.weight_diff >= 0 ? '+' : ''}${item.weight_diff.toFixed(3)}g${item.fine_weight_diff != null ? ` (fine ${item.fine_weight_diff >= 0 ? '+' : ''}${item.fine_weight_diff.toFixed(3)}g)` : ''}`} colors={colors} />}
-            {item.billed_amount != null && <MetaRow icon="receipt-outline" label="Billed" value={`₹${item.billed_amount.toFixed(0)} · ${item.payment_mode}`} colors={colors} />}
-            {item.delivered_at && <MetaRow icon="checkmark-done-outline" label="Delivered" value={`${item.delivered_at.slice(0, 10)}${item.delivered_by ? ` · by ${item.delivered_by}` : ''}`} colors={colors} />}
-            {item.created_by && <MetaRow icon="person-add-outline" label="Intake by" value={`${item.created_by}${item.created_at ? ` · ${item.created_at.slice(0, 10)} ${item.created_at.slice(11, 16)}` : ''}`} colors={colors} />}
-            {item.updated_by && <MetaRow icon="pencil-outline" label="Last by" value={item.updated_by} colors={colors} />}
+            {item.item_type_name ? <MetaCell icon="diamond-outline" label="Item Type" value={`${item.item_type_name} · ${purity}%`} colors={colors} /> : null}
+            <MetaCell icon="document-text-outline" label="Item" value={item.description} colors={colors} />
+            <MetaCell icon="construct-outline" label="Type" value={item.repair_type || '—'} colors={colors} />
+            <MetaCell icon="scale-outline" label="Weight" value={`${item.gross_weight.toFixed(3)}g · ${item.pc_count} pc${item.pc_count === 1 ? '' : 's'}`} colors={colors} />
+            {item.fine_weight != null && <MetaCell icon="water-outline" label="Fine Weight" value={`${item.fine_weight.toFixed(3)}g`} colors={colors} />}
+            <MetaCell icon="cash-outline" label="Labour" value={`₹${(item.status === 'delivered' ? (item.bill_labour_charge ?? item.labour_charge) : item.labour_charge).toFixed(0)}`} colors={colors} />
+            <MetaCell icon="calendar-outline" label="Due" value={item.due_date || '—'} colors={colors} />
+            {item.karigar_name && <MetaCell icon="hammer-outline" label="Karigar" value={item.karigar_name} colors={colors} />}
+            {item.billed_amount != null && <MetaCell icon="receipt-outline" label="Billed" value={`₹${item.billed_amount.toFixed(0)} · ${item.payment_mode}`} colors={colors} />}
+            {item.delivered_at && <MetaCell icon="checkmark-done-outline" label="Delivered" value={`${item.delivered_at.slice(0, 10)}${item.delivered_by ? ` · by ${item.delivered_by}` : ''}`} colors={colors} />}
+            {item.updated_by && <MetaCell icon="pencil-outline" label="Last by" value={item.updated_by} colors={colors} />}
+            <MetaCell icon="person-outline" label="Customer" value={`${item.customer_name} · ${item.order_no}`} colors={colors} wide />
+            {item.weight_diff != null && <MetaCell icon="swap-vertical-outline" label="Weight diff" value={`${item.weight_diff >= 0 ? '+' : ''}${item.weight_diff.toFixed(3)}g${item.fine_weight_diff != null ? ` (fine ${item.fine_weight_diff >= 0 ? '+' : ''}${item.fine_weight_diff.toFixed(3)}g)` : ''}`} colors={colors} wide />}
+            {item.created_by && <MetaCell icon="person-add-outline" label="Intake by" value={`${item.created_by}${item.created_at ? ` · ${item.created_at.slice(0, 10)} ${item.created_at.slice(11, 16)}` : ''}`} colors={colors} wide />}
           </View>
 
           {form === 'edit' && (
@@ -410,12 +410,17 @@ export default function RepairItemDetailScreen() {
 
 function round3(n: number) { return Math.round(n * 1000) / 1000; }
 
-function MetaRow({ icon, label, value, colors }: { icon: any; label: string; value: string; colors: ThemeColors }) {
+// Compact 2-column grid cell — replaces the old one-fact-per-full-width-row
+// layout, which made this card take up several screens of scrolling. `wide`
+// spans the full row for values that tend to run long (names + dates, etc).
+function MetaCell({ icon, label, value, colors, wide }: { icon: any; label: string; value: string; colors: ThemeColors; wide?: boolean }) {
   const styles = makeStyles(colors);
   return (
-    <View style={styles.metaRow}>
-      <Ionicons name={icon} size={16} color={colors.brandSecondary} />
-      <Text style={styles.metaLabel}>{label}</Text>
+    <View style={[styles.metaCell, wide && styles.metaCellWide]}>
+      <View style={styles.metaCellHeader}>
+        <Ionicons name={icon} size={12} color={colors.brandSecondary} />
+        <Text style={styles.metaLabel}>{label}</Text>
+      </View>
       <Text style={styles.metaValue} numberOfLines={2}>{value}</Text>
     </View>
   );
@@ -438,10 +443,15 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   title: { flex: 1, color: colors.onSurface, fontSize: 18, fontWeight: '600', fontFamily: fonts.display },
 
-  card: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, marginBottom: spacing.lg, overflow: 'hidden' },
-  metaRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.divider },
-  metaLabel: { color: colors.mutedText, fontSize: 12, width: 80 },
-  metaValue: { flex: 1, color: colors.onSurface, fontSize: 13, fontWeight: '600' },
+  card: {
+    backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border,
+    marginBottom: spacing.lg, flexDirection: 'row', flexWrap: 'wrap', padding: spacing.sm,
+  },
+  metaCell: { flexBasis: '50%', flexGrow: 0, paddingHorizontal: spacing.xs, paddingVertical: 7, minWidth: 0 },
+  metaCellWide: { flexBasis: '100%' },
+  metaCellHeader: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 2 },
+  metaLabel: { color: colors.mutedText, fontSize: 10.5, textTransform: 'uppercase', letterSpacing: 0.3 },
+  metaValue: { color: colors.onSurface, fontSize: 13, fontWeight: '600' },
 
   photosRow: { flexDirection: 'row', gap: spacing.lg, marginBottom: spacing.lg },
   photoLarge: { width: 96, height: 96, borderRadius: radius.lg, backgroundColor: colors.surfaceTertiary },

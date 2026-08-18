@@ -123,7 +123,7 @@ export default function RepairOrdersScreen() {
             `Created ${createdDate}`,
             i.due_date ? `Due ${i.due_date}` : null,
             i.karigar_name || null,
-            `${i.gross_weight.toFixed(3)}g`,
+            i.created_by ? `by ${i.created_by}` : null,
           ].filter(Boolean);
           return (
             <Pressable
@@ -146,7 +146,7 @@ export default function RepairOrdersScreen() {
 
               <View style={styles.cardSubRow}>
                 <Text style={styles.cTag} numberOfLines={1}>{i.item_code} · {i.description}</Text>
-                {!!i.created_by && <Text style={styles.cReceiver} numberOfLines={1}>by {i.created_by}</Text>}
+                <Text style={styles.cWeight}>{i.gross_weight.toFixed(3)}g</Text>
               </View>
 
               <Text style={[styles.cMeta, isOverdue && { color: colors.onError, fontWeight: '700' }]} numberOfLines={1}>
@@ -212,7 +212,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   cName: { flex: 1, color: colors.onSurface, fontWeight: '700', fontSize: 14 },
   cardSubRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm, marginTop: 3 },
   cTag: { flex: 1, color: colors.onSurfaceSecondary, fontSize: 12 },
-  cReceiver: { color: colors.mutedText, fontSize: 11 },
+  cWeight: { color: colors.brandSecondary, fontSize: 12, fontWeight: '700' },
   cMeta: { color: colors.onSurfaceTertiary, fontSize: 10.5, marginTop: 3 },
   statusBadge: { borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1 },
   statusText: { fontSize: 9, fontWeight: '700', textTransform: 'uppercase' },

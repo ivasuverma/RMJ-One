@@ -230,6 +230,11 @@ export default function RepairBillScreen() {
     setDeletingId(item.id);
     try {
       await api.del(`/repair-items/${item.id}/bill`);
+      // Deleting now only happens from inside the edit-bill form — exit back
+      // out to the list (or wherever this form was deep-linked from) since
+      // there's no bill left here to keep editing.
+      if (routeItemId) { router.back(); return; }
+      setPicked(null); setMode('list'); setLoading(true);
       await loadBills(filter);
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
     finally { setDeletingId(''); }
@@ -318,40 +323,24 @@ export default function RepairBillScreen() {
             const sc = repairStatusColors(b.status, colors);
             return (
               <View key={b.id} style={styles.itemRow} testID={`bill-${b.id}`}>
-                <View style={styles.iconBox}><Ionicons name="receipt-outline" size={18} color={colors.brandSecondary} /></View>
-                <Pressable style={{ flex: 1 }} onPress={() => cardPress(b)}>
-                  <Text style={styles.cName} numberOfLines={1}>{b.item_code} · {b.customer_name}</Text>
-                  <Text style={styles.cMeta} numberOfLines={1}>
-                    {b.description}{b.billed_amount != null ? ` · ₹${b.billed_amount.toFixed(0)}` : ''}{b.payment_mode ? ` · ${b.payment_mode}` : ''}{b.delivered_at ? ` · delivered ${b.delivered_at.slice(0, 10)}` : ''}
-                  </Text>
+                <Pressable style={styles.itemRowMain} onPress={() => cardPress(b)}>
+                  <View style={styles.iconBox}><Ionicons name="receipt-outline" size={18} color={colors.brandSecondary} /></View>
+                  <View style={{ flex: 1 }}>
+                    <View style={styles.rowTopLine}>
+                      <Text style={styles.cName} numberOfLines={1}>{b.item_code} · {b.customer_name}</Text>
+                      <View style={[styles.statusBadgeSm, { backgroundColor: sc.bg, borderColor: sc.border }]}>
+                        <Text style={[styles.statusTextSm, { color: sc.fg }]}>{REPAIR_STATUS_LABEL[b.status]}</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.cMeta} numberOfLines={2}>
+                      {b.description}{b.billed_amount != null ? ` · ₹${b.billed_amount.toFixed(0)}` : ''}{b.payment_mode ? ` · ${b.payment_mode}` : ''}{b.delivered_at ? ` · delivered ${b.delivered_at.slice(0, 10)}` : ''}
+                    </Text>
+                  </View>
                 </Pressable>
-                <View style={[styles.statusBadgeSm, { backgroundColor: sc.bg, borderColor: sc.border }]}>
-                  <Text style={[styles.statusTextSm, { color: sc.fg }]}>{REPAIR_STATUS_LABEL[b.status]}</Text>
-                </View>
-                {b.status === 'pending_delivery' && (
-                  <Pressable onPress={() => openCloseForm(b)} style={styles.printBtn} testID={`close-delivery-${b.id}`}>
-                    <Ionicons name="checkmark-done-outline" size={16} color={colors.onBrandPrimary} />
+                {b.status === 'delivered' && canEditBill && (
+                  <Pressable onPress={() => pickItem(b)} style={styles.editBtn} testID={`edit-bill-${b.id}`}>
+                    <Ionicons name="pencil-outline" size={16} color={colors.onSurfaceSecondary} />
                   </Pressable>
-                )}
-                {b.status === 'delivered' && (
-                  <>
-                    {canEditBill && (
-                      <Pressable onPress={() => pickItem(b)} style={styles.editBtn} testID={`edit-bill-${b.id}`}>
-                        <Ionicons name="pencil-outline" size={16} color={colors.onSurfaceSecondary} />
-                      </Pressable>
-                    )}
-                    <Pressable onPress={() => printBill(b)} disabled={printingId === b.id} style={styles.editBtn} testID={`print-bill-pdf-${b.id}`}>
-                      {printingId === b.id ? <ActivityIndicator size="small" color={colors.onSurfaceSecondary} /> : <Ionicons name="document-text-outline" size={16} color={colors.onSurfaceSecondary} />}
-                    </Pressable>
-                    <Pressable onPress={() => printThermalBill(b)} disabled={thermalPrintingId === b.id} style={styles.printBtn} testID={`print-bill-${b.id}`}>
-                      {thermalPrintingId === b.id ? <ActivityIndicator size="small" color={colors.onBrandPrimary} /> : <Ionicons name="print-outline" size={16} color={colors.onBrandPrimary} />}
-                    </Pressable>
-                    {canDeleteBill && (
-                      <Pressable onPress={() => confirmDeleteBill(b)} disabled={deletingId === b.id} style={styles.deleteBtn} testID={`delete-bill-${b.id}`}>
-                        {deletingId === b.id ? <ActivityIndicator size="small" color={colors.onError} /> : <Ionicons name="trash-outline" size={16} color={colors.onError} />}
-                      </Pressable>
-                    )}
-                  </>
                 )}
               </View>
             );
@@ -415,6 +404,27 @@ export default function RepairBillScreen() {
               <Text style={styles.cName}>{picked.item_code} · {picked.customer_name}</Text>
               <Text style={styles.cMeta}>{picked.description}</Text>
             </View>
+
+            {/* Print/delete only ever apply to an already-delivered bill —
+                moved here off the list row (which only shows Edit now) so
+                they're a deliberate in-context action, not row-clutter. */}
+            {isEditingBill && (
+              <View style={styles.formActionRow}>
+                <Pressable onPress={() => printBill(picked)} disabled={printingId === picked.id} style={styles.formActionBtn} testID="form-print-pdf-btn">
+                  {printingId === picked.id ? <ActivityIndicator size="small" color={colors.onSurfaceSecondary} /> : <Ionicons name="document-text-outline" size={16} color={colors.onSurfaceSecondary} />}
+                  <Text style={styles.formActionBtnText}>Print PDF</Text>
+                </Pressable>
+                <Pressable onPress={() => printThermalBill(picked)} disabled={thermalPrintingId === picked.id} style={[styles.formActionBtn, styles.formActionBtnPrimary]} testID="form-print-thermal-btn">
+                  {thermalPrintingId === picked.id ? <ActivityIndicator size="small" color={colors.onBrandPrimary} /> : <Ionicons name="print-outline" size={16} color={colors.onBrandPrimary} />}
+                  <Text style={styles.formActionBtnTextPrimary}>Print Receipt</Text>
+                </Pressable>
+                {canDeleteBill && (
+                  <Pressable onPress={() => confirmDeleteBill(picked)} disabled={deletingId === picked.id} style={styles.formActionBtnDanger} testID="form-delete-bill-btn">
+                    {deletingId === picked.id ? <ActivityIndicator size="small" color={colors.onError} /> : <Ionicons name="trash-outline" size={16} color={colors.onError} />}
+                  </Pressable>
+                )}
+              </View>
+            )}
 
             {/* Issue − Loss − Received = New Wt */}
             <View style={styles.formulaRow} testID="bill-field-grid">
@@ -573,11 +583,16 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
     padding: spacing.md, marginBottom: spacing.sm,
   },
+  // Everything but the (optional) trailing Edit button lives in one big
+  // Pressable so the whole row is tappable, not just a sliver of text next
+  // to a wall of icon buttons — that's what was making rows unreadable.
+  itemRowMain: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, minWidth: 0 },
+  rowTopLine: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   iconBox: {
     width: 36, height: 36, borderRadius: 18, backgroundColor: colors.brandTertiary,
     alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.brand,
   },
-  cName: { color: colors.onSurface, fontWeight: '700', fontSize: 13 },
+  cName: { flex: 1, color: colors.onSurface, fontWeight: '700', fontSize: 13 },
   cMeta: { color: colors.onSurfaceTertiary, fontSize: 11, marginTop: 2 },
   editBtn: {
     width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center',
@@ -593,7 +608,19 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   },
 
   loader: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  pickedCard: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.lg },
+  pickedCard: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.sm },
+  formActionRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.lg },
+  formActionBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, paddingVertical: 11,
+  },
+  formActionBtnText: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '700' },
+  formActionBtnPrimary: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
+  formActionBtnTextPrimary: { color: colors.onBrandPrimary, fontSize: 12, fontWeight: '700' },
+  formActionBtnDanger: {
+    width: 40, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.error, borderRadius: radius.md,
+  },
   fieldGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   fieldCol: { flexBasis: '21%', flexGrow: 1 },
   // Issue − Loss − Received = New Wt — three boxes joined by inline

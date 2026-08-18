@@ -106,11 +106,11 @@ function DashCard({
               ]}
             >
               <View style={[styles.dashIcon, { backgroundColor: bg }]}>
-                <Ionicons name={r.icon} size={17} color={fg} />
+                <Ionicons name={r.icon} size={14} color={fg} />
               </View>
               <Text style={styles.dashLabel}>{r.label}</Text>
               <Text style={[styles.dashCount, r.count > 0 && r.tone === 'alert' && { color: colors.onError }]}>{r.count}</Text>
-              <Ionicons name="chevron-forward" size={16} color={colors.mutedText} />
+              <Ionicons name="chevron-forward" size={14} color={colors.mutedText} />
             </Pressable>
           );
         })}
@@ -228,21 +228,21 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   // touch target (>44pt tall) without needing hitSlop.
   dashHeaderRow: {
     flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between',
-    marginTop: spacing.lg, marginBottom: spacing.md,
+    marginTop: spacing.md, marginBottom: 6,
   },
-  dashCaption: { color: colors.mutedText, fontSize: 11, fontWeight: '600' },
+  dashCaption: { color: colors.mutedText, fontSize: 10.5, fontWeight: '600' },
   dashCard: {
-    backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg,
+    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md,
     borderWidth: 1, borderColor: colors.border, overflow: 'hidden',
   },
   dashRow: {
-    flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: spacing.md,
-    borderBottomWidth: 1, borderBottomColor: colors.divider, gap: spacing.sm, minHeight: 48,
+    flexDirection: 'row', alignItems: 'center', paddingVertical: 7, paddingHorizontal: spacing.sm,
+    borderBottomWidth: 1, borderBottomColor: colors.divider, gap: 8, minHeight: 36,
   },
   dashRowLast: { borderBottomWidth: 0 },
   dashIcon: {
-    width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center',
+    width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
   },
-  dashLabel: { flex: 1, color: colors.onSurface, fontSize: 14, fontWeight: '600' },
-  dashCount: { color: colors.onSurface, fontSize: 16, fontWeight: '800', marginRight: 2, minWidth: 20, textAlign: 'right' },
+  dashLabel: { flex: 1, color: colors.onSurface, fontSize: 12.5, fontWeight: '600' },
+  dashCount: { color: colors.onSurface, fontSize: 13.5, fontWeight: '800', marginRight: 1, minWidth: 16, textAlign: 'right' },
 });

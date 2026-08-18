@@ -4,7 +4,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { api } from '@/src/api/client';
-import { useAuth } from '@/src/auth/AuthContext';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
@@ -13,7 +12,7 @@ type Sample = {
   weight: number; pc_count?: number; karigar_id: string; karigar_name: string;
   status: 'with_karigar' | 'received'; weight_diff: number | null;
   due_date: string | null; issue_type?: string;
-  issued_at: string; received_at: string | null;
+  issued_at: string; received_at: string | null; issued_by?: string;
 };
 
 const STATUS_TABS: { key: string; label: string }[] = [
@@ -28,8 +27,6 @@ export default function SamplesScreen() {
   const router = useRouter();
   const { status: routeStatus } = useLocalSearchParams<{ status?: string }>();
   const { colors } = useTheme();
-  const { hasRight } = useAuth();
-  const canIssue = hasRight('samples', 'edit'); // issuing is the "do the job" action, same tier as edit
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const [samples, setSamples] = useState<Sample[]>([]);
@@ -56,11 +53,13 @@ export default function SamplesScreen() {
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
         <Text style={styles.title}>Stock In/Out</Text>
-        {canIssue && (
-          <Pressable onPress={() => router.push('/samples/new' as any)} style={[styles.iconBtn, styles.addBtn]} testID="new-sample-btn" hitSlop={12}>
-            <Ionicons name="add" size={22} color={colors.onBrandPrimary} />
-          </Pressable>
-        )}
+        {/* Issuing a new sample only ever needed module access on the
+            backend (require_admin_or_module, no right check) — matching
+            Repair's unconditional add button instead of gating this behind
+            the Edit right, which is meant for modifying existing records. */}
+        <Pressable onPress={() => router.push('/samples/new' as any)} style={[styles.iconBtn, styles.addBtn]} testID="new-sample-btn" hitSlop={12}>
+          <Ionicons name="add" size={22} color={colors.onBrandPrimary} />
+        </Pressable>
       </View>
 
       <ScrollView
@@ -98,6 +97,7 @@ export default function SamplesScreen() {
                   {s.weight.toFixed(3)}g
                   {s.status === 'received' && s.weight_diff ? ` · diff ${s.weight_diff > 0 ? '+' : ''}${s.weight_diff.toFixed(3)}g` : ''}
                   {at ? ` · ${at.slice(0, 10)} ${at.slice(11, 16)}` : ''}
+                  {s.issued_by ? ` · by ${s.issued_by}` : ''}
                 </Text>
               </View>
               <View style={[styles.badge, isOverdue ? styles.badgeOverdue : s.status === 'received' ? styles.badgeReceived : styles.badgeOut]}>

@@ -145,7 +145,9 @@ export default function ReceiveFromKarigarScreen() {
     setBusy(false); submittingRef.current = false;
     if (failed.length === 0) {
       Alert.alert('Done', `Received ${okCount} tag${okCount === 1 ? '' : 's'} back`);
-      router.back();
+      // Everything just received is now sitting in Pending to Bill — land the
+      // user there instead of back on a (now empty) with-karigar list.
+      router.replace('/repairs/bill?filter=ready' as any);
     } else {
       Alert.alert('Partial success', `Received ${okCount} tag(s). Failed: ${failed.join(', ')}`);
       await load();
@@ -171,10 +173,14 @@ export default function ReceiveFromKarigarScreen() {
     try {
       if (isEdit) {
         await api.put(`/repair-items/${item.id}/transactions/${txnId}`, payload);
+        router.back();
       } else {
         await api.post(`/repair-items/${item.id}/receive`, payload);
+        // The tag just moved from "With Karigar" to "Pending to Bill" — go
+        // straight into the bill form for it instead of back to a list it
+        // no longer belongs on.
+        router.replace(`/repairs/bill?itemId=${item.id}` as any);
       }
-      router.back();
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
     finally { setBusy(false); submittingRef.current = false; }
   };
