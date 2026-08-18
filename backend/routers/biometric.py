@@ -246,7 +246,26 @@ async def iclock_upload(request: Request, SN: str = Query(...), table: str = Que
                 )
             except Exception:
                 continue
-            await _ingest_biometric_punch(SN, pin, ts, 'auto')
+            # parts[2] is the device's own Status/in-out code when present
+            # (0=Check In, 1=Check Out on eSSL/ZKTeco ADMS firmware — the
+            # rest, 2-5, are break/OT variants we don't distinguish and
+            # fall back to 'auto' for). Previously this was ignored
+            # entirely and every punch went through as 'auto' (toggle
+            # whichever of check-in/check-out is still open) — fragile,
+            # because ANY extra scan more than PUNCH_COOLDOWN_MIN after the
+            # last one (a stray re-scan, a curious walk-past, a retry after
+            # a failed verify) silently flips the day to "checked out" and
+            # then locks out the real evening check-out with
+            # 'already_checked_in'. Trusting the device's own Status code
+            # when it sends one avoids that entirely.
+            event_type = 'auto'
+            if len(parts) >= 3:
+                status_code = parts[2].strip()
+                if status_code == '0':
+                    event_type = 'check_in'
+                elif status_code == '1':
+                    event_type = 'check_out'
+            await _ingest_biometric_punch(SN, pin, ts, event_type)
             n += 1
     return PlainTextResponse(f'OK: {n}')
 

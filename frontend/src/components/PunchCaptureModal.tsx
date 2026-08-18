@@ -18,50 +18,67 @@ type Props = {
   onCapture: (r: PunchResult) => Promise<void> | void;
 };
 
+// GPS can take a long time to get a fix indoors (a jewelry shop's metal/
+// concrete surroundings are a known weak spot) or never resolve at all.
+// getCurrentPositionAsync has no built-in timeout, so a stuck fix used to
+// leave the capture button silently disabled forever with no feedback —
+// looked exactly like "the button does nothing" to whoever tapped it,
+// especially by evening when the fix seems to take longer. Race it against
+// a hard timeout so a stuck attempt turns into a visible, retryable error
+// instead of an indefinite spinner-less wait.
+const LOCATION_TIMEOUT_MS = 15000;
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error('timeout')), ms);
+    p.then((v) => { clearTimeout(t); resolve(v); }, (e) => { clearTimeout(t); reject(e); });
+  });
+}
+
 export function PunchCaptureModal({ visible, mode, onClose, onCapture }: Props) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [camPerm, requestCamPerm] = useCameraPermissions();
   const [locPerm, setLocPerm] = useState<Location.PermissionResponse | null>(null);
   const [coords, setCoords] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [locError, setLocError] = useState('');
   const [busy, setBusy] = useState(false);
   const [statusMsg, setStatusMsg] = useState('');
   const camRef = useRef<CameraView | null>(null);
   const submittingRef = useRef(false);
 
   const reset = useCallback(() => {
-    setBusy(false); setStatusMsg(''); setCoords(null);
+    setBusy(false); setStatusMsg(''); setCoords(null); setLocError('');
   }, []);
 
   useEffect(() => { if (!visible) reset(); }, [visible, reset]);
 
   const askLocation = useCallback(async () => {
-    const existing = await Location.getForegroundPermissionsAsync();
-    if (existing.granted) {
-      setLocPerm(existing);
-      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+    setLocError('');
+    try {
+      let perm = await Location.getForegroundPermissionsAsync();
+      if (!perm.granted) {
+        if (!perm.canAskAgain) { setLocPerm(perm); return perm; }
+        perm = await Location.requestForegroundPermissionsAsync();
+      }
+      setLocPerm(perm);
+      if (!perm.granted) return perm;
+      const pos = await withTimeout(
+        Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+        LOCATION_TIMEOUT_MS,
+      );
       setCoords({ latitude: pos.coords.latitude, longitude: pos.coords.longitude });
-      return existing;
+      return perm;
+    } catch (e: any) {
+      setLocError(e?.message === 'timeout' ? "Couldn't get a location fix — tap to retry." : 'Location failed — tap to retry.');
+      return locPerm;
     }
-    if (!existing.canAskAgain) {
-      setLocPerm(existing);
-      return existing;
-    }
-    const p = await Location.requestForegroundPermissionsAsync();
-    setLocPerm(p);
-    if (p.granted) {
-      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-      setCoords({ latitude: pos.coords.latitude, longitude: pos.coords.longitude });
-    }
-    return p;
-  }, []);
+  }, [locPerm]);
 
   useEffect(() => {
     if (!visible) return;
-    (async () => {
-      try { await askLocation(); } catch (_e) { /* handled via state */ }
-    })();
-  }, [visible, askLocation]);
+    askLocation();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
 
   const openSettings = () => Linking.openSettings().catch(() => {});
 
@@ -82,8 +99,15 @@ export function PunchCaptureModal({ visible, mode, onClose, onCapture }: Props) 
     }
     if (!coords) {
       setStatusMsg('Getting location...');
-      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-      setCoords({ latitude: pos.coords.latitude, longitude: pos.coords.longitude });
+      try {
+        const pos = await withTimeout(Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }), LOCATION_TIMEOUT_MS);
+        setCoords({ latitude: pos.coords.latitude, longitude: pos.coords.longitude });
+      } catch (_e) {
+        setStatusMsg('');
+        setLocError("Couldn't get a location fix — tap to retry.");
+        submittingRef.current = false;
+        return;
+      }
     }
     setBusy(true);
     setStatusMsg('Capturing...');
@@ -97,7 +121,7 @@ export function PunchCaptureModal({ visible, mode, onClose, onCapture }: Props) 
       const selfie = `data:image/jpeg;base64,${shrunk.base64}`;
       setStatusMsg('Uploading...');
       const pos = coords || (await (async () => {
-        const p = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        const p = await withTimeout(Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }), LOCATION_TIMEOUT_MS);
         return { latitude: p.coords.latitude, longitude: p.coords.longitude };
       })());
       await onCapture({ selfie, latitude: pos.latitude, longitude: pos.longitude });
@@ -158,10 +182,16 @@ export function PunchCaptureModal({ visible, mode, onClose, onCapture }: Props) 
           <Ionicons name="location" size={16} color={coords ? colors.brandPrimary : colors.mutedText} />
           {locDenied ? (
             <Pressable onPress={openSettings} style={{ flex: 1 }}><Text style={styles.locDenied}>Location blocked. Tap to enable in Settings.</Text></Pressable>
+          ) : locError ? (
+            <Pressable onPress={() => askLocation()} style={{ flex: 1 }} testID="punch-location-retry">
+              <Text style={styles.locDenied}>{locError}</Text>
+            </Pressable>
           ) : locPerm?.granted && coords ? (
             <Text style={styles.locOk}>Location captured · {coords.latitude.toFixed(4)}, {coords.longitude.toFixed(4)}</Text>
           ) : (
-            <Text style={styles.locWaiting}>Waiting for location…</Text>
+            <Pressable onPress={() => askLocation()} style={{ flex: 1 }}>
+              <Text style={styles.locWaiting}>Waiting for location… (tap to retry)</Text>
+            </Pressable>
           )}
         </View>
 

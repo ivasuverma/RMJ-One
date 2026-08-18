@@ -27,6 +27,8 @@ from server import (
     _ledger_sign,
     _iter_month_dates,
     _opening_balance,
+    _resolve_attendance_state,
+    IST,
 )
 
 router = APIRouter()
@@ -155,10 +157,18 @@ async def _compute_payroll(year: int, month: int) -> list:
     start, end, total_days = _month_bounds(year, month)
     store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
     round_nearest_10 = bool(store.get('round_net_salary'))
-    # Attendance in month
+    shifts_by_name = {}
+    async for s in db.shifts.find({}, {'_id': 0}):
+        shifts_by_name[s['name']] = s
+    now_ist = now_utc().astimezone(IST)
+    today_ds = now_ist.date().isoformat()
+    minutes_now = now_ist.hour * 60 + now_ist.minute
+
+    # Attendance in month, keyed by date so each employee's day can be
+    # looked up and resolved individually.
     att_by_emp: dict = {}
     async for a in db.attendance.find({'date': {'$gte': start, '$lte': end}}, {'_id': 0, 'check_in.selfie': 0, 'check_out.selfie': 0}):
-        att_by_emp.setdefault(a['employee_id'], []).append(a)
+        att_by_emp.setdefault(a['employee_id'], {})[a['date']] = a
     # Approved leaves in month
     leaves_by_emp: dict = {}
     async for l in db.leaves.find({'status': 'approved'}, {'_id': 0}):
@@ -192,21 +202,14 @@ async def _compute_payroll(year: int, month: int) -> list:
 
     rows = []
     async for e in db.employees.find({}, {'_id': 0, 'password_hash': 0}):
-        atts = att_by_emp.get(e['id'], [])
-        present = sum(1 for a in atts if a.get('status') == 'present')
-        half = sum(1 for a in atts if a.get('status') == 'half_day')
-        absent = sum(1 for a in atts if a.get('status') == 'absent')
-        manual_off = sum(1 for a in atts if a.get('status') == 'weekly_off')
-        # Sunday work
-        sunday_work = 0
-        for a in atts:
-            if a.get('check_in') and a.get('date'):
-                try:
-                    d = date.fromisoformat(a['date'])
-                    if d.weekday() == 6: sunday_work += 1
-                except Exception: pass
+        att_by_date = att_by_emp.get(e['id'], {})
+        shift = shifts_by_name.get(e.get('shift'))
 
-        # Approved leaves count of days in month
+        # Approved leaves -> exact set of covered dates within this month.
+        # Only status == 'approved' leaves ever reach leaves_by_emp (see the
+        # query above) — a pending/rejected leave request is NOT paid leave,
+        # it falls through to a normal attendance/absent day like any other
+        # unapproved day off, per the owner/admin-approval rule.
         leave_days = 0
         leave_dates = set()
         for l in leaves_by_emp.get(e['id'], []):
@@ -221,32 +224,77 @@ async def _compute_payroll(year: int, month: int) -> list:
                         dd += timedelta(days=1)
             except Exception: pass
 
-        # Paid days off with no attendance record: store holidays and the weekly Sunday
-        # off are paid automatically, same as an approved leave, so staff aren't marked
-        # absent for days the store itself is closed / not scheduled to work.
-        att_dates = {a['date'] for a in atts}
-        holiday_days = 0
-        weekly_off_auto = 0
+        # Classify every day of the month exactly once — the single source
+        # of truth for both the paid-days math below and the counts shown
+        # on the Payroll row. A day only counts as a full 'present' day if
+        # it resolves that way via _resolve_attendance_state, which
+        # requires BOTH a check-in and a check-out within shift timing (a
+        # checked-in-but-never-checked-out day settles to 'missing_punch',
+        # not 'present' — no free full-day pay just for showing up).
+        day_state: dict = {}
         for ds in all_month_dates:
-            if ds in att_dates or ds in leave_dates:
+            if ds in leave_dates:
+                day_state[ds] = 'leave'
+                continue
+            a = att_by_date.get(ds)
+            if a and a.get('status') in ('holiday', 'weekly_off'):
+                day_state[ds] = a['status']
                 continue
             if ds in holidays:
-                holiday_days += 1
-            else:
-                try:
-                    if date.fromisoformat(ds).weekday() == 6:
-                        weekly_off_auto += 1
-                except Exception:
-                    pass
-        weekly_off_days = weekly_off_auto + manual_off
+                day_state[ds] = 'holiday'
+                continue
+            is_sunday = date.fromisoformat(ds).weekday() == 6
+            if not a:
+                if ds > today_ds:
+                    # A day that hasn't happened yet (payroll run mid-month,
+                    # before the month is over) is neither paid nor absent —
+                    # including a not-yet-arrived Sunday, which shouldn't be
+                    # auto-paid before it's actually occurred.
+                    day_state[ds] = 'future'
+                elif is_sunday:
+                    day_state[ds] = 'weekly_off'
+                else:
+                    day_state[ds] = 'absent'
+                continue
+            state = _resolve_attendance_state(a, e, shift, store, ds == today_ds, minutes_now)
+            day_state[ds] = state['status']  # present | half_day | missing_punch | absent
+
+        # Sunday pay is forfeited for a week where every scheduled workday
+        # (Mon-Sat) was a genuine absence — applied only to a Sunday that
+        # would otherwise be the default auto-paid weekly-off, and only
+        # when the full Mon-Sat block preceding it falls entirely inside
+        # this month (a partial week at the very start of the month isn't
+        # judged on data this payroll run doesn't have).
+        for ds in all_month_dates:
+            d_obj = date.fromisoformat(ds)
+            if d_obj.weekday() != 6 or day_state.get(ds) != 'weekly_off':
+                continue
+            week_start = d_obj - timedelta(days=6)
+            if week_start.isoformat() < start:
+                continue
+            week_days = [(week_start + timedelta(days=i)).isoformat() for i in range(6)]
+            if all(day_state.get(wd) == 'absent' for wd in week_days):
+                day_state[ds] = 'absent'
+
+        present = sum(1 for v in day_state.values() if v == 'present')
+        half = sum(1 for v in day_state.values() if v == 'half_day')
+        missing_punch = sum(1 for v in day_state.values() if v == 'missing_punch')
+        absent = sum(1 for v in day_state.values() if v == 'absent')
+        holiday_days = sum(1 for v in day_state.values() if v == 'holiday')
+        weekly_off_days = sum(1 for v in day_state.values() if v == 'weekly_off')
+        # Sunday-work bonus: half a day's extra pay for a Sunday that
+        # resolved to a real present/half-day (shop opened, employee
+        # actually worked it) — on top of normal pay for that day, not
+        # instead of it.
+        sunday_work = sum(
+            1 for ds in all_month_dates
+            if date.fromisoformat(ds).weekday() == 6 and day_state.get(ds) in ('present', 'half_day')
+        )
 
         base = float(e.get('salary') or 0)
         per_day = base / total_days if total_days > 0 else 0
-        # Effective days paid: present + 0.5*half + paid leaves/holidays/weekly-offs.
-        # A normal (shop-closed) Sunday is still a paid weekly-off, same as before — full
-        # monthly salary isn't reduced just because the shop doesn't open on a Sunday.
-        # If an employee actually clocks in on a Sunday (shop opened that day), they get
-        # a half-day bonus on top of their normal pay for that day — not a full extra day.
+        # Effective days paid: present + 0.5*half + paid leaves/holidays/weekly-offs
+        # (minus any Sunday forfeited above by the whole-week-absent rule).
         effective = present + 0.5 * half + leave_days + holiday_days + weekly_off_days
         earned = round(per_day * min(effective, total_days) + per_day * 0.5 * sunday_work, 2)
 
@@ -270,7 +318,7 @@ async def _compute_payroll(year: int, month: int) -> list:
             'employee_id': e['id'], 'employee_code': e.get('employee_code'), 'name': e['name'],
             'designation': e.get('designation'), 'department': e.get('department'), 'photo': e.get('photo') or '',
             'base_salary': base, 'present_days': present, 'half_days': half,
-            'absent_days': absent,
+            'absent_days': absent, 'missing_punch_days': missing_punch,
             'sunday_work': sunday_work, 'leave_days': leave_days,
             'holiday_days': holiday_days, 'weekly_off_days': weekly_off_days,
             'total_days': total_days, 'effective_days': round(min(effective, total_days), 2),

@@ -31,11 +31,11 @@ from server import (
     _get_store,
     _minutes,
     _apply_punch,
+    _resolve_attendance_state,
     _iter_month_dates,
     log_audit,
     notify_user,
     _notify_module,
-    MISSED_CHECKOUT_GRACE_MIN,
     IST,
 )
 
@@ -99,26 +99,31 @@ async def my_today(user=Depends(require_employee)):
     return doc or {}
 
 
-NOT_CHECKED_IN_GRACE_MIN = 30  # keep in sync with _check_missed_attendance's own threshold
-
-
 @router.get('/attendance/today')
-async def attendance_today(_: dict = Depends(require_staff)):
-    d = today_str()
-    employees = await db.employees.find({}, {'_id': 0, 'password_hash': 0, 'photo': 0}).sort('name', 1).to_list(1000)
+async def attendance_today(date_: Optional[str] = Query(default=None, alias='date'), _: dict = Depends(require_staff)):
+    """Returns one day's attendance for every employee — 'today' by default,
+    or any date the owner picks via ?date=YYYY-MM-DD (the Attendance
+    screen's date filter). For a past date the day is fully settled (no
+    'still mid-shift' leniency); for today it stays live."""
+    d = date_ or today_str()
+    is_today = d == today_str()
+    employees = await db.employees.find({}, {'_id': 0, 'password_hash': 0}).sort('name', 1).to_list(1000)
     att_map = {}
     async for a in db.attendance.find({'date': d}, {'_id': 0, 'check_in.selfie': 0, 'check_out.selfie': 0}):
         att_map[a['employee_id']] = a
 
-    # For the 'Not Checked In' filter: an employee whose shift started more
-    # than NOT_CHECKED_IN_GRACE_MIN minutes ago and who still has no
-    # check-in today (and no admin-recorded absent/leave/holiday/weekly_off
-    # for the day) — mirrors _check_missed_attendance's own criteria so the
-    # UI filter and the automatic reminder agree on who counts. Skipped
-    # entirely on Sundays/holidays, same as the reminder.
+    # Approved leave covering this specific date — not the employee's
+    # current (live) status flag, which only reflects "on leave right now"
+    # and would be wrong for a past/future date being viewed.
+    leave_map = {}
+    async for l in db.leaves.find(
+        {'status': 'approved', 'from_date': {'$lte': d}, 'to_date': {'$gte': d}}, {'_id': 0, 'employee_id': 1},
+    ):
+        leave_map[l['employee_id']] = True
+    holiday_today = await db.holidays.find_one({'date': d}, {'_id': 0, 'id': 1})
+
     now_ist = now_utc().astimezone(IST)
     minutes_now = now_ist.hour * 60 + now_ist.minute
-    check_late_arrivals = now_ist.weekday() != 6 and not await db.holidays.find_one({'date': d}, {'_id': 0, 'id': 1})
     store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
     shifts_by_name = {}
     async for s in db.shifts.find({}, {'_id': 0}):
@@ -127,45 +132,29 @@ async def attendance_today(_: dict = Depends(require_staff)):
     rows = []
     for e in employees:
         a = att_map.get(e['id'])
+        shift = shifts_by_name.get(e.get('shift'))
         row = {
             'employee_id': e['id'], 'employee_code': e.get('employee_code'), 'name': e['name'],
             'department': e.get('department', ''), 'designation': e.get('designation', ''),
             'shift': e.get('shift', ''), 'employee_status': e.get('status', 'active'),
+            'photo': e.get('photo') or '',
         }
-        if e.get('status') == 'on_leave':
-            row.update({'status': 'on_leave', 'check_in': None, 'check_out': None, 'is_late': False, 'working_hours': 0})
-        elif a:
-            row.update({
-                'status': a.get('status') or ('present' if a.get('check_in') else 'absent'),
-                'check_in': a.get('check_in', {}).get('timestamp') if a.get('check_in') else None,
-                'check_out': a.get('check_out', {}).get('timestamp') if a.get('check_out') else None,
-                'is_late': a.get('is_late', False),
-                'working_hours': a.get('working_hours', 0),
-            })
+        if not a and (leave_map.get(e['id']) or (is_today and e.get('status') == 'on_leave')):
+            row.update({'status': 'leave', 'check_in': None, 'check_out': None, 'is_late': False,
+                        'working_hours': 0, 'missing_punch': False})
+        elif not a and holiday_today:
+            row.update({'status': 'holiday', 'check_in': None, 'check_out': None, 'is_late': False,
+                        'working_hours': 0, 'missing_punch': False})
         else:
-            row.update({'status': 'absent', 'check_in': None, 'check_out': None, 'is_late': False, 'working_hours': 0})
-
-        # 'Missing Punch' means checked in but past their shift end (+ grace)
-        # with still no check-out — i.e. actually forgot to punch out, not
-        # just "hasn't left yet" (which is true of everyone still mid-shift
-        # and shouldn't knock them out of the Present filter).
-        missing_punch = False
-        if a and a.get('check_in') and not a.get('check_out'):
-            shift = shifts_by_name.get(e.get('shift'))
-            end = (shift.get('end') if shift else None) or store.get('work_end', '19:30')
-            if minutes_now >= _minutes(end) + MISSED_CHECKOUT_GRACE_MIN:
-                missing_punch = True
-        row['missing_punch'] = missing_punch
-
-        not_checked_in_late = False
-        already_settled = bool(a and (a.get('check_in') or a.get('status') in ('leave', 'holiday', 'weekly_off', 'absent')))
-        if check_late_arrivals and e.get('status') != 'on_leave' and not already_settled:
-            shift = shifts_by_name.get(e.get('shift'))
-            start = (shift.get('start') if shift else None) or store.get('work_start', '10:00')
-            if minutes_now >= _minutes(start) + NOT_CHECKED_IN_GRACE_MIN:
-                not_checked_in_late = True
-        row['not_checked_in_late'] = not_checked_in_late
-
+            state = _resolve_attendance_state(a, e, shift, store, is_today, minutes_now)
+            row.update({
+                'status': state['status'],
+                'check_in': a.get('check_in', {}).get('timestamp') if a and a.get('check_in') else None,
+                'check_out': a.get('check_out', {}).get('timestamp') if a and a.get('check_out') else None,
+                'is_late': state['is_late'],
+                'working_hours': (a or {}).get('working_hours', 0),
+                'missing_punch': state['status'] == 'missing_punch',
+            })
         rows.append(row)
     return rows
 
@@ -181,7 +170,8 @@ async def attendance_live(_: dict = Depends(require_staff)):
 async def attendance_calendar(emp_id: str, year: int, month: int, user=Depends(get_current)):
     if user['role'] == 'employee' and user['id'] != emp_id:
         raise HTTPException(status_code=403, detail='Employees can view only their own calendar')
-    if not await db.employees.find_one({'id': emp_id}, {'_id': 0, 'id': 1}):
+    emp = await db.employees.find_one({'id': emp_id}, {'_id': 0})
+    if not emp:
         raise HTTPException(status_code=404, detail='Employee not found')
     from calendar import monthrange
     days = monthrange(year, month)[1]
@@ -200,24 +190,32 @@ async def attendance_calendar(emp_id: str, year: int, month: int, user=Depends(g
     async for l in db.leaves.find({'employee_id': emp_id, 'status': 'approved'}, {'_id': 0}):
         leaves.append(l)
 
+    shift = await db.shifts.find_one({'name': emp.get('shift')}, {'_id': 0})
+    store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
+    now_ist = now_utc().astimezone(IST)
+    today_ds = now_ist.date().isoformat()
+    minutes_now = now_ist.hour * 60 + now_ist.minute
+
     days_out = []
     for d in _iter_month_dates(year, month):
         ds = d.isoformat()
         a = att_map.get(ds)
-        # Determine effective status
+        # Determine effective status. A record's own resolved state (via
+        # _resolve_attendance_state — the same logic Payroll and the live
+        # Attendance screen use) takes priority once one exists; otherwise
+        # fall back to holiday/leave/weekly-off/absent for a blank day.
         on_leave = any(l['from_date'] <= ds <= l['to_date'] for l in leaves)
         holiday = holidays.get(ds)
-        status = 'absent'
-        if holiday: status = 'holiday'
-        if on_leave: status = 'leave'
-        if not holiday and not on_leave and not a and d.weekday() == 6:
-            status = 'weekly_off'  # default paid weekly off (Sunday) when nothing else recorded
         if a:
-            if a.get('status') == 'present' and a.get('check_in'): status = 'present'
-            elif a.get('status') == 'half_day': status = 'half_day'
-            elif a.get('status') == 'weekly_off': status = 'weekly_off'
-            elif a.get('status') == 'absent': status = 'absent'
-            elif a.get('check_in') and not a.get('check_out'): status = 'missing_punch'
+            status = _resolve_attendance_state(a, emp, shift, store, ds == today_ds, minutes_now)['status']
+        elif holiday:
+            status = 'holiday'
+        elif on_leave:
+            status = 'leave'
+        elif d.weekday() == 6:
+            status = 'weekly_off'  # default paid weekly off (Sunday) when nothing else recorded
+        else:
+            status = 'absent'
         days_out.append({
             'date': ds, 'weekday': d.weekday(),  # 0=Mon
             'status': status,

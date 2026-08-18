@@ -3,6 +3,7 @@ import {
   View, Text, StyleSheet, ScrollView, TextInput, Pressable, RefreshControl, Platform, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
@@ -14,7 +15,7 @@ type Row = {
   department: string; designation: string; shift: string;
   status: string; check_in?: string | null; check_out?: string | null;
   is_late?: boolean; working_hours?: number; missing_punch?: boolean; employee_status?: string;
-  not_checked_in_late?: boolean;
+  photo?: string;
 };
 type Ev = {
   id: string; employee_name: string; type: 'check_in' | 'check_out';
@@ -23,29 +24,28 @@ type Ev = {
 
 const TABS = ['Today', 'Live'] as const;
 
-type StatusKey = 'all' | 'present' | 'late' | 'half_day' | 'absent' | 'missing' | 'leave' | 'not_checked_in';
+type StatusKey = 'all' | 'present' | 'late' | 'half_day' | 'absent' | 'missing';
 
 const STATUS_FILTERS: { key: StatusKey; label: string; icon: any }[] = [
   { key: 'all', label: 'All', icon: 'apps-outline' },
   { key: 'present', label: 'Present', icon: 'checkmark-circle-outline' },
   { key: 'late', label: 'Late', icon: 'alarm-outline' },
   { key: 'half_day', label: 'Half Day', icon: 'time-outline' },
-  { key: 'not_checked_in', label: 'Not Checked In', icon: 'hourglass-outline' },
-  { key: 'absent', label: 'Absent', icon: 'close-circle-outline' },
   { key: 'missing', label: 'Missing Punch', icon: 'alert-circle-outline' },
-  { key: 'leave', label: 'On Leave', icon: 'airplane-outline' },
+  { key: 'absent', label: 'Absent', icon: 'close-circle-outline' },
 ];
 
+// Present = checked in within shift + grace. Late = checked in after grace.
+// Half Day = checked in after the shift's half-day-master threshold (or
+// short hours). Missing Punch = an incomplete/contradictory punch pair —
+// checked in with no check-out past shift end, OR checked out with no
+// check-in at all — never counted as a full present day. Absent covers
+// everything else with no attendance (including on-leave/holiday days,
+// which still show their own pill on the row itself).
 function statusKeyOf(row: Row): StatusKey {
-  if (row.missing_punch) return 'missing';
-  if (row.employee_status === 'on_leave') return 'leave';
-  if (row.status === 'present') return row.is_late ? 'late' : 'present';
+  if (row.status === 'missing_punch') return 'missing';
   if (row.status === 'half_day') return 'half_day';
-  // 'not_checked_in_late' is server-computed: shift started 30+ min ago,
-  // still no check-in today, and nothing was explicitly recorded for the
-  // day (not absent/leave/holiday/weekly_off) — a live no-show risk,
-  // distinct from 'Absent' which also covers days that are simply over.
-  if (row.not_checked_in_late) return 'not_checked_in';
+  if (row.status === 'present') return row.is_late ? 'late' : 'present';
   return 'absent';
 }
 
@@ -56,6 +56,18 @@ const fmtTime = (iso?: string | null) => {
 };
 
 const VALID_STATUS_KEYS = new Set(STATUS_FILTERS.map((f) => f.key));
+
+const isoDate = (dt: Date) => dt.toISOString().slice(0, 10);
+const fmtDateLabel = (ds: string) => {
+  try {
+    const d = new Date(`${ds}T00:00:00`);
+    const today = isoDate(new Date());
+    const yest = isoDate(new Date(Date.now() - 86400000));
+    if (ds === today) return 'Today';
+    if (ds === yest) return 'Yesterday';
+    return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  } catch { return ds; }
+};
 
 export default function OwnerAttendance() {
   const router = useRouter();
@@ -74,6 +86,8 @@ export default function OwnerAttendance() {
   );
   const [deptFilter, setDeptFilter] = useState('all');
   const [query, setQuery] = useState('');
+  const [date, setDate] = useState(() => isoDate(new Date()));
+  const isToday = date === isoDate(new Date());
 
   // Coming in from a dashboard tile (e.g. tapping "Present") should re-apply
   // that filter even if this screen was already mounted from a previous visit.
@@ -84,7 +98,7 @@ export default function OwnerAttendance() {
   const load = useCallback(async () => {
     try {
       const [r, e, corr, leaves] = await Promise.all([
-        api.get<Row[]>('/attendance/today').catch(() => []),
+        api.get<Row[]>(`/attendance/today?date=${date}`).catch(() => []),
         api.get<Ev[]>('/attendance/live').catch(() => []),
         api.get<any[]>('/attendance/corrections?status=pending').catch(() => []),
         api.get<any[]>('/leaves?status=pending').catch(() => []),
@@ -95,9 +109,18 @@ export default function OwnerAttendance() {
     } finally {
       setLoading(false); setRefreshing(false);
     }
-  }, []);
+  }, [date]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  const stepDate = (deltaDays: number) => {
+    const d = new Date(`${date}T00:00:00`);
+    d.setDate(d.getDate() + deltaDays);
+    const next = isoDate(d);
+    if (next > isoDate(new Date())) return; // no future dates
+    setLoading(true);
+    setDate(next);
+  };
 
   const departments = useMemo(
     () => Array.from(new Set(rows.map((r) => r.department).filter(Boolean))).sort(),
@@ -149,6 +172,27 @@ export default function OwnerAttendance() {
           </Pressable>
         ))}
       </View>
+
+      {tab === 'Today' && (
+        <View style={styles.dateRow} testID="att-date-row">
+          <Pressable onPress={() => stepDate(-1)} style={styles.dateNav} testID="att-date-prev" hitSlop={8}>
+            <Ionicons name="chevron-back" size={18} color={colors.onSurface} />
+          </Pressable>
+          <View style={styles.dateLabel}>
+            <Ionicons name="calendar-outline" size={13} color={colors.mutedText} />
+            <Text style={styles.dateText}>{fmtDateLabel(date)}</Text>
+          </View>
+          <Pressable
+            onPress={() => stepDate(1)}
+            style={[styles.dateNav, isToday && { opacity: 0.35 }]}
+            disabled={isToday}
+            testID="att-date-next"
+            hitSlop={8}
+          >
+            <Ionicons name="chevron-forward" size={18} color={colors.onSurface} />
+          </Pressable>
+        </View>
+      )}
 
       {tab === 'Today' && !loading && (
         <>
@@ -210,7 +254,11 @@ export default function OwnerAttendance() {
                 testID={`att-row-${r.employee_id}`}
                 onPress={() => router.push(`/attendance/calendar/${r.employee_id}`)}
               >
-                <View style={styles.avatar}><Text style={styles.avatarText}>{initials(r.name)}</Text></View>
+                {r.photo ? (
+                  <Image source={{ uri: r.photo }} style={styles.avatarPhoto} />
+                ) : (
+                  <View style={styles.avatar}><Text style={styles.avatarText}>{initials(r.name)}</Text></View>
+                )}
                 <View style={{ flex: 1 }}>
                   <Text style={styles.rowName} numberOfLines={1}>{r.name}</Text>
                   <Text style={styles.rowSub} numberOfLines={1}>{r.designation || '—'} · {r.employee_code}</Text>
@@ -256,11 +304,16 @@ function StatusPill({ row }: { row: Row }) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   let label = 'Absent', bg = colors.error, bd = colors.onError, fg = colors.onError;
-  if (row.employee_status === 'on_leave') { label = 'Leave'; bg = colors.warning; bd = colors.onWarning; fg = colors.onWarning; }
-  else if (row.status === 'present') { label = row.is_late ? 'Late' : 'Present'; bg = colors.success; bd = colors.onSuccess; fg = colors.onSuccess; if (row.is_late) { bg = colors.warning; bd = colors.onWarning; fg = colors.onWarning; } }
+  if (row.status === 'leave') { label = 'Leave'; bg = colors.warning; bd = colors.onWarning; fg = colors.onWarning; }
+  else if (row.status === 'holiday') { label = 'Holiday'; bg = colors.warning; bd = colors.onWarning; fg = colors.onWarning; }
+  else if (row.status === 'missing_punch') { label = 'Missing'; bg = colors.error; bd = colors.onError; fg = colors.onError; }
   else if (row.status === 'half_day') { label = 'Half Day'; bg = colors.warning; bd = colors.onWarning; fg = colors.onWarning; }
-  else if (row.not_checked_in_late) { label = 'Not Checked In'; bg = colors.warning; bd = colors.onWarning; fg = colors.onWarning; }
-  if (row.missing_punch) { label = 'Missing'; bg = colors.error; bd = colors.onError; fg = colors.onError; }
+  else if (row.status === 'present') {
+    label = row.is_late ? 'Late' : 'Present';
+    bg = row.is_late ? colors.warning : colors.success;
+    bd = row.is_late ? colors.onWarning : colors.onSuccess;
+    fg = row.is_late ? colors.onWarning : colors.onSuccess;
+  }
   return (
     <View style={[styles.pill, { backgroundColor: bg, borderColor: bd }]}>
       <Text style={[styles.pillText, { color: fg }]}>{label}</Text>
@@ -313,6 +366,18 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
 
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
+  dateRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    marginHorizontal: spacing.lg, marginTop: spacing.sm, backgroundColor: colors.surfaceSecondary,
+    borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: 6,
+  },
+  dateNav: {
+    width: 32, height: 32, borderRadius: radius.md, backgroundColor: colors.surfaceTertiary,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  dateLabel: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  dateText: { color: colors.onSurface, fontSize: 13, fontWeight: '700' },
+
   filterScroll: { flexGrow: 0, flexShrink: 0 },
   filterRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: 2 },
   filterChip: {
@@ -341,6 +406,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.brand,
   },
   avatarText: { color: colors.brandSecondary, fontWeight: '700' },
+  avatarPhoto: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.surfaceTertiary },
   rowName: { color: colors.onSurface, fontSize: 14, fontWeight: '600' },
   rowSub: { color: colors.onSurfaceTertiary, fontSize: 11, marginTop: 2 },
   rowTimes: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 },

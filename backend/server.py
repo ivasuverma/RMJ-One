@@ -997,6 +997,47 @@ async def _apply_punch(emp: dict, kind: str, ts: datetime, extra: Optional[dict]
         return {'ok': True, 'kind': 'check_out', 'attendance_id': existing['id'], 'working_hours': hours, 'status': status, 'timestamp': ts.isoformat()}
 
 
+def _resolve_attendance_state(a: Optional[dict], emp: dict, shift: Optional[dict], store: dict,
+                               is_today: bool, minutes_now: int) -> dict:
+    """Single source of truth for what one employee's attendance means on one
+    day — used by the live Attendance screen (today, possibly still
+    in-progress), the Dashboard tiles, and Payroll (always a settled past
+    date). Returns {'status': 'present'|'half_day'|'absent'|'missing_punch'
+    |'leave'|'holiday'|'weekly_off', 'is_late': bool}.
+
+    Rules (per the owner's spec):
+    - An explicit no-punch-times status from a manual edit (leave/holiday/
+      weekly_off) is authoritative — trust it as-is.
+    - Checked out with no check-in is a data anomaly (e.g. a manual edit
+      that only set check-out, or bad device data) — 'missing_punch',
+      never counts as present/paid.
+    - Checked in AND checked out: trust the status computed at checkout
+      time (present/half_day — already reflects shift timing + the
+      late-master half-day threshold).
+    - Checked in with no check-out: fine while the shift is still ongoing
+      today (shows as present/late, matches the live view) — but once
+      shift end + grace has passed (always true for a past date, since
+      the day is over), it's 'missing_punch'. No full-day credit just for
+      having shown up with no checkout.
+    - Nothing recorded at all: 'absent'.
+    """
+    if a and a.get('status') in ('leave', 'holiday', 'weekly_off'):
+        return {'status': a['status'], 'is_late': False}
+    check_in = a.get('check_in') if a else None
+    check_out = a.get('check_out') if a else None
+    if check_out and not check_in:
+        return {'status': 'missing_punch', 'is_late': False}
+    if check_in and check_out:
+        return {'status': a.get('status') or 'present', 'is_late': bool(a.get('is_late'))}
+    if check_in and not check_out:
+        end = (shift.get('end') if shift else None) or store.get('work_end', '19:30')
+        grace_elapsed = (not is_today) or (minutes_now >= _minutes(end) + MISSED_CHECKOUT_GRACE_MIN)
+        if grace_elapsed:
+            return {'status': 'missing_punch', 'is_late': bool(a.get('is_late'))}
+        return {'status': 'present', 'is_late': bool(a.get('is_late'))}
+    return {'status': 'absent', 'is_late': False}
+
+
 def _karigar_ledger_balances(entries: list) -> dict:
     """Single source of truth for aggregating karigar_ledger entries into
     per-karigar running balances. Used by list_karigars, get_karigar_ledger,
@@ -1276,11 +1317,49 @@ async def _check_missed_checkout():
 
         await notify_user(emp['id'], 'Missed check-out',
                            "You checked in today but haven't checked out yet — don't forget before you leave.", '/')
+        # Also flag it to the owner/admin as an attendance discrepancy —
+        # unlike the employee's own reminder above, this respects the
+        # Notification Settings module toggle since it's a staff-facing
+        # broadcast, not a personal nudge.
+        await _notify_module('attendance', 'Attendance discrepancy',
+                              f"{emp['name']} checked in but hasn't checked out — no punch recorded past shift end.",
+                              '/(tabs)/attendance')
         await db.checkout_reminders.update_one(
             {'employee_id': emp['id'], 'date': today},
             {'$set': {'employee_id': emp['id'], 'date': today, 'sent_at': now_utc().isoformat()}},
             upsert=True,
         )
+
+
+async def _check_attendance_anomalies():
+    """Once per day, flags to the owner/admin any attendance record for
+    today that has a check-out but no check-in — a data anomaly that can
+    only really arise from a manual edit that only set the check-out time,
+    or an odd biometric data gap. Never something the app's own check-in/
+    check-out flow can produce (check-out is rejected without a prior
+    check-in — see _apply_punch), so this is purely a safety net. Guarded
+    per-day via db.attendance_anomaly_reminders so the 15-minute poll
+    doesn't re-notify for the same day."""
+    now_ist = now_utc().astimezone(IST)
+    today = now_ist.date().isoformat()
+    if await db.attendance_anomaly_reminders.find_one({'date': today}, {'_id': 0}) is not None:
+        return
+
+    names = []
+    async for a in db.attendance.find({'date': today, 'check_out': {'$ne': None}, 'check_in': None}, {'_id': 0, 'employee_id': 1}):
+        emp = await db.employees.find_one({'id': a['employee_id']}, {'_id': 0, 'name': 1})
+        if emp:
+            names.append(emp['name'])
+    if not names:
+        return
+    await db.attendance_anomaly_reminders.update_one(
+        {'date': today},
+        {'$set': {'date': today, 'sent_at': now_utc().isoformat(), 'count': len(names)}},
+        upsert=True,
+    )
+    await _notify_module('attendance', 'Attendance discrepancy',
+                          f"Check-out recorded with no check-in for: {_summarize_codes(names)}",
+                          '/(tabs)/attendance')
 
 
 async def _check_daily_absentee_summary():
@@ -1514,6 +1593,7 @@ async def _attendance_reminder_loop():
             await asyncio.sleep(15 * 60)
             await _check_missed_attendance()
             await _check_missed_checkout()
+            await _check_attendance_anomalies()
             await _check_daily_absentee_summary()
             await _check_repair_sample_followups()
             await _check_auto_advances()
