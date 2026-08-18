@@ -35,6 +35,7 @@ from server import (
     CashBookEntryUpdateIn,
     CashBookCounterIn,
     CashBookCounterUpdateIn,
+    CashBookQuickNameIn,
     log_audit,
 )
 
@@ -132,6 +133,37 @@ async def delete_cashbook_counter(counter_id: str, user=Depends(require_owner)):
         raise HTTPException(status_code=400, detail=f"This counter has {count} entr{'y' if count == 1 else 'ies'} — deactivate it instead of deleting")
     await db.cashbook_counters.delete_one({'id': counter_id})
     await log_audit(user, 'cashbook.counter.delete', 'cashbook_counter', counter_id, counter['name'])
+    return {'ok': True}
+
+
+# ---------------- Quick Names (reusable Name/Description presets) ----------------
+@router.get('/cashbook/quick-names')
+async def list_quick_names(_: dict = Depends(require_staff_or_module('cash_book'))):
+    return await db.cashbook_quick_names.find({}, {'_id': 0}).sort('name', 1).to_list(500)
+
+
+@router.post('/cashbook/quick-names')
+async def create_quick_name(body: CashBookQuickNameIn, user=Depends(require_admin_or_module('cash_book'))):
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail='Name is required')
+    existing = await db.cashbook_quick_names.find_one({'name': {'$regex': f'^{name}$', '$options': 'i'}}, {'_id': 0})
+    if existing:
+        return existing
+    quick_id = str(uuid.uuid4())
+    doc = {'id': quick_id, 'name': name, 'created_at': now_utc().isoformat(), 'created_by': user['name']}
+    await db.cashbook_quick_names.insert_one(dict(doc))
+    await log_audit(user, 'cashbook.quickname.create', 'cashbook_quick_name', quick_id, name)
+    return {k: v for k, v in doc.items() if k != '_id'}
+
+
+@router.delete('/cashbook/quick-names/{quick_id}')
+async def delete_quick_name(quick_id: str, user=Depends(require_admin_or_module_right('cash_book', 'delete'))):
+    doc = await db.cashbook_quick_names.find_one({'id': quick_id}, {'_id': 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail='Not found')
+    await db.cashbook_quick_names.delete_one({'id': quick_id})
+    await log_audit(user, 'cashbook.quickname.delete', 'cashbook_quick_name', quick_id, doc.get('name', ''))
     return {'ok': True}
 
 

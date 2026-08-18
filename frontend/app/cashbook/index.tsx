@@ -25,6 +25,8 @@ type DayData = {
   total_received: number; total_paid: number; closing_balance: number;
 };
 type Counter = { id: string; name: string; opening_balance: number; active: boolean; created_at: string; created_by?: string };
+type Emp = { id: string; name: string; employee_code: string; designation?: string };
+type QuickName = { id: string; name: string };
 
 type Mode = 'view' | 'form' | 'settings';
 
@@ -66,6 +68,13 @@ export default function CashBookScreen() {
   // editing an already-linked entry instead).
   const [isTransfer, setIsTransfer] = useState(false);
   const [transferCounterId, setTransferCounterId] = useState('');
+  // Employee picker (Paid entries only — e.g. salary/advance paid out) and
+  // reusable Name/Description presets (either entry type).
+  const [employees, setEmployees] = useState<Emp[]>([]);
+  const [empPickerOpen, setEmpPickerOpen] = useState(false);
+  const [quickNames, setQuickNames] = useState<QuickName[]>([]);
+  const [addingQuickName, setAddingQuickName] = useState(false);
+  const [newQuickName, setNewQuickName] = useState('');
 
   const loadCounters = useCallback(async (selectId?: string) => {
     try {
@@ -80,6 +89,12 @@ export default function CashBookScreen() {
     finally { setCountersLoading(false); }
   }, []);
   useFocusEffect(useCallback(() => { loadCounters(); }, [loadCounters]));
+
+  const loadRefs = useCallback(async () => {
+    try { setEmployees(await api.get<Emp[]>('/employees?status=active')); } catch { /* ignore */ }
+    try { setQuickNames(await api.get<QuickName[]>('/cashbook/quick-names')); } catch { /* ignore */ }
+  }, []);
+  useFocusEffect(useCallback(() => { loadRefs(); }, [loadRefs]));
 
   const load = useCallback(async (d: string, cid: string) => {
     if (!cid) { setDay(null); setLoading(false); setRefreshing(false); return; }
@@ -103,12 +118,25 @@ export default function CashBookScreen() {
   const openAdd = (t: EntryType) => {
     setEditing(null); setEntryType(t); setAmount(''); setName(''); setNote('');
     setIsTransfer(false); setTransferCounterId('');
+    setEmpPickerOpen(false); setAddingQuickName(false); setNewQuickName('');
     setMode('form');
   };
   const openEdit = (e: Entry) => {
     setEditing(e); setEntryType(e.type); setAmount(String(e.amount)); setName(e.name); setNote(e.note || '');
     setIsTransfer(false); setTransferCounterId('');
+    setEmpPickerOpen(false); setAddingQuickName(false); setNewQuickName('');
     setMode('form');
+  };
+
+  const saveQuickName = async () => {
+    const n = newQuickName.trim();
+    if (!n) return;
+    try {
+      const created = await api.post<QuickName>('/cashbook/quick-names', { name: n });
+      setQuickNames((prev) => (prev.some((q) => q.id === created.id) ? prev : [...prev, created].sort((a, b) => a.name.localeCompare(b.name))));
+      setName(created.name);
+      setNewQuickName(''); setAddingQuickName(false);
+    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
   };
 
   // Picking (or switching) the transfer counter refreshes the suggested
@@ -418,6 +446,66 @@ export default function CashBookScreen() {
             <Text style={styles.label}>Amount (₹)</Text>
             <TextInput testID="cashbook-amount" value={amount} onChangeText={(v) => setAmount(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} autoFocus />
 
+            {entryType === 'paid' && !isTransfer && employees.length > 0 && (
+              <>
+                <Text style={styles.label}>Employee (optional)</Text>
+                <Pressable onPress={() => setEmpPickerOpen((v) => !v)} style={styles.picker} testID="cashbook-employee-picker-toggle">
+                  <Text style={styles.pickerPlaceholder}>Pick an employee to fill the name</Text>
+                  <Ionicons name={empPickerOpen ? 'chevron-up' : 'chevron-down'} size={16} color={colors.mutedText} />
+                </Pressable>
+                {empPickerOpen && (
+                  <View style={styles.pickerList} testID="cashbook-employee-picker-list">
+                    <ScrollView style={{ maxHeight: 220 }} nestedScrollEnabled>
+                      {employees.map((emp) => (
+                        <Pressable key={emp.id} onPress={() => { setName(emp.name); setEmpPickerOpen(false); }} style={styles.pickerRow} testID={`cashbook-emp-opt-${emp.id}`}>
+                          <Text style={styles.pickerRowName}>{emp.name}</Text>
+                          <Text style={styles.pickerRowMeta}>{emp.designation || emp.employee_code}</Text>
+                        </Pressable>
+                      ))}
+                    </ScrollView>
+                  </View>
+                )}
+              </>
+            )}
+
+            {!isTransfer && (quickNames.length > 0 || addingQuickName) && (
+              <>
+                <Text style={styles.label}>Quick Picks</Text>
+                <View style={styles.chipRow}>
+                  {quickNames.map((q) => (
+                    <Pressable key={q.id} onPress={() => setName(q.name)} style={styles.quickChip} testID={`cashbook-quickname-${q.id}`}>
+                      <Text style={styles.quickChipText}>{q.name}</Text>
+                    </Pressable>
+                  ))}
+                  {!addingQuickName && (
+                    <Pressable onPress={() => setAddingQuickName(true)} style={[styles.quickChip, styles.quickChipAdd]} testID="cashbook-add-quickname">
+                      <Ionicons name="add" size={13} color={colors.brandSecondary} />
+                      <Text style={[styles.quickChipText, { color: colors.brandSecondary }]}>New</Text>
+                    </Pressable>
+                  )}
+                </View>
+                {addingQuickName && (
+                  <View style={styles.quickAddRow}>
+                    <TextInput
+                      testID="cashbook-new-quickname"
+                      value={newQuickName}
+                      onChangeText={setNewQuickName}
+                      placeholder="e.g. Milk, Tea, Electricity"
+                      placeholderTextColor={colors.mutedText}
+                      style={[styles.input, { flex: 1 }]}
+                      autoFocus
+                    />
+                    <Pressable onPress={saveQuickName} style={styles.quickAddSaveBtn} testID="cashbook-save-quickname">
+                      <Ionicons name="checkmark" size={18} color={colors.onBrandPrimary} />
+                    </Pressable>
+                    <Pressable onPress={() => { setAddingQuickName(false); setNewQuickName(''); }} style={styles.quickAddCancelBtn} testID="cashbook-cancel-quickname">
+                      <Ionicons name="close" size={18} color={colors.onSurfaceSecondary} />
+                    </Pressable>
+                  </View>
+                )}
+              </>
+            )}
+
             <Text style={styles.label}>Name / Description</Text>
             <TextInput testID="cashbook-name" value={name} onChangeText={setName} placeholder="e.g. Ajay Sood advance, Milk" placeholderTextColor={colors.mutedText} style={styles.input} />
 
@@ -610,6 +698,37 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   checkboxOn: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
   transferToggleText: { color: colors.onSurfaceSecondary, fontSize: 13, fontWeight: '600' },
+
+  picker: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    paddingHorizontal: spacing.md, paddingVertical: 12,
+  },
+  pickerPlaceholder: { color: colors.mutedText, fontSize: 13 },
+  pickerList: {
+    backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    marginTop: spacing.sm, padding: spacing.xs,
+  },
+  pickerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: spacing.sm, paddingVertical: 10 },
+  pickerRowName: { color: colors.onSurface, fontSize: 13, fontWeight: '600' },
+  pickerRowMeta: { color: colors.mutedText, fontSize: 11 },
+
+  quickChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start',
+    paddingHorizontal: spacing.sm, paddingVertical: 7, borderRadius: radius.pill,
+    backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border,
+  },
+  quickChipAdd: { borderColor: colors.brand, borderStyle: 'dashed' },
+  quickChipText: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '600' },
+  quickAddRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.sm },
+  quickAddSaveBtn: {
+    width: 40, height: 40, borderRadius: radius.md, backgroundColor: colors.brandPrimary,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  quickAddCancelBtn: {
+    width: 40, height: 40, borderRadius: radius.md, backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center',
+  },
   saveBtn: { backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: 14, alignItems: 'center', marginTop: spacing.md },
   saveBtnText: { color: colors.onBrandPrimary, fontWeight: '700' },
   deleteEntryBtn: {

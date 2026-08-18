@@ -817,6 +817,13 @@ class CashBookCounterUpdateIn(BaseModel):
     active: Optional[bool] = None
 
 
+class CashBookQuickNameIn(BaseModel):
+    # A reusable Name/Description preset (e.g. "Milk", "Tea", "Electricity")
+    # shop staff can tap to fill an entry instantly instead of retyping it
+    # every time — shared across counters and both Received/Paid.
+    name: str
+
+
 # ---------------- Seed ----------------
 async def seed():
     await db.users.create_index('username', unique=True)
@@ -843,6 +850,7 @@ async def seed():
     await db.push_subscriptions.create_index('role')
     await db.samples.create_index('status')
     await db.cashbook_entries.create_index([('counter_id', 1), ('date', 1)])
+    await db.cashbook_quick_names.create_index('name')
 
     # One-time setup/migration: every shop needs at least one Cash Book
     # counter to have anywhere to record entries. If none exist yet, create
