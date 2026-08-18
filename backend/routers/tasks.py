@@ -190,7 +190,7 @@ async def add_task_comment(task_id: str, body: TaskCommentIn, user=Depends(get_c
     await db.tasks.update_one({'id': task_id}, {'$push': {'comments': comment}})
     # Notify the other side of the conversation, not the commenter themselves.
     if user.get('role') == 'employee':
-        await _notify_module('tasks', f"Comment on: {t['title']}", f"{user['name']}: {comment['text']}", '/tasks')
+        await _notify_module('tasks', f"Comment on: {t['title']}", f"{user['name']}: {comment['text']}", '/tasks', script='task_comment')
     else:
         await notify_user(t['assigned_to'], f"Comment on: {t['title']}", f"{user['name']}: {comment['text']}", '/(emp)/tasks')
     return comment

@@ -376,6 +376,11 @@ class NotificationModuleSettingsIn(BaseModel):
     # Specific staff/employee ids to notify in addition to the role-matched
     # set above — lets an owner say "always also ping Rahul" without having
     # to make Rahul an admin.
+    # Finer-grained than the module's overall on/off: individual notification
+    # "scripts" (specific events within the module — see NOTIFICATION_SCRIPTS
+    # below) an owner has turned off while leaving the rest of the module on.
+    # A script not listed here is enabled by default.
+    disabled_scripts: List[str] = []
     user_ids: List[str] = []
 
 
@@ -1244,15 +1249,46 @@ NOTIFICATION_MODULES = [
 NOTIFICATION_MODULE_KEYS = {m['key'] for m in NOTIFICATION_MODULES}
 NOTIFICATION_MODULE_DEFAULT_ROLES = {m['key']: m['default_roles'] for m in NOTIFICATION_MODULES}
 
+# Finer-grained than NOTIFICATION_MODULES: every distinct broadcast event
+# ("script") an owner can individually silence without muting the whole
+# module. Each _notify_module(...) call site below passes its own `script`
+# key; two call sites can legitimately share one script key when they're the
+# same kind of event fired from two code paths (e.g. a repair item becoming
+# ready via two different actions).
+NOTIFICATION_SCRIPTS = [
+    {'key': 'attendance_checkin', 'module': 'attendance', 'label': 'Employee checked in'},
+    {'key': 'attendance_checkout', 'module': 'attendance', 'label': 'Employee checked out'},
+    {'key': 'attendance_discrepancy', 'module': 'attendance', 'label': 'Missed punch / attendance discrepancy'},
+    {'key': 'attendance_absentee_summary', 'module': 'attendance', 'label': 'Daily absentee summary (9 PM)'},
+    {'key': 'attendance_correction_request', 'module': 'attendance', 'label': 'New attendance correction request'},
+    {'key': 'attendance_leave_request', 'module': 'attendance', 'label': 'New leave request'},
+    {'key': 'task_overdue', 'module': 'tasks', 'label': 'Task overdue'},
+    {'key': 'task_comment', 'module': 'tasks', 'label': 'Employee commented on a task'},
+    {'key': 'payroll_auto_advance', 'module': 'payroll', 'label': 'Auto advance recorded'},
+    {'key': 'repair_new_order', 'module': 'repairs', 'label': 'New repair order created'},
+    {'key': 'repair_item_ready', 'module': 'repairs', 'label': 'Repair item ready / back from karigar'},
+    {'key': 'sample_issued', 'module': 'samples', 'label': 'Sample(s) issued'},
+    {'key': 'sample_received', 'module': 'samples', 'label': 'Sample received back'},
+]
+NOTIFICATION_SCRIPTS_BY_MODULE: Dict[str, list] = {}
+for _s in NOTIFICATION_SCRIPTS:
+    NOTIFICATION_SCRIPTS_BY_MODULE.setdefault(_s['module'], []).append(_s)
+NOTIFICATION_SCRIPT_KEYS = {s['key'] for s in NOTIFICATION_SCRIPTS}
 
-async def _notify_module(module: str, title: str, body: str, url: str = '/'):
+
+async def _notify_module(module: str, title: str, body: str, url: str = '/', script: Optional[str] = None):
     """Broadcast a module event to whichever staff/employees are configured to
     receive it, honoring the admin's Notification Settings (Settings >
-    Notifications). Falls back to the module's default roles if unconfigured."""
+    Notifications). Falls back to the module's default roles if unconfigured.
+    `script` (optional) is the specific event type within the module — lets
+    an owner silence just that one kind of notification via disabled_scripts
+    without muting every other event the module can send."""
     try:
         settings = await db.settings.find_one({'id': 'notifications'}, {'_id': 0})
         cfg = ((settings or {}).get('modules') or {}).get(module) or {}
         if not cfg.get('enabled', True):
+            return
+        if script and script in (cfg.get('disabled_scripts') or []):
             return
         roles = cfg.get('roles')
         if roles is None:
@@ -1356,7 +1392,7 @@ async def _check_missed_checkout():
         # broadcast, not a personal nudge.
         await _notify_module('attendance', 'Attendance discrepancy',
                               f"{emp['name']} checked in but hasn't checked out — no punch recorded past shift end.",
-                              '/(tabs)/attendance')
+                              '/(tabs)/attendance', script='attendance_discrepancy')
         await db.checkout_reminders.update_one(
             {'employee_id': emp['id'], 'date': today},
             {'$set': {'employee_id': emp['id'], 'date': today, 'sent_at': now_utc().isoformat()}},
@@ -1392,7 +1428,7 @@ async def _check_attendance_anomalies():
     )
     await _notify_module('attendance', 'Attendance discrepancy',
                           f"Check-out recorded with no check-in for: {_summarize_codes(names)}",
-                          '/(tabs)/attendance')
+                          '/(tabs)/attendance', script='attendance_discrepancy')
 
 
 async def _check_daily_absentee_summary():
@@ -1437,7 +1473,7 @@ async def _check_daily_absentee_summary():
         await _notify_module(
             'attendance',
             f"{len(absent_names)} absent today",
-            shown, '/(tabs)/attendance',
+            shown, '/(tabs)/attendance', script='attendance_absentee_summary',
         )
 
 
@@ -1558,7 +1594,7 @@ async def _check_auto_advances():
         await notify_user(emp['id'], 'Advance credited',
                            f"₹{amount:.0f} advance has been recorded for you this month.", '/')
         await _notify_module('payroll', 'Auto advance recorded',
-                              f"₹{amount:.0f} auto-advance recorded for {emp['name']}", '/(tabs)/payroll')
+                              f"₹{amount:.0f} auto-advance recorded for {emp['name']}", '/(tabs)/payroll', script='payroll_auto_advance')
 
 
 async def _check_recurring_tasks():
@@ -1618,7 +1654,7 @@ async def _check_overdue_tasks():
     ):
         await db.tasks.update_one({'id': t['id']}, {'$set': {'overdue_notified_at': now_utc().isoformat()}})
         await _notify_module('tasks', 'Task overdue',
-                              f"{t.get('assigned_to_name', 'Someone')}: {t['title']} was due {t['due_date']}", '/tasks')
+                              f"{t.get('assigned_to_name', 'Someone')}: {t['title']} was due {t['due_date']}", '/tasks', script='task_overdue')
 
 
 TASK_REPEAT_REMINDER_MIN = 180  # how often to re-nudge an assignee on a repeat_reminder task

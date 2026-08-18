@@ -83,7 +83,7 @@ async def create_samples(body: SampleIn, user=Depends(require_admin_or_module('s
     await log_audit(user, 'sample.issue', 'sample', created[0]['id'], f"{len(created)} sample(s)",
                      {'karigar': karigar['name'], 'count': len(created)})
     await _notify_module('samples', f"{len(created)} sample(s) issued",
-                          f"Issued to {karigar['name']} by {user['name']}", '/samples')
+                          f"Issued to {karigar['name']} by {user['name']}", '/samples', script='sample_issued')
     return created
 
 
@@ -234,5 +234,5 @@ async def receive_sample(sample_id: str, body: SampleReceiveIn, user=Depends(req
     await log_audit(user, 'sample.receive', 'sample', sample_id, sample['sample_code'], {'weight_diff': weight_diff})
     diff_note = f" (diff {weight_diff:+.3f}g)" if weight_diff else ''
     await _notify_module('samples', 'Sample received back',
-                          f"{sample['sample_code']} · {sample['description']} from {sample['karigar_name']}{diff_note}", '/samples')
+                          f"{sample['sample_code']} · {sample['description']} from {sample['karigar_name']}{diff_note}", '/samples', script='sample_received')
     return await db.samples.find_one({'id': sample_id}, {'_id': 0})

@@ -300,7 +300,7 @@ async def create_repair_order(body: RepairOrderIn, user=Depends(require_admin_or
     await log_audit(user, 'repair_order.create', 'repair_order', order_id, order_no,
                      {'customer': customer['name'], 'items': len(items_out)})
     await _notify_module('repairs', f'New repair order #{order_no}',
-                          f"{customer['name']} · {len(items_out)} item(s) · by {user['name']}", '/(tabs)/transactions')
+                          f"{customer['name']} · {len(items_out)} item(s) · by {user['name']}", '/(tabs)/transactions', script='repair_new_order')
     return {'order': {k: v for k, v in order.items() if k != '_id'}, 'items': items_out}
 
 
@@ -472,7 +472,7 @@ async def issue_to_karigar(item_id: str, body: IssueToKarigarIn, user=Depends(re
         await db.repair_items.update_one({'id': item_id}, {'$set': {'status': 'ready', 'updated_by': user['name']}})
         await log_audit(user, 'repair_item.ready', 'repair_item', item_id, item['item_code'], {'skipped_karigar': True})
         await _notify_module('repairs', 'Repair item ready',
-                              f"{item['item_code']} ({item.get('customer_name', '')}) is ready for delivery", '/(tabs)/transactions')
+                              f"{item['item_code']} ({item.get('customer_name', '')}) is ready for delivery", '/(tabs)/transactions', script='repair_item_ready')
         return await db.repair_items.find_one({'id': item_id}, {'_id': 0})
 
     karigar = await db.karigars.find_one({'id': body.karigar_id}, {'_id': 0})
@@ -673,7 +673,7 @@ async def receive_from_karigar(item_id: str, body: ReceiveFromKarigarIn, user=De
     }})
     await log_audit(user, 'repair_item.receive', 'repair_item', item_id, item['item_code'], {'weight_diff': calc['diff'], 'fine_weight_diff': calc['fine_diff']})
     await _notify_module('repairs', 'Repair item ready',
-                          f"{item['item_code']} ({item.get('customer_name', '')}) is back from the karigar and ready for delivery", '/(tabs)/transactions')
+                          f"{item['item_code']} ({item.get('customer_name', '')}) is back from the karigar and ready for delivery", '/(tabs)/transactions', script='repair_item_ready')
     return await db.repair_items.find_one({'id': item_id}, {'_id': 0})
 
 

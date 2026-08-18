@@ -9,7 +9,8 @@ import { api } from '@/src/api/client';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
-type ModuleCfg = { label: string; enabled: boolean; roles: string[]; user_ids: string[] };
+type ScriptCfg = { key: string; label: string; enabled: boolean };
+type ModuleCfg = { label: string; enabled: boolean; roles: string[]; user_ids: string[]; disabled_scripts: string[]; scripts: ScriptCfg[] };
 type ModulesMap = Record<string, ModuleCfg>;
 type Account = { id: string; name: string; role: string; account_type: 'user' | 'employee'; designation?: string };
 
@@ -65,13 +66,19 @@ export default function NotificationSettingsScreen() {
     patchModule(key, { user_ids: next });
   };
 
+  const toggleScript = (key: string, scriptKey: string) => {
+    const cur = modules[key]?.disabled_scripts || [];
+    const next = cur.includes(scriptKey) ? cur.filter((s) => s !== scriptKey) : [...cur, scriptKey];
+    patchModule(key, { disabled_scripts: next });
+  };
+
   const save = async () => {
     setSaving(true);
     try {
-      const payload: Record<string, { enabled: boolean; roles: string[]; user_ids: string[] }> = {};
+      const payload: Record<string, { enabled: boolean; roles: string[]; user_ids: string[]; disabled_scripts: string[] }> = {};
       for (const key of Object.keys(modules)) {
         const m = modules[key];
-        payload[key] = { enabled: m.enabled, roles: m.roles, user_ids: m.user_ids };
+        payload[key] = { enabled: m.enabled, roles: m.roles, user_ids: m.user_ids, disabled_scripts: m.disabled_scripts || [] };
       }
       const res = await api.put<{ modules: ModulesMap }>('/settings/notifications', { modules: payload });
       setModules(res.modules || {});
@@ -100,7 +107,8 @@ export default function NotificationSettingsScreen() {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}
         >
           <Text style={styles.hint}>
-            Turn a module off to stop its staff-facing alerts entirely (e.g. &quot;someone checked in&quot;). This
+            Turn a module off to stop its staff-facing alerts entirely (e.g. &quot;someone checked in&quot;), or
+            leave the module on and switch off just the individual notification types you don&apos;t want. This
             never affects a person&apos;s own notifications about their own record — leave decisions, salary paid,
             and task assignments always reach the person concerned. Pick roles and/or specific people to receive
             each module&apos;s alerts.
@@ -124,6 +132,30 @@ export default function NotificationSettingsScreen() {
 
                 {m.enabled && (
                   <View style={styles.body}>
+                    {m.scripts.length > 0 && (
+                      <>
+                        <Text style={styles.subhead}>Notification types</Text>
+                        <View style={styles.scriptList}>
+                          {m.scripts.map((s) => {
+                            const on = !(m.disabled_scripts || []).includes(s.key);
+                            return (
+                              <Pressable
+                                key={s.key}
+                                onPress={() => toggleScript(key, s.key)}
+                                style={styles.scriptRow}
+                                testID={`notif-script-${key}-${s.key}`}
+                              >
+                                <Text style={styles.scriptLabel}>{s.label}</Text>
+                                <View style={[styles.switchSm, on && styles.switchOn]}>
+                                  <View style={[styles.switchKnobSm, on && styles.switchKnobSmOn]} />
+                                </View>
+                              </Pressable>
+                            );
+                          })}
+                        </View>
+                      </>
+                    )}
+
                     <Text style={styles.subhead}>Notify roles</Text>
                     <View style={styles.chipsRow}>
                       {ROLES.map((r) => {
@@ -217,6 +249,21 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   switchKnobOn: { backgroundColor: colors.onBrandPrimary, transform: [{ translateX: 18 }] },
   body: { borderTopWidth: 1, borderTopColor: colors.divider, padding: spacing.md, backgroundColor: colors.surfaceTertiary },
   subhead: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '700' },
+  scriptList: {
+    backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    marginTop: spacing.sm, marginBottom: spacing.md, overflow: 'hidden',
+  },
+  scriptRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm,
+    paddingHorizontal: spacing.md, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.divider,
+  },
+  scriptLabel: { flex: 1, color: colors.onSurface, fontSize: 12 },
+  switchSm: {
+    width: 36, height: 21, borderRadius: 11, backgroundColor: colors.surfaceTertiary,
+    borderWidth: 1, borderColor: colors.border, padding: 2, justifyContent: 'center',
+  },
+  switchKnobSm: { width: 15, height: 15, borderRadius: 8, backgroundColor: colors.onSurfaceTertiary },
+  switchKnobSmOn: { backgroundColor: colors.onBrandPrimary, transform: [{ translateX: 14 }] },
   chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.sm, marginBottom: spacing.sm },
   chip: {
     flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 6,

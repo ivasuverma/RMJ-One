@@ -14,6 +14,7 @@ from server import (
     StoreSettingsIn,
     NotificationSettingsIn,
     NOTIFICATION_MODULES,
+    NOTIFICATION_SCRIPTS_BY_MODULE,
     log_audit,
 )
 
@@ -52,20 +53,40 @@ async def get_notification_settings(_: dict = Depends(require_owner)):
     modules = {}
     for m in NOTIFICATION_MODULES:
         cfg = stored_modules.get(m['key']) or {}
+        disabled_scripts = set(cfg.get('disabled_scripts') or [])
         modules[m['key']] = {
             'label': m['label'],
             'enabled': cfg.get('enabled', True),
             'roles': cfg.get('roles') if cfg.get('roles') is not None else list(m['default_roles']),
             'user_ids': cfg.get('user_ids') or [],
+            'disabled_scripts': sorted(disabled_scripts),
+            # Full script catalog for this module, each flagged with its
+            # current on/off state, so the settings screen can render every
+            # individual notification toggle without hardcoding labels.
+            'scripts': [
+                {'key': s['key'], 'label': s['label'], 'enabled': s['key'] not in disabled_scripts}
+                for s in NOTIFICATION_SCRIPTS_BY_MODULE.get(m['key'], [])
+            ],
         }
     return {'modules': modules}
 
 
 @router.put('/settings/notifications')
 async def update_notification_settings(body: NotificationSettingsIn, user: dict = Depends(require_owner)):
+    valid_module_keys = {m['key'] for m in NOTIFICATION_MODULES}
+    modules_payload = {}
+    for k, v in body.modules.items():
+        if k not in valid_module_keys:
+            continue
+        d = v.model_dump()
+        # Defensive: only persist script keys that actually belong to this
+        # module, so a stale/mistaken key can't silently do nothing forever.
+        valid_script_keys = {s['key'] for s in NOTIFICATION_SCRIPTS_BY_MODULE.get(k, [])}
+        d['disabled_scripts'] = [s for s in (d.get('disabled_scripts') or []) if s in valid_script_keys]
+        modules_payload[k] = d
     payload = {
         'id': 'notifications',
-        'modules': {k: v.model_dump() for k, v in body.modules.items() if k in {m['key'] for m in NOTIFICATION_MODULES}},
+        'modules': modules_payload,
         'updated_at': now_utc().isoformat(),
     }
     await db.settings.update_one({'id': 'notifications'}, {'$set': payload}, upsert=True)
