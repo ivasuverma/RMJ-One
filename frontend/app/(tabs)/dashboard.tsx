@@ -116,6 +116,10 @@ export default function DashboardScreen() {
           <Ionicons name="notifications-outline" size={20} color={colors.onSurface} />
           {unread > 0 && <View style={styles.bellDot} />}
         </Pressable>
+        {/* Settings is a tab now, but also reachable via this gear (v2 IA). */}
+        <Pressable onPress={() => router.push('/(tabs)/utility' as any)} style={styles.bellBtn} testID="dashboard-settings-btn" hitSlop={12}>
+          <Ionicons name="settings-outline" size={20} color={colors.onSurface} />
+        </Pressable>
         <Image source={images.logo} style={styles.headerBadge} contentFit="contain" testID="dashboard-logo" />
       </View>
 

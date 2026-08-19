@@ -67,7 +67,7 @@ const fmtDateLabel = (ds: string) => {
 export default function OwnerAttendance() {
   const router = useRouter();
   const { from, filter } = useLocalSearchParams<{ from?: string; filter?: string }>();
-  const goBack = () => { if (from === 'transactions') router.replace('/(tabs)/transactions' as any); else router.back(); };
+  const goBack = () => { if (from === 'work' || from === 'transactions') router.replace('/(tabs)/work' as any); else router.back(); };
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [tab, setTab] = useState<typeof TABS[number]>('Today');

@@ -26,7 +26,7 @@ const fmtINR = (n: number) => `₹${(n || 0).toLocaleString('en-IN')}`;
 export default function OwnerPayroll() {
   const router = useRouter();
   const { from } = useLocalSearchParams<{ from?: string }>();
-  const goBack = () => { if (from === 'transactions') router.replace('/(tabs)/transactions' as any); else router.back(); };
+  const goBack = () => { if (from === 'work' || from === 'transactions') router.replace('/(tabs)/work' as any); else router.back(); };
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const { user } = useAuth();

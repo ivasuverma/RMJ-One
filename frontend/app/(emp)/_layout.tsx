@@ -25,13 +25,6 @@ export default function EmployeeTabsLayout() {
     );
   }
 
-  // Calendar moved to a Home tile — it no longer needs its own tab. Transactions
-  // takes its place, but only for an employee an owner has actually assigned one
-  // of the employee-assignable modules to (repairs/tasks/approvals); otherwise
-  // there's nothing behind that tab, so it stays hidden like Leaves.
-  const EMPLOYEE_TRANSACTION_MODULES = ['repairs', 'tasks', 'approvals'];
-  const hasTransactionsAccess = (user.modules || []).some((m) => EMPLOYEE_TRANSACTION_MODULES.includes(m));
-
   return (
     <Tabs
       screenOptions={{
@@ -45,35 +38,28 @@ export default function EmployeeTabsLayout() {
         tabBarLabelStyle: { fontSize: 11, fontWeight: '600', letterSpacing: 0.3 },
       }}
     >
+      {/* Three tabs (v2 IA): Dashboard (the check-in home), Work, Settings
+          (profile). Work is always shown now — even an employee with no
+          granted operations modules still has My Tasks and My Ledger there. */}
       <Tabs.Screen
         name="home"
         options={{ title: 'Home', tabBarButtonTestID: 'tab-home', tabBarIcon: ({ color, size }) => <Ionicons name="scan-outline" color={color} size={size} /> }}
       />
       <Tabs.Screen
-        name="calendar"
-        options={{ href: null }}
-      />
-      <Tabs.Screen
-        name="leaves"
-        options={{ href: null }}
-      />
-      <Tabs.Screen
-        name="transactions"
-        options={{
-          title: 'Transactions',
-          href: hasTransactionsAccess ? undefined : null,
-          tabBarButtonTestID: 'tab-transactions',
-          tabBarIcon: ({ color, size }) => <Ionicons name="swap-horizontal-outline" color={color} size={size} />,
-        }}
-      />
-      <Tabs.Screen
-        name="tasks"
-        options={{ title: 'Tasks', tabBarButtonTestID: 'tab-tasks', tabBarIcon: ({ color, size }) => <Ionicons name="checkbox-outline" color={color} size={size} /> }}
+        name="work"
+        options={{ title: 'Work', tabBarButtonTestID: 'tab-work', tabBarIcon: ({ color, size }) => <Ionicons name="briefcase-outline" color={color} size={size} /> }}
       />
       <Tabs.Screen
         name="profile"
-        options={{ title: 'Profile', tabBarButtonTestID: 'tab-profile', tabBarIcon: ({ color, size }) => <Ionicons name="person-outline" color={color} size={size} /> }}
+        options={{ title: 'Settings', tabBarButtonTestID: 'tab-profile', tabBarIcon: ({ color, size }) => <Ionicons name="settings-outline" color={color} size={size} /> }}
       />
+      {/* Still routable via deep links / tiles, but no longer their own tab.
+          Calendar & Leaves are reached from the Home quick actions; Tasks &
+          Transactions content now lives in the Work hub. */}
+      <Tabs.Screen name="calendar" options={{ href: null }} />
+      <Tabs.Screen name="leaves" options={{ href: null }} />
+      <Tabs.Screen name="tasks" options={{ href: null }} />
+      <Tabs.Screen name="transactions" options={{ href: null }} />
     </Tabs>
   );
 }

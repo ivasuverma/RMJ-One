@@ -37,24 +37,25 @@ export default function OwnerTabsLayout() {
         tabBarLabelStyle: { fontSize: 11, fontWeight: '600', letterSpacing: 0.3 },
       }}
     >
+      {/* Three tabs (v2 IA): Dashboard, Work, Settings. */}
       <Tabs.Screen
         name="dashboard"
         options={{ title: 'Home', tabBarButtonTestID: 'tab-dashboard', tabBarIcon: ({ color, size }) => <Ionicons name="home-outline" color={color} size={size} /> }}
       />
       <Tabs.Screen
-        name="transactions"
-        options={{ title: 'Transactions', tabBarButtonTestID: 'tab-transactions', tabBarIcon: ({ color, size }) => <Ionicons name="swap-horizontal-outline" color={color} size={size} /> }}
-      />
-      <Tabs.Screen
-        name="reports"
-        options={{ title: 'Reports', tabBarButtonTestID: 'tab-reports', tabBarIcon: ({ color, size }) => <Ionicons name="bar-chart-outline" color={color} size={size} /> }}
+        name="work"
+        options={{ title: 'Work', tabBarButtonTestID: 'tab-work', tabBarIcon: ({ color, size }) => <Ionicons name="briefcase-outline" color={color} size={size} /> }}
       />
       <Tabs.Screen
         name="utility"
         options={{ title: 'Settings', tabBarButtonTestID: 'tab-utility', tabBarIcon: ({ color, size }) => <Ionicons name="settings-outline" color={color} size={size} /> }}
       />
-      {/* Still routable (tiles above link into these) but no longer their own bottom
-          tab — the reference IA groups by action type, not by module. */}
+      {/* Still routable (Work tiles + deep links point into these, and old
+          /(tabs)/transactions and /(tabs)/reports links still resolve) but no
+          longer their own bottom tab — the v2 IA groups by action type, not by
+          module. Transactions/Reports content now lives in the Work hub. */}
+      <Tabs.Screen name="transactions" options={{ href: null }} />
+      <Tabs.Screen name="reports" options={{ href: null }} />
       <Tabs.Screen name="attendance" options={{ href: null }} />
       <Tabs.Screen name="employees" options={{ href: null }} />
       <Tabs.Screen name="payroll" options={{ href: null }} />
