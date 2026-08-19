@@ -1,31 +1,33 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthContext';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
-import { Screen, Section, Skeleton, ErrorState, Tone } from '@/src/components/ui';
+import { Skeleton, ErrorState } from '@/src/components/ui';
 
-// Work is a board of live processes now (v2 Phase 4), not a static tile grid.
-// Every section shows its current state — pipeline counts, balances, what's
-// overdue — before you tap, and each stage deep-links to exactly that slice.
-// It reuses /api/dashboard (same source as the Dashboard) so the numbers
-// always agree with the home screen and never need a second endpoint.
+// Work — the operational hub, laid out to the v2 design comp: a search bar,
+// an "In progress" list of process rows (each showing its live state before
+// you tap), and a "Recently recorded" list so you can confirm a save without
+// hunting. Reuses /api/dashboard (same source as Home) so the numbers agree.
 type DashboardData = {
-  todays_attendance: { present: number; total: number; working: number };
-  pending_approvals: { attendance_corrections: number; leave_requests: number };
-  repairs_summary: { received: number; with_karigar: number; ready: number; overdue: number; delivered_today: number; total_open: number };
-  tasks_summary: { due_today: number; overdue: number; done_today: number; open_total: number };
-  samples_summary: { with_karigar: number; overdue: number; received_today: number };
-  cashbook_summary: { received_today: number; paid_today: number; closing_balance: number };
-  business_summary: { revenue_month: number; fine_with_karigars: number; customers_open: number; karigars_open: number };
+  repairs_summary: { received: number; with_karigar: number; ready: number; overdue: number; total_open: number };
+  samples_summary: { with_karigar: number; overdue: number };
+  cashbook_summary: { closing_balance: number };
+  tasks_summary: { due_today: number; overdue: number };
+  recent_activity?: { kind: 'repair' | 'cash' | 'stock' | 'ledger'; label: string; route: string }[];
 };
 
 const fmtINR = (n: number) => `₹${Math.round(n || 0).toLocaleString('en-IN')}`;
+const RECENT_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
+  repair: 'receipt-outline', cash: 'cash-outline', stock: 'diamond-outline', ledger: 'book-outline',
+};
 
-type Stage = { key: string; label: string; count: number; tone: Tone; route: string };
+// One coloured segment of a process row's description.
+type Seg = { text: string; tone?: string };
 
 export default function WorkScreen() {
   const router = useRouter();
@@ -34,289 +36,161 @@ export default function WorkScreen() {
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
 
-  const load = useCallback(async (silent?: boolean) => {
-    try {
-      setError('');
-      setData(await api.get<DashboardData>('/dashboard'));
-    } catch (e: any) {
-      if (!silent) setError(e?.detail || 'Failed to load');
-    } finally { setLoading(false); setRefreshing(false); }
+  const load = useCallback(async () => {
+    try { setError(''); setData(await api.get<DashboardData>('/dashboard')); }
+    catch (e: any) { setError(e?.detail || 'Failed to load'); }
+    finally { setLoading(false); }
   }, []);
-
   useFocusEffect(useCallback(() => { setLoading(true); load(); }, [load]));
 
   const go = (route: string) => router.push(route as any);
 
-  const showRepairs = hasModule('repairs');
-  const showSamples = hasModule('samples');
-  const showCash = hasModule('cash_book');
-  const showTasks = hasModule('tasks');
-  const showTeam = hasModule('attendance') || hasModule('payroll');
-  const showLedger = hasModule('ledger');
-  const showReports = hasModule('reports');
+  type Row = { key: string; title: string; icon: string; segs: Seg[]; badge?: number; route: string; show: boolean };
+  const rows: Row[] = data ? [
+    {
+      key: 'repairs', title: 'Repairs', icon: 'construct-outline', route: '/repairs', show: hasModule('repairs'),
+      badge: data.repairs_summary.ready || undefined,
+      segs: [
+        { text: `${data.repairs_summary.with_karigar} with karigar`, tone: 'hot' },
+        { text: ' · ' },
+        { text: `${data.repairs_summary.overdue} overdue`, tone: 'bad' },
+        { text: ' · ' },
+        { text: `${data.repairs_summary.ready} to bill` },
+      ],
+    },
+    {
+      key: 'stock', title: 'Stock In / Out', icon: 'diamond-outline', route: '/samples', show: hasModule('samples'),
+      segs: [
+        { text: `${data.samples_summary.with_karigar} samples out` },
+        { text: ' · ' },
+        { text: `${data.samples_summary.overdue} overdue`, tone: 'bad' },
+      ],
+    },
+    {
+      key: 'cash', title: 'Cash Book', icon: 'wallet-outline', route: '/cashbook', show: hasModule('cash_book'),
+      segs: [{ text: 'Closing ' }, { text: fmtINR(data.cashbook_summary.closing_balance), tone: 'strong' }],
+    },
+    {
+      key: 'tasks', title: 'Tasks', icon: 'checkbox-outline', route: '/tasks', show: hasModule('tasks'),
+      segs: [
+        { text: `${data.tasks_summary.due_today} due today` },
+        ...(data.tasks_summary.overdue > 0 ? [{ text: ' · ' }, { text: `${data.tasks_summary.overdue} overdue`, tone: 'bad' as const }] : []),
+      ],
+    },
+  ].filter((r) => r.show) : [];
 
-  const nothing = !showRepairs && !showSamples && !showCash && !showTasks && !showTeam && !showLedger && !showReports;
+  const recent = data?.recent_activity?.slice(0, 4) || [];
 
   return (
-    <Screen refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} testID="work-screen">
-      <Text style={styles.title}>Work</Text>
-      <Text style={styles.subtitle}>Everything you do, live.</Text>
+    <SafeAreaView style={styles.root} edges={['top']} testID="work-screen">
+      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        <Text style={styles.h1}>Work</Text>
+        <Text style={styles.sub}>What&apos;s in progress — and what to do next.</Text>
 
-      {loading && !data ? (
-        <WorkSkeleton />
-      ) : error ? (
-        <ErrorState message={error} onRetry={() => load()} testID="work-error" />
-      ) : data ? (
-        <>
-          {/* Repairs — pipeline with billing merged in (a Ready item is billed
-              in place via the Ready → bill flow, no separate destination). */}
-          {showRepairs && (
-            <Section
-              title="Repairs"
-              icon="construct-outline"
-              testID="work-repairs"
-              subtitle={data.repairs_summary.delivered_today > 0 ? `${data.repairs_summary.delivered_today} delivered today` : undefined}
-              right={<SeeAll onPress={() => go('/repairs')} />}
-            >
-              <PipelineBar
-                stages={[
-                  { key: 'received', label: 'Issue pending', count: data.repairs_summary.received, tone: 'neutral', route: '/repairs?filter=received' },
-                  { key: 'with_karigar', label: 'With karigar', count: data.repairs_summary.with_karigar, tone: 'info', route: '/repairs?filter=with_karigar' },
-                  { key: 'ready', label: 'Ready to bill', count: data.repairs_summary.ready, tone: 'success', route: '/repairs/bill?filter=ready' },
-                  { key: 'overdue', label: 'Overdue', count: data.repairs_summary.overdue, tone: 'error', route: '/repairs?filter=overdue' },
-                ]}
-                onGo={go}
-              />
-            </Section>
-          )}
+        <Pressable onPress={() => go('/repairs/search')} style={styles.search} testID="work-search">
+          <Ionicons name="search-outline" size={17} color={colors.mutedText} />
+          <Text style={styles.searchText}>Find a repair, sample or customer…</Text>
+        </Pressable>
 
-          {/* Stock In/Out */}
-          {showSamples && (
-            <Section
-              title="Stock In/Out"
-              icon="diamond-outline"
-              testID="work-samples"
-              subtitle={data.samples_summary.received_today > 0 ? `${data.samples_summary.received_today} returned today` : undefined}
-              right={<SeeAll onPress={() => go('/samples')} />}
-            >
-              <PipelineBar
-                stages={[
-                  { key: 'with_karigar', label: 'With karigar', count: data.samples_summary.with_karigar, tone: 'info', route: '/samples?status=with_karigar' },
-                  { key: 'overdue', label: 'Overdue', count: data.samples_summary.overdue, tone: 'error', route: '/samples?status=overdue' },
-                ]}
-                onGo={go}
-              />
-            </Section>
-          )}
-
-          {/* Cash Book — state + balance. (Close-day action is deferred; see
-              PR notes — it needs a per-counter day-close data model.) */}
-          {showCash && (
-            <Section title="Cash Book" icon="wallet-outline" testID="work-cashbook" right={<SeeAll onPress={() => go('/cashbook')} />}>
-              <Pressable onPress={() => go('/cashbook')} style={({ pressed }) => [styles.balanceCard, pressed && { opacity: 0.85 }]} testID="work-cashbook-card">
-                <View>
-                  <Text style={styles.balanceLabel}>Counter balance (all books)</Text>
-                  <Text style={styles.balanceValue}>{fmtINR(data.cashbook_summary.closing_balance)}</Text>
+        {loading && !data ? (
+          <View style={{ gap: spacing.sm, marginTop: spacing.lg }}>
+            {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} width="100%" height={72} radius={radius.md} />)}
+          </View>
+        ) : error ? (
+          <View style={{ marginTop: spacing.lg }}><ErrorState message={error} onRetry={load} /></View>
+        ) : (
+          <>
+            {rows.length > 0 && <Text style={styles.sectionLabel}>In progress</Text>}
+            {rows.map((r) => (
+              <Pressable key={r.key} onPress={() => go(r.route)} style={({ pressed }) => [styles.prow, pressed && { opacity: 0.85 }]} testID={`work-row-${r.key}`}>
+                <View style={styles.pi}><Ionicons name={r.icon as keyof typeof Ionicons.glyphMap} size={22} color={colors.brandSecondary} /></View>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={styles.pt}>{r.title}</Text>
+                  <Text style={styles.pd} numberOfLines={1}>
+                    {r.segs.map((s, i) => (
+                      <Text key={i} style={s.tone === 'hot' ? { color: colors.onWarning } : s.tone === 'bad' ? { color: colors.onError } : s.tone === 'strong' ? { color: colors.onSurface, fontWeight: '700' } : undefined}>
+                        {s.text}
+                      </Text>
+                    ))}
+                  </Text>
                 </View>
-                <View style={styles.balanceMeta}>
-                  <Text style={[styles.balanceMetaText, { color: colors.onSuccess }]}>+{fmtINR(data.cashbook_summary.received_today)}</Text>
-                  <Text style={[styles.balanceMetaText, { color: colors.onError }]}>−{fmtINR(data.cashbook_summary.paid_today)}</Text>
-                  <Text style={styles.balanceMetaSub}>today</Text>
-                </View>
+                {r.badge ? (
+                  <View style={styles.badge}><Text style={styles.badgeText}>{r.badge}</Text></View>
+                ) : (
+                  <Ionicons name="chevron-forward" size={18} color={colors.mutedText} />
+                )}
               </Pressable>
-            </Section>
-          )}
+            ))}
 
-          {/* Tasks */}
-          {showTasks && (
-            <Section title="Tasks" icon="checkbox-outline" testID="work-tasks" right={<SeeAll onPress={() => go('/tasks')} />}>
-              <PipelineBar
-                stages={[
-                  { key: 'due', label: 'Due today', count: data.tasks_summary.due_today, tone: 'info', route: '/tasks' },
-                  { key: 'overdue', label: 'Overdue', count: data.tasks_summary.overdue, tone: 'error', route: '/tasks' },
-                ]}
-                onGo={go}
-              />
-            </Section>
-          )}
-
-          {/* Payroll & Attendance — combined, low-frequency (weekly) team area. */}
-          {showTeam && (
-            <Section title="Payroll & attendance" icon="people-outline" testID="work-team">
-              <View style={styles.teamCard}>
-                {hasModule('attendance') && (
-                  <View style={styles.teamStatRow}>
-                    <Text style={styles.teamStatLabel}>Working now</Text>
-                    <Text style={styles.teamStatValue}>{data.todays_attendance.working} / {data.todays_attendance.total}</Text>
-                  </View>
-                )}
-                {hasModule('approvals') && (data.pending_approvals.attendance_corrections + data.pending_approvals.leave_requests) > 0 && (
-                  <View style={styles.teamStatRow}>
-                    <Text style={styles.teamStatLabel}>Approvals waiting</Text>
-                    <Text style={[styles.teamStatValue, { color: colors.onError }]}>{data.pending_approvals.attendance_corrections + data.pending_approvals.leave_requests}</Text>
-                  </View>
-                )}
-                <View style={styles.teamBtnRow}>
-                  {hasModule('attendance') && <TeamBtn icon="time-outline" label="Attendance" onPress={() => go('/(tabs)/attendance?from=work')} testID="work-team-attendance" />}
-                  {hasModule('payroll') && <TeamBtn icon="cash-outline" label="Payroll" onPress={() => go('/(tabs)/payroll?from=work')} testID="work-team-payroll" />}
-                  <TeamBtn icon="add-circle-outline" label="Advance / deduction" onPress={() => go('/(tabs)/employees?from=work')} testID="work-team-advance" />
+            {recent.length > 0 && (
+              <>
+                <Text style={styles.sectionLabel}>Recently recorded</Text>
+                <View style={styles.group}>
+                  {recent.map((r, i) => (
+                    <Pressable key={i} onPress={() => go(r.route)} style={({ pressed }) => [styles.li, i > 0 && styles.liBorder, pressed && { opacity: 0.7 }]} testID={`work-recent-${i}`}>
+                      <View style={styles.gi}><Ionicons name={RECENT_ICON[r.kind] || 'ellipse-outline'} size={15} color={colors.brandSecondary} /></View>
+                      <Text style={styles.gt} numberOfLines={1}>{r.label}</Text>
+                      <Ionicons name="chevron-forward" size={16} color={colors.mutedText} />
+                    </Pressable>
+                  ))}
                 </View>
+              </>
+            )}
+
+            {rows.length === 0 && recent.length === 0 && (
+              <View style={styles.empty}>
+                <Ionicons name="briefcase-outline" size={34} color={colors.mutedText} />
+                <Text style={styles.emptyText}>Nothing assigned to you yet.</Text>
               </View>
-            </Section>
-          )}
-
-          {/* Ledger — the unified dual-balance account list (v2 Phase 5). One
-              entity per account with a type; filters + statement live inside. */}
-          {(showLedger || showReports) && (
-            <Section title="Ledger" icon="book-outline" testID="work-ledger">
-              <View style={styles.ledgerRow}>
-                {showLedger && <LedgerBtn icon="book-outline" label="Open Ledger" onPress={() => go('/accounts')} testID="work-ledger-open" />}
-                {showLedger && <LedgerBtn icon="add-circle-outline" label="New account" onPress={() => go('/accounts/new')} testID="work-ledger-new" />}
-                {showReports && <LedgerBtn icon="document-text-outline" label="Reports & PDFs" onPress={() => go('/reports/generate')} testID="work-ledger-reports" />}
-              </View>
-            </Section>
-          )}
-
-          {nothing && (
-            <View style={styles.empty} testID="work-empty">
-              <Ionicons name="briefcase-outline" size={36} color={colors.mutedText} />
-              <Text style={styles.emptyText}>Nothing assigned to you yet. Ask the owner to grant you access.</Text>
-            </View>
-          )}
-
-          <View style={{ height: spacing.xxl }} />
-        </>
-      ) : null}
-    </Screen>
+            )}
+          </>
+        )}
+        <View style={{ height: spacing.xxl }} />
+      </ScrollView>
+    </SafeAreaView>
   );
 }
-
-/* ---------------- Pipeline bar ---------------- */
-function PipelineBar({ stages, onGo }: { stages: Stage[]; onGo: (route: string) => void }) {
-  const { colors } = useTheme();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
-  const tones = TONE_COLORS(colors);
-  return (
-    <View style={styles.pipeline}>
-      {stages.map((s, i) => {
-        // A zero count is muted so a live "Overdue" chip doesn't read as an
-        // alarm when there's nothing overdue — but the stage stays in place.
-        const t = s.count === 0 ? tones.neutral : tones[s.tone];
-        return (
-          <Pressable
-            key={s.key}
-            onPress={() => onGo(s.route)}
-            style={({ pressed }) => [styles.stage, { backgroundColor: t.bg, borderColor: t.border }, i > 0 && { marginLeft: 6 }, pressed && { opacity: 0.8 }]}
-            testID={`pipeline-${s.key}`}
-          >
-            <Text style={[styles.stageCount, { color: t.fg }]}>{s.count}</Text>
-            <Text style={[styles.stageLabel, { color: t.fg }]} numberOfLines={2}>{s.label}</Text>
-          </Pressable>
-        );
-      })}
-    </View>
-  );
-}
-
-function SeeAll({ onPress }: { onPress: () => void }) {
-  const { colors } = useTheme();
-  return <Pressable onPress={onPress} testID="work-see-all"><Text style={{ color: colors.brandSecondary, fontSize: 12, fontWeight: '700' }}>See all</Text></Pressable>;
-}
-
-function TeamBtn({ icon, label, onPress, testID }: { icon: keyof typeof Ionicons.glyphMap; label: string; onPress: () => void; testID?: string }) {
-  const { colors } = useTheme();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
-  return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.teamBtn, pressed && { opacity: 0.8 }]} testID={testID}>
-      <Ionicons name={icon} size={16} color={colors.brandSecondary} />
-      <Text style={styles.teamBtnText} numberOfLines={1}>{label}</Text>
-    </Pressable>
-  );
-}
-
-function LedgerBtn({ icon, label, onPress, testID }: { icon: keyof typeof Ionicons.glyphMap; label: string; onPress: () => void; testID?: string }) {
-  const { colors } = useTheme();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
-  return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.ledgerBtn, pressed && { opacity: 0.8 }]} testID={testID}>
-      <View style={styles.ledgerIcon}><Ionicons name={icon} size={18} color={colors.brandPrimary} /></View>
-      <Text style={styles.ledgerBtnText} numberOfLines={1}>{label}</Text>
-    </Pressable>
-  );
-}
-
-function WorkSkeleton() {
-  return (
-    <View style={{ gap: spacing.lg }}>
-      {Array.from({ length: 3 }).map((_, i) => (
-        <View key={i} style={{ gap: spacing.sm }}>
-          <Skeleton width="35%" height={14} />
-          <Skeleton width="100%" height={64} radius={radius.md} />
-        </View>
-      ))}
-    </View>
-  );
-}
-
-const TONE_COLORS = (colors: ThemeColors): Record<Tone, { bg: string; border: string; fg: string }> => ({
-  neutral: { bg: colors.surfaceSecondary, border: colors.border, fg: colors.onSurface },
-  brand: { bg: colors.brandTertiary, border: colors.brand, fg: colors.brandSecondary },
-  success: { bg: colors.success, border: colors.success, fg: colors.onSuccess },
-  warning: { bg: colors.warning, border: colors.warning, fg: colors.onWarning },
-  error: { bg: colors.error, border: colors.error, fg: colors.onError },
-  info: { bg: colors.info, border: colors.info, fg: colors.onInfo },
-});
 
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
-  title: { color: colors.onSurface, fontSize: 28, fontWeight: '600', fontFamily: fonts.display, marginBottom: 4 },
-  subtitle: { color: colors.mutedText, fontSize: 12, marginBottom: spacing.lg },
+  root: { flex: 1, backgroundColor: colors.surface },
+  scroll: { padding: spacing.lg, paddingBottom: spacing.xxxl },
+  h1: { color: colors.onSurface, fontSize: 30, fontWeight: '700', fontFamily: fonts.display, letterSpacing: -0.5 },
+  sub: { color: colors.onSurfaceSecondary, fontSize: 15, marginTop: 6 },
 
-  pipeline: { flexDirection: 'row' },
-  stage: {
-    flex: 1, borderRadius: radius.md, borderWidth: 1,
-    paddingVertical: 12, paddingHorizontal: 8, alignItems: 'center', justifyContent: 'center',
-  },
-  stageCount: { fontSize: 20, fontWeight: '800', fontFamily: fonts.display },
-  stageLabel: { fontSize: 10.5, fontWeight: '600', textAlign: 'center', marginTop: 2, opacity: 0.9 },
-
-  balanceCard: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+  search: {
+    flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: spacing.lg,
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
-    padding: spacing.md,
+    paddingHorizontal: spacing.md, height: 46,
   },
-  balanceLabel: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '600' },
-  balanceValue: { color: colors.onSurface, fontSize: 22, fontWeight: '800', fontFamily: fonts.display, marginTop: 3 },
-  balanceMeta: { alignItems: 'flex-end' },
-  balanceMetaText: { fontSize: 12.5, fontWeight: '800' },
-  balanceMetaSub: { color: colors.mutedText, fontSize: 10, marginTop: 1 },
+  searchText: { color: colors.mutedText, fontSize: 15 },
 
-  teamCard: {
+  sectionLabel: {
+    color: colors.mutedText, fontSize: 12, fontWeight: '700', letterSpacing: 0.8, textTransform: 'uppercase',
+    marginTop: spacing.xl, marginBottom: spacing.md,
+  },
+
+  prow: {
+    flexDirection: 'row', alignItems: 'center', gap: 14,
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
-    padding: spacing.md, gap: spacing.sm,
+    padding: spacing.md, marginBottom: spacing.sm,
   },
-  teamStatRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  teamStatLabel: { color: colors.onSurfaceSecondary, fontSize: 13 },
-  teamStatValue: { color: colors.onSurface, fontSize: 15, fontWeight: '800' },
-  teamBtnRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: 2 },
-  teamBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 6, flexGrow: 1, justifyContent: 'center',
-    backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
-    paddingVertical: 10, paddingHorizontal: spacing.sm,
+  pi: { width: 46, height: 46, borderRadius: 13, backgroundColor: colors.surfaceTertiary, alignItems: 'center', justifyContent: 'center' },
+  pt: { color: colors.onSurface, fontSize: 17, fontWeight: '600' },
+  pd: { color: colors.mutedText, fontSize: 13.5, marginTop: 3 },
+  badge: {
+    minWidth: 22, height: 22, borderRadius: 11, paddingHorizontal: 6,
+    backgroundColor: colors.brandPrimary, alignItems: 'center', justifyContent: 'center',
   },
-  teamBtnText: { color: colors.onSurface, fontSize: 12.5, fontWeight: '700' },
+  badgeText: { color: colors.onBrandPrimary, fontSize: 12, fontWeight: '800' },
 
-  ledgerRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  ledgerBtn: {
-    flexBasis: '47%', flexGrow: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
-    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
-    padding: spacing.md,
-  },
-  ledgerIcon: { width: 34, height: 34, borderRadius: 17, backgroundColor: colors.brandTertiary, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.brand },
-  ledgerBtnText: { flex: 1, color: colors.onSurface, fontSize: 13, fontWeight: '700' },
+  group: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' },
+  li: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 13, paddingHorizontal: spacing.md },
+  liBorder: { borderTopWidth: 1, borderTopColor: colors.divider },
+  gi: { width: 30, height: 30, borderRadius: 9, backgroundColor: colors.surfaceTertiary, alignItems: 'center', justifyContent: 'center' },
+  gt: { flex: 1, color: colors.onSurface, fontSize: 15, fontWeight: '500' },
 
-  empty: { alignItems: 'center', justifyContent: 'center', gap: spacing.sm, paddingVertical: spacing.xxxl, paddingHorizontal: spacing.xl },
-  emptyText: { color: colors.onSurfaceTertiary, textAlign: 'center' },
+  empty: { alignItems: 'center', justifyContent: 'center', gap: spacing.sm, paddingVertical: spacing.xxxl },
+  emptyText: { color: colors.onSurfaceTertiary },
 });

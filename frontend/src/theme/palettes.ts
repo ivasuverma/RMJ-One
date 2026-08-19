@@ -35,35 +35,37 @@ export type ThemeColors = {
   mutedText: string;
 };
 
-// Light — near-white, neutral gray surfaces. Gold shows up only on primary
-// buttons, active tab state, and key highlights, not as a background tint.
+// Light — a warm ivory counterpart to the dark comp: soft off-white canvas,
+// white cards, warm gold accents, and the same tinted-background + saturated-
+// text tone pairs (darkened for contrast on a light surface) so the two
+// themes feel like the same product in different light.
 export const lightColors: ThemeColors = {
-  surface: '#FAFAF9',
-  onSurface: '#1C1C1A',
+  surface: '#F7F5F0',
+  onSurface: '#1A1915',
   surfaceSecondary: '#FFFFFF',
-  onSurfaceSecondary: '#2E2E2B',
-  surfaceTertiary: '#F1F0EC',
-  onSurfaceTertiary: '#6E6D66',
-  surfaceInverse: '#1C1C1A',
-  onSurfaceInverse: '#FAFAF9',
-  brand: '#B8863B',
-  brandPrimary: '#B8863B',
+  onSurfaceSecondary: '#565349',
+  surfaceTertiary: '#F0EDE6',
+  onSurfaceTertiary: '#8B887E',
+  surfaceInverse: '#1A1915',
+  onSurfaceInverse: '#F7F5F0',
+  brand: '#A9812F',
+  brandPrimary: '#A9812F',
   onBrandPrimary: '#FFFFFF',
-  brandSecondary: '#8A6526',
-  brandTertiary: '#EFEEE9',
-  onBrandTertiary: '#57564F',
-  success: '#EAF6EA',
-  onSuccess: '#1F6B33',
-  warning: '#FBF3E4',
-  onWarning: '#8A5A0B',
-  error: '#FBEAEA',
-  onError: '#8A2323',
-  info: '#E7F0F7',
-  onInfo: '#1E4E70',
-  border: '#E6E5E0',
-  borderStrong: '#D6D5CE',
-  divider: '#EDECE7',
-  mutedText: '#8B8A82',
+  brandSecondary: '#7E5E22',
+  brandTertiary: '#F3EEE2',
+  onBrandTertiary: '#7E5E22',
+  success: 'rgba(47,125,81,0.12)',
+  onSuccess: '#2C7A4E',
+  warning: 'rgba(154,107,18,0.13)',
+  onWarning: '#8A5E12',
+  error: 'rgba(178,58,46,0.11)',
+  onError: '#B23A2E',
+  info: 'rgba(58,110,165,0.11)',
+  onInfo: '#3A6EA5',
+  border: 'rgba(20,18,12,0.09)',
+  borderStrong: 'rgba(20,18,12,0.15)',
+  divider: 'rgba(20,18,12,0.075)',
+  mutedText: '#8B887E',
 };
 
 // Dark — the "RMJ One" signature look (matches the v2 design comp): a

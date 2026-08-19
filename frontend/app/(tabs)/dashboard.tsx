@@ -153,31 +153,26 @@ export default function DashboardScreen() {
           {/* 1. Needs-attention briefing */}
           <NeedsAttention items={attnItems} onGo={(r) => router.push(r as any)} />
 
-          {/* 2. Glance stats — a dual gold+cash card + up to 3 headline tiles */}
-          <Section title="At a glance" icon="stats-chart-outline" testID="section-glance">
-            {showCashTile && (
-              <View style={styles.dualCard} testID="glance-dual">
-                <Text style={styles.dualLabel}>Cash & gold position</Text>
-                <DualBalance
-                  amount={data.cashbook_summary.closing_balance}
-                  fineGrams={data.business_summary.fine_with_karigars}
-                  negativeLabel="paid out"
-                />
-                <Text style={styles.dualHint}>Counter balance across all cash books · fine gold out with karigars</Text>
-              </View>
+          {/* 2. Today at a glance — a 2-col grid of stat cards (mockup layout) */}
+          <Text style={styles.glanceHeading}>Today at a glance</Text>
+          <View style={styles.glanceGrid} testID="section-glance">
+            {showAttendanceTile && (
+              <GlanceCard icon="time-outline" label="Working now" value={data.todays_attendance.present} suffix={` / ${data.todays_attendance.total}`}
+                sub={`${data.todays_attendance.not_checked_in} not checked in`} onPress={() => router.push('/(tabs)/attendance?filter=present' as any)} testID="glance-present" />
             )}
-            <View style={styles.tileRow}>
-              {showAttendanceTile && (
-                <CountTile icon="people-outline" label="Present today" value={data.todays_attendance.present} suffix={` / ${data.todays_attendance.total}`} tone="success" onPress={() => router.push('/(tabs)/attendance?filter=present' as any)} testID="glance-present" />
-              )}
-              {showRepairsTile && (
-                <CountTile icon="construct-outline" label="Repairs open" value={data.repairs_summary.total_open} tone="brand" onPress={() => router.push('/repairs' as any)} testID="glance-repairs" />
-              )}
-              {showRevenueTile && (
-                <MoneyTile icon="trending-up-outline" label="Revenue (month)" value={data.business_summary.revenue_month} tone="info" testID="glance-revenue" />
-              )}
-            </View>
-          </Section>
+            {showCashTile && (
+              <GlanceCard icon="wallet-outline" label="Cash closing" value={data.cashbook_summary.closing_balance} money gold
+                sub="across all counters" onPress={() => router.push('/cashbook' as any)} testID="glance-cash" />
+            )}
+            {showRepairsTile && (
+              <GlanceCard icon="construct-outline" label="Open repairs" value={data.repairs_summary.total_open}
+                sub={data.repairs_summary.overdue > 0 ? `${data.repairs_summary.overdue} overdue` : 'none overdue'} onPress={() => router.push('/repairs' as any)} testID="glance-repairs" />
+            )}
+            {hasModule('samples') && (
+              <GlanceCard icon="diamond-outline" label="Samples out" value={data.samples_summary.with_karigar}
+                sub={data.samples_summary.overdue > 0 ? `${data.samples_summary.overdue} overdue` : 'none overdue'} onPress={() => router.push('/samples?status=with_karigar' as any)} testID="glance-samples" />
+            )}
+          </View>
 
           {/* 3. Approvals + Leave */}
           {hasModule('approvals') && (
@@ -268,19 +263,25 @@ function NeedsAttention({ items, onGo }: { items: AttnItem[]; onGo: (route: stri
   );
 }
 
-/* ---------------- Count-up stat tiles ---------------- */
-function CountTile({ icon, label, value, suffix, tone, onPress, testID }: {
-  icon: keyof typeof import('@expo/vector-icons').Ionicons.glyphMap; label: string; value: number; suffix?: string; tone: Tone; onPress?: () => void; testID?: string;
+/* ---------------- Glance stat card (2-col grid, mockup layout) ---------------- */
+function GlanceCard({ icon, label, value, suffix, sub, money, gold, onPress, testID }: {
+  icon: keyof typeof Ionicons.glyphMap; label: string; value: number; suffix?: string; sub: string;
+  money?: boolean; gold?: boolean; onPress?: () => void; testID?: string;
 }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const display = useCountUp(value);
-  return <StatTile icon={icon} label={label} value={`${Math.round(display)}${suffix || ''}`} tone={tone} onPress={onPress} basis="30%" testID={testID} />;
-}
-
-function MoneyTile({ icon, label, value, tone, onPress, testID }: {
-  icon: keyof typeof import('@expo/vector-icons').Ionicons.glyphMap; label: string; value: number; tone: Tone; onPress?: () => void; testID?: string;
-}) {
-  const display = useCountUp(value);
-  return <StatTile icon={icon} label={label} value={fmtINR(display)} tone={tone} onPress={onPress} basis="30%" testID={testID} />;
+  const shown = money ? fmtINR(display) : `${Math.round(display)}${suffix || ''}`;
+  return (
+    <Pressable onPress={onPress} testID={testID} style={({ pressed }) => [styles.glanceCard, pressed && { opacity: 0.85 }]}>
+      <View style={styles.glanceLabelRow}>
+        <Ionicons name={icon} size={13} color={colors.mutedText} />
+        <Text style={styles.glanceLabel} numberOfLines={1}>{label}</Text>
+      </View>
+      <Text style={[styles.glanceValue, gold && { color: colors.brandSecondary }]} numberOfLines={1}>{shown}</Text>
+      <Text style={styles.glanceSub} numberOfLines={1}>{sub}</Text>
+    </Pressable>
+  );
 }
 
 /* ---------------- Approvals + Leave ---------------- */
@@ -581,14 +582,18 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   allClearTitle: { color: colors.onSuccess, fontSize: 15, fontWeight: '800' },
   allClearSub: { color: colors.onSuccess, fontSize: 12, marginTop: 1, opacity: 0.9 },
 
-  // Glance
-  dualCard: {
+  // Glance — 2-col grid of stat cards
+  glanceHeading: { color: colors.mutedText, fontSize: 12, fontWeight: '700', letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: spacing.sm, marginTop: 2 },
+  glanceGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.xl },
+  glanceCard: {
+    flexBasis: '47.5%', flexGrow: 1, minWidth: 140,
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
-    padding: spacing.md, marginBottom: spacing.sm,
+    padding: spacing.md,
   },
-  dualLabel: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '700', marginBottom: 8 },
-  dualHint: { color: colors.mutedText, fontSize: 10.5, marginTop: 8 },
-  tileRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
+  glanceLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  glanceLabel: { color: colors.onSurfaceSecondary, fontSize: 13, fontWeight: '600', flexShrink: 1 },
+  glanceValue: { color: colors.onSurface, fontSize: 27, fontWeight: '800', fontFamily: fonts.display, marginTop: 8, letterSpacing: -0.5 },
+  glanceSub: { color: colors.mutedText, fontSize: 12, marginTop: 2 },
 
   seeAll: { color: colors.brandSecondary, fontSize: 12, fontWeight: '700' },
 
