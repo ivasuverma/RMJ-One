@@ -89,6 +89,35 @@ export default function WorkScreen() {
           <Text style={styles.searchText}>Find a repair, sample or customer…</Text>
         </Pressable>
 
+        {/* Reports — always visible, independent of the live process board below. */}
+        <Text style={styles.sectionLabel}>Reports</Text>
+        <View style={styles.group}>
+          <Pressable onPress={() => go('/accounts')} style={({ pressed }) => [styles.li, pressed && { opacity: 0.7 }]} testID="work-ledger">
+            <View style={styles.gi}><Ionicons name="book-outline" size={15} color={colors.brandSecondary} /></View>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={styles.gt} numberOfLines={1}>Unified Ledger</Text>
+              <Text style={styles.gtSub} numberOfLines={1}>Fine gold & cash across every account</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={colors.mutedText} />
+          </Pressable>
+          <Pressable onPress={() => go('/reports/customer-ledger')} style={({ pressed }) => [styles.li, styles.liBorder, pressed && { opacity: 0.7 }]} testID="work-customer-ledger">
+            <View style={styles.gi}><Ionicons name="person-outline" size={15} color={colors.brandSecondary} /></View>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={styles.gt} numberOfLines={1}>Customer Ledger</Text>
+              <Text style={styles.gtSub} numberOfLines={1}>Balances by customer</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={colors.mutedText} />
+          </Pressable>
+          <Pressable onPress={() => go('/reports/karigar-ledger')} style={({ pressed }) => [styles.li, styles.liBorder, pressed && { opacity: 0.7 }]} testID="work-karigar-ledger">
+            <View style={styles.gi}><Ionicons name="hammer-outline" size={15} color={colors.brandSecondary} /></View>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={styles.gt} numberOfLines={1}>Karigar Ledger</Text>
+              <Text style={styles.gtSub} numberOfLines={1}>Gold & cash owed to karigars</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={colors.mutedText} />
+          </Pressable>
+        </View>
+
         {loading && !data ? (
           <View style={{ gap: spacing.sm, marginTop: spacing.lg }}>
             {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} width="100%" height={72} radius={radius.md} />)}
@@ -119,26 +148,10 @@ export default function WorkScreen() {
               </Pressable>
             ))}
 
-            {hasModule('ledger') && (
-              <>
-                <Text style={styles.sectionLabel}>Reports</Text>
-                <View style={styles.group}>
-                  <Pressable onPress={() => go('/accounts')} style={({ pressed }) => [styles.li, pressed && { opacity: 0.7 }]} testID="work-ledger">
-                    <View style={styles.gi}><Ionicons name="book-outline" size={15} color={colors.brandSecondary} /></View>
-                    <View style={{ flex: 1, minWidth: 0 }}>
-                      <Text style={styles.gt} numberOfLines={1}>Unified Ledger</Text>
-                      <Text style={styles.gtSub} numberOfLines={1}>Fine gold & cash across every account</Text>
-                    </View>
-                    <Ionicons name="chevron-forward" size={16} color={colors.mutedText} />
-                  </Pressable>
-                </View>
-              </>
-            )}
-
-            {rows.length === 0 && !hasModule('ledger') && (
+            {rows.length === 0 && (
               <View style={styles.empty}>
                 <Ionicons name="briefcase-outline" size={34} color={colors.mutedText} />
-                <Text style={styles.emptyText}>Nothing assigned to you yet.</Text>
+                <Text style={styles.emptyText}>Nothing in progress right now.</Text>
               </View>
             )}
           </>
