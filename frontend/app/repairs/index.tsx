@@ -4,8 +4,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { api } from '@/src/api/client';
-import { REPAIR_STATUS_LABEL, repairStatusColors, RepairItemStatus } from '@/src/utils/repairStatus';
-import { istDate, todayIST } from '@/src/utils/datetime';
+import { REPAIR_STATUS_LABEL, RepairItemStatus } from '@/src/utils/repairStatus';
+import { todayIST } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
@@ -14,17 +14,19 @@ type Item = {
   status: RepairItemStatus; karigar_name: string | null;
   gross_weight: number; due_date: string | null; created_at: string; created_by?: string;
 };
+type Pipe = { received: number; with_karigar: number; ready: number; overdue: number; total_open?: number };
 
 type FilterKey = 'all' | RepairItemStatus | 'overdue';
+const FILTER_KEYS = new Set<FilterKey>(['all', 'received', 'with_karigar', 'ready', 'overdue', 'pending_delivery', 'delivered']);
 
-const FILTERS: { key: FilterKey; label: string; icon: any }[] = [
-  { key: 'all', label: 'All', icon: 'apps-outline' },
-  { key: 'received', label: 'Issue Pending', icon: 'cube-outline' },
-  { key: 'with_karigar', label: 'With Karigar', icon: 'hammer-outline' },
-  { key: 'overdue', label: 'Overdue', icon: 'alert-circle-outline' },
+// The four pipeline stages, in flow order, each with the tone used for its
+// little progress bar + count. Tapping a stage filters the list below.
+const STAGES: { key: FilterKey; label: string; tone: 'info' | 'warn' | 'good' | 'bad'; countKey: keyof Pipe }[] = [
+  { key: 'received', label: 'Received', tone: 'info', countKey: 'received' },
+  { key: 'with_karigar', label: 'With\nkarigar', tone: 'warn', countKey: 'with_karigar' },
+  { key: 'ready', label: 'Ready\nto bill', tone: 'good', countKey: 'ready' },
+  { key: 'overdue', label: 'Overdue', tone: 'bad', countKey: 'overdue' },
 ];
-
-const FILTER_KEYS = new Set(FILTERS.map((f) => f.key));
 
 export default function RepairOrdersScreen() {
   const router = useRouter();
@@ -32,217 +34,150 @@ export default function RepairOrdersScreen() {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [items, setItems] = useState<Item[]>([]);
+  const [pipe, setPipe] = useState<Pipe | null>(null);
   const initialFilter = (routeFilter && FILTER_KEYS.has(routeFilter as FilterKey) ? routeFilter : 'received') as FilterKey;
   const [filter, setFilter] = useState<FilterKey>(initialFilter);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [selectMode, setSelectMode] = useState(false);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  // Only auto-fall-back from the default "Issue Pending" tab to "With
-  // Karigar" once, the first time the screen opens with no explicit
-  // ?filter= — a user who deliberately taps back to "Issue Pending" and
-  // finds it empty should just see the empty state, not get bounced away.
   const triedFallbackRef = useRef(!!routeFilter);
 
   const load = useCallback(async (f: FilterKey) => {
     try {
+      api.get<Pipe>('/repairs/dashboard').then(setPipe).catch(() => {});
       const res = await api.get<Item[]>(`/repair-items?status=${f}`);
       if (f === 'received' && res.length === 0 && !triedFallbackRef.current) {
         triedFallbackRef.current = true;
-        setFilter('with_karigar'); // triggers the focus effect to reload; stay in the loading state until then
+        setFilter('with_karigar');
         return;
       }
       setItems(res);
-      setRefreshing(false); setLoading(false);
-    }
-    catch (_e) { setItems([]); setRefreshing(false); setLoading(false); }
+    } catch (_e) { setItems([]); }
+    finally { setRefreshing(false); setLoading(false); }
   }, []);
   useFocusEffect(useCallback(() => { load(filter); }, [load, filter]));
 
   const todayISO = todayIST();
-  const activeFilter = FILTERS.find((f) => f.key === filter)!;
-
-  // Bulk issue/receive is only meaningful for a single, unambiguous action —
-  // scope it to when the list is filtered down to exactly one bulk-actionable status.
-  const bulkAction: 'issue' | 'receive' | null = filter === 'received' ? 'issue' : filter === 'with_karigar' ? 'receive' : null;
-
-  const exitSelect = () => { setSelectMode(false); setSelectedIds(new Set()); };
-  const toggleSelected = (itemId: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(itemId)) next.delete(itemId); else next.add(itemId);
-      return next;
-    });
-  };
-  const goBulk = () => {
-    if (!bulkAction || selectedIds.size === 0) return;
-    const ids = Array.from(selectedIds).join(',');
-    const path = bulkAction === 'issue' ? '/repairs/item/issue' : '/repairs/item/receive';
-    router.push({ pathname: path, params: { itemIds: ids } } as any);
-    exitSelect();
-  };
+  const totalOpen = pipe ? (pipe.received + pipe.with_karigar + pipe.ready) : items.length;
+  const toneColor = (t: string) => (t === 'info' ? colors.onInfo : t === 'warn' ? colors.onWarning : t === 'good' ? colors.onSuccess : colors.onError);
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="repairs-screen">
-      <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
-          <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-        </Pressable>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.title}>Repair</Text>
-          {!loading && <Text style={styles.subtitle}>{items.length} tag{items.length === 1 ? '' : 's'} · {activeFilter.label}</Text>}
-        </View>
-        {selectMode ? (
-          <Pressable onPress={exitSelect} style={styles.iconBtn} testID="cancel-select-btn" hitSlop={12}>
-            <Ionicons name="close" size={20} color={colors.onSurface} />
-          </Pressable>
-        ) : bulkAction ? (
-          <Pressable onPress={() => setSelectMode(true)} style={[styles.iconBtn, styles.selectBtn]} testID="select-mode-btn" hitSlop={12}>
-            <Ionicons name="checkbox-outline" size={20} color={colors.onSurface} />
-          </Pressable>
-        ) : null}
-        <Pressable onPress={() => router.push('/repairs/new' as any)} style={[styles.iconBtn, styles.addBtn]} testID="new-repair-btn" hitSlop={12}>
-          <Ionicons name="add" size={22} color={colors.onBrandPrimary} />
-        </Pressable>
-      </View>
-
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll} contentContainerStyle={styles.filterRow}>
-        {FILTERS.map((f) => (
-          <Pressable
-            key={f.key}
-            onPress={() => { setLoading(true); setFilter(f.key); exitSelect(); }}
-            style={[styles.filterChip, filter === f.key && styles.filterChipActive]}
-            testID={`filter-${f.key}`}
-          >
-            <Ionicons name={f.icon} size={13} color={filter === f.key ? colors.onBrandPrimary : colors.onSurfaceSecondary} />
-            <Text style={[styles.filterText, filter === f.key && styles.filterTextActive]}>{f.label}</Text>
-          </Pressable>
-        ))}
-      </ScrollView>
-
       <ScrollView
-        contentContainerStyle={{ padding: spacing.lg, paddingTop: spacing.sm, paddingBottom: selectMode ? 90 : spacing.lg }}
+        contentContainerStyle={styles.scroll}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(filter); }} tintColor={colors.brandPrimary} />}
       >
-        {loading ? (
-          <ActivityIndicator color={colors.brandPrimary} style={{ marginTop: 40 }} />
-        ) : items.length === 0 ? (
-          <View style={styles.empty}><Ionicons name="construct-outline" size={36} color={colors.mutedText} /><Text style={styles.emptyText}>No repairs found for this filter</Text></View>
-        ) : items.map((i) => {
-          const isOverdue = !!i.due_date && i.due_date < todayISO && i.status !== 'delivered' && i.status !== 'pending_delivery';
-          const sc = repairStatusColors(i.status, colors);
-          const checked = selectedIds.has(i.id);
-          const createdDate = istDate(i.created_at);
-          const metaBits = [
-            `Created ${createdDate}`,
-            i.due_date ? `Due ${i.due_date}` : null,
-            i.karigar_name || null,
-            i.created_by ? `by ${i.created_by}` : null,
-          ].filter(Boolean);
-          return (
-            <Pressable
-              key={i.id}
-              onPress={() => (selectMode ? toggleSelected(i.id) : router.push(`/repairs/item/${i.id}` as any))}
-              style={[styles.card, selectMode && checked && styles.cardSelected]}
-              testID={`item-${i.id}`}
-            >
-              <View style={styles.cardTopRow}>
-                {selectMode && (
-                  <View style={[styles.checkbox, checked && styles.checkboxOn]}>
-                    {checked && <Ionicons name="checkmark" size={14} color={colors.onBrandPrimary} />}
-                  </View>
-                )}
-                <Text style={styles.cName} numberOfLines={1}>{i.customer_name}</Text>
-                <View style={[styles.statusBadge, isOverdue ? { backgroundColor: colors.error, borderColor: colors.onError } : { backgroundColor: sc.bg, borderColor: sc.border }]}>
-                  <Text style={[styles.statusText, isOverdue ? { color: colors.onError } : { color: sc.fg }]}>{isOverdue ? 'Overdue' : REPAIR_STATUS_LABEL[i.status]}</Text>
-                </View>
-              </View>
-
-              <Text style={styles.cItem} numberOfLines={1}>{i.description}</Text>
-
-              <View style={styles.cardSubRow}>
-                <Text style={styles.cTag} numberOfLines={1}>{i.item_code}</Text>
-                <Text style={styles.cWeight}>{i.gross_weight.toFixed(3)}g</Text>
-              </View>
-
-              <Text style={[styles.cMeta, isOverdue && { color: colors.onError, fontWeight: '700' }]}>
-                {metaBits.join('  ·  ')}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </ScrollView>
-
-      {selectMode && bulkAction && (
-        <View style={styles.bulkBar}>
-          <Text style={styles.bulkBarText}>{selectedIds.size} selected</Text>
-          <Pressable onPress={goBulk} disabled={selectedIds.size === 0} style={[styles.bulkBtn, selectedIds.size === 0 && { opacity: 0.5 }]} testID="bulk-action-btn">
-            <Ionicons name={bulkAction === 'issue' ? 'arrow-redo-outline' : 'arrow-undo-outline'} size={16} color={colors.onBrandPrimary} />
-            <Text style={styles.bulkBtnText}>{bulkAction === 'issue' ? 'Issue' : 'Receive'} {selectedIds.size || ''} Tag{selectedIds.size === 1 ? '' : 's'}</Text>
+        <Pressable onPress={() => router.back()} style={styles.backRow} testID="back-btn" hitSlop={8}>
+          <Ionicons name="chevron-back" size={18} color={colors.brandPrimary} />
+          <Text style={styles.backText}>Work</Text>
+        </Pressable>
+        <View style={styles.titleRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.h1}>Repairs</Text>
+            <Text style={styles.sub}>Create, track and bill — all in one place.</Text>
+          </View>
+          <Pressable onPress={() => router.push('/repairs/new' as any)} style={styles.addBtn} testID="new-repair-btn" hitSlop={10}>
+            <Ionicons name="add" size={22} color={colors.onBrandPrimary} />
           </Pressable>
         </View>
-      )}
+
+        {/* Pipeline bar */}
+        <View style={styles.pipe}>
+          <Text style={styles.pipeHead}>Pipeline · {totalOpen} open</Text>
+          <View style={styles.stages}>
+            {STAGES.map((s) => {
+              const active = filter === s.key;
+              const count = pipe ? (pipe[s.countKey] as number) : 0;
+              return (
+                <Pressable key={s.key} style={styles.stage} onPress={() => { setLoading(true); setFilter(s.key); }} testID={`stage-${s.key}`}>
+                  <View style={styles.stageBar}>
+                    <View style={{ height: '100%', borderRadius: 3, backgroundColor: toneColor(s.tone), width: active ? '100%' : count > 0 ? '55%' : '18%', opacity: active ? 1 : 0.65 }} />
+                  </View>
+                  <Text style={[styles.stageNum, active && { color: toneColor(s.tone) }]}>{count}</Text>
+                  <Text style={styles.stageLbl}>{s.label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+
+        <Text style={styles.sectionLabel}>Items</Text>
+        {loading ? (
+          <ActivityIndicator color={colors.brandPrimary} style={{ marginTop: 30 }} />
+        ) : items.length === 0 ? (
+          <View style={styles.empty}><Ionicons name="construct-outline" size={34} color={colors.mutedText} /><Text style={styles.emptyText}>No repairs in this stage</Text></View>
+        ) : items.map((i) => {
+          const isOverdue = !!i.due_date && i.due_date < todayISO && i.status !== 'delivered' && i.status !== 'pending_delivery';
+          const pill = isOverdue ? { label: 'Overdue', tone: 'bad' } : i.status === 'ready' ? { label: 'Ready', tone: 'good' } : i.status === 'with_karigar' ? { label: 'Karigar', tone: 'warn' } : i.status === 'received' ? { label: 'Received', tone: 'info' } : { label: REPAIR_STATUS_LABEL[i.status], tone: 'info' };
+          const pillFg = toneColor(pill.tone === 'bad' ? 'bad' : pill.tone === 'good' ? 'good' : pill.tone === 'warn' ? 'warn' : 'info');
+          const pillBg = pill.tone === 'bad' ? colors.error : pill.tone === 'good' ? colors.success : pill.tone === 'warn' ? colors.warning : colors.info;
+          const canBill = i.status === 'ready';
+          return (
+            <View key={i.id} style={styles.item} testID={`item-${i.id}`}>
+              <View style={styles.itemTop}>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={styles.code}>{i.item_code}</Text>
+                  <Text style={styles.cust} numberOfLines={1}>{i.customer_name} — {i.description}</Text>
+                </View>
+                <View style={[styles.pill, { backgroundColor: pillBg }]}><Text style={[styles.pillText, { color: pillFg }]}>{pill.label}</Text></View>
+              </View>
+              <View style={styles.actRow}>
+                {canBill && (
+                  <Pressable onPress={() => router.push(`/repairs/bill?itemId=${i.id}` as any)} style={[styles.btn, styles.btnPri]} testID={`bill-${i.id}`}>
+                    <Text style={styles.btnPriText}>Create bill</Text>
+                  </Pressable>
+                )}
+                <Pressable onPress={() => router.push(`/repairs/item/${i.id}` as any)} style={[styles.btn, styles.btnGhost]} testID={`open-${i.id}`}>
+                  <Text style={styles.btnGhostText}>{canBill ? 'Open' : 'Open item'}</Text>
+                </Pressable>
+              </View>
+            </View>
+          );
+        })}
+        <View style={{ height: spacing.xxl }} />
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
-  header: {
-    flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md, gap: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.divider,
-  },
-  iconBtn: {
-    width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surfaceSecondary,
-    alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border,
-  },
-  addBtn: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
-  selectBtn: { marginLeft: spacing.sm },
-  title: { color: colors.onSurface, fontSize: 20, fontWeight: '600', fontFamily: fonts.display },
-  subtitle: { color: colors.mutedText, fontSize: 11, marginTop: 2 },
+  scroll: { padding: spacing.lg, paddingBottom: spacing.xxxl },
 
-  filterScroll: { flexGrow: 0, flexShrink: 0 },
-  filterRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: 2 },
-  filterChip: {
-    flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 5,
-    paddingHorizontal: spacing.md, paddingVertical: 8, borderRadius: radius.pill,
-    backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border,
-  },
-  filterChipActive: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
-  filterText: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '700' },
-  filterTextActive: { color: colors.onBrandPrimary },
+  backRow: { flexDirection: 'row', alignItems: 'center', gap: 2, marginBottom: 6 },
+  backText: { color: colors.brandPrimary, fontSize: 16, fontWeight: '500' },
+  titleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
+  h1: { color: colors.onSurface, fontSize: 32, fontWeight: '700', fontFamily: fonts.display, letterSpacing: -0.5 },
+  sub: { color: colors.onSurfaceSecondary, fontSize: 15, marginTop: 6 },
+  addBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.brandPrimary, alignItems: 'center', justifyContent: 'center' },
 
+  pipe: {
+    backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border,
+    padding: spacing.md, marginTop: spacing.lg,
+  },
+  pipeHead: { color: colors.mutedText, fontSize: 13, fontWeight: '600', marginBottom: 13 },
+  stages: { flexDirection: 'row', gap: 7 },
+  stage: { flex: 1, alignItems: 'center' },
+  stageBar: { height: 5, borderRadius: 3, backgroundColor: colors.surfaceTertiary, alignSelf: 'stretch', overflow: 'hidden', marginBottom: 9 },
+  stageNum: { color: colors.onSurface, fontSize: 19, fontWeight: '700', letterSpacing: -0.4 },
+  stageLbl: { color: colors.mutedText, fontSize: 10.5, textAlign: 'center', marginTop: 2, lineHeight: 13 },
+
+  sectionLabel: { color: colors.mutedText, fontSize: 12, fontWeight: '700', letterSpacing: 0.8, textTransform: 'uppercase', marginTop: spacing.xl, marginBottom: spacing.md },
   empty: { alignItems: 'center', paddingVertical: 40, gap: spacing.sm },
   emptyText: { color: colors.onSurfaceTertiary },
-  card: {
-    backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg,
-    borderWidth: 1, borderColor: colors.border, paddingHorizontal: spacing.lg, paddingVertical: 14, marginBottom: 10,
-  },
-  cardSelected: { borderColor: colors.brandPrimary, backgroundColor: colors.brandTertiary },
-  cardTopRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  checkbox: {
-    width: 20, height: 20, borderRadius: 6, borderWidth: 1.5, borderColor: colors.border,
-    alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface,
-  },
-  checkboxOn: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
-  cName: { flex: 1, color: colors.onSurface, fontWeight: '800', fontSize: 17 },
-  cItem: { color: colors.onSurfaceSecondary, fontSize: 14, fontWeight: '600', marginTop: 4 },
-  cardSubRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm, marginTop: 4 },
-  cTag: { flex: 1, color: colors.mutedText, fontSize: 12.5 },
-  cWeight: { color: colors.brandSecondary, fontSize: 14, fontWeight: '800' },
-  cMeta: { color: colors.onSurfaceTertiary, fontSize: 11, marginTop: 6 },
-  statusBadge: { borderRadius: radius.pill, paddingHorizontal: 9, paddingVertical: 4, borderWidth: 1 },
-  statusText: { fontSize: 9.5, fontWeight: '700', textTransform: 'uppercase' },
 
-  bulkBar: {
-    position: 'absolute', left: 0, right: 0, bottom: 0, flexDirection: 'row', alignItems: 'center',
-    justifyContent: 'space-between', backgroundColor: colors.surfaceSecondary, borderTopWidth: 1, borderTopColor: colors.border,
-    paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
+  item: {
+    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    padding: spacing.md, marginBottom: 10,
   },
-  bulkBarText: { color: colors.onSurfaceSecondary, fontSize: 13, fontWeight: '700' },
-  bulkBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: colors.brandPrimary, borderRadius: radius.pill, paddingHorizontal: spacing.lg, paddingVertical: 10,
-  },
-  bulkBtnText: { color: colors.onBrandPrimary, fontWeight: '700', fontSize: 13 },
+  itemTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  code: { color: colors.onSurface, fontSize: 15, fontWeight: '600' },
+  cust: { color: colors.mutedText, fontSize: 13, marginTop: 1 },
+  pill: { paddingHorizontal: 9, paddingVertical: 4, borderRadius: 8 },
+  pillText: { fontSize: 11, fontWeight: '700', letterSpacing: 0.2 },
+  actRow: { flexDirection: 'row', gap: 9, marginTop: 13 },
+  btn: { flex: 1, alignItems: 'center', paddingVertical: 11, borderRadius: 11 },
+  btnPri: { backgroundColor: colors.brandPrimary },
+  btnPriText: { color: colors.onBrandPrimary, fontSize: 14, fontWeight: '700' },
+  btnGhost: { backgroundColor: colors.surfaceTertiary, borderWidth: 1, borderColor: colors.borderStrong },
+  btnGhostText: { color: colors.onSurface, fontSize: 14, fontWeight: '600' },
 });
