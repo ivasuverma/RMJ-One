@@ -150,8 +150,8 @@ export default function DashboardScreen() {
         <ErrorState message={error} onRetry={refresh} testID="dashboard-error" />
       ) : data ? (
         <>
-          {/* 1. Needs-attention briefing */}
-          <NeedsAttention items={attnItems} onGo={(r) => router.push(r as any)} />
+          {/* 1. Needs-attention briefing — only present when something's actually pending */}
+          {attnItems.length > 0 && <NeedsAttention items={attnItems} onGo={(r) => router.push(r as any)} />}
 
           {/* 2. Today at a glance — a 2-col grid of stat cards (mockup layout) */}
           <Text style={styles.glanceHeading}>Today at a glance</Text>

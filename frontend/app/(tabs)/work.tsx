@@ -22,9 +22,6 @@ type DashboardData = {
 };
 
 const fmtINR = (n: number) => `₹${Math.round(n || 0).toLocaleString('en-IN')}`;
-const RECENT_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
-  repair: 'receipt-outline', cash: 'cash-outline', stock: 'diamond-outline', ledger: 'book-outline',
-};
 
 // One coloured segment of a process row's description.
 type Seg = { text: string; tone?: string };
@@ -81,8 +78,6 @@ export default function WorkScreen() {
     },
   ].filter((r) => r.show) : [];
 
-  const recent = data?.recent_activity?.slice(0, 4) || [];
-
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="work-screen">
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
@@ -124,22 +119,23 @@ export default function WorkScreen() {
               </Pressable>
             ))}
 
-            {recent.length > 0 && (
+            {hasModule('ledger') && (
               <>
-                <Text style={styles.sectionLabel}>Recently recorded</Text>
+                <Text style={styles.sectionLabel}>Reports</Text>
                 <View style={styles.group}>
-                  {recent.map((r, i) => (
-                    <Pressable key={i} onPress={() => go(r.route)} style={({ pressed }) => [styles.li, i > 0 && styles.liBorder, pressed && { opacity: 0.7 }]} testID={`work-recent-${i}`}>
-                      <View style={styles.gi}><Ionicons name={RECENT_ICON[r.kind] || 'ellipse-outline'} size={15} color={colors.brandSecondary} /></View>
-                      <Text style={styles.gt} numberOfLines={1}>{r.label}</Text>
-                      <Ionicons name="chevron-forward" size={16} color={colors.mutedText} />
-                    </Pressable>
-                  ))}
+                  <Pressable onPress={() => go('/accounts')} style={({ pressed }) => [styles.li, pressed && { opacity: 0.7 }]} testID="work-ledger">
+                    <View style={styles.gi}><Ionicons name="book-outline" size={15} color={colors.brandSecondary} /></View>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={styles.gt} numberOfLines={1}>Unified Ledger</Text>
+                      <Text style={styles.gtSub} numberOfLines={1}>Fine gold & cash across every account</Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={16} color={colors.mutedText} />
+                  </Pressable>
                 </View>
               </>
             )}
 
-            {rows.length === 0 && recent.length === 0 && (
+            {rows.length === 0 && !hasModule('ledger') && (
               <View style={styles.empty}>
                 <Ionicons name="briefcase-outline" size={34} color={colors.mutedText} />
                 <Text style={styles.emptyText}>Nothing assigned to you yet.</Text>
@@ -189,7 +185,8 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   li: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 13, paddingHorizontal: spacing.md },
   liBorder: { borderTopWidth: 1, borderTopColor: colors.divider },
   gi: { width: 30, height: 30, borderRadius: 9, backgroundColor: colors.surfaceTertiary, alignItems: 'center', justifyContent: 'center' },
-  gt: { flex: 1, color: colors.onSurface, fontSize: 15, fontWeight: '500' },
+  gt: { color: colors.onSurface, fontSize: 15, fontWeight: '500' },
+  gtSub: { color: colors.mutedText, fontSize: 12, marginTop: 1 },
 
   empty: { alignItems: 'center', justifyContent: 'center', gap: spacing.sm, paddingVertical: spacing.xxxl },
   emptyText: { color: colors.onSurfaceTertiary },

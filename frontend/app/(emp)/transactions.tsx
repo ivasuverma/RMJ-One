@@ -14,7 +14,7 @@ type TileDef = { key: string; label: string; icon: keyof typeof Ionicons.glyphMa
 // grants access per module in User Roles, and this screen only shows what's
 // actually been handed to this employee. If none are granted the whole
 // Transactions tab is hidden by the tab layout, so this screen never renders empty.
-// Employee-assignable modules: repairs, repair_bill, customer_ledger,
+// Employee-assignable modules: repairs, customer_ledger,
 // karigar_ledger, samples, cash_book — Tasks/Approvals management is
 // owner/admin only (an employee's personal task list on the Tasks tab is
 // unaffected; that's a separate, always-available feature, not this module).
@@ -23,7 +23,6 @@ const SECTIONS: { title: string; tiles: TileDef[] }[] = [
     title: 'Repairs',
     tiles: [
       { key: 'repair-orders', label: 'Repair', icon: 'construct-outline', route: '/repairs', module: 'repairs' },
-      { key: 'repair-bill', label: 'Repair Bill', icon: 'receipt-outline', route: '/repairs/bill', module: 'repair_bill' },
       { key: 'samples', label: 'Stock In/Out', icon: 'diamond-outline', route: '/samples', module: 'samples' },
     ],
   },
@@ -133,9 +132,9 @@ export default function EmployeeTransactionsScreen() {
 
   const [repairDash, setRepairDash] = useState<RepairDashboard | null>(null);
   const [sampleDash, setSampleDash] = useState<SamplesDashboard | null>(null);
-  // Either right is enough to see the repair card — a bill-only biller still
-  // cares about what's pending to bill/deliver, not just full repair access.
-  const showRepairDash = hasModule('repairs') || hasModule('repair_bill');
+  // Repair covers the whole lifecycle (create → track → bill), so the single
+  // "repairs" grant shows the card and its pending-to-bill/deliver rows.
+  const showRepairDash = hasModule('repairs');
   const showSampleDash = hasModule('samples');
 
   const loadDash = useCallback(async () => {

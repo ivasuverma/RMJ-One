@@ -58,8 +58,8 @@ export default function RepairBillScreen() {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const { hasRight, user } = useAuth();
-  const canEditBill = hasRight('repair_bill', 'edit');
-  const canDeleteBill = hasRight('repair_bill', 'delete');
+  const canEditBill = hasRight('repairs', 'edit');
+  const canDeleteBill = hasRight('repairs', 'delete');
   const canEditReceive = hasRight('repairs', 'edit');
 
   const [mode, setMode] = useState<Mode>(routeItemId ? 'form' : 'list');

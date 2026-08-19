@@ -334,7 +334,7 @@ export default function RepairItemDetailScreen() {
               <Pressable onPress={() => router.push({ pathname: '/repairs/bill', params: { itemId: id } } as any)} style={[styles.actionBtn, styles.actionBtnPrimary, { flex: 1 }]} testID="close-delivery-btn">
                 <Ionicons name="checkmark-done-outline" size={16} color={colors.onBrandPrimary} /><Text style={styles.actionBtnPrimaryText}>Close Delivery</Text>
               </Pressable>
-              {hasRight('repair_bill', 'edit') && (
+              {hasRight('repairs', 'edit') && (
                 <Pressable onPress={() => router.push({ pathname: '/repairs/bill', params: { itemId: id, mode: 'edit' } } as any)} style={styles.actionBtn} testID="edit-pending-bill-btn">
                   <Ionicons name="pencil-outline" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>Edit Bill</Text>
                 </Pressable>
@@ -349,7 +349,7 @@ export default function RepairItemDetailScreen() {
               <Pressable onPress={() => printPdf('bill')} disabled={printing} style={[styles.actionBtn, { flex: 1 }]} testID="view-bill-btn">
                 {printing ? <ActivityIndicator color={colors.onSurfaceSecondary} /> : <><Ionicons name="document-text-outline" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>PDF</Text></>}
               </Pressable>
-              {hasRight('repair_bill', 'edit') && (
+              {hasRight('repairs', 'edit') && (
                 <Pressable onPress={() => router.push({ pathname: '/repairs/bill', params: { itemId: id } } as any)} style={[styles.actionBtn, { flex: 1 }]} testID="edit-bill-btn">
                   <Ionicons name="pencil-outline" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>Edit</Text>
                 </Pressable>

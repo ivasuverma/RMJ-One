@@ -393,7 +393,7 @@ async def repair_order_slip_print(order_id: str, user: dict = Depends(require_st
 async def list_repair_items(
     status_: Optional[str] = Query(default=None, alias='status'),
     q: Optional[str] = None,
-    _: dict = Depends(require_staff_or_module(['repairs', 'repair_bill'])),
+    _: dict = Depends(require_staff_or_module(['repairs'])),
 ):
     query: dict = {}
     if status_ == 'overdue':
@@ -430,12 +430,12 @@ async def list_repair_items(
 
 
 @router.get('/repairs/dashboard')
-async def repairs_dashboard(_: dict = Depends(require_staff_or_module(['repairs', 'repair_bill']))):
+async def repairs_dashboard(_: dict = Depends(require_staff_or_module(['repairs']))):
     """Compact repair-pipeline stats for the employee Transactions screen —
     same status buckets the list/bill screens filter by, so each tile can
     deep-link straight into a matching pre-filtered list. Anyone holding
-    either the repairs or repair_bill right can see this (a bill-only
-    biller still cares about what's pending to bill/deliver)."""
+    the repairs right can see this — creating, tracking and billing a
+    repair are one module now."""
     today = today_str()
     items = await db.repair_items.find(
         {'status': {'$ne': 'delivered'}}, {'_id': 0, 'status': 1, 'due_date': 1},
@@ -455,7 +455,7 @@ async def repairs_dashboard(_: dict = Depends(require_staff_or_module(['repairs'
 
 
 @router.get('/repair-items/{item_id}')
-async def get_repair_item(item_id: str, _: dict = Depends(require_staff_or_module(['repairs', 'repair_bill']))):
+async def get_repair_item(item_id: str, _: dict = Depends(require_staff_or_module(['repairs']))):
     item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
     if not item: raise HTTPException(status_code=404, detail='Item not found')
     history = await db.karigar_transactions.find({'item_id': item_id}, {'_id': 0}).sort('created_at', 1).to_list(100)
@@ -862,7 +862,7 @@ async def _sync_cash_ledger_entry(item: dict, billed_amount: float, payment_mode
 
 
 @router.post('/repair-items/{item_id}/deliver')
-async def bill_item(item_id: str, body: DeliverIn, user=Depends(require_admin_or_module(['repairs', 'repair_bill']))):
+async def bill_item(item_id: str, body: DeliverIn, user=Depends(require_admin_or_module(['repairs']))):
     """Bills a Pending-to-Bill tag — this used to also mark it delivered in
     the same step, but billing and the customer actually walking out with
     the item are now two separate moments: this moves the tag to
@@ -895,7 +895,7 @@ async def bill_item(item_id: str, body: DeliverIn, user=Depends(require_admin_or
 
 
 @router.post('/repair-items/{item_id}/close-delivery')
-async def close_delivery(item_id: str, body: CloseDeliveryIn, user=Depends(require_admin_or_module(['repairs', 'repair_bill']))):
+async def close_delivery(item_id: str, body: CloseDeliveryIn, user=Depends(require_admin_or_module(['repairs']))):
     """Second, separate step from billing: the customer has actually picked
     the item up. Records who handed it over and on what date, then marks it
     delivered."""
@@ -920,7 +920,7 @@ async def close_delivery(item_id: str, body: CloseDeliveryIn, user=Depends(requi
 
 
 @router.put('/repair-items/{item_id}/bill')
-async def edit_bill(item_id: str, body: DeliverIn, user=Depends(require_admin_or_module_right('repair_bill', 'edit'))):
+async def edit_bill(item_id: str, body: DeliverIn, user=Depends(require_admin_or_module_right('repairs', 'edit'))):
     """Corrects a bill in place (whether it's still pending delivery or
     already fully delivered) — same full form as creating one, rather than
     the old delete-then-recreate dance. Doesn't touch status, delivered_at,
@@ -953,7 +953,7 @@ async def edit_bill(item_id: str, body: DeliverIn, user=Depends(require_admin_or
 
 
 @router.delete('/repair-items/{item_id}/bill')
-async def delete_bill(item_id: str, user=Depends(require_admin_or_module_right('repair_bill', 'delete'))):
+async def delete_bill(item_id: str, user=Depends(require_admin_or_module_right('repairs', 'delete'))):
     # Undoes a bill — puts the tag back to "ready" (Pending to Bill) so it
     # can be re-billed correctly. Does not touch the tag/intake record itself.
     item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
@@ -1003,7 +1003,7 @@ def _bill_receipt_lines(item: dict) -> list:
 
 
 @router.get('/repair-items/{item_id}/bill/pdf')
-async def repair_item_bill_pdf(item_id: str, _: dict = Depends(require_staff_or_module(['repairs', 'repair_bill']))):
+async def repair_item_bill_pdf(item_id: str, _: dict = Depends(require_staff_or_module(['repairs']))):
     item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
     if not item: raise HTTPException(status_code=404, detail='Item not found')
     store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
@@ -1018,7 +1018,7 @@ async def repair_item_bill_pdf(item_id: str, _: dict = Depends(require_staff_or_
 
 
 @router.post('/repair-items/{item_id}/bill/print')
-async def repair_item_bill_print(item_id: str, user: dict = Depends(require_staff_or_module(['repairs', 'repair_bill']))):
+async def repair_item_bill_print(item_id: str, user: dict = Depends(require_staff_or_module(['repairs']))):
     """Sends the bill/quotation straight to the configured WiFi thermal
     printer as a bordered table — item details, the weight change breakdown,
     and the charges/total, instead of generating a PDF."""

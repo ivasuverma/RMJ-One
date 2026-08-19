@@ -181,13 +181,12 @@ MODULE_DEFS = [
     {'key': 'users', 'label': 'Staff Accounts', 'default_roles': ['owner']},
     {'key': 'tasks', 'label': 'Tasks', 'default_roles': ['owner', 'admin']},
     # The modules an employee can be granted, matching the tiles they're ever
-    # shown: Transactions > Repair, Repair Bill, Sample Issue/Receive;
-    # Reports > Customer Ledger, Karigar Ledger. "Repair" access also covers
-    # browsing repair items (read) so a Repair Bill-only employee can still
-    # pick an item to bill — see the ['repairs', 'repair_bill'] any-of checks
-    # on the relevant endpoints.
+    # shown: Transactions > Repair, Sample Issue/Receive; Reports > Customer
+    # Ledger, Karigar Ledger. Creating, tracking AND billing a repair are one
+    # module ("repairs") — the old separate "repair_bill" grant was merged in
+    # (see the legacy alias in resolve_modules), so a single grant covers the
+    # whole repair lifecycle end to end.
     {'key': 'repairs', 'label': 'Repair', 'default_roles': ['owner', 'admin'], 'employee_assignable': True},
-    {'key': 'repair_bill', 'label': 'Repair Bill', 'default_roles': ['owner', 'admin'], 'employee_assignable': True},
     {'key': 'customer_ledger', 'label': 'Customer Ledger', 'default_roles': ['owner', 'admin', 'accountant'], 'employee_assignable': True},
     {'key': 'karigar_ledger', 'label': 'Karigar Ledger', 'default_roles': ['owner', 'admin', 'accountant'], 'employee_assignable': True},
     {'key': 'samples', 'label': 'Stock In/Out', 'default_roles': ['owner', 'admin'], 'employee_assignable': True},
@@ -223,6 +222,13 @@ def resolve_modules(user: dict) -> list:
         return sorted(MODULE_KEYS)
     override = user.get('module_access')
     if override is not None:
+        # Legacy alias: "repair_bill" was merged into "repairs" (one module now
+        # covers the whole repair lifecycle incl. billing). Any account still
+        # storing the old grant keeps working — no data migration needed.
+        override = ['repairs' if m == 'repair_bill' else m for m in override]
+        rights = user.get('module_rights')
+        if isinstance(rights, dict) and 'repair_bill' in rights and 'repairs' not in rights:
+            rights['repairs'] = rights['repair_bill']
         allowed = EMPLOYEE_ASSIGNABLE_MODULES if user.get('role') == 'employee' else MODULE_KEYS
         return sorted(set(override) & allowed)
     return _default_modules_for_role(user.get('role', ''))

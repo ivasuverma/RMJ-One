@@ -18,7 +18,6 @@ type TileDef = { key: string; label: string; icon: keyof typeof Ionicons.glyphMa
 
 const OPERATIONS_TILES: TileDef[] = [
   { key: 'repair-orders', label: 'Repair', icon: 'construct-outline', route: '/repairs', module: 'repairs' },
-  { key: 'repair-bill', label: 'Repair Bill', icon: 'receipt-outline', route: '/repairs/bill', module: 'repair_bill' },
   { key: 'samples', label: 'Stock In/Out', icon: 'diamond-outline', route: '/samples', module: 'samples' },
   { key: 'cash-book', label: 'Cash Book', icon: 'wallet-outline', route: '/cashbook', module: 'cash_book' },
   { key: 'customer-ledger', label: 'Customer Ledger', icon: 'person-outline', route: '/reports/customer-ledger', module: 'customer_ledger' },
@@ -100,7 +99,7 @@ export default function EmployeeWorkScreen() {
 
   const [repairDash, setRepairDash] = useState<RepairDashboard | null>(null);
   const [sampleDash, setSampleDash] = useState<SamplesDashboard | null>(null);
-  const showRepairDash = hasModule('repairs') || hasModule('repair_bill');
+  const showRepairDash = hasModule('repairs');
   const showSampleDash = hasModule('samples');
 
   const loadDash = useCallback(async () => {
