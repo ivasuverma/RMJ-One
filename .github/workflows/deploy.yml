@@ -2,18 +2,18 @@ name: Deploy to RMJ Server
 
 # Runs on the self-hosted runner installed directly on the Windows Server at
 # the shop. The runner already lives on the same machine as the live app, so
-# this workflow doesn't use actions/checkout — it just tells git (already
+# this workflow doesn't use actions/checkout - it just tells git (already
 # cloned at E:\Rmj-One) to fast-forward to what was just pushed, rebuilds the
 # frontend web export, and restarts both NSSM services.
 #
 # Post-deploy verification is a smoke test only: it confirms the backend
 # process actually came back up and is answering HTTP requests. It
-# deliberately does NOT run backend/tests/*.py — that suite logs in as the
+# deliberately does NOT run backend/tests/*.py - that suite logs in as the
 # real owner account and creates/deletes real employee records against
 # whatever data your shop actually has, so it's not safe to run
 # unattended on every push. Run it yourself manually when you want it
 # (see backend/tests/README, or just `pytest tests/` with
-# EXPO_PUBLIC_BACKEND_URL pointed at this server) — never as part of deploy.
+# EXPO_PUBLIC_BACKEND_URL pointed at this server) - never as part of deploy.
 on:
   push:
     branches: [main]
@@ -22,7 +22,7 @@ on:
 jobs:
   # Runs on GitHub's own hosted runner (not the shop's Windows box) so a lint
   # failure never touches the live server. This is a fast static-analysis
-  # gate only — it deliberately does NOT run backend/tests/*.py (see the
+  # gate only - it deliberately does NOT run backend/tests/*.py (see the
   # comment on the deploy job below for why) or frontend/backend unit
   # test suites; it exists to catch typos/syntax errors/broken imports
   # before they ever reach the shop.
@@ -31,12 +31,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Backend — flake8 (syntax errors + real bugs only)
+      - name: Backend - flake8 (syntax errors + real bugs only)
         run: |
           cd backend
           python3 -m pip install --quiet flake8
           # .flake8 restricts this to E9 (syntax errors) + F (pyflakes: unused
-          # imports/vars, undefined names) — see backend/.flake8 for why the
+          # imports/vars, undefined names) - see backend/.flake8 for why the
           # stylistic checks are off (this codebase's compact one-line-if
           # style would otherwise flag hundreds of pre-existing, deliberate lines).
           python3 -m flake8 .
@@ -45,20 +45,20 @@ jobs:
         with:
           node-version: 20
 
-      - name: Frontend — install
+      - name: Frontend - install
         run: cd frontend && npm ci
 
-      - name: Frontend — typecheck
+      - name: Frontend - typecheck
         run: cd frontend && npx tsc --noEmit -p .
 
       # Report-only for now: tsc (above) and flake8 are the hard correctness
       # gates. eslint runs but does NOT block the deploy, because the existing
-      # codebase predates any lint CI and hasn't been verified eslint-clean —
+      # codebase predates any lint CI and hasn't been verified eslint-clean -
       # gating on it could wedge the live deploy on pre-existing style
       # findings that have nothing to do with the change being shipped. Once
       # the repo is confirmed clean, drop `continue-on-error` to make it a
       # hard gate.
-      - name: Frontend — lint (report-only)
+      - name: Frontend - lint (report-only)
         continue-on-error: true
         run: cd frontend && npm run lint
 
@@ -86,7 +86,7 @@ jobs:
           }
 
           function Wait-ForServiceStatus($name, $wanted, $tries) {
-            # Poll instead of a single fixed sleep+check — nssm restart/start
+            # Poll instead of a single fixed sleep+check - nssm restart/start
             # is asynchronous and how long the process takes to actually
             # settle varies. Retrying is more robust than guessing one sleep
             # duration that may or may not be long enough on a given day.
@@ -115,7 +115,7 @@ jobs:
           Wait-ForServiceStatus RMJOneBackend 'SERVICE_RUNNING' 10
 
           Write-Host '--- backend smoke test ---'
-          # Pure read-only GET against the unauthenticated root route — confirms
+          # Pure read-only GET against the unauthenticated root route - confirms
           # the API is actually answering requests post-restart, no login and
           # no data mutation, so it's safe to run on every deploy.
           $ok = $false
@@ -152,7 +152,7 @@ jobs:
           cd $repo
           if ($exportExitCode -ne 0 -or -not (Test-Path -LiteralPath "$newDistPath\index.html")) {
             if (Test-Path -LiteralPath $newDistPath) { Remove-Item -LiteralPath $newDistPath -Recurse -Force }
-            throw "Frontend web export failed (exit code $exportExitCode) — RMJOneWeb was left untouched, still serving the previous build."
+            throw "Frontend web export failed (exit code $exportExitCode) - RMJOneWeb was left untouched, still serving the previous build."
           }
           Write-Host '  export OK'
 
