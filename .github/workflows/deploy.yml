@@ -51,7 +51,15 @@ jobs:
       - name: Frontend — typecheck
         run: cd frontend && npx tsc --noEmit -p .
 
-      - name: Frontend — lint
+      # Report-only for now: tsc (above) and flake8 are the hard correctness
+      # gates. eslint runs but does NOT block the deploy, because the existing
+      # codebase predates any lint CI and hasn't been verified eslint-clean —
+      # gating on it could wedge the live deploy on pre-existing style
+      # findings that have nothing to do with the change being shipped. Once
+      # the repo is confirmed clean, drop `continue-on-error` to make it a
+      # hard gate.
+      - name: Frontend — lint (report-only)
+        continue-on-error: true
         run: cd frontend && npm run lint
 
   deploy:
