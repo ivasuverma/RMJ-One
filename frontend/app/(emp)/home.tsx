@@ -10,7 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthContext';
-import { istTime, nowISTLongLabel } from '@/src/utils/datetime';
+import { istTime, nowISTLongLabel, todayIST } from '@/src/utils/datetime';
 import { spacing, radius, images, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { PunchCaptureModal, PunchResult } from '@/src/components/PunchCaptureModal';
@@ -46,15 +46,20 @@ export default function EmployeeHome() {
   const [refreshing, setRefreshing] = useState(false);
   const [showPunch, setShowPunch] = useState<null | 'check_in' | 'check_out'>(null);
   const [unread, setUnread] = useState(0);
+  const [myTasks, setMyTasks] = useState<{ id: string; title: string; due_date?: string }[]>([]);
 
   const load = useCallback(async () => {
     try {
-      const [a, s] = await Promise.all([
+      const [a, s, t] = await Promise.all([
         api.get<Att>('/attendance/me/today').catch(() => ({} as Att)),
         api.get<Store>('/settings/store').catch(() => ({} as Store)),
+        api.get<{ id: string; title: string; due_date?: string }[]>('/tasks?status=open').catch(() => []),
       ]);
       setAtt(a || {});
       setStore(s || {});
+      // Due-today or overdue only — what actually needs doing now, newest due first.
+      const today = todayIST();
+      setMyTasks((t || []).filter((x) => x.due_date && x.due_date <= today).sort((x, y) => (x.due_date || '').localeCompare(y.due_date || '')));
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -193,6 +198,35 @@ export default function EmployeeHome() {
                 </View>
               )}
             </View>
+
+            {/* My tasks due today / overdue */}
+            {myTasks.length > 0 && (
+              <>
+                <View style={styles.taskHeaderRow}>
+                  <Text style={styles.section}>My tasks today</Text>
+                  <Pressable onPress={() => router.push('/(emp)/tasks' as any)} testID="emp-tasks-see-all">
+                    <Text style={styles.taskSeeAll}>See all</Text>
+                  </Pressable>
+                </View>
+                <View style={styles.taskCard}>
+                  {myTasks.slice(0, 4).map((t, i) => {
+                    const overdue = !!t.due_date && t.due_date < todayIST();
+                    return (
+                      <Pressable
+                        key={t.id}
+                        testID={`emp-task-${t.id}`}
+                        onPress={() => router.push('/(emp)/tasks' as any)}
+                        style={({ pressed }) => [styles.taskRow, i === Math.min(myTasks.length, 4) - 1 && styles.taskRowLast, pressed && { opacity: 0.7 }]}
+                      >
+                        <View style={[styles.taskDot, { backgroundColor: overdue ? colors.onError : colors.brandPrimary }]} />
+                        <Text style={styles.taskTitle} numberOfLines={1}>{t.title}</Text>
+                        {overdue && <Text style={styles.taskOverdue}>Overdue</Text>}
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </>
+            )}
 
             {/* Quick actions */}
             <Text style={styles.section}>Quick actions</Text>
@@ -373,6 +407,21 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   doneText: { color: colors.brandSecondary, fontWeight: '700', fontSize: 13 },
 
   section: { color: colors.brandSecondary, fontSize: 11, letterSpacing: 1, textTransform: 'uppercase', marginTop: spacing.xl, marginBottom: spacing.sm },
+  taskHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  taskSeeAll: { color: colors.brandSecondary, fontSize: 12, fontWeight: '700', marginTop: spacing.xl },
+  taskCard: {
+    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md,
+    borderWidth: 1, borderColor: colors.border, overflow: 'hidden',
+  },
+  taskRow: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+    paddingVertical: 12, paddingHorizontal: spacing.md,
+    borderBottomWidth: 1, borderBottomColor: colors.divider,
+  },
+  taskRowLast: { borderBottomWidth: 0 },
+  taskDot: { width: 8, height: 8, borderRadius: 4 },
+  taskTitle: { flex: 1, color: colors.onSurface, fontSize: 13.5, fontWeight: '600' },
+  taskOverdue: { color: colors.onError, fontSize: 11, fontWeight: '700' },
   actionsRow: { flexDirection: 'row', gap: spacing.md },
   actionCard: {
     flex: 1, backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg,

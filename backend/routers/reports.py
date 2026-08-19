@@ -132,6 +132,13 @@ async def dashboard(_: dict = Depends(get_current)):
     karigar_entries = await db.karigar_ledger.find({}, {'_id': 0, 'karigar_id': 1, 'type': 1, 'weight': 1, 'fine_weight': 1, 'amount': 1}).to_list(20000)
     karigar_bal = _karigar_ledger_balances(karigar_entries)
     karigars_open = sum(1 for b in karigar_bal.values() if round(b.get('fine_bal', 0), 3) or round(b.get('amt_due', 0), 2))
+    # Net fine gold (grams) still sitting with karigars, and net cash the shop
+    # owes them — the two halves of the dual balance, surfaced so the dashboard
+    # can show a real Fine (g) + Amount (₹) glance tile instead of a cash-only
+    # figure. Kept independent (never netted into one number), per the
+    # jewellery dual-balance rule.
+    fine_with_karigars = round(sum(b.get('fine_bal', 0) for b in karigar_bal.values()), 3)
+    karigar_amt_payable = round(sum(b.get('amt_due', 0) for b in karigar_bal.values()), 2)
 
     # Stock In/Out (samples) at-a-glance — same two buckets as the employee
     # Transactions screen's own samples dashboard tile (GET /samples/dashboard),
@@ -183,6 +190,7 @@ async def dashboard(_: dict = Depends(get_current)):
             'revenue_today': round(revenue_today, 2), 'revenue_month': round(revenue_month, 2),
             'intake_today': intake_today, 'active_employees': active_employees,
             'customers_open': customers_open, 'karigars_open': karigars_open,
+            'fine_with_karigars': fine_with_karigars, 'karigar_amt_payable': karigar_amt_payable,
         },
     }
 

@@ -117,8 +117,17 @@ async def delete_customer(cid: str, user=Depends(require_owner), _mod=Depends(re
 # ---------------- Repairs: Karigars ----------------
 
 @router.get('/karigars')
-async def list_karigars(_: dict = Depends(require_staff_or_module(['repairs', 'karigar_ledger']))):
-    karigars = await db.karigars.find({}, {'_id': 0}).sort('name', 1).to_list(500)
+async def list_karigars(q: Optional[str] = None, _: dict = Depends(require_staff_or_module(['repairs', 'karigar_ledger']))):
+    query: dict = {}
+    if q:
+        # Mirror the customer search: escape regex specials, match name/mobile
+        # case-insensitively (used by the dashboard global search).
+        q_esc = re.escape(q)
+        query['$or'] = [
+            {'name': {'$regex': q_esc, '$options': 'i'}},
+            {'mobile': {'$regex': q_esc, '$options': 'i'}},
+        ]
+    karigars = await db.karigars.find(query, {'_id': 0}).sort('name', 1).to_list(500)
     entries = await db.karigar_ledger.find({}, {'_id': 0, 'karigar_id': 1, 'type': 1, 'weight': 1, 'fine_weight': 1, 'amount': 1}).to_list(20000)
     bal = _karigar_ledger_balances(entries)
     for k in karigars:
