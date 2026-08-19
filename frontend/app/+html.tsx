@@ -38,11 +38,13 @@ export default function Root({ children }: { children: React.ReactNode }) {
             whole time. This <link> is what actually gets Inter onto the
             live site. One family, multiple weights — matches how the
             `fonts` tokens in src/theme.ts pair fontFamily with fontWeight. */}
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
         <style dangerouslySetInnerHTML={{ __html: `
-          html, body, #root { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+          html, body, #root {
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+          }
+          /* Dark canvas from first paint — matches the app's default dark
+             theme so there's no white flash before React mounts. */
+          html, body { background:#0B0B0C; }
         ` }} />
 
         <ScrollViewStyleReset />

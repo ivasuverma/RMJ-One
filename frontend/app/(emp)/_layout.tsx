@@ -30,12 +30,12 @@ export default function EmployeeTabsLayout() {
       screenOptions={{
         headerShown: false,
         tabBarStyle: {
-          backgroundColor: colors.surfaceSecondary, borderTopColor: colors.border, borderTopWidth: 1,
-          height: 68, paddingBottom: 10, paddingTop: 8,
+          backgroundColor: colors.surface, borderTopColor: colors.border, borderTopWidth: 1,
+          height: 72, paddingBottom: 12, paddingTop: 10,
         },
         tabBarActiveTintColor: colors.brandPrimary,
         tabBarInactiveTintColor: colors.mutedText,
-        tabBarLabelStyle: { fontSize: 11, fontWeight: '600', letterSpacing: 0.3 },
+        tabBarLabelStyle: { fontSize: 10.5, fontWeight: '600', letterSpacing: 0.3 },
       }}
     >
       {/* Three tabs (v2 IA): Dashboard (the check-in home), Work, Settings

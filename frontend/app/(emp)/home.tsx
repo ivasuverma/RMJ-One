@@ -120,10 +120,6 @@ export default function EmployeeHome() {
                 <Ionicons name="notifications-outline" size={20} color={colors.onSurface} />
                 {unread > 0 && <View style={styles.bellDot} />}
               </Pressable>
-              {/* Settings is the Profile tab now, but also reachable here (v2 IA). */}
-              <Pressable onPress={() => router.push('/(emp)/profile' as any)} style={styles.iconBtn} testID="emp-settings-btn" hitSlop={12}>
-                <Ionicons name="settings-outline" size={20} color={colors.onSurface} />
-              </Pressable>
               <Pressable onPress={onLogout} style={styles.iconBtn} testID="emp-logout-btn" hitSlop={12}>
                 <Ionicons name="log-out-outline" size={20} color={colors.onSurface} />
               </Pressable>

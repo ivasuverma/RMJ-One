@@ -33,9 +33,9 @@ export function Card({ children, onPress, style, padded = true, testID }: {
 
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   card: {
-    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md,
+    backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg,
     borderWidth: 1, borderColor: colors.border,
   },
-  padded: { padding: spacing.md },
+  padded: { padding: spacing.lg },
   pressed: { opacity: 0.8 },
 });

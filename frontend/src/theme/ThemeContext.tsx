@@ -27,7 +27,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   // reads this via matchMedia). Falls back to the dark "Emerald vault" palette
   // when the platform reports no preference at all.
   const systemScheme = useColorScheme();
-  const [preference, setPreferenceState] = useState<ThemePreference>('system');
+  // Defaults to the signature dark look (the v2 design comp is dark-first);
+  // users can still switch to light or follow the system in Settings.
+  const [preference, setPreferenceState] = useState<ThemePreference>('dark');
 
   useEffect(() => {
     storage.getItem<string>(PREF_KEY, 'system').then((v) => {

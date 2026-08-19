@@ -16,7 +16,10 @@ export const spacing = {
   xxxl: 48,
 };
 
-export const radius = { sm: 6, md: 12, lg: 20, pill: 999 };
+// Softer, more "Apple" corner radii to match the v2 design comp: hairline
+// cards at 18 (lg), inner items/inputs at 14 (md), icon chips at 10 (sm),
+// and bottom sheets at 26 (xl).
+export const radius = { sm: 10, md: 14, lg: 18, xl: 26, pill: 999 };
 
 // Typography scale — size + weight + lineHeight per role, all on the Inter
 // family below. UI primitives (src/components/ui/) consume these instead of
@@ -44,15 +47,26 @@ export const typography: Record<'h1' | 'h2' | 'title' | 'body' | 'bodyMedium' | 
 // on a phone; it's harmless to leave running but isn't what production uses.
 import { Platform } from 'react-native';
 
+// Apple-native type. The v2 design comp is built on the San Francisco system
+// font; on the web export this CSS stack resolves to SF Pro on Apple devices
+// (iPhone/iPad/Mac — what the shop actually uses), Segoe UI on Windows, and
+// Roboto on Android, giving the app a first-party feel without bundling a
+// custom face. One family across weights, paired with each component's own
+// fontWeight (400–800).
+const APPLE_SYSTEM = Platform.select({
+  web: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", Roboto, sans-serif',
+  ios: 'System',
+  android: 'sans-serif',
+  default: 'System',
+}) as string;
+
 export const fonts = {
-  display: 'Inter',
-  displayMedium: 'Inter',
-  text: 'Inter',
-  textMedium: 'Inter',
-  textBold: 'Inter',
-  // Used as an explicit fallback anywhere Inter definitely isn't loaded
-  // (e.g. a native/EAS build, which wouldn't have the web <link> either).
-  systemFallback: Platform.select({ ios: 'Helvetica Neue', android: 'sans-serif-medium', default: 'System' }) as string,
+  display: APPLE_SYSTEM,
+  displayMedium: APPLE_SYSTEM,
+  text: APPLE_SYSTEM,
+  textMedium: APPLE_SYSTEM,
+  textBold: APPLE_SYSTEM,
+  systemFallback: APPLE_SYSTEM,
 };
 
 export const images = {

@@ -1,8 +1,13 @@
 import { useMemo } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { radius, spacing, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+
+// The signature gold gradient from the v2 design comp — used on primary
+// actions and the compose FAB.
+export const GOLD_GRADIENT = ['#D9BE7E', '#C9A54E'] as const;
 
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
 export type ButtonSize = 'sm' | 'md';
@@ -32,6 +37,17 @@ export function Button({
   const v = variantStyle(colors)[variant];
   const isDisabled = disabled || loading;
 
+  const inner = loading ? (
+    <ActivityIndicator size="small" color={v.fg} />
+  ) : (
+    <View style={styles.content}>
+      {!!leftIcon && <Ionicons name={leftIcon} size={size === 'sm' ? 14 : 16} color={v.fg} />}
+      <Text style={[styles.label, size === 'sm' && styles.labelSm, { color: v.fg }]} numberOfLines={1}>
+        {label}
+      </Text>
+    </View>
+  );
+
   return (
     <Pressable
       onPress={onPress}
@@ -40,22 +56,23 @@ export function Button({
       style={({ pressed }) => [
         styles.base,
         size === 'sm' ? styles.sizeSm : styles.sizeMd,
-        { backgroundColor: v.bg, borderColor: v.border, borderWidth: v.borderWidth },
+        variant === 'primary'
+          ? { overflow: 'hidden' }
+          : { backgroundColor: v.bg, borderColor: v.border, borderWidth: v.borderWidth },
         !fullWidth && { alignSelf: 'flex-start' },
         isDisabled && styles.disabled,
         pressed && !isDisabled && styles.pressed,
       ]}
     >
-      {loading ? (
-        <ActivityIndicator size="small" color={v.fg} />
-      ) : (
-        <View style={styles.content}>
-          {!!leftIcon && <Ionicons name={leftIcon} size={size === 'sm' ? 14 : 16} color={v.fg} />}
-          <Text style={[styles.label, size === 'sm' && styles.labelSm, { color: v.fg }]} numberOfLines={1}>
-            {label}
-          </Text>
-        </View>
+      {variant === 'primary' && (
+        <LinearGradient
+          colors={GOLD_GRADIENT}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
       )}
+      {inner}
     </Pressable>
   );
 }

@@ -66,33 +66,37 @@ export const lightColors: ThemeColors = {
   mutedText: '#8B8A82',
 };
 
-// Dark — near-black, neutral gray surfaces. Same restraint as light: gold is
-// reserved for primary actions and active state, not a background tint.
+// Dark — the "RMJ One" signature look (matches the v2 design comp): a
+// near-black #0B0B0C canvas, layered #161619 / #1E1E22 cards with hairline
+// white borders, warm ivory ink, and antique gold reserved for primary
+// actions + active state. The semantic tones (success/warning/error/info)
+// use the comp's exact tinted-background + saturated-text pairs, so a status
+// chip reads as a soft wash of colour, not a solid block.
 export const darkColors: ThemeColors = {
-  surface: '#161615',
-  onSurface: '#EDEDEA',
-  surfaceSecondary: '#1E1E1C',
-  onSurfaceSecondary: '#DEDEDA',
-  surfaceTertiary: '#282825',
-  onSurfaceTertiary: '#9E9D97',
-  surfaceInverse: '#EDEDEA',
-  onSurfaceInverse: '#161615',
-  brand: '#C9A24B',
-  brandPrimary: '#C9A24B',
-  onBrandPrimary: '#161615',
-  brandSecondary: '#E3C989',
-  brandTertiary: '#2A2A27',
-  onBrandTertiary: '#B8B7B0',
-  success: '#1F4A34',
-  onSuccess: '#B7EFC5',
-  warning: '#5C4212',
-  onWarning: '#F1D890',
-  error: '#5C1F1F',
-  onError: '#F1A9A9',
-  info: '#173A4C',
-  onInfo: '#AFD9F0',
-  border: '#2E2E2B',
-  borderStrong: '#3A3A36',
-  divider: '#242422',
-  mutedText: '#8B8A82',
+  surface: '#0B0B0C',
+  onSurface: '#F4F3EF',
+  surfaceSecondary: '#161619',
+  onSurfaceSecondary: '#B7B6B0',
+  surfaceTertiary: '#1E1E22',
+  onSurfaceTertiary: '#77766F',
+  surfaceInverse: '#F4F3EF',
+  onSurfaceInverse: '#0B0B0C',
+  brand: '#C9A54E',
+  brandPrimary: '#C9A54E',
+  onBrandPrimary: '#0B0B0C',
+  brandSecondary: '#D9BE7E',
+  brandTertiary: '#1E1E22',
+  onBrandTertiary: '#D9BE7E',
+  success: 'rgba(95,176,126,0.14)',
+  onSuccess: '#5FB07E',
+  warning: 'rgba(224,168,60,0.14)',
+  onWarning: '#E0A83C',
+  error: 'rgba(229,105,91,0.15)',
+  onError: '#E5695B',
+  info: 'rgba(111,155,209,0.14)',
+  onInfo: '#6F9BD1',
+  border: 'rgba(255,255,255,0.075)',
+  borderStrong: 'rgba(255,255,255,0.12)',
+  divider: 'rgba(255,255,255,0.075)',
+  mutedText: '#77766F',
 };

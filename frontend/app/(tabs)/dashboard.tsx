@@ -2,6 +2,7 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthContext';
@@ -140,9 +141,6 @@ export default function DashboardScreen() {
           <Ionicons name="notifications-outline" size={19} color={colors.onSurface} />
           {unread > 0 && <View style={styles.bellDot} />}
         </Pressable>
-        <Pressable onPress={() => router.push('/(tabs)/utility' as any)} style={styles.iconBtn} testID="dashboard-settings-btn" hitSlop={10}>
-          <Ionicons name="settings-outline" size={19} color={colors.onSurface} />
-        </Pressable>
         <Image source={images.logo} style={styles.headerBadge} contentFit="contain" testID="dashboard-logo" />
       </View>
 
@@ -212,8 +210,9 @@ export default function DashboardScreen() {
         </>
       ) : null}
 
-      {/* Compose ＋ button */}
+      {/* Compose ＋ button — gold gradient (signature v2 element) */}
       <Pressable onPress={() => setComposeOpen(true)} style={styles.fab} testID="dashboard-compose-btn">
+        <LinearGradient colors={['#D9BE7E', '#C9A54E']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[StyleSheet.absoluteFill, { borderRadius: 28 }]} />
         <Ionicons name="add" size={26} color={colors.onBrandPrimary} />
       </Pressable>
 
@@ -243,10 +242,10 @@ function NeedsAttention({ items, onGo }: { items: AttnItem[]; onGo: (route: stri
 
   return (
     <View style={styles.attnWrap} testID="needs-attention">
-      <Text style={styles.attnLead}>
-        {items.length === 1 ? '1 thing needs your attention' : `${items.length} things need your attention`}
-      </Text>
-      <View style={styles.attnCard}>
+      <LinearGradient colors={['#1A1712', '#17171A']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.briefCard}>
+        <Text style={styles.attnLead}>
+          {items.length === 1 ? '1 thing needs your attention' : `${items.length} things need your attention`}
+        </Text>
         {items.map((it, i) => {
           const t = toneColors[it.tone];
           return (
@@ -264,7 +263,7 @@ function NeedsAttention({ items, onGo }: { items: AttnItem[]; onGo: (route: stri
             </Pressable>
           );
         })}
-      </View>
+      </LinearGradient>
     </View>
   );
 }
@@ -553,21 +552,27 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     backgroundColor: colors.error, borderWidth: 1, borderColor: colors.surface,
   },
 
-  // Needs-attention
-  attnWrap: { marginBottom: spacing.lg },
-  attnLead: { color: colors.onSurface, fontSize: 15, fontWeight: '700', marginBottom: spacing.sm },
+  // Needs-attention "brief" card — warm dark gradient (set inline), hairline
+  // border, a plain-language lead, then tappable rows separated by top rules.
+  attnWrap: { marginBottom: spacing.xl },
+  briefCard: {
+    borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border,
+    paddingTop: spacing.lg, paddingBottom: 4,
+  },
+  // Plain surface card used by the Approvals and Recently-recorded sections.
   attnCard: {
-    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md,
+    backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg,
     borderWidth: 1, borderColor: colors.border, overflow: 'hidden',
   },
+  attnLead: { color: colors.onSurface, fontSize: 16.5, fontWeight: '600', lineHeight: 24, marginBottom: spacing.sm, paddingHorizontal: spacing.lg },
   attnRow: {
-    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
-    paddingVertical: 11, paddingHorizontal: spacing.md,
-    borderBottomWidth: 1, borderBottomColor: colors.divider,
+    flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+    paddingVertical: 13, paddingHorizontal: spacing.lg,
+    borderTopWidth: 1, borderTopColor: colors.border,
   },
-  attnRowLast: { borderBottomWidth: 0 },
-  attnIcon: { width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
-  attnLabel: { flex: 1, color: colors.onSurface, fontSize: 13.5, fontWeight: '600' },
+  attnRowLast: {},
+  attnIcon: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  attnLabel: { flex: 1, color: colors.onSurface, fontSize: 15, fontWeight: '600' },
 
   allClear: {
     flexDirection: 'row', alignItems: 'center', gap: spacing.md,
