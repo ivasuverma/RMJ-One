@@ -11,6 +11,7 @@ import { useTextFonts } from '@/src/hooks/use-text-fonts';
 import { AuthProvider } from '@/src/auth/AuthContext';
 import { ThemeProvider, useTheme } from '@/src/theme/ThemeContext';
 import { ErrorBoundary } from '@/src/components/ErrorBoundary';
+import { ToastProvider } from '@/src/components/ui/Toast';
 
 // Disable logbox errors etc so that users can see the app and agent works as expected.
 LogBox.ignoreAllLogs(true);
@@ -74,15 +75,17 @@ function AppShell() {
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.surface }}>
       <StatusBar style={scheme === 'light' ? 'dark' : 'light'} />
-      <View style={{ flex: 1, backgroundColor: colors.surface }}>
-        <Stack
-          screenOptions={{
-            headerShown: false,
-            contentStyle: { backgroundColor: colors.surface },
-            animation: 'fade',
-          }}
-        />
-      </View>
+      <ToastProvider>
+        <View style={{ flex: 1, backgroundColor: colors.surface }}>
+          <Stack
+            screenOptions={{
+              headerShown: false,
+              contentStyle: { backgroundColor: colors.surface },
+              animation: 'fade',
+            }}
+          />
+        </View>
+      </ToastProvider>
     </GestureHandlerRootView>
   );
 }

@@ -18,6 +18,21 @@ export const spacing = {
 
 export const radius = { sm: 6, md: 12, lg: 20, pill: 999 };
 
+// Typography scale — size + weight + lineHeight per role, all on the Inter
+// family below. UI primitives (src/components/ui/) consume these instead of
+// ad-hoc per-screen font sizes, so headings/body/captions stay consistent as
+// more screens migrate onto the shared components.
+type TypeStyle = { fontSize: number; fontWeight: '400' | '500' | '600' | '700' | '800'; lineHeight: number };
+export const typography: Record<'h1' | 'h2' | 'title' | 'body' | 'bodyMedium' | 'caption' | 'label', TypeStyle> = {
+  h1: { fontSize: 26, fontWeight: '700', lineHeight: 32 },
+  h2: { fontSize: 20, fontWeight: '700', lineHeight: 26 },
+  title: { fontSize: 16, fontWeight: '600', lineHeight: 22 },
+  body: { fontSize: 14, fontWeight: '400', lineHeight: 20 },
+  bodyMedium: { fontSize: 14, fontWeight: '600', lineHeight: 20 },
+  caption: { fontSize: 12, fontWeight: '400', lineHeight: 16 },
+  label: { fontSize: 12, fontWeight: '700', lineHeight: 16 },
+};
+
 // "Inter" — clean neutral grotesque-sans, the closest widely-available match
 // to Claude.ai's own UI typeface (which is proprietary and can't be bundled
 // here). RMJ-One's real deployment is a web export (see app/+html.tsx, which
