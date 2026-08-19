@@ -7,6 +7,7 @@ import { api } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthContext';
 import { nowISTLongLabel } from '@/src/utils/datetime';
 import { useCountUp } from '@/src/hooks/use-count-up';
+import { useDashboardStream } from '@/src/hooks/use-dashboard-stream';
 import { spacing, radius, images, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { Screen, Section, StatTile, Skeleton, ErrorState, DualBalance, Tone } from '@/src/components/ui';
@@ -28,6 +29,13 @@ type DashboardData = {
     revenue_today: number; revenue_month: number; intake_today: number; active_employees: number;
     customers_open: number; karigars_open: number; fine_with_karigars: number; karigar_amt_payable: number;
   };
+  recent_activity?: RecentItem[];
+};
+
+type RecentItem = { kind: 'repair' | 'cash' | 'stock' | 'ledger'; at?: string; label: string; route: string };
+
+const RECENT_ICON: Record<RecentItem['kind'], keyof typeof Ionicons.glyphMap> = {
+  repair: 'construct-outline', cash: 'wallet-outline', stock: 'diamond-outline', ledger: 'book-outline',
 };
 
 // Poll cadence tightened to ~15s (was 45s) so the "Live" pill reads honestly
@@ -54,41 +62,26 @@ export default function DashboardScreen() {
   const { width } = useWindowDimensions();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const router = useRouter();
-  const [data, setData] = useState<DashboardData | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Live via SSE with a polling fallback (see useDashboardStream). `connected`
+  // reflects the real transport so the Live pill can tell the truth.
+  const { data, connected, lastUpdated, error, refresh } = useDashboardStream<DashboardData>(AUTO_REFRESH_MS);
+  const loading = !data && !error;
   const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState('');
   const [unread, setUnread] = useState(0);
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [, forceTick] = useState(0);
   const [composeOpen, setComposeOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
 
   const isWide = width >= 900;
 
-  const load = useCallback(async (silent?: boolean) => {
-    try {
-      setError('');
-      const res = await api.get<DashboardData>('/dashboard');
-      setData(res);
-      setLastUpdated(new Date());
-    } catch (e: any) {
-      if (!silent) setError(e?.detail || 'Failed to load dashboard');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
-
   useFocusEffect(useCallback(() => {
-    load();
     api.get<{ count: number }>('/notifications/unread-count').then((r) => setUnread(r.count)).catch(() => {});
-    const poll = setInterval(() => load(true), AUTO_REFRESH_MS);
+    // Re-render every 15s so the "updated Ns ago" label stays honest.
     const clock = setInterval(() => forceTick((t) => t + 1), 15000);
-    return () => { clearInterval(poll); clearInterval(clock); };
-  }, [load]));
+    return () => clearInterval(clock);
+  }, []));
 
-  const onRefresh = () => { setRefreshing(true); load(); };
+  const onRefresh = async () => { setRefreshing(true); await refresh(); setRefreshing(false); };
 
   // Build the needs-attention list from the payload — only non-zero items,
   // each gated on the caller actually having that module.
@@ -134,8 +127,10 @@ export default function DashboardScreen() {
           <Text style={styles.dateText}>{nowISTLongLabel()}</Text>
           <Text style={styles.owner} numberOfLines={1}>{user?.name || 'Owner'}</Text>
           <View style={styles.livePill} testID="dashboard-live-pill">
-            <View style={styles.liveDot} />
-            <Text style={styles.liveText}>Live · updated {timeAgo(lastUpdated) || 'just now'}</Text>
+            <View style={[styles.liveDot, !connected && styles.liveDotOff]} />
+            <Text style={styles.liveText}>
+              {connected ? 'Live' : 'Updated'} · {timeAgo(lastUpdated) || 'just now'}
+            </Text>
           </View>
         </View>
         <Pressable onPress={() => setSearchOpen(true)} style={styles.iconBtn} testID="dashboard-search-btn" hitSlop={10}>
@@ -151,10 +146,10 @@ export default function DashboardScreen() {
         <Image source={images.logo} style={styles.headerBadge} contentFit="contain" testID="dashboard-logo" />
       </View>
 
-      {loading && !data ? (
+      {loading ? (
         <DashboardSkeleton />
-      ) : error ? (
-        <ErrorState message={error} onRetry={() => load()} testID="dashboard-error" />
+      ) : error && !data ? (
+        <ErrorState message={error} onRetry={refresh} testID="dashboard-error" />
       ) : data ? (
         <>
           {/* 1. Needs-attention briefing */}
@@ -188,7 +183,29 @@ export default function DashboardScreen() {
 
           {/* 3. Approvals + Leave */}
           {hasModule('approvals') && (
-            <ApprovalsSection onChanged={() => load(true)} />
+            <ApprovalsSection onChanged={refresh} />
+          )}
+
+          {/* 4. Recently recorded — confirm a save without hunting for it. */}
+          {!!data.recent_activity && data.recent_activity.length > 0 && (
+            <Section title="Recently recorded" icon="time-outline" testID="section-recent">
+              <View style={styles.attnCard}>
+                {data.recent_activity.slice(0, 6).map((r, i, arr) => (
+                  <Pressable
+                    key={`${r.kind}-${i}`}
+                    onPress={() => router.push(r.route as any)}
+                    testID={`recent-${i}`}
+                    style={({ pressed }) => [styles.attnRow, i === arr.length - 1 && styles.attnRowLast, pressed && { opacity: 0.7 }]}
+                  >
+                    <View style={[styles.attnIcon, { backgroundColor: colors.surfaceTertiary }]}>
+                      <Ionicons name={RECENT_ICON[r.kind]} size={13} color={colors.brandSecondary} />
+                    </View>
+                    <Text style={styles.recentLabel} numberOfLines={1}>{r.label}</Text>
+                    <Ionicons name="chevron-forward" size={15} color={colors.mutedText} />
+                  </Pressable>
+                ))}
+              </View>
+            </Section>
           )}
 
           <View style={{ height: 96 }} />
@@ -381,6 +398,7 @@ function ComposeSheet({ visible, onClose }: { visible: boolean; onClose: () => v
     { key: 'advance', label: 'Employee advance', icon: 'cash-outline', route: '/(tabs)/employees?from=work', show: hasModule('team') || hasModule('payroll') },
     { key: 'deduction', label: 'Employee deduction', icon: 'remove-circle-outline', route: '/(tabs)/employees?from=work', show: hasModule('team') || hasModule('payroll') },
     { key: 'cash', label: 'Cash in/out', icon: 'wallet-outline', route: '/cashbook', show: hasModule('cash_book') },
+    { key: 'account', label: 'New ledger account', icon: 'book-outline', route: '/accounts/new', show: hasModule('ledger') },
   ];
   const visibleActions = actions.filter((a) => a.show);
 
@@ -522,7 +540,9 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   owner: { color: colors.onSurface, fontSize: 26, fontWeight: '600', fontFamily: fonts.display, marginTop: 2 },
   livePill: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 6 },
   liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.onSuccess },
+  liveDotOff: { backgroundColor: colors.mutedText },
   liveText: { color: colors.mutedText, fontSize: 11 },
+  recentLabel: { flex: 1, color: colors.onSurface, fontSize: 13, fontWeight: '600' },
   headerBadge: { width: 40, height: 40, borderRadius: radius.md, marginLeft: 2 },
   iconBtn: {
     width: 38, height: 38, borderRadius: 19, backgroundColor: colors.surfaceSecondary,

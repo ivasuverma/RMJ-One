@@ -4,9 +4,12 @@ Extracted from the former monolithic server.py (§2.1 router split). Shared
 infrastructure (db, auth deps, models, cross-domain helpers) stays in
 server.py and is imported from here — nothing about behavior changed,
 only where the code lives."""
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+from starlette.responses import StreamingResponse
 from typing import Optional
 from datetime import date
+import asyncio
+import json
 from server import (
     db,
     today_str,
@@ -38,6 +41,68 @@ NOT_CHECKED_IN_GRACE_MIN = 30
 # ---------------- Dashboard ----------------
 @router.get('/dashboard')
 async def dashboard(_: dict = Depends(get_current)):
+    return await _compute_dashboard()
+
+
+# Server-Sent Events live stream. Additive — GET /dashboard above stays the
+# canonical fallback. This standalone Mongo has no change streams, so we simply
+# recompute on a fixed interval using the SAME shared function as the REST
+# endpoint (never a second, drifting code path). Auth is the normal
+# Authorization: Bearer header (the client uses a fetch-based reader, not the
+# native EventSource, precisely so it can send that header instead of leaking
+# the JWT in a query param). Keep-alive comment lines are sent between payloads
+# so Cloudflare's proxy doesn't idle-close the connection.
+_STREAM_INTERVAL_SEC = 5
+
+
+@router.get('/dashboard/stream')
+async def dashboard_stream(request: Request, _: dict = Depends(get_current)):
+    async def gen():
+        try:
+            # Send the current snapshot immediately on connect, then re-send on
+            # each interval until the client goes away.
+            payload = await _compute_dashboard()
+            yield f"data: {json.dumps(payload)}\n\n"
+            while True:
+                for _ in range(_STREAM_INTERVAL_SEC):
+                    if await request.is_disconnected():
+                        return
+                    await asyncio.sleep(1)
+                    yield ": keepalive\n\n"
+                if await request.is_disconnected():
+                    return
+                payload = await _compute_dashboard()
+                yield f"data: {json.dumps(payload)}\n\n"
+        except asyncio.CancelledError:  # client disconnected mid-send
+            return
+
+    return StreamingResponse(gen(), media_type='text/event-stream', headers={
+        'Cache-Control': 'no-cache',
+        'X-Accel-Buffering': 'no',  # ask any reverse proxy not to buffer the stream
+        'Connection': 'keep-alive',
+    })
+
+
+async def _recent_activity(d: str, limit: int = 12) -> list:
+    """Newest-first feed across the record types staff actually create — repair
+    intake/delivery, cash book entries, stock returns, ledger entries. Used by
+    the dashboard's "Recently recorded" strip and re-sent on the SSE stream.
+    Cheap by design: small capped per-source queries merged and trimmed."""
+    items: list = []
+    async for i in db.repair_items.find({'created_at': {'$regex': f'^{d}'}}, {'_id': 0, 'id': 1, 'created_at': 1, 'item_name': 1}).sort('created_at', -1).limit(limit):
+        items.append({'kind': 'repair', 'at': i.get('created_at'), 'label': f"Repair in: {i.get('item_name') or 'item'}", 'route': f"/repairs/{i['id']}"})
+    async for c in db.cashbook_entries.find({'date': d}, {'_id': 0, 'type': 1, 'amount': 1, 'name': 1, 'created_at': 1}).sort('created_at', -1).limit(limit):
+        sign = '+' if c.get('type') == 'received' else '−'
+        items.append({'kind': 'cash', 'at': c.get('created_at'), 'label': f"Cash {sign}₹{round(c.get('amount') or 0)}: {c.get('name') or ''}".strip(), 'route': '/cashbook'})
+    async for s in db.samples.find({'received_at': {'$regex': f'^{d}'}}, {'_id': 0, 'id': 1, 'received_at': 1, 'tag': 1}).sort('received_at', -1).limit(limit):
+        items.append({'kind': 'stock', 'at': s.get('received_at'), 'label': f"Stock returned: {s.get('tag') or 'item'}", 'route': f"/samples/{s['id']}"})
+    async for e in db.ledger_entries.find({'created_at': {'$regex': f'^{d}'}}, {'_id': 0, 'account_id': 1, 'particulars': 1, 'created_at': 1}).sort('created_at', -1).limit(limit):
+        items.append({'kind': 'ledger', 'at': e.get('created_at'), 'label': f"Ledger: {e.get('particulars') or ''}".strip(), 'route': f"/accounts/{e['account_id']}"})
+    items.sort(key=lambda x: x.get('at') or '', reverse=True)
+    return items[:limit]
+
+
+async def _compute_dashboard() -> dict:
     d = today_str()
     employees = await db.employees.find({}, {'_id': 0, 'id': 1, 'status': 1, 'shift': 1}).to_list(2000)
     total = len(employees)
@@ -192,6 +257,7 @@ async def dashboard(_: dict = Depends(get_current)):
             'customers_open': customers_open, 'karigars_open': karigars_open,
             'fine_with_karigars': fine_with_karigars, 'karigar_amt_payable': karigar_amt_payable,
         },
+        'recent_activity': await _recent_activity(d),
     }
 
 # ---------------- Audit ----------------

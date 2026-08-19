@@ -192,6 +192,10 @@ MODULE_DEFS = [
     {'key': 'karigar_ledger', 'label': 'Karigar Ledger', 'default_roles': ['owner', 'admin', 'accountant'], 'employee_assignable': True},
     {'key': 'samples', 'label': 'Stock In/Out', 'default_roles': ['owner', 'admin'], 'employee_assignable': True},
     {'key': 'cash_book', 'label': 'Cash Book', 'default_roles': ['owner', 'admin', 'accountant'], 'employee_assignable': True},
+    # Unified dual-balance ledger (v2 Phase 5) — the single account list with
+    # per-account fine (g) + amount (₹) balances. Staff-level; not granted to
+    # employee accounts (they see only their own wage/advance ledger elsewhere).
+    {'key': 'ledger', 'label': 'Ledger', 'default_roles': ['owner', 'admin', 'accountant']},
 ]
 MODULE_KEYS = {m['key'] for m in MODULE_DEFS}
 MODULE_DEFAULT_ROLES = {m['key']: set(m['default_roles']) for m in MODULE_DEFS}
@@ -830,6 +834,58 @@ class CashBookQuickNameIn(BaseModel):
     name: str
 
 
+# ---------------- Ledger: unified accounts (v2 Phase 5) ----------------
+# The dual-balance core. An "account" is one entity carrying a *type* (from the
+# account_types master) rather than living in a separate customer/karigar/
+# employee directory. Every account and every ledger entry tracks two
+# independent values: fine (pure-gold-equivalent grams, 3dp) and amount (₹).
+# They are NEVER collapsed into one number — a karigar can hold fine gold while
+# the shop owes them cash. This layer is additive: the existing per-party
+# ledgers (karigar_ledger, repairs, employee ledger) are left intact and their
+# API contracts unchanged; wiring those sources to also post here is a separate
+# integration step, done deliberately so live bookkeeping isn't double-counted.
+class AccountTypeIn(BaseModel):
+    name: str
+
+
+class AccountTypeUpdateIn(BaseModel):
+    name: Optional[str] = None
+    sort: Optional[int] = None
+
+
+class LedgerAccountIn(BaseModel):
+    type_id: str
+    name: str
+    phone: Optional[str] = ''
+    # Opening position when the account is first created — both halves are
+    # independent and either may be non-zero (or negative, if the shop already
+    # owes them). Balances are always derived: opening + sum of entry deltas.
+    opening_fine: Optional[float] = 0      # grams, 3dp
+    opening_amount: Optional[float] = 0    # ₹
+    note: Optional[str] = ''
+
+
+class LedgerAccountUpdateIn(BaseModel):
+    type_id: Optional[str] = None
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    opening_fine: Optional[float] = None
+    opening_amount: Optional[float] = None
+    note: Optional[str] = None
+    active: Optional[bool] = None
+
+
+class LedgerAccountEntryIn(BaseModel):
+    date: str  # YYYY-MM-DD
+    particulars: str
+    # Signed deltas — positive = owed to the shop (a debit to the account),
+    # negative = owed by the shop. At least one must be non-zero; an entry may
+    # move gold only, cash only, or both at once.
+    fine_delta: Optional[float] = 0    # grams, 3dp, signed
+    amount_delta: Optional[float] = 0  # ₹, signed
+    note: Optional[str] = ''
+
+
 # ---------------- Seed ----------------
 async def seed():
     await db.users.create_index('username', unique=True)
@@ -857,6 +913,24 @@ async def seed():
     await db.samples.create_index('status')
     await db.cashbook_entries.create_index([('counter_id', 1), ('date', 1)])
     await db.cashbook_quick_names.create_index('name')
+    await db.accounts.create_index('type_id')
+    await db.accounts.create_index('name')
+    await db.ledger_entries.create_index([('account_id', 1), ('date', 1)])
+
+    # Seed the account-type master with the four base types the ledger is
+    # built around (Customer, Karigar, Employee, Difference/Loss). They're
+    # marked is_system so they can be renamed but not deleted — the ledger's
+    # filter chips and the Difference/wastage sink depend on them existing.
+    if await db.account_types.count_documents({}) == 0:
+        base_types = [
+            ('Customer', 'customer'), ('Karigar', 'karigar'),
+            ('Employee', 'employee'), ('Difference (Loss)', 'difference'),
+        ]
+        for i, (name, key) in enumerate(base_types):
+            await db.account_types.insert_one({
+                'id': str(uuid.uuid4()), 'name': name, 'key': key, 'is_system': True,
+                'sort': i, 'created_at': now_utc().isoformat(), 'created_by': 'system',
+            })
 
     # One-time setup/migration: every shop needs at least one Cash Book
     # counter to have anywhere to record entries. If none exist yet, create
@@ -1922,7 +1996,7 @@ def _make_photo_thumb(photo_data_uri: Optional[str]) -> str:
 from routers import (
     auth, employees, settings as settings_router, attendance, tasks, repairs,
     users, payroll, notifications, biometric, reports, assistant, samples,
-    cashbook,
+    cashbook, ledger,
 )
 
 # ---------------- Mount ----------------
@@ -1940,6 +2014,7 @@ api.include_router(reports.router)
 api.include_router(assistant.router)
 api.include_router(samples.router)
 api.include_router(cashbook.router)
+api.include_router(ledger.router)
 
 app.include_router(api)
 app.include_router(biometric.iclock_router)  # /iclock/* — real device protocol, no /api prefix

@@ -12,6 +12,7 @@ import { AuthProvider } from '@/src/auth/AuthContext';
 import { ThemeProvider, useTheme } from '@/src/theme/ThemeContext';
 import { ErrorBoundary } from '@/src/components/ErrorBoundary';
 import { ToastProvider } from '@/src/components/ui/Toast';
+import { OfflineBanner } from '@/src/components/OfflineBanner';
 
 // Disable logbox errors etc so that users can see the app and agent works as expected.
 LogBox.ignoreAllLogs(true);
@@ -60,6 +61,14 @@ function AppShell() {
   // button — without this, it falls through to the OS default and minimizes
   // or closes the app instead of popping the screen stack. This makes the
   // hardware button behave the same as tapping the in-app arrow.
+  // Register the service worker on web so the app-shell cache + offline
+  // tolerance are active even before (or without) enabling push. Safe to call
+  // repeatedly — the browser no-ops an already-registered worker.
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+    navigator.serviceWorker.register('/sw.js').catch(() => { /* offline support just won't activate */ });
+  }, []);
+
   useEffect(() => {
     if (Platform.OS !== 'android') return;
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -84,6 +93,7 @@ function AppShell() {
               animation: 'fade',
             }}
           />
+          <OfflineBanner />
         </View>
       </ToastProvider>
     </GestureHandlerRootView>

@@ -1,13 +1,15 @@
 {
-  "name": "RMJ-One",
-  "short_name": "RMJ-One",
+  "name": "RMJ One",
+  "short_name": "RMJ One",
   "description": "One system for the entire business — Ram Murti Jewellers.",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#0E211A",
-  "theme_color": "#0E211A",
+  "background_color": "#FAFAF9",
+  "theme_color": "#161615",
   "icons": [
-    { "src": "/apple-touch-icon.png", "sizes": "180x180", "type": "image/png" }
+    { "src": "/apple-touch-icon.png", "sizes": "180x180", "type": "image/png", "purpose": "any" },
+    { "src": "/apple-touch-icon.png", "sizes": "180x180", "type": "image/png", "purpose": "maskable" }
   ]
 }
