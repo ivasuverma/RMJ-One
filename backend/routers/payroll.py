@@ -583,7 +583,6 @@ async def payroll_pdf(entry_id: str, _: dict = Depends(require_staff), _mod=Depe
     title_style = ParagraphStyle('t', parent=styles['Title'], textColor=dark, fontSize=22)
     sub_style = ParagraphStyle('s', parent=styles['Normal'], textColor=rlcolors.HexColor('#555'), fontSize=10)
     label_style = ParagraphStyle('lbl', parent=styles['Normal'], fontSize=9, textColor=rlcolors.HexColor('#666'))
-    val_style = ParagraphStyle('v', parent=styles['Normal'], fontSize=11, textColor=dark)
 
     elements = []
     elements.append(Paragraph(store.get('name', 'Ram Murti Jewellers'), title_style))

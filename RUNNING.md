@@ -16,16 +16,14 @@ cp .env.example .env          # defaults already point at the Docker Mongo above
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+# Only needed if you're developing/linting/testing the backend (black, flake8, mypy,
+# isort, pytest) — not required just to run the app:
+# pip install -r requirements-dev.txt
 uvicorn server:app --reload --host 0.0.0.0 --port 8000
 ```
 
 The backend seeds demo data on first boot: an owner login (`owner` / `Owner@123`), an
 admin and accountant login, and 5 sample employees (see terminal log for their PINs).
-
-Note: `requirements.txt` includes `emergentintegrations`, a package used only by the
-"Ask AI" assistant screen. If it fails to install from your network, remove that line (and
-`litellm`) from requirements.txt — every other screen (dashboard, attendance, payroll,
-employees) works without it.
 
 ### Optional: browser push notifications
 

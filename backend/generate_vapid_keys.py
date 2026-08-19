@@ -10,7 +10,6 @@ Requires: pip install pywebpush cryptography
 import base64
 
 from cryptography.hazmat.primitives.asymmetric import ec
-from cryptography.hazmat.primitives import serialization
 
 
 def b64url(data: bytes) -> str:

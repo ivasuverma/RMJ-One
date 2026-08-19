@@ -1,0 +1,11 @@
+[flake8]
+# This codebase intentionally uses compact one-line `if x: y` statements and a
+# dense style throughout server.py/routers — pycodestyle's stylistic checks
+# (E7xx line-shape, E2xx whitespace, E1xx continuation-line indent, E3xx blank
+# lines) would flag hundreds of pre-existing, deliberate lines with no bug
+# behind them. The CI gate (.github/workflows/deploy.yml) restricts itself to
+# E9 (syntax errors) and F (pyflakes: unused imports/vars, undefined names,
+# etc.) for the same reason — this file exists so a local `flake8` run
+# matches what CI actually checks.
+select = E9,F
+exclude = .venv,__pycache__,tests

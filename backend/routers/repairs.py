@@ -35,7 +35,6 @@ from server import (
     log_audit,
     notify_user,
     _notify_module,
-    _report_pdf,
     _pdf_response,
 )
 

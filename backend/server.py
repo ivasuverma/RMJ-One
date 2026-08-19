@@ -40,6 +40,12 @@ if ENVIRONMENT == 'production' and JWT_SECRET == 'rmj-one-dev-secret-change-in-p
         'Refusing to start: ENVIRONMENT=production but JWT_SECRET is still the default dev value. '
         'Set a real JWT_SECRET in backend/.env before running in production.'
     )
+if ENVIRONMENT == 'production' and ALLOWED_ORIGINS == ['*']:
+    raise RuntimeError(
+        'Refusing to start: ENVIRONMENT=production but ALLOWED_ORIGINS is still "*" (wide open CORS). '
+        'Set a real comma-separated origin list in backend/.env, e.g. '
+        'ALLOWED_ORIGINS=https://app.ramjewellers.in,https://admin.ramjewellers.in'
+    )
 
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]

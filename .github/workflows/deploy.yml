@@ -20,7 +20,42 @@ on:
   workflow_dispatch: {}
 
 jobs:
+  # Runs on GitHub's own hosted runner (not the shop's Windows box) so a lint
+  # failure never touches the live server. This is a fast static-analysis
+  # gate only — it deliberately does NOT run backend/tests/*.py (see the
+  # comment on the deploy job below for why) or frontend/backend unit
+  # test suites; it exists to catch typos/syntax errors/broken imports
+  # before they ever reach the shop.
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Backend — flake8 (syntax errors + real bugs only)
+        run: |
+          cd backend
+          python3 -m pip install --quiet flake8
+          # .flake8 restricts this to E9 (syntax errors) + F (pyflakes: unused
+          # imports/vars, undefined names) — see backend/.flake8 for why the
+          # stylistic checks are off (this codebase's compact one-line-if
+          # style would otherwise flag hundreds of pre-existing, deliberate lines).
+          python3 -m flake8 .
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Frontend — install
+        run: cd frontend && npm ci
+
+      - name: Frontend — typecheck
+        run: cd frontend && npx tsc --noEmit -p .
+
+      - name: Frontend — lint
+        run: cd frontend && npm run lint
+
   deploy:
+    needs: lint
     runs-on: self-hosted
     steps:
       - name: Pull latest and redeploy
@@ -90,16 +125,35 @@ jobs:
           }
           Write-Host '  backend is up'
 
-          Write-Host '--- rebuild frontend web export ---'
-          nssm stop RMJOneWeb
-          if (Test-Path -LiteralPath "$repo\frontend\dist") {
-            Remove-Item -LiteralPath "$repo\frontend\dist" -Recurse -Force
+          Write-Host '--- rebuild frontend web export (into a temp dir, old site keeps serving) ---'
+          # Building straight into `dist` meant the site was down (or serving a half-written
+          # export) for however long `expo export` took, and a failed export left `dist`
+          # deleted with nothing to restart into. Build into `dist-new` first while
+          # RMJOneWeb keeps serving the current `dist` unchanged; only swap and restart the
+          # service once the export has actually succeeded.
+          $distPath = "$repo\frontend\dist"
+          $newDistPath = "$repo\frontend\dist-new"
+          $oldDistPath = "$repo\frontend\dist-old"
+          foreach ($p in @($newDistPath, $oldDistPath)) {
+            if (Test-Path -LiteralPath $p) { Remove-Item -LiteralPath $p -Recurse -Force }
           }
           cd "$repo\frontend"
-          npx expo export --platform web
+          $env:EXPO_NO_TELEMETRY = '1'
+          npx expo export --platform web --output-dir dist-new
+          $exportExitCode = $LASTEXITCODE
           cd $repo
+          if ($exportExitCode -ne 0 -or -not (Test-Path -LiteralPath "$newDistPath\index.html")) {
+            if (Test-Path -LiteralPath $newDistPath) { Remove-Item -LiteralPath $newDistPath -Recurse -Force }
+            throw "Frontend web export failed (exit code $exportExitCode) — RMJOneWeb was left untouched, still serving the previous build."
+          }
+          Write-Host '  export OK'
 
-          Write-Host '--- restart web ---'
+          Write-Host '--- swap in new web build and restart ---'
+          nssm stop RMJOneWeb
+          Wait-ForServiceStatus RMJOneWeb 'SERVICE_STOPPED' 10
+          if (Test-Path -LiteralPath $distPath) { Rename-Item -LiteralPath $distPath -NewName 'dist-old' }
+          Rename-Item -LiteralPath $newDistPath -NewName 'dist'
+          if (Test-Path -LiteralPath $oldDistPath) { Remove-Item -LiteralPath $oldDistPath -Recurse -Force }
           nssm start RMJOneWeb
           Wait-ForServiceStatus RMJOneWeb 'SERVICE_RUNNING' 10
 
