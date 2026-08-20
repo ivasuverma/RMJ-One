@@ -306,8 +306,14 @@ async def iclock_getrequest(SN: str = Query(...)):
     device = await db.biometric_devices.find_one({'serial': SN}, {'_id': 0})
     if not device:
         return PlainTextResponse('OK')
-    start = (now_utc() - timedelta(hours=48)).strftime('%Y-%m-%d %H:%M:%S')
-    end = (now_utc() + timedelta(days=1)).strftime('%Y-%m-%d %H:%M:%S')
+    # The device compares StartTime/EndTime against its OWN clock, which is set
+    # to IST — so the window must be expressed in IST, not UTC. Computing it
+    # from now_utc() sent a window shifted 5h30m behind what the device's clock
+    # reads, which could clip the current day's punches out of the query near
+    # the day boundary. Build the window in IST to match the device.
+    now_ist = now_utc().astimezone(IST)
+    start = (now_ist - timedelta(hours=48)).strftime('%Y-%m-%d %H:%M:%S')
+    end = (now_ist + timedelta(days=1)).strftime('%Y-%m-%d %H:%M:%S')
     return PlainTextResponse(f'C:1:DATA QUERY ATTLOG StartTime={start} EndTime={end}')
 
 
