@@ -7,7 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { api } from '@/src/api/client';
 import { confirmAction } from '@/src/utils/confirm';
-import { istDisplayDateTime } from '@/src/utils/datetime';
+import { istDisplayDateTime, istDate, istTime, displayDateOnlyWithWeekday } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
@@ -29,6 +29,19 @@ export default function BiometricScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [tab, setTab] = useState<'devices' | 'logs'>('devices');
   const [webhookUrl, setWebhookUrl] = useState('');
+
+  // Group the sync log by the punch's IST date, newest day first, so it reads
+  // day-by-day like the attendance Live feed instead of one flat stream.
+  const logsByDate = useMemo(() => {
+    const groups: { date: string; items: Log[] }[] = [];
+    const m = new Map<string, Log[]>();
+    for (const l of logs) {
+      const d = istDate(l.timestamp) || '—';
+      if (!m.has(d)) { m.set(d, []); groups.push({ date: d, items: m.get(d)! }); }
+      m.get(d)!.push(l);
+    }
+    return groups;
+  }, [logs]);
 
   const load = useCallback(async () => {
     try {
@@ -142,17 +155,22 @@ export default function BiometricScreen() {
           ) : (
             logs.length === 0 ? (
               <View style={styles.empty}><Ionicons name="pulse-outline" size={40} color={colors.mutedText} /><Text style={styles.emptyText}>No sync logs yet</Text></View>
-            ) : logs.map((l) => (
-              <View key={l.id} style={styles.logRow} testID={`bio-log-${l.id}`}>
-                <View style={[styles.logDot, { backgroundColor: l.result === 'accepted' ? colors.onSuccess : l.result === 'skipped' ? colors.onWarning : colors.onError }]} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.logText}>
-                    <Text style={{ color: colors.onSurface, fontWeight: '700' }}>{l.employee_name || l.user_id}</Text>
-                    <Text> · {(l.action || l.event_type || '').replace('_', ' ')}</Text>
-                  </Text>
-                  <Text style={styles.logMeta}>{l.serial} · {l.result}{l.reason ? ` · ${l.reason}` : ''}</Text>
-                </View>
-                <Text style={styles.logTime}>{fmtWhen(l.timestamp)}</Text>
+            ) : logsByDate.map((g) => (
+              <View key={g.date}>
+                <Text style={styles.logDateHeader}>{g.date === '—' ? 'Unknown date' : displayDateOnlyWithWeekday(g.date)}</Text>
+                {g.items.map((l) => (
+                  <View key={l.id} style={styles.logRow} testID={`bio-log-${l.id}`}>
+                    <View style={[styles.logDot, { backgroundColor: l.result === 'accepted' ? colors.onSuccess : l.result === 'skipped' ? colors.onWarning : colors.onError }]} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.logText}>
+                        <Text style={{ color: colors.onSurface, fontWeight: '700' }}>{l.employee_name || l.user_id}</Text>
+                        <Text> · {(l.action || l.event_type || '').replace('_', ' ')}</Text>
+                      </Text>
+                      <Text style={styles.logMeta}>{l.serial} · {l.result}{l.reason ? ` · ${l.reason}` : ''}</Text>
+                    </View>
+                    <Text style={styles.logTime}>{istTime(l.timestamp)}</Text>
+                  </View>
+                ))}
               </View>
             ))
           )}
@@ -224,7 +242,8 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   logDot: { width: 8, height: 8, borderRadius: 4 },
   logText: { color: colors.onSurfaceSecondary, fontSize: 13 },
   logMeta: { color: colors.mutedText, fontSize: 11, marginTop: 2 },
-  logTime: { color: colors.mutedText, fontSize: 10 },
+  logTime: { color: colors.onSurface, fontSize: 13, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  logDateHeader: { color: colors.mutedText, fontSize: 12, fontWeight: '700', letterSpacing: 0.6, textTransform: 'uppercase', marginTop: spacing.lg, marginBottom: spacing.sm },
   empty: { alignItems: 'center', paddingVertical: 40, gap: spacing.sm },
   emptyText: { color: colors.onSurfaceTertiary },
 });
