@@ -1,4 +1,4 @@
-"""One-time migration: bring Customers and Karigars into the Unified Ledger.
+r"""One-time migration: bring Customers and Karigars into the Unified Ledger.
 
 WHAT IT DOES
     Creates one unified `accounts` row per existing customer and per existing
@@ -154,8 +154,10 @@ async def main(commit: bool):
             'type_id': cust_type if kind == 'customer' else kar_type,
             'name': nm,
             'phone': (phone or '').strip(),
-            'opening_fine': round(opening_fine, 3),
-            'opening_amount': round(opening_amount, 2),
+            # `or 0.0` collapses negative-zero (round(-0.0004, 3) -> -0.0) to a
+            # clean 0.0 so the stored opening balance never reads as "-0.00".
+            'opening_fine': round(opening_fine, 3) or 0.0,
+            'opening_amount': round(opening_amount, 2) or 0.0,
             'note': '',
             'active': True,
             'created_at': _now_iso(),

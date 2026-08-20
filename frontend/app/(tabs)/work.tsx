@@ -18,6 +18,7 @@ type DashboardData = {
   samples_summary: { with_karigar: number; overdue: number };
   cashbook_summary: { closing_balance: number };
   tasks_summary: { due_today: number; overdue: number };
+  todays_attendance?: { present: number; absent: number; late: number; not_checked_in: number; total: number };
   recent_activity?: { kind: 'repair' | 'cash' | 'stock' | 'ledger'; label: string; route: string }[];
 };
 
@@ -125,7 +126,16 @@ export default function WorkScreen() {
             <View style={styles.pi}><Ionicons name="calendar-outline" size={22} color={colors.brandSecondary} /></View>
             <View style={{ flex: 1, minWidth: 0 }}>
               <Text style={styles.pt}>Attendance &amp; Payroll</Text>
-              <Text style={styles.pd} numberOfLines={1}>Daily in/out · calendar · monthly salary</Text>
+              <Text style={styles.pd} numberOfLines={1}>
+                {data?.todays_attendance ? (
+                  <>
+                    <Text style={{ color: colors.onSuccess, fontWeight: '700' }}>{data.todays_attendance.present} present</Text>
+                    <Text> · </Text>
+                    <Text style={{ color: colors.onError, fontWeight: '700' }}>{data.todays_attendance.absent} absent</Text>
+                    {data.todays_attendance.late > 0 && <Text> · {data.todays_attendance.late} late</Text>}
+                  </>
+                ) : 'Daily in/out · calendar · monthly salary'}
+              </Text>
             </View>
             <Ionicons name="chevron-forward" size={18} color={colors.mutedText} />
           </Pressable>
