@@ -40,6 +40,28 @@ from server import (
 
 router = APIRouter()
 
+
+async def _mirror_party_account(kind: str, ref: str, name: str, phone: str) -> None:
+    """Create a unified-ledger account mirroring a newly-created customer or
+    karigar, so every party shows up in the Ledger (type-filtered) the moment
+    it's created — not only after the one-time migration. Idempotent on
+    (source.kind, source.ref): a party already mirrored is skipped, so this is
+    safe to call on every create. Best-effort — a mirror failure must never
+    block the actual customer/karigar creation, so callers wrap in try/except.
+    Balances still live in the party's own ledger for now; this brings the
+    account's identity into the unified list."""
+    if await db.accounts.find_one({'source.kind': kind, 'source.ref': ref}, {'_id': 0, 'id': 1}):
+        return
+    t = await db.account_types.find_one({'key': kind}, {'_id': 0, 'id': 1})
+    if not t:
+        return
+    await db.accounts.insert_one({
+        'id': str(uuid.uuid4()), 'type_id': t['id'], 'name': (name or '').strip(),
+        'phone': (phone or '').strip(), 'opening_fine': 0, 'opening_amount': 0,
+        'note': '', 'active': True, 'created_at': now_utc().isoformat(), 'created_by': 'auto',
+        'source': {'kind': kind, 'ref': ref},
+    })
+
 # ---------------- Repairs: Customers ----------------
 @router.get('/customers')
 async def list_customers(q: Optional[str] = None, _: dict = Depends(require_staff_or_module(['repairs', 'customer_ledger']))):
@@ -92,6 +114,8 @@ async def create_customer(body: CustomerIn, user=Depends(require_admin_or_module
         raise HTTPException(status_code=400, detail='A mobile number is required')
     doc = {'id': str(uuid.uuid4()), **body.model_dump(), 'created_at': now_utc().isoformat()}
     await db.customers.insert_one(dict(doc))
+    try: await _mirror_party_account('customer', doc['id'], body.name, body.mobile)
+    except Exception: pass
     await log_audit(user, 'customer.create', 'customer', doc['id'], body.name)
     return {k: v for k, v in doc.items() if k != '_id'}
 
@@ -154,6 +178,8 @@ async def create_karigar(body: KarigarIn, user=Depends(require_admin_or_module('
         raise HTTPException(status_code=400, detail='A mobile number is required')
     doc = {'id': str(uuid.uuid4()), **{**body.model_dump(), 'name': name}, 'created_at': now_utc().isoformat()}
     await db.karigars.insert_one(dict(doc))
+    try: await _mirror_party_account('karigar', doc['id'], name, body.mobile)
+    except Exception: pass
     await log_audit(user, 'karigar.create', 'karigar', doc['id'], name)
     return {k: v for k, v in doc.items() if k != '_id'}
 
@@ -270,6 +296,8 @@ async def create_repair_order(body: RepairOrderIn, user=Depends(require_admin_or
             raise HTTPException(status_code=400, detail='A mobile number is required for a new customer')
         customer = {'id': str(uuid.uuid4()), **body.new_customer.model_dump(), 'created_at': now_utc().isoformat()}
         await db.customers.insert_one(dict(customer))
+        try: await _mirror_party_account('customer', customer['id'], customer.get('name', ''), customer.get('mobile', ''))
+        except Exception: pass
         await log_audit(user, 'customer.create', 'customer', customer['id'], customer['name'])
     else:
         raise HTTPException(status_code=400, detail='customer_id or new_customer is required')
