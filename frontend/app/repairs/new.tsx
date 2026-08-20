@@ -107,6 +107,8 @@ export default function NewRepairOrderScreen() {
     if (submittingRef.current) return;
     if (mode === 'existing' && !selected) { Alert.alert('Missing', 'Pick a customer, or switch to New Customer'); return; }
     if (mode === 'new' && !newName.trim()) { Alert.alert('Missing', 'Enter the customer name'); return; }
+    // Same rule as a ledger account: a new party must have a mobile number.
+    if (mode === 'new' && newMobile.replace(/\D/g, '').length < 7) { Alert.alert('Missing', 'A mobile number is required for a new customer'); return; }
     if (items.length === 0) { Alert.alert('Missing', 'Add at least one item to this order'); return; }
     submittingRef.current = true;
     setSaving(true);
@@ -196,7 +198,7 @@ export default function NewRepairOrderScreen() {
             <View style={styles.formCard} testID="new-customer-form">
               <Text style={styles.label}>Name</Text>
               <TextInput testID="new-customer-name" value={newName} onChangeText={setNewName} placeholder="Customer name" placeholderTextColor={colors.mutedText} style={styles.input} />
-              <Text style={styles.label}>Mobile</Text>
+              <Text style={styles.label}>Mobile <Text style={{ color: colors.onError }}>*</Text></Text>
               <TextInput testID="new-customer-mobile" value={newMobile} onChangeText={setNewMobile} keyboardType="phone-pad" placeholder="98xxxxxxxx" placeholderTextColor={colors.mutedText} style={styles.input} />
               <Text style={styles.label}>Address (optional)</Text>
               <TextInput testID="new-customer-address" value={newAddress} onChangeText={setNewAddress} placeholder="Address" placeholderTextColor={colors.mutedText} style={styles.input} />

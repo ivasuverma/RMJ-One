@@ -63,6 +63,9 @@ export default function KarigarsScreen() {
     if (submittingRef.current) return;
     if (isEmployee && !pickedEmp) { Alert.alert('Missing', 'Pick which employee is this karigar'); return; }
     if (!isEmployee && !name.trim()) { Alert.alert('Missing', 'Enter a name'); return; }
+    // Same rule as a ledger account: an outside karigar needs a mobile number
+    // (in-house karigars are employees and carry their own contact details).
+    if (!isEmployee && mobile.replace(/\D/g, '').length < 7) { Alert.alert('Missing', 'A mobile number is required'); return; }
     submittingRef.current = true;
     setSaving(true);
     try {
@@ -150,7 +153,7 @@ export default function KarigarsScreen() {
                   <TextInput testID="karigar-name" value={name} onChangeText={setName} placeholder="Karigar or workshop name" placeholderTextColor={colors.mutedText} style={styles.input} />
                 </>
               )}
-              <Text style={styles.label}>Mobile (optional)</Text>
+              <Text style={styles.label}>Mobile {isEmployee ? '(optional)' : <Text style={{ color: colors.onError }}>*</Text>}</Text>
               <TextInput testID="karigar-mobile" value={mobile} onChangeText={setMobile} keyboardType="phone-pad" placeholder="98xxxxxxxx" placeholderTextColor={colors.mutedText} style={styles.input} />
 
               {editingId && (

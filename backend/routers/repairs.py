@@ -88,6 +88,8 @@ async def get_customer(cid: str, _: dict = Depends(require_staff_or_module(['rep
 
 @router.post('/customers')
 async def create_customer(body: CustomerIn, user=Depends(require_admin_or_module('repairs'))):
+    if len(re.sub(r'\D', '', body.mobile or '')) < 7:
+        raise HTTPException(status_code=400, detail='A mobile number is required')
     doc = {'id': str(uuid.uuid4()), **body.model_dump(), 'created_at': now_utc().isoformat()}
     await db.customers.insert_one(dict(doc))
     await log_audit(user, 'customer.create', 'customer', doc['id'], body.name)
@@ -147,6 +149,9 @@ async def create_karigar(body: KarigarIn, user=Depends(require_admin_or_module('
         emp = await db.employees.find_one({'id': body.employee_id}, {'_id': 0})
         if not emp: raise HTTPException(status_code=404, detail='Employee not found')
         name = emp['name']
+    elif len(re.sub(r'\D', '', body.mobile or '')) < 7:
+        # Outside karigars need a mobile number (in-house ones are employees).
+        raise HTTPException(status_code=400, detail='A mobile number is required')
     doc = {'id': str(uuid.uuid4()), **{**body.model_dump(), 'name': name}, 'created_at': now_utc().isoformat()}
     await db.karigars.insert_one(dict(doc))
     await log_audit(user, 'karigar.create', 'karigar', doc['id'], name)
@@ -261,6 +266,8 @@ async def create_repair_order(body: RepairOrderIn, user=Depends(require_admin_or
         customer = await db.customers.find_one({'id': body.customer_id}, {'_id': 0})
         if not customer: raise HTTPException(status_code=404, detail='Customer not found')
     elif body.new_customer:
+        if len(re.sub(r'\D', '', body.new_customer.mobile or '')) < 7:
+            raise HTTPException(status_code=400, detail='A mobile number is required for a new customer')
         customer = {'id': str(uuid.uuid4()), **body.new_customer.model_dump(), 'created_at': now_utc().isoformat()}
         await db.customers.insert_one(dict(customer))
         await log_audit(user, 'customer.create', 'customer', customer['id'], customer['name'])
