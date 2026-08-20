@@ -20,9 +20,10 @@ type Entry = {
   running_fine: number; running_amount: number; source?: string; created_by?: string;
 };
 type Detail = {
-  account: { id: string; name: string; phone?: string; opening_fine: number; opening_amount: number; note?: string };
+  account: { id: string; name: string; phone?: string; type_id?: string; note?: string; active?: boolean; opening_fine: number; opening_amount: number };
   type_name: string; fine_balance: number; amount_balance: number; entries: Entry[];
 };
+type AccountType = { id: string; name: string; key: string };
 
 const fmtFine = (n: number) => `${n >= 0 ? '' : '−'}${Math.abs(n).toFixed(3)} g`;
 const fmtAmt = (n: number) => `${n >= 0 ? '' : '−'}₹${Math.abs(Math.round(n)).toLocaleString('en-IN')}`;
@@ -44,6 +45,15 @@ export default function AccountDetailScreen() {
   const [busy, setBusy] = useState(false);
   const [exporting, setExporting] = useState(false);
 
+  // Edit-account form
+  const [types, setTypes] = useState<AccountType[]>([]);
+  const [editOpen, setEditOpen] = useState(false);
+  const [eName, setEName] = useState('');
+  const [ePhone, setEPhone] = useState('');
+  const [eTypeId, setETypeId] = useState('');
+  const [eNote, setENote] = useState('');
+  const [editBusy, setEditBusy] = useState(false);
+
   // Add-entry form
   const [date, setDate] = useState(todayIST());
   const [particulars, setParticulars] = useState('');
@@ -63,6 +73,50 @@ export default function AccountDetailScreen() {
   }, [id]);
 
   useFocusEffect(useCallback(() => { setLoading(true); load(); }, [load]));
+  useFocusEffect(useCallback(() => { api.get<AccountType[]>('/account-types').then(setTypes).catch(() => {}); }, []));
+
+  const openEdit = () => {
+    if (!data) return;
+    setEName(data.account.name);
+    setEPhone(data.account.phone || '');
+    setETypeId(data.account.type_id || '');
+    setENote(data.account.note || '');
+    setEditOpen(true);
+  };
+
+  const saveEdit = () => guard(async () => {
+    if (!eName.trim()) { toast.error('Name is required'); return; }
+    if (ePhone.replace(/\D/g, '').length < 7) { toast.error('Mobile number is required'); return; }
+    setEditBusy(true);
+    try {
+      await api.put(`/accounts/${id}`, { name: eName.trim(), phone: ePhone.trim(), type_id: eTypeId || undefined, note: eNote });
+      setEditOpen(false);
+      toast.success('Account updated');
+      await load();
+    } catch (e: any) {
+      toast.error(e?.detail || 'Could not update account');
+    } finally { setEditBusy(false); }
+  });
+
+  const deactivate = () => {
+    confirmAction('Deactivate account?', 'It will be hidden from the ledger list but its history is kept. You can recreate it later.', 'Deactivate', async () => {
+      try {
+        await api.put(`/accounts/${id}`, { active: false });
+        toast.success('Account deactivated');
+        router.back();
+      } catch (e: any) { toast.error(e?.detail || 'Could not deactivate'); }
+    });
+  };
+
+  const deleteAccount = () => {
+    confirmAction('Delete account?', 'Permanently removes this account. Only possible when it has no ledger entries — otherwise deactivate it instead.', 'Delete', async () => {
+      try {
+        await api.del(`/accounts/${id}`);
+        toast.success('Account deleted');
+        router.back();
+      } catch (e: any) { toast.error(e?.detail || 'Could not delete — try Deactivate instead'); }
+    });
+  };
 
   const openAdd = () => {
     setDate(todayIST()); setParticulars(''); setFine(''); setAmount(''); setDirection('debit');
@@ -128,6 +182,9 @@ export default function AccountDetailScreen() {
           <Text style={styles.title} numberOfLines={1}>{data?.account.name || 'Account'}</Text>
           {!!data && <Text style={styles.subtitle}>{data.type_name}{data.account.phone ? ` · ${data.account.phone}` : ''}</Text>}
         </View>
+        <Pressable onPress={openEdit} disabled={!data} style={styles.iconBtn} testID="account-edit-btn" hitSlop={12}>
+          <Ionicons name="create-outline" size={19} color={colors.onSurface} />
+        </Pressable>
         <Pressable onPress={exportPdf} disabled={exporting} style={styles.iconBtn} testID="account-export-pdf" hitSlop={12}>
           <Ionicons name={exporting ? 'hourglass-outline' : 'download-outline'} size={19} color={colors.onSurface} />
         </Pressable>
@@ -227,6 +284,45 @@ export default function AccountDetailScreen() {
           </KeyboardAvoidingView>
         </Pressable>
       </Modal>
+
+      {/* Edit-account modal */}
+      <Modal visible={editOpen} transparent animationType="slide" onRequestClose={() => setEditOpen(false)}>
+        <Pressable style={styles.sheetBackdrop} onPress={() => setEditOpen(false)}>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+            <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
+              <View style={styles.sheetHandle} />
+              <Text style={styles.sheetTitle}>Edit account</Text>
+
+              <Text style={styles.formLabel}>Type</Text>
+              <View style={styles.etypeRow}>
+                {types.map((t) => (
+                  <Pressable key={t.id} onPress={() => setETypeId(t.id)} style={[styles.etypeChip, eTypeId === t.id && styles.dirChipActive]} testID={`edit-type-${t.key}`}>
+                    <Text style={[styles.dirText, eTypeId === t.id && styles.dirTextActive]}>{t.name}</Text>
+                  </Pressable>
+                ))}
+              </View>
+
+              <Input label="Name" value={eName} onChangeText={setEName} required placeholder="Account name" testID="edit-name" />
+              <Input label="Mobile" value={ePhone} onChangeText={setEPhone} required keyboardType="phone-pad" placeholder="Mobile number" testID="edit-phone" />
+              <Input label="Note (optional)" value={eNote} onChangeText={setENote} placeholder="Anything worth remembering" testID="edit-note" />
+
+              <View style={{ height: spacing.md }} />
+              <Button label="Save changes" onPress={saveEdit} loading={editBusy} leftIcon="checkmark" testID="edit-save" />
+
+              <View style={styles.dangerRow}>
+                <Pressable onPress={deactivate} style={styles.dangerBtn} testID="account-deactivate">
+                  <Ionicons name="eye-off-outline" size={17} color={colors.onWarning} />
+                  <Text style={[styles.dangerText, { color: colors.onWarning }]}>Deactivate</Text>
+                </Pressable>
+                <Pressable onPress={deleteAccount} style={styles.dangerBtn} testID="account-delete">
+                  <Ionicons name="trash-outline" size={17} color={colors.onError} />
+                  <Text style={[styles.dangerText, { color: colors.onError }]}>Delete</Text>
+                </Pressable>
+              </View>
+            </Pressable>
+          </KeyboardAvoidingView>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -306,5 +402,14 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   dirText: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '700' },
   dirTextActive: { color: colors.onBrandPrimary },
   formLabel: { color: colors.onSurfaceSecondary, fontSize: 12, marginBottom: 6, marginTop: spacing.sm },
+  etypeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.sm },
+  etypeChip: { paddingHorizontal: spacing.md, paddingVertical: 9, borderRadius: radius.pill, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border },
+  dangerRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
+  dangerBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    paddingVertical: 12, borderRadius: radius.md, backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1, borderColor: colors.borderStrong,
+  },
+  dangerText: { fontSize: 14, fontWeight: '700' },
   twoCol: { flexDirection: 'row', gap: spacing.sm },
 });
