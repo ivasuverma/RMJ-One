@@ -26,9 +26,14 @@ iclock_router = APIRouter()  # mounted directly on app, no /api prefix — real 
 
 # Minimum minutes required between two accepted biometric punches for the
 # same employee before a new scan is treated as a real check-in/check-out
-# toggle rather than the device re-capturing the same visit. See
-# _ingest_biometric_punch.
-PUNCH_COOLDOWN_MIN = 180
+# toggle rather than the ADMS receiver re-processing the SAME record it just
+# uploaded. Kept deliberately small: the eSSL device has its own "Duplicate
+# Punch Period" (typically 300 min) that already collapses a single visit's
+# repeat scans, so this server-side guard only needs to catch the ADMS
+# getrequest re-uploading an identical punch (same timestamp, ~0 gap). A large
+# value here DOUBLE-filters on top of the device and can swallow a legitimate
+# second punch (e.g. an early check-out) — which is why it's 2, not 180.
+PUNCH_COOLDOWN_MIN = 2
 
 # ---------------- Biometric (eSSL Cloud Push) ----------------
 class DeviceIn(BaseModel):
