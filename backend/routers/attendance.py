@@ -163,8 +163,11 @@ async def attendance_today(date_: Optional[str] = Query(default=None, alias='dat
 
 
 @router.get('/attendance/live')
-async def attendance_live(_: dict = Depends(require_staff)):
-    events = await db.attendance_events.find({}, {'_id': 0}).sort('created_at', -1).limit(30).to_list(30)
+async def attendance_live(limit: int = 120, _: dict = Depends(require_staff)):
+    # Recent punch feed for the Attendance "Live" view — newest first, spanning
+    # enough events to cover several days so the feed can be grouped date-wise.
+    limit = max(1, min(limit, 500))
+    events = await db.attendance_events.find({}, {'_id': 0}).sort('created_at', -1).limit(limit).to_list(limit)
     return events
 
 

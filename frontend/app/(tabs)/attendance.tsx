@@ -5,7 +5,7 @@ import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
-import { istTime, todayIST, nowISTLongLabel } from '@/src/utils/datetime';
+import { istTime, istDate, todayIST, nowISTLongLabel, displayDateOnlyWithWeekday } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import AttendanceCalendarView from '@/src/components/AttendanceCalendarView';
@@ -26,8 +26,9 @@ type PayRow = {
   total_days: number; effective_days: number; advance: number; net_salary: number; paid?: boolean; id?: string;
 };
 type PayrollResp = { year: number; month: number; rows: PayRow[]; total_net: number };
+type Ev = { id: string; employee_name: string; type: 'check_in' | 'check_out'; timestamp: string; is_late?: boolean; working_hours?: number; source?: string };
 
-type Seg = 'today' | 'cal' | 'pay';
+type Seg = 'today' | 'live' | 'cal' | 'pay';
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const fmtINR = (n: number) => `₹${Math.round(n || 0).toLocaleString('en-IN')}`;
 const fmtTime = (iso?: string | null) => (iso ? (istTime(iso) || '—') : '—');
@@ -62,10 +63,11 @@ export default function OwnerAttendance() {
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const goBack = () => { if (from === 'work' || from === 'transactions') router.replace('/(tabs)/work' as any); else router.back(); };
 
-  const [seg, setSeg] = useState<Seg>(segParam === 'cal' ? 'cal' : segParam === 'pay' ? 'pay' : 'today');
+  const [seg, setSeg] = useState<Seg>(segParam === 'cal' ? 'cal' : segParam === 'pay' ? 'pay' : segParam === 'live' ? 'live' : 'today');
   const [rows, setRows] = useState<Row[]>([]);
   const [selEmp, setSelEmp] = useState<string | null>(null);
   const [pay, setPay] = useState<PayrollResp | null>(null);
+  const [events, setEvents] = useState<Ev[]>([]);
   const now = new Date();
   const [year] = useState(now.getFullYear());
   const [month] = useState(now.getMonth() + 1);
@@ -87,6 +89,23 @@ export default function OwnerAttendance() {
   }, [year, month]);
   useFocusEffect(useCallback(() => { if (seg === 'pay') loadPay(); }, [seg, loadPay]));
 
+  const loadLive = useCallback(async () => {
+    try { setEvents(await api.get<Ev[]>('/attendance/live?limit=120')); } catch { setEvents([]); }
+  }, []);
+  useFocusEffect(useCallback(() => { if (seg === 'live') loadLive(); }, [seg, loadLive]));
+
+  // Group the punch feed by IST date, newest day first, newest punch first.
+  const liveByDate = useMemo(() => {
+    const groups: { date: string; items: Ev[] }[] = [];
+    const byDate = new Map<string, Ev[]>();
+    for (const e of events) {
+      const d = istDate(e.timestamp);
+      if (!byDate.has(d)) { byDate.set(d, []); groups.push({ date: d, items: byDate.get(d)! }); }
+      byDate.get(d)!.push(e);
+    }
+    return groups;
+  }, [events]);
+
   const counts = useMemo(() => {
     const c = { present: 0, late: 0, absent: 0, notin: 0 };
     rows.forEach((r) => { c[bucketOf(r)]++; });
@@ -102,15 +121,16 @@ export default function OwnerAttendance() {
   };
 
   const subtitle = seg === 'today' ? `${nowISTLongLabel()} · ${inCount} of ${rows.length} in`
-    : seg === 'cal' ? 'Edit any day — payroll updates with it'
-      : `${MONTHS[month - 1]} ${year} · salary synced to attendance`;
+    : seg === 'live' ? 'Every check-in and check-out, newest first'
+      : seg === 'cal' ? 'Edit any day — payroll updates with it'
+        : `${MONTHS[month - 1]} ${year} · salary synced to attendance`;
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="attendance-screen">
       <ScrollView
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); if (seg === 'pay') loadPay(); }} tintColor={colors.brandPrimary} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); if (seg === 'pay') loadPay(); if (seg === 'live') loadLive(); }} tintColor={colors.brandPrimary} />}
       >
         <Pressable onPress={goBack} style={styles.backRow} hitSlop={8} testID="back-btn">
           <Ionicons name="chevron-back" size={18} color={colors.brandPrimary} />
@@ -121,9 +141,9 @@ export default function OwnerAttendance() {
 
         {/* Segmented control */}
         <View style={styles.seg}>
-          {(['today', 'cal', 'pay'] as Seg[]).map((s) => (
+          {(['today', 'live', 'cal', 'pay'] as Seg[]).map((s) => (
             <Pressable key={s} onPress={() => setSeg(s)} style={[styles.sg, seg === s && styles.sgOn]} testID={`seg-${s}`}>
-              <Text style={[styles.sgText, seg === s && styles.sgTextOn]}>{s === 'today' ? 'Today' : s === 'cal' ? 'Calendar' : 'Payroll'}</Text>
+              <Text style={[styles.sgText, seg === s && styles.sgTextOn]}>{s === 'today' ? 'Today' : s === 'live' ? 'Live' : s === 'cal' ? 'Calendar' : 'Payroll'}</Text>
             </Pressable>
           ))}
         </View>
@@ -155,6 +175,29 @@ export default function OwnerAttendance() {
               );
             })}
           </>
+        ) : seg === 'live' ? (
+          liveByDate.length === 0 ? (
+            <Text style={styles.empty}>No punches recorded yet.</Text>
+          ) : liveByDate.map((g) => (
+            <View key={g.date}>
+              <Text style={styles.sec}>{displayDateOnlyWithWeekday(g.date)}</Text>
+              {g.items.map((e) => (
+                <View key={e.id} style={styles.liveRow} testID={`live-${e.id}`}>
+                  <View style={[styles.liveDot, { backgroundColor: e.type === 'check_in' ? colors.onSuccess : colors.onError }]} />
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={styles.en} numberOfLines={1}>{e.employee_name}</Text>
+                    <Text style={styles.et}>
+                      {e.type === 'check_in' ? 'Checked in' : 'Checked out'}
+                      {e.type === 'check_in' && e.is_late ? <Text style={{ color: colors.onWarning }}> · Late</Text> : null}
+                      {e.type === 'check_out' && e.working_hours ? ` · ${e.working_hours}h` : ''}
+                      {e.source === 'biometric' ? ' · device' : ''}
+                    </Text>
+                  </View>
+                  <Text style={styles.liveTime}>{istTime(e.timestamp)}</Text>
+                </View>
+              ))}
+            </View>
+          ))
         ) : seg === 'cal' ? (
           <>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
@@ -258,6 +301,14 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   etB: { color: colors.onSurfaceSecondary, fontWeight: '600' },
   pill: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 9 },
   pillText: { fontSize: 11, fontWeight: '700' },
+
+  liveRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border,
+    borderRadius: 13, paddingVertical: 11, paddingHorizontal: 14, marginBottom: 8,
+  },
+  liveDot: { width: 9, height: 9, borderRadius: 5 },
+  liveTime: { color: colors.onSurface, fontSize: 14, fontWeight: '700', fontVariant: ['tabular-nums'] },
 
   chips: { gap: 8, paddingVertical: spacing.md, paddingRight: spacing.lg },
   chip: { paddingHorizontal: 15, paddingVertical: 8, borderRadius: 11, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border },
