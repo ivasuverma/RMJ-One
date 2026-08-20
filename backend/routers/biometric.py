@@ -78,6 +78,21 @@ async def create_device(body: DeviceIn, user=Depends(require_owner), _mod=Depend
     return {k: v for k, v in doc.items() if k not in ('_id', 'secret')}
 
 
+@router.post('/biometric/devices/{did}/pull')
+async def pull_device(did: str, user=Depends(require_owner), _mod=Depends(require_module('biometric'))):
+    """Queue a one-shot 'send me everything' for this device. The device only
+    talks to us when IT polls (ADMS is device-initiated), so we can't reach out
+    live — instead we set a flag that the next iclock/getrequest poll turns into
+    a full-history ATTLOG query. The 72h intake filter still drops stale
+    re-dumps, so this safely pulls just the recent punches the device is holding.
+    Poll interval is ~10s, so it takes effect almost immediately."""
+    d = await db.biometric_devices.find_one({'id': did}, {'_id': 0})
+    if not d: raise HTTPException(status_code=404, detail='Device not found')
+    await db.biometric_devices.update_one({'id': did}, {'$set': {'force_pull': True}})
+    await log_audit(user, 'biometric.device.pull', 'device', did, d.get('serial', ''))
+    return {'ok': True, 'note': 'The device will re-send its recent punches on its next check-in (usually within a few seconds).'}
+
+
 @router.delete('/biometric/devices/{did}')
 async def delete_device(did: str, user=Depends(require_owner), _mod=Depends(require_module('biometric'))):
     d = await db.biometric_devices.find_one({'id': did}, {'_id': 0})
@@ -335,8 +350,14 @@ async def iclock_getrequest(SN: str = Query(...)):
     # reads, which could clip the current day's punches out of the query near
     # the day boundary. Build the window in IST to match the device.
     now_ist = now_utc().astimezone(IST)
-    start = (now_ist - timedelta(hours=48)).strftime('%Y-%m-%d %H:%M:%S')
     end = (now_ist + timedelta(days=1)).strftime('%Y-%m-%d %H:%M:%S')
+    if device.get('force_pull'):
+        # A "Sync now" was requested from the app — pull the full history once,
+        # then clear the flag. The 72h intake filter keeps only recent punches.
+        await db.biometric_devices.update_one({'serial': SN}, {'$set': {'force_pull': False}})
+        start = '2000-01-01 00:00:00'
+    else:
+        start = (now_ist - timedelta(hours=48)).strftime('%Y-%m-%d %H:%M:%S')
     return PlainTextResponse(f'C:1:DATA QUERY ATTLOG StartTime={start} EndTime={end}')
 
 

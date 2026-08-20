@@ -27,6 +27,7 @@ export default function BiometricScreen() {
   const [secret, setSecret] = useState('');
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [pulling, setPulling] = useState<string | null>(null);
   const [tab, setTab] = useState<'devices' | 'logs'>('devices');
   const [webhookUrl, setWebhookUrl] = useState('');
 
@@ -80,6 +81,15 @@ export default function BiometricScreen() {
       try { await api.del(`/biometric/devices/${d.id}`); await load(); }
       catch (e: any) { Alert.alert('Failed', e?.detail || 'Could not delete this device. Please try again.'); }
     });
+  };
+
+  const pull = async (d: Device) => {
+    setPulling(d.id);
+    try {
+      const r = await api.post<{ note?: string }>(`/biometric/devices/${d.id}/pull`, {});
+      Alert.alert('Sync requested', r?.note || 'The device will re-send its recent punches shortly. Check the Logs tab in a few seconds.');
+    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Could not request a sync.'); }
+    finally { setPulling(null); }
   };
 
 
@@ -146,6 +156,9 @@ export default function BiometricScreen() {
                     <Text style={styles.cMeta}>Serial: {d.serial}</Text>
                     <Text style={styles.cMeta}>Last seen: {fmtWhen(d.last_seen)}</Text>
                   </View>
+                  <Pressable onPress={() => pull(d)} disabled={pulling === d.id} style={styles.syncBtn} hitSlop={10} testID={`pull-device-${d.id}`}>
+                    {pulling === d.id ? <ActivityIndicator size="small" color={colors.brandSecondary} /> : <Ionicons name="sync-outline" size={16} color={colors.brandSecondary} />}
+                  </Pressable>
                   <Pressable onPress={() => remove(d)} style={styles.delBtn} hitSlop={10} testID={`del-device-${d.id}`}>
                     <Ionicons name="trash-outline" size={16} color={colors.onError} />
                   </Pressable>
@@ -230,6 +243,10 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   cName: { color: colors.onSurface, fontWeight: '700', fontSize: 14 },
   cMeta: { color: colors.onSurfaceTertiary, fontSize: 11, marginTop: 2 },
+  syncBtn: {
+    width: 34, height: 34, borderRadius: 17, backgroundColor: colors.brandTertiary,
+    borderColor: colors.brand, borderWidth: 1, alignItems: 'center', justifyContent: 'center', marginRight: spacing.sm,
+  },
   delBtn: {
     width: 34, height: 34, borderRadius: 17, backgroundColor: colors.error,
     borderColor: colors.onError, borderWidth: 1, alignItems: 'center', justifyContent: 'center',
