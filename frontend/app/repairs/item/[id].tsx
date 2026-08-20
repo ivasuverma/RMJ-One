@@ -264,37 +264,49 @@ export default function RepairItemDetailScreen() {
             {item.created_by && <MetaCell icon="person-add-outline" label="Intake by" value={`${item.created_by}${item.created_at ? ` · ${istDateTime(item.created_at)}` : ''}`} colors={colors} wide />}
           </View>
 
-          {form === 'edit' && (
-            <View style={styles.formCard} testID="edit-form">
-              <Text style={styles.section}>Edit Repair</Text>
-              {item.status === 'delivered' && (
-                <Text style={styles.hint}>This tag has already been billed — changes here update the record only, not the printed bill.</Text>
-              )}
-              <Text style={styles.label}>Description</Text>
-              <TextInput testID="edit-description" value={editDescription} onChangeText={setEditDescription} placeholderTextColor={colors.mutedText} style={styles.input} />
-              <Text style={styles.label}>Repair Type</Text>
-              <TextInput testID="edit-repair-type" value={editRepairType} onChangeText={setEditRepairType} placeholderTextColor={colors.mutedText} style={styles.input} />
-              <View style={{ flexDirection: 'row', gap: spacing.sm }}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.label}>Gross Weight (g){weightLocked ? ' — locked' : ''}</Text>
-                  <TextInput testID="edit-weight" editable={!weightLocked} value={editGrossWeight} onChangeText={(v) => setEditGrossWeight(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholderTextColor={colors.mutedText} style={[styles.input, weightLocked && styles.inputLocked]} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.label}>Pieces</Text>
-                  <TextInput testID="edit-pcs" value={editPcCount} onChangeText={(v) => setEditPcCount(v.replace(/[^0-9]/g, ''))} keyboardType="number-pad" placeholderTextColor={colors.mutedText} style={styles.input} />
-                </View>
+          <Modal visible={form === 'edit'} animationType="slide" onRequestClose={() => setForm(null)}>
+            <SafeAreaView style={styles.root} edges={['top']} testID="edit-form">
+              <View style={styles.header}>
+                <Pressable onPress={() => setForm(null)} style={styles.iconBtn} hitSlop={12} testID="edit-close-btn">
+                  <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
+                </Pressable>
+                <Text style={styles.title} numberOfLines={1}>Edit {item.item_code}</Text>
+                <View style={{ width: 40 }} />
               </View>
-              {weightLocked && <Text style={styles.hint}>Weight is locked once a tag has been issued to a karigar, to keep the karigar ledger accurate.</Text>}
-              <Text style={styles.label}>Labour Charge (₹){labourLocked ? ' — locked' : ''}</Text>
-              <TextInput testID="edit-labour" editable={!labourLocked} value={editLabourCharge} onChangeText={(v) => setEditLabourCharge(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholderTextColor={colors.mutedText} style={[styles.input, labourLocked && styles.inputLocked]} />
-              <DateField label="Due Date" value={editDueDate} onChange={setEditDueDate} testID="edit-due" />
-              <Text style={styles.label}>Notes</Text>
-              <TextInput testID="edit-notes" value={editNotes} onChangeText={setEditNotes} placeholderTextColor={colors.mutedText} style={styles.input} />
-              <Pressable onPress={saveEdit} disabled={busy} style={[styles.saveBtn, busy && { opacity: 0.6 }]} testID="edit-save-btn">
-                {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.saveBtnText}>Save Changes</Text>}
-              </Pressable>
-            </View>
-          )}
+              <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+                <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 60 }} keyboardShouldPersistTaps="handled">
+                  {item.status === 'delivered' && (
+                    <Text style={styles.hint}>This tag has already been billed — changes here update the record only, not the printed bill.</Text>
+                  )}
+                  <Text style={styles.label}>Customer</Text>
+                  <View style={[styles.input, styles.inputLocked, { justifyContent: 'center' }]}><Text style={{ color: colors.onSurfaceSecondary }}>{item.customer_name}</Text></View>
+                  <Text style={styles.label}>Description</Text>
+                  <TextInput testID="edit-description" value={editDescription} onChangeText={setEditDescription} placeholderTextColor={colors.mutedText} style={styles.input} />
+                  <Text style={styles.label}>Repair Type</Text>
+                  <TextInput testID="edit-repair-type" value={editRepairType} onChangeText={setEditRepairType} placeholderTextColor={colors.mutedText} style={styles.input} />
+                  <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.label}>Gross Weight (g){weightLocked ? ' — locked' : ''}</Text>
+                      <TextInput testID="edit-weight" editable={!weightLocked} value={editGrossWeight} onChangeText={(v) => setEditGrossWeight(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholderTextColor={colors.mutedText} style={[styles.input, weightLocked && styles.inputLocked]} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.label}>Pieces</Text>
+                      <TextInput testID="edit-pcs" value={editPcCount} onChangeText={(v) => setEditPcCount(v.replace(/[^0-9]/g, ''))} keyboardType="number-pad" placeholderTextColor={colors.mutedText} style={styles.input} />
+                    </View>
+                  </View>
+                  {weightLocked && <Text style={styles.hint}>Weight is locked once a tag has been issued to a karigar, to keep the karigar ledger accurate.</Text>}
+                  <Text style={styles.label}>Labour Charge (₹){labourLocked ? ' — locked' : ''}</Text>
+                  <TextInput testID="edit-labour" editable={!labourLocked} value={editLabourCharge} onChangeText={(v) => setEditLabourCharge(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholderTextColor={colors.mutedText} style={[styles.input, labourLocked && styles.inputLocked]} />
+                  <DateField label="Due Date" value={editDueDate} onChange={setEditDueDate} testID="edit-due" />
+                  <Text style={styles.label}>Notes</Text>
+                  <TextInput testID="edit-notes" value={editNotes} onChangeText={setEditNotes} placeholderTextColor={colors.mutedText} style={styles.input} />
+                  <Pressable onPress={saveEdit} disabled={busy} style={[styles.saveBtn, busy && { opacity: 0.6 }, { marginTop: spacing.lg }]} testID="edit-save-btn">
+                    {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.saveBtnText}>Save Changes</Text>}
+                  </Pressable>
+                </ScrollView>
+              </KeyboardAvoidingView>
+            </SafeAreaView>
+          </Modal>
 
           {(item.intake_photo || item.final_photo) && (
             <View style={styles.photosRow}>

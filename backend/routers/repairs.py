@@ -52,7 +52,12 @@ async def _mirror_party_account(kind: str, ref: str, name: str, phone: str) -> N
     account's identity into the unified list."""
     if await db.accounts.find_one({'source.kind': kind, 'source.ref': ref}, {'_id': 0, 'id': 1}):
         return
+    # Resolve the account type by its key ('customer'/'karigar'); fall back to a
+    # case-insensitive name match so a shop whose seeded types lost their 'key'
+    # still mirrors correctly instead of silently doing nothing.
     t = await db.account_types.find_one({'key': kind}, {'_id': 0, 'id': 1})
+    if not t:
+        t = await db.account_types.find_one({'name': {'$regex': f'^{kind}$', '$options': 'i'}}, {'_id': 0, 'id': 1})
     if not t:
         return
     await db.accounts.insert_one({
