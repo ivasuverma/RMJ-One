@@ -35,6 +35,13 @@ iclock_router = APIRouter()  # mounted directly on app, no /api prefix — real 
 # second punch (e.g. an early check-out) — which is why it's 2, not 180.
 PUNCH_COOLDOWN_MIN = 2
 
+# On the ADMS re-query, this device re-dumps its whole stored log every poll,
+# ignoring the StartTime/EndTime we send. Records older than this window are
+# treated as already-handled re-dumps and skipped at intake (see iclock_upload)
+# so they can't spam the log or re-toggle old days. Wide enough to still absorb
+# a genuine multi-day device/network outage on reconnect.
+BACKLOG_MAX_HOURS = 72
+
 # ---------------- Biometric (eSSL Cloud Push) ----------------
 class DeviceIn(BaseModel):
     serial: str
@@ -261,6 +268,17 @@ async def iclock_upload(request: Request, SN: str = Query(...), table: str = Que
                     tzinfo=IST
                 )
             except Exception:
+                continue
+            # Ignore ancient records. This device re-dumps its ENTIRE stored
+            # attendance log on every poll (it doesn't honour the StartTime/
+            # EndTime on our DATA QUERY), so a backlog going back days — much of
+            # it already recorded or manually-edited (and thus rejected) — is
+            # re-processed over and over, spamming biometric_logs and crowding
+            # out the day's real punches. Anything older than the backlog window
+            # is a re-dump we've already handled: skip it silently (no ingest,
+            # no log row) so only genuinely recent punches flow through. A real
+            # multi-day outage still resyncs everything within this window.
+            if ts < now_utc() - timedelta(hours=BACKLOG_MAX_HOURS):
                 continue
             # parts[2] is the device's own Status/in-out code when present
             # (0=Check In, 1=Check Out on eSSL/ZKTeco ADMS firmware — the
