@@ -185,8 +185,11 @@ async def _ingest_biometric_punch(serial: str, user_id: str, ts: datetime, event
         return {'ok': False, 'reason': reason, 'user_id': user_id}
 
     kind = result['kind']
+    # last_seen = when we actually heard from the device (now), NOT the punch's
+    # own timestamp — a re-dump of an old punch was making "Last seen" read as
+    # the punch time (e.g. yesterday) instead of the live connection time.
     await db.biometric_devices.update_one({'serial': serial},
-                                          {'$set': {'last_seen': norm_ts.isoformat(), 'status': 'online'}})
+                                          {'$set': {'last_seen': now_utc().isoformat(), 'status': 'online'}})
     log_doc['result'] = 'accepted'; log_doc['action'] = kind; log_doc['attendance_id'] = result['attendance_id']
     log_doc['employee_id'] = emp['id']; log_doc['employee_name'] = emp['name']
     await db.biometric_logs.insert_one(dict(log_doc))

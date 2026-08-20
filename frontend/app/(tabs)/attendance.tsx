@@ -5,10 +5,9 @@ import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
-import { istTime, istDate, todayIST, nowISTLongLabel, displayDateOnlyWithWeekday } from '@/src/utils/datetime';
+import { istTime, istDate, todayIST, nowISTLongLabel, displayDateOnlyWithWeekday, localDateStr } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
-import AttendanceCalendarView from '@/src/components/AttendanceCalendarView';
 
 // Attendance & Payroll — one screen inside Work, three segments (matches the
 // v2 design comp): Today (daily in/out), Calendar (pick a person, edit any
@@ -28,7 +27,7 @@ type PayRow = {
 type PayrollResp = { year: number; month: number; rows: PayRow[]; total_net: number };
 type Ev = { id: string; employee_name: string; type: 'check_in' | 'check_out'; timestamp: string; is_late?: boolean; working_hours?: number; source?: string };
 
-type Seg = 'today' | 'live' | 'cal' | 'pay';
+type Seg = 'today' | 'live' | 'pay';
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const fmtINR = (n: number) => `₹${Math.round(n || 0).toLocaleString('en-IN')}`;
 const fmtTime = (iso?: string | null) => (iso ? (istTime(iso) || '—') : '—');
@@ -63,12 +62,13 @@ export default function OwnerAttendance() {
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const goBack = () => { if (from === 'work' || from === 'transactions') router.replace('/(tabs)/work' as any); else router.back(); };
 
-  const [seg, setSeg] = useState<Seg>(segParam === 'cal' ? 'cal' : segParam === 'pay' ? 'pay' : segParam === 'live' ? 'live' : 'today');
+  const [seg, setSeg] = useState<Seg>(segParam === 'pay' ? 'pay' : segParam === 'live' ? 'live' : 'today');
+  const [date, setDate] = useState(todayIST());
   const [rows, setRows] = useState<Row[]>([]);
-  const [selEmp, setSelEmp] = useState<string | null>(null);
   const [pay, setPay] = useState<PayrollResp | null>(null);
   const [events, setEvents] = useState<Ev[]>([]);
   const [todayFilter, setTodayFilter] = useState<Bucket | 'all'>('all');
+  const isToday = date === todayIST();
   const now = new Date();
   const [year] = useState(now.getFullYear());
   const [month] = useState(now.getMonth() + 1);
@@ -78,11 +78,10 @@ export default function OwnerAttendance() {
 
   const load = useCallback(async () => {
     try {
-      const r = await api.get<Row[]>(`/attendance/today?date=${todayIST()}`).catch(() => [] as Row[]);
+      const r = await api.get<Row[]>(`/attendance/today?date=${date}`).catch(() => [] as Row[]);
       setRows(r);
-      if (!selEmp && r.length) setSelEmp(r[0].employee_id);
     } finally { setLoading(false); setRefreshing(false); }
-  }, [selEmp]);
+  }, [date]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const loadPay = useCallback(async () => {
@@ -122,10 +121,9 @@ export default function OwnerAttendance() {
     finally { setRunning(false); }
   };
 
-  const subtitle = seg === 'today' ? `${nowISTLongLabel()} · ${inCount} of ${rows.length} in`
+  const subtitle = seg === 'today' ? (isToday ? `${nowISTLongLabel()} · ${inCount} of ${rows.length} in` : `${displayDateOnlyWithWeekday(date)} · ${inCount} of ${rows.length} in`)
     : seg === 'live' ? 'Every check-in and check-out, newest first'
-      : seg === 'cal' ? 'Edit any day — payroll updates with it'
-        : `${MONTHS[month - 1]} ${year} · salary synced to attendance`;
+      : `${MONTHS[month - 1]} ${year} · salary synced to attendance`;
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="attendance-screen">
@@ -143,17 +141,30 @@ export default function OwnerAttendance() {
 
         {/* Segmented control */}
         <View style={styles.seg}>
-          {(['today', 'live', 'cal', 'pay'] as Seg[]).map((s) => (
+          {(['today', 'live', 'pay'] as Seg[]).map((s) => (
             <Pressable key={s} onPress={() => { setSeg(s); if (s === 'today') load(); else if (s === 'live') loadLive(); else if (s === 'pay') loadPay(); }} style={[styles.sg, seg === s && styles.sgOn]} testID={`seg-${s}`}>
-              <Text style={[styles.sgText, seg === s && styles.sgTextOn]}>{s === 'today' ? 'Today' : s === 'live' ? 'Live' : s === 'cal' ? 'Calendar' : 'Payroll'}</Text>
+              <Text style={[styles.sgText, seg === s && styles.sgTextOn]}>{s === 'today' ? 'Today' : s === 'live' ? 'Live' : 'Payroll'}</Text>
             </Pressable>
           ))}
         </View>
 
-        {loading && seg !== 'cal' ? (
+        {loading ? (
           <ActivityIndicator color={colors.brandPrimary} style={{ marginTop: 40 }} />
         ) : seg === 'today' ? (
           <>
+            {/* Date filter — step back/forward a day to review past attendance. */}
+            <View style={styles.dateNav}>
+              <Pressable onPress={() => setDate((d) => localDateStr(new Date(new Date(d + 'T12:00:00').getTime() - 86400000)))} style={styles.dateArrow} testID="date-prev" hitSlop={8}>
+                <Ionicons name="chevron-back" size={18} color={colors.onSurface} />
+              </Pressable>
+              <Text style={styles.dateLabel}>{isToday ? 'Today' : displayDateOnlyWithWeekday(date)}</Text>
+              <Pressable onPress={() => !isToday && setDate((d) => localDateStr(new Date(new Date(d + 'T12:00:00').getTime() + 86400000)))} disabled={isToday} style={[styles.dateArrow, isToday && { opacity: 0.3 }]} testID="date-next" hitSlop={8}>
+                <Ionicons name="chevron-forward" size={18} color={colors.onSurface} />
+              </Pressable>
+              {!isToday && (
+                <Pressable onPress={() => setDate(todayIST())} style={styles.dateToday} testID="date-today"><Text style={styles.dateTodayText}>Today</Text></Pressable>
+              )}
+            </View>
             <View style={styles.sumRow}>
               {([['present', 'Present', 'good', counts.present], ['late', 'Late', 'warn', counts.late], ['absent', 'Absent', 'bad', counts.absent], ['notin', 'Not in', 'info', counts.notin]] as const).map(([key, label, tone, n]) => (
                 <SumChip key={key} n={n} label={label} tone={tone} colors={colors} active={todayFilter === key} onPress={() => setTodayFilter((f) => (f === key ? 'all' : key))} />
@@ -165,7 +176,7 @@ export default function OwnerAttendance() {
             ) : shownRows.map((r) => {
               const p = pillFor(r);
               return (
-                <Pressable key={r.employee_id} onPress={() => { setSelEmp(r.employee_id); setSeg('cal'); }} style={({ pressed }) => [styles.erow, pressed && { opacity: 0.8 }]} testID={`att-row-${r.employee_id}`}>
+                <Pressable key={r.employee_id} onPress={() => router.push(`/attendance/calendar/${r.employee_id}` as any)} style={({ pressed }) => [styles.erow, pressed && { opacity: 0.8 }]} testID={`att-row-${r.employee_id}`}>
                   <Avatar photo={r.photo} name={r.name} colors={colors} />
                   <View style={{ flex: 1, minWidth: 0 }}>
                     <Text style={styles.en} numberOfLines={1}>{r.name}</Text>
@@ -199,23 +210,6 @@ export default function OwnerAttendance() {
               ))}
             </View>
           ))
-        ) : seg === 'cal' ? (
-          <>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
-              {rows.map((r) => (
-                <Pressable key={r.employee_id} onPress={() => setSelEmp(r.employee_id)} style={[styles.chip, selEmp === r.employee_id && styles.chipOn]} testID={`emp-chip-${r.employee_id}`}>
-                  <Text style={[styles.chipText, selEmp === r.employee_id && styles.chipTextOn]}>{r.name.split(' ')[0]}</Text>
-                </Pressable>
-              ))}
-            </ScrollView>
-            {selEmp ? (
-              <View style={{ marginTop: 4 }}>
-                <AttendanceCalendarView empId={selEmp} />
-              </View>
-            ) : (
-              <Text style={styles.empty}>Pick a team member above.</Text>
-            )}
-          </>
         ) : (
           <>
             <Text style={styles.sec}>Employees · this cycle</Text>
@@ -285,6 +279,11 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   sgText: { color: colors.mutedText, fontSize: 14, fontWeight: '600' },
   sgTextOn: { color: colors.onSurface },
 
+  dateNav: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.lg },
+  dateArrow: { width: 34, height: 34, borderRadius: 17, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
+  dateLabel: { flex: 1, textAlign: 'center', color: colors.onSurface, fontSize: 15, fontWeight: '700' },
+  dateToday: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10, backgroundColor: colors.brandPrimary },
+  dateTodayText: { color: colors.onBrandPrimary, fontSize: 13, fontWeight: '700' },
   sumRow: { flexDirection: 'row', gap: 9, marginTop: spacing.lg },
   sc: { flex: 1, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, borderRadius: 15, paddingVertical: 13, alignItems: 'center' },
   scN: { fontSize: 22, fontWeight: '800', letterSpacing: -0.5 },
