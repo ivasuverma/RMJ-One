@@ -173,14 +173,12 @@ export default function ReceiveFromKarigarScreen() {
     try {
       if (isEdit) {
         await api.put(`/repair-items/${item.id}/transactions/${txnId}`, payload);
-        router.back();
       } else {
         await api.post(`/repair-items/${item.id}/receive`, payload);
-        // The tag just moved from "With Karigar" to "Pending to Bill" — go
-        // straight into the bill form for it instead of back to a list it
-        // no longer belongs on.
-        router.replace(`/repairs/bill?itemId=${item.id}` as any);
       }
+      // Every step lands on the tag's summary — where print/PDF/edit/delete and
+      // the "Create bill" next-step action all live.
+      router.replace(`/repairs/item/${item.id}` as any);
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
     finally { setBusy(false); submittingRef.current = false; }
   };

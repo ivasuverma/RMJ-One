@@ -145,7 +145,7 @@ export default function RepairBillScreen() {
       await api.post(`/repair-items/${closeItem.id}/close-delivery`, {
         delivered_at: closeDate || null, delivered_by: closeBy || null,
       });
-      if (routeItemId) { router.back(); return; }
+      if (routeItemId) { router.replace(`/repairs/item/${routeItemId}` as any); return; }
       setCloseItem(null); setMode('list'); setLoading(true);
       await loadBills(filter);
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
@@ -298,7 +298,7 @@ export default function RepairBillScreen() {
       } else {
         await api.post(`/repair-items/${picked.id}/deliver`, payload);
       }
-      if (routeItemId) { router.back(); return; }
+      if (routeItemId) { router.replace(`/repairs/item/${routeItemId}` as any); return; }
       setPicked(null); setMode('list'); setLoading(true);
       await loadBills(filter);
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
@@ -321,7 +321,7 @@ export default function RepairBillScreen() {
       // Deleting now only happens from inside the edit-bill form — exit back
       // out to the list (or wherever this form was deep-linked from) since
       // there's no bill left here to keep editing.
-      if (routeItemId) { router.back(); return; }
+      if (routeItemId) { router.replace(`/repairs/item/${routeItemId}` as any); return; }
       setPicked(null); setMode('list'); setLoading(true);
       await loadBills(filter);
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }

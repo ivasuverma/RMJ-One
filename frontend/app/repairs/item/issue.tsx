@@ -82,7 +82,8 @@ export default function IssueToKarigarScreen() {
       } else {
         await api.post(`/repair-items/${item.id}/issue`, { karigar_id: pickedKarigar?.id ?? null, note });
       }
-      router.back();
+      // Land on the tag's summary — print/PDF/edit/delete all live there.
+      router.replace(`/repairs/item/${item.id}` as any);
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
     finally { setBusy(false); submittingRef.current = false; }
   };
