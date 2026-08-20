@@ -68,6 +68,7 @@ export default function OwnerAttendance() {
   const [selEmp, setSelEmp] = useState<string | null>(null);
   const [pay, setPay] = useState<PayrollResp | null>(null);
   const [events, setEvents] = useState<Ev[]>([]);
+  const [todayFilter, setTodayFilter] = useState<Bucket | 'all'>('all');
   const now = new Date();
   const [year] = useState(now.getFullYear());
   const [month] = useState(now.getMonth() + 1);
@@ -112,6 +113,7 @@ export default function OwnerAttendance() {
     return c;
   }, [rows]);
   const inCount = counts.present + counts.late;
+  const shownRows = useMemo(() => (todayFilter === 'all' ? rows : rows.filter((r) => bucketOf(r) === todayFilter)), [rows, todayFilter]);
 
   const runPayroll = async () => {
     setRunning(true);
@@ -142,7 +144,7 @@ export default function OwnerAttendance() {
         {/* Segmented control */}
         <View style={styles.seg}>
           {(['today', 'live', 'cal', 'pay'] as Seg[]).map((s) => (
-            <Pressable key={s} onPress={() => setSeg(s)} style={[styles.sg, seg === s && styles.sgOn]} testID={`seg-${s}`}>
+            <Pressable key={s} onPress={() => { setSeg(s); if (s === 'today') load(); else if (s === 'live') loadLive(); else if (s === 'pay') loadPay(); }} style={[styles.sg, seg === s && styles.sgOn]} testID={`seg-${s}`}>
               <Text style={[styles.sgText, seg === s && styles.sgTextOn]}>{s === 'today' ? 'Today' : s === 'live' ? 'Live' : s === 'cal' ? 'Calendar' : 'Payroll'}</Text>
             </Pressable>
           ))}
@@ -153,15 +155,14 @@ export default function OwnerAttendance() {
         ) : seg === 'today' ? (
           <>
             <View style={styles.sumRow}>
-              <SumChip n={counts.present} label="Present" tone="good" colors={colors} />
-              <SumChip n={counts.late} label="Late" tone="warn" colors={colors} />
-              <SumChip n={counts.absent} label="Absent" tone="bad" colors={colors} />
-              <SumChip n={counts.notin} label="Not in" tone="info" colors={colors} />
+              {([['present', 'Present', 'good', counts.present], ['late', 'Late', 'warn', counts.late], ['absent', 'Absent', 'bad', counts.absent], ['notin', 'Not in', 'info', counts.notin]] as const).map(([key, label, tone, n]) => (
+                <SumChip key={key} n={n} label={label} tone={tone} colors={colors} active={todayFilter === key} onPress={() => setTodayFilter((f) => (f === key ? 'all' : key))} />
+              ))}
             </View>
-            <Text style={styles.sec}>Daily in / out</Text>
-            {rows.length === 0 ? (
-              <Text style={styles.empty}>No team members to show.</Text>
-            ) : rows.map((r) => {
+            <Text style={styles.sec}>{todayFilter === 'all' ? 'Daily in / out' : `Showing ${todayFilter === 'notin' ? 'not in' : todayFilter}`}</Text>
+            {shownRows.length === 0 ? (
+              <Text style={styles.empty}>{todayFilter === 'all' ? 'No team members to show.' : 'Nobody in this group.'}</Text>
+            ) : shownRows.map((r) => {
               const p = pillFor(r);
               return (
                 <Pressable key={r.employee_id} onPress={() => { setSelEmp(r.employee_id); setSeg('cal'); }} style={({ pressed }) => [styles.erow, pressed && { opacity: 0.8 }]} testID={`att-row-${r.employee_id}`}>
@@ -260,13 +261,13 @@ function Avatar({ photo, name, colors }: { photo?: string; name: string; colors:
   return <View style={styles.av}><Text style={styles.avText}>{initials(name)}</Text></View>;
 }
 
-function SumChip({ n, label, tone, colors }: { n: number; label: string; tone: string; colors: ThemeColors }) {
+function SumChip({ n, label, tone, colors, active, onPress }: { n: number; label: string; tone: string; colors: ThemeColors; active?: boolean; onPress?: () => void }) {
   const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
-    <View style={styles.sc}>
+    <Pressable onPress={onPress} style={[styles.sc, active && { borderColor: toneFg(tone, colors), backgroundColor: toneBg(tone, colors) }]}>
       <Text style={[styles.scN, { color: toneFg(tone, colors) }]}>{n}</Text>
-      <Text style={styles.scL}>{label}</Text>
-    </View>
+      <Text style={[styles.scL, active && { color: toneFg(tone, colors) }]}>{label}</Text>
+    </Pressable>
   );
 }
 

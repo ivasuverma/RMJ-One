@@ -30,6 +30,7 @@ export default function LedgerScreen() {
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [types, setTypes] = useState<AccountType[]>([]);
   const [typeFilter, setTypeFilter] = useState<string>('all');
+  const [balanceFilter, setBalanceFilter] = useState<'all' | 'with' | 'nil'>('all');
   const [q, setQ] = useState('');
   const [data, setData] = useState<ListResp | null>(null);
   const [loading, setLoading] = useState(true);
@@ -57,6 +58,19 @@ export default function LedgerScreen() {
   useFocusEffect(useCallback(() => { setLoading(true); load(); }, [load]));
 
   const typeKeyById = useMemo(() => Object.fromEntries(types.map((t) => [t.id, t.key])), [types]);
+
+  // Client-side balance filter over the loaded accounts. "Nil" = both fine and
+  // cash are effectively zero; "With balance" = something is outstanding either
+  // way. Net totals are recomputed from the filtered set so the header agrees.
+  const isNil = (a: Account) => Math.abs(a.fine_balance) < 0.0005 && Math.abs(a.amount_balance) < 0.005;
+  const view = useMemo(() => {
+    const all = data?.accounts ?? [];
+    const accounts = balanceFilter === 'all' ? all : all.filter((a) => (balanceFilter === 'nil' ? isNil(a) : !isNil(a)));
+    if (balanceFilter === 'all' && data) return { accounts, net_fine: data.net_fine, net_amount: data.net_amount };
+    let nf = 0; let na = 0;
+    accounts.forEach((a) => { nf += a.fine_balance; na += a.amount_balance; });
+    return { accounts, net_fine: Math.round(nf * 1000) / 1000, net_amount: Math.round(na * 100) / 100 };
+  }, [data, balanceFilter]);
 
   return (
     <Screen scroll={false} testID="ledger-screen">
@@ -109,19 +123,28 @@ export default function LedgerScreen() {
         ))}
       </View>
 
+      {/* Balance filter — nil vs outstanding accounts */}
+      <View style={styles.balRow}>
+        {([['all', 'All'], ['with', 'With balance'], ['nil', 'Nil']] as const).map(([key, label]) => (
+          <Pressable key={key} onPress={() => setBalanceFilter(key)} style={[styles.balSeg, balanceFilter === key && styles.balSegOn]} testID={`ledger-bal-${key}`}>
+            <Text style={[styles.balText, balanceFilter === key && styles.balTextOn]}>{label}</Text>
+          </Pressable>
+        ))}
+      </View>
+
       {loading && !data ? (
         <View style={{ paddingHorizontal: spacing.lg, gap: spacing.sm }}>
           {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} width="100%" height={58} radius={radius.md} />)}
         </View>
       ) : error ? (
         <View style={{ padding: spacing.lg }}><ErrorState message={error} onRetry={load} testID="ledger-error" /></View>
-      ) : !data || data.accounts.length === 0 ? (
+      ) : view.accounts.length === 0 ? (
         <EmptyState
           icon="book-outline"
-          title="No accounts yet"
-          message={q || typeFilter !== 'all' ? 'Nothing matches this filter.' : 'Create your first ledger account to start tracking fine gold and cash.'}
-          actionLabel="Create account"
-          onAction={() => router.push('/accounts/new' as any)}
+          title={data && data.accounts.length > 0 ? 'Nothing here' : 'No accounts yet'}
+          message={balanceFilter === 'nil' ? 'No nil-balance accounts in this view.' : balanceFilter === 'with' ? 'No accounts with an outstanding balance here.' : (q || typeFilter !== 'all' ? 'Nothing matches this filter.' : 'Create your first ledger account to start tracking fine gold and cash.')}
+          actionLabel={balanceFilter === 'all' ? 'Create account' : undefined}
+          onAction={balanceFilter === 'all' ? () => router.push('/accounts/new' as any) : undefined}
           testID="ledger-empty"
         />
       ) : (
@@ -130,7 +153,7 @@ export default function LedgerScreen() {
           showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}
         >
-          {data.accounts.map((a) => (
+          {view.accounts.map((a) => (
             <Card key={a.id} onPress={() => router.push(`/accounts/${a.id}` as any)} testID={`ledger-account-${a.id}`} style={styles.rowCard}>
               <View style={styles.rowTop}>
                 <View style={{ flex: 1, minWidth: 0 }}>
@@ -197,6 +220,12 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   chipActive: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
   chipText: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '700' },
   chipTextActive: { color: colors.onBrandPrimary },
+
+  balRow: { flexDirection: 'row', gap: 3, marginHorizontal: spacing.lg, marginBottom: spacing.sm, backgroundColor: colors.surfaceTertiary, borderRadius: 11, padding: 4 },
+  balSeg: { flex: 1, alignItems: 'center', paddingVertical: 8, borderRadius: 8 },
+  balSegOn: { backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.borderStrong },
+  balText: { color: colors.mutedText, fontSize: 13, fontWeight: '600' },
+  balTextOn: { color: colors.onSurface },
 
   list: { paddingHorizontal: spacing.lg, gap: spacing.sm },
   rowCard: { gap: 8 },
