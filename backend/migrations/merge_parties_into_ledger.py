@@ -43,8 +43,19 @@ import re
 import sys
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 
 from motor.motor_asyncio import AsyncIOMotorClient
+
+# Auto-load backend/.env (the file sits one level up from this migrations/
+# folder) so the script can just be run as `python migrations/...` with no
+# manual environment setup. Falls back silently if python-dotenv isn't present
+# or the variables are already exported.
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).resolve().parent.parent / '.env')
+except Exception:
+    pass
 
 
 def _now_iso() -> str:
