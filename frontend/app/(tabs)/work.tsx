@@ -89,6 +89,22 @@ export default function WorkScreen() {
           <Text style={styles.searchText}>Find a repair, sample or customer…</Text>
         </Pressable>
 
+        {hasModule('attendance') && (
+          <>
+            <Text style={styles.sectionLabel}>Team</Text>
+            <View style={styles.group}>
+              <Pressable onPress={() => go('/(tabs)/attendance?from=work')} style={({ pressed }) => [styles.li, pressed && { opacity: 0.7 }]} testID="work-attendance">
+                <View style={styles.gi}><Ionicons name="calendar-outline" size={15} color={colors.brandSecondary} /></View>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={styles.gt} numberOfLines={1}>Attendance &amp; Payroll</Text>
+                  <Text style={styles.gtSub} numberOfLines={1}>Daily in/out, calendar & monthly salary</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={16} color={colors.mutedText} />
+              </Pressable>
+            </View>
+          </>
+        )}
+
         {/* Reports — always visible, independent of the live process board below. */}
         <Text style={styles.sectionLabel}>Reports</Text>
         <View style={styles.group}>

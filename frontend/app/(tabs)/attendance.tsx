@@ -1,429 +1,276 @@
 import { useCallback, useMemo, useState } from 'react';
-import {
-  View, Text, StyleSheet, ScrollView, TextInput, Pressable, RefreshControl, Platform, ActivityIndicator,
-} from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, ActivityIndicator, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
-import { istTime, todayIST, shiftedISTDate, displayDateOnly, localDateStr } from '@/src/utils/datetime';
+import { istTime, todayIST, nowISTLongLabel } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import AttendanceCalendarView from '@/src/components/AttendanceCalendarView';
 
+// Attendance & Payroll — one screen inside Work, three segments (matches the
+// v2 design comp): Today (daily in/out), Calendar (pick a person, edit any
+// day), Payroll (salary auto-synced to the month's attendance). Reuses the
+// existing endpoints and the shared AttendanceCalendarView so the calendar's
+// month/day-edit logic isn't duplicated.
 type Row = {
   employee_id: string; employee_code: string; name: string;
   department: string; designation: string; shift: string;
   status: string; check_in?: string | null; check_out?: string | null;
-  is_late?: boolean; working_hours?: number; missing_punch?: boolean; employee_status?: string;
-  photo?: string;
+  is_late?: boolean; working_hours?: number; missing_punch?: boolean; photo?: string;
 };
-type Ev = {
-  id: string; employee_name: string; type: 'check_in' | 'check_out';
-  timestamp: string; is_late?: boolean; working_hours?: number;
+type PayRow = {
+  employee_id: string; name: string; designation: string; photo?: string;
+  total_days: number; effective_days: number; advance: number; net_salary: number; paid?: boolean; id?: string;
 };
+type PayrollResp = { year: number; month: number; rows: PayRow[]; total_net: number };
 
-const TABS = ['Today', 'Live'] as const;
+type Seg = 'today' | 'cal' | 'pay';
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const fmtINR = (n: number) => `₹${Math.round(n || 0).toLocaleString('en-IN')}`;
+const fmtTime = (iso?: string | null) => (iso ? (istTime(iso) || '—') : '—');
+const initials = (name: string) => (name || '?').trim()[0]?.toUpperCase() || '?';
 
-type StatusKey = 'all' | 'present' | 'late' | 'half_day' | 'absent' | 'missing';
-
-const STATUS_FILTERS: { key: StatusKey; label: string; icon: any }[] = [
-  { key: 'all', label: 'All', icon: 'apps-outline' },
-  { key: 'present', label: 'Present', icon: 'checkmark-circle-outline' },
-  { key: 'late', label: 'Late', icon: 'alarm-outline' },
-  { key: 'half_day', label: 'Half Day', icon: 'time-outline' },
-  { key: 'missing', label: 'Missing Punch', icon: 'alert-circle-outline' },
-  { key: 'absent', label: 'Absent', icon: 'close-circle-outline' },
-];
-
-// Present = checked in within shift + grace. Late = checked in after grace.
-// Half Day = checked in after the shift's half-day-master threshold (or
-// short hours). Missing Punch = an incomplete/contradictory punch pair —
-// checked in with no check-out past shift end, OR checked out with no
-// check-in at all — never counted as a full present day. Absent covers
-// everything else with no attendance (including on-leave/holiday days,
-// which still show their own pill on the row itself).
-function statusKeyOf(row: Row): StatusKey {
-  if (row.status === 'missing_punch') return 'missing';
-  if (row.status === 'half_day') return 'half_day';
-  if (row.status === 'present') return row.is_late ? 'late' : 'present';
-  return 'absent';
+// Present = punched in on time · Late = punched in after grace · Absent =
+// marked absent/leave/holiday · Not in = expected but hasn't punched yet.
+type Bucket = 'present' | 'late' | 'absent' | 'notin';
+function bucketOf(r: Row): Bucket {
+  if (r.status === 'absent') return 'absent';
+  if (r.check_in) return r.is_late ? 'late' : 'present';
+  return 'notin';
 }
-
-const fmtTime = (iso?: string | null) => {
-  if (!iso) return '—:—';
-  const t = istTime(iso);
-  return t || '—:—';
+const PILL: Record<Bucket | 'half' | 'missing', { label: string; tone: 'good' | 'warn' | 'bad' | 'info' | 'muted' }> = {
+  present: { label: 'Present', tone: 'good' },
+  late: { label: 'Late', tone: 'warn' },
+  absent: { label: 'Absent', tone: 'bad' },
+  notin: { label: 'Not in', tone: 'muted' },
+  half: { label: 'Half day', tone: 'info' },
+  missing: { label: 'Missing punch', tone: 'warn' },
 };
-
-const VALID_STATUS_KEYS = new Set(STATUS_FILTERS.map((f) => f.key));
-
-const fmtDateLabel = (ds: string) => {
-  if (ds === todayIST()) return 'Today';
-  if (ds === shiftedISTDate(-1)) return 'Yesterday';
-  return displayDateOnly(ds);
-};
+function pillFor(r: Row) {
+  if (r.status === 'half_day') return PILL.half;
+  if (r.status === 'missing_punch') return PILL.missing;
+  return PILL[bucketOf(r)];
+}
 
 export default function OwnerAttendance() {
   const router = useRouter();
-  const { from, filter } = useLocalSearchParams<{ from?: string; filter?: string }>();
-  const goBack = () => { if (from === 'work' || from === 'transactions') router.replace('/(tabs)/work' as any); else router.back(); };
+  const { from, seg: segParam } = useLocalSearchParams<{ from?: string; seg?: string }>();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
-  const [tab, setTab] = useState<typeof TABS[number]>('Today');
-  const [rows, setRows] = useState<Row[]>([]);
-  const [events, setEvents] = useState<Ev[]>([]);
-  const [pendingCount, setPendingCount] = useState(0);
-  const [refreshing, setRefreshing] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState<StatusKey>(
-    (filter && VALID_STATUS_KEYS.has(filter as StatusKey)) ? (filter as StatusKey) : 'all',
-  );
-  const [deptFilter, setDeptFilter] = useState('all');
-  const [query, setQuery] = useState('');
-  const [date, setDate] = useState(() => todayIST());
-  const isToday = date === todayIST();
+  const goBack = () => { if (from === 'work' || from === 'transactions') router.replace('/(tabs)/work' as any); else router.back(); };
 
-  // Coming in from a dashboard tile (e.g. tapping "Present") should re-apply
-  // that filter even if this screen was already mounted from a previous visit.
-  useFocusEffect(useCallback(() => {
-    if (filter && VALID_STATUS_KEYS.has(filter as StatusKey)) setStatusFilter(filter as StatusKey);
-  }, [filter]));
+  const [seg, setSeg] = useState<Seg>(segParam === 'cal' ? 'cal' : segParam === 'pay' ? 'pay' : 'today');
+  const [rows, setRows] = useState<Row[]>([]);
+  const [selEmp, setSelEmp] = useState<string | null>(null);
+  const [pay, setPay] = useState<PayrollResp | null>(null);
+  const now = new Date();
+  const [year] = useState(now.getFullYear());
+  const [month] = useState(now.getMonth() + 1);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [running, setRunning] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const [r, e, corr, leaves] = await Promise.all([
-        api.get<Row[]>(`/attendance/today?date=${date}`).catch(() => []),
-        api.get<Ev[]>('/attendance/live').catch(() => []),
-        api.get<any[]>('/attendance/corrections?status=pending').catch(() => []),
-        api.get<any[]>('/leaves?status=pending').catch(() => []),
-      ]);
+      const r = await api.get<Row[]>(`/attendance/today?date=${todayIST()}`).catch(() => [] as Row[]);
       setRows(r);
-      setEvents(e);
-      setPendingCount(corr.length + leaves.length);
-    } finally {
-      setLoading(false); setRefreshing(false);
-    }
-  }, [date]);
-
+      if (!selEmp && r.length) setSelEmp(r[0].employee_id);
+    } finally { setLoading(false); setRefreshing(false); }
+  }, [selEmp]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const stepDate = (deltaDays: number) => {
-    const d = new Date(`${date}T00:00:00`);
-    d.setDate(d.getDate() + deltaDays);
-    const next = localDateStr(d);
-    if (next > todayIST()) return; // no future dates
-    setLoading(true);
-    setDate(next);
+  const loadPay = useCallback(async () => {
+    try { setPay(await api.get<PayrollResp>(`/payroll/${year}/${month}`)); } catch { setPay(null); }
+  }, [year, month]);
+  useFocusEffect(useCallback(() => { if (seg === 'pay') loadPay(); }, [seg, loadPay]));
+
+  const counts = useMemo(() => {
+    const c = { present: 0, late: 0, absent: 0, notin: 0 };
+    rows.forEach((r) => { c[bucketOf(r)]++; });
+    return c;
+  }, [rows]);
+  const inCount = counts.present + counts.late;
+
+  const runPayroll = async () => {
+    setRunning(true);
+    try { await api.post('/payroll/save', { year, month }); await loadPay(); Alert.alert('Payroll saved', `${MONTHS[month - 1]} ${year} salary is locked to the current attendance.`); }
+    catch (e: any) { Alert.alert('Could not run payroll', e?.detail || 'Please try again'); }
+    finally { setRunning(false); }
   };
 
-  const departments = useMemo(
-    () => Array.from(new Set(rows.map((r) => r.department).filter(Boolean))).sort(),
-    [rows],
-  );
-
-  const filteredRows = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return rows.filter((r) => {
-      if (statusFilter !== 'all' && statusKeyOf(r) !== statusFilter) return false;
-      if (deptFilter !== 'all' && r.department !== deptFilter) return false;
-      if (q && !r.name.toLowerCase().includes(q) && !r.employee_code.toLowerCase().includes(q)) return false;
-      return true;
-    });
-  }, [rows, statusFilter, deptFilter, query]);
+  const subtitle = seg === 'today' ? `${nowISTLongLabel()} · ${inCount} of ${rows.length} in`
+    : seg === 'cal' ? 'Edit any day — payroll updates with it'
+      : `${MONTHS[month - 1]} ${year} · salary synced to attendance`;
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="attendance-screen">
-      <View style={styles.header}>
-        {(router.canGoBack() || from === 'transactions') && (
-          <Pressable onPress={goBack} style={styles.backBtn} testID="back-btn" hitSlop={12}>
-            <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-          </Pressable>
-        )}
-        <Text style={styles.title}>Attendance</Text>
-        <Pressable
-          testID="approvals-btn"
-          onPress={() => router.push('/approvals')}
-          style={styles.approvalsBtn}
-        >
-          <Ionicons name="checkmark-done-circle-outline" size={16} color={colors.onBrandPrimary} />
-          <Text style={styles.approvalsText}>Approvals</Text>
-          {pendingCount > 0 && (
-            <View style={styles.badge}><Text style={styles.badgeText}>{pendingCount}</Text></View>
-          )}
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); if (seg === 'pay') loadPay(); }} tintColor={colors.brandPrimary} />}
+      >
+        <Pressable onPress={goBack} style={styles.backRow} hitSlop={8} testID="back-btn">
+          <Ionicons name="chevron-back" size={18} color={colors.brandPrimary} />
+          <Text style={styles.backText}>Work</Text>
         </Pressable>
-      </View>
+        <Text style={styles.h1}>Attendance &amp; Payroll</Text>
+        <Text style={styles.sub}>{subtitle}</Text>
 
-      {/* Sub-tabs */}
-      <View style={styles.segRow}>
-        {TABS.map((t) => (
-          <Pressable
-            key={t}
-            testID={`att-tab-${t.toLowerCase()}`}
-            onPress={() => setTab(t)}
-            style={[styles.segBtn, tab === t && styles.segBtnActive]}
-          >
-            <Text style={[styles.segText, tab === t && styles.segTextActive]}>{t}</Text>
-          </Pressable>
-        ))}
-      </View>
-
-      {tab === 'Today' && (
-        <View style={styles.dateRow} testID="att-date-row">
-          <Pressable onPress={() => stepDate(-1)} style={styles.dateNav} testID="att-date-prev" hitSlop={8}>
-            <Ionicons name="chevron-back" size={18} color={colors.onSurface} />
-          </Pressable>
-          <View style={styles.dateLabel}>
-            <Ionicons name="calendar-outline" size={13} color={colors.mutedText} />
-            <Text style={styles.dateText}>{fmtDateLabel(date)}</Text>
-          </View>
-          <Pressable
-            onPress={() => stepDate(1)}
-            style={[styles.dateNav, isToday && { opacity: 0.35 }]}
-            disabled={isToday}
-            testID="att-date-next"
-            hitSlop={8}
-          >
-            <Ionicons name="chevron-forward" size={18} color={colors.onSurface} />
-          </Pressable>
+        {/* Segmented control */}
+        <View style={styles.seg}>
+          {(['today', 'cal', 'pay'] as Seg[]).map((s) => (
+            <Pressable key={s} onPress={() => setSeg(s)} style={[styles.sg, seg === s && styles.sgOn]} testID={`seg-${s}`}>
+              <Text style={[styles.sgText, seg === s && styles.sgTextOn]}>{s === 'today' ? 'Today' : s === 'cal' ? 'Calendar' : 'Payroll'}</Text>
+            </Pressable>
+          ))}
         </View>
-      )}
 
-      {tab === 'Today' && !loading && (
-        <>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll} contentContainerStyle={styles.filterRow}>
-            {STATUS_FILTERS.map((f) => (
-              <Pressable
-                key={f.key}
-                onPress={() => setStatusFilter(f.key)}
-                style={[styles.filterChip, statusFilter === f.key && styles.filterChipActive]}
-                testID={`att-filter-${f.key}`}
-              >
-                <Ionicons name={f.icon} size={13} color={statusFilter === f.key ? colors.onBrandPrimary : colors.onSurfaceSecondary} />
-                <Text style={[styles.filterText, statusFilter === f.key && styles.filterTextActive]}>{f.label}</Text>
-              </Pressable>
-            ))}
-          </ScrollView>
-
-          {departments.length > 1 && (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll} contentContainerStyle={styles.filterRow}>
-              <Pressable onPress={() => setDeptFilter('all')} style={[styles.filterChip, deptFilter === 'all' && styles.filterChipActive]} testID="att-dept-all">
-                <Text style={[styles.filterText, deptFilter === 'all' && styles.filterTextActive]}>All Departments</Text>
-              </Pressable>
-              {departments.map((d) => (
-                <Pressable key={d} onPress={() => setDeptFilter(d)} style={[styles.filterChip, deptFilter === d && styles.filterChipActive]} testID={`att-dept-${d}`}>
-                  <Text style={[styles.filterText, deptFilter === d && styles.filterTextActive]}>{d}</Text>
+        {loading && seg !== 'cal' ? (
+          <ActivityIndicator color={colors.brandPrimary} style={{ marginTop: 40 }} />
+        ) : seg === 'today' ? (
+          <>
+            <View style={styles.sumRow}>
+              <SumChip n={counts.present} label="Present" tone="good" colors={colors} />
+              <SumChip n={counts.late} label="Late" tone="warn" colors={colors} />
+              <SumChip n={counts.absent} label="Absent" tone="bad" colors={colors} />
+              <SumChip n={counts.notin} label="Not in" tone="info" colors={colors} />
+            </View>
+            <Text style={styles.sec}>Daily in / out</Text>
+            {rows.length === 0 ? (
+              <Text style={styles.empty}>No team members to show.</Text>
+            ) : rows.map((r) => {
+              const p = pillFor(r);
+              return (
+                <Pressable key={r.employee_id} onPress={() => { setSelEmp(r.employee_id); setSeg('cal'); }} style={({ pressed }) => [styles.erow, pressed && { opacity: 0.8 }]} testID={`att-row-${r.employee_id}`}>
+                  <Avatar photo={r.photo} name={r.name} colors={colors} />
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={styles.en} numberOfLines={1}>{r.name}</Text>
+                    <Text style={styles.et} numberOfLines={1}>In <Text style={styles.etB}>{fmtTime(r.check_in)}</Text> · Out <Text style={styles.etB}>{fmtTime(r.check_out)}</Text></Text>
+                  </View>
+                  <View style={[styles.pill, { backgroundColor: toneBg(p.tone, colors) }]}><Text style={[styles.pillText, { color: toneFg(p.tone, colors) }]}>{p.label}</Text></View>
+                </Pressable>
+              );
+            })}
+          </>
+        ) : seg === 'cal' ? (
+          <>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
+              {rows.map((r) => (
+                <Pressable key={r.employee_id} onPress={() => setSelEmp(r.employee_id)} style={[styles.chip, selEmp === r.employee_id && styles.chipOn]} testID={`emp-chip-${r.employee_id}`}>
+                  <Text style={[styles.chipText, selEmp === r.employee_id && styles.chipTextOn]}>{r.name.split(' ')[0]}</Text>
                 </Pressable>
               ))}
             </ScrollView>
-          )}
-
-          <View style={styles.searchRow}>
-            <Ionicons name="search-outline" size={16} color={colors.mutedText} />
-            <TextInput
-              testID="att-search" value={query} onChangeText={setQuery}
-              placeholder="Search by name or code" placeholderTextColor={colors.mutedText}
-              style={styles.searchInput}
-            />
-          </View>
-        </>
-      )}
-
-      {loading ? (
-        <View style={styles.centered}>
-          <ActivityIndicator color={colors.brandPrimary} size="large" />
-        </View>
-      ) : (
-        <ScrollView
-          contentContainerStyle={{ padding: spacing.lg, paddingBottom: 80 }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}
-          showsVerticalScrollIndicator={false}
-        >
-          {tab === 'Today' ? (
-            filteredRows.length === 0 ? (
-              <EmptyBox icon="people-outline" title="No matches" subtitle={rows.length === 0 ? 'Add employees first' : 'Try a different filter'} />
-            ) : filteredRows.map((r) => (
-              <Pressable
-                key={r.employee_id}
-                style={styles.row}
-                testID={`att-row-${r.employee_id}`}
-                onPress={() => router.push(`/attendance/calendar/${r.employee_id}`)}
-              >
-                {r.photo ? (
-                  <Image source={{ uri: r.photo }} style={styles.avatarPhoto} />
-                ) : (
-                  <View style={styles.avatar}><Text style={styles.avatarText}>{initials(r.name)}</Text></View>
-                )}
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.rowName} numberOfLines={1}>{r.name}</Text>
-                  <Text style={styles.rowSub} numberOfLines={1}>{r.designation || '—'} · {r.employee_code}</Text>
-                  <View style={styles.rowTimes}>
-                    <Ionicons name="log-in-outline" size={12} color={colors.mutedText} />
-                    <Text style={styles.rowTime}>{fmtTime(r.check_in)}</Text>
-                    <Text style={styles.rowSep}>·</Text>
-                    <Ionicons name="log-out-outline" size={12} color={colors.mutedText} />
-                    <Text style={styles.rowTime}>{fmtTime(r.check_out)}</Text>
-                    {!!r.working_hours && <Text style={styles.hoursTag}>{r.working_hours}h</Text>}
-                  </View>
-                </View>
-                <StatusPill row={r} />
-              </Pressable>
-            ))
-          ) : (
-            events.length === 0 ? (
-              <EmptyBox icon="pulse-outline" title="No activity yet" subtitle="Punches will appear here in real time" />
-            ) : events.map((e) => (
-              <View key={e.id} style={styles.eventRow} testID={`event-${e.id}`}>
-                <View style={[styles.dot, { backgroundColor: e.type === 'check_in' ? colors.brandPrimary : colors.brandSecondary }]} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.eventText}>
-                    <Text style={{ fontWeight: '700' }}>{e.employee_name}</Text>
-                    {' '}{e.type === 'check_in' ? 'checked in' : 'checked out'}
-                  </Text>
-                  {!!e.working_hours && <Text style={styles.eventMeta}>{e.working_hours} hours worked</Text>}
-                  {e.type === 'check_in' && e.is_late && <Text style={styles.lateMeta}>Marked late</Text>}
-                </View>
-                <Text style={styles.eventTime}>{fmtTime(e.timestamp)}</Text>
+            {selEmp ? (
+              <View style={{ marginTop: 4 }}>
+                <AttendanceCalendarView empId={selEmp} />
               </View>
-            ))
-          )}
-        </ScrollView>
-      )}
+            ) : (
+              <Text style={styles.empty}>Pick a team member above.</Text>
+            )}
+          </>
+        ) : (
+          <>
+            <Text style={styles.sec}>Employees · this cycle</Text>
+            {!pay || pay.rows.length === 0 ? (
+              <Text style={styles.empty}>No payroll for this month yet.</Text>
+            ) : pay.rows.map((p) => (
+              <Pressable key={p.employee_id} onPress={() => router.push({ pathname: '/payroll/[emp]', params: { emp: p.employee_id, year: String(year), month: String(month) } } as any)} style={({ pressed }) => [styles.erow, pressed && { opacity: 0.8 }]} testID={`pay-row-${p.employee_id}`}>
+                <Avatar photo={p.photo} name={p.name} colors={colors} />
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={styles.en} numberOfLines={1}>{p.name}</Text>
+                  <Text style={styles.et} numberOfLines={1}>{p.effective_days} payable of {p.total_days} days{p.advance ? ` · ${fmtINR(p.advance)} adv` : ''}</Text>
+                </View>
+                <View style={{ alignItems: 'flex-end' }}>
+                  <Text style={styles.payV}>{fmtINR(p.net_salary)}</Text>
+                  <Text style={styles.payS}>{p.paid ? 'paid' : 'net payable'}</Text>
+                </View>
+              </Pressable>
+            ))}
+            {!!pay && pay.rows.length > 0 && (
+              <View style={styles.twoBtn}>
+                <Pressable onPress={runPayroll} disabled={running} style={[styles.btn, styles.btnPri, running && { opacity: 0.6 }]} testID="run-payroll">
+                  <Text style={styles.btnPriText}>{running ? 'Saving…' : 'Run payroll'}</Text>
+                </Pressable>
+                <Pressable onPress={() => router.push('/(tabs)/payroll?from=work' as any)} style={[styles.btn, styles.btnGhost]} testID="payroll-export">
+                  <Text style={styles.btnGhostText}>Export</Text>
+                </Pressable>
+              </View>
+            )}
+          </>
+        )}
+        <View style={{ height: spacing.xxxl }} />
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
-const initials = (n: string) => n.trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() || '').join('');
+const toneBg = (t: string, c: ThemeColors) => (t === 'good' ? c.success : t === 'warn' ? c.warning : t === 'bad' ? c.error : t === 'info' ? c.info : c.surfaceTertiary);
+const toneFg = (t: string, c: ThemeColors) => (t === 'good' ? c.onSuccess : t === 'warn' ? c.onWarning : t === 'bad' ? c.onError : t === 'info' ? c.onInfo : c.mutedText);
 
-function StatusPill({ row }: { row: Row }) {
-  const { colors } = useTheme();
+function Avatar({ photo, name, colors }: { photo?: string; name: string; colors: ThemeColors }) {
   const styles = useMemo(() => makeStyles(colors), [colors]);
-  let label = 'Absent', bg = colors.error, bd = colors.onError, fg = colors.onError;
-  if (row.status === 'leave') { label = 'Leave'; bg = colors.warning; bd = colors.onWarning; fg = colors.onWarning; }
-  else if (row.status === 'holiday') { label = 'Holiday'; bg = colors.warning; bd = colors.onWarning; fg = colors.onWarning; }
-  else if (row.status === 'missing_punch') { label = 'Missing'; bg = colors.error; bd = colors.onError; fg = colors.onError; }
-  else if (row.status === 'half_day') { label = 'Half Day'; bg = colors.warning; bd = colors.onWarning; fg = colors.onWarning; }
-  else if (row.status === 'present') {
-    label = row.is_late ? 'Late' : 'Present';
-    bg = row.is_late ? colors.warning : colors.success;
-    bd = row.is_late ? colors.onWarning : colors.onSuccess;
-    fg = row.is_late ? colors.onWarning : colors.onSuccess;
-  }
-  return (
-    <View style={[styles.pill, { backgroundColor: bg, borderColor: bd }]}>
-      <Text style={[styles.pillText, { color: fg }]}>{label}</Text>
-    </View>
-  );
+  if (photo) return <Image source={{ uri: photo }} style={styles.avPhoto} />;
+  return <View style={styles.av}><Text style={styles.avText}>{initials(name)}</Text></View>;
 }
 
-function EmptyBox({ icon, title, subtitle }: { icon: any; title: string; subtitle: string }) {
-  const { colors } = useTheme();
+function SumChip({ n, label, tone, colors }: { n: number; label: string; tone: string; colors: ThemeColors }) {
   const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
-    <View style={styles.emptyBox}>
-      <Ionicons name={icon} size={44} color={colors.mutedText} />
-      <Text style={styles.emptyTitle}>{title}</Text>
-      <Text style={styles.emptySub}>{subtitle}</Text>
+    <View style={styles.sc}>
+      <Text style={[styles.scN, { color: toneFg(tone, colors) }]}>{n}</Text>
+      <Text style={styles.scL}>{label}</Text>
     </View>
   );
 }
 
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
-  header: {
-    flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md, gap: spacing.md,
-  },
-  title: {
-    flex: 1, color: colors.onSurface, fontSize: 30, fontWeight: '600',
-    fontFamily: fonts.display,
-  },
-  backBtn: {
-    width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surfaceSecondary,
-    alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border,
-  },
-  approvalsBtn: {
-    flexDirection: 'row', gap: 6, alignItems: 'center', backgroundColor: colors.brandPrimary,
-    paddingHorizontal: 12, paddingVertical: 8, borderRadius: radius.pill,
-  },
-  approvalsText: { color: colors.onBrandPrimary, fontWeight: '700', fontSize: 12 },
-  badge: { minWidth: 20, height: 20, paddingHorizontal: 6, borderRadius: 10, backgroundColor: colors.onBrandPrimary, alignItems: 'center', justifyContent: 'center' },
-  badgeText: { color: colors.brandPrimary, fontWeight: '800', fontSize: 11 },
+  scroll: { padding: spacing.lg, paddingBottom: spacing.xxxl },
+  backRow: { flexDirection: 'row', alignItems: 'center', gap: 2, marginBottom: 6 },
+  backText: { color: colors.brandPrimary, fontSize: 16, fontWeight: '500' },
+  h1: { color: colors.onSurface, fontSize: 32, fontWeight: '800', fontFamily: fonts.display, letterSpacing: -0.6 },
+  sub: { color: colors.onSurfaceSecondary, fontSize: 15, marginTop: 6 },
 
-  segRow: {
-    flexDirection: 'row', marginHorizontal: spacing.lg, backgroundColor: colors.surfaceSecondary,
-    borderRadius: radius.pill, padding: 4, borderWidth: 1, borderColor: colors.border,
-  },
-  segBtn: { flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: radius.pill },
-  segBtnActive: { backgroundColor: colors.brandPrimary },
-  segText: { color: colors.onSurfaceTertiary, fontWeight: '600', fontSize: 13 },
-  segTextActive: { color: colors.onBrandPrimary },
+  seg: { flexDirection: 'row', backgroundColor: colors.surfaceTertiary, borderRadius: 12, padding: 4, gap: 3, marginTop: spacing.lg },
+  sg: { flex: 1, alignItems: 'center', paddingVertical: 9, borderRadius: 9 },
+  sgOn: { backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.borderStrong },
+  sgText: { color: colors.mutedText, fontSize: 14, fontWeight: '600' },
+  sgTextOn: { color: colors.onSurface },
 
-  centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  sumRow: { flexDirection: 'row', gap: 9, marginTop: spacing.lg },
+  sc: { flex: 1, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, borderRadius: 15, paddingVertical: 13, alignItems: 'center' },
+  scN: { fontSize: 22, fontWeight: '800', letterSpacing: -0.5 },
+  scL: { fontSize: 11, color: colors.mutedText, marginTop: 3, fontWeight: '600' },
 
-  dateRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    marginHorizontal: spacing.lg, marginTop: spacing.sm, backgroundColor: colors.surfaceSecondary,
-    borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: 6,
-  },
-  dateNav: {
-    width: 32, height: 32, borderRadius: radius.md, backgroundColor: colors.surfaceTertiary,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  dateLabel: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  dateText: { color: colors.onSurface, fontSize: 13, fontWeight: '700' },
+  sec: { fontSize: 13, fontWeight: '700', letterSpacing: 0.7, color: colors.mutedText, textTransform: 'uppercase', marginTop: spacing.xl, marginBottom: spacing.md },
+  empty: { color: colors.onSurfaceTertiary, marginTop: spacing.lg },
 
-  filterScroll: { flexGrow: 0, flexShrink: 0 },
-  filterRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: 2 },
-  filterChip: {
-    flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 5,
-    paddingHorizontal: spacing.md, paddingVertical: 8, borderRadius: radius.pill,
-    backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border,
-  },
-  filterChipActive: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
-  filterText: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '700' },
-  filterTextActive: { color: colors.onBrandPrimary },
-
-  searchRow: {
-    flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.surfaceSecondary,
-    borderRadius: radius.pill, borderWidth: 1, borderColor: colors.border, paddingHorizontal: spacing.md,
-    marginHorizontal: spacing.lg, marginTop: spacing.sm,
-  },
-  searchInput: { flex: 1, color: colors.onSurface, paddingVertical: 10, fontSize: 13 },
-
-  row: {
-    flexDirection: 'row', alignItems: 'center', gap: spacing.md, backgroundColor: colors.surfaceSecondary,
-    borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.md,
-    marginBottom: spacing.sm,
-  },
-  avatar: {
-    width: 44, height: 44, borderRadius: 22, backgroundColor: colors.brandTertiary,
-    alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.brand,
-  },
-  avatarText: { color: colors.brandSecondary, fontWeight: '700' },
-  avatarPhoto: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.surfaceTertiary },
-  rowName: { color: colors.onSurface, fontSize: 14, fontWeight: '600' },
-  rowSub: { color: colors.onSurfaceTertiary, fontSize: 11, marginTop: 2 },
-  rowTimes: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 },
-  rowTime: { color: colors.mutedText, fontSize: 11 },
-  rowSep: { color: colors.mutedText, fontSize: 12, marginHorizontal: 2 },
-  hoursTag: { color: colors.brandSecondary, fontSize: 10, fontWeight: '700', marginLeft: 6, backgroundColor: colors.brandTertiary, paddingHorizontal: 6, paddingVertical: 1, borderRadius: 6 },
-
-  pill: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: radius.pill, borderWidth: 1 },
+  erow: { flexDirection: 'row', alignItems: 'center', gap: 13, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, borderRadius: 15, padding: 13, marginBottom: 10 },
+  av: { width: 42, height: 42, borderRadius: 21, backgroundColor: colors.surfaceTertiary, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
+  avPhoto: { width: 42, height: 42, borderRadius: 21, backgroundColor: colors.surfaceTertiary },
+  avText: { color: colors.brandSecondary, fontWeight: '700', fontSize: 16 },
+  en: { color: colors.onSurface, fontSize: 15.5, fontWeight: '600' },
+  et: { color: colors.mutedText, fontSize: 13, marginTop: 2 },
+  etB: { color: colors.onSurfaceSecondary, fontWeight: '600' },
+  pill: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 9 },
   pillText: { fontSize: 11, fontWeight: '700' },
 
-  eventRow: {
-    flexDirection: 'row', alignItems: 'center', gap: spacing.md,
-    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1,
-    borderColor: colors.border, padding: spacing.md, marginBottom: spacing.sm,
-  },
-  dot: { width: 8, height: 8, borderRadius: 4 },
-  eventText: { color: colors.onSurface, fontSize: 13 },
-  eventMeta: { color: colors.brandSecondary, fontSize: 11, marginTop: 2 },
-  lateMeta: { color: colors.onWarning, fontSize: 11, marginTop: 2 },
-  eventTime: { color: colors.mutedText, fontSize: 11 },
+  chips: { gap: 8, paddingVertical: spacing.md, paddingRight: spacing.lg },
+  chip: { paddingHorizontal: 15, paddingVertical: 8, borderRadius: 11, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border },
+  chipOn: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
+  chipText: { color: colors.onSurfaceSecondary, fontSize: 13.5, fontWeight: '600' },
+  chipTextOn: { color: colors.onBrandPrimary },
 
-  emptyBox: { alignItems: 'center', paddingVertical: 60, gap: spacing.sm },
-  emptyTitle: { color: colors.onSurface, fontSize: 15, fontWeight: '600' },
-  emptySub: { color: colors.onSurfaceTertiary, fontSize: 12 },
+  payV: { fontSize: 16, fontWeight: '800', color: colors.brandSecondary },
+  payS: { fontSize: 11, color: colors.mutedText, marginTop: 2 },
+  twoBtn: { flexDirection: 'row', gap: 10, marginTop: spacing.md },
+  btn: { flex: 1, alignItems: 'center', paddingVertical: 14, borderRadius: 13 },
+  btnPri: { backgroundColor: colors.brandPrimary },
+  btnPriText: { color: colors.onBrandPrimary, fontSize: 15, fontWeight: '700' },
+  btnGhost: { backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.borderStrong },
+  btnGhostText: { color: colors.onSurface, fontSize: 15, fontWeight: '700' },
 });
