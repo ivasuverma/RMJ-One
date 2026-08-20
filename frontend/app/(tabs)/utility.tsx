@@ -17,7 +17,7 @@ import { isPushSupported, isSubscribed, subscribeToPush, unsubscribeFromPush } f
 const THEME_LABEL: Record<ThemePreference, string> = { system: 'System', light: 'Light', dark: 'Dark' };
 
 type RowDef = {
-  key: string; label: string; icon: keyof typeof Ionicons.glyphMap; route: string;
+  key: string; label: string; sub: string; icon: keyof typeof Ionicons.glyphMap; route: string;
 };
 type GroupDef = { title: string; ownerOnly?: boolean; rows: RowDef[] };
 
@@ -27,27 +27,27 @@ const GROUPS: GroupDef[] = [
   {
     title: 'People & Access', ownerOnly: true,
     rows: [
-      { key: 'user-roles', label: 'Users & Roles', icon: 'shield-checkmark-outline', route: '/settings/user-roles' },
-      { key: 'staff', label: 'Staff Accounts', icon: 'people-circle-outline', route: '/settings/users' },
-      { key: 'team', label: 'Team Roster', icon: 'people-outline', route: '/(tabs)/employees' },
+      { key: 'user-roles', label: 'Users & Roles', sub: 'Who can access what', icon: 'shield-checkmark-outline', route: '/settings/user-roles' },
+      { key: 'staff', label: 'Staff Accounts', sub: 'Admin & accountant logins', icon: 'people-circle-outline', route: '/settings/users' },
+      { key: 'team', label: 'Team Roster', sub: 'Your employees', icon: 'people-outline', route: '/(tabs)/employees' },
     ],
   },
   {
     title: 'Masters', ownerOnly: true,
     rows: [
-      { key: 'account-types', label: 'Account Types', icon: 'pricetags-outline', route: '/settings/account-types' },
-      { key: 'repair-types', label: 'Repair Types', icon: 'construct-outline', route: '/settings/repair-types' },
-      { key: 'item-master', label: 'Items & Purity', icon: 'diamond-outline', route: '/settings/item-master' },
-      { key: 'shifts', label: 'Shifts', icon: 'time-outline', route: '/settings/shifts' },
-      { key: 'holidays', label: 'Holidays', icon: 'calendar-outline', route: '/settings/holidays' },
+      { key: 'account-types', label: 'Account Types', sub: 'Ledger categories', icon: 'pricetags-outline', route: '/settings/account-types' },
+      { key: 'repair-types', label: 'Repair Types', sub: 'Repair catalogue', icon: 'construct-outline', route: '/settings/repair-types' },
+      { key: 'item-master', label: 'Items & Purity', sub: 'Item master & purity', icon: 'diamond-outline', route: '/settings/item-master' },
+      { key: 'shifts', label: 'Shifts', sub: 'Work timings', icon: 'time-outline', route: '/settings/shifts' },
+      { key: 'holidays', label: 'Holidays', sub: 'Holiday calendar', icon: 'calendar-outline', route: '/settings/holidays' },
     ],
   },
   {
     title: 'Business', ownerOnly: true,
     rows: [
-      { key: 'store', label: 'Store Settings', icon: 'storefront-outline', route: '/store-settings' },
-      { key: 'biometric', label: 'Biometric Devices', icon: 'hardware-chip-outline', route: '/settings/biometric' },
-      { key: 'audit', label: 'Audit Log', icon: 'document-lock-outline', route: '/settings/audit' },
+      { key: 'store', label: 'Store Settings', sub: 'Shop profile & hours', icon: 'storefront-outline', route: '/store-settings' },
+      { key: 'biometric', label: 'Biometric Devices', sub: 'Attendance hardware', icon: 'hardware-chip-outline', route: '/settings/biometric' },
+      { key: 'audit', label: 'Audit Log', sub: 'Every change, logged', icon: 'document-lock-outline', route: '/settings/audit' },
     ],
   },
 ];
@@ -100,57 +100,59 @@ export default function UtilityScreen() {
         </Pressable>
 
         {visibleGroups.map((g) => (
-          <Group key={g.title} title={g.title}>
-            {g.rows.map((r, i) => (
+          <View key={g.title}>
+            <Text style={styles.groupTitle}>{g.title}</Text>
+            {g.rows.map((r) => (
               <Row
                 key={r.key}
                 icon={r.icon}
                 label={r.label}
-                last={i === g.rows.length - 1}
+                sub={r.sub}
                 onPress={() => router.push(r.route as any)}
                 testID={`settings-row-${r.key}`}
               />
             ))}
-          </Group>
+          </View>
         ))}
 
         {/* App preferences */}
-        <Group title="App">
+        <Text style={styles.groupTitle}>App</Text>
+        <Row
+          icon="notifications-outline"
+          label="Notifications"
+          sub="Push alerts on this device"
+          value={pushBusy ? undefined : (pushOn ? 'On' : 'Off')}
+          valueTone={pushOn ? 'success' : undefined}
+          trailing={pushBusy ? <ActivityIndicator size="small" color={colors.brandSecondary} /> : undefined}
+          onPress={togglePush}
+          testID="utility-notifications-toggle"
+        />
+        {isOwner && (
           <Row
-            icon="notifications-outline"
-            label="Notifications"
-            value={pushBusy ? undefined : (pushOn ? 'On' : 'Off')}
-            valueTone={pushOn ? 'success' : undefined}
-            trailing={pushBusy ? <ActivityIndicator size="small" color={colors.brandSecondary} /> : undefined}
-            onPress={togglePush}
-            testID="utility-notifications-toggle"
+            icon="options-outline"
+            label="Notification Settings"
+            sub="What triggers an alert"
+            onPress={() => router.push('/settings/notifications' as any)}
+            testID="settings-row-notifications"
           />
-          {isOwner && (
-            <Row
-              icon="options-outline"
-              label="Notification Settings"
-              onPress={() => router.push('/settings/notifications' as any)}
-              testID="settings-row-notifications"
-            />
-          )}
-          <Row
-            icon="contrast-outline"
-            label="Appearance"
-            value={THEME_LABEL[preference]}
-            last={!themePickerOpen}
-            onPress={() => setThemePickerOpen((v) => !v)}
-            testID="utility-appearance-btn"
-          />
-          {themePickerOpen && (
-            <View style={styles.themeRow} testID="utility-appearance-options">
-              {(['system', 'light', 'dark'] as const).map((opt) => (
-                <Pressable key={opt} testID={`appearance-${opt}`} onPress={() => { setPreference(opt); setThemePickerOpen(false); }} style={[styles.themeOpt, preference === opt && styles.themeOptActive]}>
-                  <Text style={[styles.themeOptText, preference === opt && styles.themeOptTextActive]}>{THEME_LABEL[opt]}</Text>
-                </Pressable>
-              ))}
-            </View>
-          )}
-        </Group>
+        )}
+        <Row
+          icon="contrast-outline"
+          label="Appearance"
+          sub="Light, dark or system"
+          value={THEME_LABEL[preference]}
+          onPress={() => setThemePickerOpen((v) => !v)}
+          testID="utility-appearance-btn"
+        />
+        {themePickerOpen && (
+          <View style={styles.themeRow} testID="utility-appearance-options">
+            {(['system', 'light', 'dark'] as const).map((opt) => (
+              <Pressable key={opt} testID={`appearance-${opt}`} onPress={() => { setPreference(opt); setThemePickerOpen(false); }} style={[styles.themeOpt, preference === opt && styles.themeOptActive]}>
+                <Text style={[styles.themeOptText, preference === opt && styles.themeOptTextActive]}>{THEME_LABEL[opt]}</Text>
+              </Pressable>
+            ))}
+          </View>
+        )}
 
         <Pressable testID="logout-btn" style={styles.logout} onPress={onLogout}>
           <Ionicons name="log-out-outline" size={20} color={colors.onError} />
@@ -163,31 +165,23 @@ export default function UtilityScreen() {
   );
 }
 
-function Group({ title, children }: { title: string; children: ReactNode }) {
-  const { colors } = useTheme();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
-  return (
-    <View style={styles.group}>
-      <Text style={styles.groupTitle}>{title}</Text>
-      <View style={styles.groupCard}>{children}</View>
-    </View>
-  );
-}
-
-function Row({ icon, label, value, valueTone, trailing, last, onPress, testID }: {
-  icon: keyof typeof Ionicons.glyphMap; label: string; value?: string;
-  valueTone?: 'success'; trailing?: ReactNode; last?: boolean; onPress: () => void; testID?: string;
+function Row({ icon, label, sub, value, valueTone, trailing, onPress, testID }: {
+  icon: keyof typeof Ionicons.glyphMap; label: string; sub?: string; value?: string;
+  valueTone?: 'success'; trailing?: ReactNode; onPress: () => void; testID?: string;
 }) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.row, !last && styles.rowBorderBottom, pressed && { backgroundColor: colors.surfaceTertiary }]} testID={testID}>
-      <View style={styles.rowIcon}><Ionicons name={icon} size={17} color={colors.brandSecondary} /></View>
-      <Text style={styles.rowLabel}>{label}</Text>
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.row, pressed && { opacity: 0.85 }]} testID={testID}>
+      <View style={styles.rowIcon}><Ionicons name={icon} size={22} color={colors.brandSecondary} /></View>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={styles.rowLabel} numberOfLines={1}>{label}</Text>
+        {!!sub && <Text style={styles.rowSub} numberOfLines={1}>{sub}</Text>}
+      </View>
       {trailing ?? (value !== undefined ? (
         <Text style={[styles.rowValue, valueTone === 'success' && { color: colors.onSuccess }]}>{value}</Text>
       ) : null)}
-      <Ionicons name="chevron-forward" size={16} color={colors.mutedText} style={{ marginLeft: 6 }} />
+      <Ionicons name="chevron-forward" size={18} color={colors.mutedText} style={{ marginLeft: 6 }} />
     </Pressable>
   );
 }
@@ -208,19 +202,18 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   role: { color: colors.brandSecondary, fontSize: 12, marginTop: 2 },
   profileHint: { color: colors.mutedText, fontSize: 11, marginTop: 3 },
 
-  group: { marginBottom: spacing.lg },
   groupTitle: {
-    color: colors.mutedText, fontSize: 11, letterSpacing: 0.6, textTransform: 'uppercase',
-    fontWeight: '700', marginBottom: spacing.sm, marginLeft: spacing.xs,
+    color: colors.mutedText, fontSize: 12, letterSpacing: 0.8, textTransform: 'uppercase',
+    fontWeight: '700', marginBottom: spacing.md, marginTop: spacing.xl,
   },
-  groupCard: {
-    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md,
-    borderWidth: 1, borderColor: colors.border, overflow: 'hidden',
+  row: {
+    flexDirection: 'row', alignItems: 'center', gap: 14,
+    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    padding: spacing.md, marginBottom: spacing.sm,
   },
-  row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 13, paddingHorizontal: spacing.md, gap: spacing.md },
-  rowBorderBottom: { borderBottomWidth: 1, borderBottomColor: colors.divider },
-  rowIcon: { width: 30, height: 30, borderRadius: radius.sm, backgroundColor: colors.brandTertiary, alignItems: 'center', justifyContent: 'center' },
-  rowLabel: { flex: 1, color: colors.onSurface, fontSize: 14.5 },
+  rowIcon: { width: 46, height: 46, borderRadius: 13, backgroundColor: colors.surfaceTertiary, alignItems: 'center', justifyContent: 'center' },
+  rowLabel: { color: colors.onSurface, fontSize: 17, fontWeight: '600' },
+  rowSub: { color: colors.mutedText, fontSize: 13.5, marginTop: 3 },
   rowValue: { color: colors.mutedText, fontSize: 13 },
 
   themeRow: { flexDirection: 'row', gap: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.md, backgroundColor: colors.surfaceTertiary },

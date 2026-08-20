@@ -89,89 +89,60 @@ export default function WorkScreen() {
           <Text style={styles.searchText}>Find a repair, sample or customer…</Text>
         </Pressable>
 
-        {hasModule('attendance') && (
-          <>
-            <Text style={styles.sectionLabel}>Team</Text>
-            <View style={styles.group}>
-              <Pressable onPress={() => go('/(tabs)/attendance?from=work')} style={({ pressed }) => [styles.li, pressed && { opacity: 0.7 }]} testID="work-attendance">
-                <View style={styles.gi}><Ionicons name="calendar-outline" size={15} color={colors.brandSecondary} /></View>
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={styles.gt} numberOfLines={1}>Attendance &amp; Payroll</Text>
-                  <Text style={styles.gtSub} numberOfLines={1}>Daily in/out, calendar & monthly salary</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={16} color={colors.mutedText} />
-              </Pressable>
-            </View>
-          </>
-        )}
-
-        {/* Reports — always visible, independent of the live process board below. */}
-        <Text style={styles.sectionLabel}>Reports</Text>
-        <View style={styles.group}>
-          <Pressable onPress={() => go('/accounts')} style={({ pressed }) => [styles.li, pressed && { opacity: 0.7 }]} testID="work-ledger">
-            <View style={styles.gi}><Ionicons name="book-outline" size={15} color={colors.brandSecondary} /></View>
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <Text style={styles.gt} numberOfLines={1}>Unified Ledger</Text>
-              <Text style={styles.gtSub} numberOfLines={1}>Fine gold & cash across every account</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={16} color={colors.mutedText} />
-          </Pressable>
-          <Pressable onPress={() => go('/reports/customer-ledger')} style={({ pressed }) => [styles.li, styles.liBorder, pressed && { opacity: 0.7 }]} testID="work-customer-ledger">
-            <View style={styles.gi}><Ionicons name="person-outline" size={15} color={colors.brandSecondary} /></View>
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <Text style={styles.gt} numberOfLines={1}>Customer Ledger</Text>
-              <Text style={styles.gtSub} numberOfLines={1}>Balances by customer</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={16} color={colors.mutedText} />
-          </Pressable>
-          <Pressable onPress={() => go('/reports/karigar-ledger')} style={({ pressed }) => [styles.li, styles.liBorder, pressed && { opacity: 0.7 }]} testID="work-karigar-ledger">
-            <View style={styles.gi}><Ionicons name="hammer-outline" size={15} color={colors.brandSecondary} /></View>
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <Text style={styles.gt} numberOfLines={1}>Karigar Ledger</Text>
-              <Text style={styles.gtSub} numberOfLines={1}>Gold & cash owed to karigars</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={16} color={colors.mutedText} />
-          </Pressable>
-        </View>
-
+        <Text style={styles.sectionLabel}>In progress</Text>
         {loading && !data ? (
-          <View style={{ gap: spacing.sm, marginTop: spacing.lg }}>
+          <View style={{ gap: spacing.sm }}>
             {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} width="100%" height={72} radius={radius.md} />)}
           </View>
         ) : error ? (
-          <View style={{ marginTop: spacing.lg }}><ErrorState message={error} onRetry={load} /></View>
+          <ErrorState message={error} onRetry={load} />
         ) : (
-          <>
-            {rows.length > 0 && <Text style={styles.sectionLabel}>In progress</Text>}
-            {rows.map((r) => (
-              <Pressable key={r.key} onPress={() => go(r.route)} style={({ pressed }) => [styles.prow, pressed && { opacity: 0.85 }]} testID={`work-row-${r.key}`}>
-                <View style={styles.pi}><Ionicons name={r.icon as keyof typeof Ionicons.glyphMap} size={22} color={colors.brandSecondary} /></View>
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={styles.pt}>{r.title}</Text>
-                  <Text style={styles.pd} numberOfLines={1}>
-                    {r.segs.map((s, i) => (
-                      <Text key={i} style={s.tone === 'hot' ? { color: colors.onWarning } : s.tone === 'bad' ? { color: colors.onError } : s.tone === 'strong' ? { color: colors.onSurface, fontWeight: '700' } : undefined}>
-                        {s.text}
-                      </Text>
-                    ))}
-                  </Text>
-                </View>
-                {r.badge ? (
-                  <View style={styles.badge}><Text style={styles.badgeText}>{r.badge}</Text></View>
-                ) : (
-                  <Ionicons name="chevron-forward" size={18} color={colors.mutedText} />
-                )}
-              </Pressable>
-            ))}
-
-            {rows.length === 0 && (
-              <View style={styles.empty}>
-                <Ionicons name="briefcase-outline" size={34} color={colors.mutedText} />
-                <Text style={styles.emptyText}>Nothing in progress right now.</Text>
+          rows.map((r) => (
+            <Pressable key={r.key} onPress={() => go(r.route)} style={({ pressed }) => [styles.prow, pressed && { opacity: 0.85 }]} testID={`work-row-${r.key}`}>
+              <View style={styles.pi}><Ionicons name={r.icon as keyof typeof Ionicons.glyphMap} size={22} color={colors.brandSecondary} /></View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={styles.pt}>{r.title}</Text>
+                <Text style={styles.pd} numberOfLines={1}>
+                  {r.segs.map((s, i) => (
+                    <Text key={i} style={s.tone === 'hot' ? { color: colors.onWarning } : s.tone === 'bad' ? { color: colors.onError } : s.tone === 'strong' ? { color: colors.onSurface, fontWeight: '700' } : undefined}>
+                      {s.text}
+                    </Text>
+                  ))}
+                </Text>
               </View>
-            )}
-          </>
+              {r.badge ? (
+                <View style={styles.badge}><Text style={styles.badgeText}>{r.badge}</Text></View>
+              ) : (
+                <Ionicons name="chevron-forward" size={18} color={colors.mutedText} />
+              )}
+            </Pressable>
+          ))
         )}
+
+        {/* Attendance & Payroll — same button style, part of the operational hub. */}
+        {hasModule('attendance') && (
+          <Pressable onPress={() => go('/(tabs)/attendance?from=work')} style={({ pressed }) => [styles.prow, pressed && { opacity: 0.85 }]} testID="work-attendance">
+            <View style={styles.pi}><Ionicons name="calendar-outline" size={22} color={colors.brandSecondary} /></View>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={styles.pt}>Attendance &amp; Payroll</Text>
+              <Text style={styles.pd} numberOfLines={1}>Daily in/out · calendar · monthly salary</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={colors.mutedText} />
+          </Pressable>
+        )}
+
+        {/* Reports — after In progress. The unified ledger is the single home
+            for every party (customers, karigars, staff), filterable by type. */}
+        <Text style={styles.sectionLabel}>Reports</Text>
+        <Pressable onPress={() => go('/accounts')} style={({ pressed }) => [styles.prow, pressed && { opacity: 0.85 }]} testID="work-ledger">
+          <View style={styles.pi}><Ionicons name="book-outline" size={22} color={colors.brandSecondary} /></View>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={styles.pt}>Unified Ledger</Text>
+            <Text style={styles.pd} numberOfLines={1}>Customers, karigars & staff — fine gold & cash</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.mutedText} />
+        </Pressable>
+
         <View style={{ height: spacing.xxl }} />
       </ScrollView>
     </SafeAreaView>

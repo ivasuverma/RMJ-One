@@ -21,6 +21,7 @@ See server.py's 'ledger' module in MODULE_DEFS (staff-level, not
 employee-assignable)."""
 from fastapi import APIRouter, Depends, HTTPException
 from typing import Optional
+import re
 import uuid
 from server import (
     db,
@@ -56,6 +57,36 @@ async def _get_account(account_id: str) -> dict:
     if not a:
         raise HTTPException(status_code=404, detail='Account not found')
     return a
+
+
+# Digits only, so "98765 43210", "+91-98765..." and "9876543210" all compare
+# equal when checking a mobile number is unique.
+def _norm_phone(phone: str) -> str:
+    return re.sub(r'\D', '', phone or '')
+
+
+async def _assert_unique_identity(name: str, phone: str, exclude_id: Optional[str] = None):
+    """Every account must have a mobile number, and neither the name nor the
+    mobile may collide with another account. Names compare case-insensitively;
+    mobiles compare on digits only. Applies across ALL accounts (active or not)
+    so a deactivated duplicate still blocks a re-create rather than silently
+    creating a second identity."""
+    if not name:
+        raise HTTPException(status_code=400, detail='Name is required')
+    if not _norm_phone(phone):
+        raise HTTPException(status_code=400, detail='Mobile number is required for every account')
+    name_clash = await db.accounts.find_one(
+        {'name': {'$regex': f'^{re.escape(name)}$', '$options': 'i'}, **({'id': {'$ne': exclude_id}} if exclude_id else {})},
+        {'_id': 0, 'id': 1},
+    )
+    if name_clash:
+        raise HTTPException(status_code=409, detail=f'An account named "{name}" already exists')
+    # Match on normalised digits: pull candidates and compare in Python (stored
+    # phones may carry spaces/punctuation the regex-free path can't normalise).
+    digits = _norm_phone(phone)
+    async for other in db.accounts.find({**({'id': {'$ne': exclude_id}} if exclude_id else {})}, {'_id': 0, 'id': 1, 'phone': 1}):
+        if _norm_phone(other.get('phone', '')) == digits:
+            raise HTTPException(status_code=409, detail='An account with this mobile number already exists')
 
 
 async def _balance_for(account: dict) -> dict:
@@ -164,12 +195,13 @@ async def list_accounts(
 
 @router.post('/accounts')
 async def create_account(body: LedgerAccountIn, user=Depends(require_staff_or_module('ledger'))):
-    if not body.name.strip():
-        raise HTTPException(status_code=400, detail='Name is required')
+    name = body.name.strip()
+    phone = (body.phone or '').strip()
+    await _assert_unique_identity(name, phone)
     await _get_type(body.type_id)  # 404s if the type doesn't exist
     doc = {
-        'id': str(uuid.uuid4()), 'type_id': body.type_id, 'name': body.name.strip(),
-        'phone': (body.phone or '').strip(), 'opening_fine': round(body.opening_fine or 0, 3),
+        'id': str(uuid.uuid4()), 'type_id': body.type_id, 'name': name,
+        'phone': phone, 'opening_fine': round(body.opening_fine or 0, 3),
         'opening_amount': round(body.opening_amount or 0, 2), 'note': body.note or '',
         'active': True, 'created_at': now_utc().isoformat(), 'created_by': user['name'],
     }
@@ -212,12 +244,16 @@ async def update_account(account_id: str, body: LedgerAccountUpdateIn, user=Depe
     if body.type_id is not None:
         await _get_type(body.type_id)
         upd['type_id'] = body.type_id
-    if body.name is not None:
-        if not body.name.strip():
-            raise HTTPException(status_code=400, detail='Name is required')
-        upd['name'] = body.name.strip()
-    if body.phone is not None:
-        upd['phone'] = body.phone.strip()
+    # Resolve the would-be name/phone (fall back to current) and re-check the
+    # uniqueness + mobile-required invariant whenever either one is edited.
+    if body.name is not None or body.phone is not None:
+        new_name = (body.name if body.name is not None else account.get('name', '')).strip()
+        new_phone = (body.phone if body.phone is not None else account.get('phone', '')).strip()
+        await _assert_unique_identity(new_name, new_phone, exclude_id=account_id)
+        if body.name is not None:
+            upd['name'] = new_name
+        if body.phone is not None:
+            upd['phone'] = new_phone
     if body.opening_fine is not None:
         upd['opening_fine'] = round(body.opening_fine, 3)
     if body.opening_amount is not None:

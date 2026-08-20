@@ -26,7 +26,7 @@ export default function NewAccountScreen() {
   const [openingFine, setOpeningFine] = useState('');
   const [openingAmount, setOpeningAmount] = useState('');
   const [busy, setBusy] = useState(false);
-  const [errors, setErrors] = useState<{ name?: string; type?: string }>({});
+  const [errors, setErrors] = useState<{ name?: string; type?: string; phone?: string }>({});
 
   useFocusEffect(useCallback(() => {
     api.get<AccountType[]>('/account-types').then((ts) => {
@@ -40,6 +40,7 @@ export default function NewAccountScreen() {
     const e: typeof errors = {};
     if (!name.trim()) e.name = 'Name is required';
     if (!typeId) e.type = 'Pick a type';
+    if (phone.replace(/\D/g, '').length < 7) e.phone = 'Mobile number is required';
     setErrors(e);
     if (Object.keys(e).length) return;
     setBusy(true);
@@ -88,7 +89,7 @@ export default function NewAccountScreen() {
           </View>
 
           <Input label="Name" value={name} onChangeText={(v) => { setName(v); setErrors((p) => ({ ...p, name: undefined })); }} required error={errors.name} placeholder="e.g. Ajay Sood, Bagga Jewellers" testID="account-name" />
-          <Input label="Phone (optional)" value={phone} onChangeText={setPhone} keyboardType="phone-pad" placeholder="Mobile number" testID="account-phone" />
+          <Input label="Mobile" value={phone} onChangeText={(v) => { setPhone(v); setErrors((p) => ({ ...p, phone: undefined })); }} required error={errors.phone} keyboardType="phone-pad" placeholder="Mobile number" testID="account-phone" />
 
           <Text style={styles.sectionLabel}>Opening balance</Text>
           <Text style={styles.hint}>Where this account starts. Positive = they owe the shop; negative = the shop owes them. Fine and cash are independent — set either or both.</Text>
