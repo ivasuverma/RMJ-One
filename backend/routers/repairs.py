@@ -65,7 +65,7 @@ async def _mirror_party_account(kind: str, ref: str, name: str, phone: str) -> N
 # ---------------- Repairs: Customers ----------------
 @router.get('/customers')
 async def list_customers(q: Optional[str] = None, _: dict = Depends(require_staff_or_module(['repairs', 'customer_ledger']))):
-    query: dict = {}
+    query: dict = {'active': {'$ne': False}}  # hide customers deactivated via the ledger
     if q:
         q_esc = re.escape(q)
         query['$or'] = [
@@ -144,7 +144,7 @@ async def delete_customer(cid: str, user=Depends(require_owner), _mod=Depends(re
 
 @router.get('/karigars')
 async def list_karigars(q: Optional[str] = None, _: dict = Depends(require_staff_or_module(['repairs', 'karigar_ledger']))):
-    query: dict = {}
+    query: dict = {'active': {'$ne': False}}  # hide karigars deactivated via the ledger
     if q:
         # Mirror the customer search: escape regex specials, match name/mobile
         # case-insensitively (used by the dashboard global search).

@@ -65,6 +65,23 @@ def _norm_phone(phone: str) -> str:
     return re.sub(r'\D', '', phone or '')
 
 
+async def _sync_source_active(account: dict, active: bool) -> None:
+    """A ledger account created by mirroring a customer/karigar carries a
+    `source = {kind, ref}`. When such an account is deactivated or deleted in
+    the ledger, reflect that on the source record so the party also disappears
+    from the repair pickers — otherwise a "deleted from ledger" customer would
+    still show up under Existing Customer. We flip an `active` flag (soft) so
+    repair/ledger history stays intact rather than hard-deleting."""
+    src = account.get('source') or {}
+    kind, ref = src.get('kind'), src.get('ref')
+    if not ref:
+        return
+    if kind == 'customer':
+        await db.customers.update_one({'id': ref}, {'$set': {'active': active}})
+    elif kind == 'karigar':
+        await db.karigars.update_one({'id': ref}, {'$set': {'active': active}})
+
+
 async def _assert_unique_identity(name: str, phone: str, exclude_id: Optional[str] = None):
     """Every account must have a mobile number, and neither the name nor the
     mobile may collide with another account. Names compare case-insensitively;
@@ -265,6 +282,8 @@ async def update_account(account_id: str, body: LedgerAccountUpdateIn, user=Depe
     if upd:
         upd['updated_at'] = now_utc().isoformat()
         await db.accounts.update_one({'id': account_id}, {'$set': upd})
+        if body.active is not None:
+            await _sync_source_active(account, body.active)
         await log_audit(user, 'ledger.account.update', 'account', account_id, account['name'], upd)
     return await db.accounts.find_one({'id': account_id}, {'_id': 0})
 
@@ -276,6 +295,7 @@ async def delete_account(account_id: str, user=Depends(require_staff_or_module('
     if n > 0:
         raise HTTPException(status_code=400, detail=f'This account has {n} ledger entr{"y" if n == 1 else "ies"} — deactivate it instead of deleting')
     await db.accounts.delete_one({'id': account_id})
+    await _sync_source_active(account, False)  # hide the source party from pickers too
     await log_audit(user, 'ledger.account.delete', 'account', account_id, account['name'])
     return {'ok': True}
 

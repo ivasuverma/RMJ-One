@@ -189,6 +189,28 @@ export default function RepairItemDetailScreen() {
     finally { setThermalPrinting(false); }
   };
 
+  // Customer's copy = the order intake receipt (what the customer takes when
+  // dropping the item off). Thermal to the receipt printer; PDF opens in-app.
+  const printCustomerSlip = async () => {
+    setThermalPrinting(true);
+    try { await api.post(`/repair-orders/${item!.order_id}/slip/print`, {}); }
+    catch (e: any) { Alert.alert('Print failed', e?.detail || 'Could not reach the printer. Check Store Settings.'); }
+    finally { setThermalPrinting(false); }
+  };
+  const printCustomerSlipPdf = async () => {
+    setPrinting(true);
+    try {
+      const base = process.env.EXPO_PUBLIC_BACKEND_URL || '';
+      const url = `${base}/api/repair-orders/${item!.order_id}/slip/pdf`;
+      const token = (await storage.secureGet<string>(TOKEN_KEY, '')) || '';
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) throw new Error(`Print failed (${res.status})`);
+      if (Platform.OS === 'web') { const blob = await res.blob(); window.open(URL.createObjectURL(blob), '_blank'); }
+      else Alert.alert('Ready', 'PDF preview is available on the web app.');
+    } catch (e: any) { Alert.alert('Failed', e?.message || 'Please try again'); }
+    finally { setPrinting(false); }
+  };
+
   if (loading || !item) {
     return (
       <SafeAreaView style={styles.root} edges={['top']}>
@@ -301,6 +323,9 @@ export default function RepairItemDetailScreen() {
           {item.status === 'received' && (
             <>
               <View style={styles.actionsRow}>
+                <Pressable onPress={printCustomerSlip} disabled={thermalPrinting} style={[styles.actionBtn, { flex: 1 }]} testID="print-customer-slip-btn">
+                  {thermalPrinting ? <ActivityIndicator color={colors.onSurfaceSecondary} /> : <><Ionicons name="print-outline" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>Customer Print</Text></>}
+                </Pressable>
                 <Pressable onPress={() => router.push({ pathname: '/repairs/item/issue', params: { itemId: id } } as any)} style={[styles.actionBtn, styles.actionBtnPrimary, { flex: 1 }]} testID="show-issue-form">
                   <Ionicons name="arrow-redo-outline" size={16} color={colors.onBrandPrimary} /><Text style={styles.actionBtnPrimaryText}>Issue to Karigar</Text>
                 </Pressable>
@@ -330,16 +355,26 @@ export default function RepairItemDetailScreen() {
             </View>
           )}
           {item.status === 'pending_delivery' && (
-            <View style={[styles.actionsRow, { marginBottom: spacing.lg }]}>
-              <Pressable onPress={() => router.push({ pathname: '/repairs/bill', params: { itemId: id } } as any)} style={[styles.actionBtn, styles.actionBtnPrimary, { flex: 1 }]} testID="close-delivery-btn">
-                <Ionicons name="checkmark-done-outline" size={16} color={colors.onBrandPrimary} /><Text style={styles.actionBtnPrimaryText}>Close Delivery</Text>
-              </Pressable>
-              {hasRight('repairs', 'edit') && (
-                <Pressable onPress={() => router.push({ pathname: '/repairs/bill', params: { itemId: id, mode: 'edit' } } as any)} style={styles.actionBtn} testID="edit-pending-bill-btn">
-                  <Ionicons name="pencil-outline" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>Edit Bill</Text>
+            <>
+              <View style={styles.actionsRow}>
+                <Pressable onPress={() => printThermal('bill')} disabled={thermalPrinting} style={[styles.actionBtn, { flex: 1 }]} testID="print-bill-pending-btn">
+                  {thermalPrinting ? <ActivityIndicator color={colors.onSurfaceSecondary} /> : <><Ionicons name="print-outline" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>Print Bill</Text></>}
                 </Pressable>
-              )}
-            </View>
+                <Pressable onPress={() => printPdf('bill')} disabled={printing} style={[styles.actionBtn, { flex: 1 }]} testID="view-bill-pending-btn">
+                  {printing ? <ActivityIndicator color={colors.onSurfaceSecondary} /> : <><Ionicons name="document-text-outline" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>Bill PDF</Text></>}
+                </Pressable>
+              </View>
+              <View style={[styles.actionsRow, { marginBottom: spacing.lg }]}>
+                <Pressable onPress={() => router.push({ pathname: '/repairs/bill', params: { itemId: id } } as any)} style={[styles.actionBtn, styles.actionBtnPrimary, { flex: 1 }]} testID="close-delivery-btn">
+                  <Ionicons name="checkmark-done-outline" size={16} color={colors.onBrandPrimary} /><Text style={styles.actionBtnPrimaryText}>Close Delivery</Text>
+                </Pressable>
+                {hasRight('repairs', 'edit') && (
+                  <Pressable onPress={() => router.push({ pathname: '/repairs/bill', params: { itemId: id, mode: 'edit' } } as any)} style={styles.actionBtn} testID="edit-pending-bill-btn">
+                    <Ionicons name="pencil-outline" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>Edit Bill</Text>
+                  </Pressable>
+                )}
+              </View>
+            </>
           )}
           {item.status === 'delivered' && (
             <View style={[styles.actionsRow, { marginBottom: spacing.lg }]}>
