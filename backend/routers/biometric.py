@@ -110,6 +110,17 @@ async def _ingest_biometric_punch(serial: str, user_id: str, ts: datetime, event
     # passes now_utc(). Devices/eBioServer hand us IST-labelled timestamps;
     # _apply_punch converts back to IST internally for date/lateness math
     # either way, so this only affects what's persisted, not the logic.
+    #
+    # A NAIVE timestamp (e.g. the /biometric/push or eBioServer webhook path,
+    # where datetime.fromisoformat parsed a string with no offset) must be
+    # read as IST — that is the documented device contract. Previously it fell
+    # through to .astimezone(), which silently assumes the SERVER's local
+    # timezone; on a UTC-hosted server that shifted every naive punch back
+    # 5h30m, landing early-morning punches on the previous day. Pin naive
+    # timestamps to IST so the result no longer depends on the host timezone.
+    # (The iClock ADMS path already tags tzinfo=IST, so it is unaffected.)
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=IST)
     norm_ts = ts.astimezone(timezone.utc)
 
     # Debounce: this device re-captures the same physical visit as multiple
