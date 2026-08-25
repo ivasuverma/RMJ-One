@@ -5,91 +5,21 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { api } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthContext';
+import { todayIST } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
-// Employee Work hub (v2 3-tab IA). Replaces the old conditional "Transactions"
-// tab and folds the personal Tasks tab in as a tile. Always visible — even an
-// employee with no granted operations modules still has My Tasks and My
-// Ledger here, so the tab is never a dead end. The repair/sample at-a-glance
-// dashboards and the granted-module tiles are the same as before; only the
-// navigation shell around them changed.
-type TileDef = { key: string; label: string; icon: keyof typeof Ionicons.glyphMap; route: string; module?: string };
+// Employee Work hub — same card language as the admin Work board: an
+// "In progress" list of process rows (each showing its live state before you
+// tap), then the granted-module and personal shortcuts underneath. Rows are
+// gated on the modules this employee has actually been granted; My Tasks and
+// My Ledger are always present so the tab is never a dead end.
+type RepairDash = { received: number; with_karigar: number; ready: number; pending_delivery: number; overdue: number; delivered_today: number };
+type SampleDash = { with_karigar: number; overdue: number; received_today: number };
+type Task = { id: string; title: string; due_date?: string };
 
-const OPERATIONS_TILES: TileDef[] = [
-  { key: 'repair-orders', label: 'Repair', icon: 'construct-outline', route: '/repairs', module: 'repairs' },
-  { key: 'samples', label: 'Stock In/Out', icon: 'diamond-outline', route: '/samples', module: 'samples' },
-  { key: 'cash-book', label: 'Cash Book', icon: 'wallet-outline', route: '/cashbook', module: 'cash_book' },
-  { key: 'customer-ledger', label: 'Customer Ledger', icon: 'person-outline', route: '/reports/customer-ledger', module: 'customer_ledger' },
-  { key: 'karigar-ledger', label: 'Karigar Ledger', icon: 'hammer-outline', route: '/reports/karigar-ledger', module: 'karigar_ledger' },
-];
-
-type RepairDashboard = {
-  received: number; with_karigar: number; ready: number;
-  pending_delivery: number; overdue: number; delivered_today: number;
-};
-type SamplesDashboard = { with_karigar: number; overdue: number; received_today: number };
-
-type Tone = 'alert' | 'warn' | 'info' | 'neutral';
-const toneColors = (t: Tone, c: ThemeColors): { bg: string; fg: string } => {
-  if (t === 'alert') return { bg: c.error, fg: c.onError };
-  if (t === 'warn') return { bg: c.warning, fg: c.onWarning };
-  if (t === 'info') return { bg: c.info, fg: c.onInfo };
-  return { bg: c.brandTertiary, fg: c.brandPrimary };
-};
-
-type StatRow = { key: string; label: string; icon: keyof typeof Ionicons.glyphMap; tone: Tone; route: string; count: number };
-
-function buildRepairRows(d: RepairDashboard): StatRow[] {
-  return [
-    { key: 'overdue', label: 'Overdue', icon: 'alert-circle-outline', tone: 'alert', route: '/repairs?filter=overdue', count: d.overdue },
-    { key: 'received', label: 'Issue Pending', icon: 'cube-outline', tone: 'neutral', route: '/repairs?filter=received', count: d.received },
-    { key: 'ready', label: 'Pending to Bill', icon: 'pricetag-outline', tone: 'warn', route: '/repairs/bill?filter=ready', count: d.ready },
-    { key: 'pending_delivery', label: 'Pending Delivery', icon: 'time-outline', tone: 'warn', route: '/repairs/bill?filter=pending_delivery', count: d.pending_delivery },
-    { key: 'with_karigar', label: 'With Karigar', icon: 'hammer-outline', tone: 'info', route: '/repairs?filter=with_karigar', count: d.with_karigar },
-  ];
-}
-function buildSampleRows(d: SamplesDashboard): StatRow[] {
-  return [
-    { key: 'overdue', label: 'Overdue', icon: 'alert-circle-outline', tone: 'alert', route: '/samples?status=overdue', count: d.overdue },
-    { key: 'with_karigar', label: 'With Karigar', icon: 'hammer-outline', tone: 'info', route: '/samples?status=with_karigar', count: d.with_karigar },
-  ];
-}
-
-function DashCard({ testID, title, caption, rows, colors, onPress }: {
-  testID: string; title: string; caption?: string; rows: StatRow[]; colors: ThemeColors; onPress: (route: string) => void;
-}) {
-  const styles = useMemo(() => makeStyles(colors), [colors]);
-  return (
-    <View testID={testID}>
-      <View style={styles.dashHeaderRow}>
-        <Text style={styles.sectionLabel}>{title}</Text>
-        {!!caption && <Text style={styles.dashCaption}>{caption}</Text>}
-      </View>
-      <View style={styles.dashCard}>
-        {rows.map((r, i) => {
-          const tone: Tone = r.count === 0 ? 'neutral' : r.tone;
-          const { bg, fg } = toneColors(tone, colors);
-          return (
-            <Pressable
-              key={r.key}
-              testID={`dash-row-${testID}-${r.key}`}
-              onPress={() => onPress(r.route)}
-              style={({ pressed }) => [styles.dashRow, i === rows.length - 1 && styles.dashRowLast, pressed && { opacity: 0.7 }]}
-            >
-              <View style={[styles.dashIcon, { backgroundColor: bg }]}>
-                <Ionicons name={r.icon} size={14} color={fg} />
-              </View>
-              <Text style={styles.dashLabel}>{r.label}</Text>
-              <Text style={[styles.dashCount, r.count > 0 && r.tone === 'alert' && { color: colors.onError }]}>{r.count}</Text>
-              <Ionicons name="chevron-forward" size={14} color={colors.mutedText} />
-            </Pressable>
-          );
-        })}
-      </View>
-    </View>
-  );
-}
+type Seg = { text: string; tone?: 'hot' | 'bad' | 'strong' };
+type Row = { key: string; title: string; icon: keyof typeof Ionicons.glyphMap; segs: Seg[]; badge?: number; route: string };
 
 export default function EmployeeWorkScreen() {
   const router = useRouter();
@@ -97,80 +27,95 @@ export default function EmployeeWorkScreen() {
   const { user, hasModule } = useAuth();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
-  const [repairDash, setRepairDash] = useState<RepairDashboard | null>(null);
-  const [sampleDash, setSampleDash] = useState<SamplesDashboard | null>(null);
-  const showRepairDash = hasModule('repairs');
-  const showSampleDash = hasModule('samples');
+  const [repairDash, setRepairDash] = useState<RepairDash | null>(null);
+  const [sampleDash, setSampleDash] = useState<SampleDash | null>(null);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const hasRepairs = hasModule('repairs');
+  const hasSamples = hasModule('samples');
 
-  const loadDash = useCallback(async () => {
-    if (showRepairDash) {
-      try { setRepairDash(await api.get<RepairDashboard>('/repairs/dashboard')); }
-      catch (_e) { setRepairDash(null); }
-    } else setRepairDash(null);
-    if (showSampleDash) {
-      try { setSampleDash(await api.get<SamplesDashboard>('/samples/dashboard')); }
-      catch (_e) { setSampleDash(null); }
-    } else setSampleDash(null);
-  }, [showRepairDash, showSampleDash]);
+  const load = useCallback(async () => {
+    if (hasRepairs) api.get<RepairDash>('/repairs/dashboard').then(setRepairDash).catch(() => setRepairDash(null));
+    if (hasSamples) api.get<SampleDash>('/samples/dashboard').then(setSampleDash).catch(() => setSampleDash(null));
+    api.get<Task[]>('/tasks?status=open').then(setTasks).catch(() => setTasks([]));
+  }, [hasRepairs, hasSamples]);
+  useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  useFocusEffect(useCallback(() => { loadDash(); }, [loadDash]));
+  const today = todayIST();
+  const tasksDue = tasks.filter((t) => t.due_date && t.due_date === today).length;
+  const tasksOverdue = tasks.filter((t) => t.due_date && t.due_date < today).length;
 
-  const opsTiles = OPERATIONS_TILES.filter((t) => !t.module || hasModule(t.module));
-  const goTo = (route: string) => router.push(route as any);
+  const go = (route: string) => router.push(route as any);
+
+  // In-progress process rows (pipeline-style), each gated on access + live data.
+  const rows: Row[] = [];
+  if (hasRepairs && repairDash) {
+    rows.push({
+      key: 'repairs', title: 'Repairs', icon: 'construct-outline', route: '/repairs',
+      badge: repairDash.ready || undefined,
+      segs: [
+        { text: `${repairDash.with_karigar} with karigar`, tone: 'hot' },
+        { text: ' · ' }, { text: `${repairDash.overdue} overdue`, tone: 'bad' },
+        { text: ' · ' }, { text: `${repairDash.ready} to bill` },
+      ],
+    });
+  }
+  if (hasSamples && sampleDash) {
+    rows.push({
+      key: 'stock', title: 'Stock In / Out', icon: 'diamond-outline', route: '/samples',
+      segs: [
+        { text: `${sampleDash.with_karigar} samples out` },
+        ...(sampleDash.overdue > 0 ? [{ text: ' · ' }, { text: `${sampleDash.overdue} overdue`, tone: 'bad' as const }] : []),
+      ],
+    });
+  }
+  rows.push({
+    key: 'tasks', title: 'My Tasks', icon: 'checkbox-outline', route: '/(emp)/tasks',
+    badge: tasksDue || undefined,
+    segs: tasks.length === 0
+      ? [{ text: 'Nothing pending' }]
+      : [
+        { text: `${tasksDue} due today` },
+        ...(tasksOverdue > 0 ? [{ text: ' · ' }, { text: `${tasksOverdue} overdue`, tone: 'bad' as const }] : []),
+      ],
+  });
+  if (hasModule('cash_book')) {
+    rows.push({ key: 'cash', title: 'Cash Book', icon: 'wallet-outline', route: '/cashbook', segs: [{ text: 'Record cash in / out' }] });
+  }
+
+  // Reports / ledgers the employee can open, same row style.
+  const reports: Row[] = [];
+  if (hasModule('customer_ledger')) reports.push({ key: 'cust', title: 'Customer Ledger', icon: 'person-outline', route: '/reports/customer-ledger', segs: [{ text: 'Balances by customer' }] });
+  if (hasModule('karigar_ledger')) reports.push({ key: 'kar', title: 'Karigar Ledger', icon: 'hammer-outline', route: '/reports/karigar-ledger', segs: [{ text: 'Gold & cash owed to karigars' }] });
+  reports.push({ key: 'myledger', title: 'My Ledger', icon: 'book-outline', route: `/ledger/${user?.id}`, segs: [{ text: 'Your wages, advances & dues' }] });
+
+  const renderRow = (r: Row) => (
+    <Pressable key={r.key} onPress={() => go(r.route)} style={({ pressed }) => [styles.prow, pressed && { opacity: 0.85 }]} testID={`emp-work-row-${r.key}`}>
+      <View style={styles.pi}><Ionicons name={r.icon} size={22} color={colors.brandSecondary} /></View>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={styles.pt}>{r.title}</Text>
+        <Text style={styles.pd} numberOfLines={1}>
+          {r.segs.map((s, i) => (
+            <Text key={i} style={s.tone === 'hot' ? { color: colors.onWarning } : s.tone === 'bad' ? { color: colors.onError } : s.tone === 'strong' ? { color: colors.onSurface, fontWeight: '700' } : undefined}>{s.text}</Text>
+          ))}
+        </Text>
+      </View>
+      {r.badge ? <View style={styles.badge}><Text style={styles.badgeText}>{r.badge}</Text></View> : <Ionicons name="chevron-forward" size={18} color={colors.mutedText} />}
+    </Pressable>
+  );
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="emp-work-screen">
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        <Text style={styles.title}>Work</Text>
-        <Text style={styles.subtitle}>Your tasks, ledger, and everything you record.</Text>
+        <Text style={styles.h1}>Work</Text>
+        <Text style={styles.sub}>What&apos;s in progress — and what to do next.</Text>
 
-        {/* My Tasks / My Ledger — always available, never gated on a module. */}
-        <Text style={styles.sectionLabel}>Me</Text>
-        <View style={styles.grid}>
-          <Pressable testID="emp-work-tile-my-tasks" onPress={() => router.push('/(emp)/tasks' as any)} style={({ pressed }) => [styles.tile, pressed && { opacity: 0.8 }]}>
-            <View style={styles.tileIcon}><Ionicons name="checkbox-outline" size={24} color={colors.brandPrimary} /></View>
-            <Text style={styles.tileLabel}>My Tasks</Text>
-          </Pressable>
-          <Pressable testID="emp-work-tile-my-ledger" onPress={() => router.push(`/ledger/${user?.id}` as any)} style={({ pressed }) => [styles.tile, pressed && { opacity: 0.8 }]}>
-            <View style={styles.tileIcon}><Ionicons name="book-outline" size={24} color={colors.brandPrimary} /></View>
-            <Text style={styles.tileLabel}>My Ledger</Text>
-          </Pressable>
-        </View>
+        <Text style={styles.sectionLabel}>In progress</Text>
+        {rows.map(renderRow)}
 
-        {showRepairDash && repairDash && (
-          <DashCard
-            testID="emp-repair-dashboard" title="Repairs" colors={colors} onPress={goTo}
-            rows={buildRepairRows(repairDash)}
-            caption={repairDash.delivered_today > 0 ? `${repairDash.delivered_today} delivered today` : undefined}
-          />
-        )}
+        <Text style={styles.sectionLabel}>Reports</Text>
+        {reports.map(renderRow)}
 
-        {showSampleDash && sampleDash && (
-          <DashCard
-            testID="emp-samples-dashboard" title="Stock In/Out" colors={colors} onPress={goTo}
-            rows={buildSampleRows(sampleDash)}
-            caption={sampleDash.received_today > 0 ? `${sampleDash.received_today} returned today` : undefined}
-          />
-        )}
-
-        {opsTiles.length > 0 && (
-          <>
-            <Text style={styles.sectionLabel}>Operations</Text>
-            <View style={styles.grid}>
-              {opsTiles.map((t) => (
-                <Pressable
-                  key={t.key}
-                  testID={`emp-work-tile-${t.key}`}
-                  onPress={() => router.push(t.route as any)}
-                  style={({ pressed }) => [styles.tile, pressed && { opacity: 0.8 }]}
-                >
-                  <View style={styles.tileIcon}><Ionicons name={t.icon} size={24} color={colors.brandPrimary} /></View>
-                  <Text style={styles.tileLabel}>{t.label}</Text>
-                </Pressable>
-              ))}
-            </View>
-          </>
-        )}
+        <View style={{ height: spacing.xxl }} />
       </ScrollView>
     </SafeAreaView>
   );
@@ -179,39 +124,18 @@ export default function EmployeeWorkScreen() {
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   scroll: { padding: spacing.lg, paddingBottom: spacing.xxxl },
-  title: { color: colors.onSurface, fontSize: 28, fontWeight: '600', fontFamily: fonts.display, marginBottom: 4 },
-  subtitle: { color: colors.mutedText, fontSize: 12, marginBottom: spacing.xl },
-  sectionLabel: {
-    color: colors.brandSecondary, fontSize: 11, letterSpacing: 1, textTransform: 'uppercase',
-    marginBottom: spacing.md, marginTop: spacing.lg,
+  h1: { color: colors.onSurface, fontSize: 30, fontWeight: '700', fontFamily: fonts.display, letterSpacing: -0.5 },
+  sub: { color: colors.onSurfaceSecondary, fontSize: 15, marginTop: 6 },
+  sectionLabel: { color: colors.mutedText, fontSize: 12, fontWeight: '700', letterSpacing: 0.8, textTransform: 'uppercase', marginTop: spacing.xl, marginBottom: spacing.md },
+
+  prow: {
+    flexDirection: 'row', alignItems: 'center', gap: 14,
+    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    padding: spacing.md, marginBottom: spacing.sm,
   },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  tile: {
-    flexBasis: '31%', flexGrow: 0, maxWidth: '31%', minWidth: 96,
-    backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg,
-    borderWidth: 1, borderColor: colors.border, padding: spacing.md, alignItems: 'center',
-  },
-  tileIcon: {
-    width: 52, height: 52, borderRadius: 26, backgroundColor: colors.brandTertiary,
-    alignItems: 'center', justifyContent: 'center', marginBottom: spacing.sm,
-    borderWidth: 1, borderColor: colors.brand,
-  },
-  tileLabel: { color: colors.onSurface, fontSize: 13, fontWeight: '700', textAlign: 'center' },
-  dashHeaderRow: {
-    flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between',
-    marginTop: spacing.md, marginBottom: 6,
-  },
-  dashCaption: { color: colors.mutedText, fontSize: 10.5, fontWeight: '600' },
-  dashCard: {
-    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md,
-    borderWidth: 1, borderColor: colors.border, overflow: 'hidden',
-  },
-  dashRow: {
-    flexDirection: 'row', alignItems: 'center', paddingVertical: 7, paddingHorizontal: spacing.sm,
-    borderBottomWidth: 1, borderBottomColor: colors.divider, gap: 8, minHeight: 36,
-  },
-  dashRowLast: { borderBottomWidth: 0 },
-  dashIcon: { width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  dashLabel: { flex: 1, color: colors.onSurface, fontSize: 12.5, fontWeight: '600' },
-  dashCount: { color: colors.onSurface, fontSize: 13.5, fontWeight: '800', marginRight: 1, minWidth: 16, textAlign: 'right' },
+  pi: { width: 46, height: 46, borderRadius: 13, backgroundColor: colors.surfaceTertiary, alignItems: 'center', justifyContent: 'center' },
+  pt: { color: colors.onSurface, fontSize: 17, fontWeight: '600' },
+  pd: { color: colors.mutedText, fontSize: 13.5, marginTop: 3 },
+  badge: { minWidth: 22, height: 22, borderRadius: 11, paddingHorizontal: 6, backgroundColor: colors.brandPrimary, alignItems: 'center', justifyContent: 'center' },
+  badgeText: { color: colors.onBrandPrimary, fontSize: 12, fontWeight: '800' },
 });

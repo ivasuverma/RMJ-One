@@ -100,32 +100,25 @@ export default function EmployeeHome() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}
         showsVerticalScrollIndicator={false}
       >
-        {/* Hero header */}
-        <View style={styles.hero}>
-          <Image source={images.goldTexture} style={StyleSheet.absoluteFill} contentFit="cover" />
-          <LinearGradient colors={heroGradient} style={StyleSheet.absoluteFill} />
-          <View style={styles.heroInner}>
-            <View style={styles.heroTopRow}>
-              {user?.photo ? (
-                <Image source={{ uri: user.photo }} style={styles.avatarPhoto} />
-              ) : (
-                <View style={styles.avatar}><Text style={styles.avatarText}>{(user?.name || 'E')[0]?.toUpperCase()}</Text></View>
-              )}
-              <View style={{ flex: 1 }}>
-                <Text style={styles.heroLabel}>WELCOME</Text>
-                <Text style={styles.heroName} numberOfLines={1}>{user?.name}</Text>
-                <Text style={styles.heroCode}>{user?.employee_code} · {user?.designation || '—'}</Text>
-              </View>
-              <Pressable onPress={() => router.push('/notifications' as any)} style={styles.iconBtn} testID="emp-notifications-btn" hitSlop={12}>
-                <Ionicons name="notifications-outline" size={20} color={colors.onSurface} />
-                {unread > 0 && <View style={styles.bellDot} />}
-              </Pressable>
-              <Pressable onPress={onLogout} style={styles.iconBtn} testID="emp-logout-btn" hitSlop={12}>
-                <Ionicons name="log-out-outline" size={20} color={colors.onSurface} />
-              </Pressable>
-            </View>
+        {/* Flat header — same clean language as the admin dashboard. */}
+        <View style={styles.header}>
+          {user?.photo ? (
+            <Image source={{ uri: user.photo }} style={styles.avatarPhoto} />
+          ) : (
+            <View style={styles.avatar}><Text style={styles.avatarText}>{(user?.name || 'E')[0]?.toUpperCase()}</Text></View>
+          )}
+          <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={styles.dateText}>{nowISTLongLabel()}</Text>
+            <Text style={styles.heroName} numberOfLines={1}>{user?.name}</Text>
+            <Text style={styles.heroCode}>{user?.employee_code} · {user?.designation || '—'}</Text>
           </View>
+          <Pressable onPress={() => router.push('/notifications' as any)} style={styles.iconBtn} testID="emp-notifications-btn" hitSlop={12}>
+            <Ionicons name="notifications-outline" size={20} color={colors.onSurface} />
+            {unread > 0 && <View style={styles.bellDot} />}
+          </Pressable>
+          <Pressable onPress={onLogout} style={styles.iconBtn} testID="emp-logout-btn" hitSlop={12}>
+            <Ionicons name="log-out-outline" size={20} color={colors.onSurface} />
+          </Pressable>
         </View>
 
         {loading ? (
@@ -323,6 +316,7 @@ function ActionCard({ icon, label, onPress, testID }: { icon: any; label: string
 
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
+  header: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.lg },
   hero: { height: 180, position: 'relative' },
   heroInner: { flex: 1, paddingHorizontal: spacing.lg, paddingTop: spacing.md, gap: spacing.md, justifyContent: 'space-between', paddingBottom: spacing.lg },
   heroTopRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
@@ -346,7 +340,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     position: 'absolute', top: 8, right: 9, width: 8, height: 8, borderRadius: 4,
     backgroundColor: colors.error, borderWidth: 1, borderColor: colors.surfaceSecondary,
   },
-  dateText: { color: colors.onSurfaceTertiary, fontSize: 12, letterSpacing: 0.6, textTransform: 'uppercase' },
+  dateText: { color: colors.brandSecondary, fontSize: 12, letterSpacing: 0.6, textTransform: 'uppercase' },
 
   banner: {
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1,
