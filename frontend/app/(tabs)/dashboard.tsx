@@ -160,10 +160,6 @@ export default function DashboardScreen() {
               <GlanceCard icon="time-outline" label="Working now" value={data.todays_attendance.present} suffix={` / ${data.todays_attendance.total}`}
                 sub={`${data.todays_attendance.not_checked_in} not checked in`} onPress={() => router.push('/(tabs)/attendance?filter=present' as any)} testID="glance-present" />
             )}
-            {showCashTile && (
-              <GlanceCard icon="wallet-outline" label="Cash closing" value={data.cashbook_summary.closing_balance} money gold
-                sub="across all counters" onPress={() => router.push('/cashbook' as any)} testID="glance-cash" />
-            )}
             {showRepairsTile && (
               <GlanceCard icon="construct-outline" label="Open repairs" value={data.repairs_summary.total_open}
                 sub={data.repairs_summary.overdue > 0 ? `${data.repairs_summary.overdue} overdue` : 'none overdue'} onPress={() => router.push('/repairs' as any)} testID="glance-repairs" />

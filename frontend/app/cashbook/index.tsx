@@ -45,6 +45,8 @@ export default function CashBookScreen() {
   const canEdit = hasRight('cash_book', 'edit');
   const canDelete = hasRight('cash_book', 'delete');
   const isOwner = user?.role === 'owner';
+  // Employees see only today's book — no back-dating / browsing past days.
+  const isEmployee = user?.role === 'employee';
 
   const [date, setDate] = useState(todayIST());
   const [day, setDay] = useState<DayData | null>(null);
@@ -243,20 +245,28 @@ export default function CashBookScreen() {
   const paid = day?.entries.filter((e) => e.type === 'paid') || [];
   const isToday = date === todayIST();
 
-  const renderEntry = (e: Entry, amountColor: string) => (
+  const renderEntry = (e: Entry, amountColor: string) => {
+    // A transfer shows only the other counter's name + the swap sign — the
+    // "Transfer to/from" wording is redundant next to the icon and the column.
+    const isTransferEntry = !!e.linked_entry_id;
+    const displayName = isTransferEntry
+      ? (transferOptions.find((c) => c.id === e.transfer_counter_id)?.name || e.name.replace(/^Transfer\s+(to|from)\s+/i, ''))
+      : e.name;
+    return (
     <Pressable key={e.id} disabled={!canEdit} onPress={() => openEdit(e)} style={styles.entryRow} testID={`cashbook-entry-${e.id}`}>
       <View style={{ flex: 1, minWidth: 0 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-          {!!e.linked_entry_id && <Ionicons name="swap-horizontal-outline" size={11} color={colors.brandSecondary} />}
-          <Text style={styles.entryName} numberOfLines={2}>{e.name}</Text>
+          {isTransferEntry && <Ionicons name="swap-horizontal-outline" size={11} color={colors.brandSecondary} />}
+          <Text style={styles.entryName} numberOfLines={2}>{displayName}</Text>
         </View>
         {!!e.note && <Text style={styles.entryNote} numberOfLines={2}>{e.note}</Text>}
       </View>
       <Text style={[styles.entryAmount, { color: amountColor }]}>{fmtINR(e.amount)}</Text>
     </Pressable>
-  );
+    );
+  };
 
-  const headerTitle = mode === 'settings' ? (counterForm ? (counterForm.id ? 'Edit Counter' : 'Add Counter') : 'Cash Book Counters') : mode === 'form' ? (editing ? 'Edit Entry' : entryType === 'received' ? 'Cash Received' : 'Cash Paid') : 'Cash Book';
+  const headerTitle =mode === 'settings' ? (counterForm ? (counterForm.id ? 'Edit Counter' : 'Add Counter') : 'Cash Book Counters') : mode === 'form' ? (editing ? 'Edit Entry' : entryType === 'received' ? 'Cash Received' : 'Cash Paid') : 'Cash Book';
   const onBack = () => {
     if (mode === 'settings' && counterForm) { setCounterForm(null); return; }
     if (mode !== 'view') { setMode('view'); return; }
@@ -289,22 +299,24 @@ export default function CashBookScreen() {
             </ScrollView>
           )}
 
-          <View style={styles.dayNav}>
-            <Pressable onPress={() => shiftDay(-1)} style={styles.navBtn} testID="cashbook-prev-day" hitSlop={10}>
-              <Ionicons name="chevron-back" size={18} color={colors.onSurface} />
-            </Pressable>
-            <View style={{ flex: 1 }}>
-              <DateField value={date} onChange={setDate} testID="cashbook-date-field" />
-            </View>
-            <Pressable onPress={() => shiftDay(1)} style={styles.navBtn} testID="cashbook-next-day" hitSlop={10}>
-              <Ionicons name="chevron-forward" size={18} color={colors.onSurface} />
-            </Pressable>
-            {!isToday && (
-              <Pressable onPress={() => setDate(todayIST())} style={styles.todayChip} testID="cashbook-today-btn">
-                <Text style={styles.todayChipText}>Today</Text>
+          {!isEmployee && (
+            <View style={styles.dayNav}>
+              <Pressable onPress={() => shiftDay(-1)} style={styles.navBtn} testID="cashbook-prev-day" hitSlop={10}>
+                <Ionicons name="chevron-back" size={18} color={colors.onSurface} />
               </Pressable>
-            )}
-          </View>
+              <View style={{ flex: 1 }}>
+                <DateField value={date} onChange={setDate} testID="cashbook-date-field" />
+              </View>
+              <Pressable onPress={() => shiftDay(1)} style={styles.navBtn} testID="cashbook-next-day" hitSlop={10}>
+                <Ionicons name="chevron-forward" size={18} color={colors.onSurface} />
+              </Pressable>
+              {!isToday && (
+                <Pressable onPress={() => setDate(todayIST())} style={styles.todayChip} testID="cashbook-today-btn">
+                  <Text style={styles.todayChipText}>Today</Text>
+                </Pressable>
+              )}
+            </View>
+          )}
           <Text style={styles.dayLabel}>
             {displayDateOnlyWithWeekday(date)}{counters.length === 1 ? ` · ${counters[0].name}` : ''}
           </Text>
