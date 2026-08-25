@@ -86,26 +86,22 @@ export default function DashboardScreen() {
 
   // Build the needs-attention list from the payload — only non-zero items,
   // each gated on the caller actually having that module.
+  // Exactly three things, in priority order: who isn't in, what's overdue, and
+  // what's still on the task list. Only non-zero items render, and the card
+  // shrinks to fit (see NeedsAttention) — one item is a one-row card.
   const attnItems = useMemo<AttnItem[]>(() => {
     if (!data) return [];
     const items: AttnItem[] = [];
     const a = data.todays_attendance;
-    if (hasModule('attendance')) {
-      if (a.not_checked_in > 0) items.push({ key: 'nci', label: `${a.not_checked_in} not checked in`, icon: 'hourglass-outline', tone: 'warning', route: '/(tabs)/attendance?filter=absent' });
-      if (a.absent > 0) items.push({ key: 'absent', label: `${a.absent} absent`, icon: 'close-circle-outline', tone: 'error', route: '/(tabs)/attendance?filter=absent' });
-      if (a.missing_punch > 0) items.push({ key: 'mp', label: `${a.missing_punch} missing a punch`, icon: 'alert-circle-outline', tone: 'error', route: '/(tabs)/attendance?filter=missing' });
+    const t = data.tasks_summary;
+    if (hasModule('attendance') && a.not_checked_in > 0) {
+      items.push({ key: 'nci', label: `${a.not_checked_in} not checked in`, icon: 'hourglass-outline', tone: 'warning', route: '/(tabs)/attendance?filter=absent' });
     }
     if (hasModule('repairs') && data.repairs_summary.overdue > 0) {
       items.push({ key: 'rep-od', label: `${data.repairs_summary.overdue} repair${data.repairs_summary.overdue === 1 ? '' : 's'} overdue`, icon: 'construct-outline', tone: 'error', route: '/repairs?filter=overdue' });
     }
-    if (hasModule('samples') && data.samples_summary.overdue > 0) {
-      items.push({ key: 'smp-od', label: `${data.samples_summary.overdue} stock item${data.samples_summary.overdue === 1 ? '' : 's'} overdue`, icon: 'diamond-outline', tone: 'error', route: '/samples?status=overdue' });
-    }
-    if (hasModule('tasks') && data.tasks_summary.overdue > 0) {
-      items.push({ key: 'task-od', label: `${data.tasks_summary.overdue} task${data.tasks_summary.overdue === 1 ? '' : 's'} overdue`, icon: 'alert-circle-outline', tone: 'error', route: '/tasks?filter=overdue' });
-    }
-    if (hasModule('tasks') && data.tasks_summary.due_today > 0) {
-      items.push({ key: 'task-due', label: `${data.tasks_summary.due_today} task${data.tasks_summary.due_today === 1 ? '' : 's'} due today`, icon: 'today-outline', tone: 'info', route: '/tasks?filter=today' });
+    if (hasModule('tasks') && t.open_total > 0) {
+      items.push({ key: 'tasks', label: `${t.open_total} task${t.open_total === 1 ? '' : 's'} pending`, icon: 'checkbox-outline', tone: 'info', route: '/tasks' });
     }
     return items;
   }, [data, hasModule]);
@@ -134,15 +130,20 @@ export default function DashboardScreen() {
             </Text>
           </View>
         </View>
-        <Pressable onPress={() => setSearchOpen(true)} style={styles.iconBtn} testID="dashboard-search-btn" hitSlop={10}>
-          <Ionicons name="search-outline" size={19} color={colors.onSurface} />
-        </Pressable>
         <Pressable onPress={() => router.push('/notifications' as any)} style={styles.iconBtn} testID="notifications-btn" hitSlop={10}>
           <Ionicons name="notifications-outline" size={19} color={colors.onSurface} />
           {unread > 0 && <View style={styles.bellDot} />}
         </Pressable>
-        <Image source={images.logo} style={styles.headerBadge} contentFit="contain" testID="dashboard-logo" />
+        <Pressable onPress={() => setComposeOpen(true)} style={[styles.iconBtn, styles.iconBtnGold]} testID="dashboard-compose-btn" hitSlop={10}>
+          <Ionicons name="add" size={22} color={colors.onBrandPrimary} />
+        </Pressable>
       </View>
+
+      {/* Search bar (Apple §16: direct, always-visible) */}
+      <Pressable onPress={() => setSearchOpen(true)} style={styles.headerSearch} testID="dashboard-search-btn">
+        <Ionicons name="search-outline" size={17} color={colors.mutedText} />
+        <Text style={styles.headerSearchText}>Search customers, karigars, staff…</Text>
+      </Pressable>
 
       {loading ? (
         <DashboardSkeleton />
@@ -153,20 +154,20 @@ export default function DashboardScreen() {
           {/* 1. Needs-attention briefing — only present when something's actually pending */}
           {attnItems.length > 0 && <NeedsAttention items={attnItems} onGo={(r) => router.push(r as any)} />}
 
-          {/* 2. Today at a glance — a 2-col grid of stat cards (mockup layout) */}
+          {/* 2. Today at a glance — three columns: Repairs, Samples, Tasks */}
           <Text style={styles.glanceHeading}>Today at a glance</Text>
           <View style={styles.glanceGrid} testID="section-glance">
-            {showAttendanceTile && (
-              <GlanceCard icon="time-outline" label="Working now" value={data.todays_attendance.present} suffix={` / ${data.todays_attendance.total}`}
-                sub={`${data.todays_attendance.not_checked_in} not checked in`} onPress={() => router.push('/(tabs)/attendance?filter=present' as any)} testID="glance-present" />
-            )}
             {showRepairsTile && (
-              <GlanceCard icon="construct-outline" label="Open repairs" value={data.repairs_summary.total_open}
+              <GlanceCard icon="construct-outline" label="Repairs" value={data.repairs_summary.total_open}
                 sub={data.repairs_summary.overdue > 0 ? `${data.repairs_summary.overdue} overdue` : 'none overdue'} onPress={() => router.push('/repairs' as any)} testID="glance-repairs" />
             )}
             {hasModule('samples') && (
-              <GlanceCard icon="diamond-outline" label="Samples out" value={data.samples_summary.with_karigar}
+              <GlanceCard icon="diamond-outline" label="Samples" value={data.samples_summary.with_karigar}
                 sub={data.samples_summary.overdue > 0 ? `${data.samples_summary.overdue} overdue` : 'none overdue'} onPress={() => router.push('/samples?status=with_karigar' as any)} testID="glance-samples" />
+            )}
+            {hasModule('tasks') && (
+              <GlanceCard icon="checkbox-outline" label="Tasks" value={data.tasks_summary.open_total}
+                sub={data.tasks_summary.overdue > 0 ? `${data.tasks_summary.overdue} overdue` : (data.tasks_summary.due_today > 0 ? `${data.tasks_summary.due_today} due today` : 'none overdue')} onPress={() => router.push('/tasks' as any)} testID="glance-tasks" />
             )}
           </View>
 
@@ -200,12 +201,6 @@ export default function DashboardScreen() {
           <View style={{ height: 96 }} />
         </>
       ) : null}
-
-      {/* Compose ＋ button — gold gradient (signature v2 element) */}
-      <Pressable onPress={() => setComposeOpen(true)} style={styles.fab} testID="dashboard-compose-btn">
-        <LinearGradient colors={['#D9BE7E', '#C9A54E']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[StyleSheet.absoluteFill, { borderRadius: 28 }]} />
-        <Ionicons name="add" size={26} color={colors.onBrandPrimary} />
-      </Pressable>
 
       <ComposeSheet visible={composeOpen} onClose={() => setComposeOpen(false)} />
       <SearchOverlay visible={searchOpen} onClose={() => setSearchOpen(false)} />
@@ -542,6 +537,13 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     position: 'absolute', top: 8, right: 9, width: 8, height: 8, borderRadius: 4,
     backgroundColor: colors.error, borderWidth: 1, borderColor: colors.surface,
   },
+  iconBtnGold: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
+  headerSearch: {
+    flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: spacing.lg,
+    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    paddingHorizontal: spacing.md, height: 46,
+  },
+  headerSearchText: { color: colors.mutedText, fontSize: 15 },
 
   // Needs-attention "brief" card — warm dark gradient (set inline), hairline
   // border, a plain-language lead, then tappable rows separated by top rules.
@@ -574,16 +576,16 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
 
   // Glance — 2-col grid of stat cards
   glanceHeading: { color: colors.mutedText, fontSize: 12, fontWeight: '700', letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: spacing.sm, marginTop: 2 },
-  glanceGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.xl },
+  glanceGrid: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.xl },
   glanceCard: {
-    flexBasis: '47.5%', flexGrow: 1, minWidth: 140,
+    flex: 1, minWidth: 0,
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
     padding: spacing.md,
   },
-  glanceLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  glanceLabel: { color: colors.onSurfaceSecondary, fontSize: 13, fontWeight: '600', flexShrink: 1 },
-  glanceValue: { color: colors.onSurface, fontSize: 27, fontWeight: '800', fontFamily: fonts.display, marginTop: 8, letterSpacing: -0.5 },
-  glanceSub: { color: colors.mutedText, fontSize: 12, marginTop: 2 },
+  glanceLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  glanceLabel: { color: colors.onSurfaceSecondary, fontSize: 12.5, fontWeight: '600', flexShrink: 1 },
+  glanceValue: { color: colors.onSurface, fontSize: 26, fontWeight: '800', fontFamily: fonts.display, marginTop: 8, letterSpacing: -0.5 },
+  glanceSub: { color: colors.mutedText, fontSize: 11, marginTop: 2 },
 
   seeAll: { color: colors.brandSecondary, fontSize: 12, fontWeight: '700' },
 

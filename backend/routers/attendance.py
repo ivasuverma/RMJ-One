@@ -110,7 +110,9 @@ async def attendance_today(date_: Optional[str] = Query(default=None, alias='dat
     # 'photo' excluded in favor of photo_thumb (small avatar) — same
     # reasoning as GET /employees, and this endpoint is refetched on nearly
     # every Attendance screen visit.
-    employees = await db.employees.find({}, {'_id': 0, 'password_hash': 0, 'photo': 0}).sort('name', 1).to_list(1000)
+    # Inactive (ex-)employees don't belong on the daily attendance list — only
+    # active / on-leave staff. (on_leave still shows, with its leave status.)
+    employees = await db.employees.find({'status': {'$ne': 'inactive'}}, {'_id': 0, 'password_hash': 0, 'photo': 0}).sort('name', 1).to_list(1000)
     att_map = {}
     async for a in db.attendance.find({'date': d}, {'_id': 0, 'check_in.selfie': 0, 'check_out.selfie': 0}):
         att_map[a['employee_id']] = a

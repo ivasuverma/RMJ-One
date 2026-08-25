@@ -45,39 +45,39 @@ export default function WorkScreen() {
 
   const go = (route: string) => router.push(route as any);
 
-  type Row = { key: string; title: string; icon: string; segs: Seg[]; badge?: number; route: string; show: boolean };
-  const rows: Row[] = data ? [
-    {
-      key: 'repairs', title: 'Repairs', icon: 'construct-outline', route: '/repairs', show: hasModule('repairs'),
-      badge: data.repairs_summary.ready || undefined,
-      segs: [
-        { text: `${data.repairs_summary.with_karigar} with karigar`, tone: 'hot' },
-        { text: ' · ' },
-        { text: `${data.repairs_summary.overdue} overdue`, tone: 'bad' },
-        { text: ' · ' },
-        { text: `${data.repairs_summary.ready} to bill` },
-      ],
-    },
-    {
-      key: 'stock', title: 'Stock In / Out', icon: 'diamond-outline', route: '/samples', show: hasModule('samples'),
-      segs: [
-        { text: `${data.samples_summary.with_karigar} samples out` },
-        { text: ' · ' },
-        { text: `${data.samples_summary.overdue} overdue`, tone: 'bad' },
-      ],
-    },
-    {
-      key: 'cash', title: 'Cash Book', icon: 'wallet-outline', route: '/cashbook', show: hasModule('cash_book'),
-      segs: [{ text: 'Closing ' }, { text: fmtINR(data.cashbook_summary.closing_balance), tone: 'strong' }],
-    },
-    {
-      key: 'tasks', title: 'Tasks', icon: 'checkbox-outline', route: '/tasks', show: hasModule('tasks'),
-      segs: [
-        { text: `${data.tasks_summary.due_today} due today` },
-        ...(data.tasks_summary.overdue > 0 ? [{ text: ' · ' }, { text: `${data.tasks_summary.overdue} overdue`, tone: 'bad' as const }] : []),
-      ],
-    },
-  ].filter((r) => r.show) : [];
+  // Rows are built from the modules this user has — ALWAYS, not gated on the
+  // dashboard fetch — so the board renders instantly with its structure and the
+  // live counts fill in when /dashboard returns (no blank skeleton wait).
+  type Row = { key: string; title: string; icon: keyof typeof Ionicons.glyphMap; segs: Seg[]; badge?: number; route: string };
+  const placeholder: Seg[] = [{ text: '…' }];
+  const rows: Row[] = [];
+  if (hasModule('repairs')) rows.push({
+    key: 'repairs', title: 'Repairs', icon: 'construct-outline', route: '/repairs',
+    badge: data?.repairs_summary.ready || undefined,
+    segs: data ? [
+      { text: `${data.repairs_summary.with_karigar} with karigar`, tone: 'hot' }, { text: ' · ' },
+      { text: `${data.repairs_summary.overdue} overdue`, tone: 'bad' }, { text: ' · ' },
+      { text: `${data.repairs_summary.ready} to bill` },
+    ] : placeholder,
+  });
+  if (hasModule('samples')) rows.push({
+    key: 'stock', title: 'Stock In / Out', icon: 'diamond-outline', route: '/samples',
+    segs: data ? [
+      { text: `${data.samples_summary.with_karigar} samples out` },
+      ...(data.samples_summary.overdue > 0 ? [{ text: ' · ' }, { text: `${data.samples_summary.overdue} overdue`, tone: 'bad' as const }] : []),
+    ] : placeholder,
+  });
+  if (hasModule('cash_book')) rows.push({
+    key: 'cash', title: 'Cash Book', icon: 'wallet-outline', route: '/cashbook',
+    segs: data ? [{ text: 'Closing ' }, { text: fmtINR(data.cashbook_summary.closing_balance), tone: 'strong' }] : placeholder,
+  });
+  if (hasModule('tasks')) rows.push({
+    key: 'tasks', title: 'Tasks', icon: 'checkbox-outline', route: '/tasks', badge: data?.tasks_summary.due_today || undefined,
+    segs: data ? [
+      { text: `${data.tasks_summary.due_today} due today` },
+      ...(data.tasks_summary.overdue > 0 ? [{ text: ' · ' }, { text: `${data.tasks_summary.overdue} overdue`, tone: 'bad' as const }] : []),
+    ] : placeholder,
+  });
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="work-screen">
@@ -90,35 +90,27 @@ export default function WorkScreen() {
           <Text style={styles.searchText}>Find a repair, sample or customer…</Text>
         </Pressable>
 
-        <Text style={styles.sectionLabel}>In progress</Text>
-        {loading && !data ? (
-          <View style={{ gap: spacing.sm }}>
-            {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} width="100%" height={72} radius={radius.md} />)}
-          </View>
-        ) : error ? (
-          <ErrorState message={error} onRetry={load} />
-        ) : (
-          rows.map((r) => (
-            <Pressable key={r.key} onPress={() => go(r.route)} style={({ pressed }) => [styles.prow, pressed && { opacity: 0.85 }]} testID={`work-row-${r.key}`}>
-              <View style={styles.pi}><Ionicons name={r.icon as keyof typeof Ionicons.glyphMap} size={22} color={colors.brandSecondary} /></View>
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={styles.pt}>{r.title}</Text>
-                <Text style={styles.pd} numberOfLines={1}>
-                  {r.segs.map((s, i) => (
-                    <Text key={i} style={s.tone === 'hot' ? { color: colors.onWarning } : s.tone === 'bad' ? { color: colors.onError } : s.tone === 'strong' ? { color: colors.onSurface, fontWeight: '700' } : undefined}>
-                      {s.text}
-                    </Text>
-                  ))}
-                </Text>
-              </View>
-              {r.badge ? (
-                <View style={styles.badge}><Text style={styles.badgeText}>{r.badge}</Text></View>
-              ) : (
-                <Ionicons name="chevron-forward" size={18} color={colors.mutedText} />
-              )}
-            </Pressable>
-          ))
-        )}
+        {rows.length > 0 && <Text style={styles.sectionLabel}>In progress</Text>}
+        {rows.map((r) => (
+          <Pressable key={r.key} onPress={() => go(r.route)} style={({ pressed }) => [styles.prow, pressed && { opacity: 0.85 }]} testID={`work-row-${r.key}`}>
+            <View style={styles.pi}><Ionicons name={r.icon} size={22} color={colors.brandSecondary} /></View>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={styles.pt}>{r.title}</Text>
+              <Text style={styles.pd} numberOfLines={1}>
+                {r.segs.map((s, i) => (
+                  <Text key={i} style={s.tone === 'hot' ? { color: colors.onWarning } : s.tone === 'bad' ? { color: colors.onError } : s.tone === 'strong' ? { color: colors.onSurface, fontWeight: '700' } : undefined}>
+                    {s.text}
+                  </Text>
+                ))}
+              </Text>
+            </View>
+            {r.badge ? (
+              <View style={styles.badge}><Text style={styles.badgeText}>{r.badge}</Text></View>
+            ) : (
+              <Ionicons name="chevron-forward" size={18} color={colors.mutedText} />
+            )}
+          </Pressable>
+        ))}
 
         {/* Attendance & Payroll — same button style, part of the operational hub. */}
         {hasModule('attendance') && (
