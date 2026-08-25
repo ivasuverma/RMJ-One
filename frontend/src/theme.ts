@@ -21,20 +21,30 @@ export const spacing = {
 // and bottom sheets at 26 (xl).
 export const radius = { sm: 10, md: 14, lg: 18, xl: 26, pill: 999 };
 
-// Typography scale — size + weight + lineHeight per role, all on the Inter
-// family below. UI primitives (src/components/ui/) consume these instead of
-// ad-hoc per-screen font sizes, so headings/body/captions stay consistent as
-// more screens migrate onto the shared components.
-type TypeStyle = { fontSize: number; fontWeight: '400' | '500' | '600' | '700' | '800'; lineHeight: number };
-export const typography: Record<'h1' | 'h2' | 'title' | 'body' | 'bodyMedium' | 'caption' | 'label', TypeStyle> = {
-  h1: { fontSize: 26, fontWeight: '700', lineHeight: 32 },
-  h2: { fontSize: 20, fontWeight: '700', lineHeight: 26 },
-  title: { fontSize: 16, fontWeight: '600', lineHeight: 22 },
-  body: { fontSize: 14, fontWeight: '400', lineHeight: 20 },
-  bodyMedium: { fontSize: 14, fontWeight: '600', lineHeight: 20 },
-  caption: { fontSize: 12, fontWeight: '400', lineHeight: 16 },
-  label: { fontSize: 12, fontWeight: '700', lineHeight: 16 },
+// Typography scale — size + weight + lineHeight + tracking per role, on the
+// Apple system font stack (see fonts.display below). UI primitives
+// (src/components/ui/) consume these instead of ad-hoc per-screen font sizes.
+//
+// Apple §15: tracking (letterSpacing) is size-specific — large display text
+// wants NEGATIVE tracking (letters read too far apart as they grow), body sits
+// near 0, small text wants a touch positive for legibility. Leading (lineHeight)
+// tracks size inversely: tight on big headings, looser on body. Baked in here so
+// every heading is correct instead of each screen guessing a `-0.5` inline.
+type TypeStyle = { fontSize: number; fontWeight: '400' | '500' | '600' | '700' | '800'; lineHeight: number; letterSpacing: number };
+export const typography: Record<'display' | 'h1' | 'h2' | 'title' | 'body' | 'bodyMedium' | 'caption' | 'label', TypeStyle> = {
+  display: { fontSize: 32, fontWeight: '800', lineHeight: 36, letterSpacing: -0.6 },
+  h1: { fontSize: 26, fontWeight: '700', lineHeight: 32, letterSpacing: -0.4 },
+  h2: { fontSize: 20, fontWeight: '700', lineHeight: 26, letterSpacing: -0.3 },
+  title: { fontSize: 16, fontWeight: '600', lineHeight: 22, letterSpacing: -0.1 },
+  body: { fontSize: 14, fontWeight: '400', lineHeight: 20, letterSpacing: 0 },
+  bodyMedium: { fontSize: 14, fontWeight: '600', lineHeight: 20, letterSpacing: 0 },
+  caption: { fontSize: 12, fontWeight: '400', lineHeight: 16, letterSpacing: 0.1 },
+  label: { fontSize: 12, fontWeight: '700', lineHeight: 16, letterSpacing: 0.6 },
 };
+
+// Apple §1: press feedback must be instant and consistent. One token instead of
+// the 0.7/0.8/0.85/0.9 scatter across screens.
+export const pressedOpacity = 0.85;
 
 // "Inter" — clean neutral grotesque-sans, the closest widely-available match
 // to Claude.ai's own UI typeface (which is proprietary and can't be bundled

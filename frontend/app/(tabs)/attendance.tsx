@@ -8,6 +8,7 @@ import { api } from '@/src/api/client';
 import { istTime, istDate, todayIST, nowISTLongLabel, displayDateOnlyWithWeekday, localDateStr } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { haptics } from '@/src/utils/haptics';
 
 // Attendance & Payroll — one screen inside Work, three segments (matches the
 // v2 design comp): Today (daily in/out), Calendar (pick a person, edit any
@@ -142,7 +143,7 @@ export default function OwnerAttendance() {
         {/* Segmented control */}
         <View style={styles.seg}>
           {(['today', 'live', 'pay'] as Seg[]).map((s) => (
-            <Pressable key={s} onPress={() => { setSeg(s); if (s === 'today') load(); else if (s === 'live') loadLive(); else if (s === 'pay') loadPay(); }} style={[styles.sg, seg === s && styles.sgOn]} testID={`seg-${s}`}>
+            <Pressable key={s} onPress={() => { if (s !== seg) haptics.selection(); setSeg(s); if (s === 'today') load(); else if (s === 'live') loadLive(); else if (s === 'pay') loadPay(); }} style={[styles.sg, seg === s && styles.sgOn]} testID={`seg-${s}`}>
               <Text style={[styles.sgText, seg === s && styles.sgTextOn]}>{s === 'today' ? 'Today' : s === 'live' ? 'Live' : 'Payroll'}</Text>
             </Pressable>
           ))}

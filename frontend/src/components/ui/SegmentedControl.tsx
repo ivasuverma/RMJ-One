@@ -1,7 +1,8 @@
 import { useMemo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { radius, spacing, ThemeColors } from '@/src/theme';
+import { radius, spacing, pressedOpacity, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { haptics } from '@/src/utils/haptics';
 
 export type SegmentOption = { key: string; label: string };
 
@@ -24,8 +25,8 @@ export function SegmentedControl({ options, value, onChange, testID }: {
         return (
           <Pressable
             key={o.key}
-            onPress={() => onChange(o.key)}
-            style={[styles.segment, active && styles.segmentActive]}
+            onPress={() => { if (!active) { haptics.selection(); onChange(o.key); } }}
+            style={({ pressed }) => [styles.segment, active && styles.segmentActive, pressed && { opacity: pressedOpacity }]}
             testID={testID ? `${testID}-${o.key}` : undefined}
           >
             <Text style={[styles.text, active && styles.textActive]} numberOfLines={1}>{o.label}</Text>

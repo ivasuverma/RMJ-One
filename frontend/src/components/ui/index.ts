@@ -17,3 +17,4 @@ export { ErrorState } from './ErrorState';
 export { DualBalance } from './DualBalance';
 export type { BalanceDirection } from './DualBalance';
 export { ToastProvider, useToast } from './Toast';
+export { Sheet } from './Sheet';

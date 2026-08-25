@@ -14,6 +14,7 @@ import { istTime, nowISTLongLabel, todayIST } from '@/src/utils/datetime';
 import { spacing, radius, images, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { PunchCaptureModal, PunchResult } from '@/src/components/PunchCaptureModal';
+import { haptics } from '@/src/utils/haptics';
 
 type Att = {
   id?: string;
@@ -75,10 +76,12 @@ export default function EmployeeHome() {
     const endpoint = showPunch === 'check_in' ? '/attendance/check-in' : '/attendance/check-out';
     try {
       await api.post(endpoint, r);
+      haptics.success();
       setShowPunch(null);
       await load();
       Alert.alert('Success', showPunch === 'check_in' ? 'Checked in successfully.' : 'Checked out successfully.');
     } catch (e: any) {
+      haptics.error();
       Alert.alert('Failed', e?.detail || 'Please try again');
     }
   };

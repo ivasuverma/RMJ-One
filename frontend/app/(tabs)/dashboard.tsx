@@ -11,7 +11,7 @@ import { useCountUp } from '@/src/hooks/use-count-up';
 import { useDashboardStream } from '@/src/hooks/use-dashboard-stream';
 import { spacing, radius, images, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
-import { Screen, Section, StatTile, Skeleton, ErrorState, DualBalance, Tone } from '@/src/components/ui';
+import { Screen, Section, StatTile, Skeleton, ErrorState, DualBalance, Tone, Sheet } from '@/src/components/ui';
 
 type DashboardData = {
   todays_attendance: {
@@ -401,23 +401,17 @@ function ComposeSheet({ visible, onClose }: { visible: boolean; onClose: () => v
   const go = (route: string) => { onClose(); router.push(route as any); };
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.sheetBackdrop} onPress={onClose} testID="compose-backdrop">
-        <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
-          <View style={styles.sheetHandle} />
-          <Text style={styles.sheetTitle}>Create</Text>
-          {visibleActions.length === 0 ? (
-            <Text style={styles.sheetEmpty}>Nothing to create with your current access.</Text>
-          ) : visibleActions.map((a) => (
-            <Pressable key={a.key} onPress={() => go(a.route)} style={({ pressed }) => [styles.sheetRow, pressed && { opacity: 0.7 }]} testID={`compose-${a.key}`}>
-              <View style={styles.sheetIcon}><Ionicons name={a.icon} size={18} color={colors.brandSecondary} /></View>
-              <Text style={styles.sheetLabel}>{a.label}</Text>
-              <Ionicons name="chevron-forward" size={16} color={colors.mutedText} />
-            </Pressable>
-          ))}
+    <Sheet visible={visible} onClose={onClose} title="Create" testID="compose-sheet">
+      {visibleActions.length === 0 ? (
+        <Text style={styles.sheetEmpty}>Nothing to create with your current access.</Text>
+      ) : visibleActions.map((a) => (
+        <Pressable key={a.key} onPress={() => go(a.route)} style={({ pressed }) => [styles.sheetRow, pressed && { opacity: 0.7 }]} testID={`compose-${a.key}`}>
+          <View style={styles.sheetIcon}><Ionicons name={a.icon} size={18} color={colors.brandSecondary} /></View>
+          <Text style={styles.sheetLabel}>{a.label}</Text>
+          <Ionicons name="chevron-forward" size={16} color={colors.mutedText} />
         </Pressable>
-      </Pressable>
-    </Modal>
+      ))}
+    </Sheet>
   );
 }
 
