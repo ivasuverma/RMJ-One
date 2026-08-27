@@ -17,6 +17,7 @@ from server import (
     require_staff,
     require_module,
     _apply_punch,
+    _notify_module,
     log_audit,
     IST,
 )
@@ -193,6 +194,26 @@ async def _ingest_biometric_punch(serial: str, user_id: str, ts: datetime, event
     log_doc['result'] = 'accepted'; log_doc['action'] = kind; log_doc['attendance_id'] = result['attendance_id']
     log_doc['employee_id'] = emp['id']; log_doc['employee_name'] = emp['name']
     await db.biometric_logs.insert_one(dict(log_doc))
+
+    # Notify owners/admins for genuinely LIVE punches only. The device re-dumps
+    # its whole backlog on many polls, so an accepted punch can be hours or days
+    # old — firing on those would spam stale "checked in" alerts. Only punches
+    # within the last 15 minutes are treated as real-time, matching the app's
+    # own check-in/out notifications (same scripts, so the same toggles apply).
+    try:
+        age_min = (now_utc() - norm_ts).total_seconds() / 60
+    except Exception:
+        age_min = 9999
+    if -2 <= age_min <= 15:
+        now_local = norm_ts.astimezone(IST)
+        if kind == 'check_in':
+            await _notify_module('attendance', f"{emp['name']} checked in",
+                                 f"{now_local.strftime('%I:%M %p')}{' · Late' if result.get('is_late') else ''} · Biometric",
+                                 '/(tabs)/attendance', script='attendance_checkin')
+        elif kind == 'check_out':
+            await _notify_module('attendance', f"{emp['name']} checked out",
+                                 f"Worked {result.get('working_hours', 0)}h today · Biometric",
+                                 '/(tabs)/attendance', script='attendance_checkout')
     return {'ok': True, 'action': kind, 'employee': emp['name'], 'attendance_id': result['attendance_id']}
 
 
