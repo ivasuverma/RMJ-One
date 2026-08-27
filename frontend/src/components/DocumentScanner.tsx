@@ -21,42 +21,82 @@ function orderCorners(pts: Pt[]): Pt[] {
   return [tl, tr, br, bl];
 }
 
+// 4 corners of a rotated rectangle (opencv.js has no boxPoints binding).
+function rotatedRectPoints(rr: any): Pt[] {
+  const cx = rr.center.x, cy = rr.center.y;
+  const w = rr.size.width / 2, h = rr.size.height / 2;
+  const a = (rr.angle * Math.PI) / 180;
+  const cos = Math.cos(a), sin = Math.sin(a);
+  return [
+    { x: cx - w * cos + h * sin, y: cy - w * sin - h * cos },
+    { x: cx + w * cos + h * sin, y: cy + w * sin - h * cos },
+    { x: cx + w * cos - h * sin, y: cy + w * sin + h * cos },
+    { x: cx - w * cos - h * sin, y: cy - w * sin + h * cos },
+  ];
+}
+
 function detectQuad(cv: any, srcMat: any): Pt[] | null {
+  // Detect on a downscaled copy: faster, and the dominant document edges
+  // survive while fine texture/noise drops out. Points are scaled back up.
+  const detMax = 900;
+  const s = Math.min(1, detMax / Math.max(srcMat.rows, srcMat.cols));
+  const small = new cv.Mat();
   const gray = new cv.Mat();
   const edges = new cv.Mat();
   const contours = new cv.MatVector();
   const hierarchy = new cv.Mat();
-  let best: any = null;
+  let bestContour: any = null;
   let bestArea = 0;
   try {
-    cv.cvtColor(srcMat, gray, cv.COLOR_RGBA2GRAY);
+    cv.resize(srcMat, small, new cv.Size(Math.round(srcMat.cols * s), Math.round(srcMat.rows * s)));
+    cv.cvtColor(small, gray, cv.COLOR_RGBA2GRAY);
+    // Local contrast boost (CLAHE) so faint paper edges on a pale surface (a
+    // white slip on a cream counter) actually register — this is what makes
+    // low-contrast documents detectable. Paired with low Canny thresholds.
+    try {
+      const clahe = (cv.createCLAHE ? cv.createCLAHE(3.0, new cv.Size(8, 8)) : new cv.CLAHE(3.0, new cv.Size(8, 8)));
+      clahe.apply(gray, gray);
+      if (clahe.delete) clahe.delete();
+    } catch { /* CLAHE unavailable in this build — carry on without it */ }
     cv.GaussianBlur(gray, gray, new cv.Size(5, 5), 0);
-    cv.Canny(gray, edges, 75, 200);
-    const kernel = cv.Mat.ones(3, 3, cv.CV_8U);
-    cv.dilate(edges, edges, kernel);
-    kernel.delete();
-    cv.findContours(edges, contours, hierarchy, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
-    const minArea = srcMat.rows * srcMat.cols * 0.15;
+    cv.Canny(gray, edges, 20, 60);
+    const k = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(7, 7));
+    cv.morphologyEx(edges, edges, cv.MORPH_CLOSE, k);
+    k.delete();
+    cv.findContours(edges, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+    const minArea = small.rows * small.cols * 0.06;
     for (let i = 0; i < contours.size(); i++) {
       const c = contours.get(i);
       const area = cv.contourArea(c);
-      if (area > bestArea && area > minArea) {
-        const peri = cv.arcLength(c, true);
-        const approx = new cv.Mat();
-        cv.approxPolyDP(c, approx, 0.02 * peri, true);
-        if (approx.rows === 4) { if (best) best.delete(); best = approx; bestArea = area; }
-        else approx.delete();
-      }
-      c.delete();
+      if (area > bestArea && area > minArea) { if (bestContour) bestContour.delete(); bestContour = c; bestArea = area; }
+      else c.delete();
     }
-    if (!best) return null;
-    const pts: Pt[] = [];
-    for (let i = 0; i < 4; i++) pts.push({ x: best.data32S[i * 2], y: best.data32S[i * 2 + 1] });
-    return orderCorners(pts);
+    if (!bestContour) return null;
+
+    // Prefer a clean 4-point polygon; widen epsilon before giving up, then fall
+    // back to the tightest rotated rectangle so we (almost) always snap.
+    let quad: Pt[] | null = null;
+    const peri = cv.arcLength(bestContour, true);
+    for (const eps of [0.02, 0.04, 0.06, 0.09]) {
+      const approx = new cv.Mat();
+      cv.approxPolyDP(bestContour, approx, eps * peri, true);
+      if (approx.rows === 4) {
+        quad = [];
+        for (let i = 0; i < 4; i++) quad.push({ x: approx.data32S[i * 2], y: approx.data32S[i * 2 + 1] });
+      }
+      approx.delete();
+      if (quad) break;
+    }
+    if (!quad) {
+      const rr = cv.minAreaRect(bestContour);
+      quad = rotatedRectPoints(rr);
+    }
+    // Scale detection-space points back to the full image.
+    return orderCorners(quad.map((p) => ({ x: p.x / s, y: p.y / s })));
   } catch { return null; }
   finally {
-    gray.delete(); edges.delete(); contours.delete(); hierarchy.delete();
-    if (best) best.delete();
+    small.delete(); gray.delete(); edges.delete(); contours.delete(); hierarchy.delete();
+    if (bestContour) bestContour.delete();
   }
 }
 
