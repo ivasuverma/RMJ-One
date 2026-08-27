@@ -20,7 +20,28 @@ function pickWebFile(accept: string, capture?: boolean): Promise<File | null> {
     input.type = 'file';
     input.accept = accept;
     if (capture) input.setAttribute('capture', 'environment');
-    input.onchange = () => resolve(input.files && input.files[0] ? input.files[0] : null);
+    // The input MUST be in the DOM for .click() to open the picker on mobile
+    // browsers (iOS Safari/WebView silently ignore a detached input) — this is
+    // why the capture buttons appeared to do nothing on phones. Keep it off
+    // screen and remove it once we have a result.
+    input.style.position = 'fixed';
+    input.style.left = '-9999px';
+    input.style.top = '0';
+    input.style.opacity = '0';
+    let done = false;
+    const finish = (f: File | null) => {
+      if (done) return;
+      done = true;
+      window.removeEventListener('focus', onFocus);
+      try { input.remove(); } catch { /* already gone */ }
+      resolve(f);
+    };
+    // If the user cancels the picker, onchange never fires; the window regains
+    // focus instead — resolve null then so the sheet doesn't hang.
+    const onFocus = () => { setTimeout(() => { if (!input.files || input.files.length === 0) finish(null); }, 400); };
+    input.onchange = () => finish(input.files && input.files[0] ? input.files[0] : null);
+    document.body.appendChild(input);
+    window.addEventListener('focus', onFocus);
     input.click();
   });
 }

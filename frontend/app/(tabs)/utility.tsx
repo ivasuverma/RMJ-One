@@ -27,7 +27,7 @@ const GROUPS: GroupDef[] = [
   {
     title: 'People & Access', ownerOnly: true,
     rows: [
-      { key: 'user-roles', label: 'People', sub: 'Access, notifications, documents & logins', icon: 'shield-checkmark-outline', route: '/settings/user-roles' },
+      { key: 'user-roles', label: 'People & Roles', sub: 'Access, notifications, documents & logins', icon: 'shield-checkmark-outline', route: '/settings/user-roles' },
       { key: 'team', label: 'Employees', sub: 'Your team', icon: 'people-outline', route: '/(tabs)/employees' },
     ],
   },
