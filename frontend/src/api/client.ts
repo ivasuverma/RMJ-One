@@ -102,9 +102,18 @@ export const api = {
   },
   // Multipart upload — do NOT set Content-Type so the browser adds the correct
   // multipart boundary. Used by the Documents module to POST a captured file.
+  // A 90s timeout means a stalled upload fails cleanly instead of spinning
+  // forever (e.g. a big photo on a weak connection).
   async upload<T>(path: string, form: FormData): Promise<T> {
-    const res = await fetch(`${BASE}/api${path}`, { method: 'POST', headers: await authHeaders(), body: form });
-    return handle(res, true) as Promise<T>;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 90000);
+    try {
+      const res = await fetch(`${BASE}/api${path}`, { method: 'POST', headers: await authHeaders(), body: form, signal: ctrl.signal });
+      return handle(res, true) as Promise<T>;
+    } catch (e: any) {
+      if (e?.name === 'AbortError') throw { detail: 'Upload timed out — check your connection and try again.' };
+      throw e;
+    } finally { clearTimeout(timer); }
   },
 };
 

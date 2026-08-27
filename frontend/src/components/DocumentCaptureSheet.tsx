@@ -25,6 +25,32 @@ function pickWebFile(accept: string, capture?: boolean): Promise<File | null> {
   });
 }
 
+// Downscale a captured photo before upload: a modern phone camera produces
+// 3–6 MB images, which are slow to upload on a shop's connection and bloat
+// storage. Shrinking to ~1600px / JPEG q0.8 keeps them legible (receipts, IDs)
+// at a fraction of the size. Non-images (PDFs) and small files pass through.
+async function shrinkImage(file: File): Promise<Blob> {
+  if (typeof document === 'undefined' || !file.type.startsWith('image/') || file.size < 900_000) return file;
+  try {
+    const url = URL.createObjectURL(file);
+    const img = await new Promise<HTMLImageElement>((res, rej) => {
+      const im = new (window as any).Image();
+      im.onload = () => res(im); im.onerror = rej; im.src = url;
+    });
+    const max = 1600;
+    const scale = Math.min(1, max / Math.max(img.width, img.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(img.width * scale);
+    canvas.height = Math.round(img.height * scale);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return file;
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    URL.revokeObjectURL(url);
+    const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, 'image/jpeg', 0.8));
+    return blob && blob.size < file.size ? blob : file;
+  } catch { return file; }
+}
+
 export function DocumentCaptureSheet({ visible, onClose, onSaved }: {
   visible: boolean; onClose: () => void; onSaved?: () => void;
 }) {
@@ -49,9 +75,12 @@ export function DocumentCaptureSheet({ visible, onClose, onSaved }: {
     if (!file || busy) return;
     setBusy(true);
     try {
+      const blob = await shrinkImage(file);
+      const name = file.type.startsWith('image/') ? file.name.replace(/\.[^.]+$/, '') + '.jpg' : file.name;
       const form = new FormData();
-      form.append('file', file);
+      form.append('file', blob, name);
       form.append('category_key', cat.key);
+      form.append('note', '');
       await api.upload('/documents', form);
       haptics.impact();
       toast.success('Saved to Pending · uploading');
