@@ -17,8 +17,10 @@ connects its Google account — see drive_connected()) later uploads and flips t
 list, record, view. OCR fields are reserved (Phase 5) and left null.
 """
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query, Response
+from fastapi.responses import HTMLResponse, RedirectResponse
 from typing import Optional
 from pydantic import BaseModel
+import asyncio
 import base64
 import re
 import uuid
@@ -178,12 +180,16 @@ async def create_document(
     if len(raw) > 12 * 1024 * 1024:
         raise HTTPException(status_code=400, detail='File too large (max 12 MB)')
 
+    import drive_service
+    connected = await drive_service.is_connected()
     doc = {
         'id': str(uuid.uuid4()), 'category_key': category_key, 'status': 'pending',
         'local_data': base64.b64encode(raw).decode('ascii'),
         'file': {'drive_file_id': None, 'drive_view_link': None, 'drive_thumbnail_link': None,
                  'mime': file.content_type or 'image/jpeg', 'size': len(raw), 'orig_name': file.filename or 'capture.jpg'},
-        'upload_state': 'queued',                       # flips to 'synced' when Drive sync runs
+        # 'queued' → the worker will upload it; 'local' → no Drive connected yet,
+        # so it just lives locally until the owner connects Google (then re-queued).
+        'upload_state': 'queued' if connected else 'local',
         'linked_ref': None, 'note': (note or '').strip(),
         'uploaded_by': user['id'], 'uploaded_by_name': user['name'],
         'created_at': now_utc().isoformat(), 'recorded_at': None, 'recorded_by': None,
@@ -222,6 +228,8 @@ async def list_documents(
 @router.get('/documents/summary')
 async def documents_summary(user=Depends(get_current)):
     """Role-filtered counts — feeds the Work row and Home needs-attention item."""
+    import drive_service
+    connected = await drive_service.is_connected()
     role = _role(user)
     visible = await _visible_keys(role)
     pending = 0
@@ -237,9 +245,10 @@ async def documents_summary(user=Depends(get_current)):
             pending += 1; b['pending'] += 1
         else:
             done += 1; b['done'] += 1
-        if d.get('upload_state') in ('queued', 'uploading'):
+        # Only count as "uploading" when Drive is actually connected and working.
+        if connected and d.get('upload_state') in ('queued', 'uploading'):
             uploading += 1
-    return {'pending_count': pending, 'done_count': done, 'uploading_count': uploading, 'by_category': by_category}
+    return {'pending_count': pending, 'done_count': done, 'uploading_count': uploading, 'by_category': by_category, 'drive_connected': connected}
 
 
 class RecordIn(BaseModel):
@@ -302,3 +311,103 @@ async def document_file(doc_id: str, user=Depends(get_current)):
     if not data:
         raise HTTPException(status_code=404, detail='No local copy (see Drive link)')
     return Response(content=base64.b64decode(data), media_type=(d.get('file') or {}).get('mime', 'image/jpeg'))
+
+
+# ---------------- Google Drive (owner) ----------------
+def _drive_filename(doc: dict, cat: dict) -> str:
+    """`<record-or-name>_<date>.<ext>` so Drive stays browsable on its own."""
+    orig = (doc.get('file') or {}).get('orig_name') or 'document'
+    ext = orig.rsplit('.', 1)[-1] if '.' in orig else 'jpg'
+    lr = doc.get('linked_ref') or {}
+    base = (lr.get('label') or doc.get('note') or orig.rsplit('.', 1)[0] or cat.get('label', 'doc'))
+    base = re.sub(r'[^\w\- ]+', '', str(base)).strip()[:60] or 'document'
+    date = (doc.get('created_at') or '')[:10]
+    return f'{base}_{date}.{ext}'
+
+
+@router.get('/google-drive/status')
+async def drive_status(user=Depends(require_owner)):
+    import drive_service
+    cfg = await drive_service.get_config()
+    return {
+        'connected': bool(cfg.get('refresh_token')),
+        'email': cfg.get('email'),
+        'env_ready': drive_service.env_ready(),
+        'connected_at': cfg.get('connected_at'),
+    }
+
+
+@router.get('/google-drive/auth-url')
+async def drive_auth_url(user=Depends(require_owner)):
+    import drive_service
+    if not drive_service.env_ready():
+        raise HTTPException(status_code=400, detail='Google credentials not configured on the server (GOOGLE_CLIENT_ID / SECRET / REDIRECT_URI).')
+    state = str(uuid.uuid4())
+    await db.settings.update_one({'id': 'google_drive'}, {'$set': {'id': 'google_drive', 'oauth_state': state}}, upsert=True)
+    return {'url': drive_service.auth_url(state)}
+
+
+@router.get('/google-drive/callback')
+async def drive_callback(code: Optional[str] = None, state: Optional[str] = None, error: Optional[str] = None):
+    """Google redirects the owner's browser here after consent. No bearer token —
+    validated by the one-time `state` we issued. Returns a plain HTML page."""
+    import drive_service
+
+    def page(msg: str, ok: bool) -> HTMLResponse:
+        color = '#5FB07E' if ok else '#E5695B'
+        return HTMLResponse(f"<html><body style='background:#0B0B0C;color:#F4F3EF;font-family:-apple-system,sans-serif;text-align:center;padding:60px'>"
+                            f"<div style='font-size:44px;color:{color}'>{'✓' if ok else '✕'}</div>"
+                            f"<h2>{msg}</h2><p style='color:#B7B6B0'>You can close this tab and return to RMJ One.</p></body></html>")
+
+    if error or not code:
+        return page('Google Drive was not connected.', False)
+    cfg = await drive_service.get_config()
+    if not state or state != cfg.get('oauth_state'):
+        return page('Link expired — please start again from Settings.', False)
+    try:
+        refresh_token, email = await drive_service.exchange_code(code)
+    except Exception:
+        return page('Could not complete the Google sign-in.', False)
+    if not refresh_token:
+        return page('Google did not return a refresh token — remove RMJ One from your Google account permissions and try again.', False)
+    await db.settings.update_one({'id': 'google_drive'}, {'$set': {
+        'refresh_token': refresh_token, 'email': email, 'connected_at': now_utc().isoformat(), 'oauth_state': None,
+    }}, upsert=True)
+    # Any docs captured while offline/unconnected can now sync.
+    await db.documents.update_many({'upload_state': {'$in': ['local', 'failed']}, 'deleted': {'$ne': True}}, {'$set': {'upload_state': 'queued'}})
+    return page('Google Drive connected.', True)
+
+
+@router.post('/google-drive/disconnect')
+async def drive_disconnect(user=Depends(require_owner)):
+    await db.settings.update_one({'id': 'google_drive'}, {'$set': {'refresh_token': None, 'email': None, 'connected_at': None}})
+    await log_audit(user, 'documents.drive.disconnect', 'settings', 'google_drive', '')
+    return {'ok': True}
+
+
+# Background worker (started from server.py). Uploads one queued doc per tick to
+# keep memory flat; flips 'synced' with the Drive links, or 'failed' on error.
+async def upload_worker():
+    import drive_service
+    while True:
+        try:
+            if await drive_service.is_connected():
+                cfg = await drive_service.get_config()
+                doc = await db.documents.find_one({'upload_state': 'queued', 'deleted': {'$ne': True}, 'local_data': {'$ne': None}}, {'_id': 0})
+                if doc:
+                    await db.documents.update_one({'id': doc['id']}, {'$set': {'upload_state': 'uploading'}})
+                    try:
+                        cat = (await _categories_map()).get(doc['category_key'], {})
+                        res = await drive_service.upload(cfg, cat.get('label', doc['category_key']), _drive_filename(doc, cat), doc['local_data'], (doc.get('file') or {}).get('mime', 'image/jpeg'))
+                        await db.documents.update_one({'id': doc['id']}, {'$set': {
+                            'upload_state': 'synced',
+                            'file.drive_file_id': res['drive_file_id'],
+                            'file.drive_view_link': res['drive_view_link'],
+                            'file.drive_thumbnail_link': res['drive_thumbnail_link'],
+                        }})
+                    except Exception as e:
+                        await db.documents.update_one({'id': doc['id']}, {'$set': {'upload_state': 'failed', 'upload_error': str(e)[:200]}})
+                    continue  # grab the next queued doc without waiting
+        except Exception:
+            pass
+        await asyncio.sleep(6)

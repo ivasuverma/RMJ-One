@@ -1092,6 +1092,8 @@ async def seed():
 async def on_startup():
     await seed()
     asyncio.create_task(_attendance_reminder_loop())
+    from routers.documents import upload_worker  # background Drive sync for Documents
+    asyncio.create_task(upload_worker())
 
 
 @app.on_event('shutdown')

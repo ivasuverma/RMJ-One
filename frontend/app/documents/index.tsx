@@ -21,7 +21,7 @@ type Doc = {
   linked_ref?: { type: string; id: string; label?: string } | null;
 };
 type Cat = { key: string; label: string; icon: keyof typeof Ionicons.glyphMap; can_record_roles?: string[] };
-type Summary = { pending_count: number; done_count: number; uploading_count: number; by_category: Record<string, { pending: number; done: number }> };
+type Summary = { pending_count: number; done_count: number; uploading_count: number; drive_connected?: boolean; by_category: Record<string, { pending: number; done: number }> };
 
 const LINK_TYPES: { key: string; label: string; endpoint: string }[] = [
   { key: 'customer', label: 'Customer', endpoint: '/customers' },
@@ -162,7 +162,9 @@ export default function DocumentsScreen() {
           <View style={styles.drivePill}>
             {summary && summary.uploading_count > 0
               ? <><Ionicons name="cloud-upload-outline" size={13} color={colors.onWarning} /><Text style={[styles.drivePillText, { color: colors.onWarning }]}>{summary.uploading_count} uploading</Text></>
-              : <><Ionicons name="cloud-done-outline" size={13} color={colors.onSuccess} /><Text style={[styles.drivePillText, { color: colors.onSuccess }]}>Local</Text></>}
+              : summary?.drive_connected
+                ? <><Ionicons name="cloud-done-outline" size={13} color={colors.onSuccess} /><Text style={[styles.drivePillText, { color: colors.onSuccess }]}>Synced</Text></>
+                : <><Ionicons name="phone-portrait-outline" size={13} color={colors.mutedText} /><Text style={[styles.drivePillText, { color: colors.mutedText }]}>Local</Text></>}
           </View>
         </View>
 
