@@ -138,7 +138,7 @@ export default function DashboardScreen() {
         </View>
         {hasModule('documents') && (
           <Pressable onPress={() => setCaptureDoc(true)} style={styles.iconBtn} testID="dashboard-capture-btn" hitSlop={10}>
-            <Ionicons name="scan-outline" size={19} color={colors.onSurface} />
+            <Ionicons name="camera" size={21} color={colors.brandSecondary} />
           </Pressable>
         )}
         <Pressable onPress={() => router.push('/notifications' as any)} style={styles.iconBtn} testID="notifications-btn" hitSlop={10}>

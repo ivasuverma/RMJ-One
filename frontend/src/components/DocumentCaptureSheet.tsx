@@ -6,6 +6,7 @@ import { haptics } from '@/src/utils/haptics';
 import { spacing, radius, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { Sheet, useToast } from '@/src/components/ui';
+import { DocumentScanner } from '@/src/components/DocumentScanner';
 
 export type DocCategory = { id: string; key: string; label: string; icon: keyof typeof Ionicons.glyphMap; can_record?: boolean };
 
@@ -102,6 +103,7 @@ export function DocumentCaptureSheet({ visible, onClose, onSaved, autoCamera }: 
   const [note, setNote] = useState('');
   const [catKey, setCatKey] = useState<string | null>(null);
   const [phase, setPhase] = useState<Phase>('capture');
+  const [scanning, setScanning] = useState(false);
   const autoFired = useRef(false);
 
   useEffect(() => {
@@ -223,6 +225,12 @@ export function DocumentCaptureSheet({ visible, onClose, onSaved, autoCamera }: 
               <Text style={styles.reviewName} numberOfLines={2}>{note.trim() || file.name}</Text>
               <Pressable onPress={retake} hitSlop={8} testID="doc-retake"><Text style={styles.changeText}>Retake / change</Text></Pressable>
             </View>
+            {file.type.startsWith('image/') && (
+              <Pressable onPress={() => setScanning(true)} style={styles.cropBtn} testID="doc-scan">
+                <Ionicons name="scan" size={16} color={colors.brandSecondary} />
+                <Text style={styles.cropBtnText}>Scan / crop</Text>
+              </Pressable>
+            )}
           </View>
 
           <Text style={styles.fieldLabel}>Remark (optional — used as the name)</Text>
@@ -254,6 +262,9 @@ export function DocumentCaptureSheet({ visible, onClose, onSaved, autoCamera }: 
           </Pressable>
         </ScrollView>
       )}
+      {scanning && file && (
+        <DocumentScanner file={file} onCancel={() => setScanning(false)} onResult={(f) => { setFile(f); setScanning(false); }} />
+      )}
     </Sheet>
   );
 }
@@ -275,6 +286,8 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   previewPdf: { alignItems: 'center', justifyContent: 'center' },
   reviewName: { color: colors.onSurface, fontSize: 15, fontWeight: '700' },
   changeText: { color: colors.brandSecondary, fontSize: 13, fontWeight: '700', marginTop: 4 },
+  cropBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 8, paddingHorizontal: 12, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceSecondary },
+  cropBtnText: { color: colors.brandSecondary, fontSize: 12.5, fontWeight: '700' },
 
   fieldLabel: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '600', marginBottom: 8, marginTop: spacing.sm },
   input: {

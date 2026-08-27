@@ -119,7 +119,7 @@ export default function WorkScreen() {
           </View>
           {hasModule('documents') && (
             <Pressable onPress={() => setCaptureDoc(true)} style={styles.captureBtn} testID="work-capture-btn" hitSlop={8}>
-              <Ionicons name="scan-outline" size={20} color={colors.onSurface} />
+              <Ionicons name="camera" size={22} color={colors.brandSecondary} />
             </Pressable>
           )}
           <Pressable onPress={() => setComposeOpen(true)} style={[styles.captureBtn, styles.captureBtnGold]} testID="work-compose-btn" hitSlop={8}>

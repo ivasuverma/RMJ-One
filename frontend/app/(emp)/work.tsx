@@ -125,7 +125,7 @@ export default function EmployeeWorkScreen() {
           </View>
           {hasDocs && (
             <Pressable onPress={() => setCaptureDoc(true)} style={styles.captureBtn} testID="emp-work-capture-btn" hitSlop={8}>
-              <Ionicons name="scan-outline" size={20} color={colors.onSurface} />
+              <Ionicons name="camera" size={22} color={colors.brandSecondary} />
             </Pressable>
           )}
         </View>
