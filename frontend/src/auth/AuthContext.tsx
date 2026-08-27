@@ -117,6 +117,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(res.user);
   }, []);
 
+  // Auto sign-out after a configurable stretch of inactivity. The owner sets
+  // the number of minutes in Settings › Security (0 = never). Idle is detected
+  // from DOM activity (web export), and re-armed on every interaction.
+  const uid = user?.id;
+  useEffect(() => {
+    if (!uid) return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let minutes = 0;
+    let cancelled = false;
+    const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'visibilitychange'];
+    const doLogout = () => { logout().finally(() => router.replace('/login')); };
+    const arm = () => {
+      if (timer) clearTimeout(timer);
+      if (minutes > 0) timer = setTimeout(doLogout, minutes * 60 * 1000);
+    };
+    const onActivity = () => arm();
+    api.get<{ auto_signout_minutes: number }>('/settings/security')
+      .then((s) => {
+        if (cancelled) return;
+        minutes = Number(s?.auto_signout_minutes) || 0;
+        if (minutes <= 0) return;
+        if (typeof document !== 'undefined') {
+          events.forEach((e) => document.addEventListener(e, onActivity, { passive: true } as any));
+        }
+        arm();
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+      if (typeof document !== 'undefined') {
+        events.forEach((e) => document.removeEventListener(e, onActivity));
+      }
+    };
+  }, [uid, logout, router]);
+
   const hasModule = useCallback((key: string) => !!user?.modules?.includes(key), [user]);
   // Owner/admin/accountant have no module_rights concept — the backend never
   // gates them on it, so treat them as always-rights-on here too. For an

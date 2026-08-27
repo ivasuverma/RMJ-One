@@ -88,7 +88,7 @@ export default function DocumentsScreen() {
   const Thumb = ({ d, size }: { d: Doc; size: number }) => (
     <View style={[styles.thumb, { width: size, height: size, borderRadius: size > 60 ? 12 : 10 }]}>
       {(d.file.mime || '').startsWith('image/') && token ? (
-        <Image source={{ uri: fileUri(d.id), headers: { Authorization: `Bearer ${token}` } }} style={{ width: size, height: size }} contentFit="cover" />
+        <Image source={{ uri: fileUri(d.id), headers: { Authorization: `Bearer ${token}` } }} style={{ width: size, height: size }} contentFit="cover" cachePolicy="memory-disk" recyclingKey={d.id} transition={120} />
       ) : (
         <Ionicons name="document-text-outline" size={size > 60 ? 30 : 22} color={colors.brandSecondary} />
       )}
