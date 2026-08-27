@@ -8,6 +8,7 @@ import { useAuth } from '@/src/auth/AuthContext';
 import { todayIST } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { DocumentCaptureSheet } from '@/src/components/DocumentCaptureSheet';
 
 // Employee Work hub — same card language as the admin Work board: an
 // "In progress" list of process rows (each showing its live state before you
@@ -31,6 +32,7 @@ export default function EmployeeWorkScreen() {
   const [sampleDash, setSampleDash] = useState<SampleDash | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [docPending, setDocPending] = useState<number | null>(null);
+  const [captureDoc, setCaptureDoc] = useState(false);
   const hasRepairs = hasModule('repairs');
   const hasSamples = hasModule('samples');
   const hasDocs = hasModule('documents');
@@ -116,8 +118,17 @@ export default function EmployeeWorkScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="emp-work-screen">
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        <Text style={styles.h1}>Work</Text>
-        <Text style={styles.sub}>What&apos;s in progress — and what to do next.</Text>
+        <View style={styles.titleRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.h1}>Work</Text>
+            <Text style={styles.sub}>What&apos;s in progress — and what to do next.</Text>
+          </View>
+          {hasDocs && (
+            <Pressable onPress={() => setCaptureDoc(true)} style={styles.captureBtn} testID="emp-work-capture-btn" hitSlop={8}>
+              <Ionicons name="scan-outline" size={20} color={colors.onSurface} />
+            </Pressable>
+          )}
+        </View>
 
         <Text style={styles.sectionLabel}>In progress</Text>
         {rows.map(renderRow)}
@@ -127,6 +138,7 @@ export default function EmployeeWorkScreen() {
 
         <View style={{ height: spacing.xxl }} />
       </ScrollView>
+      <DocumentCaptureSheet visible={captureDoc} onClose={() => setCaptureDoc(false)} onSaved={load} />
     </SafeAreaView>
   );
 }
@@ -136,6 +148,8 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   scroll: { padding: spacing.lg, paddingBottom: spacing.xxxl },
   h1: { color: colors.onSurface, fontSize: 30, fontWeight: '700', fontFamily: fonts.display, letterSpacing: -0.5 },
   sub: { color: colors.onSurfaceSecondary, fontSize: 15, marginTop: 6 },
+  titleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
+  captureBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
   sectionLabel: { color: colors.mutedText, fontSize: 12, fontWeight: '700', letterSpacing: 0.8, textTransform: 'uppercase', marginTop: spacing.xl, marginBottom: spacing.md },
 
   prow: {

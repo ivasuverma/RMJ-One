@@ -167,7 +167,11 @@ export default function CashBookScreen() {
     if (!counterId) { Alert.alert('No counter selected', 'Add a Cash Book counter first.'); return; }
     if (isTransfer && !transferCounterId) { Alert.alert('Invalid', 'Pick the other counter for this transfer'); return; }
     setBusy(true);
-    const payload: any = { date, counter_id: counterId, type: entryType, amount: amt, name: name.trim(), note };
+    const payload: any = { date, amount: amt, name: name.trim(), note };
+    // A linked transfer entry can't change its type/counter (the backend
+    // rejects it) — so when editing one, only send the editable fields.
+    // Otherwise (new entry, or editing a normal entry) send them as before.
+    if (!editing || !editing.linked_entry_id) { payload.counter_id = counterId; payload.type = entryType; }
     if (isTransfer && !editing) payload.transfer_counter_id = transferCounterId;
     try {
       if (editing) {
