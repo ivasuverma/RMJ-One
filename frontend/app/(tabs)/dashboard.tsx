@@ -187,8 +187,8 @@ export default function DashboardScreen() {
             <ApprovalsSection onChanged={refresh} />
           )}
 
-          {/* 4. Recently recorded — confirm a save without hunting for it. */}
-          {!!data.recent_activity && data.recent_activity.length > 0 && (
+          {/* 4. Recently recorded — admin accounts only (owner/admin). */}
+          {(user?.role === 'owner' || user?.role === 'admin') && !!data.recent_activity && data.recent_activity.length > 0 && (
             <Section title="Recently recorded" icon="time-outline" testID="section-recent">
               <View style={styles.attnCard}>
                 {data.recent_activity.slice(0, 6).map((r, i, arr) => (

@@ -63,10 +63,14 @@ def _role(user: dict) -> str:
 def _can_see(cat: dict, role: str, rights: dict = None) -> bool:
     if role == 'owner':
         return True
+    # Per-category, per-person override (Settings › People). Only the categories
+    # explicitly set for this person use the override; everything else falls
+    # back to the category's role rules — so granting one category never hides
+    # the ones this person could already see by role.
     override = (rights or {}).get('doc_category_rights') or {}
-    if override:
-        # Per-account permissions (Settings › People) take over once set.
-        return bool((override.get(cat.get('key')) or {}).get('view'))
+    key = cat.get('key')
+    if key in override:
+        return bool((override.get(key) or {}).get('view'))
     return role in (cat.get('visible_to_roles') or [])
 
 
@@ -74,8 +78,9 @@ def _can_record(cat: dict, role: str, rights: dict = None) -> bool:
     if role == 'owner':
         return True
     override = (rights or {}).get('doc_category_rights') or {}
-    if override:
-        return bool((override.get(cat.get('key')) or {}).get('record'))
+    key = cat.get('key')
+    if key in override:
+        return bool((override.get(key) or {}).get('record'))
     return role in (cat.get('can_record_roles') or [])
 
 
@@ -318,9 +323,10 @@ async def record_document(doc_id: str, body: RecordIn, user=Depends(get_current)
         raise HTTPException(status_code=404, detail='Document not found')
     cats = await _categories_map()
     cat = cats.get(d['category_key'])
-    if not cat or not _can_see(cat, _role(user)):
+    rights = await _account_rights(user)
+    if not cat or not _can_see(cat, _role(user), rights):
         raise HTTPException(status_code=403, detail='No access to this document')
-    if not _can_record(cat, _role(user)):
+    if not _can_record(cat, _role(user), rights):
         raise HTTPException(status_code=403, detail='You do not have permission to record this category')
     upd = {
         'status': 'done', 'recorded_at': now_utc().isoformat(), 'recorded_by': user['id'],
