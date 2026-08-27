@@ -1116,6 +1116,8 @@ async def on_startup():
     asyncio.create_task(_attendance_reminder_loop())
     from routers.documents import upload_worker  # background Drive sync for Documents
     asyncio.create_task(upload_worker())
+    from backup_service import backup_loop  # daily whole-DB backup to Drive
+    asyncio.create_task(backup_loop())
 
 
 @app.on_event('shutdown')
@@ -2054,7 +2056,7 @@ def _make_photo_thumb(photo_data_uri: Optional[str]) -> str:
 from routers import (
     auth, employees, settings as settings_router, attendance, tasks, repairs,
     users, payroll, notifications, biometric, reports, assistant, samples,
-    cashbook, ledger, documents,
+    cashbook, ledger, documents, backup,
 )
 
 # ---------------- Mount ----------------
@@ -2074,6 +2076,7 @@ api.include_router(samples.router)
 api.include_router(cashbook.router)
 api.include_router(ledger.router)
 api.include_router(documents.router)
+api.include_router(backup.router)
 
 app.include_router(api)
 app.include_router(biometric.iclock_router)  # /iclock/* — real device protocol, no /api prefix

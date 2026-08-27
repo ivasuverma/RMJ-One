@@ -119,6 +119,54 @@ async def upload(config: dict, category_label: str, filename: str, data_b64: str
     return {'drive_file_id': j['id'], 'drive_view_link': j.get('webViewLink'), 'drive_thumbnail_link': j.get('thumbnailLink')}
 
 
+BACKUP_FOLDER = 'RMJ One Backups'
+
+
+async def upload_backup(config: dict, filename: str, raw: bytes, mime: str = 'application/gzip') -> dict:
+    """Upload a raw database backup blob into a dedicated 'RMJ One Backups'
+    folder (kept separate from documents). Returns the created file id + name."""
+    access = await _access_token(config)
+    async with httpx.AsyncClient(timeout=300) as h:
+        folder = await _ensure_folder(h, access, BACKUP_FOLDER, None)
+        rc = await h.post(FILES_URL, json={'name': filename, 'parents': [folder]}, headers={'Authorization': f'Bearer {access}'})
+        rc.raise_for_status()
+        fid = rc.json()['id']
+        ru = await h.patch(
+            f'{UPLOAD_URL}/{fid}?uploadType=media&fields=id,name,size,createdTime',
+            content=raw, headers={'Authorization': f'Bearer {access}', 'Content-Type': mime},
+        )
+        ru.raise_for_status()
+        return ru.json()
+
+
+async def list_backups(config: dict) -> list:
+    """List backup files (newest first) so we can show status + prune old ones."""
+    access = await _access_token(config)
+    async with httpx.AsyncClient(timeout=60) as h:
+        folder_q = f"name='{BACKUP_FOLDER}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
+        fr = await h.get(FILES_URL, params={'q': folder_q, 'fields': 'files(id)', 'spaces': 'drive'}, headers={'Authorization': f'Bearer {access}'})
+        fr.raise_for_status()
+        folders = fr.json().get('files', [])
+        if not folders:
+            return []
+        fid = folders[0]['id']
+        r = await h.get(FILES_URL, params={
+            'q': f"'{fid}' in parents and trashed=false",
+            'fields': 'files(id,name,size,createdTime)',
+            'orderBy': 'createdTime desc', 'spaces': 'drive', 'pageSize': 100,
+        }, headers={'Authorization': f'Bearer {access}'})
+        r.raise_for_status()
+        return r.json().get('files', [])
+
+
+async def delete_file(config: dict, file_id: str) -> None:
+    access = await _access_token(config)
+    async with httpx.AsyncClient(timeout=30) as h:
+        r = await h.delete(f'{FILES_URL}/{file_id}', headers={'Authorization': f'Bearer {access}'})
+        if r.status_code not in (200, 204, 404):
+            r.raise_for_status()
+
+
 async def download(config: dict, file_id: str) -> bytes:
     """Fetch the raw bytes of a Drive file we uploaded. Used to serve the
     full-size original on demand once the heavy local copy has been dropped

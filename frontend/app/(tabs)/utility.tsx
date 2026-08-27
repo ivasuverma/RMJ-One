@@ -48,6 +48,7 @@ const GROUPS: GroupDef[] = [
       { key: 'store', label: 'Store Settings', sub: 'Shop profile & hours', icon: 'storefront-outline', route: '/store-settings' },
       { key: 'security', label: 'Security', sub: 'Auto sign-out after inactivity', icon: 'lock-closed-outline', route: '/settings/security' },
       { key: 'google-drive', label: 'Google Drive', sub: 'Where documents are backed up', icon: 'cloud-outline', route: '/settings/google-drive' },
+      { key: 'backup', label: 'Backup', sub: 'Daily database backup to Drive', icon: 'save-outline', route: '/settings/backup' },
       { key: 'biometric', label: 'Biometric Devices', sub: 'Attendance hardware', icon: 'hardware-chip-outline', route: '/settings/biometric' },
       { key: 'audit', label: 'Audit Log', sub: 'Every change, logged', icon: 'document-lock-outline', route: '/settings/audit' },
     ],
