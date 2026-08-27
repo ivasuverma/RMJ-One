@@ -12,6 +12,7 @@ import { useDashboardStream } from '@/src/hooks/use-dashboard-stream';
 import { spacing, radius, images, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { Screen, Section, StatTile, Skeleton, ErrorState, DualBalance, Tone, Sheet } from '@/src/components/ui';
+import { DocumentCaptureSheet } from '@/src/components/DocumentCaptureSheet';
 
 type DashboardData = {
   todays_attendance: {
@@ -73,6 +74,7 @@ export default function DashboardScreen() {
   const [, forceTick] = useState(0);
   const [composeOpen, setComposeOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [captureDoc, setCaptureDoc] = useState(false);
 
   const isWide = width >= 900;
 
@@ -134,6 +136,11 @@ export default function DashboardScreen() {
             </Text>
           </View>
         </View>
+        {hasModule('documents') && (
+          <Pressable onPress={() => setCaptureDoc(true)} style={styles.iconBtn} testID="dashboard-capture-btn" hitSlop={10}>
+            <Ionicons name="scan-outline" size={19} color={colors.onSurface} />
+          </Pressable>
+        )}
         <Pressable onPress={() => router.push('/notifications' as any)} style={styles.iconBtn} testID="notifications-btn" hitSlop={10}>
           <Ionicons name="notifications-outline" size={19} color={colors.onSurface} />
           {unread > 0 && <View style={styles.bellDot} />}
@@ -207,6 +214,7 @@ export default function DashboardScreen() {
       ) : null}
 
       <ComposeSheet visible={composeOpen} onClose={() => setComposeOpen(false)} />
+      <DocumentCaptureSheet visible={captureDoc} onClose={() => setCaptureDoc(false)} onSaved={refresh} />
       <SearchOverlay visible={searchOpen} onClose={() => setSearchOpen(false)} />
     </Screen>
   );
@@ -232,7 +240,7 @@ function NeedsAttention({ items, onGo }: { items: AttnItem[]; onGo: (route: stri
 
   return (
     <View style={styles.attnWrap} testID="needs-attention">
-      <LinearGradient colors={['#1A1712', '#17171A']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.briefCard}>
+      <View style={styles.briefCard}>
         <Text style={styles.attnLead}>
           {items.length === 1 ? '1 thing needs your attention' : `${items.length} things need your attention`}
         </Text>
@@ -253,7 +261,7 @@ function NeedsAttention({ items, onGo }: { items: AttnItem[]; onGo: (route: stri
             </Pressable>
           );
         })}
-      </LinearGradient>
+      </View>
     </View>
   );
 }
@@ -554,6 +562,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   // border, a plain-language lead, then tappable rows separated by top rules.
   attnWrap: { marginBottom: spacing.xl },
   briefCard: {
+    backgroundColor: colors.surfaceSecondary,
     borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border,
     paddingTop: spacing.lg, paddingBottom: 4,
   },

@@ -8,6 +8,7 @@ import { useAuth } from '@/src/auth/AuthContext';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { Skeleton, ErrorState } from '@/src/components/ui';
+import { DocumentCaptureSheet } from '@/src/components/DocumentCaptureSheet';
 
 // Work — the operational hub, laid out to the v2 design comp: a search bar,
 // an "In progress" list of process rows (each showing its live state before
@@ -34,8 +35,18 @@ export default function WorkScreen() {
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [data, setData] = useState<DashboardData | null>(null);
   const [docSummary, setDocSummary] = useState<{ pending_count: number } | null>(null);
+  const [captureDoc, setCaptureDoc] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  // Custom order for the In-progress rows — persisted per device so each user
+  // arranges the board to match how they actually work.
+  const ORDER_KEY = 'rmj.work_order';
+  const [order, setOrder] = useState<string[]>([]);
+  const [editOrder, setEditOrder] = useState(false);
+  useFocusEffect(useCallback(() => {
+    try { const raw = typeof window !== 'undefined' ? window.localStorage.getItem(ORDER_KEY) : null; if (raw) setOrder(JSON.parse(raw)); } catch { /* ignore */ }
+  }, []));
+  const persistOrder = (keys: string[]) => { setOrder(keys); try { if (typeof window !== 'undefined') window.localStorage.setItem(ORDER_KEY, JSON.stringify(keys)); } catch { /* ignore */ } };
 
   const load = useCallback(async () => {
     try { setError(''); setData(await api.get<DashboardData>('/dashboard')); }
@@ -86,20 +97,47 @@ export default function WorkScreen() {
     segs: docSummary ? (docSummary.pending_count > 0 ? [{ text: `${docSummary.pending_count} pending to record`, tone: 'hot' }] : [{ text: 'All recorded' }]) : placeholder,
   });
 
+  // Apply the user's saved order; unknown/new rows fall to the end.
+  const idx = (k: string) => { const i = order.indexOf(k); return i === -1 ? 999 : i; };
+  const sortedRows = [...rows].sort((a, b) => idx(a.key) - idx(b.key));
+  const move = (key: string, dir: -1 | 1) => {
+    const keys = sortedRows.map((r) => r.key);
+    const i = keys.indexOf(key); const j = i + dir;
+    if (j < 0 || j >= keys.length) return;
+    [keys[i], keys[j]] = [keys[j], keys[i]];
+    persistOrder(keys);
+  };
+
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="work-screen">
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        <Text style={styles.h1}>Work</Text>
-        <Text style={styles.sub}>What&apos;s in progress — and what to do next.</Text>
+        <View style={styles.titleRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.h1}>Work</Text>
+            <Text style={styles.sub}>What&apos;s in progress — and what to do next.</Text>
+          </View>
+          {hasModule('documents') && (
+            <Pressable onPress={() => setCaptureDoc(true)} style={styles.captureBtn} testID="work-capture-btn" hitSlop={8}>
+              <Ionicons name="scan-outline" size={20} color={colors.onSurface} />
+            </Pressable>
+          )}
+        </View>
 
         <Pressable onPress={() => go('/repairs/search')} style={styles.search} testID="work-search">
           <Ionicons name="search-outline" size={17} color={colors.mutedText} />
           <Text style={styles.searchText}>Find a repair, sample or customer…</Text>
         </Pressable>
 
-        {rows.length > 0 && <Text style={styles.sectionLabel}>In progress</Text>}
-        {rows.map((r) => (
-          <Pressable key={r.key} onPress={() => go(r.route)} style={({ pressed }) => [styles.prow, pressed && { opacity: 0.85 }]} testID={`work-row-${r.key}`}>
+        {sortedRows.length > 0 && (
+          <View style={styles.progressHead}>
+            <Text style={styles.sectionLabel}>In progress</Text>
+            <Pressable onPress={() => setEditOrder((v) => !v)} hitSlop={8} testID="work-edit-order">
+              <Text style={styles.editOrderText}>{editOrder ? 'Done' : 'Reorder'}</Text>
+            </Pressable>
+          </View>
+        )}
+        {sortedRows.map((r, ri) => (
+          <Pressable key={r.key} onPress={() => !editOrder && go(r.route)} style={({ pressed }) => [styles.prow, pressed && !editOrder && { opacity: 0.85 }]} testID={`work-row-${r.key}`}>
             <View style={styles.pi}><Ionicons name={r.icon} size={22} color={colors.brandSecondary} /></View>
             <View style={{ flex: 1, minWidth: 0 }}>
               <Text style={styles.pt}>{r.title}</Text>
@@ -111,7 +149,12 @@ export default function WorkScreen() {
                 ))}
               </Text>
             </View>
-            {r.badge ? (
+            {editOrder ? (
+              <View style={styles.reorderCtrls}>
+                <Pressable onPress={() => move(r.key, -1)} disabled={ri === 0} style={[styles.arrowBtn, ri === 0 && { opacity: 0.3 }]} hitSlop={6} testID={`work-up-${r.key}`}><Ionicons name="chevron-up" size={18} color={colors.onSurface} /></Pressable>
+                <Pressable onPress={() => move(r.key, 1)} disabled={ri === sortedRows.length - 1} style={[styles.arrowBtn, ri === sortedRows.length - 1 && { opacity: 0.3 }]} hitSlop={6} testID={`work-down-${r.key}`}><Ionicons name="chevron-down" size={18} color={colors.onSurface} /></Pressable>
+              </View>
+            ) : r.badge ? (
               <View style={styles.badge}><Text style={styles.badgeText}>{r.badge}</Text></View>
             ) : (
               <Ionicons name="chevron-forward" size={18} color={colors.mutedText} />
@@ -154,6 +197,7 @@ export default function WorkScreen() {
 
         <View style={{ height: spacing.xxl }} />
       </ScrollView>
+      <DocumentCaptureSheet visible={captureDoc} onClose={() => setCaptureDoc(false)} onSaved={load} />
     </SafeAreaView>
   );
 }
@@ -161,6 +205,12 @@ export default function WorkScreen() {
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   scroll: { padding: spacing.lg, paddingBottom: spacing.xxxl },
+  titleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
+  captureBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
+  progressHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  editOrderText: { color: colors.brandSecondary, fontSize: 13, fontWeight: '700', marginTop: spacing.xl, marginBottom: spacing.md },
+  reorderCtrls: { flexDirection: 'row', gap: 4 },
+  arrowBtn: { width: 32, height: 32, borderRadius: 8, backgroundColor: colors.surfaceTertiary, alignItems: 'center', justifyContent: 'center' },
   h1: { color: colors.onSurface, fontSize: 30, fontWeight: '700', fontFamily: fonts.display, letterSpacing: -0.5 },
   sub: { color: colors.onSurfaceSecondary, fontSize: 15, marginTop: 6 },
 

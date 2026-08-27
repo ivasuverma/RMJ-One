@@ -140,6 +140,19 @@ async def update_category(cat_id: str, body: CategoryIn, user=Depends(require_ow
     return await db.document_categories.find_one({'id': cat_id}, {'_id': 0})
 
 
+@router.delete('/document-categories/{cat_id}')
+async def delete_category(cat_id: str, user=Depends(require_owner)):
+    cat = await db.document_categories.find_one({'id': cat_id}, {'_id': 0})
+    if not cat:
+        raise HTTPException(status_code=404, detail='Category not found')
+    n = await db.documents.count_documents({'category_key': cat['key'], 'deleted': {'$ne': True}})
+    if n > 0:
+        raise HTTPException(status_code=400, detail=f'This category has {n} document{"s" if n != 1 else ""} — move or delete them first, or turn the category off instead.')
+    await db.document_categories.delete_one({'id': cat_id})
+    await log_audit(user, 'documents.category.delete', 'document_category', cat_id, cat.get('label', ''))
+    return {'ok': True}
+
+
 # ---------------- Documents ----------------
 _LIST_PROJECTION = {'_id': 0, 'local_data': 0, 'ocr': 0}  # never ship the raw bytes in a list
 

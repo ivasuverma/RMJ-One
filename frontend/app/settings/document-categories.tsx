@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
+import { confirmAction } from '@/src/utils/confirm';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { Sheet, useToast } from '@/src/components/ui';
@@ -74,12 +75,21 @@ function CategoryEditor({ cat, isNew, onClose, onSaved }: { cat: Cat | null; isN
   const [label, setLabel] = useState('');
   const [visible, setVisible] = useState<string[]>([]);
   const [record, setRecord] = useState<string[]>([]);
+  const [active, setActive] = useState(true);
   const [busy, setBusy] = useState(false);
 
   // Re-seed local form state whenever a different category opens.
   useEffect(() => {
-    if (cat) { setLabel(cat.label); setVisible(cat.visible_to_roles); setRecord(cat.can_record_roles); }
+    if (cat) { setLabel(cat.label); setVisible(cat.visible_to_roles); setRecord(cat.can_record_roles); setActive(cat.active !== false); }
   }, [cat?.id, cat?.label, cat]);
+
+  const remove = () => {
+    if (!cat) return;
+    confirmAction('Delete category?', `Remove "${cat.label}". Only possible when it has no documents — otherwise turn it off instead.`, 'Delete', async () => {
+      try { await api.del(`/document-categories/${cat.id}`); onSaved(); }
+      catch (e: any) { toast.error(e?.detail || 'Could not delete'); }
+    });
+  };
 
   const toggle = (list: string[], setList: (v: string[]) => void, role: string) => {
     setList(list.includes(role) ? list.filter((r) => r !== role) : [...list, role]);
@@ -93,7 +103,7 @@ function CategoryEditor({ cat, isNew, onClose, onSaved }: { cat: Cat | null; isN
     const rec = Array.from(new Set(['owner', ...record]));
     setBusy(true);
     try {
-      const body = { label: label.trim(), icon: cat.icon || 'document-outline', visible_to_roles: vis, can_record_roles: rec, active: cat.active };
+      const body = { label: label.trim(), icon: cat.icon || 'document-outline', visible_to_roles: vis, can_record_roles: rec, active };
       if (isNew) await api.post('/document-categories', body);
       else await api.put(`/document-categories/${cat.id}`, body);
       onSaved();
@@ -124,10 +134,24 @@ function CategoryEditor({ cat, isNew, onClose, onSaved }: { cat: Cat | null; isN
         ))}
       </View>
 
+      <Pressable onPress={() => setActive((a) => !a)} style={styles.activeRow} testID="doc-cat-active">
+        <View style={{ flex: 1 }}>
+          <Text style={styles.activeLabel}>Active</Text>
+          <Text style={styles.activeSub}>Off hides it from capture and lists (history is kept)</Text>
+        </View>
+        <View style={[styles.switch, active && styles.switchOn]}><View style={[styles.knob, active && styles.knobOn]} /></View>
+      </Pressable>
+
       <View style={{ height: spacing.md }} />
       <Pressable onPress={save} disabled={busy} style={[styles.saveBtn, busy && { opacity: 0.6 }]} testID="doc-cat-save">
         {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.saveBtnText}>Save</Text>}
       </Pressable>
+      {!isNew && (
+        <Pressable onPress={remove} style={styles.deleteBtn} testID="doc-cat-delete">
+          <Ionicons name="trash-outline" size={16} color={colors.onError} />
+          <Text style={styles.deleteText}>Delete category</Text>
+        </Pressable>
+      )}
     </Sheet>
   );
 }
@@ -152,4 +176,13 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   roleTextOn: { color: colors.onBrandPrimary },
   saveBtn: { backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: 14, alignItems: 'center' },
   saveBtnText: { color: colors.onBrandPrimary, fontSize: 15, fontWeight: '700' },
+  activeRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.lg },
+  activeLabel: { color: colors.onSurface, fontSize: 15, fontWeight: '600' },
+  activeSub: { color: colors.mutedText, fontSize: 12, marginTop: 2 },
+  switch: { width: 46, height: 28, borderRadius: 14, backgroundColor: colors.surfaceTertiary, borderWidth: 1, borderColor: colors.border, justifyContent: 'center', padding: 2 },
+  switchOn: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
+  knob: { width: 22, height: 22, borderRadius: 11, backgroundColor: colors.onSurfaceTertiary },
+  knobOn: { backgroundColor: colors.onBrandPrimary, alignSelf: 'flex-end' },
+  deleteBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12, marginTop: spacing.sm, borderRadius: radius.md, borderWidth: 1, borderColor: colors.error },
+  deleteText: { color: colors.onError, fontSize: 14, fontWeight: '700' },
 });
