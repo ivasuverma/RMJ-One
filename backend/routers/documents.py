@@ -209,10 +209,17 @@ async def create_document(
     category_key: str = Form(...),
     note: str = Form(default=''),
     thumb: str = Form(default=''),   # small base64 JPEG (images only) for fast grid
+    client_id: str = Form(default=''),   # idempotency key from the upload queue
     user=Depends(get_current),
 ):
     """Capture: create a PENDING doc immediately and return fast. The bytes are
     kept locally (base64) so it works offline; the Drive upload is queued."""
+    # Idempotency: if the upload queue retries after a timeout where we actually
+    # saved the doc, return the existing one instead of creating a duplicate.
+    if client_id:
+        existing = await db.documents.find_one({'client_id': client_id, 'deleted': {'$ne': True}}, _LIST_PROJECTION)
+        if existing:
+            return existing
     cats = await _categories_map()
     cat = cats.get(category_key)
     if not cat:
@@ -235,6 +242,7 @@ async def create_document(
         thumb_clean = thumb.split(',', 1)[-1].strip()   # tolerate a data-URL prefix
     doc = {
         'id': str(uuid.uuid4()), 'category_key': category_key, 'status': 'pending',
+        'client_id': client_id or None,      # idempotency key (upload queue)
         'local_data': base64.b64encode(raw).decode('ascii'),
         'local_kind': 'full',                # 'full' | 'thumb' | 'none' (Drive-only)
         'thumb_data': thumb_clean or None,

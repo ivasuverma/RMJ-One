@@ -98,6 +98,9 @@ function buildForm(item: OutboxItem): FormData {
   form.append('category_key', item.category_key);
   form.append('note', item.note || '');
   if (item.thumb) form.append('thumb', item.thumb);
+  // Idempotency: a retry after a timeout (where the server actually saved the
+  // doc) must not create a duplicate — the server dedupes on this key.
+  form.append('client_id', item.id);
   return form;
 }
 

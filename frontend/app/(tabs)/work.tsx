@@ -9,6 +9,7 @@ import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { Skeleton, ErrorState, Sheet } from '@/src/components/ui';
 import { DocumentCaptureSheet } from '@/src/components/DocumentCaptureSheet';
+import { UploadQueueBadge } from '@/src/components/UploadQueueBadge';
 
 // Work — the operational hub, laid out to the v2 design comp: a search bar,
 // an "In progress" list of process rows (each showing its live state before
@@ -117,6 +118,7 @@ export default function WorkScreen() {
             <Text style={styles.h1}>Work</Text>
             <Text style={styles.sub}>What&apos;s in progress — and what to do next.</Text>
           </View>
+          {hasModule('documents') && <UploadQueueBadge />}
           {hasModule('documents') && (
             <Pressable onPress={() => setCaptureDoc(true)} style={styles.captureBtn} testID="work-capture-btn" hitSlop={8}>
               <Ionicons name="camera" size={22} color={colors.brandSecondary} />

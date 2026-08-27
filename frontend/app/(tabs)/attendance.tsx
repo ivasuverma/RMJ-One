@@ -76,6 +76,7 @@ export default function OwnerAttendance() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [running, setRunning] = useState(false);
+  const [pendingApprovals, setPendingApprovals] = useState(0);
 
   const load = useCallback(async () => {
     try {
@@ -84,6 +85,16 @@ export default function OwnerAttendance() {
     } finally { setLoading(false); setRefreshing(false); }
   }, [date]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  // Pending attendance corrections + leave requests, for the Approvals button badge.
+  useFocusEffect(useCallback(() => {
+    Promise.all([
+      api.get<{ status: string }[]>('/attendance/corrections').catch(() => []),
+      api.get<{ status: string }[]>('/leaves').catch(() => []),
+    ]).then(([c, l]) => setPendingApprovals(
+      c.filter((x) => x.status === 'pending').length + l.filter((x) => x.status === 'pending').length,
+    )).catch(() => {});
+  }, []));
 
   const loadPay = useCallback(async () => {
     try { setPay(await api.get<PayrollResp>(`/payroll/${year}/${month}`)); } catch { setPay(null); }
@@ -137,8 +148,16 @@ export default function OwnerAttendance() {
           <Ionicons name="chevron-back" size={18} color={colors.brandPrimary} />
           <Text style={styles.backText}>Work</Text>
         </Pressable>
-        <Text style={styles.h1}>Attendance &amp; Payroll</Text>
-        <Text style={styles.sub}>{subtitle}</Text>
+        <View style={styles.titleRow}>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={styles.h1}>Attendance</Text>
+            <Text style={styles.sub}>{subtitle}</Text>
+          </View>
+          <Pressable onPress={() => router.push('/approvals' as any)} style={styles.apprBtn} testID="attendance-approvals" hitSlop={8}>
+            <Ionicons name="checkmark-done-outline" size={22} color={colors.onSurface} />
+            {pendingApprovals > 0 && <View style={styles.apprBadge}><Text style={styles.apprBadgeText}>{pendingApprovals}</Text></View>}
+          </Pressable>
+        </View>
 
         {/* Segmented control */}
         <View style={styles.seg}>
@@ -271,7 +290,11 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   scroll: { padding: spacing.lg, paddingBottom: spacing.xxxl },
   backRow: { flexDirection: 'row', alignItems: 'center', gap: 2, marginBottom: 6 },
   backText: { color: colors.brandPrimary, fontSize: 16, fontWeight: '500' },
-  h1: { color: colors.onSurface, fontSize: 32, fontWeight: '800', fontFamily: fonts.display, letterSpacing: -0.6 },
+  titleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
+  h1: { color: colors.onSurface, fontSize: 26, fontWeight: '800', fontFamily: fonts.display, letterSpacing: -0.5 },
+  apprBtn: { width: 46, height: 46, borderRadius: 23, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
+  apprBadge: { position: 'absolute', top: -3, right: -3, minWidth: 20, height: 20, borderRadius: 10, paddingHorizontal: 5, backgroundColor: colors.brandPrimary, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: colors.surface },
+  apprBadgeText: { color: colors.onBrandPrimary, fontSize: 11, fontWeight: '800' },
   sub: { color: colors.onSurfaceSecondary, fontSize: 15, marginTop: 6 },
 
   seg: { flexDirection: 'row', backgroundColor: colors.surfaceTertiary, borderRadius: 12, padding: 4, gap: 3, marginTop: spacing.lg },

@@ -946,6 +946,7 @@ async def seed():
     await db.documents.create_index([('status', 1), ('created_at', -1)])
     await db.documents.create_index('category_key')
     await db.documents.create_index('upload_state')
+    await db.documents.create_index('client_id', sparse=True)
     # Biometric dedupe looks up an employee's most recent punch by source.
     await db.attendance_events.create_index([('employee_id', 1), ('timestamp', -1)])
 

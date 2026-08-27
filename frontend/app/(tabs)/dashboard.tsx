@@ -13,6 +13,7 @@ import { spacing, radius, images, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { Screen, Section, StatTile, Skeleton, ErrorState, DualBalance, Tone, Sheet } from '@/src/components/ui';
 import { DocumentCaptureSheet } from '@/src/components/DocumentCaptureSheet';
+import { UploadQueueBadge } from '@/src/components/UploadQueueBadge';
 
 type DashboardData = {
   todays_attendance: {
@@ -136,6 +137,7 @@ export default function DashboardScreen() {
             </Text>
           </View>
         </View>
+        {hasModule('documents') && <UploadQueueBadge />}
         {hasModule('documents') && (
           <Pressable onPress={() => setCaptureDoc(true)} style={styles.iconBtn} testID="dashboard-capture-btn" hitSlop={10}>
             <Ionicons name="camera" size={21} color={colors.brandSecondary} />
