@@ -30,14 +30,17 @@ export default function EmployeeWorkScreen() {
   const [repairDash, setRepairDash] = useState<RepairDash | null>(null);
   const [sampleDash, setSampleDash] = useState<SampleDash | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [docPending, setDocPending] = useState<number | null>(null);
   const hasRepairs = hasModule('repairs');
   const hasSamples = hasModule('samples');
+  const hasDocs = hasModule('documents');
 
   const load = useCallback(async () => {
     if (hasRepairs) api.get<RepairDash>('/repairs/dashboard').then(setRepairDash).catch(() => setRepairDash(null));
     if (hasSamples) api.get<SampleDash>('/samples/dashboard').then(setSampleDash).catch(() => setSampleDash(null));
+    if (hasDocs) api.get<{ pending_count: number }>('/documents/summary').then((s) => setDocPending(s.pending_count)).catch(() => {});
     api.get<Task[]>('/tasks?status=open').then(setTasks).catch(() => setTasks([]));
-  }, [hasRepairs, hasSamples]);
+  }, [hasRepairs, hasSamples, hasDocs]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const today = todayIST();
@@ -80,6 +83,13 @@ export default function EmployeeWorkScreen() {
   });
   if (hasModule('cash_book')) {
     rows.push({ key: 'cash', title: 'Cash Book', icon: 'wallet-outline', route: '/cashbook', segs: [{ text: 'Record cash in / out' }] });
+  }
+  if (hasDocs) {
+    rows.push({
+      key: 'documents', title: 'Documents', icon: 'documents-outline', route: '/documents',
+      badge: docPending || undefined,
+      segs: docPending && docPending > 0 ? [{ text: `${docPending} pending to record`, tone: 'hot' }] : [{ text: 'Snap receipts, KYC & bills' }],
+    });
   }
 
   // Reports / ledgers the employee can open, same row style.

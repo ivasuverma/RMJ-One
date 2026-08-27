@@ -31,6 +31,7 @@ type DashboardData = {
     customers_open: number; karigars_open: number; fine_with_karigars: number; karigar_amt_payable: number;
   };
   recent_activity?: RecentItem[];
+  documents_pending?: number;
 };
 
 type RecentItem = { kind: 'repair' | 'cash' | 'stock' | 'ledger'; at?: string; label: string; route: string };
@@ -102,6 +103,9 @@ export default function DashboardScreen() {
     }
     if (hasModule('tasks') && t.open_total > 0) {
       items.push({ key: 'tasks', label: `${t.open_total} task${t.open_total === 1 ? '' : 's'} pending`, icon: 'checkbox-outline', tone: 'info', route: '/tasks' });
+    }
+    if (hasModule('documents') && (data.documents_pending || 0) > 0) {
+      items.push({ key: 'docs', label: `${data.documents_pending} photo${data.documents_pending === 1 ? '' : 's'} to record`, icon: 'receipt-outline', tone: 'warning', route: '/documents?tab=pending' });
     }
     return items;
   }, [data, hasModule]);
@@ -390,6 +394,7 @@ function ComposeSheet({ visible, onClose }: { visible: boolean; onClose: () => v
     { key: 'deduction', label: 'Employee deduction', icon: 'remove-circle-outline', route: '/(tabs)/employees?from=work', show: hasModule('team') || hasModule('payroll') },
     { key: 'cash', label: 'Cash in/out', icon: 'wallet-outline', route: '/cashbook', show: hasModule('cash_book') },
     { key: 'account', label: 'New ledger account', icon: 'book-outline', route: '/accounts/new', show: hasModule('ledger') },
+    { key: 'document', label: 'Add document', icon: 'document-attach-outline', route: '/documents?capture=1', show: hasModule('documents') },
   ];
   const visibleActions = actions.filter((a) => a.show);
 

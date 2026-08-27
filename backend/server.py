@@ -195,6 +195,10 @@ MODULE_DEFS = [
     # per-account fine (g) + amount (₹) balances. Staff-level; not granted to
     # employee accounts (they see only their own wage/advance ledger elsewhere).
     {'key': 'ledger', 'label': 'Ledger', 'default_roles': ['owner', 'admin', 'accountant']},
+    # Documents — snap/record photos of receipts, KYC, cash sheets, bills,
+    # statements. Per-category role visibility is layered on top (see
+    # document_categories); this module just gates the Work-tab row.
+    {'key': 'documents', 'label': 'Documents', 'default_roles': ['owner', 'admin', 'accountant'], 'employee_assignable': True},
 ]
 MODULE_KEYS = {m['key'] for m in MODULE_DEFS}
 MODULE_DEFAULT_ROLES = {m['key']: set(m['default_roles']) for m in MODULE_DEFS}
@@ -937,6 +941,12 @@ async def seed():
                 'id': str(uuid.uuid4()), 'name': name, 'key': key, 'is_system': True,
                 'sort': i, 'created_at': now_utc().isoformat(), 'created_by': 'system',
             })
+
+    # Seed the Documents category master (Customer KYC, IDs, Supplier, Cash
+    # Sheets, Bills, Bank/CC Statements, Expense Bills) with default per-role
+    # view/record permissions — editable in Settings afterward.
+    from routers.documents import seed_document_categories
+    await seed_document_categories()
 
     # One-time setup/migration: every shop needs at least one Cash Book
     # counter to have anywhere to record entries. If none exist yet, create
@@ -2002,7 +2012,7 @@ def _make_photo_thumb(photo_data_uri: Optional[str]) -> str:
 from routers import (
     auth, employees, settings as settings_router, attendance, tasks, repairs,
     users, payroll, notifications, biometric, reports, assistant, samples,
-    cashbook, ledger,
+    cashbook, ledger, documents,
 )
 
 # ---------------- Mount ----------------
@@ -2021,6 +2031,7 @@ api.include_router(assistant.router)
 api.include_router(samples.router)
 api.include_router(cashbook.router)
 api.include_router(ledger.router)
+api.include_router(documents.router)
 
 app.include_router(api)
 app.include_router(biometric.iclock_router)  # /iclock/* — real device protocol, no /api prefix

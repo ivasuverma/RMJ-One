@@ -93,6 +93,19 @@ export const api = {
     const res = await fetch(`${BASE}/api${path}`, { method: 'DELETE', headers: await authHeaders() });
     return handle(res, true) as Promise<T>;
   },
+  async patch<T>(path: string, body?: any): Promise<T> {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json', ...(await authHeaders()) };
+    const res = await fetch(`${BASE}/api${path}`, {
+      method: 'PATCH', headers, body: body ? JSON.stringify(body) : undefined,
+    });
+    return handle(res, true) as Promise<T>;
+  },
+  // Multipart upload — do NOT set Content-Type so the browser adds the correct
+  // multipart boundary. Used by the Documents module to POST a captured file.
+  async upload<T>(path: string, form: FormData): Promise<T> {
+    const res = await fetch(`${BASE}/api${path}`, { method: 'POST', headers: await authHeaders(), body: form });
+    return handle(res, true) as Promise<T>;
+  },
 };
 
 // `remember=false` (web only) keeps the session in sessionStorage instead of the

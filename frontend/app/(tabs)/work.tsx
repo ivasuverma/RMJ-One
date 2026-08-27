@@ -33,6 +33,7 @@ export default function WorkScreen() {
   const { hasModule } = useAuth();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [data, setData] = useState<DashboardData | null>(null);
+  const [docSummary, setDocSummary] = useState<{ pending_count: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -40,7 +41,8 @@ export default function WorkScreen() {
     try { setError(''); setData(await api.get<DashboardData>('/dashboard')); }
     catch (e: any) { setError(e?.detail || 'Failed to load'); }
     finally { setLoading(false); }
-  }, []);
+    if (hasModule('documents')) api.get<{ pending_count: number }>('/documents/summary').then(setDocSummary).catch(() => {});
+  }, [hasModule]);
   useFocusEffect(useCallback(() => { setLoading(true); load(); }, [load]));
 
   const go = (route: string) => router.push(route as any);
@@ -77,6 +79,11 @@ export default function WorkScreen() {
       { text: `${data.tasks_summary.due_today} due today` },
       ...(data.tasks_summary.overdue > 0 ? [{ text: ' · ' }, { text: `${data.tasks_summary.overdue} overdue`, tone: 'bad' as const }] : []),
     ] : placeholder,
+  });
+  if (hasModule('documents')) rows.push({
+    key: 'documents', title: 'Documents', icon: 'documents-outline', route: '/documents',
+    badge: docSummary?.pending_count || undefined,
+    segs: docSummary ? (docSummary.pending_count > 0 ? [{ text: `${docSummary.pending_count} pending to record`, tone: 'hot' }] : [{ text: 'All recorded' }]) : placeholder,
   });
 
   return (

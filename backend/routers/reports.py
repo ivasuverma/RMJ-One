@@ -258,6 +258,11 @@ async def _compute_dashboard() -> dict:
             'fine_with_karigars': fine_with_karigars, 'karigar_amt_payable': karigar_amt_payable,
         },
         'recent_activity': await _recent_activity(d),
+        # Documents captured but not yet recorded in the books — feeds the Home
+        # needs-attention item + the Work row. Staff-dashboard consumers (owner/
+        # admin/accountant) see the shop-wide pending total; fine-grained
+        # per-category role filtering lives on GET /documents/summary.
+        'documents_pending': await db.documents.count_documents({'status': 'pending', 'deleted': {'$ne': True}}),
     }
 
 # ---------------- Audit ----------------
