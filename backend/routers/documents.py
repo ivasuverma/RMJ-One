@@ -133,7 +133,15 @@ async def list_categories(all_: bool = Query(default=False, alias='all'), user=D
     if all_ and role == 'owner':
         return cats
     rights = await _account_rights(user)
-    return [c for c in cats if c.get('active', True) and _can_see(c, role, rights)]
+    # Tag each visible category with what THIS caller may do with it, resolved
+    # from their per-person rights (falling back to role) — so the app can show
+    # or hide the Record button correctly instead of guessing from role alone.
+    out = []
+    for c in cats:
+        if not c.get('active', True) or not _can_see(c, role, rights):
+            continue
+        out.append({**c, 'can_view': True, 'can_record': _can_record(c, role, rights)})
+    return out
 
 
 class CategoryIn(BaseModel):

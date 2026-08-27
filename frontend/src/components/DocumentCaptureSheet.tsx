@@ -121,7 +121,11 @@ export function DocumentCaptureSheet({ visible, onClose, onSaved }: {
     try {
       const blob = await shrinkImage(file);
       const thumb = await makeThumb(file);
-      const name = file.type.startsWith('image/') ? file.name.replace(/\.[^.]+$/, '') + '.jpg' : file.name;
+      // A meaningful filename ("Customer-2026-08-27.jpg") instead of the camera's
+      // timestamp blob name — nicer in Drive and as a fallback label.
+      const stamp = new Date().toISOString().slice(0, 10);
+      const base = (cat.label || 'document').replace(/[^\w-]+/g, '-').replace(/^-+|-+$/g, '') || 'document';
+      const name = file.type.startsWith('image/') ? `${base}-${stamp}.jpg` : (file.name || `${base}-${stamp}.pdf`);
       const form = new FormData();
       form.append('file', blob, name);
       form.append('category_key', cat.key);

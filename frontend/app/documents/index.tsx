@@ -7,7 +7,7 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { api, TOKEN_KEY } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthContext';
 import { storage } from '@/src/utils/storage';
-import { istTime, istDisplayDateTime } from '@/src/utils/datetime';
+import { istTime, istDisplayDate, istDisplayDateTime } from '@/src/utils/datetime';
 import { confirmAction } from '@/src/utils/confirm';
 import { haptics } from '@/src/utils/haptics';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
@@ -21,7 +21,17 @@ type Doc = {
   note?: string; created_at: string; recorded_at?: string | null; uploaded_by_name?: string;
   linked_ref?: { type: string; id: string; label?: string } | null;
 };
-type Cat = { key: string; label: string; icon: keyof typeof Ionicons.glyphMap; can_record_roles?: string[] };
+type Cat = { key: string; label: string; icon: keyof typeof Ionicons.glyphMap; can_record_roles?: string[]; can_record?: boolean; can_view?: boolean };
+
+// A readable name for a document row/card. The raw upload filename is just a
+// timestamp, so never show it — prefer the remark, then what it's linked to,
+// then a friendly "<Category> · <date>".
+function docTitle(d: Doc, catLabel?: string): string {
+  const note = (d.note || '').trim();
+  if (note) return note;
+  if (d.linked_ref?.label) return d.linked_ref.label;
+  return `${catLabel || 'Document'} · ${istDisplayDate(d.created_at)}`;
+}
 type Summary = { pending_count: number; done_count: number; uploading_count: number; drive_connected?: boolean; can_see_done?: boolean; by_category: Record<string, { pending: number; done: number }> };
 
 export default function DocumentsScreen() {
@@ -49,7 +59,13 @@ export default function DocumentsScreen() {
 
   const base = process.env.EXPO_PUBLIC_BACKEND_URL || '';
   const catMap = useMemo(() => Object.fromEntries(cats.map((c) => [c.key, c])), [cats]);
-  const canRecord = (key: string) => role === 'owner' || (catMap[key]?.can_record_roles || []).includes(role);
+  // Prefer the per-account flag the server computes for this caller; fall back
+  // to the role-based list only if an older payload didn't include it.
+  const canRecord = (key: string) => {
+    const c = catMap[key];
+    if (c && typeof c.can_record === 'boolean') return c.can_record;
+    return role === 'owner' || (c?.can_record_roles || []).includes(role);
+  };
   const canDelete = role === 'owner' || role === 'admin';
   const fileUri = (id: string) => `${base}/api/documents/${id}/file`;
 
@@ -154,8 +170,8 @@ export default function DocumentsScreen() {
               <Pressable onPress={() => setViewer(d)} style={styles.rowMain}>
                 <Thumb d={d} size={46} />
                 <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={styles.docName} numberOfLines={1}>{d.note || d.file.orig_name}</Text>
-                  <Text style={styles.docMeta} numberOfLines={1}>{catMap[d.category_key]?.label || d.category_key} · {istTime(d.created_at)}{uploading ? ' · uploading' : ''}</Text>
+                  <Text style={styles.docName} numberOfLines={1}>{docTitle(d, catMap[d.category_key]?.label)}</Text>
+                  <Text style={styles.docMeta} numberOfLines={1}>{catMap[d.category_key]?.label || d.category_key} · {istTime(d.created_at)}{d.uploaded_by_name ? ` · ${d.uploaded_by_name}` : ''}{uploading ? ' · uploading' : ''}</Text>
                 </View>
               </Pressable>
               {canRecord(d.category_key) && (
@@ -272,7 +288,7 @@ function QuickView({ doc, categoryLabel, token, fileUri, onClose, onRecord, canR
           <View style={styles.qvStamp}><Ionicons name={doc.upload_state === 'synced' ? 'cloud-done' : 'phone-portrait-outline'} size={12} color={colors.onSurface} /><Text style={styles.qvStampText}>{doc.upload_state === 'synced' ? 'In Drive' : 'Local'}</Text></View>
         </Pressable>
         <View style={styles.qvPanel}>
-          <Text style={styles.qvName} numberOfLines={2}>{doc.note || doc.file.orig_name}</Text>
+          <Text style={styles.qvName} numberOfLines={2}>{docTitle(doc, categoryLabel)}</Text>
           <Text style={styles.qvMeta}>{doc.uploaded_by_name ? `By ${doc.uploaded_by_name} · ` : ''}{istDisplayDateTime(doc.recorded_at || doc.created_at)}</Text>
           <View style={styles.qvActions}>
             {isImage && (
