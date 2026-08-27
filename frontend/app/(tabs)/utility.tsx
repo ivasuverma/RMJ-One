@@ -29,7 +29,7 @@ const GROUPS: GroupDef[] = [
     rows: [
       { key: 'user-roles', label: 'Users & Roles', sub: 'Who can access what', icon: 'shield-checkmark-outline', route: '/settings/user-roles' },
       { key: 'staff', label: 'Staff Accounts', sub: 'Admin & accountant logins', icon: 'people-circle-outline', route: '/settings/users' },
-      { key: 'team', label: 'Team Roster', sub: 'Your employees', icon: 'people-outline', route: '/(tabs)/employees' },
+      { key: 'team', label: 'Employees', sub: 'Your team', icon: 'people-outline', route: '/(tabs)/employees' },
     ],
   },
   {

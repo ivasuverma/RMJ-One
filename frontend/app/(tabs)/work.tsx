@@ -189,7 +189,7 @@ export default function WorkScreen() {
         <Pressable onPress={() => go('/accounts')} style={({ pressed }) => [styles.prow, pressed && { opacity: 0.85 }]} testID="work-ledger">
           <View style={styles.pi}><Ionicons name="book-outline" size={22} color={colors.brandSecondary} /></View>
           <View style={{ flex: 1, minWidth: 0 }}>
-            <Text style={styles.pt}>Unified Ledger</Text>
+            <Text style={styles.pt}>Ledger</Text>
             <Text style={styles.pd} numberOfLines={1}>Customers, karigars & staff — fine gold & cash</Text>
           </View>
           <Ionicons name="chevron-forward" size={18} color={colors.mutedText} />

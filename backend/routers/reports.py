@@ -104,7 +104,9 @@ async def _recent_activity(d: str, limit: int = 12) -> list:
 
 async def _compute_dashboard() -> dict:
     d = today_str()
-    employees = await db.employees.find({}, {'_id': 0, 'id': 1, 'status': 1, 'shift': 1}).to_list(2000)
+    # Exclude inactive (ex-)employees — they shouldn't inflate the absent count
+    # or the "N of M in" total on the dashboard.
+    employees = await db.employees.find({'status': {'$ne': 'inactive'}}, {'_id': 0, 'id': 1, 'status': 1, 'shift': 1}).to_list(2000)
     total = len(employees)
     on_leave_status = sum(1 for e in employees if e.get('status') == 'on_leave')
 

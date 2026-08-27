@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, TextInput, ActivityIndicator, Modal, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
@@ -8,6 +8,7 @@ import { api, TOKEN_KEY } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthContext';
 import { storage } from '@/src/utils/storage';
 import { istTime, istDisplayDateTime } from '@/src/utils/datetime';
+import { confirmAction } from '@/src/utils/confirm';
 import { haptics } from '@/src/utils/haptics';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
@@ -22,17 +23,6 @@ type Doc = {
 };
 type Cat = { key: string; label: string; icon: keyof typeof Ionicons.glyphMap; can_record_roles?: string[] };
 type Summary = { pending_count: number; done_count: number; uploading_count: number; drive_connected?: boolean; by_category: Record<string, { pending: number; done: number }> };
-
-const LINK_TYPES: { key: string; label: string; endpoint: string }[] = [
-  { key: 'customer', label: 'Customer', endpoint: '/customers' },
-  { key: 'karigar', label: 'Karigar', endpoint: '/karigars' },
-  { key: 'employee', label: 'Employee', endpoint: '/employees' },
-  { key: 'repair', label: 'Repair', endpoint: '/repair-items' },
-];
-const LINK_ROUTE: Record<string, (id: string) => string> = {
-  customer: (id) => `/customers/${id}`, karigar: (id) => `/karigars/${id}`,
-  employee: (id) => `/ledger/${id}`, repair: (id) => `/repairs/item/${id}`,
-};
 
 export default function DocumentsScreen() {
   const router = useRouter();
@@ -60,7 +50,23 @@ export default function DocumentsScreen() {
   const base = process.env.EXPO_PUBLIC_BACKEND_URL || '';
   const catMap = useMemo(() => Object.fromEntries(cats.map((c) => [c.key, c])), [cats]);
   const canRecord = (key: string) => role === 'owner' || (catMap[key]?.can_record_roles || []).includes(role);
+  const canDelete = role === 'owner' || role === 'admin';
   const fileUri = (id: string) => `${base}/api/documents/${id}/file`;
+
+  // Open the full file (PDF or image) in a new tab. The file route needs a
+  // bearer token, which window.open can't send — so fetch the blob first.
+  const openFile = async (d: Doc) => {
+    try {
+      const res = await fetch(fileUri(d.id), { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) throw new Error();
+      const url = URL.createObjectURL(await res.blob());
+      if (Platform.OS === 'web') window.open(url, '_blank');
+    } catch { toast.error('Could not open the file'); }
+  };
+  const del = (id: string) => confirmAction('Delete document?', 'Removes it from RMJ One. A copy already in Google Drive is kept.', 'Delete', async () => {
+    try { await api.del(`/documents/${id}`); setViewer(null); toast.success('Deleted'); load(); }
+    catch (e: any) { toast.error(e?.detail || 'Could not delete'); }
+  });
 
   const load = useCallback(async () => {
     setToken((await storage.secureGet<string>(TOKEN_KEY, '')) || '');
@@ -71,7 +77,7 @@ export default function DocumentsScreen() {
     const params = new URLSearchParams({ status: tab });
     const cat = tab === 'done' ? doneCat! : (catFilter !== 'all' ? catFilter : '');
     if (cat) params.set('category', cat);
-    if (tab === 'pending' && q.trim()) params.set('q', q.trim());
+    if (q.trim()) params.set('q', q.trim());
     try { setDocs(await api.get<Doc[]>(`/documents?${params.toString()}`)); } catch { setDocs([]); }
     finally { setLoading(false); setRefreshing(false); }
   }, [tab, catFilter, q, doneCat]);
@@ -112,16 +118,23 @@ export default function DocumentsScreen() {
   };
 
   const gridView = () => (
-    docs.length === 0 ? <View style={styles.empty}><Text style={styles.emptyText}>Empty folder.</Text></View> : (
-      <View style={styles.grid}>
-        {docs.map((d) => (
-          <Pressable key={d.id} onPress={() => setViewer(d)} style={styles.gridItem} testID={`doc-grid-${d.id}`}>
-            <Thumb d={d} size={GRID} />
-            {d.upload_state === 'synced' && <View style={styles.syncBadge}><Ionicons name="cloud-done" size={11} color={colors.onSuccess} /></View>}
-          </Pressable>
-        ))}
+    <>
+      <View style={styles.searchWrap}>
+        <Ionicons name="search" size={16} color={colors.mutedText} />
+        <TextInput value={q} onChangeText={setQ} onSubmitEditing={load} placeholder="Search by name, remark or date" placeholderTextColor={colors.mutedText} style={styles.searchInput} returnKeyType="search" testID="doc-done-search" />
+        {q.length > 0 && <Pressable onPress={() => { setQ(''); setTimeout(load, 0); }} hitSlop={8}><Ionicons name="close-circle" size={16} color={colors.mutedText} /></Pressable>}
       </View>
-    )
+      {docs.length === 0 ? <View style={styles.empty}><Text style={styles.emptyText}>{q ? 'No matches.' : 'Empty folder.'}</Text></View> : (
+        <View style={styles.grid}>
+          {docs.map((d) => (
+            <Pressable key={d.id} onPress={() => setViewer(d)} style={styles.gridItem} testID={`doc-grid-${d.id}`}>
+              <Thumb d={d} size={GRID} />
+              {d.upload_state === 'synced' && <View style={styles.syncBadge}><Ionicons name="cloud-done" size={11} color={colors.onSuccess} /></View>}
+            </Pressable>
+          ))}
+        </View>
+      )}
+    </>
   );
 
   const pendingView = () => (
@@ -180,12 +193,14 @@ export default function DocumentsScreen() {
 
         {tab === 'pending' && (
           <>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
-              <Pressable onPress={() => setCatFilter('all')} style={[styles.chip, catFilter === 'all' && styles.chipOn]}><Text style={[styles.chipText, catFilter === 'all' && styles.chipTextOn]}>All</Text></Pressable>
-              {cats.map((c) => (
-                <Pressable key={c.key} onPress={() => setCatFilter(c.key)} style={[styles.chip, catFilter === c.key && styles.chipOn]} testID={`doc-catchip-${c.key}`}><Text style={[styles.chipText, catFilter === c.key && styles.chipTextOn]}>{c.label}</Text></Pressable>
-              ))}
-            </ScrollView>
+            {cats.some((c) => (summary?.by_category?.[c.key]?.pending || 0) > 0) && (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
+                <Pressable onPress={() => setCatFilter('all')} style={[styles.chip, catFilter === 'all' && styles.chipOn]}><Text style={[styles.chipText, catFilter === 'all' && styles.chipTextOn]}>All</Text></Pressable>
+                {cats.filter((c) => (summary?.by_category?.[c.key]?.pending || 0) > 0).map((c) => (
+                  <Pressable key={c.key} onPress={() => setCatFilter(c.key)} style={[styles.chip, catFilter === c.key && styles.chipOn]} testID={`doc-catchip-${c.key}`}><Text style={[styles.chipText, catFilter === c.key && styles.chipTextOn]}>{c.label}</Text></Pressable>
+                ))}
+              </ScrollView>
+            )}
             <View style={styles.searchWrap}>
               <Ionicons name="search" size={16} color={colors.mutedText} />
               <TextInput value={q} onChangeText={setQ} onSubmitEditing={load} placeholder="Search by name or note" placeholderTextColor={colors.mutedText} style={styles.searchInput} returnKeyType="search" testID="doc-search" />
@@ -209,7 +224,7 @@ export default function DocumentsScreen() {
         onClose={() => setRecordDoc(null)} onDone={() => { setRecordDoc(null); setViewer(null); haptics.success(); toast.success('Recorded'); load(); }} />
       <QuickView doc={viewer} categoryLabel={viewer ? (catMap[viewer.category_key]?.label || viewer.category_key) : ''} token={token} fileUri={fileUri}
         onClose={() => setViewer(null)} onRecord={(d) => setRecordDoc(d)} canRecord={viewer ? canRecord(viewer.category_key) : false}
-        onOpenLink={(lr) => { const r = LINK_ROUTE[lr.type]; if (r) { setViewer(null); router.push(r(lr.id) as any); } }} />
+        canDelete={canDelete} onDelete={del} onOpenFile={openFile} />
     </SafeAreaView>
   );
 }
@@ -221,9 +236,10 @@ const TINTS = (c: ThemeColors) => [
 ];
 
 /* ---------------- Quick view (full-screen) ---------------- */
-function QuickView({ doc, categoryLabel, token, fileUri, onClose, onRecord, canRecord, onOpenLink }: {
+function QuickView({ doc, categoryLabel, token, fileUri, onClose, onRecord, canRecord, canDelete, onDelete, onOpenFile }: {
   doc: Doc | null; categoryLabel: string; token: string; fileUri: (id: string) => string;
-  onClose: () => void; onRecord: (d: Doc) => void; canRecord: boolean; onOpenLink: (lr: { type: string; id: string }) => void;
+  onClose: () => void; onRecord: (d: Doc) => void; canRecord: boolean; canDelete: boolean;
+  onDelete: (id: string) => void; onOpenFile: (d: Doc) => void;
 }) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
@@ -233,32 +249,29 @@ function QuickView({ doc, categoryLabel, token, fileUri, onClose, onRecord, canR
     <Modal visible transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.qvRoot}>
         <View style={styles.qvBar}>
-          <Pressable onPress={onClose} hitSlop={10} testID="qv-close"><Text style={styles.qvClose}>Done</Text></Pressable>
+          <Pressable onPress={onClose} hitSlop={10} testID="qv-close"><Text style={styles.qvClose}>Close</Text></Pressable>
           <Text style={styles.qvCat} numberOfLines={1}>{categoryLabel}</Text>
-          <View style={{ width: 44 }} />
+          {canDelete
+            ? <Pressable onPress={() => onDelete(doc.id)} hitSlop={10} style={{ width: 44, alignItems: 'flex-end' }} testID="qv-delete"><Ionicons name="trash-outline" size={20} color={colors.onError} /></Pressable>
+            : <View style={{ width: 44 }} />}
         </View>
-        <View style={styles.qvImgWrap}>
+        <Pressable style={styles.qvImgWrap} onPress={() => !isImage && onOpenFile(doc)}>
           {isImage && token
             ? <Image source={{ uri: fileUri(doc.id), headers: { Authorization: `Bearer ${token}` } }} style={styles.qvImg} contentFit="contain" />
-            : <Ionicons name="document-text-outline" size={64} color={colors.mutedText} />}
-          <View style={styles.qvStamp}><Ionicons name={doc.upload_state === 'synced' ? 'cloud-done' : 'cloud-upload-outline'} size={12} color={colors.onSurface} /><Text style={styles.qvStampText}>{doc.upload_state === 'synced' ? 'In Drive' : 'Local'}</Text></View>
-        </View>
+            : <View style={{ alignItems: 'center', gap: 10 }}><Ionicons name="document-text-outline" size={64} color={colors.mutedText} /><Text style={{ color: '#fff', fontWeight: '700' }}>Tap to open PDF</Text></View>}
+          <View style={styles.qvStamp}><Ionicons name={doc.upload_state === 'synced' ? 'cloud-done' : 'phone-portrait-outline'} size={12} color={colors.onSurface} /><Text style={styles.qvStampText}>{doc.upload_state === 'synced' ? 'In Drive' : 'Local'}</Text></View>
+        </Pressable>
         <View style={styles.qvPanel}>
           <Text style={styles.qvName} numberOfLines={2}>{doc.note || doc.file.orig_name}</Text>
-          {doc.linked_ref?.label ? (
-            <Pressable onPress={() => onOpenLink(doc.linked_ref!)} style={styles.qvLink} testID="qv-link">
-              <Ionicons name="link-outline" size={15} color={colors.brandSecondary} />
-              <Text style={styles.qvLinkText}>{doc.linked_ref.label}</Text>
-              <Ionicons name="chevron-forward" size={14} color={colors.mutedText} />
-            </Pressable>
-          ) : null}
           <Text style={styles.qvMeta}>{doc.uploaded_by_name ? `By ${doc.uploaded_by_name} · ` : ''}{istDisplayDateTime(doc.recorded_at || doc.created_at)}</Text>
           <View style={styles.qvActions}>
-            {doc.file.drive_view_link ? (
-              <Pressable onPress={() => { if (Platform.OS === 'web') window.open(doc.file.drive_view_link!, '_blank'); }} style={styles.qvBtn} testID="qv-drive"><Ionicons name="open-outline" size={16} color={colors.onSurface} /><Text style={styles.qvBtnText}>Open in Drive</Text></Pressable>
-            ) : null}
-            {doc.status === 'pending' && canRecord && (
-              <Pressable onPress={() => onRecord(doc)} style={[styles.qvBtn, styles.qvBtnPrimary]} testID="qv-record"><Ionicons name="checkmark-done-outline" size={16} color={colors.onBrandPrimary} /><Text style={[styles.qvBtnText, { color: colors.onBrandPrimary }]}>Record in books</Text></Pressable>
+            {isImage && (
+              <Pressable onPress={() => onOpenFile(doc)} style={styles.qvBtn} testID="qv-open"><Ionicons name="expand-outline" size={16} color={colors.onSurface} /><Text style={styles.qvBtnText}>Open full size</Text></Pressable>
+            )}
+            {canRecord && (
+              doc.status === 'pending'
+                ? <Pressable onPress={() => onRecord(doc)} style={[styles.qvBtn, styles.qvBtnPrimary]} testID="qv-record"><Ionicons name="checkmark-done-outline" size={16} color={colors.onBrandPrimary} /><Text style={[styles.qvBtnText, { color: colors.onBrandPrimary }]}>Done</Text></Pressable>
+                : <Pressable onPress={() => onRecord(doc)} style={styles.qvBtn} testID="qv-edit-remark"><Ionicons name="create-outline" size={16} color={colors.onSurface} /><Text style={styles.qvBtnText}>Edit remark</Text></Pressable>
             )}
           </View>
         </View>
@@ -267,66 +280,36 @@ function QuickView({ doc, categoryLabel, token, fileUri, onClose, onRecord, canR
   );
 }
 
-/* ---------------- Record → Done sheet ---------------- */
+/* ---------------- Move to Done sheet — a single searchable remark ---------------- */
 function RecordSheet({ doc, categoryLabel, onClose, onDone }: { doc: Doc | null; categoryLabel: string; onClose: () => void; onDone: () => void }) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const toast = useToast();
-  const [type, setType] = useState<string | null>(null);
-  const [q, setQ] = useState('');
-  const [hits, setHits] = useState<{ id: string; label: string; sub?: string }[]>([]);
-  const [picked, setPicked] = useState<{ id: string; label: string } | null>(null);
+  const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
-  const reset = () => { setType(null); setQ(''); setHits([]); setPicked(null); setBusy(false); };
+  useEffect(() => { setNote(doc?.note || ''); }, [doc?.id]);
 
-  const search = async (t: string, query: string) => {
-    const def = LINK_TYPES.find((l) => l.key === t);
-    if (!def || !query.trim()) { setHits([]); return; }
-    try {
-      const res = await api.get<any[]>(`${def.endpoint}?q=${encodeURIComponent(query.trim())}`);
-      setHits(res.slice(0, 12).map((r) => (t === 'repair'
-        ? { id: r.id, label: `${r.item_code} — ${r.customer_name}`, sub: r.description }
-        : { id: r.id, label: r.name, sub: r.mobile || r.employee_code })));
-    } catch { setHits([]); }
-  };
-  const submit = async (withLink: boolean) => {
+  const submit = async () => {
     if (!doc || busy) return;
     setBusy(true);
     try {
-      await api.patch(`/documents/${doc.id}/record`, withLink && picked && type ? { linked_ref_type: type, linked_ref_id: picked.id, linked_ref_label: picked.label } : {});
-      reset(); onDone();
-    } catch (e: any) { toast.error(e?.detail || 'Could not record'); setBusy(false); }
+      // Store the remark as both note and linked label so it's searchable and
+      // shows on the Done row (name + phone in one box for easy lookup).
+      const n = note.trim();
+      await api.patch(`/documents/${doc.id}/record`, { note: n, linked_ref_label: n || undefined });
+      setBusy(false); onDone();
+    } catch (e: any) { toast.error(e?.detail || 'Could not save'); setBusy(false); }
   };
 
+  const isDone = doc?.status === 'done';
   return (
-    <Sheet visible={!!doc} onClose={() => { reset(); onClose(); }} title="Record in books" testID="doc-record-sheet">
-      <Text style={styles.recHint}>{categoryLabel} · link this document to the record it belongs to.</Text>
-      <View style={styles.recTypeRow}>
-        {LINK_TYPES.map((l) => (
-          <Pressable key={l.key} onPress={() => { setType(l.key); setPicked(null); setHits([]); setQ(''); }} style={[styles.recType, type === l.key && styles.recTypeOn]} testID={`rec-type-${l.key}`}><Text style={[styles.recTypeText, type === l.key && styles.recTypeTextOn]}>{l.label}</Text></Pressable>
-        ))}
-      </View>
-      {type && !picked && (
-        <>
-          <View style={styles.searchWrap}>
-            <Ionicons name="search" size={16} color={colors.mutedText} />
-            <TextInput value={q} onChangeText={(v) => { setQ(v); search(type, v); }} placeholder={`Search ${type}…`} placeholderTextColor={colors.mutedText} style={styles.searchInput} autoFocus testID="rec-search" />
-          </View>
-          {hits.map((h) => (
-            <Pressable key={h.id} onPress={() => setPicked({ id: h.id, label: h.label })} style={styles.hitRow} testID={`rec-hit-${h.id}`}>
-              <Text style={styles.hitName} numberOfLines={1}>{h.label}</Text>{!!h.sub && <Text style={styles.hitSub} numberOfLines={1}>{h.sub}</Text>}
-            </Pressable>
-          ))}
-        </>
-      )}
-      {picked && (
-        <View style={styles.pickedRow}><Ionicons name="checkmark-circle" size={18} color={colors.onSuccess} /><Text style={styles.pickedName} numberOfLines={1}>{picked.label}</Text><Pressable onPress={() => setPicked(null)} hitSlop={8}><Text style={styles.changeText}>Change</Text></Pressable></View>
-      )}
+    <Sheet visible={!!doc} onClose={onClose} title={isDone ? 'Edit remark' : 'Move to Done'} testID="doc-record-sheet">
+      <Text style={styles.recHint}>{categoryLabel} · add a remark so it&apos;s easy to find later — name, phone, invoice no.</Text>
+      <TextInput value={note} onChangeText={setNote} placeholder="e.g. Anita Sharma · 98xxxxxxxx" placeholderTextColor={colors.mutedText} style={styles.noteInput} autoFocus testID="rec-note" />
       <View style={{ height: spacing.md }} />
-      <Pressable onPress={() => submit(true)} disabled={busy || !picked} style={[styles.recPrimary, (busy || !picked) && { opacity: 0.5 }]} testID="rec-confirm">
-        {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.recPrimaryText}>Record &amp; mark done</Text>}
+      <Pressable onPress={submit} disabled={busy} style={[styles.recPrimary, busy && { opacity: 0.5 }]} testID="rec-confirm">
+        {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.recPrimaryText}>{isDone ? 'Save' : 'Done'}</Text>}
       </Pressable>
-      <Pressable onPress={() => submit(false)} disabled={busy} style={styles.recGhost} testID="rec-nolink"><Text style={styles.recGhostText}>Mark done without linking</Text></Pressable>
     </Sheet>
   );
 }
@@ -404,6 +387,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
 
   // Record sheet
   recHint: { color: colors.mutedText, fontSize: 13, marginBottom: spacing.md },
+  noteInput: { backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, color: colors.onSurface, paddingHorizontal: spacing.md, paddingVertical: 13, fontSize: 15 },
   recTypeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.md },
   recType: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: radius.pill, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border },
   recTypeOn: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
