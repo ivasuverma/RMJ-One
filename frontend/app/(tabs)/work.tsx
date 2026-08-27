@@ -7,7 +7,7 @@ import { api } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthContext';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
-import { Skeleton, ErrorState } from '@/src/components/ui';
+import { Skeleton, ErrorState, Sheet } from '@/src/components/ui';
 import { DocumentCaptureSheet } from '@/src/components/DocumentCaptureSheet';
 
 // Work — the operational hub, laid out to the v2 design comp: a search bar,
@@ -36,6 +36,7 @@ export default function WorkScreen() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [docSummary, setDocSummary] = useState<{ pending_count: number } | null>(null);
   const [captureDoc, setCaptureDoc] = useState(false);
+  const [composeOpen, setComposeOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   // Custom order for the In-progress rows — persisted per device so each user
@@ -121,6 +122,9 @@ export default function WorkScreen() {
               <Ionicons name="scan-outline" size={20} color={colors.onSurface} />
             </Pressable>
           )}
+          <Pressable onPress={() => setComposeOpen(true)} style={[styles.captureBtn, styles.captureBtnGold]} testID="work-compose-btn" hitSlop={8}>
+            <Ionicons name="add" size={24} color={colors.onBrandPrimary} />
+          </Pressable>
         </View>
 
         <Pressable onPress={() => go('/repairs/search')} style={styles.search} testID="work-search">
@@ -197,6 +201,28 @@ export default function WorkScreen() {
 
         <View style={{ height: spacing.xxl }} />
       </ScrollView>
+      <Sheet visible={composeOpen} onClose={() => setComposeOpen(false)} title="Create" testID="work-compose-sheet">
+        {(() => {
+          const actions: { key: string; label: string; icon: string; route: string; show: boolean }[] = [
+            { key: 'task', label: 'New task', icon: 'checkbox-outline', route: '/tasks/new', show: hasModule('tasks') },
+            { key: 'repair', label: 'New repair', icon: 'construct-outline', route: '/repairs/new', show: hasModule('repairs') },
+            { key: 'stock', label: 'Stock In/Out', icon: 'diamond-outline', route: '/samples/new', show: hasModule('samples') },
+            { key: 'adv-ded', label: 'Advance / Deduction', icon: 'swap-vertical-outline', route: '/(tabs)/employees?from=work', show: hasModule('team') || hasModule('payroll') },
+            { key: 'cash', label: 'Cash in/out', icon: 'wallet-outline', route: '/cashbook', show: hasModule('cash_book') },
+            { key: 'account', label: 'New ledger account', icon: 'book-outline', route: '/accounts/new', show: hasModule('ledger') },
+            { key: 'document', label: 'Add document', icon: 'document-attach-outline', route: '/documents?capture=1', show: hasModule('documents') },
+          ].filter((a) => a.show);
+          const go = (route: string) => { setComposeOpen(false); router.push(route as any); };
+          if (actions.length === 0) return <Text style={styles.sheetEmpty}>Nothing to create with your current access.</Text>;
+          return actions.map((a) => (
+            <Pressable key={a.key} onPress={() => go(a.route)} style={({ pressed }) => [styles.sheetRow, pressed && { opacity: 0.7 }]} testID={`work-compose-${a.key}`}>
+              <View style={styles.sheetIcon}><Ionicons name={a.icon as keyof typeof Ionicons.glyphMap} size={18} color={colors.brandSecondary} /></View>
+              <Text style={styles.sheetLabel}>{a.label}</Text>
+              <Ionicons name="chevron-forward" size={16} color={colors.mutedText} />
+            </Pressable>
+          ));
+        })()}
+      </Sheet>
       <DocumentCaptureSheet visible={captureDoc} onClose={() => setCaptureDoc(false)} onSaved={load} />
     </SafeAreaView>
   );
@@ -207,6 +233,11 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   scroll: { padding: spacing.lg, paddingBottom: spacing.xxxl },
   titleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
   captureBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
+  captureBtnGold: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
+  sheetRow: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 14, paddingHorizontal: spacing.sm, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.divider },
+  sheetIcon: { width: 36, height: 36, borderRadius: 10, backgroundColor: colors.surfaceTertiary, alignItems: 'center', justifyContent: 'center' },
+  sheetLabel: { flex: 1, color: colors.onSurface, fontSize: 16, fontWeight: '600' },
+  sheetEmpty: { color: colors.mutedText, fontSize: 14, paddingVertical: spacing.lg, textAlign: 'center' },
   progressHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   editOrderText: { color: colors.brandSecondary, fontSize: 13, fontWeight: '700', marginTop: spacing.xl, marginBottom: spacing.md },
   reorderCtrls: { flexDirection: 'row', gap: 4 },
