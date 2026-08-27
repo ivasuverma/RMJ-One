@@ -147,7 +147,10 @@ jobs:
           }
           cd "$repo\frontend"
           $env:EXPO_NO_TELEMETRY = '1'
-          npx expo export --platform web --output-dir dist-new
+          # --clear wipes the Metro cache so the async-routes (code-split) build
+          # is produced correctly; a stale cache on the persistent runner could
+          # otherwise emit a non-split or mismatched bundle.
+          npx expo export --platform web --output-dir dist-new --clear
           $exportExitCode = $LASTEXITCODE
           cd $repo
           if ($exportExitCode -ne 0 -or -not (Test-Path -LiteralPath "$newDistPath\index.html")) {
