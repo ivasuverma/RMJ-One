@@ -14,8 +14,9 @@ type Cat = {
   visible_to_roles: string[]; can_record_roles: string[]; active: boolean;
 };
 
-const ROLES = ['owner', 'admin', 'accountant', 'employee'];
-const ROLE_LABEL: Record<string, string> = { owner: 'Owner', admin: 'Admin', accountant: 'Accountant', employee: 'Sales/Staff' };
+// Every role is granted by default now — who actually sees/records each
+// category is set per person in Settings › People, which overrides these.
+const ALL_ROLES = ['owner', 'admin', 'accountant', 'employee'];
 
 export default function DocumentCategoriesScreen() {
   const router = useRouter();
@@ -33,7 +34,7 @@ export default function DocumentCategoriesScreen() {
   }, []);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const openNew = () => { setIsNew(true); setEditing({ id: '', key: '', label: '', icon: 'document-outline', visible_to_roles: ['owner'], can_record_roles: ['owner'], active: true }); };
+  const openNew = () => { setIsNew(true); setEditing({ id: '', key: '', label: '', icon: 'document-outline', visible_to_roles: [...ALL_ROLES], can_record_roles: [...ALL_ROLES], active: true }); };
   const openEdit = (c: Cat) => { setIsNew(false); setEditing({ ...c, visible_to_roles: [...c.visible_to_roles], can_record_roles: [...c.can_record_roles] }); };
 
   return (
@@ -48,13 +49,13 @@ export default function DocumentCategoriesScreen() {
         <ActivityIndicator color={colors.brandPrimary} style={{ marginTop: 40 }} />
       ) : (
         <ScrollView contentContainerStyle={{ padding: spacing.lg }} showsVerticalScrollIndicator={false}>
-          <Text style={styles.hint}>Who can view and who can record each kind of document. Owner always sees everything.</Text>
+          <Text style={styles.hint}>The kinds of document you can file. Who can view or record each one is set per person in Settings › People.</Text>
           {cats.map((c) => (
             <Pressable key={c.id} onPress={() => openEdit(c)} style={({ pressed }) => [styles.row, pressed && { opacity: 0.85 }]} testID={`doc-cat-${c.key}`}>
               <View style={styles.rowIcon}><Ionicons name={c.icon || 'document-outline'} size={18} color={colors.brandSecondary} /></View>
               <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={styles.rowLabel}>{c.label}{!c.active ? '  · off' : ''}</Text>
-                <Text style={styles.rowMeta} numberOfLines={1}>View: {c.visible_to_roles.map((r) => ROLE_LABEL[r] || r).join(', ') || '—'}</Text>
+                <Text style={styles.rowLabel}>{c.label}</Text>
+                <Text style={styles.rowMeta} numberOfLines={1}>{c.active !== false ? 'Active' : 'Off · hidden from capture'}</Text>
               </View>
               <Ionicons name="chevron-forward" size={16} color={colors.mutedText} />
             </Pressable>
@@ -73,14 +74,12 @@ function CategoryEditor({ cat, isNew, onClose, onSaved }: { cat: Cat | null; isN
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const toast = useToast();
   const [label, setLabel] = useState('');
-  const [visible, setVisible] = useState<string[]>([]);
-  const [record, setRecord] = useState<string[]>([]);
   const [active, setActive] = useState(true);
   const [busy, setBusy] = useState(false);
 
   // Re-seed local form state whenever a different category opens.
   useEffect(() => {
-    if (cat) { setLabel(cat.label); setVisible(cat.visible_to_roles); setRecord(cat.can_record_roles); setActive(cat.active !== false); }
+    if (cat) { setLabel(cat.label); setActive(cat.active !== false); }
   }, [cat?.id, cat?.label, cat]);
 
   const remove = () => {
@@ -91,16 +90,14 @@ function CategoryEditor({ cat, isNew, onClose, onSaved }: { cat: Cat | null; isN
     });
   };
 
-  const toggle = (list: string[], setList: (v: string[]) => void, role: string) => {
-    setList(list.includes(role) ? list.filter((r) => r !== role) : [...list, role]);
-  };
-
   const save = async () => {
     if (!cat || busy) return;
     if (!label.trim()) { toast.error('Enter a name'); return; }
-    // Owner is implicit; keep it in the stored lists so the API is explicit.
-    const vis = Array.from(new Set(['owner', ...visible]));
-    const rec = Array.from(new Set(['owner', ...record]));
+    // Role lists are no longer edited here — permissions live per person in
+    // People. Pass through whatever the category already had (new ones default
+    // to all roles) so the role-based fallback stays sensible.
+    const vis = Array.from(new Set(['owner', ...(cat.visible_to_roles || [])]));
+    const rec = Array.from(new Set(['owner', ...(cat.can_record_roles || [])]));
     setBusy(true);
     try {
       const body = { label: label.trim(), icon: cat.icon || 'document-outline', visible_to_roles: vis, can_record_roles: rec, active };
@@ -116,23 +113,7 @@ function CategoryEditor({ cat, isNew, onClose, onSaved }: { cat: Cat | null; isN
       <Text style={styles.formLabel}>Name</Text>
       <TextInput value={label} onChangeText={setLabel} placeholder="e.g. Expense Bills" placeholderTextColor={colors.mutedText} style={styles.input} testID="doc-cat-name" />
 
-      <Text style={styles.formLabel}>Who can view</Text>
-      <View style={styles.roleRow}>
-        {ROLES.filter((r) => r !== 'owner').map((r) => (
-          <Pressable key={r} onPress={() => toggle(visible, setVisible, r)} style={[styles.roleChip, visible.includes(r) && styles.roleChipOn]} testID={`view-${r}`}>
-            <Text style={[styles.roleText, visible.includes(r) && styles.roleTextOn]}>{ROLE_LABEL[r]}</Text>
-          </Pressable>
-        ))}
-      </View>
-
-      <Text style={styles.formLabel}>Who can record (mark done)</Text>
-      <View style={styles.roleRow}>
-        {ROLES.filter((r) => r !== 'owner').map((r) => (
-          <Pressable key={r} onPress={() => toggle(record, setRecord, r)} style={[styles.roleChip, record.includes(r) && styles.roleChipOn]} testID={`record-${r}`}>
-            <Text style={[styles.roleText, record.includes(r) && styles.roleTextOn]}>{ROLE_LABEL[r]}</Text>
-          </Pressable>
-        ))}
-      </View>
+      <Text style={styles.permNote}>View &amp; record permissions are set per person in Settings › People.</Text>
 
       <Pressable onPress={() => setActive((a) => !a)} style={styles.activeRow} testID="doc-cat-active">
         <View style={{ flex: 1 }}>
@@ -169,11 +150,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
 
   formLabel: { color: colors.onSurfaceSecondary, fontSize: 12, letterSpacing: 0.4, marginBottom: 8, marginTop: spacing.md },
   input: { backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, color: colors.onSurface, paddingHorizontal: spacing.md, paddingVertical: 12, fontSize: 15 },
-  roleRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  roleChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: radius.pill, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border },
-  roleChipOn: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
-  roleText: { color: colors.onSurfaceSecondary, fontSize: 13, fontWeight: '700' },
-  roleTextOn: { color: colors.onBrandPrimary },
+  permNote: { color: colors.mutedText, fontSize: 12, lineHeight: 17, marginTop: spacing.md },
   saveBtn: { backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: 14, alignItems: 'center' },
   saveBtnText: { color: colors.onBrandPrimary, fontSize: 15, fontWeight: '700' },
   activeRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.lg },
