@@ -482,6 +482,16 @@ class ModuleAccessUpdateIn(BaseModel):
     # owner must explicitly pick counters here (unlike other employee-assignable
     # modules, which don't have a further sub-resource to restrict).
     cashbook_counter_ids: Optional[List[str]] = None
+    # Master notification switch for this account (push + in-app bell). None =
+    # leave unchanged; True/False sets it.
+    notifications_enabled: Optional[bool] = None
+    # Per-category document permissions, e.g.
+    # {'kyc': {'view': True, 'record': False}}. None = leave unchanged. When an
+    # account has this set, it overrides the category's role-based visibility.
+    doc_category_rights: Optional[Dict[str, Dict[str, bool]]] = None
+    # Whether this account can browse the Documents "Done" folder. None = leave
+    # unchanged.
+    doc_see_done: Optional[bool] = None
 
 
 class ShiftIn(BaseModel):
@@ -1373,9 +1383,27 @@ import asyncio
 import json as _json
 
 
+async def _muted_account_ids(ids: list) -> set:
+    """Ids among `ids` whose account has explicitly turned notifications off
+    (Settings › People › <person>). A missing/True flag means enabled."""
+    muted: set = set()
+    ids = [i for i in ids if i]
+    if not ids:
+        return muted
+    async for a in db.users.find({'id': {'$in': ids}, 'notifications_enabled': False}, {'_id': 0, 'id': 1}):
+        muted.add(a['id'])
+    async for a in db.employees.find({'id': {'$in': ids}, 'notifications_enabled': False}, {'_id': 0, 'id': 1}):
+        muted.add(a['id'])
+    return muted
+
+
 async def _send_push_to_subs(subs: list, title: str, body: str, url: str = '/'):
     if not WEBPUSH_AVAILABLE or not VAPID_PRIVATE_KEY:
         return
+    # Drop subscriptions owned by accounts that have muted notifications.
+    muted = await _muted_account_ids([s.get('user_id') for s in subs])
+    if muted:
+        subs = [s for s in subs if s.get('user_id') not in muted]
     payload = _json.dumps({'title': title, 'body': body, 'url': url})
     for sub in subs:
         def _do_send(s=sub):
@@ -1398,6 +1426,10 @@ async def _send_push_to_subs(subs: list, title: str, body: str, url: str = '/'):
 
 
 async def _store_notification(user_id: str, title: str, body: str, url: str):
+    # Respect the account's master notification switch for the in-app bell too,
+    # not just browser push — a muted person shouldn't accrue a history either.
+    if await _muted_account_ids([user_id]):
+        return
     await db.notifications.insert_one({
         'id': str(uuid.uuid4()), 'user_id': user_id, 'title': title, 'body': body,
         'url': url or '/', 'read': False, 'created_at': now_utc().isoformat(),

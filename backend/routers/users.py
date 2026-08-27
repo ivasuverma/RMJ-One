@@ -149,6 +149,9 @@ async def list_access_accounts(_: dict = Depends(require_owner), _mod=Depends(re
             'id': u['id'], 'name': u['name'], 'username': u.get('username'), 'role': u.get('role'),
             'account_type': 'user', 'module_access': u.get('module_access'),
             'resolved_modules': resolve_modules(u),
+            'notifications_enabled': u.get('notifications_enabled', True) is not False,
+            'doc_category_rights': u.get('doc_category_rights') or {},
+            'doc_see_done': u.get('doc_see_done', True) is not False,
         })
     async for e in db.employees.find({}, {'_id': 0, 'password_hash': 0}):
         out.append({
@@ -157,6 +160,9 @@ async def list_access_accounts(_: dict = Depends(require_owner), _mod=Depends(re
             'module_access': e.get('module_access'), 'module_rights': e.get('module_rights') or {},
             'cashbook_counter_ids': e.get('cashbook_counter_ids') or [],
             'resolved_modules': resolve_modules({'role': 'employee', 'module_access': e.get('module_access')}),
+            'notifications_enabled': e.get('notifications_enabled', True) is not False,
+            'doc_category_rights': e.get('doc_category_rights') or {},
+            'doc_see_done': e.get('doc_see_done', True) is not False,
         })
     return out
 
@@ -169,26 +175,51 @@ async def update_access(account_id: str, body: ModuleAccessUpdateIn, user=Depend
     bad_rights = set((body.module_rights or {}).keys()) - EMPLOYEE_ASSIGNABLE_MODULES
     if bad_rights:
         raise HTTPException(status_code=400, detail=f'Not an employee-assignable module: {", ".join(sorted(bad_rights))}')
+
+    # Fields that apply the same way to staff and employees (and even to the
+    # owner): the master notification switch and the per-category document
+    # permissions. Only include what was actually provided so a partial save
+    # (e.g. just toggling notifications) doesn't wipe the rest.
+    extra: dict = {}
+    if body.notifications_enabled is not None:
+        extra['notifications_enabled'] = bool(body.notifications_enabled)
+    if body.doc_category_rights is not None:
+        extra['doc_category_rights'] = {
+            k: {'view': bool((v or {}).get('view')), 'record': bool((v or {}).get('record'))}
+            for k, v in (body.doc_category_rights or {}).items()
+        }
+    if body.doc_see_done is not None:
+        extra['doc_see_done'] = bool(body.doc_see_done)
+    # module_access is only meaningfully "provided" when the caller sends the
+    # access editor; a notifications-only save omits it (leaves it as-is).
+    touches_modules = 'module_access' in body.model_fields_set
+
     u = await db.users.find_one({'id': account_id}, {'_id': 0})
     if u:
-        if u.get('role') == 'owner':
-            raise HTTPException(status_code=400, detail='Owner always has full access')
-        await db.users.update_one({'id': account_id}, {'$set': {'module_access': body.module_access}})
-        await log_audit(user, 'access.update', 'user', account_id, u.get('username', ''), {'module_access': body.module_access})
+        upd = dict(extra)
+        if touches_modules:
+            if u.get('role') == 'owner':
+                raise HTTPException(status_code=400, detail='Owner always has full access')
+            upd['module_access'] = body.module_access
+        if upd:
+            await db.users.update_one({'id': account_id}, {'$set': upd})
+        await log_audit(user, 'access.update', 'user', account_id, u.get('username', ''), upd)
         return {'ok': True}
     e = await db.employees.find_one({'id': account_id}, {'_id': 0})
     if e:
-        # Employees can only ever be granted the employee-assignable subset —
-        # enforced here too (not just hidden in the UI), so this can't be
-        # bypassed by calling the API directly.
-        bad_access = set(body.module_access or []) - EMPLOYEE_ASSIGNABLE_MODULES
-        if bad_access:
-            raise HTTPException(status_code=400, detail=f'Not an employee-assignable module: {", ".join(sorted(bad_access))}')
-        await db.employees.update_one({'id': account_id}, {'$set': {
-            'module_access': body.module_access, 'module_rights': body.module_rights or {},
-            'cashbook_counter_ids': body.cashbook_counter_ids or [],
-        }})
-        await log_audit(user, 'access.update', 'employee', account_id, e.get('name', ''),
-                         {'module_access': body.module_access, 'module_rights': body.module_rights, 'cashbook_counter_ids': body.cashbook_counter_ids})
+        upd = dict(extra)
+        if touches_modules:
+            # Employees can only ever be granted the employee-assignable subset —
+            # enforced here too (not just hidden in the UI), so this can't be
+            # bypassed by calling the API directly.
+            bad_access = set(body.module_access or []) - EMPLOYEE_ASSIGNABLE_MODULES
+            if bad_access:
+                raise HTTPException(status_code=400, detail=f'Not an employee-assignable module: {", ".join(sorted(bad_access))}')
+            upd['module_access'] = body.module_access
+            upd['module_rights'] = body.module_rights or {}
+            upd['cashbook_counter_ids'] = body.cashbook_counter_ids or []
+        if upd:
+            await db.employees.update_one({'id': account_id}, {'$set': upd})
+        await log_audit(user, 'access.update', 'employee', account_id, e.get('name', ''), upd)
         return {'ok': True}
     raise HTTPException(status_code=404, detail='Account not found')

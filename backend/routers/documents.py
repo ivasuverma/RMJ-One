@@ -60,12 +60,42 @@ def _role(user: dict) -> str:
     return user.get('role', '')
 
 
-def _can_see(cat: dict, role: str) -> bool:
-    return role == 'owner' or role in (cat.get('visible_to_roles') or [])
+def _can_see(cat: dict, role: str, rights: dict = None) -> bool:
+    if role == 'owner':
+        return True
+    override = (rights or {}).get('doc_category_rights') or {}
+    if override:
+        # Per-account permissions (Settings › People) take over once set.
+        return bool((override.get(cat.get('key')) or {}).get('view'))
+    return role in (cat.get('visible_to_roles') or [])
 
 
-def _can_record(cat: dict, role: str) -> bool:
-    return role == 'owner' or role in (cat.get('can_record_roles') or [])
+def _can_record(cat: dict, role: str, rights: dict = None) -> bool:
+    if role == 'owner':
+        return True
+    override = (rights or {}).get('doc_category_rights') or {}
+    if override:
+        return bool((override.get(cat.get('key')) or {}).get('record'))
+    return role in (cat.get('can_record_roles') or [])
+
+
+def _can_see_done(user: dict, rights: dict = None) -> bool:
+    """Whether this account may browse the Documents 'Done' folder. Owner always
+    can; everyone else defaults to yes unless explicitly turned off per-account."""
+    if _role(user) == 'owner':
+        return True
+    return (rights or {}).get('doc_see_done', True) is not False
+
+
+async def _account_rights(user: dict) -> dict:
+    """This account's saved per-category document permissions + done-folder flag,
+    or {} when none are set (in which case the category's role rules apply)."""
+    uid = user.get('id')
+    if not uid:
+        return {}
+    return (await db.users.find_one({'id': uid}, {'_id': 0, 'doc_category_rights': 1, 'doc_see_done': 1})
+            or await db.employees.find_one({'id': uid}, {'_id': 0, 'doc_category_rights': 1, 'doc_see_done': 1})
+            or {})
 
 
 async def _categories_map() -> dict:
@@ -75,8 +105,8 @@ async def _categories_map() -> dict:
     return out
 
 
-async def _visible_keys(role: str) -> set:
-    return {k for k, c in (await _categories_map()).items() if _can_see(c, role)}
+async def _visible_keys(role: str, rights: dict = None) -> set:
+    return {k for k, c in (await _categories_map()).items() if _can_see(c, role, rights)}
 
 
 # The real Drive uploader is wired once the shop connects its Google account
@@ -97,7 +127,8 @@ async def list_categories(all_: bool = Query(default=False, alias='all'), user=D
     cats = await db.document_categories.find({}, {'_id': 0}).sort('sort_order', 1).to_list(100)
     if all_ and role == 'owner':
         return cats
-    return [c for c in cats if c.get('active', True) and _can_see(c, role)]
+    rights = await _account_rights(user)
+    return [c for c in cats if c.get('active', True) and _can_see(c, role, rights)]
 
 
 class CategoryIn(BaseModel):
@@ -172,8 +203,9 @@ async def create_document(
     cat = cats.get(category_key)
     if not cat:
         raise HTTPException(status_code=404, detail='Unknown category')
-    if not _can_see(cat, _role(user)):
-        raise HTTPException(status_code=403, detail='You do not have access to this document category')
+    rights = await _account_rights(user)
+    if not _can_record(cat, _role(user), rights):
+        raise HTTPException(status_code=403, detail='You do not have permission to file documents in this category')
     raw = await file.read()
     if not raw:
         raise HTTPException(status_code=400, detail='Empty file')
@@ -207,13 +239,17 @@ async def list_documents(
     user=Depends(get_current),
 ):
     role = _role(user)
-    visible = await _visible_keys(role)
+    rights = await _account_rights(user)
+    visible = await _visible_keys(role, rights)
     query: dict = {'deleted': {'$ne': True}, 'category_key': {'$in': list(visible)}}
     if category and category != 'all':
         if category not in visible:
             raise HTTPException(status_code=403, detail='No access to this category')
         query['category_key'] = category
     if status in ('pending', 'done'):
+        # Someone without Done-folder access can never list done documents.
+        if status == 'done' and not _can_see_done(user, rights):
+            return []
         query['status'] = status
     if q and q.strip():
         q_esc = re.escape(q.strip())
@@ -231,7 +267,9 @@ async def documents_summary(user=Depends(get_current)):
     import drive_service
     connected = await drive_service.is_connected()
     role = _role(user)
-    visible = await _visible_keys(role)
+    rights = await _account_rights(user)
+    visible = await _visible_keys(role, rights)
+    can_see_done = _can_see_done(user, rights)
     pending = 0
     done = 0
     uploading = 0
@@ -248,7 +286,12 @@ async def documents_summary(user=Depends(get_current)):
         # Only count as "uploading" when Drive is actually connected and working.
         if connected and d.get('upload_state') in ('queued', 'uploading'):
             uploading += 1
-    return {'pending_count': pending, 'done_count': done, 'uploading_count': uploading, 'by_category': by_category, 'drive_connected': connected}
+    if not can_see_done:
+        done = 0
+        for b in by_category.values():
+            b['done'] = 0
+    return {'pending_count': pending, 'done_count': done, 'uploading_count': uploading,
+            'by_category': by_category, 'drive_connected': connected, 'can_see_done': can_see_done}
 
 
 class RecordIn(BaseModel):
