@@ -180,27 +180,37 @@ export function DocumentScanner({ file, onCancel, onResult }: {
     return () => { cancelled = true; };
   }, [file, maxW, maxH]);
 
-  // One PanResponder per corner. We snapshot the corners on grant and apply the
-  // gesture delta to that base each move, so dragging doesn't drift.
+  // Live mirror of corners in a ref so the drag handlers can snapshot the base
+  // WITHOUT `corners` being a dependency — otherwise the PanResponders would be
+  // rebuilt on every move and the in-progress drag would die instantly (that
+  // was the "can't move the corners" bug).
+  const cornersRef = useRef<Pt[]>([]);
+  cornersRef.current = corners;
+  const boxRef = useRef(box);
+  boxRef.current = box;
   const baseRef = useRef<Pt[] | null>(null);
   const responders2 = useMemo(() => [0, 1, 2, 3].map((i) => PanResponder.create({
     onStartShouldSetPanResponder: () => true,
+    onStartShouldSetPanResponderCapture: () => true,
     onMoveShouldSetPanResponder: () => true,
-    onPanResponderGrant: () => { baseRef.current = corners; },
+    onMoveShouldSetPanResponderCapture: () => true,
+    onPanResponderGrant: () => { baseRef.current = cornersRef.current.map((p) => ({ ...p })); },
     onPanResponderMove: (_e, g) => {
       const base = baseRef.current;
+      const b = boxRef.current;
       if (!base || base.length !== 4) return;
       setCorners((prev) => {
         const next = [...prev];
         next[i] = {
-          x: Math.max(0, Math.min(box.w, base[i].x + g.dx)),
-          y: Math.max(0, Math.min(box.h, base[i].y + g.dy)),
+          x: Math.max(0, Math.min(b.w, base[i].x + g.dx)),
+          y: Math.max(0, Math.min(b.h, base[i].y + g.dy)),
         };
         return next;
       });
     },
     onPanResponderRelease: () => { baseRef.current = null; },
-  })), [box.w, box.h, corners]);
+    onPanResponderTerminate: () => { baseRef.current = null; },
+  })), []);
 
   const useCrop = async () => {
     const cv = cvRef.current, canvas = srcCanvasRef.current;
