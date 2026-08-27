@@ -22,7 +22,7 @@ type Doc = {
   linked_ref?: { type: string; id: string; label?: string } | null;
 };
 type Cat = { key: string; label: string; icon: keyof typeof Ionicons.glyphMap; can_record_roles?: string[] };
-type Summary = { pending_count: number; done_count: number; uploading_count: number; drive_connected?: boolean; by_category: Record<string, { pending: number; done: number }> };
+type Summary = { pending_count: number; done_count: number; uploading_count: number; drive_connected?: boolean; can_see_done?: boolean; by_category: Record<string, { pending: number; done: number }> };
 
 export default function DocumentsScreen() {
   const router = useRouter();
@@ -84,6 +84,11 @@ export default function DocumentsScreen() {
   useFocusEffect(useCallback(() => { setLoading(true); load(); }, [load]));
 
   const switchTab = (t: 'pending' | 'done') => { if (t === tab) return; haptics.selection(); setTab(t); setDoneCat(null); setLoading(true); };
+
+  // If this person can't browse Done (e.g. deep-linked there), snap to Pending.
+  useEffect(() => {
+    if (summary && summary.can_see_done === false && tab === 'done') { setTab('pending'); setDoneCat(null); }
+  }, [summary, tab]);
 
   const Thumb = ({ d, size }: { d: Doc; size: number }) => (
     <View style={[styles.thumb, { width: size, height: size, borderRadius: size > 60 ? 12 : 10 }]}>
@@ -181,7 +186,10 @@ export default function DocumentsScreen() {
           </View>
         </View>
 
-        {!doneCat && (
+        {/* The Done tab only appears for people allowed to browse the Done
+            folder (Settings › People). Pending is always the default. When
+            Done is hidden there's nothing to segment, so drop the control. */}
+        {!doneCat && summary?.can_see_done !== false && (
           <View style={styles.seg}>
             {(['pending', 'done'] as const).map((t) => (
               <Pressable key={t} onPress={() => switchTab(t)} style={[styles.sg, tab === t && styles.sgOn]} testID={`doc-tab-${t}`}>
