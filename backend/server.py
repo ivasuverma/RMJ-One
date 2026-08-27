@@ -485,6 +485,10 @@ class ModuleAccessUpdateIn(BaseModel):
     # Master notification switch for this account (push + in-app bell). None =
     # leave unchanged; True/False sets it.
     notifications_enabled: Optional[bool] = None
+    # Per-module notification opt-in, e.g. {'attendance': True, 'payroll': False}.
+    # A module left out falls back to that module's default roles. None = leave
+    # unchanged.
+    notif_prefs: Optional[Dict[str, bool]] = None
     # Per-category document permissions, e.g.
     # {'kyc': {'view': True, 'record': False}}. None = leave unchanged. When an
     # account has this set, it overrides the category's role-based visibility.
@@ -1527,37 +1531,33 @@ for _s in NOTIFICATION_SCRIPTS:
 NOTIFICATION_SCRIPT_KEYS = {s['key'] for s in NOTIFICATION_SCRIPTS}
 
 
+def _wants_module(acc: dict, role: str, module: str) -> bool:
+    """Whether this account should receive `module` broadcasts. Decided per
+    person on their People page: the master switch gates everything, then
+    notif_prefs[module] (on/off) wins if set, otherwise it falls back to the
+    module's default roles."""
+    if acc.get('notifications_enabled') is False:
+        return False
+    prefs = acc.get('notif_prefs') or {}
+    if module in prefs:
+        return bool(prefs[module])
+    return role in set(NOTIFICATION_MODULE_DEFAULT_ROLES.get(module, ['owner', 'admin']))
+
+
 async def _notify_module_impl(module: str, title: str, body: str, url: str = '/', script: Optional[str] = None):
-    """Broadcast a module event to whichever staff/employees are configured to
-    receive it, honoring the admin's Notification Settings (Settings >
-    Notifications). Falls back to the module's default roles if unconfigured.
-    `script` (optional) is the specific event type within the module — lets
-    an owner silence just that one kind of notification via disabled_scripts
-    without muting every other event the module can send."""
+    """Broadcast a module event to whichever people opted in for it. Recipients
+    are now resolved per account (Settings › People › <person> › Notifications)
+    rather than from a single global config — each person controls which module
+    alerts they get, gated by their master notification switch. `script` is kept
+    for call-site compatibility but is no longer separately silenceable."""
     try:
-        settings = await db.settings.find_one({'id': 'notifications'}, {'_id': 0})
-        cfg = ((settings or {}).get('modules') or {}).get(module) or {}
-        if not cfg.get('enabled', True):
-            return
-        if script and script in (cfg.get('disabled_scripts') or []):
-            return
-        roles = cfg.get('roles')
-        if roles is None:
-            roles = NOTIFICATION_MODULE_DEFAULT_ROLES.get(module, ['owner', 'admin'])
-        role_recipient_ids = set()
-        if roles:
-            async for u in db.users.find({'role': {'$in': roles}}, {'_id': 0, 'id': 1}):
-                role_recipient_ids.add(u['id'])
-            if 'employee' in roles:
-                async for e in db.employees.find({'status': {'$ne': 'inactive'}}, {'_id': 0, 'id': 1}):
-                    role_recipient_ids.add(e['id'])
-            await notify_roles(roles, title, body, url)
-        # Specific individuals picked in addition to (or instead of) roles —
-        # skip anyone already covered by the role broadcast above to avoid a
-        # duplicate notification.
-        for uid in (cfg.get('user_ids') or []):
-            if uid not in role_recipient_ids:
-                await notify_user(uid, title, body, url)
+        proj = {'_id': 0, 'id': 1, 'role': 1, 'notifications_enabled': 1, 'notif_prefs': 1}
+        async for u in db.users.find({}, proj):
+            if _wants_module(u, u.get('role', ''), module):
+                await notify_user(u['id'], title, body, url)
+        async for e in db.employees.find({'status': {'$ne': 'inactive'}}, proj):
+            if _wants_module(e, 'employee', module):
+                await notify_user(e['id'], title, body, url)
     except Exception as e:
         logger.warning(f'_notify_module failed for {module}: {e}')
 

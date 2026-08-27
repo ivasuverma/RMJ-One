@@ -129,15 +129,6 @@ export default function UtilityScreen() {
           onPress={togglePush}
           testID="utility-notifications-toggle"
         />
-        {isOwner && (
-          <Row
-            icon="options-outline"
-            label="Notification Settings"
-            sub="What triggers an alert"
-            onPress={() => router.push('/settings/notifications' as any)}
-            testID="settings-row-notifications"
-          />
-        )}
         <Row
           icon="contrast-outline"
           label="Appearance"

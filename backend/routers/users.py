@@ -23,6 +23,8 @@ from server import (
     UserUpdateIn,
     SelfAccountUpdateIn,
     ModuleAccessUpdateIn,
+    NOTIFICATION_MODULES,
+    NOTIFICATION_MODULE_KEYS,
     log_audit,
 )
 
@@ -141,6 +143,13 @@ async def list_modules(_: dict = Depends(require_owner), _mod=Depends(require_mo
     return MODULE_DEFS
 
 
+@router.get('/access/notification-modules')
+async def list_notification_modules(_: dict = Depends(require_owner), _mod=Depends(require_module('user_roles'))):
+    """The notification categories a person can opt in/out of, each with the
+    roles that receive it by default (used to show the right initial state)."""
+    return NOTIFICATION_MODULES
+
+
 @router.get('/access/accounts')
 async def list_access_accounts(_: dict = Depends(require_owner), _mod=Depends(require_module('user_roles'))):
     out = []
@@ -150,6 +159,7 @@ async def list_access_accounts(_: dict = Depends(require_owner), _mod=Depends(re
             'account_type': 'user', 'module_access': u.get('module_access'),
             'resolved_modules': resolve_modules(u),
             'notifications_enabled': u.get('notifications_enabled', True) is not False,
+            'notif_prefs': u.get('notif_prefs') or {},
             'doc_category_rights': u.get('doc_category_rights') or {},
             'doc_see_done': u.get('doc_see_done', True) is not False,
         })
@@ -161,6 +171,7 @@ async def list_access_accounts(_: dict = Depends(require_owner), _mod=Depends(re
             'cashbook_counter_ids': e.get('cashbook_counter_ids') or [],
             'resolved_modules': resolve_modules({'role': 'employee', 'module_access': e.get('module_access')}),
             'notifications_enabled': e.get('notifications_enabled', True) is not False,
+            'notif_prefs': e.get('notif_prefs') or {},
             'doc_category_rights': e.get('doc_category_rights') or {},
             'doc_see_done': e.get('doc_see_done', True) is not False,
         })
@@ -183,6 +194,8 @@ async def update_access(account_id: str, body: ModuleAccessUpdateIn, user=Depend
     extra: dict = {}
     if body.notifications_enabled is not None:
         extra['notifications_enabled'] = bool(body.notifications_enabled)
+    if body.notif_prefs is not None:
+        extra['notif_prefs'] = {k: bool(v) for k, v in (body.notif_prefs or {}).items() if k in NOTIFICATION_MODULE_KEYS}
     if body.doc_category_rights is not None:
         extra['doc_category_rights'] = {
             k: {'view': bool((v or {}).get('view')), 'record': bool((v or {}).get('record'))}
