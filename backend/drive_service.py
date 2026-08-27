@@ -117,3 +117,17 @@ async def upload(config: dict, category_label: str, filename: str, data_b64: str
         ru.raise_for_status()
         j = ru.json()
     return {'drive_file_id': j['id'], 'drive_view_link': j.get('webViewLink'), 'drive_thumbnail_link': j.get('thumbnailLink')}
+
+
+async def download(config: dict, file_id: str) -> bytes:
+    """Fetch the raw bytes of a Drive file we uploaded. Used to serve the
+    full-size original on demand once the heavy local copy has been dropped
+    (only a small thumbnail is kept locally after a successful sync)."""
+    access = await _access_token(config)
+    async with httpx.AsyncClient(timeout=120) as h:
+        r = await h.get(
+            f'{FILES_URL}/{file_id}?alt=media',
+            headers={'Authorization': f'Bearer {access}'},
+        )
+        r.raise_for_status()
+        return r.content

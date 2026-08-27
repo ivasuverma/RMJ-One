@@ -51,6 +51,29 @@ async function shrinkImage(file: File): Promise<Blob> {
   } catch { return file; }
 }
 
+// A tiny (~520px) JPEG kept locally after the full image lands in Drive, so the
+// grid stays instant without holding the heavy original in the database.
+async function makeThumb(file: File): Promise<string> {
+  if (typeof document === 'undefined' || !file.type.startsWith('image/')) return '';
+  try {
+    const url = URL.createObjectURL(file);
+    const img = await new Promise<HTMLImageElement>((res, rej) => {
+      const im = new (window as any).Image();
+      im.onload = () => res(im); im.onerror = rej; im.src = url;
+    });
+    const scale = Math.min(1, 520 / Math.max(img.width, img.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(img.width * scale);
+    canvas.height = Math.round(img.height * scale);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return '';
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    URL.revokeObjectURL(url);
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+    return dataUrl.split(',', 2)[1] || '';   // strip the data-URL prefix
+  } catch { return ''; }
+}
+
 export function DocumentCaptureSheet({ visible, onClose, onSaved }: {
   visible: boolean; onClose: () => void; onSaved?: () => void;
 }) {
@@ -76,11 +99,13 @@ export function DocumentCaptureSheet({ visible, onClose, onSaved }: {
     setBusy(true);
     try {
       const blob = await shrinkImage(file);
+      const thumb = await makeThumb(file);
       const name = file.type.startsWith('image/') ? file.name.replace(/\.[^.]+$/, '') + '.jpg' : file.name;
       const form = new FormData();
       form.append('file', blob, name);
       form.append('category_key', cat.key);
       form.append('note', '');
+      if (thumb) form.append('thumb', thumb);
       await api.upload('/documents', form);
       haptics.impact();
       toast.success('Saved to Pending · uploading');

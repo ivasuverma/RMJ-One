@@ -187,7 +187,7 @@ async def delete_category(cat_id: str, user=Depends(require_owner)):
 
 
 # ---------------- Documents ----------------
-_LIST_PROJECTION = {'_id': 0, 'local_data': 0, 'ocr': 0}  # never ship the raw bytes in a list
+_LIST_PROJECTION = {'_id': 0, 'local_data': 0, 'thumb_data': 0, 'ocr': 0}  # never ship raw bytes in a list
 
 
 @router.post('/documents')
@@ -195,6 +195,7 @@ async def create_document(
     file: UploadFile = File(...),
     category_key: str = Form(...),
     note: str = Form(default=''),
+    thumb: str = Form(default=''),   # small base64 JPEG (images only) for fast grid
     user=Depends(get_current),
 ):
     """Capture: create a PENDING doc immediately and return fast. The bytes are
@@ -214,9 +215,16 @@ async def create_document(
 
     import drive_service
     connected = await drive_service.is_connected()
+    # A small client-made thumbnail (images only) lets us drop the heavy
+    # full-size copy once it's safely in Drive, while grid views stay instant.
+    thumb_clean = ''
+    if thumb:
+        thumb_clean = thumb.split(',', 1)[-1].strip()   # tolerate a data-URL prefix
     doc = {
         'id': str(uuid.uuid4()), 'category_key': category_key, 'status': 'pending',
         'local_data': base64.b64encode(raw).decode('ascii'),
+        'local_kind': 'full',                # 'full' | 'thumb' | 'none' (Drive-only)
+        'thumb_data': thumb_clean or None,
         'file': {'drive_file_id': None, 'drive_view_link': None, 'drive_thumbnail_link': None,
                  'mime': file.content_type or 'image/jpeg', 'size': len(raw), 'orig_name': file.filename or 'capture.jpg'},
         # 'queued' → the worker will upload it; 'local' → no Drive connected yet,
@@ -340,20 +348,37 @@ async def delete_document(doc_id: str, user=Depends(get_current)):
 
 
 @router.get('/documents/{doc_id}/file')
-async def document_file(doc_id: str, user=Depends(get_current)):
-    """Serve the locally-held bytes (thumbnail/full view) until Drive links exist.
-    Role-checked against the category's visibility."""
+async def document_file(doc_id: str, full: bool = Query(default=False), user=Depends(get_current)):
+    """Serve the document bytes. By default this is the fast local copy (the
+    small thumbnail once synced); `?full=1` returns the full-size original,
+    fetched from Drive on demand when the heavy local copy has been dropped.
+    Permission-checked against the caller's category visibility."""
     d = await db.documents.find_one({'id': doc_id, 'deleted': {'$ne': True}}, {'_id': 0})
     if not d:
         raise HTTPException(status_code=404, detail='Document not found')
     cats = await _categories_map()
     cat = cats.get(d['category_key'])
-    if not cat or not _can_see(cat, _role(user)):
+    rights = await _account_rights(user)
+    if not cat or not _can_see(cat, _role(user), rights):
         raise HTTPException(status_code=403, detail='No access to this document')
+    mime = (d.get('file') or {}).get('mime', 'image/jpeg')
+    local_kind = d.get('local_kind', 'full')
+    drive_id = (d.get('file') or {}).get('drive_file_id')
+    # Go to Drive when the caller wants full size and the local copy is only a
+    # thumbnail (or gone) — or when there's no local copy at all.
+    need_drive = drive_id and ((full and local_kind != 'full') or not d.get('local_data'))
+    if need_drive:
+        try:
+            import drive_service
+            cfg = await drive_service.get_config()
+            raw = await drive_service.download(cfg, drive_id)
+            return Response(content=raw, media_type=mime)
+        except Exception:
+            pass   # fall back to whatever local copy we still have
     data = d.get('local_data')
     if not data:
         raise HTTPException(status_code=404, detail='No local copy (see Drive link)')
-    return Response(content=base64.b64decode(data), media_type=(d.get('file') or {}).get('mime', 'image/jpeg'))
+    return Response(content=base64.b64decode(data), media_type=mime)
 
 
 # ---------------- Google Drive (owner) ----------------
@@ -442,12 +467,22 @@ async def upload_worker():
                     try:
                         cat = (await _categories_map()).get(doc['category_key'], {})
                         res = await drive_service.upload(cfg, cat.get('label', doc['category_key']), _drive_filename(doc, cat), doc['local_data'], (doc.get('file') or {}).get('mime', 'image/jpeg'))
-                        await db.documents.update_one({'id': doc['id']}, {'$set': {
+                        # Now that the original is safely in Drive, free the heavy
+                        # local copy: keep the small thumbnail for a fast grid if
+                        # we have one, otherwise go Drive-only (full-size is then
+                        # fetched from Drive on demand). This is what stops the
+                        # database from ballooning with full-size base64.
+                        thumb = doc.get('thumb_data')
+                        set_fields = {
                             'upload_state': 'synced',
                             'file.drive_file_id': res['drive_file_id'],
                             'file.drive_view_link': res['drive_view_link'],
                             'file.drive_thumbnail_link': res['drive_thumbnail_link'],
-                        }})
+                            'local_data': thumb or None,
+                            'local_kind': 'thumb' if thumb else 'none',
+                            'thumb_data': None,
+                        }
+                        await db.documents.update_one({'id': doc['id']}, {'$set': set_fields})
                     except Exception as e:
                         await db.documents.update_one({'id': doc['id']}, {'$set': {'upload_state': 'failed', 'upload_error': str(e)[:200]}})
                     continue  # grab the next queued doc without waiting

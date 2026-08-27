@@ -57,7 +57,9 @@ export default function DocumentsScreen() {
   // bearer token, which window.open can't send — so fetch the blob first.
   const openFile = async (d: Doc) => {
     try {
-      const res = await fetch(fileUri(d.id), { headers: { Authorization: `Bearer ${token}` } });
+      // Ask for the full-size original (served from Drive when only a local
+      // thumbnail remains after sync).
+      const res = await fetch(`${fileUri(d.id)}?full=1`, { headers: { Authorization: `Bearer ${token}` } });
       if (!res.ok) throw new Error();
       const url = URL.createObjectURL(await res.blob());
       if (Platform.OS === 'web') window.open(url, '_blank');
