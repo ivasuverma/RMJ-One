@@ -153,7 +153,11 @@ async def list_notification_modules(_: dict = Depends(require_owner), _mod=Depen
 @router.get('/access/accounts')
 async def list_access_accounts(_: dict = Depends(require_owner), _mod=Depends(require_module('user_roles'))):
     out = []
-    async for u in db.users.find({}, {'_id': 0, 'password_hash': 0}):
+    # Exclude the heavy base64 fields (profile photo + ID-proof scans) — this
+    # list only needs names/roles/permissions, and pulling every employee's
+    # full photo made the People page crawl.
+    _slim = {'_id': 0, 'password_hash': 0, 'photo': 0, 'photo_thumb': 0, 'id_proofs': 0}
+    async for u in db.users.find({}, _slim):
         out.append({
             'id': u['id'], 'name': u['name'], 'username': u.get('username'), 'role': u.get('role'),
             'account_type': 'user', 'module_access': u.get('module_access'),
@@ -163,7 +167,7 @@ async def list_access_accounts(_: dict = Depends(require_owner), _mod=Depends(re
             'doc_category_rights': u.get('doc_category_rights') or {},
             'doc_see_done': u.get('doc_see_done', True) is not False,
         })
-    async for e in db.employees.find({}, {'_id': 0, 'password_hash': 0}):
+    async for e in db.employees.find({}, _slim):
         out.append({
             'id': e['id'], 'name': e['name'], 'username': e.get('username'), 'role': 'employee',
             'account_type': 'employee', 'designation': e.get('designation'), 'status': e.get('status'),

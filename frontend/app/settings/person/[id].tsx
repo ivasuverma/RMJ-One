@@ -252,8 +252,8 @@ export default function PersonScreen() {
               })}
             </Section>
 
-            {/* Documents */}
-            {docCats.length > 0 && (
+            {/* Documents — only when this person has the Documents module on. */}
+            {mods.has('documents') && docCats.length > 0 && (
               <Section title="Documents">
                 {docCats.map((dc) => {
                   const dr = docRights[dc.key] || {};
