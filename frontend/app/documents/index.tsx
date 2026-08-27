@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, TextInput, ActivityIndicator, Modal, Platform } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
@@ -269,17 +269,21 @@ function QuickView({ doc, categoryLabel, token, fileUri, onClose, onRecord, canR
 }) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+  const insets = useSafeAreaInsets();
   if (!doc) return null;
   const isImage = (doc.file.mime || '').startsWith('image/');
   return (
     <Modal visible transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.qvRoot}>
-        <View style={styles.qvBar}>
-          <Pressable onPress={onClose} hitSlop={10} testID="qv-close"><Text style={styles.qvClose}>Close</Text></Pressable>
+        <View style={[styles.qvBar, { paddingTop: insets.top + 8 }]}>
+          <Pressable onPress={onClose} hitSlop={10} style={styles.qvCloseBtn} testID="qv-close">
+            <Ionicons name="chevron-back" size={18} color={colors.onSurface} />
+            <Text style={styles.qvClose}>Close</Text>
+          </Pressable>
           <Text style={styles.qvCat} numberOfLines={1}>{categoryLabel}</Text>
           {canDelete
-            ? <Pressable onPress={() => onDelete(doc.id)} hitSlop={10} style={{ width: 44, alignItems: 'flex-end' }} testID="qv-delete"><Ionicons name="trash-outline" size={20} color={colors.onError} /></Pressable>
-            : <View style={{ width: 44 }} />}
+            ? <Pressable onPress={() => onDelete(doc.id)} hitSlop={10} style={styles.qvIconBtn} testID="qv-delete"><Ionicons name="trash-outline" size={19} color={colors.onError} /></Pressable>
+            : <View style={styles.qvIconBtn} />}
         </View>
         <Pressable style={styles.qvImgWrap} onPress={() => !isImage && onOpenFile(doc)}>
           {isImage && token
@@ -394,9 +398,11 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
 
   // Quick view
   qvRoot: { flex: 1, backgroundColor: '#000' },
-  qvBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 52, paddingHorizontal: spacing.lg, paddingBottom: spacing.md },
-  qvClose: { color: colors.brandPrimary, fontSize: 16, fontWeight: '600', width: 44 },
-  qvCat: { flex: 1, textAlign: 'center', color: '#fff', fontSize: 15, fontWeight: '700' },
+  qvBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm, paddingHorizontal: spacing.md, paddingBottom: spacing.md, backgroundColor: 'rgba(20,20,24,0.96)', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(255,255,255,0.14)' },
+  qvCloseBtn: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingVertical: 8, paddingHorizontal: 12, borderRadius: radius.pill, backgroundColor: 'rgba(255,255,255,0.12)' },
+  qvClose: { color: colors.onSurface, fontSize: 15, fontWeight: '700' },
+  qvIconBtn: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.12)' },
+  qvCat: { flex: 1, textAlign: 'center', color: '#fff', fontSize: 16, fontWeight: '800' },
   qvImgWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', position: 'relative' },
   qvImg: { width: '100%', height: '100%' },
   qvStamp: { position: 'absolute', top: spacing.md, right: spacing.lg, flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(30,30,34,0.9)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: radius.pill },
