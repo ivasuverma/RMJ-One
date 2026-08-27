@@ -7,6 +7,7 @@ import { spacing, radius, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { Sheet, useToast } from '@/src/components/ui';
 import { DocumentScanner } from '@/src/components/DocumentScanner';
+import { enqueueUpload } from '@/src/utils/uploadQueue';
 
 export type DocCategory = { id: string; key: string; label: string; icon: keyof typeof Ionicons.glyphMap; can_record?: boolean };
 
@@ -151,12 +152,10 @@ export function DocumentCaptureSheet({ visible, onClose, onSaved, autoCamera }: 
       const stamp = new Date().toISOString().slice(0, 10);
       const base = (remark || cat.label || 'document').replace(/[^\w-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'document';
       const name = file.type.startsWith('image/') ? `${base}-${stamp}.jpg` : (file.name || `${base}-${stamp}.pdf`);
-      const form = new FormData();
-      form.append('file', blob, name);
-      form.append('category_key', cat.key);
-      form.append('note', remark);   // the remark doubles as the document name
-      if (thumb) form.append('thumb', thumb);
-      await api.upload('/documents', form);
+      const id = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+      // Save to the on-device outbox and return instantly — the upload happens
+      // in the background and survives an app close, so no photo is ever lost.
+      await enqueueUpload({ id, blob, filename: name, category_key: cat.key, note: remark, thumb });
       haptics.success();
       onSaved?.();
       setPhase('saved');
@@ -181,7 +180,7 @@ export function DocumentCaptureSheet({ visible, onClose, onSaved, autoCamera }: 
           <View style={styles.savedCircle}><Ionicons name="checkmark" size={40} color={colors.onSuccess} /></View>
           <Text style={styles.savedTitle}>Saved</Text>
           <Text style={styles.savedSub}>
-            Filed to Pending{selectedCat ? ` · ${selectedCat.label}` : ''}. It&apos;s backing up to Drive in the background — safe to close.
+            Saved{selectedCat ? ` · ${selectedCat.label}` : ''}. It&apos;s uploading in the background and will keep trying even if you close the app — safe to close.
           </Text>
           <View style={styles.savedBtns}>
             <Pressable onPress={addAnother} style={[styles.opt, styles.optPrimary]} testID="doc-add-another">

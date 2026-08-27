@@ -13,6 +13,7 @@ import { ThemeProvider, useTheme } from '@/src/theme/ThemeContext';
 import { ErrorBoundary } from '@/src/components/ErrorBoundary';
 import { ToastProvider } from '@/src/components/ui/Toast';
 import { OfflineBanner } from '@/src/components/OfflineBanner';
+import { startUploadQueue } from '@/src/utils/uploadQueue';
 
 // Disable logbox errors etc so that users can see the app and agent works as expected.
 LogBox.ignoreAllLogs(true);
@@ -67,6 +68,9 @@ function AppShell() {
   useEffect(() => {
     if (Platform.OS !== 'web' || typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
     navigator.serviceWorker.register('/sw.js').catch(() => { /* offline support just won't activate */ });
+    // Resume any document uploads left in the on-device outbox (e.g. the app
+    // was closed mid-upload) — they retry automatically in the background.
+    startUploadQueue();
   }, []);
 
   useEffect(() => {
