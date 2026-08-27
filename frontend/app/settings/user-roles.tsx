@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Alert, RefreshControl,
+  View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Alert, RefreshControl, Switch, TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -12,11 +12,14 @@ import { useTheme } from '@/src/theme/ThemeContext';
 
 type ModuleDef = { key: string; label: string; default_roles: string[]; employee_assignable?: boolean };
 type Rights = { edit?: boolean; delete?: boolean };
+type DocRight = { view?: boolean; record?: boolean };
 type Counter = { id: string; name: string };
+type DocCategory = { id: string; key: string; label: string };
 type Account = {
   id: string; name: string; username?: string; role: string; account_type: 'user' | 'employee';
   designation?: string; status?: string; module_access: string[] | null; resolved_modules: string[];
   module_rights?: Record<string, Rights>; cashbook_counter_ids?: string[];
+  notifications_enabled?: boolean; doc_category_rights?: Record<string, DocRight>; doc_see_done?: boolean;
 };
 
 const ROLE_LABEL: Record<string, string> = { owner: 'Owner', admin: 'Admin', accountant: 'Accountant', employee: 'Employee' };
@@ -42,17 +45,48 @@ export default function UserRolesScreen() {
   // counters are explicitly checked here, not every counter in the shop.
   const [counters, setCounters] = useState<Counter[]>([]);
   const [counterSel, setCounterSel] = useState<Record<string, Set<string>>>({});
+  // New per-person controls folded in from Staff Accounts + Notifications:
+  // a master notification switch, and per-category document view/record rights
+  // plus a "can browse Done folder" switch.
+  const [docCategories, setDocCategories] = useState<DocCategory[]>([]);
+  const [notifSel, setNotifSel] = useState<Record<string, boolean>>({});
+  const [docRights, setDocRights] = useState<Record<string, Record<string, DocRight>>>({});
+  const [docSeeDone, setDocSeeDone] = useState<Record<string, boolean>>({});
+  const [newPassword, setNewPassword] = useState<Record<string, string>>({});
+  // Create a new staff (owner/admin/accountant) login — folded in from the old
+  // Staff Accounts screen so everything about people lives on one page.
+  const [showAdd, setShowAdd] = useState(false);
+  const [addName, setAddName] = useState('');
+  const [addUser, setAddUser] = useState('');
+  const [addPass, setAddPass] = useState('');
+  const [addRole, setAddRole] = useState<'admin' | 'accountant'>('admin');
+  const [adding, setAdding] = useState(false);
+
+  const createStaff = async () => {
+    if (!addName.trim() || !addUser.trim() || addPass.length < 4) {
+      Alert.alert('Missing', 'Name, username and a password of 4+ chars are required.'); return;
+    }
+    setAdding(true);
+    try {
+      await api.post('/users', { name: addName.trim(), username: addUser.trim(), password: addPass, role: addRole });
+      setShowAdd(false); setAddName(''); setAddUser(''); setAddPass(''); setAddRole('admin');
+      await load();
+    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+    finally { setAdding(false); }
+  };
 
   const load = useCallback(async () => {
     try {
-      const [m, a, c] = await Promise.all([
+      const [m, a, c, dc] = await Promise.all([
         api.get<ModuleDef[]>('/access/modules'),
         api.get<Account[]>('/access/accounts'),
         api.get<Counter[]>('/cashbook/counters').catch(() => []),
+        api.get<DocCategory[]>('/document-categories?all=1').catch(() => []),
       ]);
       setModules(m);
       setAccounts(a);
       setCounters(c);
+      setDocCategories(dc);
     } catch (_e) { /* owner-only endpoint; non-owners just see nothing */ }
     finally { setLoading(false); setRefreshing(false); }
   }, []);
@@ -66,6 +100,10 @@ export default function UserRolesScreen() {
     setSelection((prev) => ({ ...prev, [acc.id]: new Set(acc.resolved_modules) }));
     setRights((prev) => ({ ...prev, [acc.id]: { ...(acc.module_rights || {}) } }));
     setCounterSel((prev) => ({ ...prev, [acc.id]: new Set(acc.cashbook_counter_ids || []) }));
+    setNotifSel((prev) => ({ ...prev, [acc.id]: acc.notifications_enabled !== false }));
+    setDocRights((prev) => ({ ...prev, [acc.id]: { ...(acc.doc_category_rights || {}) } }));
+    setDocSeeDone((prev) => ({ ...prev, [acc.id]: acc.doc_see_done !== false }));
+    setNewPassword((prev) => ({ ...prev, [acc.id]: '' }));
   };
 
   const [resettingAll, setResettingAll] = useState(false);
@@ -113,9 +151,29 @@ export default function UserRolesScreen() {
     });
   };
 
+  const toggleDocRight = (accId: string, key: string, which: 'view' | 'record') => {
+    setDocRights((prev) => {
+      const acc = { ...(prev[accId] || {}) };
+      const cur = { ...(acc[key] || {}) };
+      cur[which] = !cur[which];
+      // Recording implies viewing — you can't file into a category you can't see.
+      if (which === 'record' && cur.record) cur.view = true;
+      if (which === 'view' && !cur.view) cur.record = false;
+      acc[key] = cur;
+      return { ...prev, [accId]: acc };
+    });
+  };
+
   const save = async (acc: Account) => {
     setSavingId(acc.id);
     try {
+      // Optional password reset for a staff (user) account, folded in from the
+      // old Staff Accounts screen. Employees keep their own edit flow.
+      const pw = (newPassword[acc.id] || '').trim();
+      if (pw && acc.account_type === 'user') {
+        if (pw.length < 4) { Alert.alert('Too short', 'New password must be 4+ characters.'); setSavingId(null); return; }
+        await api.put(`/users/${acc.id}`, { name: acc.name, username: acc.username, role: acc.role, password: pw });
+      }
       const sel = selection[acc.id] || new Set<string>();
       // Only carry rights for modules that are both employee-assignable and
       // still selected — dropping access to a module drops its rights too.
@@ -133,7 +191,20 @@ export default function UserRolesScreen() {
       const cashbookCounterIds = acc.account_type === 'employee' && sel.has('cash_book')
         ? Array.from(counterSel[acc.id] || [])
         : [];
-      await api.put(`/access/accounts/${acc.id}`, { module_access: Array.from(sel), module_rights: moduleRights, cashbook_counter_ids: cashbookCounterIds });
+      // Only persist doc rights that actually grant something, keeping the
+      // stored map tidy. An empty map = "fall back to role-based visibility".
+      const docRightsPayload: Record<string, DocRight> = {};
+      for (const [k, v] of Object.entries(docRights[acc.id] || {})) {
+        if (v && (v.view || v.record)) docRightsPayload[k] = { view: !!v.view, record: !!v.record };
+      }
+      await api.put(`/access/accounts/${acc.id}`, {
+        module_access: Array.from(sel),
+        module_rights: moduleRights,
+        cashbook_counter_ids: cashbookCounterIds,
+        notifications_enabled: notifSel[acc.id] !== false,
+        doc_category_rights: docRightsPayload,
+        doc_see_done: docSeeDone[acc.id] !== false,
+      });
       await load();
       setExpandedId(null);
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Could not save. Please try again.'); }
@@ -156,9 +227,9 @@ export default function UserRolesScreen() {
         <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
-        <Text style={styles.title}>User Roles</Text>
-        <Pressable onPress={resetAll} disabled={resettingAll} style={styles.resetAllBtn} testID="reset-all-btn">
-          {resettingAll ? <ActivityIndicator size="small" color={colors.onSurfaceSecondary} /> : <Text style={styles.resetAllText}>Reset All</Text>}
+        <Text style={styles.title}>People</Text>
+        <Pressable onPress={() => setShowAdd((v) => !v)} style={[styles.iconBtn, styles.addTopBtn]} testID="add-staff-btn" hitSlop={12}>
+          <Ionicons name={showAdd ? 'close' : 'add'} size={22} color={colors.onBrandPrimary} />
         </Pressable>
       </View>
 
@@ -169,6 +240,32 @@ export default function UserRolesScreen() {
           contentContainerStyle={{ padding: spacing.lg, paddingBottom: 60 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}
         >
+          {showAdd && (
+            <View style={styles.addCard} testID="add-staff-form">
+              <Text style={styles.docSectionTitle}>New staff login</Text>
+              <TextInput value={addName} onChangeText={setAddName} placeholder="Full name" placeholderTextColor={colors.mutedText} style={styles.pwInput} testID="add-name" />
+              <TextInput value={addUser} onChangeText={(v) => setAddUser(v.toLowerCase().replace(/\s/g, ''))} placeholder="Username" placeholderTextColor={colors.mutedText} autoCapitalize="none" style={[styles.pwInput, { marginTop: spacing.sm }]} testID="add-username" />
+              <TextInput value={addPass} onChangeText={setAddPass} placeholder="Temporary password" placeholderTextColor={colors.mutedText} secureTextEntry style={[styles.pwInput, { marginTop: spacing.sm }]} testID="add-password" />
+              <View style={styles.addRoleRow}>
+                {(['admin', 'accountant'] as const).map((r) => (
+                  <Pressable key={r} onPress={() => setAddRole(r)} style={[styles.addRoleBtn, addRole === r && styles.rightChipOn]} testID={`add-role-${r}`}>
+                    <Text style={[styles.rightChipText, addRole === r && styles.rightChipTextOn]}>{ROLE_LABEL[r]}</Text>
+                  </Pressable>
+                ))}
+              </View>
+              <Pressable onPress={createStaff} disabled={adding} style={[styles.saveBtn, { marginTop: spacing.md }, adding && { opacity: 0.6 }]} testID="create-staff-btn">
+                {adding ? <ActivityIndicator size="small" color={colors.onBrandPrimary} /> : <Text style={styles.saveBtnText}>Create staff account</Text>}
+              </Pressable>
+            </View>
+          )}
+
+          <View style={styles.topActions}>
+            <Text style={[styles.hint, { flex: 1, marginBottom: 0 }]}>Tap a person to set their access, notifications, document rights and password.</Text>
+            <Pressable onPress={resetAll} disabled={resettingAll} style={styles.resetAllBtn} testID="reset-all-btn">
+              {resettingAll ? <ActivityIndicator size="small" color={colors.onSurfaceSecondary} /> : <Text style={styles.resetAllText}>Reset All</Text>}
+            </Pressable>
+          </View>
+
           <Text style={styles.hint}>
             Owner always has full access. Everyone else gets their role's default modules unless you customize
             them here — a custom list always overrides the default, even if you uncheck everything. For an
@@ -269,6 +366,80 @@ export default function UserRolesScreen() {
                         </View>
                       );
                     })}
+                    {/* Notifications master switch (folded in from the old
+                        Notifications screen) — off means this person gets no
+                        push and no in-app bell entries. */}
+                    <View style={styles.sectionDivider} />
+                    <View style={styles.switchRow}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.switchTitle}>Notifications</Text>
+                        <Text style={styles.switchSub}>Push & in-app alerts for this person</Text>
+                      </View>
+                      <Switch
+                        value={notifSel[acc.id] !== false}
+                        onValueChange={(v) => setNotifSel((p) => ({ ...p, [acc.id]: v }))}
+                        trackColor={{ true: colors.brandPrimary, false: colors.border }}
+                        thumbColor={colors.surface}
+                        testID={`notif-${acc.id}`}
+                      />
+                    </View>
+
+                    {/* Per-category document permissions (replaces the role
+                        chips that used to live on each category). */}
+                    {docCategories.length > 0 && (
+                      <>
+                        <View style={styles.sectionDivider} />
+                        <Text style={styles.docSectionTitle}>Documents — who can view &amp; record</Text>
+                        {docCategories.map((dc) => {
+                          const dr = (docRights[acc.id] || {})[dc.key] || {};
+                          return (
+                            <View key={dc.key} style={styles.docCatRow}>
+                              <Text style={styles.docCatLabel} numberOfLines={1}>{dc.label}</Text>
+                              <Pressable onPress={() => toggleDocRight(acc.id, dc.key, 'view')} style={[styles.rightChip, dr.view && styles.rightChipOn]} testID={`docview-${acc.id}-${dc.key}`}>
+                                <Ionicons name={dr.view ? 'checkmark-circle' : 'ellipse-outline'} size={13} color={dr.view ? colors.onBrandPrimary : colors.mutedText} />
+                                <Text style={[styles.rightChipText, dr.view && styles.rightChipTextOn]}>View</Text>
+                              </Pressable>
+                              <Pressable onPress={() => toggleDocRight(acc.id, dc.key, 'record')} style={[styles.rightChip, dr.record && styles.rightChipOn]} testID={`docrec-${acc.id}-${dc.key}`}>
+                                <Ionicons name={dr.record ? 'checkmark-circle' : 'ellipse-outline'} size={13} color={dr.record ? colors.onBrandPrimary : colors.mutedText} />
+                                <Text style={[styles.rightChipText, dr.record && styles.rightChipTextOn]}>Record</Text>
+                              </Pressable>
+                            </View>
+                          );
+                        })}
+                        <View style={styles.switchRow}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.switchTitle}>See “Done” folder</Text>
+                            <Text style={styles.switchSub}>Browse filed/recorded documents</Text>
+                          </View>
+                          <Switch
+                            value={docSeeDone[acc.id] !== false}
+                            onValueChange={(v) => setDocSeeDone((p) => ({ ...p, [acc.id]: v }))}
+                            trackColor={{ true: colors.brandPrimary, false: colors.border }}
+                            thumbColor={colors.surface}
+                            testID={`docdone-${acc.id}`}
+                          />
+                        </View>
+                        <Text style={styles.docHint}>Leave every category unchecked to fall back to this person&apos;s role defaults.</Text>
+                      </>
+                    )}
+
+                    {/* Staff password reset (folded in from Staff Accounts). */}
+                    {acc.account_type === 'user' && (
+                      <>
+                        <View style={styles.sectionDivider} />
+                        <Text style={styles.docSectionTitle}>Account · @{acc.username}</Text>
+                        <TextInput
+                          value={newPassword[acc.id] || ''}
+                          onChangeText={(v) => setNewPassword((p) => ({ ...p, [acc.id]: v }))}
+                          placeholder="Set a new password (leave blank to keep)"
+                          placeholderTextColor={colors.mutedText}
+                          secureTextEntry
+                          style={styles.pwInput}
+                          testID={`pw-${acc.id}`}
+                        />
+                      </>
+                    )}
+
                     <View style={styles.actionsRow}>
                       <Pressable
                         onPress={() => resetToDefault(acc)}
@@ -356,4 +527,21 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   resetBtnText: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '700' },
   saveBtn: { flex: 1, alignItems: 'center', paddingVertical: 11, borderRadius: radius.md, backgroundColor: colors.brandPrimary },
   saveBtnText: { color: colors.onBrandPrimary, fontSize: 12, fontWeight: '700' },
+  addTopBtn: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
+  addCard: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.lg, marginBottom: spacing.lg },
+  addRoleRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
+  addRoleBtn: { flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface },
+  topActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: spacing.md },
+  sectionDivider: { height: 1, backgroundColor: colors.divider, marginVertical: spacing.md },
+  switchRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: 4 },
+  switchTitle: { color: colors.onSurface, fontSize: 13, fontWeight: '700' },
+  switchSub: { color: colors.mutedText, fontSize: 11, marginTop: 2 },
+  docSectionTitle: { color: colors.brandSecondary, fontSize: 11, letterSpacing: 0.8, textTransform: 'uppercase', fontWeight: '700', marginBottom: spacing.sm },
+  docCatRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: 5 },
+  docCatLabel: { flex: 1, color: colors.onSurfaceSecondary, fontSize: 13 },
+  docHint: { color: colors.mutedText, fontSize: 10.5, marginTop: 6, lineHeight: 15 },
+  pwInput: {
+    backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    color: colors.onSurface, paddingHorizontal: spacing.md, paddingVertical: 11, fontSize: 13,
+  },
 });

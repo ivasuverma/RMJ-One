@@ -27,8 +27,7 @@ const GROUPS: GroupDef[] = [
   {
     title: 'People & Access', ownerOnly: true,
     rows: [
-      { key: 'user-roles', label: 'Users & Roles', sub: 'Who can access what', icon: 'shield-checkmark-outline', route: '/settings/user-roles' },
-      { key: 'staff', label: 'Staff Accounts', sub: 'Admin & accountant logins', icon: 'people-circle-outline', route: '/settings/users' },
+      { key: 'user-roles', label: 'People', sub: 'Access, notifications, documents & logins', icon: 'shield-checkmark-outline', route: '/settings/user-roles' },
       { key: 'team', label: 'Employees', sub: 'Your team', icon: 'people-outline', route: '/(tabs)/employees' },
     ],
   },
@@ -36,7 +35,7 @@ const GROUPS: GroupDef[] = [
     title: 'Masters', ownerOnly: true,
     rows: [
       { key: 'account-types', label: 'Account Types', sub: 'Ledger categories', icon: 'pricetags-outline', route: '/settings/account-types' },
-      { key: 'doc-categories', label: 'Document Categories', sub: 'Who can view & record each kind', icon: 'folder-outline', route: '/settings/document-categories' },
+      { key: 'doc-categories', label: 'Document Categories', sub: 'Names & folders (permissions live in People)', icon: 'folder-outline', route: '/settings/document-categories' },
       { key: 'repair-types', label: 'Repair Types', sub: 'Repair catalogue', icon: 'construct-outline', route: '/settings/repair-types' },
       { key: 'item-master', label: 'Items & Purity', sub: 'Item master & purity', icon: 'diamond-outline', route: '/settings/item-master' },
       { key: 'shifts', label: 'Shifts', sub: 'Work timings', icon: 'time-outline', route: '/settings/shifts' },
