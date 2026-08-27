@@ -940,6 +940,14 @@ async def seed():
     await db.accounts.create_index('type_id')
     await db.accounts.create_index('name')
     await db.ledger_entries.create_index([('account_id', 1), ('date', 1)])
+    # Documents: list is filtered by status/category and sorted newest-first;
+    # the upload worker polls by upload_state. Without these, both scan the
+    # whole collection as it grows.
+    await db.documents.create_index([('status', 1), ('created_at', -1)])
+    await db.documents.create_index('category_key')
+    await db.documents.create_index('upload_state')
+    # Biometric dedupe looks up an employee's most recent punch by source.
+    await db.attendance_events.create_index([('employee_id', 1), ('timestamp', -1)])
 
     # Seed the account-type master with the four base types the ledger is
     # built around (Customer, Karigar, Employee, Difference/Loss). They're

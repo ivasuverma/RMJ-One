@@ -10,6 +10,7 @@ from typing import Optional
 from datetime import date
 import asyncio
 import json
+import time
 from server import (
     db,
     today_str,
@@ -39,9 +40,35 @@ router = APIRouter()
 NOT_CHECKED_IN_GRACE_MIN = 30
 
 # ---------------- Dashboard ----------------
+# The dashboard is the same shop-wide snapshot for every staff viewer and is
+# recomputed on a 5s SSE tick per connected client — so with several people
+# logged in it was re-running ~20 Mongo queries many times a second. A tiny
+# shared TTL cache collapses that to one computation per window for everyone,
+# which is well within the dashboard's own staleness tolerance (30-min grace
+# rules etc.). A lock prevents a thundering-herd recompute when it expires.
+_DASH_TTL_SEC = 4.0
+_dash_cache: dict = {'at': 0.0, 'data': None}
+_dash_lock = asyncio.Lock()
+
+
+async def _compute_dashboard_cached() -> dict:
+    now = time.monotonic()
+    data = _dash_cache['data']
+    if data is not None and (now - _dash_cache['at']) < _DASH_TTL_SEC:
+        return data
+    async with _dash_lock:
+        now = time.monotonic()
+        if _dash_cache['data'] is not None and (now - _dash_cache['at']) < _DASH_TTL_SEC:
+            return _dash_cache['data']
+        fresh = await _compute_dashboard()
+        _dash_cache['data'] = fresh
+        _dash_cache['at'] = time.monotonic()
+        return fresh
+
+
 @router.get('/dashboard')
 async def dashboard(_: dict = Depends(get_current)):
-    return await _compute_dashboard()
+    return await _compute_dashboard_cached()
 
 
 # Server-Sent Events live stream. Additive — GET /dashboard above stays the
@@ -61,7 +88,7 @@ async def dashboard_stream(request: Request, _: dict = Depends(get_current)):
         try:
             # Send the current snapshot immediately on connect, then re-send on
             # each interval until the client goes away.
-            payload = await _compute_dashboard()
+            payload = await _compute_dashboard_cached()
             yield f"data: {json.dumps(payload)}\n\n"
             while True:
                 for _ in range(_STREAM_INTERVAL_SEC):
@@ -71,7 +98,7 @@ async def dashboard_stream(request: Request, _: dict = Depends(get_current)):
                     yield ": keepalive\n\n"
                 if await request.is_disconnected():
                     return
-                payload = await _compute_dashboard()
+                payload = await _compute_dashboard_cached()
                 yield f"data: {json.dumps(payload)}\n\n"
         except asyncio.CancelledError:  # client disconnected mid-send
             return
