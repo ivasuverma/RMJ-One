@@ -183,13 +183,15 @@ export function DocumentCaptureSheet({ visible, onClose, onSaved, autoCamera }: 
           <Text style={styles.savedSub}>
             Filed to Pending{selectedCat ? ` · ${selectedCat.label}` : ''}. It&apos;s backing up to Drive in the background — safe to close.
           </Text>
-          <Pressable onPress={addAnother} style={[styles.opt, styles.optPrimary]} testID="doc-add-another">
-            <Ionicons name="camera" size={20} color={colors.onBrandPrimary} />
-            <Text style={styles.optPrimaryText}>Capture another</Text>
-          </Pressable>
-          <Pressable onPress={onClose} style={styles.alt} testID="doc-done">
-            <Text style={styles.altText}>Done</Text>
-          </Pressable>
+          <View style={styles.savedBtns}>
+            <Pressable onPress={addAnother} style={[styles.opt, styles.optPrimary]} testID="doc-add-another">
+              <Ionicons name="camera" size={20} color={colors.onBrandPrimary} />
+              <Text style={styles.optPrimaryText}>Capture another</Text>
+            </Pressable>
+            <Pressable onPress={onClose} style={styles.savedDone} testID="doc-done">
+              <Text style={styles.altText}>Done</Text>
+            </Pressable>
+          </View>
         </View>
       ) : phase === 'saving' ? (
         <View style={styles.savingWrap} testID="doc-saving">
@@ -313,4 +315,9 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   savedCircle: { width: 72, height: 72, borderRadius: 36, backgroundColor: colors.success, alignItems: 'center', justifyContent: 'center' },
   savedTitle: { color: colors.onSurface, fontSize: 22, fontWeight: '800' },
   savedSub: { color: colors.mutedText, fontSize: 13.5, textAlign: 'center', lineHeight: 19, paddingHorizontal: spacing.md },
+  savedBtns: { alignSelf: 'stretch', gap: spacing.sm, marginTop: spacing.sm },
+  savedDone: {
+    alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderRadius: radius.md,
+    backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border,
+  },
 });
