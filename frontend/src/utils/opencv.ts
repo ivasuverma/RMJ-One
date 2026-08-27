@@ -3,7 +3,12 @@
 // browser caches it after the first use. Every caller must handle rejection
 // (no network, blocked, etc.) by falling back to the un-cropped photo, so a
 // failure here can never block saving a document.
-const CDN_URL = 'https://docs.opencv.org/4.10.0/opencv.js';
+//
+// Uses the @techstark build, which INLINES the WASM into the single JS file.
+// The stock docs.opencv.org build fetches a separate opencv_js.wasm relative to
+// the host page, which 404s on our domain — that was the "couldn't start"
+// error. This build resolves `window.cv` as a promise to the ready module.
+const CDN_URL = 'https://cdn.jsdelivr.net/npm/@techstark/opencv-js@5.0.0-release.1/dist/opencv.js';
 
 let loader: Promise<any> | null = null;
 
