@@ -17,7 +17,7 @@ connects its Google account — see drive_connected()) later uploads and flips t
 list, record, view. OCR fields are reserved (Phase 5) and left null.
 """
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query, Response
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse
 from typing import Optional
 from pydantic import BaseModel
 import asyncio
