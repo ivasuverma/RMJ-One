@@ -63,14 +63,14 @@ def _role(user: dict) -> str:
 def _can_see(cat: dict, role: str, rights: dict = None) -> bool:
     if role == 'owner':
         return True
-    # Per-category, per-person override (Settings › People). Only the categories
-    # explicitly set for this person use the override; everything else falls
-    # back to the category's role rules — so granting one category never hides
-    # the ones this person could already see by role.
+    # Per-person overrides (Settings › People). As soon as ANY category is set
+    # for this person, the whole map is authoritative — a category not marked
+    # View is denied (it does NOT fall back to the role). Only a completely
+    # empty map falls back to the category's role rules, matching the on-screen
+    # hint "leave every category unchecked to fall back to role defaults".
     override = (rights or {}).get('doc_category_rights') or {}
-    key = cat.get('key')
-    if key in override:
-        return bool((override.get(key) or {}).get('view'))
+    if override:
+        return bool((override.get(cat.get('key')) or {}).get('view'))
     return role in (cat.get('visible_to_roles') or [])
 
 
@@ -78,9 +78,8 @@ def _can_record(cat: dict, role: str, rights: dict = None) -> bool:
     if role == 'owner':
         return True
     override = (rights or {}).get('doc_category_rights') or {}
-    key = cat.get('key')
-    if key in override:
-        return bool((override.get(key) or {}).get('record'))
+    if override:
+        return bool((override.get(cat.get('key')) or {}).get('record'))
     return role in (cat.get('can_record_roles') or [])
 
 
