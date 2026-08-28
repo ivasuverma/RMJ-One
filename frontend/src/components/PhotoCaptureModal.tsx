@@ -26,12 +26,15 @@ type Props = {
   title: string;
   onClose: () => void;
   onCapture: (photo: string) => Promise<void> | void;
+  // When true, capture at higher resolution (for record photos that go to
+  // Drive full-size). Default keeps the small 720px used for inline base64.
+  highRes?: boolean;
 };
 
 // Generic rear-camera capture modal (no location/selfie requirement) — used
 // wherever the app needs a plain reference photo, e.g. repair item intake
 // and final delivery photos.
-export function PhotoCaptureModal({ visible, title, onClose, onCapture }: Props) {
+export function PhotoCaptureModal({ visible, title, onClose, onCapture, highRes }: Props) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [camPerm, requestCamPerm] = useCameraPermissions();
@@ -62,8 +65,8 @@ export function PhotoCaptureModal({ visible, title, onClose, onCapture }: Props)
       const photo = await camRef.current?.takePictureAsync({ quality: 0.5, base64: false, skipProcessing: true });
       if (!photo?.uri) throw new Error('Failed to capture');
       const shrunk = await manipulateAsync(
-        photo.uri, [{ resize: { width: 720 } }],
-        { compress: 0.6, format: SaveFormat.JPEG, base64: true },
+        photo.uri, [{ resize: { width: highRes ? 1600 : 720 } }],
+        { compress: highRes ? 0.75 : 0.6, format: SaveFormat.JPEG, base64: true },
       );
       const dataUri = `data:image/jpeg;base64,${shrunk.base64}`;
       // Land on a review step (with optional crop) instead of saving straight away.
@@ -74,7 +77,7 @@ export function PhotoCaptureModal({ visible, title, onClose, onCapture }: Props)
       setBusy(false);
       submittingRef.current = false;
     }
-  }, [camPerm, requestCamPerm]);
+  }, [camPerm, requestCamPerm, highRes]);
 
   const usePhoto = useCallback(async () => {
     if (!captured || submittingRef.current) return;

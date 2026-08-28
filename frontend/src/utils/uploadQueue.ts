@@ -12,11 +12,16 @@ export type OutboxItem = {
   id: string;
   blob: Blob;
   filename: string;
-  category_key: string;
-  note: string;
   thumb: string;      // base64 (no data-url prefix), may be ''
   created_at: number;
   tries: number;
+  endpoint?: string;  // default '/documents'
+  // Documents:
+  category_key?: string;
+  note?: string;
+  // Record photos (repair/sample/employee):
+  ref_type?: string;
+  ref_id?: string;
 };
 
 const DB_NAME = 'rmj-doc-outbox';
@@ -95,11 +100,13 @@ let retryTimer: ReturnType<typeof setTimeout> | null = null;
 function buildForm(item: OutboxItem): FormData {
   const form = new FormData();
   form.append('file', item.blob, item.filename);
-  form.append('category_key', item.category_key);
-  form.append('note', item.note || '');
   if (item.thumb) form.append('thumb', item.thumb);
-  // Idempotency: a retry after a timeout (where the server actually saved the
-  // doc) must not create a duplicate — the server dedupes on this key.
+  if (item.category_key) form.append('category_key', item.category_key);
+  if (item.note !== undefined) form.append('note', item.note || '');
+  if (item.ref_type) form.append('ref_type', item.ref_type);
+  if (item.ref_id) form.append('ref_id', item.ref_id);
+  // Idempotency: a retry after a timeout (where the server actually saved it)
+  // must not create a duplicate — the server dedupes on this key.
   form.append('client_id', item.id);
   return form;
 }
@@ -116,7 +123,7 @@ async function drain(): Promise<void> {
       if (items.length === 0) break;
       const item = items[0];
       try {
-        await api.upload('/documents', buildForm(item));
+        await api.upload(item.endpoint || '/documents', buildForm(item));
         await idbDel(item.id);
         await emitCount();
       } catch {
@@ -137,13 +144,22 @@ async function drain(): Promise<void> {
 export async function enqueueUpload(item: Omit<OutboxItem, 'created_at' | 'tries'>): Promise<void> {
   if (!hasIDB()) {
     // No IndexedDB (shouldn't happen on web) — fall back to a direct upload.
-    await api.upload('/documents', buildForm({ ...item, created_at: Date.now(), tries: 0 }));
+    const rec = { ...item, created_at: Date.now(), tries: 0 } as OutboxItem;
+    await api.upload(rec.endpoint || '/documents', buildForm(rec));
     return;
   }
   const rec: OutboxItem = { ...item, created_at: Date.now(), tries: 0 };
   await idbPut(rec);
   await emitCount();
   drain();
+}
+
+// Convenience for a high-res record photo (repair/sample/employee) → uploads to
+// Drive in the background via /record-photos, keeping only a thumbnail.
+export async function enqueueRecordPhoto(args: {
+  id: string; blob: Blob; filename: string; thumb: string; ref_type: string; ref_id: string;
+}): Promise<void> {
+  await enqueueUpload({ ...args, endpoint: '/record-photos' });
 }
 
 let started = false;

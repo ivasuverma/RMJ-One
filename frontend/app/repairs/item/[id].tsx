@@ -14,6 +14,7 @@ import { REPAIR_STATUS_LABEL, repairStatusColors, RepairItemStatus } from '@/src
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { useAuth } from '@/src/auth/AuthContext';
+import { RecordPhotos } from '@/src/components/RecordPhotos';
 
 type Item = {
   id: string; item_code: string; order_id: string; order_no: string; customer_name: string;
@@ -324,6 +325,9 @@ export default function RepairItemDetailScreen() {
               )}
             </View>
           )}
+
+          {/* High-res reference photos (uploaded to Drive, thumbnail kept). */}
+          <RecordPhotos refType="repair_item" refId={item.id} label="Photos" />
 
           {item.karigar_name && (
             <Pressable onPress={() => printThermal('issue-slip')} disabled={thermalPrinting} style={[styles.actionBtn, { marginBottom: spacing.md }]} testID="print-issue-slip-btn">
