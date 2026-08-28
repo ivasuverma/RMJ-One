@@ -37,7 +37,7 @@ export default function EmployeeTabsLayout() {
         ),
         tabBarStyle: {
           backgroundColor: 'transparent', borderTopWidth: 0, elevation: 0,
-          height: 72, paddingBottom: 12, paddingTop: 10,
+          height: 58, paddingBottom: 8, paddingTop: 6,
         },
         tabBarActiveTintColor: colors.brandPrimary,
         tabBarInactiveTintColor: colors.mutedText,

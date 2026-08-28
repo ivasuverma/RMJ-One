@@ -12,7 +12,7 @@ import { useTheme } from '@/src/theme/ThemeContext';
 
 type Shift = {
   id: string; name: string; start: string; end: string; grace_min: number;
-  late_half_day_after_min?: number | null; is_active: boolean;
+  late_half_day_after_min?: number | null; remote?: boolean; is_active: boolean;
 };
 
 const EMPTY = { name: '', start: '10:00', end: '19:30', grace: '15', lateHalfDay: '' };
@@ -28,6 +28,7 @@ export default function ShiftsScreen() {
   const [end, setEnd] = useState(EMPTY.end);
   const [grace, setGrace] = useState(EMPTY.grace);
   const [lateHalfDay, setLateHalfDay] = useState(EMPTY.lateHalfDay);
+  const [remote, setRemote] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -43,7 +44,7 @@ export default function ShiftsScreen() {
 
   const resetForm = () => {
     setEditingId(null); setName(EMPTY.name); setStart(EMPTY.start); setEnd(EMPTY.end);
-    setGrace(EMPTY.grace); setLateHalfDay(EMPTY.lateHalfDay);
+    setGrace(EMPTY.grace); setLateHalfDay(EMPTY.lateHalfDay); setRemote(false);
   };
 
   const closeForm = () => { resetForm(); setShowForm(false); };
@@ -51,6 +52,7 @@ export default function ShiftsScreen() {
   const startEdit = (s: Shift) => {
     setEditingId(s.id); setName(s.name); setStart(s.start); setEnd(s.end); setGrace(String(s.grace_min));
     setLateHalfDay(s.late_half_day_after_min ? String(s.late_half_day_after_min) : '');
+    setRemote(!!s.remote);
     setShowForm(true);
   };
 
@@ -63,7 +65,8 @@ export default function ShiftsScreen() {
     try {
       const payload = {
         name: name.trim(), start, end, grace_min: parseInt(grace || '0', 10),
-        late_half_day_after_min: lateHalfDay.trim() ? parseInt(lateHalfDay, 10) : null,
+        late_half_day_after_min: remote || !lateHalfDay.trim() ? null : parseInt(lateHalfDay, 10),
+        remote,
         is_active: true,
       };
       if (editingId) await api.put(`/shifts/${editingId}`, payload);
@@ -112,32 +115,48 @@ export default function ShiftsScreen() {
             <View style={styles.formCard} testID="add-shift-form">
               <Text style={styles.section}>{editingId ? 'Edit Shift' : 'Add Shift'}</Text>
               <TextInput testID="shift-name" value={name} onChangeText={setName} placeholder="Shift name" placeholderTextColor={colors.mutedText} style={styles.input} />
-              <View style={styles.row2}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.label}>Start</Text>
-                  <TextInput testID="shift-start" value={start} onChangeText={setStart} placeholder="10:00" placeholderTextColor={colors.mutedText} style={styles.input} autoCapitalize="none" />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.label}>End</Text>
-                  <TextInput testID="shift-end" value={end} onChangeText={setEnd} placeholder="19:30" placeholderTextColor={colors.mutedText} style={styles.input} autoCapitalize="none" />
-                </View>
-              </View>
-              <Text style={styles.label}>Grace (min)</Text>
-              <TextInput testID="shift-grace" value={grace} onChangeText={(v) => setGrace(v.replace(/[^0-9]/g, ''))} keyboardType="numeric" style={styles.input} />
 
-              <Text style={styles.label}>Late master — mark half-day if late by (min)</Text>
-              <TextInput
-                testID="shift-late-half-day"
-                value={lateHalfDay}
-                onChangeText={(v) => setLateHalfDay(v.replace(/[^0-9]/g, ''))}
-                keyboardType="numeric"
-                placeholder="Leave blank to disable"
-                placeholderTextColor={colors.mutedText}
-                style={styles.input}
-              />
-              <Text style={styles.hint}>
-                If someone checks in this many minutes past start + grace, that day counts as a half-day for payroll — even if they end up working full hours.
-              </Text>
+              <Pressable onPress={() => setRemote((v) => !v)} style={[styles.remoteRow, remote && styles.remoteRowOn]} testID="shift-remote-toggle">
+                <Ionicons name="home-outline" size={18} color={remote ? colors.brandPrimary : colors.mutedText} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.remoteTitle}>Work from home</Text>
+                  <Text style={styles.remoteSub}>No attendance. Paid the full set salary each month.</Text>
+                </View>
+                <View style={[styles.switch, remote && styles.switchOn]}>
+                  <View style={[styles.knob, remote && styles.knobOn]} />
+                </View>
+              </Pressable>
+
+              {!remote && (
+                <>
+                  <View style={styles.row2}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.label}>Start</Text>
+                      <TextInput testID="shift-start" value={start} onChangeText={setStart} placeholder="10:00" placeholderTextColor={colors.mutedText} style={styles.input} autoCapitalize="none" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.label}>End</Text>
+                      <TextInput testID="shift-end" value={end} onChangeText={setEnd} placeholder="19:30" placeholderTextColor={colors.mutedText} style={styles.input} autoCapitalize="none" />
+                    </View>
+                  </View>
+                  <Text style={styles.label}>Grace (min)</Text>
+                  <TextInput testID="shift-grace" value={grace} onChangeText={(v) => setGrace(v.replace(/[^0-9]/g, ''))} keyboardType="numeric" style={styles.input} />
+
+                  <Text style={styles.label}>Late master — mark half-day if late by (min)</Text>
+                  <TextInput
+                    testID="shift-late-half-day"
+                    value={lateHalfDay}
+                    onChangeText={(v) => setLateHalfDay(v.replace(/[^0-9]/g, ''))}
+                    keyboardType="numeric"
+                    placeholder="Leave blank to disable"
+                    placeholderTextColor={colors.mutedText}
+                    style={styles.input}
+                  />
+                  <Text style={styles.hint}>
+                    If someone checks in this many minutes past start + grace, that day counts as a half-day for payroll — even if they end up working full hours.
+                  </Text>
+                </>
+              )}
 
               <View style={{ flexDirection: 'row', gap: spacing.sm }}>
                 {editingId && (
@@ -162,9 +181,15 @@ export default function ShiftsScreen() {
             <View key={s.id} style={[styles.card, editingId === s.id && styles.cardEditing]} testID={`shift-${s.id}`}>
               <Pressable style={{ flex: 1 }} onPress={() => startEdit(s)} testID={`edit-shift-${s.id}`}>
                 <Text style={styles.cName}>{s.name}</Text>
-                <Text style={styles.cMeta}>{s.start} – {s.end} · Grace {s.grace_min}m</Text>
-                {!!s.late_half_day_after_min && (
-                  <Text style={styles.cMetaWarn}>Half-day if late by {s.late_half_day_after_min}m+</Text>
+                {s.remote ? (
+                  <Text style={styles.cMetaRemote}>Work from home · no attendance · full salary</Text>
+                ) : (
+                  <>
+                    <Text style={styles.cMeta}>{s.start} – {s.end} · Grace {s.grace_min}m</Text>
+                    {!!s.late_half_day_after_min && (
+                      <Text style={styles.cMetaWarn}>Half-day if late by {s.late_half_day_after_min}m+</Text>
+                    )}
+                  </>
                 )}
               </Pressable>
               <Pressable onPress={() => startEdit(s)} style={styles.editBtn} hitSlop={10} testID={`edit-icon-shift-${s.id}`}>
@@ -226,6 +251,18 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   cName: { color: colors.onSurface, fontWeight: '700', fontSize: 14 },
   cMeta: { color: colors.onSurfaceTertiary, fontSize: 12, marginTop: 2 },
   cMetaWarn: { color: colors.onWarning, fontSize: 11, marginTop: 2, fontWeight: '600' },
+  cMetaRemote: { color: colors.brandSecondary, fontSize: 11.5, marginTop: 2, fontWeight: '600' },
+  remoteRow: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm,
+    backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: spacing.md,
+  },
+  remoteRowOn: { borderColor: colors.brandPrimary, backgroundColor: colors.brandTertiary },
+  remoteTitle: { color: colors.onSurface, fontSize: 14, fontWeight: '700' },
+  remoteSub: { color: colors.onSurfaceTertiary, fontSize: 11, marginTop: 2 },
+  switch: { width: 44, height: 26, borderRadius: 13, backgroundColor: colors.surfaceTertiary, padding: 3, justifyContent: 'center' },
+  switchOn: { backgroundColor: colors.brandPrimary },
+  knob: { width: 20, height: 20, borderRadius: 10, backgroundColor: colors.onSurface, alignSelf: 'flex-start' },
+  knobOn: { alignSelf: 'flex-end', backgroundColor: colors.onBrandPrimary },
   editBtn: {
     width: 34, height: 34, borderRadius: 17, backgroundColor: colors.brandTertiary,
     borderColor: colors.brand, borderWidth: 1, alignItems: 'center', justifyContent: 'center',

@@ -143,12 +143,16 @@ async def _compute_dashboard() -> dict:
         db.settings.find_one({'id': 'store'}, {'_id': 0}),
         db.shifts.find({}, {'_id': 0}).to_list(200),
     )
+    store = _store_doc or {}
+    shifts_by_name = {s['name']: s for s in _shifts}
+    # Work-from-home shifts don't record attendance — keep them out of the
+    # dashboard's present/absent/total tiles entirely.
+    remote_shifts = {n for n, s in shifts_by_name.items() if s.get('remote')}
+    employees = [e for e in employees if e.get('shift') not in remote_shifts]
     total = len(employees)
     on_leave_status = sum(1 for e in employees if e.get('status') == 'on_leave')
     att_by_emp = {a['employee_id']: a for a in att}
     check_today = now_ist.weekday() != 6 and not _holiday
-    store = _store_doc or {}
-    shifts_by_name = {s['name']: s for s in _shifts}
 
     # Every tile below is derived from the same per-employee resolver the
     # Attendance screen and Payroll use, so the dashboard counts always

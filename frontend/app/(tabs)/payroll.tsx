@@ -16,7 +16,7 @@ type Row = {
   base_salary: number; present_days: number; half_days: number; absent_days: number; sunday_work: number;
   leave_days: number; total_days: number; effective_days: number;
   earned: number; advance: number; bonus: number; fine: number; manual_deduction: number;
-  net_salary: number; paid?: boolean; id?: string; photo?: string;
+  net_salary: number; paid?: boolean; id?: string; photo?: string; remote?: boolean;
 };
 type PayrollResp = { year: number; month: number; rows: Row[]; saved?: boolean; locked?: boolean; total_net: number };
 
@@ -188,14 +188,21 @@ export default function OwnerPayroll() {
               )}
               <View style={{ flex: 1 }}>
                 <Text style={styles.empName} numberOfLines={1}>{r.name}</Text>
-                <Text style={styles.empSub}>
-                  <Text style={{ color: colors.onSuccess, fontFamily: fonts.textMedium, fontWeight: '700' }}>{r.present_days}P</Text>
-                  {'  ·  '}
-                  <Text style={{ color: colors.onError, fontFamily: fonts.textMedium, fontWeight: '700' }}>{r.absent_days}A</Text>
-                  {'  ·  '}
-                  <Text style={{ color: colors.onWarning, fontFamily: fonts.textMedium, fontWeight: '700' }}>{r.half_days}HD</Text>
-                  {'  ·  '}{r.sunday_work}Su · {r.leave_days}L
-                </Text>
+                {r.remote ? (
+                  <Text style={styles.empSub}>
+                    <Text style={{ color: colors.brandSecondary, fontFamily: fonts.textMedium, fontWeight: '700' }}>Work from home</Text>
+                    {'  ·  full salary'}
+                  </Text>
+                ) : (
+                  <Text style={styles.empSub}>
+                    <Text style={{ color: colors.onSuccess, fontFamily: fonts.textMedium, fontWeight: '700' }}>{r.present_days}P</Text>
+                    {'  ·  '}
+                    <Text style={{ color: colors.onError, fontFamily: fonts.textMedium, fontWeight: '700' }}>{r.absent_days}A</Text>
+                    {'  ·  '}
+                    <Text style={{ color: colors.onWarning, fontFamily: fonts.textMedium, fontWeight: '700' }}>{r.half_days}HD</Text>
+                    {'  ·  '}{r.sunday_work}Su · {r.leave_days}L
+                  </Text>
+                )}
                 {(r.advance > 0 || r.bonus > 0 || r.fine > 0 || r.manual_deduction > 0) && (
                   <Text style={styles.empExtras}>
                     {r.bonus > 0 && `+${fmtINR(r.bonus)} bonus `}

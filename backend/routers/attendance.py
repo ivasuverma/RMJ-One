@@ -133,6 +133,10 @@ async def attendance_today(date_: Optional[str] = Query(default=None, alias='dat
     shifts_by_name = {}
     async for s in db.shifts.find({}, {'_id': 0}):
         shifts_by_name[s['name']] = s
+    # Work-from-home shifts don't record attendance — drop those employees from
+    # the daily list entirely (they show in Payroll instead).
+    remote_shifts = {n for n, s in shifts_by_name.items() if s.get('remote')}
+    employees = [e for e in employees if e.get('shift') not in remote_shifts]
 
     rows = []
     for e in employees:

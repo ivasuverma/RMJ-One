@@ -36,6 +36,9 @@ const fmtTime = (iso?: string) => {
 
 export default function EmployeeHome() {
   const { user } = useAuth();
+  // Work-from-home staff don't record attendance — hide the punch card and
+  // the check-in/out reminders for them.
+  const isRemote = !!user?.remote;
   const { colors, scheme } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const heroGradient = scheme === 'light'
@@ -129,7 +132,7 @@ export default function EmployeeHome() {
         ) : (
           <View style={{ paddingHorizontal: spacing.lg, marginTop: spacing.lg }}>
             {/* Reminder banners */}
-            {reminderCheckIn && (
+            {!isRemote && reminderCheckIn && (
               <ReminderBanner
                 testID="reminder-checkin"
                 icon="alarm-outline" color={colors.warning}
@@ -140,7 +143,7 @@ export default function EmployeeHome() {
                 ]}
               />
             )}
-            {reminderCheckOut && (
+            {!isRemote && reminderCheckOut && (
               <ReminderBanner
                 testID="reminder-checkout"
                 icon="alarm-outline" color={colors.warning}
@@ -152,7 +155,17 @@ export default function EmployeeHome() {
               />
             )}
 
-            {/* Punch card */}
+            {/* Punch card — hidden entirely for work-from-home staff */}
+            {isRemote && (
+              <View style={styles.punchCard} testID="remote-card">
+                <Text style={styles.punchLabel}>WORK FROM HOME</Text>
+                <View style={styles.doneBadge}>
+                  <Ionicons name="home" size={18} color={colors.brandPrimary} />
+                  <Text style={styles.doneText}>No attendance to record. Your salary is paid in full each month.</Text>
+                </View>
+              </View>
+            )}
+            {!isRemote && (
             <View style={styles.punchCard} testID="punch-card">
               <Text style={styles.punchLabel}>TODAY&apos;S PUNCH</Text>
               <View style={styles.punchRow}>
@@ -188,6 +201,7 @@ export default function EmployeeHome() {
                 </View>
               )}
             </View>
+            )}
 
             {/* My tasks due today / overdue */}
             {myTasks.length > 0 && (

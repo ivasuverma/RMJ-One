@@ -147,10 +147,14 @@ async def me(user=Depends(get_current)):
             'id': user['id'], 'username': user['username'], 'name': user['name'], 'role': user['role'],
             'modules': resolve_modules(user),
         }
+    # Work-from-home employees don't record attendance, so the app hides the
+    # check-in card and attendance tiles for them.
+    shift_doc = await db.shifts.find_one({'name': user.get('shift')}, {'_id': 0, 'remote': 1})
     return {
         'id': user['id'], 'username': user.get('username') or user.get('employee_code'), 'name': user['name'], 'role': 'employee',
         'employee_code': user['employee_code'], 'designation': user.get('designation'),
         'department': user.get('department'), 'photo': user.get('photo', ''),
+        'shift': user.get('shift'), 'remote': bool(shift_doc and shift_doc.get('remote')),
         'modules': resolve_modules(user), 'module_rights': user.get('module_rights') or {},
         'must_change_password': bool(user.get('must_change_password')),
     }

@@ -313,6 +313,19 @@ async def _compute_payroll(year: int, month: int) -> list:
         effective = present + 0.5 * half + leave_days + holiday_days + weekly_off_days
         earned = round(per_day * min(effective, total_days) + per_day * 0.5 * sunday_work, 2)
 
+        # Work-from-home shift: no attendance is tracked, so pay the full set
+        # salary for the month. Nothing is counted as absent/late/half; the
+        # whole month reads as paid days. Ledger entries (advance/bonus/fine)
+        # and opening balance still apply below, exactly like any other row.
+        is_remote = bool(shift and shift.get('remote'))
+        if is_remote:
+            present = total_days
+            half = missing_punch = absent = 0
+            holiday_days = weekly_off_days = sunday_work = late_days = 0
+            leave_days = 0
+            effective = total_days
+            earned = round(base, 2)
+
         # Ledger tallies in month
         month_advance = 0.0
         month_bonus = 0.0
@@ -332,6 +345,7 @@ async def _compute_payroll(year: int, month: int) -> list:
         rows.append({
             'employee_id': e['id'], 'employee_code': e.get('employee_code'), 'name': e['name'],
             'designation': e.get('designation'), 'department': e.get('department'), 'photo': e.get('photo_thumb') or '',
+            'remote': is_remote,
             'base_salary': base, 'present_days': present, 'half_days': half,
             'absent_days': absent, 'missing_punch_days': missing_punch,
             'sunday_work': sunday_work, 'leave_days': leave_days, 'late_days': late_days,

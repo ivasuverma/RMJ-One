@@ -12,6 +12,10 @@ export type User = {
   designation?: string;
   department?: string;
   photo?: string;
+  // Employee-only: their assigned shift, and whether that shift is a
+  // work-from-home one (no attendance; hide check-in and attendance tiles).
+  shift?: string;
+  remote?: boolean;
   modules?: string[];
   // Employee-only: true right after an admin creates the account, until they
   // set a real password — the default (last 4 digits of employee code) is

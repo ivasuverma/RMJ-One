@@ -506,6 +506,10 @@ class ShiftIn(BaseModel):
     # "Late master": if set (>0), a check-in this many minutes past start+grace turns
     # the whole day into a half-day for payroll, even if full hours were later worked.
     late_half_day_after_min: Optional[int] = None
+    # Work-from-home shift: employees on it don't record attendance at all. They
+    # never appear on the Attendance screen or get missed-check reminders, and
+    # payroll pays their full set salary every month regardless of punches.
+    remote: bool = False
     is_active: bool = True
 
 
@@ -1606,6 +1610,8 @@ async def _check_missed_attendance():
 
     async for emp in db.employees.find({'status': 'active'}, {'_id': 0, 'password_hash': 0}):
         shift = await db.shifts.find_one({'name': emp.get('shift')}, {'_id': 0})
+        if shift and shift.get('remote'):
+            continue  # work-from-home — no attendance to miss
         start = (shift.get('start') if shift else None) or store.get('work_start', '10:00')
         if minutes_now < _minutes(start) + MISSED_ATTENDANCE_GRACE_MIN:
             continue  # not yet past their shift start + grace period
@@ -1653,6 +1659,8 @@ async def _check_missed_checkout():
 
     async for emp in db.employees.find({'status': 'active'}, {'_id': 0, 'password_hash': 0}):
         shift = await db.shifts.find_one({'name': emp.get('shift')}, {'_id': 0})
+        if shift and shift.get('remote'):
+            continue  # work-from-home — no attendance to miss
         end = (shift.get('end') if shift else None) or store.get('work_end', '19:30')
         if minutes_now < _minutes(end) + MISSED_CHECKOUT_GRACE_MIN:
             continue  # not yet past their shift end + grace period
