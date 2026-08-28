@@ -1543,6 +1543,7 @@ NOTIFICATION_SCRIPTS = [
     {'key': 'sample_received', 'module': 'samples', 'label': 'Sample received back'},
     {'key': 'cashbook_transfer', 'module': 'cash_book', 'label': 'Cash transferred between counters'},
     {'key': 'cashbook_entry', 'module': 'cash_book', 'label': 'Employee recorded cash in / out'},
+    {'key': 'cashbook_edit', 'module': 'cash_book', 'label': 'Employee edited a cash entry'},
 ]
 NOTIFICATION_SCRIPTS_BY_MODULE: Dict[str, list] = {}
 for _s in NOTIFICATION_SCRIPTS:

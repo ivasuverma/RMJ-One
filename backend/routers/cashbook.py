@@ -302,6 +302,24 @@ async def update_cashbook_entry(entry_id: str, body: CashBookEntryUpdateIn, user
             mirror_upd = {k: v for k, v in upd.items() if k in ('date', 'amount', 'note')}
             if mirror_upd:
                 await db.cashbook_entries.update_one({'id': linked_id}, {'$set': mirror_upd})
+        # Alert owners/admins when an employee edits an entry — with what changed.
+        if user.get('role') == 'employee':
+            changes = []
+            if 'amount' in upd and float(upd['amount']) != float(entry.get('amount') or 0):
+                changes.append(f"amount ₹{float(entry.get('amount') or 0):,.0f} → ₹{float(upd['amount']):,.0f}")
+            if 'type' in upd and upd['type'] != entry.get('type'):
+                changes.append(f"type {entry.get('type')} → {upd['type']}")
+            if 'name' in upd and upd['name'] != entry.get('name'):
+                changes.append(f"name '{entry.get('name', '')}' → '{upd['name']}'")
+            if 'date' in upd and upd['date'] != entry.get('date'):
+                changes.append(f"date {entry.get('date')} → {upd['date']}")
+            if 'note' in upd and (upd.get('note') or '') != (entry.get('note') or ''):
+                changes.append('note changed')
+            if changes:
+                await _notify_module(
+                    'cash_book', f"{user['name']} edited a cash entry",
+                    ('; '.join(changes))[:300], '/cashbook', script='cashbook_edit',
+                )
     return await db.cashbook_entries.find_one({'id': entry_id}, {'_id': 0})
 
 

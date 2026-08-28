@@ -100,6 +100,9 @@ export default function UtilityScreen() {
             <Text style={styles.role}>{(user?.role || '').charAt(0).toUpperCase() + (user?.role || '').slice(1)} · @{user?.username}</Text>
             <Text style={styles.profileHint}>Account, password & sign-in</Text>
           </View>
+          <Pressable onPress={onLogout} hitSlop={10} style={styles.quickLogout} testID="quick-logout-btn">
+            <Ionicons name="log-out-outline" size={20} color={colors.onError} />
+          </Pressable>
           <Ionicons name="chevron-forward" size={18} color={colors.mutedText} />
         </Pressable>
 
@@ -192,6 +195,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg,
     borderWidth: 1, borderColor: colors.border, padding: spacing.lg, marginBottom: spacing.xl,
   },
+  quickLogout: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.error, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.onError, marginRight: 4 },
   avatar: { width: 52, height: 52, borderRadius: 26, backgroundColor: colors.brandPrimary, alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: colors.onBrandPrimary, fontSize: 20, fontWeight: '800' },
   name: { color: colors.onSurface, fontSize: 16, fontWeight: '700' },
