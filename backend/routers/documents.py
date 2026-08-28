@@ -491,8 +491,9 @@ async def drive_callback(code: Optional[str] = None, state: Optional[str] = None
     await db.settings.update_one({'id': 'google_drive'}, {'$set': {
         'refresh_token': refresh_token, 'email': email, 'connected_at': now_utc().isoformat(), 'oauth_state': None,
     }}, upsert=True)
-    # Any docs captured while offline/unconnected can now sync.
+    # Any docs/photos captured while offline/unconnected can now sync.
     await db.documents.update_many({'upload_state': {'$in': ['local', 'failed']}, 'deleted': {'$ne': True}}, {'$set': {'upload_state': 'queued'}})
+    await db.record_photos.update_many({'upload_state': {'$in': ['local', 'failed']}, 'deleted': {'$ne': True}}, {'$set': {'upload_state': 'queued'}})
     return page('Google Drive connected.', True)
 
 

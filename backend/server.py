@@ -947,6 +947,9 @@ async def seed():
     await db.documents.create_index('category_key')
     await db.documents.create_index('upload_state')
     await db.documents.create_index('client_id', sparse=True)
+    await db.record_photos.create_index([('ref_type', 1), ('ref_id', 1)])
+    await db.record_photos.create_index('upload_state')
+    await db.record_photos.create_index('client_id', sparse=True)
     # Biometric dedupe looks up an employee's most recent punch by source.
     await db.attendance_events.create_index([('employee_id', 1), ('timestamp', -1)])
 
@@ -1119,6 +1122,8 @@ async def on_startup():
     asyncio.create_task(upload_worker())
     from backup_service import backup_loop  # daily whole-DB backup to Drive
     asyncio.create_task(backup_loop())
+    from routers.record_photos import record_photo_worker  # background Drive sync for record photos
+    asyncio.create_task(record_photo_worker())
 
 
 @app.on_event('shutdown')
@@ -2057,7 +2062,7 @@ def _make_photo_thumb(photo_data_uri: Optional[str]) -> str:
 from routers import (
     auth, employees, settings as settings_router, attendance, tasks, repairs,
     users, payroll, notifications, biometric, reports, assistant, samples,
-    cashbook, ledger, documents, backup,
+    cashbook, ledger, documents, backup, record_photos,
 )
 
 # ---------------- Mount ----------------
@@ -2077,6 +2082,7 @@ api.include_router(samples.router)
 api.include_router(cashbook.router)
 api.include_router(ledger.router)
 api.include_router(documents.router)
+api.include_router(record_photos.router)
 api.include_router(backup.router)
 
 app.include_router(api)
