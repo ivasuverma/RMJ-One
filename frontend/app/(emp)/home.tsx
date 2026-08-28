@@ -232,11 +232,12 @@ export default function EmployeeHome() {
               </>
             )}
 
-            {/* Quick actions */}
+            {/* Quick actions — work-from-home staff have no attendance, so
+                Calendar and Leave request are dropped for them. */}
             <Text style={styles.section}>Quick actions</Text>
             <View style={styles.actionsRow}>
-              <ActionCard icon="calendar-outline" label="Calendar" onPress={() => router.push('/(emp)/calendar' as any)} testID="action-calendar" />
-              <ActionCard icon="airplane-outline" label="Leave request" onPress={() => router.push('/leaves')} testID="action-leave" />
+              {!isRemote && <ActionCard icon="calendar-outline" label="Calendar" onPress={() => router.push('/(emp)/calendar' as any)} testID="action-calendar" />}
+              {!isRemote && <ActionCard icon="airplane-outline" label="Leave request" onPress={() => router.push('/leaves')} testID="action-leave" />}
               <ActionCard icon="book-outline" label="My Ledger" onPress={() => router.push(`/ledger/${user?.id}`)} testID="action-ledger" />
             </View>
           </View>
