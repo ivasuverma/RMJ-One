@@ -1,10 +1,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, Pressable, ActivityIndicator, Modal, Alert, Linking, Platform } from 'react-native';
+import { View, Text, StyleSheet, Pressable, ActivityIndicator, Modal, Alert, Linking, Platform, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { DocumentScanner } from '@/src/components/DocumentScanner';
+
+async function dataUriToFile(uri: string): Promise<File> {
+  const res = await fetch(uri);
+  const blob = await res.blob();
+  return new File([blob], 'photo.jpg', { type: blob.type || 'image/jpeg' });
+}
+function fileToDataUri(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result));
+    r.onerror = reject;
+    r.readAsDataURL(file);
+  });
+}
 
 type Props = {
   visible: boolean;
@@ -21,10 +36,17 @@ export function PhotoCaptureModal({ visible, title, onClose, onCapture }: Props)
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [camPerm, requestCamPerm] = useCameraPermissions();
   const [busy, setBusy] = useState(false);
+  const [captured, setCaptured] = useState<string | null>(null);   // dataUri under review
+  const [scanFile, setScanFile] = useState<File | null>(null);     // File handed to the cropper
   const camRef = useRef<CameraView | null>(null);
   const submittingRef = useRef(false);
 
-  useEffect(() => { if (!visible) setBusy(false); }, [visible]);
+  useEffect(() => { if (!visible) { setBusy(false); setCaptured(null); setScanFile(null); } }, [visible]);
+
+  const openCrop = useCallback(async () => {
+    if (!captured) return;
+    try { setScanFile(await dataUriToFile(captured)); } catch { /* ignore */ }
+  }, [captured]);
 
   const openSettings = () => Linking.openSettings().catch(() => {});
 
@@ -44,14 +66,23 @@ export function PhotoCaptureModal({ visible, title, onClose, onCapture }: Props)
         { compress: 0.6, format: SaveFormat.JPEG, base64: true },
       );
       const dataUri = `data:image/jpeg;base64,${shrunk.base64}`;
-      await onCapture(dataUri);
+      // Land on a review step (with optional crop) instead of saving straight away.
+      setCaptured(dataUri);
     } catch (e: any) {
       Alert.alert('Failed', e?.message || 'Please try again');
     } finally {
       setBusy(false);
       submittingRef.current = false;
     }
-  }, [camPerm, requestCamPerm, onCapture]);
+  }, [camPerm, requestCamPerm]);
+
+  const usePhoto = useCallback(async () => {
+    if (!captured || submittingRef.current) return;
+    submittingRef.current = true;
+    setBusy(true);
+    try { await onCapture(captured); }
+    finally { setBusy(false); submittingRef.current = false; }
+  }, [captured, onCapture]);
 
   const camDenied = camPerm && !camPerm.granted && !camPerm.canAskAgain;
 
@@ -67,7 +98,9 @@ export function PhotoCaptureModal({ visible, title, onClose, onCapture }: Props)
         </View>
 
         <View style={styles.cameraWrap}>
-          {camPerm?.granted ? (
+          {captured ? (
+            <Image source={{ uri: captured }} style={StyleSheet.absoluteFill} resizeMode="contain" />
+          ) : camPerm?.granted ? (
             <CameraView ref={(r) => { camRef.current = r; }} facing="back" style={StyleSheet.absoluteFill} />
           ) : (
             <View style={styles.permBox}>
@@ -88,16 +121,35 @@ export function PhotoCaptureModal({ visible, title, onClose, onCapture }: Props)
         </View>
 
         <View style={styles.footer}>
-          <Pressable
-            testID="photo-capture-btn" onPress={onTakePhoto} disabled={busy || !camPerm?.granted}
-            style={({ pressed }) => [styles.captureBtn, (busy || !camPerm?.granted) && { opacity: 0.5 }, pressed && { transform: [{ scale: 0.98 }] }]}
-          >
-            {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : (
-              <><Ionicons name="camera" size={20} color={colors.onBrandPrimary} /><Text style={styles.captureText}>Capture Photo</Text></>
-            )}
-          </Pressable>
+          {captured ? (
+            <View style={styles.reviewRow}>
+              <Pressable onPress={() => setCaptured(null)} style={styles.ghostBtn} testID="photo-retake"><Ionicons name="camera-reverse-outline" size={18} color={colors.onSurface} /><Text style={styles.ghostText}>Retake</Text></Pressable>
+              {Platform.OS === 'web' && (
+                <Pressable onPress={openCrop} style={styles.ghostBtn} testID="photo-crop"><Ionicons name="scan" size={18} color={colors.brandSecondary} /><Text style={styles.ghostText}>Crop</Text></Pressable>
+              )}
+              <Pressable onPress={usePhoto} disabled={busy} style={[styles.captureBtn, styles.usePhotoBtn, busy && { opacity: 0.6 }]} testID="photo-use">
+                {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <><Ionicons name="checkmark" size={20} color={colors.onBrandPrimary} /><Text style={styles.captureText}>Use photo</Text></>}
+              </Pressable>
+            </View>
+          ) : (
+            <Pressable
+              testID="photo-capture-btn" onPress={onTakePhoto} disabled={busy || !camPerm?.granted}
+              style={({ pressed }) => [styles.captureBtn, (busy || !camPerm?.granted) && { opacity: 0.5 }, pressed && { transform: [{ scale: 0.98 }] }]}
+            >
+              {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : (
+                <><Ionicons name="camera" size={20} color={colors.onBrandPrimary} /><Text style={styles.captureText}>Capture Photo</Text></>
+              )}
+            </Pressable>
+          )}
         </View>
       </View>
+      {scanFile && (
+        <DocumentScanner
+          file={scanFile}
+          onCancel={() => setScanFile(null)}
+          onResult={async (f) => { try { setCaptured(await fileToDataUri(f)); } catch { /* keep original */ } setScanFile(null); }}
+        />
+      )}
     </Modal>
   );
 }
@@ -126,4 +178,9 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: 16,
   },
   captureText: { color: colors.onBrandPrimary, fontWeight: '800', fontSize: 15, letterSpacing: 0.3 },
+  reviewRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  ghostBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 14, paddingHorizontal: 14, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceSecondary },
+  ghostText: { color: colors.onSurface, fontSize: 14, fontWeight: '700' },
+  usePhotoBtn: { flex: 1, paddingVertical: 14 },
 });
+

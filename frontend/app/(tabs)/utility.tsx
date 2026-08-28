@@ -7,6 +7,7 @@ import { useAuth } from '@/src/auth/AuthContext';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme, ThemePreference } from '@/src/theme/ThemeContext';
 import { isPushSupported, isSubscribed, subscribeToPush, unsubscribeFromPush } from '@/src/utils/push';
+import { NotificationSetupHint } from '@/src/components/NotificationSetupHint';
 
 // Settings, rethought (v2 Phase 6): grouped iOS-style inset list — a profile
 // card at the top, then quiet section headers over full-width rows (icon +
@@ -120,6 +121,7 @@ export default function UtilityScreen() {
 
         {/* App preferences */}
         <Text style={styles.groupTitle}>App</Text>
+        <NotificationSetupHint />
         <Row
           icon="notifications-outline"
           label="Notifications"
