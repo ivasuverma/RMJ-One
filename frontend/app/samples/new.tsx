@@ -7,6 +7,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
 import { PhotoCaptureModal } from '@/src/components/PhotoCaptureModal';
+import { enqueueRecordPhoto } from '@/src/utils/uploadQueue';
+import { makeThumbFromDataUri } from '@/src/utils/imageThumb';
 import { DateField } from '@/src/components/DateField';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
@@ -58,14 +60,25 @@ export default function NewSampleScreen() {
     submittingRef.current = true;
     setSaving(true);
     try {
-      await api.post('/samples', {
+      const created = await api.post<{ id: string }[]>('/samples', {
         karigar_id: karigarId, note: note.trim(),
         issue_type: issueType.trim(), due_date: dueDate || null,
         items: items.map((i) => ({
           description: i.description.trim(), tag_number: i.tag_number.trim(),
-          weight: parseFloat(i.weight) || 0, pc_count: parseInt(i.pc_count, 10) || 1, photo: i.photo,
+          // High-res photo goes to Drive via the record-photos queue after create.
+          weight: parseFloat(i.weight) || 0, pc_count: parseInt(i.pc_count, 10) || 1, photo: '',
         })),
       });
+      await Promise.all(items.map(async (it, idx) => {
+        const rec = created?.[idx];
+        if (!it.photo || !rec?.id) return;
+        try {
+          const full = await (await fetch(it.photo)).blob();
+          const thumb = await makeThumbFromDataUri(it.photo);
+          const pid = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `${Date.now()}-${idx}`;
+          await enqueueRecordPhoto({ id: pid, blob: full, filename: `sample-${rec.id}.jpg`, thumb, ref_type: 'sample', ref_id: rec.id });
+        } catch { /* don't block navigation on a queue hiccup */ }
+      }));
       router.replace('/samples' as any);
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
     finally { setSaving(false); submittingRef.current = false; }
@@ -178,6 +191,7 @@ export default function NewSampleScreen() {
         visible={cameraOpen}
         title="Sample Photo"
         onClose={() => setCameraOpen(false)}
+        highRes
         onCapture={async (photo) => { setDraft((d) => ({ ...d, photo })); setCameraOpen(false); }}
       />
     </SafeAreaView>
