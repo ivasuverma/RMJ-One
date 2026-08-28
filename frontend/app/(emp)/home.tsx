@@ -15,6 +15,7 @@ import { spacing, radius, images, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { PunchCaptureModal, PunchResult } from '@/src/components/PunchCaptureModal';
 import { UploadQueueBadge } from '@/src/components/UploadQueueBadge';
+import { AppSetupBanner } from '@/src/components/AppSetupBanner';
 import { haptics } from '@/src/utils/haptics';
 
 type Att = {
@@ -131,6 +132,9 @@ export default function EmployeeHome() {
           </View>
         ) : (
           <View style={{ paddingHorizontal: spacing.lg, marginTop: spacing.lg }}>
+            {/* Install-to-home-screen + enable-notifications onboarding */}
+            <AppSetupBanner />
+
             {/* Reminder banners */}
             {!isRemote && reminderCheckIn && (
               <ReminderBanner

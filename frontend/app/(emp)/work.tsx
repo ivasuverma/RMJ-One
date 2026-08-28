@@ -10,6 +10,7 @@ import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { DocumentCaptureSheet } from '@/src/components/DocumentCaptureSheet';
 import { UploadQueueBadge } from '@/src/components/UploadQueueBadge';
+import { AppSetupBanner } from '@/src/components/AppSetupBanner';
 
 // Employee Work hub — same card language as the admin Work board: an
 // "In progress" list of process rows (each showing its live state before you
@@ -130,6 +131,8 @@ export default function EmployeeWorkScreen() {
             </Pressable>
           )}
         </View>
+
+        <AppSetupBanner />
 
         <Text style={styles.sectionLabel}>In progress</Text>
         {rows.map(renderRow)}
