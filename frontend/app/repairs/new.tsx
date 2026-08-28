@@ -7,6 +7,22 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
 import { PhotoCaptureModal } from '@/src/components/PhotoCaptureModal';
+import { enqueueRecordPhoto } from '@/src/utils/uploadQueue';
+
+// Small (~420px) thumbnail kept for fast display after the full image lands in Drive.
+async function makeIntakeThumb(dataUri: string): Promise<string> {
+  if (typeof document === 'undefined') return '';
+  try {
+    const img = await new Promise<HTMLImageElement>((res, rej) => {
+      const im = new (window as any).Image(); im.onload = () => res(im); im.onerror = rej; im.src = dataUri;
+    });
+    const scale = Math.min(1, 420 / Math.max(img.width, img.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(img.width * scale); canvas.height = Math.round(img.height * scale);
+    canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL('image/jpeg', 0.7).split(',', 2)[1] || '';
+  } catch { return ''; }
+}
 import { DateField } from '@/src/components/DateField';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
@@ -119,13 +135,27 @@ export default function NewRepairOrderScreen() {
           description: i.description.trim(), repair_type: i.repair_type,
           gross_weight: parseFloat(i.gross_weight) || 0, pc_count: parseInt(i.pc_count, 10) || 1,
           labour_charge: parseFloat(i.labour_charge) || 0, needs_karigar: i.needs_karigar,
-          due_date: i.due_date || null, notes: i.notes, intake_photo: i.intake_photo,
+          // Intake photos no longer live as base64 on the item — the high-res
+          // goes to Drive via the record-photos queue after the item is created.
+          due_date: i.due_date || null, notes: i.notes, intake_photo: '',
         })),
       };
       if (mode === 'existing') body.customer_id = selected!.id;
       else body.new_customer = { name: newName.trim(), mobile: newMobile, address: newAddress, notes: '' };
 
-      const res = await api.post<{ order: { id: string } }>('/repair-orders', body);
+      const res = await api.post<{ order: { id: string }; items: { id: string }[] }>('/repair-orders', body);
+      // Queue each captured intake photo against its freshly-created item
+      // (the response returns items in the same order we sent them).
+      await Promise.all(items.map(async (it, idx) => {
+        const created = res.items?.[idx];
+        if (!it.intake_photo || !created?.id) return;
+        try {
+          const full = await (await fetch(it.intake_photo)).blob();
+          const thumb = await makeIntakeThumb(it.intake_photo);
+          const pid = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `${Date.now()}-${idx}`;
+          await enqueueRecordPhoto({ id: pid, blob: full, filename: `repair-${created.id}.jpg`, thumb, ref_type: 'repair_item', ref_id: created.id });
+        } catch { /* a failed enqueue shouldn't block navigating to the order */ }
+      }));
       router.replace(`/repairs/${res.order.id}` as any);
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
     finally { setSaving(false); submittingRef.current = false; }
@@ -326,6 +356,7 @@ export default function NewRepairOrderScreen() {
       <PhotoCaptureModal
         visible={cameraOpen}
         title="Item Photo"
+        highRes
         onClose={() => setCameraOpen(false)}
         onCapture={async (photo) => { setDraft((d) => ({ ...d, intake_photo: photo })); setCameraOpen(false); }}
       />
