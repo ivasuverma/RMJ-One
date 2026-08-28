@@ -5,7 +5,7 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
-import { DocumentScanner } from '@/src/components/DocumentScanner';
+import { SimpleCropper } from '@/src/components/SimpleCropper';
 
 async function dataUriToFile(uri: string): Promise<File> {
   const res = await fetch(uri);
@@ -144,7 +144,7 @@ export function PhotoCaptureModal({ visible, title, onClose, onCapture }: Props)
         </View>
       </View>
       {scanFile && (
-        <DocumentScanner
+        <SimpleCropper
           file={scanFile}
           onCancel={() => setScanFile(null)}
           onResult={async (f) => { try { setCaptured(await fileToDataUri(f)); } catch { /* keep original */ } setScanFile(null); }}

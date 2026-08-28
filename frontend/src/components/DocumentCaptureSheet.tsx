@@ -6,7 +6,7 @@ import { haptics } from '@/src/utils/haptics';
 import { spacing, radius, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { Sheet, useToast } from '@/src/components/ui';
-import { DocumentScanner } from '@/src/components/DocumentScanner';
+import { SimpleCropper } from '@/src/components/SimpleCropper';
 import { enqueueUpload } from '@/src/utils/uploadQueue';
 
 export type DocCategory = { id: string; key: string; label: string; icon: keyof typeof Ionicons.glyphMap; can_record?: boolean };
@@ -264,7 +264,7 @@ export function DocumentCaptureSheet({ visible, onClose, onSaved, autoCamera }: 
         </ScrollView>
       )}
       {scanning && file && (
-        <DocumentScanner file={file} onCancel={() => setScanning(false)} onResult={(f) => { setFile(f); setScanning(false); }} />
+        <SimpleCropper file={file} onCancel={() => setScanning(false)} onResult={(f) => { setFile(f); setScanning(false); }} />
       )}
     </Sheet>
   );
