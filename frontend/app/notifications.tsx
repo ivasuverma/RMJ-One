@@ -47,7 +47,11 @@ export default function NotificationsScreen() {
       setItems((prev) => prev.map((x) => (x.id === n.id ? { ...x, read: true } : x)));
       api.post(`/notifications/${n.id}/read`, {}).catch(() => {});
     }
-    if (n.url && n.url !== '/') router.push(n.url as any);
+    // Older notifications were saved pointing at the deprecated Transactions
+    // tab; send those to the live Repairs list instead.
+    let url = n.url;
+    if (url === '/(tabs)/transactions' || url === '/(emp)/transactions') url = '/repairs';
+    if (url && url !== '/') router.push(url as any);
   };
 
   const markAllRead = async () => {
@@ -123,7 +127,11 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     padding: spacing.md, marginBottom: spacing.sm,
   },
   rowUnread: { borderColor: colors.brand, backgroundColor: colors.brandTertiary },
-  unreadDot: { width: 7, height: 7, borderRadius: 3.5, backgroundColor: colors.brandPrimary, marginTop: 6 },
+  unreadDot: {
+    width: 12, height: 12, borderRadius: 6, backgroundColor: colors.error, marginTop: 4,
+    borderWidth: 2, borderColor: colors.surface,
+    shadowColor: colors.error, shadowOpacity: 0.6, shadowRadius: 4, shadowOffset: { width: 0, height: 0 }, elevation: 3,
+  },
   iconBox: {
     width: 32, height: 32, borderRadius: 16, backgroundColor: colors.surface,
     alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border,

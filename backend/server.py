@@ -1815,7 +1815,7 @@ async def _check_repair_sample_followups():
             lines.append(f"Receive sample: {_summarize_codes(to_receive_sample[uid])}")
         if not lines:
             continue
-        await notify_user(uid, 'Repair/sample follow-up', ' · '.join(lines), '/(tabs)/transactions')
+        await notify_user(uid, 'Repair/sample follow-up', ' · '.join(lines), '/repairs')
 
     await db.followup_reminders.update_one(
         {'date': today},
