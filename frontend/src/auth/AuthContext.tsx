@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'expo-router';
 import { api, saveToken, clearToken, getToken, isSessionOnly, setUnauthorizedHandler } from '@/src/api/client';
+import { isQuickUnlockEnabled, runQuickUnlock } from '@/src/utils/quickUnlock';
 
 export type User = {
   id: string;
@@ -25,6 +26,12 @@ export type User = {
 type AuthState = {
   user: User | null;
   loading: boolean;
+  // True when a valid session exists on this device but the user hasn't passed
+  // the biometric quick-unlock gate yet. The app is held behind a lock screen
+  // while this is set.
+  locked: boolean;
+  unlock: () => Promise<{ ok: boolean; reason?: string }>;
+  cancelQuickUnlock: () => Promise<void>;
   login: (username: string, password: string, remember?: boolean) => Promise<void>;
   loginOwner: (username: string, password: string, remember?: boolean) => Promise<void>;
   loginEmployee: (username: string, password: string, remember?: boolean) => Promise<void>;
@@ -40,6 +47,7 @@ const AuthCtx = createContext<AuthState>({} as AuthState);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [locked, setLocked] = useState(false);
   const router = useRouter();
 
   // Single global point for "your session is no longer valid" — fired by
@@ -50,6 +58,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     setUnauthorizedHandler(() => {
       setUser(null);
+      setLocked(false);
       router.replace('/login');
     });
     return () => setUnauthorizedHandler(null);
@@ -68,8 +77,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    (async () => { await refresh(); setLoading(false); })();
+    (async () => {
+      await refresh();
+      // If a valid session survived on this device and the user turned on quick
+      // unlock, hold the app behind the biometric gate until they pass it. Only
+      // gate when refresh() kept the token (i.e. the session is still valid).
+      try {
+        const token = await getToken();
+        if (token && (await isQuickUnlockEnabled())) setLocked(true);
+      } catch { /* ignore — fall through unlocked */ }
+      setLoading(false);
+    })();
   }, [refresh]);
+
+  const unlock = useCallback(async () => {
+    const res = await runQuickUnlock();
+    if (res.ok) setLocked(false);
+    return res;
+  }, []);
+
+  // "Use password instead" from the lock screen — drop the stored session and
+  // send them through the normal login. Enrollment stays so they can re-enable
+  // quick unlock later without re-registering, unless they disable it.
+  const cancelQuickUnlock = useCallback(async () => {
+    await clearToken();
+    setUser(null);
+    setLocked(false);
+    router.replace('/login');
+  }, [router]);
 
   const login = useCallback(async (username: string, password: string, remember: boolean = true) => {
     // One sign-in for everyone — owner, admin, accountant, or employee.
@@ -78,6 +113,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       '/auth/login-unified', { username, password }, false,
     );
     await saveToken(res.access_token, remember);
+    setLocked(false);
     setUser(res.user);
   }, []);
 
@@ -86,6 +122,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       '/auth/login', { username, password }, false,
     );
     await saveToken(res.access_token, remember);
+    setLocked(false);
     setUser(res.user);
   }, []);
 
@@ -94,11 +131,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       '/auth/employee-login', { username, password }, false,
     );
     await saveToken(res.access_token, remember);
+    setLocked(false);
     setUser(res.user);
   }, []);
 
   const logout = useCallback(async () => {
     await clearToken();
+    setLocked(false);
     setUser(null);
   }, []);
 
@@ -164,7 +203,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [user]);
 
   return (
-    <AuthCtx.Provider value={{ user, loading, login, loginOwner, loginEmployee, logout, refresh, updateMyAccount, hasModule, hasRight }}>
+    <AuthCtx.Provider value={{ user, loading, locked, unlock, cancelQuickUnlock, login, loginOwner, loginEmployee, logout, refresh, updateMyAccount, hasModule, hasRight }}>
       {children}
     </AuthCtx.Provider>
   );

@@ -7,6 +7,7 @@ import { api } from '@/src/api/client';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { useToast } from '@/src/components/ui';
+import { QuickUnlockCard } from '@/src/components/QuickUnlockCard';
 
 // Auto sign-out after inactivity. The owner picks a preset (or Off); every
 // signed-in device reads this and arms an idle timer (see AuthContext).
@@ -83,6 +84,10 @@ export default function SecurityScreen() {
         )}
 
         <Text style={styles.foot}>Tip: a shared shop tablet is safest at 5–15 minutes; a personal phone can be longer.</Text>
+
+        <Text style={[styles.sectionLabel, { marginTop: spacing.xl }]}>Quick unlock</Text>
+        <Text style={styles.note}>On your own phone, reopen the app with Face ID or a fingerprint instead of retyping your password. It only unlocks this device — a computer or a new phone still needs the full sign-in.</Text>
+        <QuickUnlockCard />
       </ScrollView>
     </SafeAreaView>
   );

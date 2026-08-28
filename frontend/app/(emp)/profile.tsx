@@ -9,6 +9,7 @@ import { api } from '@/src/api/client';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme, ThemePreference } from '@/src/theme/ThemeContext';
 import { isPushSupported, isSubscribed, subscribeToPush, unsubscribeFromPush } from '@/src/utils/push';
+import { QuickUnlockCard } from '@/src/components/QuickUnlockCard';
 
 const THEME_LABEL: Record<ThemePreference, string> = { system: 'System', light: 'Light', dark: 'Dark' };
 
@@ -155,6 +156,9 @@ export default function EmployeeProfile() {
             ))}
           </View>
         )}
+
+        <SectionLabel text="Sign in" />
+        <QuickUnlockCard />
 
         <Pressable testID="emp-logout-btn-profile" style={styles.logoutBtn} onPress={onLogout}>
           <Ionicons name="log-out-outline" size={20} color={colors.onError} />

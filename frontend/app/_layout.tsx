@@ -8,11 +8,12 @@ import { StatusBar } from 'expo-status-bar';
 
 import { useIconFonts } from '@/src/hooks/use-icon-fonts';
 import { useTextFonts } from '@/src/hooks/use-text-fonts';
-import { AuthProvider } from '@/src/auth/AuthContext';
+import { AuthProvider, useAuth } from '@/src/auth/AuthContext';
 import { ThemeProvider, useTheme } from '@/src/theme/ThemeContext';
 import { ErrorBoundary } from '@/src/components/ErrorBoundary';
 import { ToastProvider } from '@/src/components/ui/Toast';
 import { OfflineBanner } from '@/src/components/OfflineBanner';
+import { LockScreen } from '@/src/components/LockScreen';
 import { startUploadQueue } from '@/src/utils/uploadQueue';
 
 // Disable logbox errors etc so that users can see the app and agent works as expected.
@@ -55,6 +56,7 @@ export default function RootLayout() {
 
 function AppShell() {
   const { colors, scheme } = useTheme();
+  const { locked } = useAuth();
   const router = useRouter();
 
   // Every screen renders its own in-app back arrow (headerShown is off
@@ -98,6 +100,7 @@ function AppShell() {
             }}
           />
           <OfflineBanner />
+          {locked && <LockScreen />}
         </View>
       </ToastProvider>
     </GestureHandlerRootView>
