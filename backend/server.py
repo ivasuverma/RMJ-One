@@ -1516,6 +1516,7 @@ NOTIFICATION_MODULES = [
     {'key': 'payroll', 'label': 'Payroll', 'default_roles': ['owner', 'admin']},
     {'key': 'repairs', 'label': 'Repair', 'default_roles': ['owner', 'admin']},
     {'key': 'samples', 'label': 'Stock In/Out', 'default_roles': ['owner', 'admin']},
+    {'key': 'cash_book', 'label': 'Cash Book', 'default_roles': ['owner', 'admin']},
 ]
 NOTIFICATION_MODULE_KEYS = {m['key'] for m in NOTIFICATION_MODULES}
 NOTIFICATION_MODULE_DEFAULT_ROLES = {m['key']: m['default_roles'] for m in NOTIFICATION_MODULES}
@@ -1540,6 +1541,8 @@ NOTIFICATION_SCRIPTS = [
     {'key': 'repair_item_ready', 'module': 'repairs', 'label': 'Repair item ready / back from karigar'},
     {'key': 'sample_issued', 'module': 'samples', 'label': 'Sample(s) issued'},
     {'key': 'sample_received', 'module': 'samples', 'label': 'Sample received back'},
+    {'key': 'cashbook_transfer', 'module': 'cash_book', 'label': 'Cash transferred between counters'},
+    {'key': 'cashbook_entry', 'module': 'cash_book', 'label': 'Employee recorded cash in / out'},
 ]
 NOTIFICATION_SCRIPTS_BY_MODULE: Dict[str, list] = {}
 for _s in NOTIFICATION_SCRIPTS:

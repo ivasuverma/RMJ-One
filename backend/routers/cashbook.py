@@ -37,6 +37,7 @@ from server import (
     CashBookCounterUpdateIn,
     CashBookQuickNameIn,
     log_audit,
+    _notify_module,
 )
 
 router = APIRouter()
@@ -241,6 +242,25 @@ async def create_cashbook_entry(body: CashBookEntryIn, user=Depends(require_admi
 
     await log_audit(user, 'cashbook.create', 'cashbook_entry', entry_id, f"{body.type} {body.amount} - {body.name}",
                      {'date': body.date, 'counter': counter['name'], 'transfer_to': other_counter['name'] if other_counter else None})
+
+    # Notify owners/admins on cash movement.
+    amt = f"₹{body.amount:,.0f}"
+    if other_counter:
+        # Direction: a 'received' entry means cash came INTO this counter from
+        # the other; a 'paid' entry means it went OUT to the other.
+        src, dst = (other_counter, counter) if body.type == 'received' else (counter, other_counter)
+        await _notify_module(
+            'cash_book', 'Cash transferred between counters',
+            f"{amt}: {src['name']} → {dst['name']} · by {user['name']}",
+            '/cashbook', script='cashbook_transfer',
+        )
+    elif user.get('role') == 'employee':
+        direction = 'in' if body.type == 'received' else 'out'
+        await _notify_module(
+            'cash_book', f"{user['name']} recorded cash {direction}",
+            f"{amt} · {counter['name']} · {body.name.strip()}",
+            '/cashbook', script='cashbook_entry',
+        )
     return {k: v for k, v in entry.items() if k != '_id'}
 
 
