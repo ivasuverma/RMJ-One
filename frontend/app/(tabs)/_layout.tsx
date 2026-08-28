@@ -1,14 +1,13 @@
 import { Tabs, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
-import { BlurView } from 'expo-blur';
+import { View, ActivityIndicator } from 'react-native';
 import { useEffect } from 'react';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { useAuth } from '@/src/auth/AuthContext';
 
 export default function OwnerTabsLayout() {
   const { user, loading } = useAuth();
-  const { colors, scheme } = useTheme();
+  const { colors } = useTheme();
   const router = useRouter();
 
   useEffect(() => {
@@ -29,15 +28,10 @@ export default function OwnerTabsLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        // Apple §12: a translucent material layer with a bright top edge (light
-        // catching the glass), not an opaque strip with a hard 1px divider.
-        tabBarBackground: () => (
-          <BlurView tint={scheme === 'light' ? 'light' : 'dark'} intensity={40} style={StyleSheet.absoluteFill}>
-            <View style={{ flex: 1, backgroundColor: scheme === 'light' ? 'rgba(247,245,240,0.72)' : 'rgba(11,11,12,0.72)', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.borderStrong }} />
-          </BlurView>
-        ),
+        // Seamless bar that matches the app background — no translucent band or
+        // divider line above it.
         tabBarStyle: {
-          backgroundColor: 'transparent', borderTopWidth: 0, elevation: 0,
+          backgroundColor: colors.surface, borderTopWidth: 0, elevation: 0,
           height: 72, paddingBottom: 12, paddingTop: 10,
         },
         tabBarActiveTintColor: colors.brandPrimary,
