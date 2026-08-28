@@ -32,13 +32,14 @@ export default function OwnerTabsLayout() {
         headerShown: false,
         // Seamless bar that matches the app background — no translucent band or
         // divider line above it.
-        // Compact bar: a fixed content band sitting exactly on top of the
-        // device's bottom safe area (home-indicator gap). Basing the height on
-        // the inset — instead of a hardcoded number — keeps labels from being
-        // clipped into the home indicator, while staying as short as possible.
+        // Compact bar. The installed PWA often reports a 0 bottom inset, which
+        // let the labels get clipped by the home indicator — so clamp the
+        // bottom padding to at least 20px to always clear it, while keeping the
+        // content band itself short.
         tabBarStyle: {
           backgroundColor: colors.surface, borderTopWidth: 0, elevation: 0,
-          height: 52 + insets.bottom, paddingBottom: insets.bottom + 4, paddingTop: 6,
+          height: 46 + Math.max(insets.bottom, 20),
+          paddingBottom: Math.max(insets.bottom, 20), paddingTop: 6,
         },
         tabBarActiveTintColor: colors.brandPrimary,
         tabBarInactiveTintColor: colors.mutedText,

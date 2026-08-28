@@ -127,10 +127,30 @@ async def list_employees(
 
 @router.get('/employees/{emp_id}')
 async def get_employee(emp_id: str, _: dict = Depends(get_current)):
-    doc = await db.employees.find_one({'id': emp_id}, {'_id': 0, 'password_hash': 0})
+    # Exclude the heavy bits from the default profile payload: each ID proof's
+    # base64 data_uri (fetched on demand when viewed — see the endpoint below)
+    # and the timeline (the profile screen no longer shows it). This keeps the
+    # profile page snappy even for employees with several multi-MB documents.
+    doc = await db.employees.find_one(
+        {'id': emp_id},
+        {'_id': 0, 'password_hash': 0, 'id_proofs.data_uri': 0},
+    )
     if not doc: raise HTTPException(status_code=404, detail='Employee not found')
-    timeline = await db.timeline.find({'employee_id': emp_id}, {'_id': 0}).sort('created_at', -1).to_list(1000)
-    return {'employee': doc, 'timeline': timeline}
+    return {'employee': doc, 'timeline': []}
+
+
+@router.get('/employees/{emp_id}/id-proofs/{proof_id}')
+async def get_id_proof(emp_id: str, proof_id: str, _: dict = Depends(get_current)):
+    """Fetch one ID proof's base64 data on demand — kept out of the main
+    profile payload so the page loads fast."""
+    doc = await db.employees.find_one(
+        {'id': emp_id, 'id_proofs.id': proof_id},
+        {'_id': 0, 'id_proofs.$': 1},
+    )
+    proofs = (doc or {}).get('id_proofs') or []
+    if not proofs:
+        raise HTTPException(status_code=404, detail='ID proof not found')
+    return {'id': proof_id, 'data_uri': proofs[0].get('data_uri', '')}
 
 
 @router.post('/employees')
