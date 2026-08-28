@@ -12,6 +12,7 @@ import { confirmAction } from '@/src/utils/confirm';
 import { istDisplayDate, displayDateOnly } from '@/src/utils/datetime';
 import { spacing, radius, images, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { RecordPhotos } from '@/src/components/RecordPhotos';
 
 type IdProof = { id: string; name: string; data_uri: string; uploaded_at: string };
 
@@ -328,6 +329,8 @@ function DetailsCard({ emp, onReload }: { emp: Emp; onReload: () => void }) {
 
       <SectionTitle text="ID Proofs" />
       <IdProofsSection empId={emp.id} proofs={emp.id_proofs || []} onChange={onReload} />
+
+      <RecordPhotos refType="employee" refId={emp.id} label="Photos" />
 
       {!!emp.notes && (
         <>

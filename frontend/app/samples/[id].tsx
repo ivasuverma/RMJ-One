@@ -8,6 +8,7 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { api, TOKEN_KEY } from '@/src/api/client';
 import { storage } from '@/src/utils/storage';
 import { useAuth } from '@/src/auth/AuthContext';
+import { RecordPhotos } from '@/src/components/RecordPhotos';
 import { confirmAction } from '@/src/utils/confirm';
 import { istDateTime } from '@/src/utils/datetime';
 import { PhotoCaptureModal } from '@/src/components/PhotoCaptureModal';
@@ -171,6 +172,8 @@ export default function SampleDetailScreen() {
           </View>
 
           {sample.photo ? <Image source={{ uri: sample.photo }} style={styles.photo} /> : null}
+
+          <RecordPhotos refType="sample" refId={sample.id} label="Photos" />
 
           <Text style={styles.description}>{sample.description}</Text>
           {!!sample.tag_number && <Text style={styles.tagNumber}>Tag {sample.tag_number}</Text>}
