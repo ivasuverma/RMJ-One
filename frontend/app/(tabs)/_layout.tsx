@@ -1,6 +1,7 @@
 import { Tabs, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { View, ActivityIndicator } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useEffect } from 'react';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { useAuth } from '@/src/auth/AuthContext';
@@ -8,6 +9,7 @@ import { useAuth } from '@/src/auth/AuthContext';
 export default function OwnerTabsLayout() {
   const { user, loading } = useAuth();
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const router = useRouter();
 
   useEffect(() => {
@@ -30,9 +32,13 @@ export default function OwnerTabsLayout() {
         headerShown: false,
         // Seamless bar that matches the app background — no translucent band or
         // divider line above it.
+        // Compact bar: a fixed content band sitting exactly on top of the
+        // device's bottom safe area (home-indicator gap). Basing the height on
+        // the inset — instead of a hardcoded number — keeps labels from being
+        // clipped into the home indicator, while staying as short as possible.
         tabBarStyle: {
           backgroundColor: colors.surface, borderTopWidth: 0, elevation: 0,
-          height: 58, paddingBottom: 8, paddingTop: 6,
+          height: 52 + insets.bottom, paddingBottom: insets.bottom + 4, paddingTop: 6,
         },
         tabBarActiveTintColor: colors.brandPrimary,
         tabBarInactiveTintColor: colors.mutedText,
