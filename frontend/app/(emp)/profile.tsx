@@ -60,7 +60,7 @@ export default function EmployeeProfile() {
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 60 }} showsVerticalScrollIndicator={false}>
         <Text style={styles.title}>Profile</Text>
 
-        <Pressable style={styles.card} onPress={() => router.push('/settings/account' as any)} testID="emp-profile-card">
+        <Pressable style={styles.card} onPress={() => router.push('/(emp)/edit-profile' as any)} testID="emp-profile-card">
           {details?.photo ? (
             <Image source={{ uri: details.photo }} style={styles.avatarPhoto} />
           ) : (
@@ -70,8 +70,8 @@ export default function EmployeeProfile() {
           <Text style={styles.subtitle}>{user?.employee_code} · {user?.designation || '—'}</Text>
           <Text style={styles.dept}>{user?.department || '—'}</Text>
           <View style={styles.editHint}>
-            <Ionicons name="key-outline" size={13} color={colors.brandSecondary} />
-            <Text style={styles.editHintText}>Tap to change username / password</Text>
+            <Ionicons name="create-outline" size={13} color={colors.brandSecondary} />
+            <Text style={styles.editHintText}>Tap to edit your profile &amp; details</Text>
           </View>
         </Pressable>
 

@@ -34,7 +34,7 @@ const fmtTime = (iso?: string) => {
 };
 
 export default function EmployeeHome() {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const { colors, scheme } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const heroGradient = scheme === 'light'
@@ -86,7 +86,6 @@ export default function EmployeeHome() {
     }
   };
 
-  const onLogout = async () => { await logout(); router.replace('/login'); };
 
   const hasCheckIn = !!att?.check_in;
   const hasCheckOut = !!att?.check_out;
@@ -118,9 +117,6 @@ export default function EmployeeHome() {
           <Pressable onPress={() => router.push('/notifications' as any)} style={styles.iconBtn} testID="emp-notifications-btn" hitSlop={12}>
             <Ionicons name="notifications-outline" size={20} color={colors.onSurface} />
             {unread > 0 && <View style={styles.bellDot} />}
-          </Pressable>
-          <Pressable onPress={onLogout} style={styles.iconBtn} testID="emp-logout-btn" hitSlop={12}>
-            <Ionicons name="log-out-outline" size={20} color={colors.onSurface} />
           </Pressable>
         </View>
 
@@ -224,7 +220,7 @@ export default function EmployeeHome() {
             <Text style={styles.section}>Quick actions</Text>
             <View style={styles.actionsRow}>
               <ActionCard icon="calendar-outline" label="Calendar" onPress={() => router.push('/(emp)/calendar' as any)} testID="action-calendar" />
-              <ActionCard icon="airplane-outline" label="Leaves" onPress={() => router.push('/leaves')} testID="action-leave" />
+              <ActionCard icon="airplane-outline" label="Leave request" onPress={() => router.push('/leaves')} testID="action-leave" />
               <ActionCard icon="book-outline" label="My Ledger" onPress={() => router.push(`/ledger/${user?.id}`)} testID="action-ledger" />
             </View>
           </View>

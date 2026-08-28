@@ -38,7 +38,7 @@ export default function EmployeeLeaves() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="emp-leaves-screen">
       <View style={styles.header}>
-        <Text style={styles.title}>My Leaves</Text>
+        <Text style={styles.title}>Leave Requests</Text>
         <Pressable
           onPress={() => router.push('/leaves/new')}
           style={styles.addBtn}

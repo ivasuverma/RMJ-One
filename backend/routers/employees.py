@@ -5,6 +5,7 @@ infrastructure (db, auth deps, models, cross-domain helpers) stays in
 server.py and is imported from here — nothing about behavior changed,
 only where the code lives."""
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from typing import Optional
 import uuid
 import re
@@ -26,6 +27,57 @@ from server import (
 )
 
 router = APIRouter()
+
+
+# ---------------- Employee self-service (own profile) ----------------
+# Registered BEFORE /employees/{emp_id} so "me" isn't captured as an id.
+class EmployeeSelfUpdateIn(BaseModel):
+    name: Optional[str] = None
+    mobile: Optional[str] = None
+    address: Optional[str] = None
+    aadhaar: Optional[str] = None
+    pan: Optional[str] = None
+    bank_account: Optional[str] = None
+    bank_ifsc: Optional[str] = None
+    bank_name: Optional[str] = None
+    photo: Optional[str] = None
+
+
+@router.get('/employees/me')
+async def get_my_profile(user=Depends(get_current)):
+    if user.get('role') != 'employee':
+        raise HTTPException(status_code=403, detail='Employees only')
+    emp = await db.employees.find_one({'id': user['id']}, {'_id': 0, 'password_hash': 0})
+    if not emp:
+        raise HTTPException(status_code=404, detail='Profile not found')
+    return emp
+
+
+@router.put('/employees/me')
+async def update_my_profile(body: EmployeeSelfUpdateIn, user=Depends(get_current)):
+    # An employee may update their own personal details only — never salary,
+    # designation, department, status or access (those stay admin-controlled).
+    if user.get('role') != 'employee':
+        raise HTTPException(status_code=403, detail='Employees only')
+    emp = await db.employees.find_one({'id': user['id']}, {'_id': 0})
+    if not emp:
+        raise HTTPException(status_code=404, detail='Profile not found')
+    upd: dict = {}
+    for f in ('name', 'mobile', 'address', 'aadhaar', 'pan', 'bank_account', 'bank_ifsc', 'bank_name'):
+        v = getattr(body, f)
+        if v is not None:
+            upd[f] = v.strip()
+    if 'name' in upd and not upd['name']:
+        raise HTTPException(status_code=400, detail='Name cannot be empty')
+    if body.photo is not None:
+        upd['photo'] = body.photo
+        upd['photo_thumb'] = _make_photo_thumb(body.photo)
+    if upd:
+        upd['updated_at'] = now_utc().isoformat()
+        await db.employees.update_one({'id': user['id']}, {'$set': upd})
+        await log_audit(user, 'employee.self_update', 'employee', user['id'], emp.get('name', ''), {'fields': list(upd.keys())})
+    return await db.employees.find_one({'id': user['id']}, {'_id': 0, 'password_hash': 0})
+
 
 # ---------------- Employees ----------------
 @router.get('/employees')

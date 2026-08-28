@@ -62,6 +62,7 @@ export default function EmployeeTabsLayout() {
       {/* Still routable via deep links / tiles, but no longer their own tab.
           Calendar & Leaves are reached from the Home quick actions; Tasks &
           Transactions content now lives in the Work hub. */}
+      <Tabs.Screen name="edit-profile" options={{ href: null }} />
       <Tabs.Screen name="calendar" options={{ href: null }} />
       <Tabs.Screen name="leaves" options={{ href: null }} />
       <Tabs.Screen name="tasks" options={{ href: null }} />

@@ -25,7 +25,7 @@ type Row = { key: string; title: string; icon: keyof typeof Ionicons.glyphMap; s
 export default function EmployeeWorkScreen() {
   const router = useRouter();
   const { colors } = useTheme();
-  const { user, hasModule } = useAuth();
+  const { hasModule } = useAuth();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const [repairDash, setRepairDash] = useState<RepairDash | null>(null);
@@ -98,7 +98,6 @@ export default function EmployeeWorkScreen() {
   const reports: Row[] = [];
   if (hasModule('customer_ledger')) reports.push({ key: 'cust', title: 'Customer Ledger', icon: 'person-outline', route: '/reports/customer-ledger', segs: [{ text: 'Balances by customer' }] });
   if (hasModule('karigar_ledger')) reports.push({ key: 'kar', title: 'Karigar Ledger', icon: 'hammer-outline', route: '/reports/karigar-ledger', segs: [{ text: 'Gold & cash owed to karigars' }] });
-  reports.push({ key: 'myledger', title: 'My Ledger', icon: 'book-outline', route: `/ledger/${user?.id}`, segs: [{ text: 'Your wages, advances & dues' }] });
 
   const renderRow = (r: Row) => (
     <Pressable key={r.key} onPress={() => go(r.route)} style={({ pressed }) => [styles.prow, pressed && { opacity: 0.85 }]} testID={`emp-work-row-${r.key}`}>
