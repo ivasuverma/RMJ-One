@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, TextInput, ActivityIndicator, Modal, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, TextInput, ActivityIndicator, Modal, Platform, PanResponder } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
@@ -22,6 +22,19 @@ type Doc = {
   linked_ref?: { type: string; id: string; label?: string } | null;
 };
 type Cat = { key: string; label: string; icon: keyof typeof Ionicons.glyphMap; can_record_roles?: string[]; can_record?: boolean; can_view?: boolean };
+
+// Group documents (already newest-first) into per-day buckets, order preserved.
+function groupByDay(docs: Doc[]): { day: string; items: Doc[] }[] {
+  const out: { day: string; items: Doc[] }[] = [];
+  const idx = new Map<string, Doc[]>();
+  for (const d of docs) {
+    const day = (d.created_at || '').slice(0, 10);
+    let bucket = idx.get(day);
+    if (!bucket) { bucket = []; idx.set(day, bucket); out.push({ day, items: bucket }); }
+    bucket.push(d);
+  }
+  return out;
+}
 
 // A readable name for a document row/card. The raw upload filename is just a
 // timestamp, so never show it — prefer the remark, then what it's linked to,
@@ -56,6 +69,7 @@ export default function DocumentsScreen() {
   const [captureOpen, setCaptureOpen] = useState(capture === '1');
   const [recordDoc, setRecordDoc] = useState<Doc | null>(null);
   const [viewer, setViewer] = useState<Doc | null>(null);
+  const [opening, setOpening] = useState(false);
 
   const base = process.env.EXPO_PUBLIC_BACKEND_URL || '';
   const catMap = useMemo(() => Object.fromEntries(cats.map((c) => [c.key, c])), [cats]);
@@ -72,6 +86,7 @@ export default function DocumentsScreen() {
   // Open the full file (PDF or image) in a new tab. The file route needs a
   // bearer token, which window.open can't send — so fetch the blob first.
   const openFile = async (d: Doc) => {
+    setOpening(true);
     try {
       // Ask for the full-size original (served from Drive when only a local
       // thumbnail remains after sync).
@@ -80,8 +95,9 @@ export default function DocumentsScreen() {
       const url = URL.createObjectURL(await res.blob());
       if (Platform.OS === 'web') window.open(url, '_blank');
     } catch { toast.error('Could not open the file'); }
+    finally { setOpening(false); }
   };
-  const del = (id: string) => confirmAction('Delete document?', 'Removes it from RMJ One. A copy already in Google Drive is kept.', 'Delete', async () => {
+  const del = (id: string) => confirmAction('Delete document?', 'Permanently removes it from RMJ One and from Google Drive. This cannot be undone.', 'Delete', async () => {
     try { await api.del(`/documents/${id}`); setViewer(null); toast.success('Deleted'); load(); }
     catch (e: any) { toast.error(e?.detail || 'Could not delete'); }
   });
@@ -108,15 +124,22 @@ export default function DocumentsScreen() {
     if (summary && summary.can_see_done === false && tab === 'done') { setTab('pending'); setDoneCat(null); }
   }, [summary, tab]);
 
-  const Thumb = ({ d, size }: { d: Doc; size: number }) => (
-    <View style={[styles.thumb, { width: size, height: size, borderRadius: size > 60 ? 12 : 10 }]}>
-      {(d.file.mime || '').startsWith('image/') && token ? (
-        <Image source={{ uri: fileUri(d.id), headers: { Authorization: `Bearer ${token}` } }} style={{ width: size, height: size }} contentFit="cover" cachePolicy="memory-disk" recyclingKey={d.id} transition={120} />
-      ) : (
-        <Ionicons name="document-text-outline" size={size > 60 ? 30 : 22} color={colors.brandSecondary} />
-      )}
-    </View>
-  );
+  const Thumb = ({ d, size }: { d: Doc; size: number }) => {
+    const [loaded, setLoaded] = useState(false);
+    const isImg = (d.file.mime || '').startsWith('image/') && !!token;
+    return (
+      <View style={[styles.thumb, { width: size, height: size, borderRadius: size > 60 ? 12 : 10 }]}>
+        {isImg ? (
+          <>
+            <Image source={{ uri: fileUri(d.id), headers: { Authorization: `Bearer ${token}` } }} style={{ width: size, height: size }} contentFit="cover" cachePolicy="memory-disk" recyclingKey={d.id} transition={120} onLoadEnd={() => setLoaded(true)} />
+            {!loaded && <View style={styles.thumbLoading}><ActivityIndicator size="small" color={colors.brandSecondary} /></View>}
+          </>
+        ) : (
+          <Ionicons name="document-text-outline" size={size > 60 ? 30 : 22} color={colors.brandSecondary} />
+        )}
+      </View>
+    );
+  };
 
   const foldersView = () => {
     const withDone = cats.filter((c) => (summary?.by_category?.[c.key]?.done || 0) > 0);
@@ -148,14 +171,19 @@ export default function DocumentsScreen() {
         {q.length > 0 && <Pressable onPress={() => { setQ(''); setTimeout(load, 0); }} hitSlop={8}><Ionicons name="close-circle" size={16} color={colors.mutedText} /></Pressable>}
       </View>
       {docs.length === 0 ? <View style={styles.empty}><Text style={styles.emptyText}>{q ? 'No matches.' : 'Empty folder.'}</Text></View> : (
-        <View style={styles.grid}>
-          {docs.map((d) => (
-            <Pressable key={d.id} onPress={() => setViewer(d)} style={styles.gridItem} testID={`doc-grid-${d.id}`}>
-              <Thumb d={d} size={GRID} />
-              {d.upload_state === 'synced' && <View style={styles.syncBadge}><Ionicons name="cloud-done" size={11} color={colors.onSuccess} /></View>}
-            </Pressable>
-          ))}
-        </View>
+        groupByDay(docs).map((g) => (
+          <View key={g.day}>
+            <Text style={styles.dayHeader}>{istDisplayDate(g.items[0]?.created_at) || g.day}</Text>
+            <View style={styles.grid}>
+              {g.items.map((d) => (
+                <Pressable key={d.id} onPress={() => setViewer(d)} style={styles.gridItem} testID={`doc-grid-${d.id}`}>
+                  <Thumb d={d} size={GRID} />
+                  {d.upload_state === 'synced' && <View style={styles.syncBadge}><Ionicons name="cloud-done" size={11} color={colors.onSuccess} /></View>}
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        ))
       )}
     </>
   );
@@ -211,7 +239,7 @@ export default function DocumentsScreen() {
           <View style={styles.seg}>
             {(['pending', 'done'] as const).map((t) => (
               <Pressable key={t} onPress={() => switchTab(t)} style={[styles.sg, tab === t && styles.sgOn]} testID={`doc-tab-${t}`}>
-                <Text style={[styles.sgText, tab === t && styles.sgTextOn]}>{t === 'pending' ? 'Pending' : 'Done'} {summary ? <Text style={styles.sgCount}>{t === 'pending' ? summary.pending_count : summary.done_count}</Text> : null}</Text>
+                <Text style={[styles.sgText, tab === t && styles.sgTextOn]}>{t === 'pending' ? 'Pending' : 'Done'}{t === 'pending' && summary ? <Text style={styles.sgCount}> {summary.pending_count}</Text> : null}</Text>
               </Pressable>
             ))}
           </View>
@@ -250,7 +278,8 @@ export default function DocumentsScreen() {
         onClose={() => setRecordDoc(null)} onDone={() => { setRecordDoc(null); setViewer(null); haptics.success(); toast.success('Recorded'); load(); }} />
       <QuickView doc={viewer} categoryLabel={viewer ? (catMap[viewer.category_key]?.label || viewer.category_key) : ''} token={token} fileUri={fileUri}
         onClose={() => setViewer(null)} onRecord={(d) => setRecordDoc(d)} canRecord={viewer ? canRecord(viewer.category_key) : false}
-        canDelete={canDelete} onDelete={del} onOpenFile={openFile} />
+        canDelete={canDelete} onDelete={del} onOpenFile={openFile} opening={opening}
+        list={docs} onNavigate={(d) => setViewer(d)} />
     </SafeAreaView>
   );
 }
@@ -262,14 +291,26 @@ const TINTS = (c: ThemeColors) => [
 ];
 
 /* ---------------- Quick view (full-screen) ---------------- */
-function QuickView({ doc, categoryLabel, token, fileUri, onClose, onRecord, canRecord, canDelete, onDelete, onOpenFile }: {
+function QuickView({ doc, categoryLabel, token, fileUri, onClose, onRecord, canRecord, canDelete, onDelete, onOpenFile, opening, list, onNavigate }: {
   doc: Doc | null; categoryLabel: string; token: string; fileUri: (id: string) => string;
   onClose: () => void; onRecord: (d: Doc) => void; canRecord: boolean; canDelete: boolean;
-  onDelete: (id: string) => void; onOpenFile: (d: Doc) => void;
+  onDelete: (id: string) => void; onOpenFile: (d: Doc) => void; opening: boolean;
+  list: Doc[]; onNavigate: (d: Doc) => void;
 }) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const insets = useSafeAreaInsets();
+  const [imgLoaded, setImgLoaded] = useState(false);
+  const idx = doc ? list.findIndex((x) => x.id === doc.id) : -1;
+  const go = (dir: number) => {
+    const n = idx + dir;
+    if (n >= 0 && n < list.length) { setImgLoaded(false); onNavigate(list[n]); }
+  };
+  // Swipe left → next, swipe right → previous (through the current list).
+  const pan = useMemo(() => PanResponder.create({
+    onMoveShouldSetPanResponder: (_e, g) => Math.abs(g.dx) > 24 && Math.abs(g.dx) > Math.abs(g.dy),
+    onPanResponderRelease: (_e, g) => { if (g.dx <= -50) go(1); else if (g.dx >= 50) go(-1); },
+  }), [idx, list]);
   if (!doc) return null;
   const isImage = (doc.file.mime || '').startsWith('image/');
   return (
@@ -285,18 +326,25 @@ function QuickView({ doc, categoryLabel, token, fileUri, onClose, onRecord, canR
             ? <Pressable onPress={() => onDelete(doc.id)} hitSlop={10} style={styles.qvIconBtn} testID="qv-delete"><Ionicons name="trash-outline" size={19} color={colors.onError} /></Pressable>
             : <View style={styles.qvIconBtn} />}
         </View>
-        <Pressable style={styles.qvImgWrap} onPress={() => !isImage && onOpenFile(doc)}>
+        <View style={styles.qvImgWrap} {...pan.panHandlers}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => !isImage && onOpenFile(doc)} />
           {isImage && token
-            ? <Image source={{ uri: fileUri(doc.id), headers: { Authorization: `Bearer ${token}` } }} style={styles.qvImg} contentFit="contain" />
+            ? <Image key={doc.id} source={{ uri: fileUri(doc.id), headers: { Authorization: `Bearer ${token}` } }} style={styles.qvImg} contentFit="contain" onLoadEnd={() => setImgLoaded(true)} />
             : <View style={{ alignItems: 'center', gap: 10 }}><Ionicons name="document-text-outline" size={64} color={colors.mutedText} /><Text style={{ color: '#fff', fontWeight: '700' }}>Tap to open PDF</Text></View>}
-          <View style={styles.qvStamp}><Ionicons name={doc.upload_state === 'synced' ? 'cloud-done' : 'phone-portrait-outline'} size={12} color={colors.onSurface} /><Text style={styles.qvStampText}>{doc.upload_state === 'synced' ? 'In Drive' : 'Local'}</Text></View>
-        </Pressable>
+          {isImage && !imgLoaded && <View style={styles.qvImgLoading} pointerEvents="none"><ActivityIndicator color="#fff" size="large" /></View>}
+          {idx > 0 && <Pressable onPress={() => go(-1)} style={[styles.qvNav, { left: 6 }]} testID="qv-prev"><Ionicons name="chevron-back" size={26} color="#fff" /></Pressable>}
+          {idx >= 0 && idx < list.length - 1 && <Pressable onPress={() => go(1)} style={[styles.qvNav, { right: 6 }]} testID="qv-next"><Ionicons name="chevron-forward" size={26} color="#fff" /></Pressable>}
+          <View style={styles.qvStamp}><Ionicons name={doc.upload_state === 'synced' ? 'cloud-done' : 'phone-portrait-outline'} size={12} color={colors.onSurface} /><Text style={styles.qvStampText}>{doc.upload_state === 'synced' ? 'In Drive' : 'Local'}{list.length > 1 && idx >= 0 ? ` · ${idx + 1}/${list.length}` : ''}</Text></View>
+        </View>
         <View style={styles.qvPanel}>
           <Text style={styles.qvName} numberOfLines={2}>{docTitle(doc, categoryLabel)}</Text>
           <Text style={styles.qvMeta}>{doc.uploaded_by_name ? `By ${doc.uploaded_by_name} · ` : ''}{istDisplayDateTime(doc.recorded_at || doc.created_at)}</Text>
           <View style={styles.qvActions}>
             {isImage && (
-              <Pressable onPress={() => onOpenFile(doc)} style={styles.qvBtn} testID="qv-open"><Ionicons name="expand-outline" size={16} color={colors.onSurface} /><Text style={styles.qvBtnText}>Open full size</Text></Pressable>
+              <Pressable onPress={() => onOpenFile(doc)} disabled={opening} style={styles.qvBtn} testID="qv-open">
+                {opening ? <ActivityIndicator size="small" color={colors.onSurface} /> : <Ionicons name="expand-outline" size={16} color={colors.onSurface} />}
+                <Text style={styles.qvBtnText}>{opening ? 'Opening…' : 'Open full size'}</Text>
+              </Pressable>
             )}
             {canRecord && (
               doc.status === 'pending'
@@ -374,6 +422,8 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: 13, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.sm, marginBottom: 10 },
   rowMain: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 13, minWidth: 0 },
   thumb: { backgroundColor: colors.surfaceTertiary, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  thumbLoading: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceTertiary },
+  dayHeader: { color: colors.mutedText, fontSize: 12, fontWeight: '800', letterSpacing: 0.4, textTransform: 'uppercase', marginTop: spacing.md, marginBottom: 2 },
   docName: { color: colors.onSurface, fontSize: 15, fontWeight: '600' },
   docMeta: { color: colors.mutedText, fontSize: 12.5, marginTop: 2 },
   recBtn: { backgroundColor: colors.brandPrimary, paddingHorizontal: 14, paddingVertical: 9, borderRadius: 10 },
@@ -405,6 +455,8 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   qvCat: { flex: 1, textAlign: 'center', color: '#fff', fontSize: 16, fontWeight: '800' },
   qvImgWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', position: 'relative' },
   qvImg: { width: '100%', height: '100%' },
+  qvImgLoading: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
+  qvNav: { position: 'absolute', top: '50%', marginTop: -22, width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.45)' },
   qvStamp: { position: 'absolute', top: spacing.md, right: spacing.lg, flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(30,30,34,0.9)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: radius.pill },
   qvStampText: { color: colors.onSurface, fontSize: 11, fontWeight: '700' },
   qvPanel: { backgroundColor: colors.surface, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, padding: spacing.lg, paddingBottom: spacing.xxl, gap: 8 },

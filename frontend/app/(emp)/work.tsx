@@ -9,6 +9,7 @@ import { todayIST } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { DocumentCaptureSheet } from '@/src/components/DocumentCaptureSheet';
+import { UploadQueueBadge } from '@/src/components/UploadQueueBadge';
 
 // Employee Work hub — same card language as the admin Work board: an
 // "In progress" list of process rows (each showing its live state before you
@@ -122,6 +123,7 @@ export default function EmployeeWorkScreen() {
             <Text style={styles.h1}>Work</Text>
             <Text style={styles.sub}>What&apos;s in progress — and what to do next.</Text>
           </View>
+          <UploadQueueBadge />
           {hasDocs && (
             <Pressable onPress={() => setCaptureDoc(true)} style={styles.captureBtn} testID="emp-work-capture-btn" hitSlop={8}>
               <Ionicons name="camera" size={22} color={colors.brandSecondary} />

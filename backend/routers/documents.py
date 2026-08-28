@@ -390,8 +390,17 @@ async def delete_document(doc_id: str, user=Depends(get_current)):
     d = await db.documents.find_one({'id': doc_id}, {'_id': 0, 'local_data': 0})
     if not d:
         raise HTTPException(status_code=404, detail='Document not found')
-    # Soft-delete in the app; the original stays in Drive (once synced).
-    await db.documents.update_one({'id': doc_id}, {'$set': {'deleted': True, 'deleted_at': now_utc().isoformat(), 'deleted_by': user['id']}})
+    # Delete everywhere: remove the original from Google Drive (if synced), then
+    # remove the record + any local bytes from this server.
+    drive_id = (d.get('file') or {}).get('drive_file_id')
+    if drive_id:
+        try:
+            import drive_service
+            cfg = await drive_service.get_config()
+            await drive_service.delete_file(cfg, drive_id)
+        except Exception:
+            pass   # Drive delete failed — still remove from the app below
+    await db.documents.delete_one({'id': doc_id})
     await log_audit(user, 'documents.delete', 'document', doc_id, (d.get('file') or {}).get('orig_name', ''))
     return {'ok': True}
 
