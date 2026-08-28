@@ -244,6 +244,7 @@ async def _compute_payroll(year: int, month: int) -> list:
         # checked-in-but-never-checked-out day settles to 'missing_punch',
         # not 'present' — no free full-day pay just for showing up).
         day_state: dict = {}
+        late_days = 0
         for ds in all_month_dates:
             if ds in leave_dates:
                 day_state[ds] = 'leave'
@@ -270,6 +271,8 @@ async def _compute_payroll(year: int, month: int) -> list:
                 continue
             state = _resolve_attendance_state(a, e, shift, store, ds == today_ds, minutes_now)
             day_state[ds] = state['status']  # present | half_day | missing_punch | absent
+            if state.get('is_late'):
+                late_days += 1  # a present/half day where the employee arrived late
 
         # Sunday pay is forfeited for a week where every scheduled workday
         # (Mon-Sat) was a genuine absence — applied only to a Sunday that
@@ -331,7 +334,7 @@ async def _compute_payroll(year: int, month: int) -> list:
             'designation': e.get('designation'), 'department': e.get('department'), 'photo': e.get('photo_thumb') or '',
             'base_salary': base, 'present_days': present, 'half_days': half,
             'absent_days': absent, 'missing_punch_days': missing_punch,
-            'sunday_work': sunday_work, 'leave_days': leave_days,
+            'sunday_work': sunday_work, 'leave_days': leave_days, 'late_days': late_days,
             'holiday_days': holiday_days, 'weekly_off_days': weekly_off_days,
             'total_days': total_days, 'effective_days': round(min(effective, total_days), 2),
             'per_day_rate': round(per_day, 2),

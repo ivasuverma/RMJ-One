@@ -128,6 +128,7 @@ export default function PayrollDetail() {
         <Line label="Base Salary" value={fmtINR(row.base_salary)} />
         <SectionTitle text="Days Summary" />
         <Line label="Present days" value={String(row.present_days)} />
+        <Line label="Late arrivals" value={String(row.late_days ?? 0)} />
         <Line label="Half days" value={String(row.half_days)} />
         <Line label="Sunday work (half-day bonus)" value={String(row.sunday_work)} />
         <Line label="Leave days (paid)" value={String(row.leave_days)} />
