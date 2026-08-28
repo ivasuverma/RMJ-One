@@ -15,7 +15,7 @@ type Rights = { edit?: boolean; delete?: boolean };
 type DocRight = { view?: boolean; record?: boolean };
 type Counter = { id: string; name: string };
 type DocCategory = { key: string; label: string };
-type NotifModule = { key: string; label: string; default_roles: string[] };
+type NotifModule = { key: string; label: string; default_roles: string[]; events?: { key: string; label: string }[] };
 type Account = {
   id: string; name: string; username?: string; role: string; account_type: 'user' | 'employee';
   designation?: string; status?: string; module_access: string[] | null; resolved_modules: string[];
@@ -189,18 +189,33 @@ export default function PersonScreen() {
             </View>
             <Switch value={notifOn} onValueChange={setNotifOn} trackColor={{ true: colors.brandPrimary, false: colors.border }} thumbColor={colors.surface} testID="person-notif-master" />
           </View>
-          {notifOn && notifModules.map((nm) => (
-            <View key={nm.key} style={styles.switchRow}>
-              <Text style={styles.notifModLabel}>{nm.label}</Text>
-              <Switch
-                value={notifPrefs[nm.key] !== false}
-                onValueChange={(v) => setNotifPrefs((p) => ({ ...p, [nm.key]: v }))}
-                trackColor={{ true: colors.brandPrimary, false: colors.border }}
-                thumbColor={colors.surface}
-                testID={`person-notif-${nm.key}`}
-              />
-            </View>
-          ))}
+          {notifOn && notifModules.map((nm) => {
+            const on = notifPrefs[nm.key] !== false;
+            return (
+              <View key={nm.key}>
+                <View style={styles.switchRow}>
+                  <Text style={styles.notifModLabel}>{nm.label}</Text>
+                  <Switch
+                    value={on}
+                    onValueChange={(v) => setNotifPrefs((p) => ({ ...p, [nm.key]: v }))}
+                    trackColor={{ true: colors.brandPrimary, false: colors.border }}
+                    thumbColor={colors.surface}
+                    testID={`person-notif-${nm.key}`}
+                  />
+                </View>
+                {on && (nm.events || []).length > 0 && (
+                  <View style={styles.eventList}>
+                    {(nm.events || []).map((ev) => (
+                      <View key={ev.key} style={styles.eventRow}>
+                        <Ionicons name="ellipse" size={5} color={colors.brandSecondary} />
+                        <Text style={styles.eventText}>{ev.label}</Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </View>
+            );
+          })}
         </Section>
 
         {isOwner ? (
@@ -327,6 +342,9 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   switchTitle: { color: colors.onSurface, fontSize: 14, fontWeight: '600' },
   switchSub: { color: colors.mutedText, fontSize: 11.5, marginTop: 2 },
   notifModLabel: { flex: 1, color: colors.onSurfaceSecondary, fontSize: 14 },
+  eventList: { paddingLeft: 4, paddingBottom: 10, gap: 5 },
+  eventRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  eventText: { color: colors.mutedText, fontSize: 12.5, flex: 1 },
 
   modRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: 9 },
   checkbox: { width: 20, height: 20, borderRadius: 5, borderWidth: 1.5, borderColor: colors.border, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface },

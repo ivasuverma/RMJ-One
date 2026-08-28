@@ -25,6 +25,7 @@ from server import (
     ModuleAccessUpdateIn,
     NOTIFICATION_MODULES,
     NOTIFICATION_MODULE_KEYS,
+    NOTIFICATION_SCRIPTS_BY_MODULE,
     log_audit,
 )
 
@@ -146,8 +147,12 @@ async def list_modules(_: dict = Depends(require_owner), _mod=Depends(require_mo
 @router.get('/access/notification-modules')
 async def list_notification_modules(_: dict = Depends(require_owner), _mod=Depends(require_module('user_roles'))):
     """The notification categories a person can opt in/out of, each with the
-    roles that receive it by default (used to show the right initial state)."""
-    return NOTIFICATION_MODULES
+    roles that receive it by default and the individual alerts it sends (shown
+    line-by-line under the toggle)."""
+    return [
+        {**m, 'events': [{'key': s['key'], 'label': s['label']} for s in NOTIFICATION_SCRIPTS_BY_MODULE.get(m['key'], [])]}
+        for m in NOTIFICATION_MODULES
+    ]
 
 
 @router.get('/access/accounts')

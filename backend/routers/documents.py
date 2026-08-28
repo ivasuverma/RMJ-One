@@ -259,7 +259,35 @@ async def create_document(
     }
     await db.documents.insert_one(dict(doc))
     await log_audit(user, 'documents.create', 'document', doc['id'], f'{cat["label"]} · {doc["file"]["orig_name"]}')
+    await _notify_record_holders(cat, doc, user)
     return {k: v for k, v in doc.items() if k not in ('_id', 'local_data', 'ocr')}
+
+
+async def _notify_record_holders(cat: dict, doc: dict, actor: dict) -> None:
+    """Tell whoever can RECORD this category that a new document is waiting —
+    resolved per person from their record rights (falling back to role). Skips
+    the person who captured it. Gated by each recipient's master notification
+    switch (handled inside notify_user)."""
+    from server import notify_user
+    title = f'New {cat.get("label", "document")} to record'
+    body = (doc.get('note') or (doc.get('file') or {}).get('orig_name') or 'A document was captured.')[:120]
+    actor_id = actor.get('id')
+    proj = {'_id': 0, 'id': 1, 'role': 1, 'doc_category_rights': 1, 'status': 1}
+    sent = set()
+    try:
+        async for u in db.users.find({}, proj):
+            if u['id'] == actor_id:
+                continue
+            if _can_record(cat, u.get('role', ''), u):
+                await notify_user(u['id'], title, body, '/documents?tab=pending')
+                sent.add(u['id'])
+        async for e in db.employees.find({'status': {'$ne': 'inactive'}}, proj):
+            if e['id'] == actor_id or e['id'] in sent:
+                continue
+            if _can_record(cat, 'employee', e):
+                await notify_user(e['id'], title, body, '/documents?tab=pending')
+    except Exception:
+        pass
 
 
 @router.get('/documents')

@@ -52,6 +52,15 @@ async def add_ledger_entry(body: LedgerEntryIn, user=Depends(require_staff), _mo
     await db.timeline.insert_one(dict(doc))
     await log_audit(user, 'ledger.create', 'ledger', doc['id'], emp.get('employee_code', ''),
                      {'type': body.entry_type, 'amount': body.amount})
+    # Personal alert to the employee when money is recorded against/for them.
+    if body.entry_type in ('advance', 'bonus', 'fine', 'deduction'):
+        label = title_map.get(body.entry_type, 'Ledger entry')
+        await notify_user(
+            body.employee_id,
+            f'{label}: ₹{float(body.amount):,.0f}',
+            (body.note or '').strip() or f'{label} recorded on your account.',
+            '/(emp)/profile',
+        )
     return {k: v for k, v in doc.items() if k != '_id'}
 
 
