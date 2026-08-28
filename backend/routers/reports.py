@@ -46,7 +46,7 @@ NOT_CHECKED_IN_GRACE_MIN = 30
 # shared TTL cache collapses that to one computation per window for everyone,
 # which is well within the dashboard's own staleness tolerance (30-min grace
 # rules etc.). A lock prevents a thundering-herd recompute when it expires.
-_DASH_TTL_SEC = 4.0
+_DASH_TTL_SEC = 20.0
 _dash_cache: dict = {'at': 0.0, 'data': None}
 _dash_lock = asyncio.Lock()
 
@@ -79,7 +79,7 @@ async def dashboard(_: dict = Depends(get_current)):
 # native EventSource, precisely so it can send that header instead of leaking
 # the JWT in a query param). Keep-alive comment lines are sent between payloads
 # so Cloudflare's proxy doesn't idle-close the connection.
-_STREAM_INTERVAL_SEC = 5
+_STREAM_INTERVAL_SEC = 20
 
 
 @router.get('/dashboard/stream')
@@ -133,20 +133,22 @@ async def _compute_dashboard() -> dict:
     d = today_str()
     # Exclude inactive (ex-)employees — they shouldn't inflate the absent count
     # or the "N of M in" total on the dashboard.
-    employees = await db.employees.find({'status': {'$ne': 'inactive'}}, {'_id': 0, 'id': 1, 'status': 1, 'shift': 1}).to_list(2000)
-    total = len(employees)
-    on_leave_status = sum(1 for e in employees if e.get('status') == 'on_leave')
-
-    att = await db.attendance.find({'date': d}, {'_id': 0, 'check_in.selfie': 0, 'check_out.selfie': 0}).to_list(1000)
-    att_by_emp = {a['employee_id']: a for a in att}
-
     now_ist = now_utc().astimezone(IST)
     minutes_now = now_ist.hour * 60 + now_ist.minute
-    check_today = now_ist.weekday() != 6 and not await db.holidays.find_one({'date': d}, {'_id': 0, 'id': 1})
-    store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
-    shifts_by_name = {}
-    async for s in db.shifts.find({}, {'_id': 0}):
-        shifts_by_name[s['name']] = s
+    # Run the independent attendance reads concurrently instead of one-by-one.
+    employees, att, _holiday, _store_doc, _shifts = await asyncio.gather(
+        db.employees.find({'status': {'$ne': 'inactive'}}, {'_id': 0, 'id': 1, 'status': 1, 'shift': 1}).to_list(2000),
+        db.attendance.find({'date': d}, {'_id': 0, 'check_in.selfie': 0, 'check_out.selfie': 0}).to_list(1000),
+        db.holidays.find_one({'date': d}, {'_id': 0, 'id': 1}),
+        db.settings.find_one({'id': 'store'}, {'_id': 0}),
+        db.shifts.find({}, {'_id': 0}).to_list(200),
+    )
+    total = len(employees)
+    on_leave_status = sum(1 for e in employees if e.get('status') == 'on_leave')
+    att_by_emp = {a['employee_id']: a for a in att}
+    check_today = now_ist.weekday() != 6 and not _holiday
+    store = _store_doc or {}
+    shifts_by_name = {s['name']: s for s in _shifts}
 
     # Every tile below is derived from the same per-employee resolver the
     # Attendance screen and Payroll use, so the dashboard counts always
@@ -218,12 +220,14 @@ async def _compute_dashboard() -> dict:
     intake_today = await db.repair_items.count_documents({'created_at': {'$regex': f'^{d}'}})
     active_employees = await db.employees.count_documents({'status': {'$ne': 'inactive'}})
 
-    orders = await db.repair_orders.find({}, {'_id': 0, 'id': 1, 'customer_id': 1}).to_list(10000)
+    # These three are the biggest reads — run them concurrently.
+    orders, open_items_all, karigar_entries = await asyncio.gather(
+        db.repair_orders.find({}, {'_id': 0, 'id': 1, 'customer_id': 1}).to_list(10000),
+        db.repair_items.find({'status': {'$ne': 'delivered'}}, {'_id': 0, 'order_id': 1}).to_list(10000),
+        db.karigar_ledger.find({}, {'_id': 0, 'karigar_id': 1, 'type': 1, 'weight': 1, 'fine_weight': 1, 'amount': 1}).to_list(20000),
+    )
     order_to_customer = {o['id']: o['customer_id'] for o in orders}
-    open_items_all = await db.repair_items.find({'status': {'$ne': 'delivered'}}, {'_id': 0, 'order_id': 1}).to_list(10000)
     customers_open = len({order_to_customer[i['order_id']] for i in open_items_all if order_to_customer.get(i.get('order_id'))})
-
-    karigar_entries = await db.karigar_ledger.find({}, {'_id': 0, 'karigar_id': 1, 'type': 1, 'weight': 1, 'fine_weight': 1, 'amount': 1}).to_list(20000)
     karigar_bal = _karigar_ledger_balances(karigar_entries)
     karigars_open = sum(1 for b in karigar_bal.values() if round(b.get('fine_bal', 0), 3) or round(b.get('amt_due', 0), 2))
     # Net fine gold (grams) still sitting with karigars, and net cash the shop
@@ -249,9 +253,7 @@ async def _compute_dashboard() -> dict:
     cb_entries_today = await db.cashbook_entries.find({'date': d}, {'_id': 0, 'type': 1, 'amount': 1}).to_list(5000)
     cb_received_today = sum(e['amount'] for e in cb_entries_today if e['type'] == 'received')
     cb_paid_today = sum(e['amount'] for e in cb_entries_today if e['type'] == 'paid')
-    cb_opening_total = 0.0
-    for c in cb_counters:
-        cb_opening_total += await _opening_balance_for(c['id'], d)
+    cb_opening_total = sum(await asyncio.gather(*[_opening_balance_for(c['id'], d) for c in cb_counters])) if cb_counters else 0.0
     cb_closing = round(cb_opening_total + cb_received_today - cb_paid_today, 2)
 
     return {
