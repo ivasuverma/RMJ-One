@@ -224,8 +224,11 @@ async def create_document(
     if not cat:
         raise HTTPException(status_code=404, detail='Unknown category')
     rights = await _account_rights(user)
-    if not _can_record(cat, _role(user), rights):
-        raise HTTPException(status_code=403, detail='You do not have permission to file documents in this category')
+    # Uploading a document is a VIEW-level right: anyone who can see the
+    # category may add photos into its Pending tab. RECORD is only needed to
+    # then mark a pending document as done (see record_document below).
+    if not _can_see(cat, _role(user), rights):
+        raise HTTPException(status_code=403, detail='You do not have access to this category')
     raw = await file.read()
     if not raw:
         raise HTTPException(status_code=400, detail='Empty file')

@@ -9,7 +9,7 @@ import { Sheet, useToast } from '@/src/components/ui';
 import { SimpleCropper } from '@/src/components/SimpleCropper';
 import { enqueueUpload } from '@/src/utils/uploadQueue';
 
-export type DocCategory = { id: string; key: string; label: string; icon: keyof typeof Ionicons.glyphMap; can_record?: boolean };
+export type DocCategory = { id: string; key: string; label: string; icon: keyof typeof Ionicons.glyphMap; can_record?: boolean; can_view?: boolean };
 
 // The app ships as a web export, so capture uses a native file input — which
 // gives us camera (capture=environment), photo library, and Files/PDF for free
@@ -109,8 +109,10 @@ export function DocumentCaptureSheet({ visible, onClose, onSaved, autoCamera }: 
 
   useEffect(() => {
     if (visible) {
-      // Only categories this person may RECORD into (that's what filing needs).
-      api.get<DocCategory[]>('/document-categories').then((cs) => setCats(cs.filter((c) => c.can_record !== false))).catch(() => {});
+      // Categories this person may VIEW — uploading into the Pending tab is a
+      // view-level right (Record is only needed to mark a doc done). The API
+      // already returns only viewable categories, so show them all.
+      api.get<DocCategory[]>('/document-categories').then((cs) => setCats(cs.filter((c) => c.can_view !== false))).catch(() => {});
     } else {
       setFile(null); setNote(''); setCatKey(null); setPhase('capture'); autoFired.current = false;
     }
