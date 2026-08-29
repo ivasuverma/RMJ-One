@@ -232,7 +232,12 @@ export default function AccountDetailScreen() {
               <Text style={[styles.cellDate, styles.colDate]}>{displayDateOnly(e.date)}</Text>
               <View style={styles.colPart}>
                 <Text style={styles.cellPart} numberOfLines={2}>{e.particulars}</Text>
-                <Text style={styles.cellRun}>bal {e.running_fine.toFixed(3)}g · ₹{Math.round(e.running_amount).toLocaleString('en-IN')}</Text>
+                <View style={styles.metaRow}>
+                  {!!e.source && e.source !== 'manual' && (
+                    <View style={styles.srcTag}><Text style={styles.srcTagText}>{e.source === 'karigar' ? 'Karigar ledger' : e.source === 'repair' ? 'Repair' : e.source}</Text></View>
+                  )}
+                  <Text style={styles.cellRun}>bal {e.running_fine.toFixed(3)}g · ₹{Math.round(e.running_amount).toLocaleString('en-IN')}</Text>
+                </View>
               </View>
               <Text style={[styles.cellNum, styles.colNum, { color: e.fine_delta > 0 ? colors.onSuccess : e.fine_delta < 0 ? colors.onWarning : colors.mutedText }]}>{signFine(e.fine_delta)}</Text>
               <Text style={[styles.cellNum, styles.colNum, { color: e.amount_delta > 0 ? colors.onSuccess : e.amount_delta < 0 ? colors.onWarning : colors.mutedText }]}>{signAmt(e.amount_delta)}</Text>
@@ -380,6 +385,9 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   cellDate: { color: colors.onSurfaceSecondary, fontSize: 11.5 },
   cellPart: { color: colors.onSurface, fontSize: 13, fontWeight: '600' },
   cellRun: { color: colors.mutedText, fontSize: 10, marginTop: 2 },
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2, flexWrap: 'wrap' },
+  srcTag: { backgroundColor: colors.brandTertiary, borderRadius: radius.pill, paddingHorizontal: 6, paddingVertical: 1 },
+  srcTagText: { color: colors.brandSecondary, fontSize: 9, fontWeight: '700' },
   cellNum: { fontSize: 12.5, fontWeight: '800', fontVariant: ['tabular-nums'] },
 
   noEntries: { color: colors.mutedText, fontSize: 13, textAlign: 'center', paddingVertical: spacing.xl },

@@ -106,8 +106,95 @@ async def _assert_unique_identity(name: str, phone: str, exclude_id: Optional[st
             raise HTTPException(status_code=409, detail='An account with this mobile number already exists')
 
 
+# Human labels for the karigar_ledger entry types when shown in the unified
+# statement.
+_KARIGAR_LABELS = {
+    'gold_out': 'Gold issued', 'gold_in': 'Gold received',
+    'labour_payable': 'Labour payable', 'payment': 'Payment to karigar',
+    'receipt': 'Receipt', 'wastage': 'Wastage', 'adjustment': 'Adjustment',
+}
+
+
+async def _source_ledger(account: dict) -> dict:
+    """Read-only reflection of a mirrored party's own sub-ledger into the
+    unified ledger — so a customer's/karigar's repair and sample activity shows
+    up here WITHOUT being re-posted (nothing is written, so there's no double
+    counting and edits/deletes at the source flow through automatically).
+
+    Returns synthetic entries (same shape as a unified entry, flagged
+    read_only) plus their summed fine/amount deltas. Sign follows the unified
+    convention: positive = owed to the shop, negative = owed by the shop."""
+    src = account.get('source') or {}
+    kind, ref = src.get('kind'), src.get('ref')
+    entries: list = []
+    fine = 0.0
+    amount = 0.0
+    if not ref:
+        return {'entries': entries, 'fine': 0.0, 'amount': 0.0}
+
+    if kind == 'karigar':
+        # karigar_ledger already carries BOTH repair issue/receive AND sample
+        # out/in (samples post gold_out/gold_in here too), so this single source
+        # covers "repair and sample" for karigars.
+        async for e in db.karigar_ledger.find({'karigar_id': ref}, {'_id': 0}):
+            t = e.get('type')
+            fw = e.get('fine_weight') if e.get('fine_weight') is not None else (e.get('weight') or 0)
+            amt = e.get('amount') or 0
+            fd = 0.0
+            ad = 0.0
+            if t == 'gold_out':
+                fd = fw
+            elif t == 'gold_in':
+                fd = -fw
+            elif t == 'payment':
+                ad = amt  # we paid the karigar — reduces what the shop owes them
+            elif t in ('labour_payable', 'receipt', 'wastage', 'adjustment'):
+                ad = -amt  # shop owes the karigar
+            part = _KARIGAR_LABELS.get(t, t or 'Entry')
+            if e.get('item_code'):
+                part = f"{part} · {e['item_code']}"
+            if e.get('note'):
+                part = f"{part} — {e['note']}"
+            created = e.get('created_at') or ''
+            entries.append({
+                'id': e.get('id'), 'date': created[:10], 'created_at': created,
+                'particulars': part, 'fine_delta': round(fd, 3), 'amount_delta': round(ad, 2),
+                'note': e.get('note', ''), 'source': 'karigar', 'ref_id': e.get('id'), 'read_only': True,
+            })
+            fine += fd
+            amount += ad
+
+    elif kind == 'customer':
+        # Customers carry no money sub-ledger (repair bills settle straight to
+        # the cash book). What they DO carry is gold the shop is currently
+        # holding for their in-progress repairs — reflect that as read-only
+        # entries (negative fine = the shop holds their gold, owed back).
+        oids = [o['id'] async for o in db.repair_orders.find({'customer_id': ref}, {'_id': 0, 'id': 1})]
+        if oids:
+            async for it in db.repair_items.find(
+                {'order_id': {'$in': oids}, 'status': {'$ne': 'delivered'}},
+                {'_id': 0, 'id': 1, 'item_code': 1, 'description': 1, 'gross_weight': 1, 'created_at': 1},
+            ):
+                gw = it.get('gross_weight') or 0
+                if not gw:
+                    continue
+                created = it.get('created_at') or ''
+                desc = (it.get('description') or '').strip()
+                code = it.get('item_code') or ''
+                entries.append({
+                    'id': it.get('id'), 'date': created[:10], 'created_at': created,
+                    'particulars': f"In for repair: {desc}{(' · ' + code) if code else ''}".strip(),
+                    'fine_delta': round(-gw, 3), 'amount_delta': 0.0,
+                    'note': '', 'source': 'repair', 'ref_id': it.get('id'), 'read_only': True,
+                })
+                fine += -gw
+
+    return {'entries': entries, 'fine': round(fine, 3), 'amount': round(amount, 2)}
+
+
 async def _balance_for(account: dict) -> dict:
-    """Opening position + signed sum of every entry delta for this account.
+    """Opening position + signed sum of every entry delta for this account,
+    PLUS the read-only reflection of the party's own repair/sample sub-ledger.
     Returned as two independent numbers (fine grams / amount ₹), each rounded
     to their own precision (3dp / 2dp)."""
     agg = await db.ledger_entries.aggregate([
@@ -116,9 +203,10 @@ async def _balance_for(account: dict) -> dict:
     ]).to_list(1)
     sum_fine = agg[0]['fine'] if agg else 0
     sum_amount = agg[0]['amount'] if agg else 0
+    src = await _source_ledger(account)
     return {
-        'fine_balance': round((account.get('opening_fine') or 0) + sum_fine, 3),
-        'amount_balance': round((account.get('opening_amount') or 0) + sum_amount, 2),
+        'fine_balance': round((account.get('opening_fine') or 0) + sum_fine + src['fine'], 3),
+        'amount_balance': round((account.get('opening_amount') or 0) + sum_amount + src['amount'], 2),
     }
 
 
@@ -232,9 +320,14 @@ async def create_account(body: LedgerAccountIn, user=Depends(require_staff_or_mo
 async def get_account(account_id: str, _: dict = Depends(require_staff_or_module('ledger'))):
     account = await _get_account(account_id)
     t = await db.account_types.find_one({'id': account['type_id']}, {'_id': 0, 'name': 1})
-    entries = await db.ledger_entries.find({'account_id': account_id}, {'_id': 0}).sort('date', 1).to_list(5000)
-    # Also sort by created_at within the same date so a running balance reads
-    # in the order entries were actually recorded.
+    manual = await db.ledger_entries.find({'account_id': account_id}, {'_id': 0}).to_list(5000)
+    # Fold in the read-only reflection of this party's repair/sample sub-ledger
+    # (karigar_ledger for karigars, gold-held for customers) so it all reads as
+    # one statement. These carry read_only=True and can't be edited/deleted here.
+    src = await _source_ledger(account)
+    entries = manual + src['entries']
+    # Sort by date, then created_at within the same date, so the running
+    # balance reads in the order entries were actually recorded.
     entries.sort(key=lambda e: (e.get('date', ''), e.get('created_at', '')))
     bal = await _balance_for(account)
     # Running balances down the statement, starting from the opening position.
