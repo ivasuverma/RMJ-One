@@ -99,6 +99,27 @@ async def _ensure_folder(h: httpx.AsyncClient, access: str, name: str, parent: O
     return r2.json()['id']
 
 
+async def upload_raw(config: dict, category_label: str, filename: str, raw: bytes, mime: str) -> dict:
+    """Upload raw bytes straight to Drive (no base64 round-trip) — used for large
+    files (e.g. multi-page PDFs) that are too big to inline in MongoDB, so they
+    stream to Drive on capture instead of being stored in the database at all.
+    Returns the same drive_* fields as upload()."""
+    access = await _access_token(config)
+    async with httpx.AsyncClient(timeout=300) as h:
+        root = await _ensure_folder(h, access, ROOT_FOLDER, None)
+        folder = await _ensure_folder(h, access, category_label, root)
+        rc = await h.post(FILES_URL, json={'name': filename, 'parents': [folder]}, headers={'Authorization': f'Bearer {access}'})
+        rc.raise_for_status()
+        fid = rc.json()['id']
+        ru = await h.patch(
+            f'{UPLOAD_URL}/{fid}?uploadType=media&fields=id,webViewLink,thumbnailLink',
+            content=raw, headers={'Authorization': f'Bearer {access}', 'Content-Type': mime or 'application/octet-stream'},
+        )
+        ru.raise_for_status()
+        j = ru.json()
+    return {'drive_file_id': j['id'], 'drive_view_link': j.get('webViewLink'), 'drive_thumbnail_link': j.get('thumbnailLink')}
+
+
 async def upload(config: dict, category_label: str, filename: str, data_b64: str, mime: str) -> dict:
     """Two-step upload (metadata create, then media patch) — avoids hand-rolling
     a multipart/related body. Returns the drive_* fields to store on the doc."""

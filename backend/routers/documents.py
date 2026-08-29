@@ -232,17 +232,10 @@ async def create_document(
     raw = await file.read()
     if not raw:
         raise HTTPException(status_code=400, detail='Empty file')
-    # The bytes are stored inline as base64 in the Mongo document, and base64
-    # inflates size by ~4/3. MongoDB caps a single document at 16 MB, so the
-    # raw file must stay under ~11 MB or the insert fails. Photos are shrunk
-    # client-side (well under this); large multi-page PDFs are the case that
-    # hits it — reject them cleanly with a 4xx (a permanent error the upload
-    # queue won't retry forever) rather than letting the insert blow up as a 500.
-    if len(raw) > 11 * 1024 * 1024:
-        raise HTTPException(
-            status_code=400,
-            detail='File too large (max ~11 MB). A big multi-page PDF exceeds this — reduce or split it, or upload the pages as separate photos.',
-        )
+    # Absolute ceiling to bound server memory (the whole file is read in). Well
+    # above any realistic scanned document.
+    if len(raw) > 60 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail='File too large (max 60 MB).')
 
     import drive_service
     connected = await drive_service.is_connected()
@@ -251,23 +244,66 @@ async def create_document(
     thumb_clean = ''
     if thumb:
         thumb_clean = thumb.split(',', 1)[-1].strip()   # tolerate a data-URL prefix
-    doc = {
+
+    mime = file.content_type or 'image/jpeg'
+    orig_name = file.filename or 'capture.jpg'
+    now_iso = now_utc().isoformat()
+    base_doc = {
         'id': str(uuid.uuid4()), 'category_key': category_key, 'status': 'pending',
-        'client_id': client_id or None,      # idempotency key (upload queue)
-        'local_data': base64.b64encode(raw).decode('ascii'),
-        'local_kind': 'full',                # 'full' | 'thumb' | 'none' (Drive-only)
-        'thumb_data': thumb_clean or None,
-        'file': {'drive_file_id': None, 'drive_view_link': None, 'drive_thumbnail_link': None,
-                 'mime': file.content_type or 'image/jpeg', 'size': len(raw), 'orig_name': file.filename or 'capture.jpg'},
-        # 'queued' → the worker will upload it; 'local' → no Drive connected yet,
-        # so it just lives locally until the owner connects Google (then re-queued).
-        'upload_state': 'queued' if connected else 'local',
+        'client_id': client_id or None,
         'linked_ref': None, 'note': (note or '').strip(),
         'uploaded_by': user['id'], 'uploaded_by_name': user['name'],
-        'created_at': now_utc().isoformat(), 'recorded_at': None, 'recorded_by': None,
-        'ocr': {'text': None, 'fields': {}, 'status': 'none'},   # Phase 5 — reserved
+        'created_at': now_iso, 'recorded_at': None, 'recorded_by': None,
+        'ocr': {'text': None, 'fields': {}, 'status': 'none'},
         'deleted': False,
     }
+
+    # The bytes are normally stored inline as base64 in the Mongo document, and
+    # base64 inflates size by ~4/3 against MongoDB's 16 MB per-document cap — so
+    # a file over ~11 MB can't be inlined. Those STREAM STRAIGHT TO GOOGLE DRIVE
+    # here (no copy kept in the database), landing as a Drive-only document just
+    # like a small one becomes after the background sync. Anything the database
+    # can hold still takes the fast inline path (instant return, offline-safe).
+    INLINE_MAX = 11 * 1024 * 1024
+    if len(raw) > INLINE_MAX:
+        if not connected:
+            raise HTTPException(
+                status_code=400,
+                detail='This file is too large to store without Google Drive. Ask the owner to connect Google Drive in Settings, then upload it again.',
+            )
+        cfg = await drive_service.get_config()
+        file_meta = {'drive_file_id': None, 'mime': mime, 'size': len(raw), 'orig_name': orig_name}
+        try:
+            res = await drive_service.upload_raw(
+                cfg, cat.get('label', category_key),
+                _drive_filename({**base_doc, 'file': file_meta}, cat), raw, mime,
+            )
+        except Exception:
+            # Transient Drive/network failure → 502 so the upload queue RETRIES
+            # (not a permanent 4xx), instead of losing the file.
+            raise HTTPException(status_code=502, detail='Could not reach Google Drive — will retry.')
+        doc = {
+            **base_doc,
+            'local_data': thumb_clean or None,
+            'local_kind': 'thumb' if thumb_clean else 'none',   # full-size lives only in Drive
+            'thumb_data': None,
+            'file': {'drive_file_id': res['drive_file_id'], 'drive_view_link': res['drive_view_link'],
+                     'drive_thumbnail_link': res['drive_thumbnail_link'],
+                     'mime': mime, 'size': len(raw), 'orig_name': orig_name},
+            'upload_state': 'synced',
+        }
+    else:
+        doc = {
+            **base_doc,
+            'local_data': base64.b64encode(raw).decode('ascii'),
+            'local_kind': 'full',                # 'full' | 'thumb' | 'none' (Drive-only)
+            'thumb_data': thumb_clean or None,
+            'file': {'drive_file_id': None, 'drive_view_link': None, 'drive_thumbnail_link': None,
+                     'mime': mime, 'size': len(raw), 'orig_name': orig_name},
+            # 'queued' → the worker uploads it; 'local' → no Drive yet, lives
+            # locally until the owner connects Google (then re-queued).
+            'upload_state': 'queued' if connected else 'local',
+        }
     await db.documents.insert_one(dict(doc))
     await log_audit(user, 'documents.create', 'document', doc['id'], f'{cat["label"]} · {doc["file"]["orig_name"]}')
     await _notify_record_holders(cat, doc, user)
