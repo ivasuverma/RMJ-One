@@ -153,6 +153,19 @@ export default function AccountDetailScreen() {
     });
   };
 
+  const settleBalance = () => {
+    if (!data) return;
+    confirmAction(
+      'Settle balance?',
+      `Post an entry that clears this account to zero (currently ${fmtFine(data.fine_balance)} gold, ${fmtAmt(data.amount_balance)}). Any new repair/sample/wage activity after this starts fresh.`,
+      'Settle',
+      async () => {
+        try { await api.post(`/accounts/${id}/settle`, {}); toast.success('Balance settled'); await load(); }
+        catch (e: any) { toast.error(e?.detail || 'Could not settle'); }
+      },
+    );
+  };
+
   const exportPdf = async () => {
     setExporting(true);
     try {
@@ -204,6 +217,13 @@ export default function AccountDetailScreen() {
             <BalanceCard label="Fine balance" value={fmtFine(data.fine_balance)} direction={dirWord(data.fine_balance)} tint={colors.brandSecondary} />
             <BalanceCard label="Amount balance" value={fmtAmt(data.amount_balance)} direction={dirWord(data.amount_balance)} tint={data.amount_balance >= 0 ? colors.onSuccess : colors.onWarning} />
           </View>
+
+          {(Math.abs(data.fine_balance) > 0.0005 || Math.abs(data.amount_balance) > 0.005) && (
+            <Pressable onPress={settleBalance} style={styles.settleBtn} testID="account-settle-btn">
+              <Ionicons name="checkmark-done-outline" size={16} color={colors.onBrandPrimary} />
+              <Text style={styles.settleBtnText}>Settle / clear balance</Text>
+            </Pressable>
+          )}
 
           {/* Statement — two independent columns (Fine g / Amount ₹). */}
           <View style={styles.stmtHeaderRow}>
@@ -385,6 +405,11 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   cellDate: { color: colors.onSurfaceSecondary, fontSize: 11.5 },
   cellPart: { color: colors.onSurface, fontSize: 13, fontWeight: '600' },
   cellRun: { color: colors.mutedText, fontSize: 10, marginTop: 2 },
+  settleBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: 12, marginTop: spacing.md,
+  },
+  settleBtnText: { color: colors.onBrandPrimary, fontWeight: '800', fontSize: 14 },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2, flexWrap: 'wrap' },
   srcTag: { backgroundColor: colors.brandTertiary, borderRadius: radius.pill, paddingHorizontal: 6, paddingVertical: 1 },
   srcTagText: { color: colors.brandSecondary, fontSize: 9, fontWeight: '700' },

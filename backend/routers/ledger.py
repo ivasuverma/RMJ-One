@@ -26,6 +26,7 @@ import uuid
 from server import (
     db,
     now_utc,
+    IST,
     require_owner,
     require_staff_or_module,
     AccountTypeIn,
@@ -188,6 +189,33 @@ async def _source_ledger(account: dict) -> dict:
                     'note': '', 'source': 'repair', 'ref_id': it.get('id'), 'read_only': True,
                 })
                 fine += -gw
+
+    elif kind == 'employee':
+        # Employees keep a cash-only wage ledger (advances, bonuses, fines,
+        # deductions, paid salaries) on the timeline. Reflect it here so staff
+        # dues sit alongside customers/karigars in the one ledger. The employee
+        # ledger's own sign is: bonus/salary credit the employee, advance/fine/
+        # deduction debit them — flip to the unified convention (positive = owed
+        # TO the shop, e.g. an advance the employee must work off).
+        LBL = {'advance': 'Advance', 'bonus': 'Bonus', 'fine': 'Fine',
+               'deduction': 'Deduction', 'salary': 'Salary'}
+        async for e in db.timeline.find(
+            {'employee_id': ref, 'type': {'$in': list(LBL)}}, {'_id': 0},
+        ):
+            t = e.get('type')
+            amt = abs(float(e.get('amount') or 0))
+            emp_delta = amt if t in ('bonus', 'salary') else -amt
+            ad = -emp_delta  # unified convention
+            created = e.get('created_at') or ''
+            part = LBL.get(t, t or 'Entry')
+            if e.get('description'):
+                part = f"{part} — {e['description']}"
+            entries.append({
+                'id': e.get('id'), 'date': created[:10], 'created_at': created,
+                'particulars': part, 'fine_delta': 0.0, 'amount_delta': round(ad, 2),
+                'note': e.get('description', ''), 'source': 'employee', 'ref_id': e.get('id'), 'read_only': True,
+            })
+            amount += ad
 
     return {'entries': entries, 'fine': round(fine, 3), 'amount': round(amount, 2)}
 
@@ -413,6 +441,32 @@ async def add_entry(account_id: str, body: LedgerAccountEntryIn, user=Depends(re
     await log_audit(user, 'ledger.entry.create', 'ledger_entry', doc['id'],
                     f"{account['name']}: {body.particulars.strip()}", {'fine': fine, 'amount': amount})
     return {k: v for k, v in doc.items() if k != '_id'}
+
+
+@router.post('/accounts/{account_id}/settle')
+async def settle_account(account_id: str, user=Depends(require_staff_or_module('ledger'))):
+    """Clear an account's current balance to zero by posting one offsetting
+    manual entry. Whatever the balance is right now — including the reflected
+    repair/sample/wage activity — an equal-and-opposite entry brings both the
+    fine (gold) and amount (cash) columns to 0. Any new activity after this
+    accrues fresh, exactly like settling a real ledger."""
+    account = await _get_account(account_id)
+    bal = await _balance_for(account)
+    fine = round(bal['fine_balance'], 3)
+    amount = round(bal['amount_balance'], 2)
+    if fine == 0 and amount == 0:
+        raise HTTPException(status_code=400, detail='Nothing to settle — the balance is already zero')
+    doc = {
+        'id': str(uuid.uuid4()), 'account_id': account_id,
+        'date': now_utc().astimezone(IST).date().isoformat(),
+        'particulars': 'Balance settled', 'fine_delta': round(-fine, 3), 'amount_delta': round(-amount, 2),
+        'note': 'Cleared account balance', 'source': 'manual', 'ref_id': None,
+        'created_at': now_utc().isoformat(), 'created_by': user['name'],
+    }
+    await db.ledger_entries.insert_one(dict(doc))
+    await log_audit(user, 'ledger.settle', 'account', account_id, account['name'],
+                    {'fine': -fine, 'amount': -amount})
+    return {'ok': True, 'entry': {k: v for k, v in doc.items() if k != '_id'}}
 
 
 @router.delete('/accounts/{account_id}/entries/{entry_id}')

@@ -995,6 +995,39 @@ async def seed():
             {'counter_id': {'$exists': False}}, {'$set': {'counter_id': default_counter_id}},
         )
 
+    # Idempotent backfill: make sure every customer, karigar and employee is
+    # mirrored as a unified-ledger account, so the all-in-one Ledger lists them
+    # and can carry their reflected balance. Safe to run on every boot — it
+    # only inserts the accounts that are missing (matched on source.kind+ref).
+    _type_by_key = {}
+    async for _t in db.account_types.find({'key': {'$in': ['customer', 'karigar', 'employee']}}, {'_id': 0, 'key': 1, 'id': 1}):
+        _type_by_key[_t['key']] = _t['id']
+    if _type_by_key:
+        _existing_mirrors = set()
+        async for _a in db.accounts.find({'source.ref': {'$exists': True}}, {'_id': 0, 'source': 1}):
+            _s = _a.get('source') or {}
+            if _s.get('ref'):
+                _existing_mirrors.add((_s.get('kind'), _s.get('ref')))
+
+        async def _ensure_mirror(kind, ref, name, phone):
+            tid = _type_by_key.get(kind)
+            if not tid or not ref or (kind, ref) in _existing_mirrors:
+                return
+            await db.accounts.insert_one({
+                'id': str(uuid.uuid4()), 'type_id': tid, 'name': (name or '').strip(),
+                'phone': (phone or '').strip(), 'opening_fine': 0, 'opening_amount': 0,
+                'note': '', 'active': True, 'created_at': now_utc().isoformat(), 'created_by': 'auto',
+                'source': {'kind': kind, 'ref': ref},
+            })
+            _existing_mirrors.add((kind, ref))
+
+        async for _c in db.customers.find({}, {'_id': 0, 'id': 1, 'name': 1, 'mobile': 1}):
+            await _ensure_mirror('customer', _c['id'], _c.get('name'), _c.get('mobile'))
+        async for _k in db.karigars.find({}, {'_id': 0, 'id': 1, 'name': 1, 'phone': 1, 'mobile': 1}):
+            await _ensure_mirror('karigar', _k['id'], _k.get('name'), _k.get('phone') or _k.get('mobile'))
+        async for _e in db.employees.find({}, {'_id': 0, 'id': 1, 'name': 1, 'mobile': 1}):
+            await _ensure_mirror('employee', _e['id'], _e.get('name'), _e.get('mobile'))
+
     # One-time backfill: any employee with a full-size photo but no thumb yet
     # (i.e. saved before photo_thumb existed) gets one generated now, so
     # every list screen benefits immediately on this restart rather than only
