@@ -43,9 +43,9 @@ async function handle(res: Response, authed: boolean = true) {
   }
   const parsed = safeJson(text);
   if (!res.ok) {
-    const detail = (parsed.ok && (parsed.value?.detail || parsed.value?.message)) || res.statusText || 'Request failed';
+    const rawDetail = (parsed.ok && (parsed.value?.detail ?? parsed.value?.message)) ?? res.statusText ?? 'Request failed';
     if (res.status === 401 && authed) { await clearToken(); onUnauthorized?.(); }
-    throw { status: res.status, detail: String(detail) } as ApiError;
+    throw { status: res.status, detail: formatDetail(rawDetail) } as ApiError;
   }
   if (!parsed.ok) {
     // A 200 with a body that isn't JSON almost always means the request hit the
@@ -63,6 +63,23 @@ async function handle(res: Response, authed: boolean = true) {
 
 function safeJson(t: string): { ok: true; value: any } | { ok: false; value: string } {
   try { return { ok: true, value: JSON.parse(t) }; } catch { return { ok: false, value: t }; }
+}
+
+// FastAPI validation errors come back as `detail: [{loc, msg, type}, ...]`.
+// Rendering that array with String() gave "[object Object], [object Object]" —
+// turn it into a readable "field: message" string instead.
+function formatDetail(detail: any): string {
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) {
+    return detail.map((d) => {
+      if (typeof d === 'string') return d;
+      const field = Array.isArray(d?.loc) ? d.loc.filter((p: any) => p !== 'body').join('.') : '';
+      const msg = d?.msg || 'invalid';
+      return field ? `${field}: ${msg}` : msg;
+    }).join('; ') || 'Request failed';
+  }
+  if (detail && typeof detail === 'object') return detail.msg || detail.message || JSON.stringify(detail);
+  return String(detail ?? 'Request failed');
 }
 
 export const api = {

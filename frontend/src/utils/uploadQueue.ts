@@ -10,7 +10,14 @@ import { api } from '@/src/api/client';
 
 export type OutboxItem = {
   id: string;
-  blob: Blob;
+  // We store the file bytes as an ArrayBuffer (not a Blob). iOS Safari/PWA has
+  // a long-standing bug where a Blob written to IndexedDB comes back empty or
+  // unreadable, which produced a corrupted/empty multipart body on upload
+  // (server saw no file → 422). ArrayBuffers round-trip reliably; we rebuild
+  // the Blob from `data` + `mime` at upload time.
+  data: ArrayBuffer;
+  mime: string;
+  blob?: Blob;         // legacy items enqueued before the ArrayBuffer switch
   filename: string;
   thumb: string;      // base64 (no data-url prefix), may be ''
   created_at: number;
@@ -164,7 +171,12 @@ let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
 function buildForm(item: OutboxItem): FormData {
   const form = new FormData();
-  form.append('file', item.blob, item.filename);
+  // Rebuild the Blob from the stored ArrayBuffer (falling back to a legacy
+  // stored Blob for items enqueued before the switch).
+  const fileBlob = item.data
+    ? new Blob([item.data], { type: item.mime || 'application/octet-stream' })
+    : item.blob;
+  form.append('file', fileBlob as Blob, item.filename);
   if (item.thumb) form.append('thumb', item.thumb);
   if (item.category_key) form.append('category_key', item.category_key);
   if (item.note !== undefined) form.append('note', item.note || '');
@@ -225,14 +237,22 @@ async function drain(): Promise<void> {
   }
 }
 
-export async function enqueueUpload(item: Omit<OutboxItem, 'created_at' | 'tries'>): Promise<void> {
+// Public input: callers hand us a Blob; we convert it to an ArrayBuffer for
+// safe IndexedDB storage (see the note on OutboxItem.data).
+export type EnqueueInput = {
+  id: string; blob: Blob; filename: string; thumb: string;
+  endpoint?: string; category_key?: string; note?: string; ref_type?: string; ref_id?: string;
+};
+
+export async function enqueueUpload(input: EnqueueInput): Promise<void> {
+  const { blob, ...rest } = input;
+  const data = await blob.arrayBuffer();
+  const rec: OutboxItem = { ...rest, data, mime: blob.type || 'application/octet-stream', created_at: Date.now(), tries: 0 };
   if (!hasIDB()) {
     // No IndexedDB (shouldn't happen on web) — fall back to a direct upload.
-    const rec = { ...item, created_at: Date.now(), tries: 0 } as OutboxItem;
     await api.upload(rec.endpoint || '/documents', buildForm(rec));
     return;
   }
-  const rec: OutboxItem = { ...item, created_at: Date.now(), tries: 0 };
   await idbPut(rec);
   await emitCount();
   drain();
