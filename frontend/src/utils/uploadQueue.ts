@@ -70,6 +70,16 @@ async function idbDel(id: string): Promise<void> {
   });
 }
 
+async function idbGet(id: string): Promise<OutboxItem | undefined> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, 'readonly');
+    const req = tx.objectStore(STORE).get(id);
+    req.onsuccess = () => resolve(req.result as OutboxItem | undefined);
+    req.onerror = () => reject(req.error);
+  });
+}
+
 // ---- listeners (so the UI can show "N waiting to upload") ----
 type Listener = (count: number) => void;
 const listeners = new Set<Listener>();
@@ -91,6 +101,43 @@ export function onOutboxChange(cb: Listener): () => void {
 
 export async function outboxCount(): Promise<number> {
   return hasIDB() ? (await idbAll()).length : 0;
+}
+
+// Lightweight metadata for the queue UI (no blob needed to render the list).
+export type OutboxMeta = {
+  id: string; filename: string; thumb: string; tries: number; created_at: number;
+  category_key?: string; ref_type?: string; endpoint?: string;
+};
+
+export async function outboxItems(): Promise<OutboxMeta[]> {
+  if (!hasIDB()) return [];
+  const items = await idbAll();
+  return items.map((i) => ({
+    id: i.id, filename: i.filename, thumb: i.thumb, tries: i.tries || 0, created_at: i.created_at,
+    category_key: i.category_key, ref_type: i.ref_type, endpoint: i.endpoint,
+  }));
+}
+
+// Cancel one queued/stuck item. Safe even if it's the one currently uploading —
+// the worker checks for its removal before any retry, so it won't come back.
+export async function cancelUpload(id: string): Promise<void> {
+  if (!hasIDB()) return;
+  await idbDel(id);
+  await emitCount();
+}
+
+export async function clearOutbox(): Promise<void> {
+  if (!hasIDB()) return;
+  const items = await idbAll();
+  for (const it of items) { try { await idbDel(it.id); } catch { /* ignore */ } }
+  await emitCount();
+}
+
+// Force an immediate retry pass (e.g. after the connection is back).
+export function retryUploads(): void {
+  if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+  draining = false;
+  drain();
 }
 
 // ---- the worker ----
@@ -127,8 +174,13 @@ async function drain(): Promise<void> {
         await idbDel(item.id);
         await emitCount();
       } catch {
+        // If the user cancelled this item while it was in flight, it's no
+        // longer in the outbox — don't resurrect it by writing it back.
+        const still = await idbGet(item.id).catch(() => undefined);
+        if (!still) { await emitCount(); continue; }
         item.tries = (item.tries || 0) + 1;
         try { await idbPut(item); } catch { /* ignore */ }
+        await emitCount();
         // Back off (cap ~30s) and try the whole drain again later.
         const delay = Math.min(30000, 2000 * Math.max(1, item.tries));
         if (retryTimer) clearTimeout(retryTimer);
