@@ -15,6 +15,11 @@ export type OutboxItem = {
   thumb: string;      // base64 (no data-url prefix), may be ''
   created_at: number;
   tries: number;
+  // A permanent (4xx) failure — the file itself is the problem (too big, bad
+  // type, no permission). We stop retrying these and surface the reason so the
+  // user can cancel; only transient (network / 5xx) errors keep retrying.
+  permanent?: boolean;
+  error?: string;
   endpoint?: string;  // default '/documents'
   // Documents:
   category_key?: string;
@@ -107,6 +112,7 @@ export async function outboxCount(): Promise<number> {
 export type OutboxMeta = {
   id: string; filename: string; thumb: string; tries: number; created_at: number;
   category_key?: string; ref_type?: string; endpoint?: string;
+  permanent?: boolean; error?: string;
 };
 
 export async function outboxItems(): Promise<OutboxMeta[]> {
@@ -115,6 +121,7 @@ export async function outboxItems(): Promise<OutboxMeta[]> {
   return items.map((i) => ({
     id: i.id, filename: i.filename, thumb: i.thumb, tries: i.tries || 0, created_at: i.created_at,
     category_key: i.category_key, ref_type: i.ref_type, endpoint: i.endpoint,
+    permanent: i.permanent, error: i.error,
   }));
 }
 
@@ -133,8 +140,19 @@ export async function clearOutbox(): Promise<void> {
   await emitCount();
 }
 
-// Force an immediate retry pass (e.g. after the connection is back).
-export function retryUploads(): void {
+// Force an immediate retry pass (e.g. after the connection is back). Also
+// clears any "permanent failure" flags so those items get one more attempt —
+// the user asked to retry, so honor it.
+export async function retryUploads(): Promise<void> {
+  if (hasIDB()) {
+    try {
+      const items = await idbAll();
+      for (const it of items) {
+        if (it.permanent) { it.permanent = false; it.error = undefined; it.tries = 0; await idbPut(it); }
+      }
+      await emitCount();
+    } catch { /* ignore */ }
+  }
   if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
   draining = false;
   drain();
@@ -167,17 +185,31 @@ async function drain(): Promise<void> {
     // eslint-disable-next-line no-constant-condition
     while (true) {
       const items = await idbAll();
-      if (items.length === 0) break;
-      const item = items[0];
+      // Skip items already marked as a permanent failure — they stay in the
+      // outbox (shown as "failed" in the badge) until the user cancels them,
+      // but must not block the rest of the queue or be retried.
+      const item = items.find((i) => !i.permanent);
+      if (!item) break;
       try {
         await api.upload(item.endpoint || '/documents', buildForm(item));
         await idbDel(item.id);
         await emitCount();
-      } catch {
+      } catch (e: any) {
         // If the user cancelled this item while it was in flight, it's no
         // longer in the outbox — don't resurrect it by writing it back.
         const still = await idbGet(item.id).catch(() => undefined);
         if (!still) { await emitCount(); continue; }
+        const status = Number(e?.status) || 0;
+        // 4xx = the file/request itself is wrong (too large, bad type, no
+        // permission) — retrying can never succeed, so mark it failed and move
+        // on. Everything else (network drop, 5xx) is transient → back off/retry.
+        if (status >= 400 && status < 500) {
+          item.permanent = true;
+          item.error = e?.detail || 'Upload rejected';
+          try { await idbPut(item); } catch { /* ignore */ }
+          await emitCount();
+          continue;   // try the next item; don't schedule a retry for this one
+        }
         item.tries = (item.tries || 0) + 1;
         try { await idbPut(item); } catch { /* ignore */ }
         await emitCount();

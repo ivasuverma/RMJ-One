@@ -142,7 +142,7 @@ export default function EmployeeWorkScreen() {
 
         <View style={{ height: spacing.xxl }} />
       </ScrollView>
-      <DocumentCaptureSheet visible={captureDoc} onClose={() => setCaptureDoc(false)} onSaved={load} autoCamera />
+      <DocumentCaptureSheet visible={captureDoc} onClose={() => setCaptureDoc(false)} onSaved={load} />
     </SafeAreaView>
   );
 }

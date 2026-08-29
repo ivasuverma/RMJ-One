@@ -225,7 +225,7 @@ export default function WorkScreen() {
           ));
         })()}
       </Sheet>
-      <DocumentCaptureSheet visible={captureDoc} onClose={() => setCaptureDoc(false)} onSaved={load} autoCamera />
+      <DocumentCaptureSheet visible={captureDoc} onClose={() => setCaptureDoc(false)} onSaved={load} />
     </SafeAreaView>
   );
 }

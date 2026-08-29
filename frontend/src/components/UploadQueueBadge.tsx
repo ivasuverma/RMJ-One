@@ -21,7 +21,9 @@ export function UploadQueueBadge() {
   useEffect(() => onOutboxChange(setCount), []);
 
   const refresh = useCallback(async () => { setItems(await outboxItems()); }, []);
-  useEffect(() => { if (open) refresh(); }, [open, count, refresh]);
+  // Keep items in sync with the count (even when closed) so the badge can flag
+  // a failed upload, and refresh again whenever the sheet opens.
+  useEffect(() => { refresh(); }, [open, count, refresh]);
 
   const label = (it: OutboxMeta) => {
     if (it.ref_type) return `${it.ref_type} photo`;
@@ -43,16 +45,20 @@ export function UploadQueueBadge() {
     });
   };
 
+  const anyFailed = items.some((i) => i.permanent);
+
   if (count <= 0) return null;
   return (
     <>
       <Pressable
         onPress={() => setOpen(true)}
-        style={[styles.btn, { backgroundColor: colors.surfaceSecondary, borderColor: colors.brand }]}
+        style={[styles.btn, { backgroundColor: colors.surfaceSecondary, borderColor: anyFailed ? colors.error : colors.brand }]}
         testID="upload-queue-badge"
         hitSlop={8}
       >
-        <ActivityIndicator size="small" color={colors.brandSecondary} />
+        {anyFailed
+          ? <Ionicons name="alert-circle" size={18} color={colors.onError} />
+          : <ActivityIndicator size="small" color={colors.brandSecondary} />}
         <Text style={[styles.txt, { color: colors.onSurface }]}>{count}</Text>
       </Pressable>
 
@@ -75,7 +81,9 @@ export function UploadQueueBadge() {
                   </View>
                   <View style={{ flex: 1, minWidth: 0 }}>
                     <Text style={styles.rowLabel} numberOfLines={1}>{label(it)}</Text>
-                    <Text style={styles.rowMeta}>{it.tries > 0 ? `Failed ${it.tries}× — retrying` : 'Waiting to upload'}</Text>
+                    {it.permanent
+                      ? <Text style={styles.rowErr} numberOfLines={2}>Couldn&apos;t upload — {it.error || 'rejected'}</Text>
+                      : <Text style={styles.rowMeta}>{it.tries > 0 ? `Failed ${it.tries}× — retrying` : 'Waiting to upload'}</Text>}
                   </View>
                   <Pressable onPress={() => cancel(it)} hitSlop={8} style={styles.cancelBtn} testID={`upload-cancel-${it.id}`}>
                     <Ionicons name="trash-outline" size={16} color={colors.onError} />
@@ -117,6 +125,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   rowIcon: { width: 38, height: 38, borderRadius: 10, backgroundColor: colors.brandTertiary, alignItems: 'center', justifyContent: 'center' },
   rowLabel: { color: colors.onSurface, fontSize: 14, fontWeight: '600' },
   rowMeta: { color: colors.mutedText, fontSize: 11.5, marginTop: 2 },
+  rowErr: { color: colors.onError, fontSize: 11.5, marginTop: 2, lineHeight: 15 },
   cancelBtn: { width: 34, height: 34, borderRadius: 17, backgroundColor: colors.error, borderWidth: 1, borderColor: colors.onError, alignItems: 'center', justifyContent: 'center' },
   actions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
   actBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 12, borderRadius: radius.md },

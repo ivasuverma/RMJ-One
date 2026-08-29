@@ -232,8 +232,17 @@ async def create_document(
     raw = await file.read()
     if not raw:
         raise HTTPException(status_code=400, detail='Empty file')
-    if len(raw) > 12 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail='File too large (max 12 MB)')
+    # The bytes are stored inline as base64 in the Mongo document, and base64
+    # inflates size by ~4/3. MongoDB caps a single document at 16 MB, so the
+    # raw file must stay under ~11 MB or the insert fails. Photos are shrunk
+    # client-side (well under this); large multi-page PDFs are the case that
+    # hits it — reject them cleanly with a 4xx (a permanent error the upload
+    # queue won't retry forever) rather than letting the insert blow up as a 500.
+    if len(raw) > 11 * 1024 * 1024:
+        raise HTTPException(
+            status_code=400,
+            detail='File too large (max ~11 MB). A big multi-page PDF exceeds this — reduce or split it, or upload the pages as separate photos.',
+        )
 
     import drive_service
     connected = await drive_service.is_connected()

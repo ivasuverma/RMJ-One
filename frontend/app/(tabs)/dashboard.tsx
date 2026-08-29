@@ -216,7 +216,7 @@ export default function DashboardScreen() {
       ) : null}
 
       <ComposeSheet visible={composeOpen} onClose={() => setComposeOpen(false)} />
-      <DocumentCaptureSheet visible={captureDoc} onClose={() => setCaptureDoc(false)} onSaved={refresh} autoCamera />
+      <DocumentCaptureSheet visible={captureDoc} onClose={() => setCaptureDoc(false)} onSaved={refresh} />
       <SearchOverlay visible={searchOpen} onClose={() => setSearchOpen(false)} />
     </Screen>
   );
