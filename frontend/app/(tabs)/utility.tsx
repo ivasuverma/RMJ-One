@@ -29,7 +29,12 @@ const GROUPS: GroupDef[] = [
     title: 'People & Access', ownerOnly: true,
     rows: [
       { key: 'user-roles', label: 'People & Roles', sub: 'Access, notifications, documents & logins', icon: 'shield-checkmark-outline', route: '/settings/user-roles' },
-      { key: 'team', label: 'Employees', sub: 'Your team', icon: 'people-outline', route: '/(tabs)/employees' },
+    ],
+  },
+  {
+    title: 'Attendance & Payroll', ownerOnly: true,
+    rows: [
+      { key: 'attendance-payroll', label: 'Attendance & Payroll', sub: 'Employees, shifts, holidays, departments, locations, biometric, store', icon: 'time-outline', route: '/settings/attendance-payroll' },
     ],
   },
   {
@@ -39,17 +44,13 @@ const GROUPS: GroupDef[] = [
       { key: 'doc-categories', label: 'Document Categories', sub: 'Names & folders (permissions live in People)', icon: 'folder-outline', route: '/settings/document-categories' },
       { key: 'repair-types', label: 'Repair Types', sub: 'Repair catalogue', icon: 'construct-outline', route: '/settings/repair-types' },
       { key: 'item-master', label: 'Items & Purity', sub: 'Item master & purity', icon: 'diamond-outline', route: '/settings/item-master' },
-      { key: 'shifts', label: 'Shifts', sub: 'Work timings', icon: 'time-outline', route: '/settings/shifts' },
-      { key: 'holidays', label: 'Holidays', sub: 'Holiday calendar', icon: 'calendar-outline', route: '/settings/holidays' },
     ],
   },
   {
     title: 'Business', ownerOnly: true,
     rows: [
-      { key: 'store', label: 'Store Settings', sub: 'Shop profile & hours', icon: 'storefront-outline', route: '/store-settings' },
       { key: 'security', label: 'Security', sub: 'Auto sign-out after inactivity', icon: 'lock-closed-outline', route: '/settings/security' },
       { key: 'google-drive', label: 'Google Drive & Backup', sub: 'Document storage + daily database backup', icon: 'cloud-outline', route: '/settings/google-drive' },
-      { key: 'biometric', label: 'Biometric Devices', sub: 'Attendance hardware', icon: 'hardware-chip-outline', route: '/settings/biometric' },
       { key: 'audit', label: 'Audit Log', sub: 'Every change, logged', icon: 'document-lock-outline', route: '/settings/audit' },
     ],
   },

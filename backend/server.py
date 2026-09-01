@@ -177,6 +177,8 @@ MODULE_DEFS = [
     {'key': 'user_roles', 'label': 'User Roles', 'default_roles': ['owner']},
     {'key': 'shifts', 'label': 'Shifts', 'default_roles': ['owner']},
     {'key': 'holidays', 'label': 'Holidays', 'default_roles': ['owner']},
+    {'key': 'departments', 'label': 'Departments', 'default_roles': ['owner']},
+    {'key': 'locations', 'label': 'Locations', 'default_roles': ['owner']},
     {'key': 'store_settings', 'label': 'Store Settings', 'default_roles': ['owner']},
     {'key': 'users', 'label': 'Staff Accounts', 'default_roles': ['owner']},
     {'key': 'tasks', 'label': 'Tasks', 'default_roles': ['owner', 'admin']},
@@ -517,6 +519,17 @@ class HolidayIn(BaseModel):
     date: str  # YYYY-MM-DD
     name: str
     type: Literal['public', 'festival', 'store_closed'] = 'public'
+
+
+class DepartmentIn(BaseModel):
+    name: str
+    is_active: bool = True
+
+
+class LocationIn(BaseModel):
+    name: str
+    address: Optional[str] = ''
+    is_active: bool = True
 
 
 class LedgerEntryIn(BaseModel):

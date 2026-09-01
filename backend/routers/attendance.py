@@ -26,6 +26,8 @@ from server import (
     DecisionIn,
     ShiftIn,
     HolidayIn,
+    DepartmentIn,
+    LocationIn,
     AttendanceDayIn,
     CalendarCorrectionIn,
     _get_store,
@@ -546,4 +548,95 @@ async def delete_holiday(hid: str, user: dict = Depends(require_owner), _mod=Dep
     r = await db.holidays.delete_one({'id': hid})
     if r.deleted_count == 0: raise HTTPException(status_code=404, detail='Holiday not found')
     await log_audit(user, 'holiday.delete', 'holiday', hid, (existing or {}).get('name', ''))
+    return {'ok': True}
+
+
+# ---------------- Departments ----------------
+@router.get('/departments')
+async def list_departments(_: dict = Depends(get_current)):
+    return await db.departments.find({}, {'_id': 0}).sort('name', 1).to_list(200)
+
+
+@router.post('/departments')
+async def create_department(body: DepartmentIn, user: dict = Depends(require_owner), _mod=Depends(require_module('departments'))):
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail='Name is required')
+    if await db.departments.find_one({'name': {'$regex': f'^{name}$', '$options': 'i'}}):
+        raise HTTPException(status_code=400, detail='A department with this name already exists')
+    doc = {'id': str(uuid.uuid4()), 'name': name, 'is_active': body.is_active, 'created_at': now_utc().isoformat()}
+    await db.departments.insert_one(dict(doc))
+    await log_audit(user, 'department.create', 'department', doc['id'], name)
+    return {k: v for k, v in doc.items() if k != '_id'}
+
+
+@router.put('/departments/{did}')
+async def update_department(did: str, body: DepartmentIn, user: dict = Depends(require_owner), _mod=Depends(require_module('departments'))):
+    if not await db.departments.find_one({'id': did}):
+        raise HTTPException(status_code=404, detail='Department not found')
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail='Name is required')
+    await db.departments.update_one({'id': did}, {'$set': {'name': name, 'is_active': body.is_active}})
+    await log_audit(user, 'department.update', 'department', did, name)
+    return await db.departments.find_one({'id': did}, {'_id': 0})
+
+
+@router.delete('/departments/{did}')
+async def delete_department(did: str, user: dict = Depends(require_owner), _mod=Depends(require_module('departments'))):
+    existing = await db.departments.find_one({'id': did}, {'_id': 0})
+    if not existing:
+        raise HTTPException(status_code=404, detail='Department not found')
+    used = await db.employees.count_documents({'department_id': did})
+    if used > 0:
+        raise HTTPException(status_code=400, detail=f'{used} employee(s) use this department — reassign them first')
+    await db.departments.delete_one({'id': did})
+    await log_audit(user, 'department.delete', 'department', did, existing.get('name', ''))
+    return {'ok': True}
+
+
+# ---------------- Locations / Branches ----------------
+@router.get('/locations')
+async def list_locations(_: dict = Depends(get_current)):
+    return await db.locations.find({}, {'_id': 0}).sort('name', 1).to_list(200)
+
+
+@router.post('/locations')
+async def create_location(body: LocationIn, user: dict = Depends(require_owner), _mod=Depends(require_module('locations'))):
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail='Name is required')
+    if await db.locations.find_one({'name': {'$regex': f'^{name}$', '$options': 'i'}}):
+        raise HTTPException(status_code=400, detail='A location with this name already exists')
+    doc = {
+        'id': str(uuid.uuid4()), 'name': name, 'address': (body.address or '').strip(),
+        'is_active': body.is_active, 'created_at': now_utc().isoformat(),
+    }
+    await db.locations.insert_one(dict(doc))
+    await log_audit(user, 'location.create', 'location', doc['id'], name)
+    return {k: v for k, v in doc.items() if k != '_id'}
+
+
+@router.put('/locations/{lid}')
+async def update_location(lid: str, body: LocationIn, user: dict = Depends(require_owner), _mod=Depends(require_module('locations'))):
+    if not await db.locations.find_one({'id': lid}):
+        raise HTTPException(status_code=404, detail='Location not found')
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail='Name is required')
+    await db.locations.update_one({'id': lid}, {'$set': {'name': name, 'address': (body.address or '').strip(), 'is_active': body.is_active}})
+    await log_audit(user, 'location.update', 'location', lid, name)
+    return await db.locations.find_one({'id': lid}, {'_id': 0})
+
+
+@router.delete('/locations/{lid}')
+async def delete_location(lid: str, user: dict = Depends(require_owner), _mod=Depends(require_module('locations'))):
+    existing = await db.locations.find_one({'id': lid}, {'_id': 0})
+    if not existing:
+        raise HTTPException(status_code=404, detail='Location not found')
+    used = await db.employees.count_documents({'location_id': lid})
+    if used > 0:
+        raise HTTPException(status_code=400, detail=f'{used} employee(s) use this location — reassign them first')
+    await db.locations.delete_one({'id': lid})
+    await log_audit(user, 'location.delete', 'location', lid, existing.get('name', ''))
     return {'ok': True}
