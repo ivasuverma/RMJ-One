@@ -18,8 +18,10 @@ type Account = {
 
 const ROLE_LABEL: Record<string, string> = { owner: 'Owner', admin: 'Admin', accountant: 'Accountant', employee: 'Sales / Staff' };
 
-// People — one clean list of everyone. Tapping a person opens their own full
-// page (account, password, notifications, access & document rights).
+// Users — staff logins only (owner/admin/accountant). Employee access,
+// notifications & documents now live on the employee's own profile. Tapping
+// a staff login opens their full page (account, password, notifications,
+// access & document rights).
 export default function PeopleScreen() {
   const router = useRouter();
   const { colors } = useTheme();
@@ -58,7 +60,7 @@ export default function PeopleScreen() {
   };
 
   const resetAll = () => {
-    const customizable = accounts.filter((a) => a.role !== 'owner' && a.module_access !== null);
+    const customizable = accounts.filter((a) => a.account_type === 'user' && a.role !== 'owner' && a.module_access !== null);
     if (customizable.length === 0) { Alert.alert('Nothing to reset', 'Everyone is already on their role default.'); return; }
     confirmAction('Reset all to default', `Clear custom access for ${customizable.length} account${customizable.length === 1 ? '' : 's'} and fall back to role defaults?`, 'Reset All', async () => {
       setResettingAll(true);
@@ -71,7 +73,6 @@ export default function PeopleScreen() {
   };
 
   const staff = accounts.filter((a) => a.account_type === 'user');
-  const team = accounts.filter((a) => a.account_type === 'employee');
 
   const renderRow = (a: Account) => {
     const isOwner = a.role === 'owner';
@@ -81,7 +82,7 @@ export default function PeopleScreen() {
       : `${a.resolved_modules.length} module${a.resolved_modules.length === 1 ? '' : 's'}${a.module_access !== null ? ' · custom' : ''}`;
     return (
       <Pressable key={a.id} onPress={() => router.push(`/settings/person/${a.id}` as any)} style={({ pressed }) => [styles.row, pressed && { opacity: 0.85 }]} testID={`people-row-${a.id}`}>
-        <View style={styles.avatar}><Ionicons name={isOwner ? 'star' : a.account_type === 'employee' ? 'person-outline' : 'people-outline'} size={18} color={colors.brandSecondary} /></View>
+        <View style={styles.avatar}><Ionicons name={isOwner ? 'star' : 'people-outline'} size={18} color={colors.brandSecondary} /></View>
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={styles.name} numberOfLines={1}>{a.name}{a.status === 'inactive' ? '  · inactive' : ''}</Text>
           <Text style={styles.meta} numberOfLines={1}>{ROLE_LABEL[a.role] || a.role}{a.username ? ` · @${a.username}` : ''} · {sub}</Text>
@@ -127,16 +128,13 @@ export default function PeopleScreen() {
           )}
 
           <View style={styles.topRow}>
-            <Text style={styles.hint}>Tap a person to set their access, notifications, document rights and password.</Text>
+            <Text style={styles.hint}>Tap a staff login to set their access, notifications, document rights and password. Employee access lives on each employee's own profile.</Text>
             <Pressable onPress={resetAll} disabled={resettingAll} style={styles.resetBtn} testID="reset-all-btn">
               {resettingAll ? <ActivityIndicator size="small" color={colors.onSurfaceSecondary} /> : <Text style={styles.resetText}>Reset All</Text>}
             </Pressable>
           </View>
 
-          <Text style={styles.groupLabel}>Staff logins</Text>
-          {staff.map(renderRow)}
-          <Text style={styles.groupLabel}>Employees</Text>
-          {team.length === 0 ? <Text style={styles.emptyText}>No employees yet</Text> : team.map(renderRow)}
+          {staff.length === 0 ? <Text style={styles.emptyText}>No staff logins yet</Text> : staff.map(renderRow)}
         </ScrollView>
       )}
     </SafeAreaView>
