@@ -1,18 +1,24 @@
 /* RMJ One service worker.
  *
- * Scope, deliberately minimal for a live business app: browser push
- * notifications only. It does NOT cache the app shell or assets.
+ * Push notifications + fast cold starts.
  *
- * Why no caching: with frequent deploys, a cached HTML shell can end up
- * pointing at content-hashed JS chunks that a newer deploy has replaced. The
- * old chunks 404, and the app hangs on a blank screen. For a shop that's
- * always online this offline-cache buys little and risks a lot, so we let the
- * browser fetch everything fresh and keep the worker to push only.
+ * Caching strategy — safe because Expo's web export gives every JS/CSS/asset a
+ * CONTENT-HASHED filename (a new build = a new URL), so a cached asset can never
+ * be "stale": if the code changes, the URL changes.
  *
- * On activate we purge every old cache this worker ever created, so any device
- * still holding a stale bundle heals itself the next time it loads.
+ *   - Hashed static assets (/_expo/static/**, /assets/**, *.js/*.css) →
+ *     CACHE-FIRST. Served instantly on a cold start; fetched + cached on first
+ *     miss. This is what makes reopening the app after it was killed fast
+ *     instead of re-downloading the whole bundle over the shop's connection.
+ *   - HTML navigations and the service worker itself → ALWAYS NETWORK (never
+ *     cached), so a new deploy is picked up immediately. The fresh HTML points
+ *     at the new hashed asset URLs, which then cache on first load.
+ *   - API calls (/api/**) and the SSE stream are never touched.
+ *
+ * On activate we drop caches from older SW versions so a format change heals.
  */
-const CACHE_VERSION = 'rmj-one-v2-nocache';
+const CACHE_VERSION = 'rmj-one-v3-assets';
+const ASSET_CACHE = CACHE_VERSION;
 
 self.addEventListener('install', () => {
   self.skipWaiting();
@@ -21,13 +27,44 @@ self.addEventListener('install', () => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.map((k) => caches.delete(k))))
+      .then((keys) => Promise.all(keys.filter((k) => k !== ASSET_CACHE).map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
       .catch(() => {}),
   );
 });
 
-// No fetch handler: the browser handles all requests directly, always fresh.
+// Only cache-first the immutable, content-hashed assets.
+function isHashedAsset(url) {
+  return (
+    url.pathname.startsWith('/_expo/') ||
+    url.pathname.startsWith('/assets/') ||
+    /\.(?:js|css|woff2?|ttf|otf|png|jpg|jpeg|webp|svg|ico)$/i.test(url.pathname)
+  );
+}
+
+self.addEventListener('fetch', (event) => {
+  const req = event.request;
+  if (req.method !== 'GET') return;
+  let url;
+  try { url = new URL(req.url); } catch (e) { return; }
+  // Same-origin only; never cache the API, the SSE stream, or HTML navigations.
+  if (url.origin !== self.location.origin) return;
+  if (url.pathname.startsWith('/api/')) return;
+  if (req.mode === 'navigate' || req.destination === 'document') return;
+  if (!isHashedAsset(url)) return;
+
+  event.respondWith(
+    caches.open(ASSET_CACHE).then((cache) =>
+      cache.match(req).then((hit) => {
+        if (hit) return hit;
+        return fetch(req).then((res) => {
+          if (res && res.ok && res.status === 200) { cache.put(req, res.clone()).catch(() => {}); }
+          return res;
+        });
+      }),
+    ).catch(() => fetch(req)),
+  );
+});
 
 /* ---------------- Push notifications ---------------- */
 self.addEventListener('push', (event) => {

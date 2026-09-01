@@ -106,9 +106,13 @@ export function useDashboardStream<T = any>(pollMs = 15000) {
 
   useEffect(() => {
     stopped.current = false;
+    // Paint immediately from a plain GET /dashboard (same call the Work page
+    // uses, which is why it loads instantly) — don't block first render on the
+    // SSE stream's first frame, which was making the dashboard appear to hang.
+    refresh();
     startStream();
     return () => { stopped.current = true; clearTimers(); };
-  }, [startStream]);
+  }, [startStream, refresh]);
 
   return { data, connected, lastUpdated, error, refresh };
 }
