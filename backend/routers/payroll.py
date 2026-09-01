@@ -411,11 +411,27 @@ async def _compute_payroll(year: int, month: int) -> list:
     return rows
 
 
+def _month_is_complete(year: int, month: int) -> bool:
+    """Whether this payroll month has actually ended (IST) — the salary_earned
+    receivable below must only land in the wage ledger once it has, not while
+    the month is still accruing. Saving/regenerating payroll mid-month (to
+    preview attendance-to-date) would otherwise drop a partial 'earned so far'
+    figure into the ledger — misstating what's actually owed and feeding a
+    wrong opening balance into next month's payroll."""
+    today = now_utc().astimezone(IST).date()
+    return (year, month) < (today.year, today.month)
+
+
 async def _upsert_salary_earned(employee_id: str, year: int, month: int, earned: float, entry_id: str) -> None:
     """Post/refresh the month's salary as a RECEIVABLE (owed to the employee) in
-    the wage ledger the moment payroll is generated — so the ledger shows what's
-    owed before payment, and a later payment (salary_paid) clears it. Idempotent
-    per employee+month."""
+    the wage ledger once that month has ended — so the ledger shows what's owed
+    before payment, and a later payment (salary_paid) clears it. Idempotent per
+    employee+month. If an entry was already posted for a month that turns out
+    to still be in progress, remove it instead of updating it (self-heals a
+    premature post from before this guard existed)."""
+    if not _month_is_complete(year, month):
+        await db.timeline.delete_one({'employee_id': employee_id, 'type': 'salary_earned', 'year': year, 'month': month})
+        return
     ym = f"{year}-{month:02d}"
     doc_set = {
         'title': f'Salary earned {ym}', 'description': f'Earned ₹{earned:.0f}',
