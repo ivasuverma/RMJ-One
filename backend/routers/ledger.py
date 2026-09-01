@@ -226,7 +226,7 @@ async def create_account_type(body: AccountTypeIn, user=Depends(require_owner)):
     name = body.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail='Name is required')
-    if await db.account_types.find_one({'name': {'$regex': f'^{name}$', '$options': 'i'}}):
+    if await db.account_types.find_one({'name': {'$regex': f'^{re.escape(name)}$', '$options': 'i'}}):
         raise HTTPException(status_code=400, detail='A type with this name already exists')
     count = await db.account_types.count_documents({})
     doc = {

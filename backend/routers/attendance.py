@@ -7,6 +7,7 @@ only where the code lives."""
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Optional
 from datetime import datetime, timedelta, timezone, date
+import re
 import uuid
 from server import (
     db,
@@ -107,6 +108,7 @@ async def attendance_today(
     department_id: Optional[str] = None,
     location_id: Optional[str] = None,
     _: dict = Depends(require_staff),
+    _mod: dict = Depends(require_module('attendance')),
 ):
     """Returns one day's attendance for every employee — 'today' by default,
     or any date the owner picks via ?date=YYYY-MM-DD (the Attendance
@@ -182,7 +184,7 @@ async def attendance_today(
 
 
 @router.get('/attendance/live')
-async def attendance_live(limit: int = 120, _: dict = Depends(require_staff)):
+async def attendance_live(limit: int = 120, _: dict = Depends(require_staff), _mod: dict = Depends(require_module('attendance'))):
     # Recent punch feed for the Attendance "Live" view — newest first, spanning
     # enough events to cover several days so the feed can be grouped date-wise.
     limit = max(1, min(limit, 500))
@@ -573,7 +575,7 @@ async def create_department(body: DepartmentIn, user: dict = Depends(require_own
     name = body.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail='Name is required')
-    if await db.departments.find_one({'name': {'$regex': f'^{name}$', '$options': 'i'}}):
+    if await db.departments.find_one({'name': {'$regex': f'^{re.escape(name)}$', '$options': 'i'}}):
         raise HTTPException(status_code=400, detail='A department with this name already exists')
     doc = {'id': str(uuid.uuid4()), 'name': name, 'is_active': body.is_active, 'created_at': now_utc().isoformat()}
     await db.departments.insert_one(dict(doc))
@@ -617,7 +619,7 @@ async def create_location(body: LocationIn, user: dict = Depends(require_owner),
     name = body.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail='Name is required')
-    if await db.locations.find_one({'name': {'$regex': f'^{name}$', '$options': 'i'}}):
+    if await db.locations.find_one({'name': {'$regex': f'^{re.escape(name)}$', '$options': 'i'}}):
         raise HTTPException(status_code=400, detail='A location with this name already exists')
     doc = {
         'id': str(uuid.uuid4()), 'name': name, 'address': (body.address or '').strip(),

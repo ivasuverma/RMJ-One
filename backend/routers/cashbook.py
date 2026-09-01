@@ -23,6 +23,7 @@ management (create/rename/deactivate) is owner-only — entry CRUD follows
 the usual module/right checks and applies across whichever counter the
 caller is working in."""
 from fastapi import APIRouter, Depends, HTTPException, Query
+import re
 import uuid
 from server import (
     db,
@@ -158,7 +159,7 @@ async def create_quick_name(body: CashBookQuickNameIn, user=Depends(require_admi
     name = body.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail='Name is required')
-    existing = await db.cashbook_quick_names.find_one({'name': {'$regex': f'^{name}$', '$options': 'i'}}, {'_id': 0})
+    existing = await db.cashbook_quick_names.find_one({'name': {'$regex': f'^{re.escape(name)}$', '$options': 'i'}}, {'_id': 0})
     if existing:
         return existing
     quick_id = str(uuid.uuid4())

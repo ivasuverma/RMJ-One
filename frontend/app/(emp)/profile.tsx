@@ -29,7 +29,7 @@ export default function EmployeeProfile() {
 
   const load = useCallback(async () => {
     if (!user?.id) return;
-    try { const res = await api.get<any>(`/employees/${user.id}`); setDetails(res.employee); }
+    try { setDetails(await api.get<any>('/employees/me')); }
     catch (_e) { setDetails(null); }
   }, [user?.id]);
 

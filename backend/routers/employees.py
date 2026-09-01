@@ -18,6 +18,7 @@ from server import (
     require_owner,
     require_admin,
     require_module,
+    resolve_modules,
     SetEmployeeCredentialsIn,
     EmployeeIn,
     IdProofIn,
@@ -25,6 +26,19 @@ from server import (
     _ledger_sign,
     _make_photo_thumb,
 )
+
+
+def _can_see_team_data(user: dict) -> bool:
+    """Full employee records (salary, contact, bank/ID details) are for
+    whoever can actually manage the team or run payroll — everyone else
+    (e.g. an employee holding just Cash Book/Karigar Ledger access, who
+    only needs a name to pick a co-worker from a dropdown) gets the
+    lightweight directory projection in list_employees, and is refused
+    entirely by the single-record/id-proof endpoints below."""
+    if user.get('role') in ('owner', 'admin'):
+        return True
+    resolved = resolve_modules(user)
+    return 'team' in resolved or 'payroll' in resolved
 
 router = APIRouter()
 
@@ -100,8 +114,9 @@ async def list_employees(
     department_id: Optional[str] = None,
     location_id: Optional[str] = None,
     status_: Optional[str] = Query(default=None, alias='status'),
-    _: dict = Depends(get_current),
+    user: dict = Depends(get_current),
 ):
+    full = _can_see_team_data(user)
     query: dict = {}
     if q:
         # re.escape() so special regex chars in free-text search (., *, (, etc.)
@@ -124,33 +139,46 @@ async def list_employees(
     # photo_thumb (~5-10KB) swapped in as `photo` below instead of the full
     # ~50-150KB capture. The employee's own detail page still fetches the
     # full photo via GET /employees/{id}, which is untouched.
-    docs = await db.employees.find(query, {'_id': 0, 'password_hash': 0, 'id_proofs': 0, 'photo': 0}).sort('name', 1).to_list(1000)
+    proj = {'_id': 0, 'password_hash': 0, 'id_proofs': 0, 'photo': 0}
+    if not full:
+        # A caller without team/payroll access (e.g. an employee with just
+        # Cash Book or Karigar Ledger access, picking a co-worker from a
+        # dropdown) gets names only — never salary, contact, or ID/bank data.
+        proj.update({
+            'mobile': 0, 'address': 0, 'gender': 0, 'guardian_name': 0, 'aadhaar': 0, 'pan': 0,
+            'bank_account': 0, 'bank_ifsc': 0, 'bank_name': 0, 'salary': 0, 'notes': 0, 'username': 0,
+            'auto_advance_amount': 0, 'auto_advance_day': 0, 'biometric_id': 0,
+        })
+    docs = await db.employees.find(query, proj).sort('name', 1).to_list(1000)
     for d in docs:
         d['photo'] = d.pop('photo_thumb', '') or ''
-    events = await db.timeline.find(
-        {'type': {'$in': ['advance', 'bonus', 'fine', 'deduction', 'salary', 'salary_earned', 'salary_paid']}},
-        {'_id': 0, 'employee_id': 1, 'type': 1, 'amount': 1, 'sign': 1},
-    ).to_list(20000)
-    balances: dict = {}
-    for e in events:
-        eid = e.get('employee_id')
-        if not eid: continue
-        amount = float(e.get('amount') or 0)
-        t = e.get('type', 'other')
-        if t in ('salary', 'salary_earned'):
-            delta = abs(amount)          # credit — owed to employee
-        elif t == 'salary_paid':
-            delta = -abs(amount)         # debit — cash paid out
-        else:
-            delta = e.get('sign', _ledger_sign(t)) * abs(amount)
-        balances[eid] = balances.get(eid, 0) + delta
-    for d in docs:
-        d['closing_balance'] = round(balances.get(d['id'], 0), 2)
+    if full:
+        events = await db.timeline.find(
+            {'type': {'$in': ['advance', 'bonus', 'fine', 'deduction', 'salary', 'salary_earned', 'salary_paid']}},
+            {'_id': 0, 'employee_id': 1, 'type': 1, 'amount': 1, 'sign': 1},
+        ).to_list(20000)
+        balances: dict = {}
+        for e in events:
+            eid = e.get('employee_id')
+            if not eid: continue
+            amount = float(e.get('amount') or 0)
+            t = e.get('type', 'other')
+            if t in ('salary', 'salary_earned'):
+                delta = abs(amount)          # credit — owed to employee
+            elif t == 'salary_paid':
+                delta = -abs(amount)         # debit — cash paid out
+            else:
+                delta = e.get('sign', _ledger_sign(t)) * abs(amount)
+            balances[eid] = balances.get(eid, 0) + delta
+        for d in docs:
+            d['closing_balance'] = round(balances.get(d['id'], 0), 2)
     return docs
 
 
 @router.get('/employees/{emp_id}')
-async def get_employee(emp_id: str, _: dict = Depends(get_current)):
+async def get_employee(emp_id: str, user: dict = Depends(get_current)):
+    if not _can_see_team_data(user):
+        raise HTTPException(status_code=403, detail='No access to employee records')
     # Exclude the heavy bits from the default profile payload: each ID proof's
     # base64 data_uri (fetched on demand when viewed — see the endpoint below)
     # and the timeline (the profile screen no longer shows it). This keeps the
@@ -164,9 +192,11 @@ async def get_employee(emp_id: str, _: dict = Depends(get_current)):
 
 
 @router.get('/employees/{emp_id}/id-proofs/{proof_id}')
-async def get_id_proof(emp_id: str, proof_id: str, _: dict = Depends(get_current)):
+async def get_id_proof(emp_id: str, proof_id: str, user: dict = Depends(get_current)):
     """Fetch one ID proof's base64 data on demand — kept out of the main
     profile payload so the page loads fast."""
+    if not _can_see_team_data(user):
+        raise HTTPException(status_code=403, detail='No access to employee records')
     doc = await db.employees.find_one(
         {'id': emp_id, 'id_proofs.id': proof_id},
         {'_id': 0, 'id_proofs.$': 1},

@@ -9,6 +9,7 @@ from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 from typing import Optional, Literal
 from datetime import datetime, timezone, timedelta
+import secrets
 import uuid
 from server import (
     db,
@@ -60,7 +61,7 @@ class BiometricPushIn(BaseModel):
 
 
 @router.get('/biometric/devices')
-async def list_devices(_: dict = Depends(require_staff)):
+async def list_devices(_: dict = Depends(require_staff), _mod: dict = Depends(require_module('biometric'))):
     docs = await db.biometric_devices.find({}, {'_id': 0, 'secret': 0}).sort('created_at', 1).to_list(100)
     return docs
 
@@ -104,7 +105,7 @@ async def delete_device(did: str, user=Depends(require_owner), _mod=Depends(requ
 
 
 @router.get('/biometric/logs')
-async def biometric_logs(limit: int = 100, _: dict = Depends(require_staff)):
+async def biometric_logs(limit: int = 100, _: dict = Depends(require_staff), _mod: dict = Depends(require_module('biometric'))):
     return await db.biometric_logs.find({}, {'_id': 0}).sort('created_at', -1).limit(limit).to_list(limit)
 
 
@@ -222,7 +223,7 @@ async def biometric_push(body: BiometricPushIn):
     # Called by a bridge script (e.g. biometric_bridge.py) — no bearer JWT;
     # validated via device serial + secret since it's not an ADMS-capable flow.
     device = await db.biometric_devices.find_one({'serial': body.serial}, {'_id': 0})
-    if not device or device.get('secret') != body.secret:
+    if not device or not secrets.compare_digest(device.get('secret') or '', body.secret or ''):
         await db.biometric_logs.insert_one({
             'id': str(uuid.uuid4()), 'serial': body.serial, 'user_id': body.user_id,
             'timestamp': body.timestamp or now_utc().isoformat(), 'event_type': body.event_type or 'auto',
@@ -426,7 +427,7 @@ _EBIOSERVER_ACK = {'StatusCode': '200', 'Message': 'Success'}
 async def ebioserver_webhook(body: EBioServerWebhookIn, key: Optional[str] = Query(None)):
     store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
     configured_secret = store.get('biometric_webhook_secret')
-    if configured_secret and key != configured_secret:
+    if configured_secret and not secrets.compare_digest(key or '', configured_secret):
         await db.biometric_logs.insert_one({
             'id': str(uuid.uuid4()), 'serial': body.SerialNumber or '', 'user_id': body.UserId or '',
             'timestamp': body.LogDateTime or now_utc().isoformat(), 'event_type': 'auto',

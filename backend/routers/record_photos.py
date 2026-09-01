@@ -13,7 +13,7 @@ import uuid
 import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query, Response
-from server import db, get_current, now_utc, log_audit
+from server import db, get_current, now_utc, log_audit, resolve_modules
 
 router = APIRouter()
 
@@ -24,6 +24,40 @@ _FOLDER_LABEL = {
     'sample': 'Sample Photos',
     'employee': 'Employee Photos',
 }
+
+# Every ref_type this feature supports maps to the module that gates its
+# parent record — a photo shouldn't be reachable by someone who couldn't see
+# the repair/sample/employee it's attached to. 'employee' maps to 'team',
+# which is never employee-assignable, so employee photos stay owner/admin-only
+# just like the employees.py endpoints they sit alongside.
+_REF_MODULE = {'repair_item': 'repairs', 'sample': 'samples', 'employee': 'team'}
+
+
+def _module_for_ref(ref_type: str) -> str:
+    mod = _REF_MODULE.get(ref_type)
+    if not mod:
+        raise HTTPException(status_code=400, detail=f'Unknown ref_type "{ref_type}"')
+    return mod
+
+
+def _require_read(user: dict, ref_type: str) -> None:
+    mod = _module_for_ref(ref_type)
+    role = user.get('role')
+    if role in ('owner', 'admin', 'accountant'):
+        return
+    if role == 'employee' and mod in resolve_modules(user):
+        return
+    raise HTTPException(status_code=403, detail=f'No access to "{mod}"')
+
+
+def _require_write(user: dict, ref_type: str) -> None:
+    mod = _module_for_ref(ref_type)
+    role = user.get('role')
+    if role in ('owner', 'admin'):
+        return
+    if role == 'employee' and mod in resolve_modules(user):
+        return
+    raise HTTPException(status_code=403, detail=f'No access to "{mod}"')
 
 
 def _folder_for(ref_type: str) -> str:
@@ -39,6 +73,7 @@ async def create_record_photo(
     client_id: str = Form(default=''),
     user=Depends(get_current),
 ):
+    _require_write(user, ref_type)
     # Idempotent on client_id (the upload queue may retry after a timeout).
     if client_id:
         existing = await db.record_photos.find_one({'client_id': client_id, 'deleted': {'$ne': True}}, _LIST_PROJ)
@@ -71,6 +106,7 @@ async def create_record_photo(
 
 @router.get('/record-photos')
 async def list_record_photos(ref_type: str = Query(...), ref_id: str = Query(...), user=Depends(get_current)):
+    _require_read(user, ref_type)
     return await db.record_photos.find(
         {'ref_type': ref_type, 'ref_id': ref_id, 'deleted': {'$ne': True}}, _LIST_PROJ,
     ).sort('created_at', 1).to_list(50)
@@ -81,6 +117,7 @@ async def record_photo_file(photo_id: str, full: bool = Query(default=False), us
     d = await db.record_photos.find_one({'id': photo_id, 'deleted': {'$ne': True}}, {'_id': 0})
     if not d:
         raise HTTPException(status_code=404, detail='Photo not found')
+    _require_read(user, d.get('ref_type', ''))
     mime = (d.get('file') or {}).get('mime', 'image/jpeg')
     drive_id = (d.get('file') or {}).get('drive_file_id')
     local_kind = d.get('local_kind', 'full')
