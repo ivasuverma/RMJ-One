@@ -73,6 +73,7 @@ export default function OwnerAttendance() {
   const [todayFilter, setTodayFilter] = useState<Bucket | 'all'>('all');
   const [empLedgers, setEmpLedgers] = useState<EmpLedgerRow[] | null>(null);
   const [empQ, setEmpQ] = useState('');
+  const [liveOpen, setLiveOpen] = useState<Record<string, boolean>>({});
   const isToday = date === todayIST();
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
@@ -234,10 +235,16 @@ export default function OwnerAttendance() {
         ) : seg === 'live' ? (
           liveByDate.length === 0 ? (
             <Text style={styles.empty}>No punches recorded yet.</Text>
-          ) : liveByDate.map((g) => (
+          ) : liveByDate.map((g, gi) => {
+            const open = liveOpen[g.date] ?? (gi === 0);   // newest day open by default
+            return (
             <View key={g.date}>
-              <Text style={styles.sec}>{displayDateOnlyWithWeekday(g.date)}</Text>
-              {g.items.map((e) => (
+              <Pressable onPress={() => setLiveOpen((m) => ({ ...m, [g.date]: !open }))} style={styles.liveDayHeader} testID={`live-day-${g.date}`}>
+                <Text style={[styles.sec, { flex: 1 }]}>{displayDateOnlyWithWeekday(g.date)}</Text>
+                <Text style={styles.liveDayCount}>{g.items.length}</Text>
+                <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={16} color={colors.mutedText} />
+              </Pressable>
+              {open && g.items.map((e) => (
                 <View key={e.id} style={styles.liveRow} testID={`live-${e.id}`}>
                   <View style={[styles.liveDot, { backgroundColor: e.type === 'check_in' ? colors.onSuccess : colors.onError }]} />
                   <View style={{ flex: 1, minWidth: 0 }}>
@@ -253,7 +260,8 @@ export default function OwnerAttendance() {
                 </View>
               ))}
             </View>
-          ))
+            );
+          })
         ) : seg === 'pay' ? (
           <>
             {/* Month picker — pay last month's salary in the first week of the
@@ -446,6 +454,8 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   payV: { fontSize: 16, fontWeight: '800', color: colors.brandSecondary },
   payS: { fontSize: 11, color: colors.mutedText, marginTop: 2 },
   paidTick: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 2 },
+  liveDayHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  liveDayCount: { color: colors.mutedText, fontSize: 12, fontWeight: '700' },
   twoBtn: { flexDirection: 'row', gap: 10, marginTop: spacing.md },
   btn: { flex: 1, alignItems: 'center', paddingVertical: 14, borderRadius: 13 },
   btnPri: { backgroundColor: colors.brandPrimary },
