@@ -338,8 +338,9 @@ function DayDetail({ day, empId, canEdit, shifts, onClose, onSaved }: {
               <TextInput
                 testID="day-in-time"
                 value={inTime} onChangeText={(v) => { setInTime(v); setOffStatus(null); }}
-                editable={canEdit || !day.check_in}
+                editable
                 placeholder="HH:MM" placeholderTextColor={colors.mutedText}
+                keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'default'}
                 style={styles.timeInput} autoCapitalize="none"
               />
             </View>
@@ -348,8 +349,9 @@ function DayDetail({ day, empId, canEdit, shifts, onClose, onSaved }: {
               <TextInput
                 testID="day-out-time"
                 value={outTime} onChangeText={(v) => { setOutTime(v); setOffStatus(null); }}
-                editable={canEdit || !day.check_out}
+                editable
                 placeholder="HH:MM" placeholderTextColor={colors.mutedText}
+                keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'default'}
                 style={styles.timeInput} autoCapitalize="none"
               />
             </View>
