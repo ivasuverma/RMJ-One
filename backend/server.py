@@ -995,12 +995,13 @@ async def seed():
             {'counter_id': {'$exists': False}}, {'$set': {'counter_id': default_counter_id}},
         )
 
-    # Idempotent backfill: make sure every customer, karigar and employee is
-    # mirrored as a unified-ledger account, so the all-in-one Ledger lists them
-    # and can carry their reflected balance. Safe to run on every boot — it
-    # only inserts the accounts that are missing (matched on source.kind+ref).
+    # Idempotent backfill: make sure every customer and karigar is mirrored as
+    # a unified-ledger account, so the all-in-one Ledger lists them and can
+    # carry their reflected balance. Employees are deliberately NOT included —
+    # they have their own dedicated Employee Ledger. Any Employee accounts that
+    # a previous build auto-created here are cleaned up below.
     _type_by_key = {}
-    async for _t in db.account_types.find({'key': {'$in': ['customer', 'karigar', 'employee']}}, {'_id': 0, 'key': 1, 'id': 1}):
+    async for _t in db.account_types.find({'key': {'$in': ['customer', 'karigar']}}, {'_id': 0, 'key': 1, 'id': 1}):
         _type_by_key[_t['key']] = _t['id']
     if _type_by_key:
         _existing_mirrors = set()
@@ -1025,8 +1026,15 @@ async def seed():
             await _ensure_mirror('customer', _c['id'], _c.get('name'), _c.get('mobile'))
         async for _k in db.karigars.find({}, {'_id': 0, 'id': 1, 'name': 1, 'phone': 1, 'mobile': 1}):
             await _ensure_mirror('karigar', _k['id'], _k.get('name'), _k.get('phone') or _k.get('mobile'))
-        async for _e in db.employees.find({}, {'_id': 0, 'id': 1, 'name': 1, 'mobile': 1}):
-            await _ensure_mirror('employee', _e['id'], _e.get('name'), _e.get('mobile'))
+
+    # Clean up Employee accounts that an earlier build auto-mirrored into the
+    # unified ledger. Only remove auto-created ones with no manual entries, so a
+    # deliberately-added account (if any) is never touched.
+    async for _ea in db.accounts.find({'source.kind': 'employee'}, {'_id': 0, 'id': 1, 'created_by': 1}):
+        if _ea.get('created_by') != 'auto':
+            continue
+        if await db.ledger_entries.count_documents({'account_id': _ea['id']}) == 0:
+            await db.accounts.delete_one({'id': _ea['id']})
 
     # One-time backfill: any employee with a full-size photo but no thumb yet
     # (i.e. saved before photo_thumb existed) gets one generated now, so
@@ -1396,10 +1404,15 @@ async def _opening_balance(emp_id: str, up_to_date_exclusive: str) -> float:
         {'employee_id': emp_id, 'created_at': {'$lt': up_to_date_exclusive}}, {'_id': 0}
     ).sort('created_at', 1):
         t = e.get('type')
-        if t in ('advance', 'bonus', 'fine', 'deduction', 'salary'):
+        if t in ('advance', 'bonus', 'fine', 'deduction', 'salary', 'salary_earned', 'salary_paid'):
             amt = float(e.get('amount') or 0)
             sign = e.get('sign', _ledger_sign(t))
-            delta = sign * abs(amt) if t != 'salary' else amt
+            if t in ('salary', 'salary_earned'):
+                delta = abs(amt)
+            elif t == 'salary_paid':
+                delta = -abs(amt)
+            else:
+                delta = sign * abs(amt)
             running += delta
     return round(running, 2)
 
@@ -1886,7 +1899,6 @@ async def _check_auto_advances():
     today = now_ist.date()
     last_day = monthrange(today.year, today.month)[1]
     prev_year, prev_month = (today.year - 1, 12) if today.month == 1 else (today.year, today.month - 1)
-    for_month = f'{prev_year:04d}-{prev_month:02d}'
 
     async for emp in db.employees.find(
         {'status': 'active', 'auto_advance_amount': {'$gt': 0}, 'auto_advance_day': {'$ne': None}},
@@ -1897,6 +1909,14 @@ async def _check_auto_advances():
             continue
         if today.day != min(day, last_day):
             continue
+        # A late-month advance (day 16+) is paying THIS month's salary at
+        # month-end ("auto pay for same month salary"); an early-month one is
+        # paying the PREVIOUS month's salary in the first week. Tag for_month
+        # accordingly so payroll deducts it from the right month.
+        if day >= 16:
+            for_month = f'{today.year:04d}-{today.month:02d}'
+        else:
+            for_month = f'{prev_year:04d}-{prev_month:02d}'
         if await db.auto_advances.find_one({'employee_id': emp['id'], 'month': for_month}, {'_id': 0}) is not None:
             continue  # already fired for this month
 

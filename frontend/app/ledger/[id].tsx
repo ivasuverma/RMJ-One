@@ -19,6 +19,7 @@ const fmtDate = (s?: string) => istDisplayDate(s);
 const ICON: Record<string, any> = {
   advance: 'cash-outline', bonus: 'gift-outline', fine: 'warning-outline',
   deduction: 'remove-circle-outline', salary: 'wallet-outline',
+  salary_earned: 'wallet-outline', salary_paid: 'checkmark-done-outline',
   joined: 'briefcase-outline', salary_revised: 'trending-up-outline',
   leave: 'calendar-outline', correction: 'create-outline', other: 'ellipse-outline',
 };

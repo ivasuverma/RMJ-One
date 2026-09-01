@@ -29,26 +29,6 @@ from server import (
 router = APIRouter()
 
 
-async def _mirror_employee_account(emp_id: str, name: str, phone: str) -> None:
-    """Create a unified-ledger account mirroring an employee (source
-    kind='employee'), so staff appear in the all-in-one Ledger. Idempotent on
-    (source.kind, source.ref). Best-effort — callers wrap in try/except so a
-    mirror failure never blocks the employee create itself."""
-    if await db.accounts.find_one({'source.kind': 'employee', 'source.ref': emp_id}, {'_id': 0, 'id': 1}):
-        return
-    t = await db.account_types.find_one({'key': 'employee'}, {'_id': 0, 'id': 1})
-    if not t:
-        t = await db.account_types.find_one({'name': {'$regex': '^employee$', '$options': 'i'}}, {'_id': 0, 'id': 1})
-    if not t:
-        return
-    await db.accounts.insert_one({
-        'id': str(uuid.uuid4()), 'type_id': t['id'], 'name': (name or '').strip(),
-        'phone': (phone or '').strip(), 'opening_fine': 0, 'opening_amount': 0,
-        'note': '', 'active': True, 'created_at': now_utc().isoformat(), 'created_by': 'auto',
-        'source': {'kind': 'employee', 'ref': emp_id},
-    })
-
-
 # ---------------- Employee self-service (own profile) ----------------
 # Registered BEFORE /employees/{emp_id} so "me" isn't captured as an id.
 class EmployeeSelfUpdateIn(BaseModel):
@@ -195,12 +175,6 @@ async def create_employee(body: EmployeeIn, user: dict = Depends(require_admin),
            'username': default_username, 'password_hash': hash_secret(default_password),
            'must_change_password': True, 'photo_thumb': _make_photo_thumb(data.get('photo')), **data}
     await db.employees.insert_one(dict(doc))
-    # Mirror into the unified ledger as an Employee account (idempotent), so the
-    # new hire shows up in the all-in-one Ledger straight away.
-    try:
-        await _mirror_employee_account(eid, data.get('name'), data.get('mobile'))
-    except Exception:
-        pass
     await db.timeline.insert_one({
         'id': str(uuid.uuid4()), 'employee_id': eid, 'type': 'joined',
         'title': 'Joined RMJ', 'description': f"Joined as {data.get('designation') or 'Employee'}",

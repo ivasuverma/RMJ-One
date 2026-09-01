@@ -190,32 +190,9 @@ async def _source_ledger(account: dict) -> dict:
                 })
                 fine += -gw
 
-    elif kind == 'employee':
-        # Employees keep a cash-only wage ledger (advances, bonuses, fines,
-        # deductions, paid salaries) on the timeline. Reflect it here so staff
-        # dues sit alongside customers/karigars in the one ledger. The employee
-        # ledger's own sign is: bonus/salary credit the employee, advance/fine/
-        # deduction debit them — flip to the unified convention (positive = owed
-        # TO the shop, e.g. an advance the employee must work off).
-        LBL = {'advance': 'Advance', 'bonus': 'Bonus', 'fine': 'Fine',
-               'deduction': 'Deduction', 'salary': 'Salary'}
-        async for e in db.timeline.find(
-            {'employee_id': ref, 'type': {'$in': list(LBL)}}, {'_id': 0},
-        ):
-            t = e.get('type')
-            amt = abs(float(e.get('amount') or 0))
-            emp_delta = amt if t in ('bonus', 'salary') else -amt
-            ad = -emp_delta  # unified convention
-            created = e.get('created_at') or ''
-            part = LBL.get(t, t or 'Entry')
-            if e.get('description'):
-                part = f"{part} — {e['description']}"
-            entries.append({
-                'id': e.get('id'), 'date': created[:10], 'created_at': created,
-                'particulars': part, 'fine_delta': 0.0, 'amount_delta': round(ad, 2),
-                'note': e.get('description', ''), 'source': 'employee', 'ref_id': e.get('id'), 'read_only': True,
-            })
-            amount += ad
+    # Employees are NOT part of the unified ledger — they keep their own
+    # dedicated wage ledger (advances/bonuses/salary) on the Employee Ledger
+    # screen. Only customers and karigars are reflected here.
 
     return {'entries': entries, 'fine': round(fine, 3), 'amount': round(amount, 2)}
 

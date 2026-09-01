@@ -70,6 +70,26 @@ export default function PayrollDetail() {
     finally { payGuard.current = false; }
   };
 
+  const undoPaid = () => {
+    if (!row?.id) return;
+    Alert.alert(
+      'Undo paid?',
+      'This removes all recorded payments and the salary ledger entries for this month, and resets it to unpaid so you can recalculate and pay again.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Undo paid', style: 'destructive', onPress: async () => {
+            if (payGuard.current) return;
+            payGuard.current = true;
+            try { await api.post(`/payroll/entry/${row.id}/unpay`, {}); await load(); }
+            catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+            finally { payGuard.current = false; }
+          },
+        },
+      ],
+    );
+  };
+
   const downloadPdf = () => {
     if (!row?.id) { Alert.alert('Generate payroll first', 'Save the payroll for this month first.'); return; }
     const base = process.env.EXPO_PUBLIC_BACKEND_URL || '';
@@ -253,6 +273,12 @@ export default function PayrollDetail() {
               <Ionicons name="checkmark-circle" size={20} color={colors.brandPrimary} />
               <Text style={styles.paidBannerText}>Paid</Text>
             </View>
+          )}
+          {row._saved && row.paid && canWrite && !row._locked && (
+            <Pressable style={styles.unpayBtn} onPress={undoPaid} testID="undo-paid-btn">
+              <Ionicons name="arrow-undo-outline" size={18} color={colors.onError} />
+              <Text style={styles.unpayText}>Undo paid — reset this salary</Text>
+            </Pressable>
           )}
           {!row._saved && (
             <View style={styles.hintBox}>
@@ -554,6 +580,12 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: 14,
   },
   payText: { color: colors.onBrandPrimary, fontWeight: '800', fontSize: 15 },
+  unpayBtn: {
+    flexDirection: 'row', gap: spacing.sm, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.surfaceSecondary, borderColor: colors.error, borderWidth: 1,
+    borderRadius: radius.md, paddingVertical: 13,
+  },
+  unpayText: { color: colors.onError, fontWeight: '800', fontSize: 14 },
   pdfBtn: {
     flexDirection: 'row', gap: spacing.sm, alignItems: 'center', justifyContent: 'center',
     backgroundColor: colors.surfaceSecondary, borderColor: colors.brand, borderWidth: 1,
