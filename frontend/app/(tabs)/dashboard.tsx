@@ -173,29 +173,70 @@ export default function DashboardScreen() {
               const a = data.todays_attendance; const b = data.business_summary;
               const pend = (data.pending_approvals?.attendance_corrections || 0) + (data.pending_approvals?.leave_requests || 0);
               const counters = data.cashbook_summary.counters || [];
-              const cashSub = counters.length
-                ? counters.map((c) => `${c.name} ${fmtINR(c.closing)}`).join('  ·  ')
-                : 'closing';
+              const r = data.repairs_summary;
               const tiles: { key: string; show: boolean; icon: keyof typeof Ionicons.glyphMap; label: string; value: string; sub: string; badge?: number; route: string; subLines?: number }[] = [
-                { key: 'repairs', show: showRepairsTile, icon: 'construct-outline', label: 'Repairs', value: String(data.repairs_summary.total_open), sub: `${data.repairs_summary.with_karigar} issued · ${data.repairs_summary.ready} to receive`, badge: data.repairs_summary.overdue || undefined, route: '/repairs', subLines: 2 },
-                { key: 'stock', show: hasModule('samples'), icon: 'diamond-outline', label: 'Stock In/Out', value: String(data.samples_summary.with_karigar), sub: 'out', route: '/samples?status=with_karigar' },
-                { key: 'cash', show: hasModule('cash_book'), icon: 'wallet-outline', label: 'Cash Book', value: fmtINR(data.cashbook_summary.closing_balance), sub: cashSub, route: '/cashbook', subLines: 3 },
-                { key: 'documents', show: hasModule('documents'), icon: 'documents-outline', label: 'Documents', value: String(data.documents_pending || 0), sub: 'to record', badge: data.documents_pending || undefined, route: '/documents?tab=pending' },
                 { key: 'attendance', show: hasModule('attendance'), icon: 'people-outline', label: 'Attendance', value: `${a.present}/${a.total}`, sub: `in · ${a.not_checked_in} missing`, badge: a.not_checked_in || undefined, route: '/(tabs)/attendance' },
                 { key: 'tasks', show: hasModule('tasks'), icon: 'checkbox-outline', label: 'Tasks', value: String(data.tasks_summary.open_total), sub: data.tasks_summary.due_today > 0 ? `${data.tasks_summary.due_today} due today` : 'open', badge: data.tasks_summary.due_today || undefined, route: '/tasks' },
+                { key: 'documents', show: hasModule('documents'), icon: 'documents-outline', label: 'Documents', value: String(data.documents_pending || 0), sub: 'to record', badge: data.documents_pending || undefined, route: '/documents?tab=pending' },
+                { key: 'stock', show: hasModule('samples'), icon: 'diamond-outline', label: 'Stock In/Out', value: String(data.samples_summary.with_karigar), sub: 'out', route: '/samples?status=with_karigar' },
                 { key: 'customers', show: showRepairsTile || hasModule('customer_ledger'), icon: 'person-outline', label: 'Customers', value: String(b.customers_open), sub: 'open ledgers', route: '/reports/customer-ledger' },
                 { key: 'karigars', show: showRepairsTile || hasModule('karigar_ledger'), icon: 'hammer-outline', label: 'Karigars', value: String(b.karigars_open), sub: `${b.fine_with_karigars.toFixed(2)}g due · ₹${Math.round(Math.abs(b.karigar_amt_payable)).toLocaleString('en-IN')} pay`, route: '/reports/karigar-ledger', subLines: 2 },
                 { key: 'approvals', show: hasModule('approvals') && pend > 0, icon: 'checkmark-done-outline', label: 'Approvals', value: String(pend), sub: 'pending', badge: pend || undefined, route: '/approvals' },
               ];
-              return tiles.filter((t) => t.show).map((t) => (
-                <Pressable key={t.key} onPress={() => router.push(t.route as any)} style={({ pressed }) => [styles.tile, pressed && { opacity: 0.85 }]} testID={`dash-tile-${t.key}`}>
-                  {!!t.badge && <View style={styles.tileBadge}><Text style={styles.tileBadgeText}>{t.badge}</Text></View>}
-                  <View style={styles.tileIcon}><Ionicons name={t.icon} size={20} color={colors.brandSecondary} /></View>
-                  <Text style={styles.tileValue} numberOfLines={1}>{t.value}</Text>
-                  <Text style={styles.tileLabel} numberOfLines={1}>{t.label}</Text>
-                  <Text style={styles.tileSub} numberOfLines={t.subLines || 1}>{t.sub}</Text>
-                </Pressable>
-              ));
+              return (
+                <>
+                  {tiles.filter((t) => t.show).map((t) => (
+                    <Pressable key={t.key} onPress={() => router.push(t.route as any)} style={({ pressed }) => [styles.tile, pressed && { opacity: 0.85 }]} testID={`dash-tile-${t.key}`}>
+                      {!!t.badge && <View style={styles.tileBadge}><Text style={styles.tileBadgeText}>{t.badge}</Text></View>}
+                      <View style={styles.tileIcon}><Ionicons name={t.icon} size={20} color={colors.brandSecondary} /></View>
+                      <Text style={styles.tileValue} numberOfLines={1}>{t.value}</Text>
+                      <Text style={styles.tileLabel} numberOfLines={1}>{t.label}</Text>
+                      <Text style={styles.tileSub} numberOfLines={t.subLines || 1}>{t.sub}</Text>
+                    </Pressable>
+                  ))}
+
+                  {hasModule('cash_book') && (
+                    <Pressable onPress={() => router.push('/cashbook' as any)} style={({ pressed }) => [styles.wideTile, pressed && { opacity: 0.85 }]} testID="dash-tile-cash">
+                      <View style={styles.wideHead}>
+                        <View style={styles.tileIcon}><Ionicons name="wallet-outline" size={20} color={colors.brandSecondary} /></View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.tileLabel}>Cash Book</Text>
+                          <Text style={styles.tileSub}>closing balance</Text>
+                        </View>
+                        <Text style={styles.wideValue} numberOfLines={1}>{fmtINR(data.cashbook_summary.closing_balance)}</Text>
+                      </View>
+                      {counters.length > 0 && (
+                        <View style={styles.wideRows}>
+                          {counters.map((c) => (
+                            <View key={c.name} style={styles.wideRow}>
+                              <Text style={styles.wideRowLabel} numberOfLines={1}>{c.name}</Text>
+                              <Text style={styles.wideRowVal} numberOfLines={1}>{fmtINR(c.closing)}</Text>
+                            </View>
+                          ))}
+                        </View>
+                      )}
+                    </Pressable>
+                  )}
+
+                  {showRepairsTile && (
+                    <Pressable onPress={() => router.push('/repairs' as any)} style={({ pressed }) => [styles.wideTile, pressed && { opacity: 0.85 }]} testID="dash-tile-repairs">
+                      <View style={styles.wideHead}>
+                        <View style={styles.tileIcon}><Ionicons name="construct-outline" size={20} color={colors.brandSecondary} /></View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.tileLabel}>Repairs</Text>
+                          <Text style={styles.tileSub}>{r.total_open} open{r.overdue > 0 ? ` · ${r.overdue} overdue` : ''}</Text>
+                        </View>
+                        <Text style={styles.wideValue}>{r.total_open}</Text>
+                      </View>
+                      <View style={styles.wideRows}>
+                        <View style={styles.wideRow}><Text style={styles.wideRowLabel}>Issued to karigar</Text><Text style={styles.wideRowVal}>{r.with_karigar}</Text></View>
+                        <View style={styles.wideRow}><Text style={styles.wideRowLabel}>To receive</Text><Text style={styles.wideRowVal}>{r.ready}</Text></View>
+                        <View style={styles.wideRow}><Text style={styles.wideRowLabel}>Delivered today</Text><Text style={styles.wideRowVal}>{r.delivered_today}</Text></View>
+                      </View>
+                    </Pressable>
+                  )}
+                </>
+              );
             })()}
           </View>
 
@@ -619,6 +660,17 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   tileSub: { color: colors.mutedText, fontSize: 11 },
   tileBadge: { position: 'absolute', top: 8, right: 8, minWidth: 20, height: 20, paddingHorizontal: 5, borderRadius: 10, backgroundColor: colors.error, alignItems: 'center', justifyContent: 'center' },
   tileBadgeText: { color: colors.onError, fontSize: 11, fontWeight: '800' },
+  wideTile: {
+    flexBasis: '100%', position: 'relative',
+    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    padding: spacing.md, gap: spacing.sm,
+  },
+  wideHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  wideValue: { color: colors.onSurface, fontSize: 22, fontWeight: '800' },
+  wideRows: { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.sm, gap: 6 },
+  wideRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  wideRowLabel: { color: colors.mutedText, fontSize: 13, flex: 1 },
+  wideRowVal: { color: colors.onSurface, fontSize: 14, fontWeight: '700' },
   glanceCard: {
     flex: 1, minWidth: 0,
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
