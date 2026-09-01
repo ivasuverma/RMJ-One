@@ -411,19 +411,19 @@ function QuickView({ doc, categoryLabel, token, fileUri, onClose, onRecord, canR
           <Text style={styles.qvMeta}>{doc.uploaded_by_name ? `By ${doc.uploaded_by_name} · ` : ''}{istDisplayDateTime(doc.recorded_at || doc.created_at)}</Text>
           <View style={styles.qvActions}>
             <Pressable onPress={() => onOpenFile(doc)} disabled={opening} style={styles.qvBtn} testID="qv-open">
-              {opening ? <ActivityIndicator size="small" color={colors.onSurface} /> : <Ionicons name="expand-outline" size={16} color={colors.onSurface} />}
-              <Text style={styles.qvBtnText}>{opening ? 'Opening…' : (isImage ? 'Open full size' : 'Open PDF')}</Text>
+              {opening ? <ActivityIndicator size="small" color={colors.onSurface} /> : <Ionicons name="expand-outline" size={19} color={colors.onSurface} />}
+              <Text style={styles.qvBtnText} numberOfLines={1}>{opening ? '…' : 'Open'}</Text>
             </Pressable>
             {canRecord && (
               doc.status === 'pending'
-                ? <Pressable onPress={() => onRecord(doc)} style={[styles.qvBtn, styles.qvBtnPrimary]} testID="qv-record"><Ionicons name="checkmark-done-outline" size={16} color={colors.onBrandPrimary} /><Text style={[styles.qvBtnText, { color: colors.onBrandPrimary }]}>Done</Text></Pressable>
-                : <Pressable onPress={() => onRecord(doc)} style={styles.qvBtn} testID="qv-edit-remark"><Ionicons name="create-outline" size={16} color={colors.onSurface} /><Text style={styles.qvBtnText}>Edit remark</Text></Pressable>
+                ? <Pressable onPress={() => onRecord(doc)} style={[styles.qvBtn, styles.qvBtnPrimary]} testID="qv-record"><Ionicons name="checkmark-done-outline" size={19} color={colors.onBrandPrimary} /><Text style={[styles.qvBtnText, { color: colors.onBrandPrimary }]} numberOfLines={1}>Done</Text></Pressable>
+                : <Pressable onPress={() => onRecord(doc)} style={styles.qvBtn} testID="qv-edit-remark"><Ionicons name="create-outline" size={19} color={colors.onSurface} /><Text style={styles.qvBtnText} numberOfLines={1}>Edit</Text></Pressable>
             )}
             {canRecord && doc.status === 'done' && (
-              <Pressable onPress={() => onChangeCategory(doc)} style={styles.qvBtn} testID="qv-recat"><Ionicons name="swap-horizontal-outline" size={16} color={colors.onSurface} /><Text style={styles.qvBtnText}>Change category</Text></Pressable>
+              <Pressable onPress={() => onChangeCategory(doc)} style={styles.qvBtn} testID="qv-recat"><Ionicons name="swap-horizontal-outline" size={19} color={colors.onSurface} /><Text style={styles.qvBtnText} numberOfLines={1}>Category</Text></Pressable>
             )}
             {canRecord && doc.status === 'done' && (
-              <Pressable onPress={() => onUndo(doc.id)} style={styles.qvBtn} testID="qv-undo"><Ionicons name="arrow-undo-outline" size={16} color={colors.onSurface} /><Text style={styles.qvBtnText}>Undo</Text></Pressable>
+              <Pressable onPress={() => onUndo(doc.id)} style={styles.qvBtn} testID="qv-undo"><Ionicons name="arrow-undo-outline" size={19} color={colors.onSurface} /><Text style={styles.qvBtnText} numberOfLines={1}>Undo</Text></Pressable>
             )}
           </View>
         </View>
@@ -577,9 +577,12 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   qvLinkText: { flex: 1, color: colors.onSurface, fontSize: 14, fontWeight: '600' },
   qvMeta: { color: colors.mutedText, fontSize: 12.5 },
   qvActions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
-  qvBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingVertical: 13, borderRadius: radius.md, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.borderStrong },
+  // iOS-toolbar style: icon over a short single-line label, not an icon+text
+  // pill — 4 of those at equal-width crushed long labels ("Change category")
+  // into an ugly 2-line wrap. Keep labels short so 11.5px always fits.
+  qvBtn: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 4, paddingVertical: 11, borderRadius: radius.md, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.borderStrong },
   qvBtnPrimary: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
-  qvBtnText: { color: colors.onSurface, fontSize: 14, fontWeight: '700' },
+  qvBtnText: { color: colors.onSurface, fontSize: 11.5, fontWeight: '600' },
 
   // Record sheet
   recHint: { color: colors.mutedText, fontSize: 13, marginBottom: spacing.md },
