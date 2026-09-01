@@ -338,13 +338,16 @@ class EmployeeIn(BaseModel):
     employee_code: Optional[str] = None
     biometric_id: Optional[str] = ''  # device-side user/person ID, e.g. "1" — set this when the
                                        # biometric device's enrolled IDs don't match employee_code
-    department: Optional[str] = ''
+    department_id: Optional[str] = None
+    location_id: Optional[str] = None
     designation: Optional[str] = ''
     shift: Optional[str] = 'General'
     salary: float = 0
     joining_date: Optional[str] = None
     mobile: Optional[str] = ''
     address: Optional[str] = ''
+    gender: Optional[str] = None
+    guardian_name: Optional[str] = ''
     aadhaar: Optional[str] = ''
     pan: Optional[str] = ''
     bank_account: Optional[str] = ''
@@ -1121,11 +1124,22 @@ async def seed():
             ('Ramesh Kumar','RMJ004','Security','Security Head','Night',22000,'2021-03-10','+91 99887 76655','4567'),
             ('Neha Gupta','RMJ005','Sales','Sales Associate','General',26000,'2024-08-05','+91 98765 00001','5678'),
         ]
+        # Seed the Departments master with each distinct name this demo data
+        # uses, so the seeded employees can carry a real department_id (not
+        # just the display-cache string) like any employee created for real.
+        dept_id_by_name: dict = {}
+        for dept_name in dict.fromkeys(s[2] for s in samples):
+            did = str(uuid.uuid4())
+            await db.departments.insert_one({
+                'id': did, 'name': dept_name, 'is_active': True, 'created_at': iso,
+            })
+            dept_id_by_name[dept_name] = did
         docs, events = [], []
         for name, code, dept, desig, shift, sal, jd, mob, pin in samples:
             eid = str(uuid.uuid4())
             docs.append({
-                'id': eid, 'name': name, 'employee_code': code, 'department': dept,
+                'id': eid, 'name': name, 'employee_code': code,
+                'department_id': dept_id_by_name[dept], 'department': dept,
                 'designation': desig, 'shift': shift, 'salary': sal, 'joining_date': jd,
                 'mobile': mob, 'address': 'Delhi', 'aadhaar': '', 'pan': '',
                 'bank_account': '', 'bank_ifsc': '', 'bank_name': '', 'photo': '',

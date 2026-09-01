@@ -29,6 +29,19 @@ from server import (
 router = APIRouter()
 
 
+async def _sync_department_name(data: dict) -> None:
+    """`department` (free text) is a derived display cache of `department_id`
+    (the real master-backed FK) — kept in sync here on every write so the
+    other places that still read the free-text field (payroll receipts, auth
+    responses, the AI assistant, attendance display) keep working unchanged."""
+    did = data.get('department_id')
+    if did:
+        dept = await db.departments.find_one({'id': did}, {'_id': 0, 'name': 1})
+        data['department'] = dept['name'] if dept else ''
+    else:
+        data['department'] = ''
+
+
 # ---------------- Employee self-service (own profile) ----------------
 # Registered BEFORE /employees/{emp_id} so "me" isn't captured as an id.
 class EmployeeSelfUpdateIn(BaseModel):
@@ -84,6 +97,8 @@ async def update_my_profile(body: EmployeeSelfUpdateIn, user=Depends(get_current
 async def list_employees(
     q: Optional[str] = None,
     department: Optional[str] = None,
+    department_id: Optional[str] = None,
+    location_id: Optional[str] = None,
     status_: Optional[str] = Query(default=None, alias='status'),
     _: dict = Depends(get_current),
 ):
@@ -99,7 +114,11 @@ async def list_employees(
             {'designation': {'$regex': q_esc, '$options': 'i'}},
             {'department': {'$regex': q_esc, '$options': 'i'}},
         ]
+    # `department` (free-text) kept for older callers; `department_id` is the
+    # real master-backed filter going forward — see _sync_department_name.
     if department: query['department'] = department
+    if department_id: query['department_id'] = department_id
+    if location_id: query['location_id'] = location_id
     if status_: query['status'] = status_
     # 'photo' excluded — this list only ever shows a small avatar, so it gets
     # photo_thumb (~5-10KB) swapped in as `photo` below instead of the full
@@ -163,6 +182,7 @@ async def create_employee(body: EmployeeIn, user: dict = Depends(require_admin),
     iso = now_utc().isoformat()
     eid = str(uuid.uuid4())
     data = body.model_dump()
+    await _sync_department_name(data)
     if not data.get('employee_code'):
         count = await db.employees.count_documents({})
         data['employee_code'] = f'RMJ{(count + 1):03d}'
@@ -198,6 +218,7 @@ async def update_employee(emp_id: str, body: EmployeeIn, user: dict = Depends(re
     existing = await db.employees.find_one({'id': emp_id}, {'_id': 0})
     if not existing: raise HTTPException(status_code=404, detail='Employee not found')
     data = body.model_dump()
+    await _sync_department_name(data)
     if data.get('employee_code'): data['employee_code'] = data['employee_code'].upper()
     # Regenerate the thumbnail whenever the photo actually changed — cheap
     # (a few ms), and avoids ever serving a stale avatar in list screens.

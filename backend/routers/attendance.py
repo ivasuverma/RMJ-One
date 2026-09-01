@@ -102,11 +102,18 @@ async def my_today(user=Depends(require_employee)):
 
 
 @router.get('/attendance/today')
-async def attendance_today(date_: Optional[str] = Query(default=None, alias='date'), _: dict = Depends(require_staff)):
+async def attendance_today(
+    date_: Optional[str] = Query(default=None, alias='date'),
+    department_id: Optional[str] = None,
+    location_id: Optional[str] = None,
+    _: dict = Depends(require_staff),
+):
     """Returns one day's attendance for every employee — 'today' by default,
     or any date the owner picks via ?date=YYYY-MM-DD (the Attendance
     screen's date filter). For a past date the day is fully settled (no
-    'still mid-shift' leniency); for today it stays live."""
+    'still mid-shift' leniency); for today it stays live. Optionally narrowed
+    to one department/location via the same master-backed ids employees are
+    filtered by on GET /employees."""
     d = date_ or today_str()
     is_today = d == today_str()
     # 'photo' excluded in favor of photo_thumb (small avatar) — same
@@ -114,7 +121,10 @@ async def attendance_today(date_: Optional[str] = Query(default=None, alias='dat
     # every Attendance screen visit.
     # Inactive (ex-)employees don't belong on the daily attendance list — only
     # active / on-leave staff. (on_leave still shows, with its leave status.)
-    employees = await db.employees.find({'status': {'$ne': 'inactive'}}, {'_id': 0, 'password_hash': 0, 'photo': 0}).sort('name', 1).to_list(1000)
+    emp_query: dict = {'status': {'$ne': 'inactive'}}
+    if department_id: emp_query['department_id'] = department_id
+    if location_id: emp_query['location_id'] = location_id
+    employees = await db.employees.find(emp_query, {'_id': 0, 'password_hash': 0, 'photo': 0}).sort('name', 1).to_list(1000)
     att_map = {}
     async for a in db.attendance.find({'date': d}, {'_id': 0, 'check_in.selfie': 0, 'check_out.selfie': 0}):
         att_map[a['employee_id']] = a
@@ -146,7 +156,8 @@ async def attendance_today(date_: Optional[str] = Query(default=None, alias='dat
         shift = shifts_by_name.get(e.get('shift'))
         row = {
             'employee_id': e['id'], 'employee_code': e.get('employee_code'), 'name': e['name'],
-            'department': e.get('department', ''), 'designation': e.get('designation', ''),
+            'department': e.get('department', ''), 'department_id': e.get('department_id'),
+            'location_id': e.get('location_id'), 'designation': e.get('designation', ''),
             'shift': e.get('shift', ''), 'employee_status': e.get('status', 'active'),
             'photo': e.get('photo_thumb') or '',
         }
