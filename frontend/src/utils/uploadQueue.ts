@@ -140,6 +140,17 @@ export async function cancelUpload(id: string): Promise<void> {
   await emitCount();
 }
 
+// Set/replace the note (remark) on a queued item — used by quick capture's
+// optional "add remark" after a photo is already queued. No-op if it already
+// uploaded and left the outbox.
+export async function updateOutboxNote(id: string, note: string): Promise<void> {
+  if (!hasIDB()) return;
+  const item = await idbGet(id).catch(() => undefined);
+  if (!item) return;
+  item.note = note;
+  try { await idbPut(item); } catch { /* ignore */ }
+}
+
 export async function clearOutbox(): Promise<void> {
   if (!hasIDB()) return;
   const items = await idbAll();

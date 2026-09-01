@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Platform, Pressable, StyleSheet, Text, View, ActivityIndicator } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View, ActivityIndicator, TextInput } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '@/src/api/client';
 import { haptics } from '@/src/utils/haptics';
-import { enqueueUpload } from '@/src/utils/uploadQueue';
+import { enqueueUpload, updateOutboxNote } from '@/src/utils/uploadQueue';
 import { Sheet } from '@/src/components/ui';
 import { pickWebFile, makeThumb, type DocCategory } from '@/src/components/DocumentCaptureSheet';
 import { spacing, radius, ThemeColors } from '@/src/theme';
@@ -47,15 +47,24 @@ export function QuickDocCapture({ visible, onClose, onSaved }: {
   const [catKey, setCatKey] = useState<string | null>(null);
   const [phase, setPhase] = useState<Phase>('category');
   const [compress, setCompress] = useState(true);
+  const [lastId, setLastId] = useState('');
+  const [remark, setRemark] = useState('');
+  const [remarkSaved, setRemarkSaved] = useState(false);
   const shooting = useRef(false);
 
   useEffect(() => {
     if (visible) {
       api.get<DocCategory[]>('/document-categories').then((cs) => setCats(cs.filter((c) => c.can_view !== false))).catch(() => {});
     } else {
-      setCatKey(null); setPhase('category'); shooting.current = false;
+      setCatKey(null); setPhase('category'); setLastId(''); setRemark(''); setRemarkSaved(false); shooting.current = false;
     }
   }, [visible]);
+
+  const saveRemark = async () => {
+    if (!lastId) return;
+    await updateOutboxNote(lastId, remark.trim());
+    setRemarkSaved(true);
+  };
 
   const selectedCat = cats.find((c) => c.key === catKey);
 
@@ -73,6 +82,7 @@ export function QuickDocCapture({ visible, onClose, onSaved }: {
       await enqueueUpload({ id, blob, filename: `${key}-${stamp}.jpg`, category_key: key, note: '', thumb });
       haptics.success();
       onSaved?.();
+      setLastId(id); setRemark(''); setRemarkSaved(false);
       setPhase('saved');
     } catch {
       haptics.error();
@@ -93,6 +103,25 @@ export function QuickDocCapture({ visible, onClose, onSaved }: {
           <View style={styles.savedCircle}><Ionicons name="checkmark" size={38} color={colors.onSuccess} /></View>
           <Text style={styles.savedTitle}>Saved{selectedCat ? ` · ${selectedCat.label}` : ''}</Text>
           <Text style={styles.savedSub}>Uploading in the background — safe to close.</Text>
+
+          {/* Optional remark (used as the document's name). */}
+          <View style={styles.remarkWrap}>
+            <TextInput
+              value={remark}
+              onChangeText={(v) => { setRemark(v); setRemarkSaved(false); }}
+              placeholder="Add a remark (optional) — e.g. name or bill no."
+              placeholderTextColor={colors.mutedText}
+              style={styles.remarkInput}
+              testID="quick-remark"
+            />
+            {!!remark.trim() && (
+              <Pressable onPress={saveRemark} style={styles.remarkBtn} testID="quick-remark-save">
+                <Ionicons name={remarkSaved ? 'checkmark' : 'save-outline'} size={16} color={colors.onBrandPrimary} />
+                <Text style={styles.remarkBtnText}>{remarkSaved ? 'Saved' : 'Save remark'}</Text>
+              </Pressable>
+            )}
+          </View>
+
           <View style={{ alignSelf: 'stretch', gap: spacing.sm, marginTop: spacing.md }}>
             <Pressable onPress={() => catKey && shoot(catKey)} style={[styles.btn, styles.btnPrimary]} testID="quick-capture-another">
               <Ionicons name="camera" size={20} color={colors.onBrandPrimary} />
@@ -151,6 +180,13 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   savedCircle: { width: 68, height: 68, borderRadius: 34, backgroundColor: colors.success, alignItems: 'center', justifyContent: 'center' },
   savedTitle: { color: colors.onSurface, fontSize: 20, fontWeight: '800' },
   savedSub: { color: colors.mutedText, fontSize: 13, textAlign: 'center' },
+  remarkWrap: { alignSelf: 'stretch', flexDirection: 'row', gap: spacing.sm, alignItems: 'center', marginTop: spacing.md },
+  remarkInput: {
+    flex: 1, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    color: colors.onSurface, paddingHorizontal: spacing.md, paddingVertical: 11, fontSize: 14,
+  },
+  remarkBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingHorizontal: 12, paddingVertical: 11 },
+  remarkBtnText: { color: colors.onBrandPrimary, fontWeight: '800', fontSize: 12.5 },
   btn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingVertical: 14, borderRadius: radius.md },
   btnPrimary: { backgroundColor: colors.brandPrimary },
   btnPrimaryText: { color: colors.onBrandPrimary, fontSize: 15, fontWeight: '800' },

@@ -40,7 +40,9 @@ export default function KarigarLedgerPickerScreen() {
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
         <Text style={styles.title}>Karigar Ledger</Text>
-        <View style={{ width: 40 }} />
+        <Pressable onPress={() => router.push('/karigars' as any)} style={[styles.iconBtn, styles.addBtn]} testID="karigar-manage-btn" hitSlop={12}>
+          <Ionicons name="add" size={22} color={colors.onBrandPrimary} />
+        </Pressable>
       </View>
 
       <View style={styles.filterRow}>
@@ -90,6 +92,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surfaceSecondary,
     alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border,
   },
+  addBtn: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
   title: { flex: 1, color: colors.onSurface, fontSize: 18, fontWeight: '600', fontFamily: fonts.display },
 
   filterRow: { flexDirection: 'row', gap: spacing.sm, paddingHorizontal: spacing.lg, paddingTop: spacing.md },

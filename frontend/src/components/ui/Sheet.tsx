@@ -38,12 +38,14 @@ export function Sheet({ visible, onClose, title, children, testID }: {
   useEffect(() => {
     if (visible) {
       setRender(true);
-      backdrop.value = withTiming(1, { duration: 200 });
-      ty.value = reduced ? 0 : withSpring(0, IN_SPRING);
+      backdrop.value = withTiming(1, { duration: 140 });
+      // A short timing slide is snappier (and steadier on the web export) than a
+      // full-screen-distance spring, which felt slow on open.
+      ty.value = reduced ? 0 : withTiming(0, { duration: 200 });
     } else if (render) {
-      backdrop.value = withTiming(0, { duration: 180 });
+      backdrop.value = withTiming(0, { duration: 140 });
       if (reduced) runOnJS(unmount)();
-      else ty.value = withSpring(sheetH.value, OUT_SPRING, (f) => { if (f) runOnJS(unmount)(); });
+      else ty.value = withTiming(sheetH.value, { duration: 180 }, (f) => { if (f) runOnJS(unmount)(); });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, reduced]);

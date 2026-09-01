@@ -51,6 +51,7 @@ export default function WorkScreen() {
   const persistOrder = (keys: string[]) => { setOrder(keys); try { if (typeof window !== 'undefined') window.localStorage.setItem(ORDER_KEY, JSON.stringify(keys)); } catch { /* ignore */ } };
 
   const [ledgerSummary, setLedgerSummary] = useState('');
+  const [custSummary, setCustSummary] = useState('');
   const load = useCallback(async () => {
     try { setError(''); setData(await api.get<DashboardData>('/dashboard')); }
     catch (e: any) { setError(e?.detail || 'Failed to load'); }
@@ -64,6 +65,12 @@ export default function WorkScreen() {
       if (Math.abs(fine) >= 0.001) parts.push(`${fine.toFixed(3)}g gold`);
       if (Math.abs(amt) >= 1) parts.push(`₹${Math.abs(Math.round(amt)).toLocaleString('en-IN')}`);
       setLedgerSummary(parts.length ? `Owed: ${parts.join(' · ')}` : '');
+    }).catch(() => {});
+    // Customer ledger tile summary — items & gold held with the shop.
+    api.get<any[]>('/customers').then((cs) => {
+      const items = cs.reduce((s, c) => s + (c.open_items || 0), 0);
+      const gold = cs.reduce((s, c) => s + (c.open_weight || 0), 0);
+      setCustSummary(items > 0 ? `${items} item${items === 1 ? '' : 's'} in · ${gold.toFixed(3)}g held` : '');
     }).catch(() => {});
   }, [hasModule]);
   useFocusEffect(useCallback(() => { setLoading(true); load(); }, [load]));
@@ -206,7 +213,7 @@ export default function WorkScreen() {
           <View style={styles.pi}><Ionicons name="person-outline" size={22} color={colors.brandSecondary} /></View>
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={styles.pt}>Customer Ledger</Text>
-            <Text style={styles.pd} numberOfLines={1}>Repair jobs & balances by customer</Text>
+            <Text style={styles.pd} numberOfLines={1}>{custSummary || 'Repair jobs & balances by customer'}</Text>
           </View>
           <Ionicons name="chevron-forward" size={18} color={colors.mutedText} />
         </Pressable>

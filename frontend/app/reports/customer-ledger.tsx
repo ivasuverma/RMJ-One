@@ -37,7 +37,9 @@ export default function CustomerLedgerScreen() {
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
         <Text style={styles.title}>Customer Ledger</Text>
-        <View style={{ width: 40 }} />
+        <Pressable onPress={() => router.push('/customers' as any)} style={[styles.iconBtn, styles.addBtn]} testID="customer-manage-btn" hitSlop={12}>
+          <Ionicons name="add" size={22} color={colors.onBrandPrimary} />
+        </Pressable>
       </View>
 
       <View style={styles.searchRow}>
@@ -89,6 +91,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md, gap: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.divider,
   },
+  addBtn: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
   iconBtn: {
     width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surfaceSecondary,
     alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border,
