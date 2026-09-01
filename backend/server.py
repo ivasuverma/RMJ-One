@@ -373,6 +373,12 @@ class StoreSettingsIn(BaseModel):
     work_end: str = '19:30'
     grace_min: int = 15
     round_net_salary: bool = False
+    # Sunday is auto-paid as a weekly-off by default. When True (the
+    # historical, always-on behavior — default True so existing shops see no
+    # change), a Sunday forfeits that auto-pay if the whole Mon-Sat before it
+    # was a genuine absence (see _compute_payroll in payroll.py). Off means
+    # every Sunday is paid regardless of the preceding week's attendance.
+    unpaid_sunday_after_absent_week: bool = True
     # When False, employees can't self-mark attendance from the app (GPS+selfie
     # check-in/check-out) — the buttons are disabled in their profile. Meant for
     # shops that have switched fully to a biometric device as the attendance

@@ -13,6 +13,7 @@ import { useTheme } from '@/src/theme/ThemeContext';
 type Form = {
   name: string; latitude: string; longitude: string; radius_m: string;
   work_start: string; work_end: string; grace_min: string; round_net_salary: boolean;
+  unpaid_sunday_after_absent_week: boolean;
   printer_ip: string; printer_port: string;
   biometric_webhook_secret: string;
   app_checkin_enabled: boolean;
@@ -21,6 +22,7 @@ type Form = {
 const EMPTY: Form = {
   name: '', latitude: '', longitude: '', radius_m: '150',
   work_start: '10:00', work_end: '19:30', grace_min: '15', round_net_salary: false,
+  unpaid_sunday_after_absent_week: true,
   printer_ip: '', printer_port: '9100',
   biometric_webhook_secret: '',
   app_checkin_enabled: true,
@@ -45,6 +47,7 @@ export default function StoreSettings() {
             radius_m: String(s.radius_m ?? 150), work_start: s.work_start || '10:00',
             work_end: s.work_end || '19:30', grace_min: String(s.grace_min ?? 15),
             round_net_salary: !!s.round_net_salary,
+            unpaid_sunday_after_absent_week: s.unpaid_sunday_after_absent_week !== false,
             printer_ip: s.printer_ip || '', printer_port: String(s.printer_port ?? 9100),
             biometric_webhook_secret: s.biometric_webhook_secret || '',
             app_checkin_enabled: s.app_checkin_enabled !== false,
@@ -90,6 +93,7 @@ export default function StoreSettings() {
         work_start: form.work_start, work_end: form.work_end,
         grace_min: parseInt(form.grace_min || '15', 10),
         round_net_salary: form.round_net_salary,
+        unpaid_sunday_after_absent_week: form.unpaid_sunday_after_absent_week,
         printer_ip: form.printer_ip.trim() || null,
         printer_port: parseInt(form.printer_port || '9100', 10),
         biometric_webhook_secret: form.biometric_webhook_secret.trim() || null,
@@ -183,6 +187,20 @@ export default function StoreSettings() {
             </View>
             <View style={[styles.switch, form.round_net_salary && styles.switchOn]}>
               <View style={[styles.switchKnob, form.round_net_salary && styles.switchKnobOn]} />
+            </View>
+          </Pressable>
+
+          <Pressable
+            onPress={() => setForm({ ...form, unpaid_sunday_after_absent_week: !form.unpaid_sunday_after_absent_week })}
+            style={styles.toggleRow}
+            testID="ss-unpaid-sunday-toggle"
+          >
+            <View style={{ flex: 1 }}>
+              <Text style={styles.toggleLabel}>Unpaid Sunday after an absent week</Text>
+              <Text style={styles.toggleSub}>If an employee is absent every scheduled day Mon–Sat, that week's Sunday isn't auto-paid as a weekly-off either</Text>
+            </View>
+            <View style={[styles.switch, form.unpaid_sunday_after_absent_week && styles.switchOn]}>
+              <View style={[styles.switchKnob, form.unpaid_sunday_after_absent_week && styles.switchKnobOn]} />
             </View>
           </Pressable>
 

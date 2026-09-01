@@ -329,17 +329,20 @@ async def _compute_payroll(year: int, month: int) -> list:
         # would otherwise be the default auto-paid weekly-off, and only
         # when the full Mon-Sat block preceding it falls entirely inside
         # this month (a partial week at the very start of the month isn't
-        # judged on data this payroll run doesn't have).
-        for ds in all_month_dates:
-            d_obj = date.fromisoformat(ds)
-            if d_obj.weekday() != 6 or day_state.get(ds) != 'weekly_off':
-                continue
-            week_start = d_obj - timedelta(days=6)
-            if week_start.isoformat() < start:
-                continue
-            week_days = [(week_start + timedelta(days=i)).isoformat() for i in range(6)]
-            if all(day_state.get(wd) == 'absent' for wd in week_days):
-                day_state[ds] = 'absent'
+        # judged on data this payroll run doesn't have). Settings-gated
+        # (Store Settings > "Unpaid Sunday after an absent week") — off
+        # means every Sunday stays auto-paid regardless of that week.
+        if store.get('unpaid_sunday_after_absent_week', True):
+            for ds in all_month_dates:
+                d_obj = date.fromisoformat(ds)
+                if d_obj.weekday() != 6 or day_state.get(ds) != 'weekly_off':
+                    continue
+                week_start = d_obj - timedelta(days=6)
+                if week_start.isoformat() < start:
+                    continue
+                week_days = [(week_start + timedelta(days=i)).isoformat() for i in range(6)]
+                if all(day_state.get(wd) == 'absent' for wd in week_days):
+                    day_state[ds] = 'absent'
 
         present = sum(1 for v in day_state.values() if v == 'present')
         half = sum(1 for v in day_state.values() if v == 'half_day')
