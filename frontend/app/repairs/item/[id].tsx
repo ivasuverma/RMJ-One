@@ -342,6 +342,11 @@ export default function RepairItemDetailScreen() {
                 <Pressable onPress={printCustomerSlip} disabled={thermalPrinting} style={[styles.actionBtn, { flex: 1 }]} testID="print-customer-slip-btn">
                   {thermalPrinting ? <ActivityIndicator color={colors.onSurfaceSecondary} /> : <><Ionicons name="print-outline" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>Customer Print</Text></>}
                 </Pressable>
+                <Pressable onPress={printCustomerSlipPdf} disabled={printing} style={[styles.actionBtn, { flex: 1 }]} testID="view-customer-slip-btn">
+                  {printing ? <ActivityIndicator color={colors.onSurfaceSecondary} /> : <><Ionicons name="document-text-outline" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>Slip PDF</Text></>}
+                </Pressable>
+              </View>
+              <View style={styles.actionsRow}>
                 <Pressable onPress={() => router.push({ pathname: '/repairs/item/issue', params: { itemId: id } } as any)} style={[styles.actionBtn, styles.actionBtnPrimary, { flex: 1 }]} testID="show-issue-form">
                   <Ionicons name="arrow-redo-outline" size={16} color={colors.onBrandPrimary} /><Text style={styles.actionBtnPrimaryText}>Issue to Karigar</Text>
                 </Pressable>

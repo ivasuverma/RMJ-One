@@ -7,7 +7,7 @@ import { api } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthContext';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
-import { Skeleton, ErrorState, Sheet } from '@/src/components/ui';
+import { ErrorState, Sheet } from '@/src/components/ui';
 import { QuickDocCapture } from '@/src/components/QuickDocCapture';
 import { UploadQueueBadge } from '@/src/components/UploadQueueBadge';
 
@@ -158,6 +158,10 @@ export default function WorkScreen() {
           <Ionicons name="search-outline" size={17} color={colors.mutedText} />
           <Text style={styles.searchText}>Find a repair, sample or customer…</Text>
         </Pressable>
+
+        {!!error && !loading && (
+          <ErrorState message={error} onRetry={() => { setLoading(true); load(); }} testID="work-error" />
+        )}
 
         {sortedRows.length > 0 && (
           <View style={styles.progressHead}>

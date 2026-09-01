@@ -19,7 +19,7 @@ type Shift = { id: string; name: string; start: string; end: string };
 type Department = { id: string; name: string };
 type Location = { id: string; name: string };
 
-type EmployeeForm = {
+type EmployeeFormState = {
   name: string; employee_code: string; biometric_id: string; department_id: string; location_id: string; designation: string;
   shift: string; salary: string; joining_date: string; mobile: string; address: string;
   gender: string; guardian_name: string;
@@ -28,14 +28,14 @@ type EmployeeForm = {
   auto_advance_amount: string; auto_advance_day: string; photo: string;
 };
 
-const EMPTY: EmployeeForm = {
+const EMPTY: EmployeeFormState = {
   name: '', employee_code: '', biometric_id: '', department_id: '', location_id: '', designation: '', shift: 'General', salary: '',
   joining_date: todayIST(), mobile: '', address: '', gender: '', guardian_name: '',
   aadhaar: '', pan: '', bank_account: '', bank_ifsc: '', bank_name: '', status: 'active', notes: '',
   auto_advance_amount: '', auto_advance_day: '', photo: '',
 };
 
-const STATUSES: EmployeeForm['status'][] = ['active', 'on_leave', 'inactive'];
+const STATUSES: EmployeeFormState['status'][] = ['active', 'on_leave', 'inactive'];
 const GENDERS = ['male', 'female', 'other'];
 
 export default function EmployeeForm() {
@@ -47,7 +47,7 @@ export default function EmployeeForm() {
   const id = params.id;
   const isEdit = !!id;
 
-  const [form, setForm] = useState<EmployeeForm>(EMPTY);
+  const [form, setForm] = useState<EmployeeFormState>(EMPTY);
   const [loading, setLoading] = useState(isEdit);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -88,7 +88,7 @@ export default function EmployeeForm() {
     })();
   }, [id, isEdit]);
 
-  const setField = <K extends keyof EmployeeForm>(k: K, v: EmployeeForm[K]) => {
+  const setField = <K extends keyof EmployeeFormState>(k: K, v: EmployeeFormState[K]) => {
     setForm((f) => ({ ...f, [k]: v }));
     if (errors[k as string]) setErrors((e) => ({ ...e, [k as string]: '' }));
   };
