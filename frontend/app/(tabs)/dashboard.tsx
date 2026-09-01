@@ -195,16 +195,25 @@ export default function DashboardScreen() {
                     </Pressable>
                   ))}
 
+                  {showRepairsTile && (
+                    <Pressable onPress={() => router.push('/repairs' as any)} style={({ pressed }) => [styles.wideTile, pressed && { opacity: 0.85 }]} testID="dash-tile-repairs">
+                      {r.overdue > 0 && <View style={styles.tileBadge}><Text style={styles.tileBadgeText}>{r.overdue}</Text></View>}
+                      <View style={styles.tileIcon}><Ionicons name="construct-outline" size={20} color={colors.brandSecondary} /></View>
+                      <Text style={styles.wideValue}>{r.total_open}</Text>
+                      <Text style={styles.tileLabel}>Repairs</Text>
+                      <View style={styles.wideRows}>
+                        <View style={styles.wideRow}><Text style={styles.wideRowLabel}>Issued</Text><Text style={styles.wideRowVal}>{r.with_karigar}</Text></View>
+                        <View style={styles.wideRow}><Text style={styles.wideRowLabel}>To receive</Text><Text style={styles.wideRowVal}>{r.ready}</Text></View>
+                        <View style={styles.wideRow}><Text style={styles.wideRowLabel}>Delivered today</Text><Text style={styles.wideRowVal}>{r.delivered_today}</Text></View>
+                      </View>
+                    </Pressable>
+                  )}
+
                   {hasModule('cash_book') && (
                     <Pressable onPress={() => router.push('/cashbook' as any)} style={({ pressed }) => [styles.wideTile, pressed && { opacity: 0.85 }]} testID="dash-tile-cash">
-                      <View style={styles.wideHead}>
-                        <View style={styles.tileIcon}><Ionicons name="wallet-outline" size={20} color={colors.brandSecondary} /></View>
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.tileLabel}>Cash Book</Text>
-                          <Text style={styles.tileSub}>closing balance</Text>
-                        </View>
-                        <Text style={styles.wideValue} numberOfLines={1}>{fmtINR(data.cashbook_summary.closing_balance)}</Text>
-                      </View>
+                      <View style={styles.tileIcon}><Ionicons name="wallet-outline" size={20} color={colors.brandSecondary} /></View>
+                      <Text style={styles.wideValue} numberOfLines={1} adjustsFontSizeToFit>{fmtINR(data.cashbook_summary.closing_balance)}</Text>
+                      <Text style={styles.tileLabel}>Cash Book</Text>
                       {counters.length > 0 && (
                         <View style={styles.wideRows}>
                           {counters.map((c) => (
@@ -215,24 +224,6 @@ export default function DashboardScreen() {
                           ))}
                         </View>
                       )}
-                    </Pressable>
-                  )}
-
-                  {showRepairsTile && (
-                    <Pressable onPress={() => router.push('/repairs' as any)} style={({ pressed }) => [styles.wideTile, pressed && { opacity: 0.85 }]} testID="dash-tile-repairs">
-                      <View style={styles.wideHead}>
-                        <View style={styles.tileIcon}><Ionicons name="construct-outline" size={20} color={colors.brandSecondary} /></View>
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.tileLabel}>Repairs</Text>
-                          <Text style={styles.tileSub}>{r.total_open} open{r.overdue > 0 ? ` · ${r.overdue} overdue` : ''}</Text>
-                        </View>
-                        <Text style={styles.wideValue}>{r.total_open}</Text>
-                      </View>
-                      <View style={styles.wideRows}>
-                        <View style={styles.wideRow}><Text style={styles.wideRowLabel}>Issued to karigar</Text><Text style={styles.wideRowVal}>{r.with_karigar}</Text></View>
-                        <View style={styles.wideRow}><Text style={styles.wideRowLabel}>To receive</Text><Text style={styles.wideRowVal}>{r.ready}</Text></View>
-                        <View style={styles.wideRow}><Text style={styles.wideRowLabel}>Delivered today</Text><Text style={styles.wideRowVal}>{r.delivered_today}</Text></View>
-                      </View>
                     </Pressable>
                   )}
                 </>
@@ -661,12 +652,11 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   tileBadge: { position: 'absolute', top: 8, right: 8, minWidth: 20, height: 20, paddingHorizontal: 5, borderRadius: 10, backgroundColor: colors.error, alignItems: 'center', justifyContent: 'center' },
   tileBadgeText: { color: colors.onError, fontSize: 11, fontWeight: '800' },
   wideTile: {
-    flexBasis: '100%', position: 'relative',
+    flexBasis: '48%', flexGrow: 1, minWidth: 150, position: 'relative',
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
-    padding: spacing.md, gap: spacing.sm,
+    padding: spacing.md, gap: 2,
   },
-  wideHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  wideValue: { color: colors.onSurface, fontSize: 22, fontWeight: '800' },
+  wideValue: { color: colors.onSurface, fontSize: 20, fontWeight: '800' },
   wideRows: { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.sm, gap: 6 },
   wideRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   wideRowLabel: { color: colors.mutedText, fontSize: 13, flex: 1 },
