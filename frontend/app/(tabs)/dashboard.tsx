@@ -152,15 +152,39 @@ export default function DashboardScreen() {
         </Pressable>
       </View>
 
+      {/* Search bar (Apple §16: direct, always-visible) */}
+      <Pressable onPress={() => setSearchOpen(true)} style={styles.headerSearch} testID="dashboard-search-btn">
+        <Ionicons name="search-outline" size={17} color={colors.mutedText} />
+        <Text style={styles.headerSearchText}>Search customers, karigars, staff…</Text>
+      </Pressable>
+
       {loading ? (
         <DashboardSkeleton />
       ) : error && !data ? (
         <ErrorState message={error} onRetry={refresh} testID="dashboard-error" />
       ) : data ? (
         <>
-          {/* One tile per module — the fast, uncluttered dashboard. Counts come
-              from the single /dashboard payload (no extra calls), so it renders
-              quickly. */}
+          {/* 1. Needs-attention briefing — only present when something's actually pending */}
+          {attnItems.length > 0 && <NeedsAttention items={attnItems} onGo={(r) => router.push(r as any)} />}
+
+          {/* 2. Today at a glance — three columns: Repairs, Samples, Tasks */}
+          <Text style={styles.glanceHeading}>Today at a glance</Text>
+          <View style={styles.glanceGrid} testID="section-glance">
+            {showRepairsTile && (
+              <GlanceCard icon="construct-outline" label="Repairs" value={data.repairs_summary.total_open}
+                sub={data.repairs_summary.overdue > 0 ? `${data.repairs_summary.overdue} overdue` : 'none overdue'} onPress={() => router.push('/repairs' as any)} testID="glance-repairs" />
+            )}
+            {hasModule('samples') && (
+              <GlanceCard icon="diamond-outline" label="Samples" value={data.samples_summary.with_karigar}
+                sub={data.samples_summary.overdue > 0 ? `${data.samples_summary.overdue} overdue` : 'none overdue'} onPress={() => router.push('/samples?status=with_karigar' as any)} testID="glance-samples" />
+            )}
+            {hasModule('tasks') && (
+              <GlanceCard icon="checkbox-outline" label="Tasks" value={data.tasks_summary.open_total}
+                sub={data.tasks_summary.overdue > 0 ? `${data.tasks_summary.overdue} overdue` : (data.tasks_summary.due_today > 0 ? `${data.tasks_summary.due_today} due today` : 'none overdue')} onPress={() => router.push('/tasks' as any)} testID="glance-tasks" />
+            )}
+          </View>
+
+          {/* Jump to — one tile per module (counts from the same payload). */}
           <Text style={styles.glanceHeading}>Jump to</Text>
           <View style={styles.tileGrid} testID="dashboard-tiles">
             {(() => {
@@ -189,6 +213,33 @@ export default function DashboardScreen() {
               ));
             })()}
           </View>
+
+          {/* 3. Approvals + Leave */}
+          {hasModule('approvals') && (
+            <ApprovalsSection onChanged={refresh} />
+          )}
+
+          {/* 4. Recently recorded — admin accounts only (owner/admin). */}
+          {(user?.role === 'owner' || user?.role === 'admin') && !!data.recent_activity && data.recent_activity.length > 0 && (
+            <Section title="Recently recorded" icon="time-outline" testID="section-recent">
+              <View style={styles.attnCard}>
+                {data.recent_activity.slice(0, 6).map((r, i, arr) => (
+                  <Pressable
+                    key={`${r.kind}-${i}`}
+                    onPress={() => router.push(r.route as any)}
+                    testID={`recent-${i}`}
+                    style={({ pressed }) => [styles.attnRow, i === arr.length - 1 && styles.attnRowLast, pressed && { opacity: 0.7 }]}
+                  >
+                    <View style={[styles.attnIcon, { backgroundColor: colors.surfaceTertiary }]}>
+                      <Ionicons name={RECENT_ICON[r.kind]} size={13} color={colors.brandSecondary} />
+                    </View>
+                    <Text style={styles.recentLabel} numberOfLines={1}>{r.label}</Text>
+                    <Ionicons name="chevron-forward" size={15} color={colors.mutedText} />
+                  </Pressable>
+                ))}
+              </View>
+            </Section>
+          )}
 
           <View style={{ height: 96 }} />
         </>
@@ -570,6 +621,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
 
   // Glance — 2-col grid of stat cards
   glanceHeading: { color: colors.mutedText, fontSize: 12, fontWeight: '700', letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: spacing.sm, marginTop: 2 },
+  glanceGrid: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.xl },
   tileGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.xl },
   tile: {
     flexBasis: '31%', flexGrow: 1, minWidth: 100, position: 'relative',
@@ -582,7 +634,6 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   tileSub: { color: colors.mutedText, fontSize: 11 },
   tileBadge: { position: 'absolute', top: 8, right: 8, minWidth: 20, height: 20, paddingHorizontal: 5, borderRadius: 10, backgroundColor: colors.error, alignItems: 'center', justifyContent: 'center' },
   tileBadgeText: { color: colors.onError, fontSize: 11, fontWeight: '800' },
-  glanceGrid: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.xl },
   glanceCard: {
     flex: 1, minWidth: 0,
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
