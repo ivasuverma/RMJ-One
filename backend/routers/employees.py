@@ -204,7 +204,14 @@ async def update_employee(emp_id: str, body: EmployeeIn, user: dict = Depends(re
     photo_thumb = existing.get('photo_thumb', '')
     if data.get('photo') != existing.get('photo'):
         photo_thumb = _make_photo_thumb(data.get('photo'))
-    await db.employees.update_one({'id': emp_id}, {'$set': {**data, 'photo_thumb': photo_thumb, 'updated_at': iso}})
+    set_fields = {**data, 'photo_thumb': photo_thumb, 'updated_at': iso}
+    # Stamp when an employee is deactivated (and clear it if reactivated) — used
+    # to hide long-gone, fully-settled staff from payroll after a grace month.
+    if data.get('status') == 'inactive' and existing.get('status') != 'inactive':
+        set_fields['deactivated_at'] = iso
+    elif data.get('status') != 'inactive' and existing.get('status') == 'inactive':
+        set_fields['deactivated_at'] = None
+    await db.employees.update_one({'id': emp_id}, {'$set': set_fields})
     if float(existing.get('salary') or 0) != float(data.get('salary') or 0):
         await db.timeline.insert_one({
             'id': str(uuid.uuid4()), 'employee_id': emp_id, 'type': 'salary_revised',

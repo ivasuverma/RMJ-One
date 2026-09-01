@@ -228,11 +228,42 @@ async def _compute_payroll(year: int, month: int) -> list:
     ):
         ledger_by_emp.setdefault(t['employee_id'], []).append(t)
 
+    # Overall wage-ledger balance per employee (all-time) — an inactive
+    # employee who has been gone for over a month AND is fully settled (no
+    # pending payable/receivable) is dropped from payroll below.
+    all_balances: dict = {}
+    async for t in db.timeline.find(
+        {'type': {'$in': ['advance', 'bonus', 'fine', 'deduction', 'salary', 'salary_earned', 'salary_paid']}},
+        {'_id': 0, 'employee_id': 1, 'type': 1, 'amount': 1, 'sign': 1},
+    ):
+        eid = t.get('employee_id')
+        if not eid:
+            continue
+        amt = abs(float(t.get('amount') or 0))
+        tt = t.get('type')
+        if tt in ('salary', 'salary_earned'):
+            d = amt
+        elif tt == 'salary_paid':
+            d = -amt
+        else:
+            d = t.get('sign', _ledger_sign(tt)) * amt
+        all_balances[eid] = all_balances.get(eid, 0) + d
+    from datetime import timedelta as _timedelta
+    inactive_cutoff = (now_utc() - _timedelta(days=30)).isoformat()
+
     rows = []
     # 'photo' excluded in favor of photo_thumb (small avatar) — this list is
     # recomputed on every Payroll screen visit, same reasoning as
     # GET /employees and GET /attendance/today.
     async for e in db.employees.find({}, {'_id': 0, 'password_hash': 0, 'photo': 0}):
+        # Hide an ex-employee who left over a month ago and is fully settled
+        # (nothing owed either way) — keeps payroll to current + recently-left
+        # staff. A pending balance keeps them visible until it's cleared.
+        if e.get('status') == 'inactive':
+            da = e.get('deactivated_at') or e.get('updated_at')   # fallback for staff deactivated before tracking
+            settled = abs(all_balances.get(e['id'], 0)) < 0.5
+            if settled and da and da < inactive_cutoff:
+                continue
         att_by_date = att_by_emp.get(e['id'], {})
         shift = shifts_by_name.get(e.get('shift'))
 

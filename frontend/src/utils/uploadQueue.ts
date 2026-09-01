@@ -82,6 +82,27 @@ async function idbDel(id: string): Promise<void> {
   });
 }
 
+// Fire a local device notification when an upload permanently fails, so a
+// dropped photo doesn't go unnoticed even if the user has navigated away.
+// Best-effort: only when notification permission is already granted.
+async function notifyUploadFailed(item: OutboxItem): Promise<void> {
+  try {
+    if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+    const what = item.ref_type ? `${item.ref_type} photo` : (item.category_key ? `${item.category_key} document` : 'A document');
+    const title = 'Photo upload failed';
+    const body = `${what} couldn't be uploaded${item.error ? `: ${item.error}` : ''}. Open the app to retry or cancel it.`;
+    const reg = typeof navigator !== 'undefined' && navigator.serviceWorker
+      ? await navigator.serviceWorker.getRegistration().catch(() => undefined)
+      : undefined;
+    if (reg && (reg as any).showNotification) {
+      await (reg as any).showNotification(title, { body, tag: 'rmj-upload-failed', renotify: true });
+    } else {
+      // eslint-disable-next-line no-new
+      new Notification(title, { body });
+    }
+  } catch { /* ignore */ }
+}
+
 async function idbGet(id: string): Promise<OutboxItem | undefined> {
   const db = await openDB();
   return new Promise((resolve, reject) => {
@@ -236,6 +257,7 @@ async function drain(): Promise<void> {
           item.error = e?.detail || 'Upload rejected';
           try { await idbPut(item); } catch { /* ignore */ }
           await emitCount();
+          notifyUploadFailed(item);
           continue;   // try the next item; don't schedule a retry for this one
         }
         item.tries = (item.tries || 0) + 1;
