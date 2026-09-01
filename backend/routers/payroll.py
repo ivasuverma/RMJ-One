@@ -621,6 +621,18 @@ async def add_payroll_payment(entry_id: str, body: PayrollPaymentIn, user=Depend
     }
     await db.payroll_payments.insert_one(dict(payment_doc))
 
+    # Ledger: each payment is its own entry. Ensure the month's salary
+    # receivable exists (posted at save), then debit THIS payment — so two
+    # payments show as two lines in the wage ledger.
+    ym = f"{entry['year']}-{entry['month']:02d}"
+    await _upsert_salary_earned(entry['employee_id'], entry['year'], entry['month'], float(entry.get('earned') or 0), entry_id)
+    await db.timeline.insert_one({
+        'id': str(uuid.uuid4()), 'employee_id': entry['employee_id'], 'type': 'salary_paid',
+        'title': f'Salary paid {ym}', 'description': f"₹{float(body.amount):.0f} · {body.payment_mode.upper()}" + (f" — {body.note}" if body.note else ''),
+        'amount': float(body.amount), 'sign': -1, 'created_at': iso,
+        'year': entry['year'], 'month': entry['month'], 'entry_id': entry_id, 'payment_id': payment_doc['id'],
+    })
+
     new_total = round(already_paid + body.amount, 2)
     fully_paid = (net - new_total) <= 0.5
     modes_used = {p['payment_mode'] for p in existing} | {body.payment_mode}
@@ -630,21 +642,7 @@ async def add_payroll_payment(entry_id: str, body: PayrollPaymentIn, user=Depend
     await db.payroll_entries.update_one({'id': entry_id}, {'$set': upd})
 
     if fully_paid:
-        # Correct double-entry so a fully-paid month nets to ZERO in the ledger:
-        #   + salary EARNED for the month (what the shop owed for the work), and
-        #   - the actual net cash paid out.
-        # Advance / bonus / fine / deduction are already their own ledger
-        # entries, so the earned credit minus every payout (advance + net)
-        # settles the month to nil — no more double-counting the advance.
-        ym = f"{entry['year']}-{entry['month']:02d}"
-        # Make sure the receivable exists (normally posted at save), then record
-        # the actual net paid as a debit so the month settles in the ledger.
-        await _upsert_salary_earned(entry['employee_id'], entry['year'], entry['month'], float(entry.get('earned') or 0), entry_id)
-        await db.timeline.insert_one(
-            {'id': str(uuid.uuid4()), 'employee_id': entry['employee_id'], 'type': 'salary_paid',
-             'title': f"Salary paid {ym}", 'description': f"Net paid ₹{net:.0f}", 'amount': net,
-             'sign': -1, 'created_at': iso, 'year': entry['year'], 'month': entry['month'], 'entry_id': entry_id},
-        )
+        # Each payment already posted its own salary_paid ledger entry above.
         await notify_user(entry['employee_id'], 'Salary paid',
                            f"Your salary for {ym} (₹{net:.0f}) has been paid", '/profile')
     await log_audit(user, 'payroll.payment.add', 'payroll_entry', entry_id, entry.get('employee_code', ''),
@@ -693,16 +691,16 @@ async def delete_payroll_payment(entry_id: str, payment_id: str, user=Depends(re
     p = await db.payroll_payments.find_one({'id': payment_id, 'entry_id': entry_id}, {'_id': 0})
     if not p: raise HTTPException(status_code=404, detail='Payment not found')
     await db.payroll_payments.delete_one({'id': payment_id})
+    # Remove this payment's own ledger entry.
+    await db.timeline.delete_one({'type': 'salary_paid', 'payment_id': payment_id})
 
     remaining = await db.payroll_payments.find({'entry_id': entry_id}, {'_id': 0}).to_list(50)
     total = round(sum(float(x['amount']) for x in remaining), 2)
     entry = await db.payroll_entries.find_one({'id': entry_id}, {'_id': 0})
     net = float(entry['net_salary']) if entry else 0.0
     fully_paid = total > 0 and (net - total) <= 0.5
-    # Dropping below fully-paid means the salary is no longer settled — remove
-    # the salary ledger entries so the wage ledger doesn't show a paid salary.
-    if not fully_paid and entry:
-        await _remove_salary_ledger_entries(entry)
+    # (The deleted payment's own ledger entry was already removed above; the
+    # remaining payments keep their own entries, so nothing else to clean up.)
     modes_used = {x['payment_mode'] for x in remaining}
     upd = {'amount_paid': total, 'paid': fully_paid, 'payment_mode': _payroll_modes_label(modes_used)}
     if not fully_paid:

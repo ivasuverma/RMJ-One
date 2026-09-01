@@ -156,12 +156,12 @@ export default function PayrollDetail() {
         <Line label="Base Salary" value={fmtINR(row.base_salary)} />
         <SectionTitle text="Days Summary" />
         <Line label="Present days" value={String(row.present_days)} />
-        <Line label="Late arrivals" value={String(row.late_days ?? 0)} />
-        <Line label="Half days" value={String(row.half_days)} />
-        <Line label="Sunday work (half-day bonus)" value={String(row.sunday_work)} />
-        <Line label="Leave days (paid)" value={String(row.leave_days)} />
-        <Line label="Holidays (paid)" value={String(row.holiday_days ?? 0)} />
-        <Line label="Weekly off / Paid off" value={String(row.weekly_off_days ?? 0)} />
+        {row.late_days > 0 && <Line label="Late arrivals" value={String(row.late_days)} />}
+        {row.half_days > 0 && <Line label="Half days" value={String(row.half_days)} />}
+        {row.sunday_work > 0 && <Line label="Sunday work (half-day bonus)" value={String(row.sunday_work)} />}
+        {row.leave_days > 0 && <Line label="Leave days (paid)" value={String(row.leave_days)} />}
+        {row.holiday_days > 0 && <Line label="Holidays (paid)" value={String(row.holiday_days)} />}
+        {row.weekly_off_days > 0 && <Line label="Weekly off / Paid off" value={String(row.weekly_off_days)} />}
         <Line label="Effective / Total" value={`${row.effective_days} / ${row.total_days}`} accent />
 
         <SectionTitle text="Formula" />
@@ -201,22 +201,22 @@ export default function PayrollDetail() {
 
         <SectionTitle text="Breakdown" />
         <Line label="Earned" value={fmtINR(row.earned)} accent />
-        <Line
-          label="Bonus" value={`+ ${fmtINR(row.bonus)}`} pos
-          onPress={() => openLedgerMonth('bonus', 'Bonus')} testID="breakdown-bonus"
-        />
-        <Line
-          label="Advance" value={`− ${fmtINR(row.advance)}`} neg
-          onPress={() => openLedgerMonth('advance', 'Advance')} testID="breakdown-advance"
-        />
-        <Line
-          label="Fine" value={`− ${fmtINR(row.fine)}`} neg
-          onPress={() => openLedgerMonth('fine', 'Fine')} testID="breakdown-fine"
-        />
-        <Line
-          label="Manual Deduction" value={`− ${fmtINR(row.manual_deduction)}`} neg
-          onPress={() => openLedgerMonth('deduction', 'Manual Deduction')} testID="breakdown-deduction"
-        />
+        {row.bonus > 0 && (
+          <Line label="Bonus" value={`+ ${fmtINR(row.bonus)}`} pos
+            onPress={() => openLedgerMonth('bonus', 'Bonus')} testID="breakdown-bonus" />
+        )}
+        {row.advance > 0 && (
+          <Line label="Advance" value={`− ${fmtINR(row.advance)}`} neg
+            onPress={() => openLedgerMonth('advance', 'Advance')} testID="breakdown-advance" />
+        )}
+        {row.fine > 0 && (
+          <Line label="Fine" value={`− ${fmtINR(row.fine)}`} neg
+            onPress={() => openLedgerMonth('fine', 'Fine')} testID="breakdown-fine" />
+        )}
+        {row.manual_deduction > 0 && (
+          <Line label="Manual Deduction" value={`− ${fmtINR(row.manual_deduction)}`} neg
+            onPress={() => openLedgerMonth('deduction', 'Manual Deduction')} testID="breakdown-deduction" />
+        )}
 
         <View style={styles.netBox}>
           <Text style={styles.netLabel}>NET SALARY</Text>
