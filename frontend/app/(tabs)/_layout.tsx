@@ -62,13 +62,17 @@ export default function OwnerTabsLayout() {
       {/* Still routable (Work tiles + deep links point into these, and old
           /(tabs)/transactions and /(tabs)/reports links still resolve) but no
           longer their own bottom tab — the v2 IA groups by action type, not by
-          module. Transactions/Reports content now lives in the Work hub. */}
-      <Tabs.Screen name="transactions" options={{ href: null }} />
-      <Tabs.Screen name="reports" options={{ href: null }} />
-      <Tabs.Screen name="attendance" options={{ href: null }} />
-      <Tabs.Screen name="employees" options={{ href: null }} />
-      <Tabs.Screen name="payroll" options={{ href: null }} />
-      <Tabs.Screen name="settings" options={{ href: null }} />
+          module. Transactions/Reports content now lives in the Work hub.
+          Each has its own back button, so the root tab bar is hidden while
+          it's active (href: null alone only drops the tappable icon, not
+          the bar itself) — it would otherwise sit redundantly under a
+          screen that already has its own way back. */}
+      <Tabs.Screen name="transactions" options={{ href: null, tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="reports" options={{ href: null, tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="attendance" options={{ href: null, tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="employees" options={{ href: null, tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="payroll" options={{ href: null, tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="settings" options={{ href: null, tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="masters" options={{ href: null }} />
     </Tabs>
   );
