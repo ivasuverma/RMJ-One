@@ -152,22 +152,15 @@ export default function DashboardScreen() {
         </Pressable>
       </View>
 
-      {/* Search bar (Apple §16: direct, always-visible) */}
-      <Pressable onPress={() => setSearchOpen(true)} style={styles.headerSearch} testID="dashboard-search-btn">
-        <Ionicons name="search-outline" size={17} color={colors.mutedText} />
-        <Text style={styles.headerSearchText}>Search customers, karigars, staff…</Text>
-      </Pressable>
-
       {loading ? (
         <DashboardSkeleton />
       ) : error && !data ? (
         <ErrorState message={error} onRetry={refresh} testID="dashboard-error" />
       ) : data ? (
         <>
-          {/* 1. Needs-attention briefing — only present when something's actually pending */}
-          {attnItems.length > 0 && <NeedsAttention items={attnItems} onGo={(r) => router.push(r as any)} />}
-
-          {/* 2. Today at a glance — three columns: Repairs, Samples, Tasks */}
+          {/* Today at a glance — quick tiles. (The needs-attention brief and the
+              recently-recorded feed were removed to keep the dashboard fast and
+              uncluttered — everything is one tap away via the tiles + Work.) */}
           <Text style={styles.glanceHeading}>Today at a glance</Text>
           <View style={styles.glanceGrid} testID="section-glance">
             {showRepairsTile && (
@@ -184,31 +177,9 @@ export default function DashboardScreen() {
             )}
           </View>
 
-          {/* 3. Approvals + Leave */}
+          {/* Approvals + Leave — the one actionable list kept on the dashboard. */}
           {hasModule('approvals') && (
             <ApprovalsSection onChanged={refresh} />
-          )}
-
-          {/* 4. Recently recorded — admin accounts only (owner/admin). */}
-          {(user?.role === 'owner' || user?.role === 'admin') && !!data.recent_activity && data.recent_activity.length > 0 && (
-            <Section title="Recently recorded" icon="time-outline" testID="section-recent">
-              <View style={styles.attnCard}>
-                {data.recent_activity.slice(0, 6).map((r, i, arr) => (
-                  <Pressable
-                    key={`${r.kind}-${i}`}
-                    onPress={() => router.push(r.route as any)}
-                    testID={`recent-${i}`}
-                    style={({ pressed }) => [styles.attnRow, i === arr.length - 1 && styles.attnRowLast, pressed && { opacity: 0.7 }]}
-                  >
-                    <View style={[styles.attnIcon, { backgroundColor: colors.surfaceTertiary }]}>
-                      <Ionicons name={RECENT_ICON[r.kind]} size={13} color={colors.brandSecondary} />
-                    </View>
-                    <Text style={styles.recentLabel} numberOfLines={1}>{r.label}</Text>
-                    <Ionicons name="chevron-forward" size={15} color={colors.mutedText} />
-                  </Pressable>
-                ))}
-              </View>
-            </Section>
           )}
 
           <View style={{ height: 96 }} />

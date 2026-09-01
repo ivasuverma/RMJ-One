@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
+import { todayIST } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
@@ -25,6 +26,7 @@ export default function NewLedgerEntry() {
   const initialType = (TYPES.find((t) => t.key === presetType)?.key || 'advance') as typeof TYPES[number]['key'];
   const [type, setType] = useState<typeof TYPES[number]['key']>(initialType);
   const [amount, setAmount] = useState('');
+  const [date, setDate] = useState(todayIST());   // YYYY-MM-DD, defaults to today
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
   const submittingRef = useRef(false);
@@ -33,10 +35,11 @@ export default function NewLedgerEntry() {
     if (submittingRef.current) return;
     const amt = parseFloat(amount);
     if (!amt || amt <= 0) { Alert.alert('Invalid', 'Amount must be greater than 0'); return; }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date.trim())) { Alert.alert('Invalid date', 'Use the format YYYY-MM-DD.'); return; }
     submittingRef.current = true;
     setSaving(true);
     try {
-      await api.post('/ledger/entries', { employee_id: emp, entry_type: type, amount: amt, note });
+      await api.post('/ledger/entries', { employee_id: emp, entry_type: type, amount: amt, note, date: date.trim() });
       // Navigate back immediately rather than waiting on an Alert.alert() confirmation —
       // multi-button Alert dialogs are unreliable on the web build, which made it look
       // like nothing happened and led to double-tapping. Landing back on the ledger
@@ -72,6 +75,15 @@ export default function NewLedgerEntry() {
               </Pressable>
             ))}
           </View>
+
+          <Text style={styles.label}>Date</Text>
+          <TextInput
+            testID="ledger-date"
+            value={date} onChangeText={(v) => setDate(v.replace(/[^0-9-]/g, ''))}
+            placeholder="YYYY-MM-DD" placeholderTextColor={colors.mutedText}
+            keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'default'}
+            autoCapitalize="none" style={styles.input}
+          />
 
           <Text style={styles.label}>Amount (₹)</Text>
           <TextInput

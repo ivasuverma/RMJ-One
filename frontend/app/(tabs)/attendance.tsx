@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, ActivityIndicator, Alert, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
@@ -29,7 +29,8 @@ type PayRow = {
 type PayrollResp = { year: number; month: number; rows: PayRow[]; total_net: number };
 type Ev = { id: string; employee_name: string; type: 'check_in' | 'check_out'; timestamp: string; is_late?: boolean; working_hours?: number; source?: string };
 
-type Seg = 'today' | 'live' | 'pay';
+type Seg = 'today' | 'live' | 'pay' | 'ledgers';
+type EmpLedgerRow = { id: string; name: string; employee_code?: string; designation?: string; closing_balance: number };
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const fmtINR = (n: number) => `₹${Math.round(n || 0).toLocaleString('en-IN')}`;
 const fmtTime = (iso?: string | null) => (iso ? (istTime(iso) || '—') : '—');
@@ -70,6 +71,8 @@ export default function OwnerAttendance() {
   const [pay, setPay] = useState<PayrollResp | null>(null);
   const [events, setEvents] = useState<Ev[]>([]);
   const [todayFilter, setTodayFilter] = useState<Bucket | 'all'>('all');
+  const [empLedgers, setEmpLedgers] = useState<EmpLedgerRow[] | null>(null);
+  const [empQ, setEmpQ] = useState('');
   const isToday = date === todayIST();
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
@@ -115,6 +118,14 @@ export default function OwnerAttendance() {
   }, []);
   useFocusEffect(useCallback(() => { if (seg === 'live') loadLive(); }, [seg, loadLive]));
 
+  const loadEmpLedgers = useCallback(async () => {
+    try {
+      const qs = empQ.trim() ? `?q=${encodeURIComponent(empQ.trim())}` : '';
+      setEmpLedgers(await api.get<EmpLedgerRow[]>(`/employees${qs}`));
+    } catch { setEmpLedgers([]); }
+  }, [empQ]);
+  useFocusEffect(useCallback(() => { if (seg === 'ledgers') loadEmpLedgers(); }, [seg, loadEmpLedgers]));
+
   // Group the punch feed by IST date, newest day first, newest punch first.
   const liveByDate = useMemo(() => {
     const groups: { date: string; items: Ev[] }[] = [];
@@ -144,7 +155,8 @@ export default function OwnerAttendance() {
 
   const subtitle = seg === 'today' ? (isToday ? `${nowISTLongLabel()} · ${inCount} of ${rows.length} in` : `${displayDateOnlyWithWeekday(date)} · ${inCount} of ${rows.length} in`)
     : seg === 'live' ? 'Every check-in and check-out, newest first'
-      : `${MONTHS[month - 1]} ${year} · salary synced to attendance`;
+      : seg === 'ledgers' ? 'Employee wage ledgers — tap to record payments'
+        : `${MONTHS[month - 1]} ${year} · salary synced to attendance`;
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="attendance-screen">
@@ -162,17 +174,20 @@ export default function OwnerAttendance() {
             <Text style={styles.h1}>Attendance</Text>
             <Text style={styles.sub}>{subtitle}</Text>
           </View>
-          <Pressable onPress={() => router.push('/approvals' as any)} style={styles.apprBtn} testID="attendance-approvals" hitSlop={8}>
+          <Pressable onPress={() => { if (seg !== 'live') haptics.selection(); setSeg('live'); loadLive(); }} style={[styles.apprBtn, seg === 'live' && styles.apprBtnOn]} testID="attendance-live-btn" hitSlop={8}>
+            <Ionicons name="pulse-outline" size={22} color={seg === 'live' ? colors.onBrandPrimary : colors.onSurface} />
+          </Pressable>
+          <Pressable onPress={() => router.push('/approvals' as any)} style={[styles.apprBtn, { marginLeft: spacing.sm }]} testID="attendance-approvals" hitSlop={8}>
             <Ionicons name="checkmark-done-outline" size={22} color={colors.onSurface} />
             {pendingApprovals > 0 && <View style={styles.apprBadge}><Text style={styles.apprBadgeText}>{pendingApprovals}</Text></View>}
           </Pressable>
         </View>
 
-        {/* Segmented control */}
+        {/* Segmented control — Live moved next to Approvals in the header. */}
         <View style={styles.seg}>
-          {(['today', 'live', 'pay'] as Seg[]).map((s) => (
-            <Pressable key={s} onPress={() => { if (s !== seg) haptics.selection(); setSeg(s); if (s === 'today') load(); else if (s === 'live') loadLive(); else if (s === 'pay') loadPay(); }} style={[styles.sg, seg === s && styles.sgOn]} testID={`seg-${s}`}>
-              <Text style={[styles.sgText, seg === s && styles.sgTextOn]}>{s === 'today' ? 'Today' : s === 'live' ? 'Live' : 'Payroll'}</Text>
+          {(['today', 'pay', 'ledgers'] as Seg[]).map((s) => (
+            <Pressable key={s} onPress={() => { if (s !== seg) haptics.selection(); setSeg(s); if (s === 'today') load(); else if (s === 'pay') loadPay(); else if (s === 'ledgers') loadEmpLedgers(); }} style={[styles.sg, seg === s && styles.sgOn]} testID={`seg-${s}`}>
+              <Text style={[styles.sgText, seg === s && styles.sgTextOn]}>{s === 'today' ? 'Today' : s === 'pay' ? 'Payroll' : 'Ledgers'}</Text>
             </Pressable>
           ))}
         </View>
@@ -239,7 +254,7 @@ export default function OwnerAttendance() {
               ))}
             </View>
           ))
-        ) : (
+        ) : seg === 'pay' ? (
           <>
             {/* Month picker — pay last month's salary in the first week of the
                 next month by stepping back to it here. */}
@@ -286,6 +301,42 @@ export default function OwnerAttendance() {
               </View>
             )}
           </>
+        ) : (
+          <>
+            {/* Employee wage ledgers — tap to open and record payments. */}
+            <View style={styles.searchWrap}>
+              <Ionicons name="search" size={16} color={colors.mutedText} />
+              <TextInput
+                value={empQ} onChangeText={setEmpQ} onSubmitEditing={loadEmpLedgers}
+                placeholder="Search employee" placeholderTextColor={colors.mutedText}
+                style={styles.searchInput} returnKeyType="search" autoCapitalize="none" testID="ledgers-search"
+              />
+              {empQ.length > 0 && <Pressable onPress={() => { setEmpQ(''); setTimeout(loadEmpLedgers, 0); }} hitSlop={8}><Ionicons name="close-circle" size={16} color={colors.mutedText} /></Pressable>}
+            </View>
+            {!empLedgers ? (
+              <ActivityIndicator color={colors.brandPrimary} style={{ marginTop: 30 }} />
+            ) : empLedgers.length === 0 ? (
+              <Text style={styles.empty}>No employees found.</Text>
+            ) : empLedgers.map((e) => {
+              const bal = e.closing_balance || 0;
+              const owed = bal >= 0;
+              return (
+                <Pressable key={e.id} onPress={() => router.push(`/ledger/${e.id}` as any)} style={({ pressed }) => [styles.erow, pressed && { opacity: 0.8 }]} testID={`ledger-emp-${e.id}`}>
+                  <Avatar photo={undefined} name={e.name} colors={colors} />
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={styles.en} numberOfLines={1}>{e.name}</Text>
+                    <Text style={styles.et} numberOfLines={1}>{e.employee_code || ''}{e.designation ? ` · ${e.designation}` : ''}</Text>
+                  </View>
+                  <View style={{ alignItems: 'flex-end' }}>
+                    <Text style={[styles.payV, { color: Math.abs(bal) < 0.5 ? colors.mutedText : owed ? colors.onSuccess : colors.onError }]}>
+                      {Math.abs(bal) < 0.5 ? '—' : `${owed ? '+' : '−'} ${fmtINR(Math.abs(bal))}`}
+                    </Text>
+                    <Text style={styles.payS}>{Math.abs(bal) < 0.5 ? 'settled' : owed ? 'we owe' : 'owes us'}</Text>
+                  </View>
+                </Pressable>
+              );
+            })}
+          </>
         )}
         <View style={{ height: spacing.xxxl }} />
       </ScrollView>
@@ -320,6 +371,9 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   titleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
   h1: { color: colors.onSurface, fontSize: 26, fontWeight: '800', fontFamily: fonts.display, letterSpacing: -0.5 },
   apprBtn: { width: 46, height: 46, borderRadius: 23, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
+  apprBtnOn: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
+  searchWrap: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.md, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, paddingHorizontal: spacing.md },
+  searchInput: { flex: 1, color: colors.onSurface, fontSize: 14, paddingVertical: 10 },
   apprBadge: { position: 'absolute', top: -3, right: -3, minWidth: 20, height: 20, borderRadius: 10, paddingHorizontal: 5, backgroundColor: colors.brandPrimary, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: colors.surface },
   apprBadgeText: { color: colors.onBrandPrimary, fontSize: 11, fontWeight: '800' },
   sub: { color: colors.onSurfaceSecondary, fontSize: 15, marginTop: 6 },

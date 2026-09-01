@@ -18,7 +18,6 @@ type Account = {
   fine_balance: number; amount_balance: number;
 };
 type ListResp = { accounts: Account[]; net_fine: number; net_amount: number; count: number };
-type EmpRow = { id: string; name: string; employee_code?: string; designation?: string; photo?: string; closing_balance: number };
 
 // A Karigar/Difference account normally has the shop owing gold/absorbing loss,
 // so "advance"/"loss" reads better than "advance" everywhere — but direction
@@ -29,9 +28,6 @@ export default function LedgerScreen() {
   const router = useRouter();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
-  const [mode, setMode] = useState<'accounts' | 'employees'>('accounts');
-  const [emps, setEmps] = useState<EmpRow[] | null>(null);
-  const [empQ, setEmpQ] = useState('');
   const [types, setTypes] = useState<AccountType[]>([]);
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [balanceFilter, setBalanceFilter] = useState<'all' | 'with' | 'nil'>('all');
@@ -58,16 +54,8 @@ export default function LedgerScreen() {
     } finally { setLoading(false); setRefreshing(false); }
   }, [typeFilter, q]);
 
-  const loadEmps = useCallback(async () => {
-    try {
-      const qs = empQ.trim() ? `?q=${encodeURIComponent(empQ.trim())}` : '';
-      setEmps(await api.get<EmpRow[]>(`/employees${qs}`));
-    } catch { setEmps([]); }
-  }, [empQ]);
-
   useFocusEffect(useCallback(() => { loadTypes(); }, [loadTypes]));
   useFocusEffect(useCallback(() => { setLoading(true); load(); }, [load]));
-  useFocusEffect(useCallback(() => { if (mode === 'employees') loadEmps(); }, [mode, loadEmps]));
 
   const typeKeyById = useMemo(() => Object.fromEntries(types.map((t) => [t.id, t.key])), [types]);
 
@@ -91,29 +79,11 @@ export default function LedgerScreen() {
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
         <Text style={styles.title}>Ledger</Text>
-        {mode === 'accounts' ? (
-          <Pressable onPress={() => router.push('/accounts/new' as any)} style={styles.iconBtn} testID="ledger-add-btn" hitSlop={12}>
-            <Ionicons name="add" size={22} color={colors.onSurface} />
-          </Pressable>
-        ) : <View style={styles.iconBtn} />}
+        <Pressable onPress={() => router.push('/accounts/new' as any)} style={styles.iconBtn} testID="ledger-add-btn" hitSlop={12}>
+          <Ionicons name="add" size={22} color={colors.onSurface} />
+        </Pressable>
       </View>
 
-      {/* Accounts (customers/karigars) vs Employees (wage ledger) */}
-      <View style={styles.modeRow}>
-        {([['accounts', 'Accounts'], ['employees', 'Employees']] as const).map(([key, label]) => (
-          <Pressable key={key} onPress={() => setMode(key)} style={[styles.modeSeg, mode === key && styles.modeSegOn]} testID={`ledger-mode-${key}`}>
-            <Text style={[styles.modeText, mode === key && styles.modeTextOn]}>{label}</Text>
-          </Pressable>
-        ))}
-      </View>
-
-      {mode === 'employees' ? (
-        <EmployeesView
-          emps={emps} q={empQ} setQ={setEmpQ} onSearch={loadEmps}
-          onOpen={(id) => router.push(`/ledger/${id}` as any)} colors={colors} styles={styles}
-        />
-      ) : (
-      <>
       {/* Net dual totals for the current filter */}
       <View style={styles.totals} testID="ledger-totals">
         <Text style={styles.totalsLabel}>Net for {typeFilter === 'all' ? 'all accounts' : types.find((t) => t.id === typeFilter)?.name || 'filter'}</Text>
@@ -203,61 +173,7 @@ export default function LedgerScreen() {
           <View style={{ height: spacing.xxl }} />
         </ScrollView>
       )}
-      </>
-      )}
     </Screen>
-  );
-}
-
-function EmployeesView({ emps, q, setQ, onSearch, onOpen, colors, styles }: {
-  emps: EmpRow[] | null; q: string; setQ: (v: string) => void; onSearch: () => void;
-  onOpen: (id: string) => void; colors: ThemeColors; styles: any;
-}) {
-  const fmt = (n: number) => `₹${Math.abs(n || 0).toLocaleString('en-IN')}`;
-  return (
-    <>
-      <View style={styles.searchWrap}>
-        <Ionicons name="search" size={17} color={colors.mutedText} />
-        <TextInput
-          value={q} onChangeText={setQ} onSubmitEditing={onSearch}
-          placeholder="Search employee" placeholderTextColor={colors.mutedText}
-          style={styles.searchInput} returnKeyType="search" autoCapitalize="none" testID="ledger-emp-search"
-        />
-        {q.length > 0 && <Pressable onPress={() => { setQ(''); setTimeout(onSearch, 0); }} hitSlop={10}><Ionicons name="close-circle" size={17} color={colors.mutedText} /></Pressable>}
-      </View>
-      {!emps ? (
-        <View style={{ paddingHorizontal: spacing.lg, gap: spacing.sm, marginTop: spacing.md }}>
-          {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} width="100%" height={58} radius={radius.md} />)}
-        </View>
-      ) : emps.length === 0 ? (
-        <EmptyState icon="people-outline" title="No employees" message="No employees match this search." testID="ledger-emp-empty" />
-      ) : (
-        <ScrollView contentContainerStyle={[styles.list, { marginTop: spacing.sm }]} showsVerticalScrollIndicator={false}>
-          {emps.map((e) => {
-            const bal = e.closing_balance || 0;
-            const owed = bal >= 0;   // + = shop owes employee, − = employee owes
-            return (
-              <Card key={e.id} onPress={() => onOpen(e.id)} testID={`ledger-emp-${e.id}`} style={styles.rowCard}>
-                <View style={styles.rowTop}>
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <Text style={styles.rowName} numberOfLines={1}>{e.name}</Text>
-                    <Text style={styles.rowType}>{e.employee_code || ''}{e.designation ? ` · ${e.designation}` : ''}</Text>
-                  </View>
-                  <View style={{ alignItems: 'flex-end' }}>
-                    <Text style={[styles.empBal, { color: Math.abs(bal) < 0.5 ? colors.mutedText : owed ? colors.onSuccess : colors.onError }]}>
-                      {Math.abs(bal) < 0.5 ? '—' : `${owed ? '+' : '−'} ${fmt(bal)}`}
-                    </Text>
-                    <Text style={styles.empBalLabel}>{Math.abs(bal) < 0.5 ? 'settled' : owed ? 'we owe' : 'owes us'}</Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={16} color={colors.mutedText} style={{ marginLeft: 6 }} />
-                </View>
-              </Card>
-            );
-          })}
-          <View style={{ height: spacing.xxl }} />
-        </ScrollView>
-      )}
-    </>
   );
 }
 
@@ -281,14 +197,6 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border,
   },
   title: { flex: 1, color: colors.onSurface, fontSize: 20, fontWeight: '700', fontFamily: fonts.display },
-
-  modeRow: { flexDirection: 'row', gap: 3, marginHorizontal: spacing.lg, marginBottom: spacing.sm, backgroundColor: colors.surfaceTertiary, borderRadius: 11, padding: 4 },
-  modeSeg: { flex: 1, alignItems: 'center', paddingVertical: 9, borderRadius: 8 },
-  modeSegOn: { backgroundColor: colors.brandPrimary },
-  modeText: { color: colors.mutedText, fontSize: 13, fontWeight: '700' },
-  modeTextOn: { color: colors.onBrandPrimary },
-  empBal: { fontSize: 14.5, fontWeight: '800' },
-  empBalLabel: { color: colors.mutedText, fontSize: 10.5, marginTop: 1 },
 
   totals: {
     marginHorizontal: spacing.lg, marginBottom: spacing.sm,
