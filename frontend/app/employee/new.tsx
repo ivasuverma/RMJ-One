@@ -16,23 +16,27 @@ import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
 type Shift = { id: string; name: string; start: string; end: string };
+type Department = { id: string; name: string };
+type Location = { id: string; name: string };
 
 type EmployeeForm = {
-  name: string; employee_code: string; biometric_id: string; department: string; designation: string;
+  name: string; employee_code: string; biometric_id: string; department_id: string; location_id: string; designation: string;
   shift: string; salary: string; joining_date: string; mobile: string; address: string;
+  gender: string; guardian_name: string;
   aadhaar: string; pan: string; bank_account: string; bank_ifsc: string; bank_name: string;
   status: 'active' | 'inactive' | 'on_leave'; notes: string;
   auto_advance_amount: string; auto_advance_day: string; photo: string;
 };
 
 const EMPTY: EmployeeForm = {
-  name: '', employee_code: '', biometric_id: '', department: '', designation: '', shift: 'General', salary: '',
-  joining_date: todayIST(), mobile: '', address: '',
+  name: '', employee_code: '', biometric_id: '', department_id: '', location_id: '', designation: '', shift: 'General', salary: '',
+  joining_date: todayIST(), mobile: '', address: '', gender: '', guardian_name: '',
   aadhaar: '', pan: '', bank_account: '', bank_ifsc: '', bank_name: '', status: 'active', notes: '',
   auto_advance_amount: '', auto_advance_day: '', photo: '',
 };
 
 const STATUSES: EmployeeForm['status'][] = ['active', 'on_leave', 'inactive'];
+const GENDERS = ['male', 'female', 'other'];
 
 export default function EmployeeForm() {
   const router = useRouter();
@@ -48,11 +52,15 @@ export default function EmployeeForm() {
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [shifts, setShifts] = useState<Shift[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [locations, setLocations] = useState<Location[]>([]);
   const [cameraOpen, setCameraOpen] = useState(false);
   const submittingRef = useRef(false);
 
   useEffect(() => {
     api.get<Shift[]>('/shifts').then(setShifts).catch(() => setShifts([]));
+    api.get<Department[]>('/departments').then(setDepartments).catch(() => setDepartments([]));
+    api.get<Location[]>('/locations').then(setLocations).catch(() => setLocations([]));
   }, []);
 
   useEffect(() => {
@@ -62,10 +70,12 @@ export default function EmployeeForm() {
         const res = await api.get<{ employee: any }>(`/employees/${id}`);
         const e = res.employee;
         setForm({
-          name: e.name || '', employee_code: e.employee_code || '', biometric_id: e.biometric_id || '', department: e.department || '',
+          name: e.name || '', employee_code: e.employee_code || '', biometric_id: e.biometric_id || '',
+          department_id: e.department_id || '', location_id: e.location_id || '',
           designation: e.designation || '', shift: e.shift || 'General',
           salary: String(e.salary ?? ''), joining_date: e.joining_date || '',
-          mobile: e.mobile || '', address: e.address || '', aadhaar: e.aadhaar || '',
+          mobile: e.mobile || '', address: e.address || '', gender: e.gender || '', guardian_name: e.guardian_name || '',
+          aadhaar: e.aadhaar || '',
           pan: e.pan || '', bank_account: e.bank_account || '', bank_ifsc: e.bank_ifsc || '',
           bank_name: e.bank_name || '', status: e.status || 'active', notes: e.notes || '',
           auto_advance_amount: e.auto_advance_amount ? String(e.auto_advance_amount) : '',
@@ -107,6 +117,9 @@ export default function EmployeeForm() {
     try {
       const payload = {
         ...form,
+        department_id: form.department_id || null,
+        location_id: form.location_id || null,
+        gender: form.gender || null,
         salary: form.salary ? Number(form.salary) : 0,
         auto_advance_amount: form.auto_advance_amount ? Number(form.auto_advance_amount) : null,
         auto_advance_day: form.auto_advance_day ? Number(form.auto_advance_day) : null,
@@ -179,8 +192,26 @@ export default function EmployeeForm() {
 
           <SectionTitle text="Personal" />
           <Field label="Full Name *" value={form.name} onChangeText={(v) => setField('name', v)} error={errors.name} testID="field-name" />
+          <Field label="Guardian's / Father's Name" value={form.guardian_name} onChangeText={(v) => setField('guardian_name', v)} testID="field-guardian" />
           <Field label="Mobile" value={form.mobile} onChangeText={(v) => setField('mobile', v)} keyboardType="phone-pad" testID="field-mobile" />
           <Field label="Address" value={form.address} onChangeText={(v) => setField('address', v)} multiline testID="field-address" />
+
+          <Text style={styles.label}>Gender</Text>
+          <View style={styles.statusRow}>
+            {GENDERS.map((g) => (
+              <Pressable
+                key={g}
+                testID={`gender-${g}`}
+                onPress={() => setField('gender', form.gender === g ? '' : g)}
+                style={[styles.statusOpt, form.gender === g && styles.statusOptActive]}
+              >
+                <Text style={[styles.statusOptText, form.gender === g && styles.statusOptTextActive]}>
+                  {g.charAt(0).toUpperCase() + g.slice(1)}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+
           <View style={styles.row2}>
             <View style={{ flex: 1 }}>
               <Field label="Aadhaar" value={form.aadhaar} onChangeText={(v) => setField('aadhaar', v)} testID="field-aadhaar" />
@@ -220,14 +251,49 @@ export default function EmployeeForm() {
             </View>
           )}
 
-          <View style={styles.row2}>
-            <View style={{ flex: 1 }}>
-              <Field label="Department" value={form.department} onChangeText={(v) => setField('department', v)} testID="field-department" />
+          <Text style={styles.label}>Department</Text>
+          {departments.length === 0 ? (
+            <Pressable onPress={() => router.push('/settings/departments' as any)} style={styles.noShifts} testID="no-departments-link">
+              <Ionicons name="add-circle-outline" size={16} color={colors.brandSecondary} />
+              <Text style={styles.noShiftsText}>No departments set up yet — tap to add one</Text>
+            </Pressable>
+          ) : (
+            <View style={styles.statusRow}>
+              {departments.map((d) => (
+                <Pressable
+                  key={d.id}
+                  testID={`dept-opt-${d.id}`}
+                  onPress={() => setField('department_id', form.department_id === d.id ? '' : d.id)}
+                  style={[styles.statusOpt, form.department_id === d.id && styles.statusOptActive]}
+                >
+                  <Text style={[styles.statusOptText, form.department_id === d.id && styles.statusOptTextActive]} numberOfLines={1}>{d.name}</Text>
+                </Pressable>
+              ))}
             </View>
-            <View style={{ flex: 1 }}>
-              <Field label="Designation" value={form.designation} onChangeText={(v) => setField('designation', v)} testID="field-designation" />
+          )}
+
+          <Text style={styles.label}>Location / Branch</Text>
+          {locations.length === 0 ? (
+            <Pressable onPress={() => router.push('/settings/locations' as any)} style={styles.noShifts} testID="no-locations-link">
+              <Ionicons name="add-circle-outline" size={16} color={colors.brandSecondary} />
+              <Text style={styles.noShiftsText}>No locations set up yet — tap to add one</Text>
+            </Pressable>
+          ) : (
+            <View style={styles.statusRow}>
+              {locations.map((l) => (
+                <Pressable
+                  key={l.id}
+                  testID={`loc-opt-${l.id}`}
+                  onPress={() => setField('location_id', form.location_id === l.id ? '' : l.id)}
+                  style={[styles.statusOpt, form.location_id === l.id && styles.statusOptActive]}
+                >
+                  <Text style={[styles.statusOptText, form.location_id === l.id && styles.statusOptTextActive]} numberOfLines={1}>{l.name}</Text>
+                </Pressable>
+              ))}
             </View>
-          </View>
+          )}
+
+          <Field label="Designation" value={form.designation} onChangeText={(v) => setField('designation', v)} testID="field-designation" />
           <View style={styles.row2}>
             <View style={{ flex: 1 }}>
               <Field label="Salary (₹/mo)" value={form.salary} onChangeText={(v) => setField('salary', v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" error={errors.salary} testID="field-salary" />

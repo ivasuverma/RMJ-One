@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, ActivityIndicator, Alert, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
@@ -9,6 +9,7 @@ import { istTime, istDate, todayIST, nowISTLongLabel, displayDateOnlyWithWeekday
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { haptics } from '@/src/utils/haptics';
+import { FilterChips } from '@/src/components/ui';
 
 // Attendance & Payroll — one screen inside Work, three segments (matches the
 // v2 design comp): Today (daily in/out), Calendar (pick a person, edit any
@@ -17,10 +18,13 @@ import { haptics } from '@/src/utils/haptics';
 // month/day-edit logic isn't duplicated.
 type Row = {
   employee_id: string; employee_code: string; name: string;
-  department: string; designation: string; shift: string;
+  department: string; department_id?: string | null; location_id?: string | null;
+  designation: string; shift: string;
   status: string; check_in?: string | null; check_out?: string | null;
   is_late?: boolean; working_hours?: number; missing_punch?: boolean; photo?: string;
 };
+type Department = { id: string; name: string };
+type Location = { id: string; name: string };
 type PayRow = {
   employee_id: string; name: string; designation: string; photo?: string;
   total_days: number; effective_days: number; advance: number; net_salary: number; paid?: boolean; id?: string;
@@ -71,6 +75,10 @@ export default function OwnerAttendance() {
   const [pay, setPay] = useState<PayrollResp | null>(null);
   const [events, setEvents] = useState<Ev[]>([]);
   const [todayFilter, setTodayFilter] = useState<Bucket | 'all'>('all');
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [locations, setLocations] = useState<Location[]>([]);
+  const [deptFilter, setDeptFilter] = useState('all');
+  const [locFilter, setLocFilter] = useState('all');
   const [empLedgers, setEmpLedgers] = useState<EmpLedgerRow[] | null>(null);
   const [empQ, setEmpQ] = useState('');
   const [liveOpen, setLiveOpen] = useState<Record<string, boolean>>({});
@@ -93,11 +101,19 @@ export default function OwnerAttendance() {
 
   const load = useCallback(async () => {
     try {
-      const r = await api.get<Row[]>(`/attendance/today?date=${date}`).catch(() => [] as Row[]);
+      const params = new URLSearchParams({ date });
+      if (deptFilter !== 'all') params.set('department_id', deptFilter);
+      if (locFilter !== 'all') params.set('location_id', locFilter);
+      const r = await api.get<Row[]>(`/attendance/today?${params.toString()}`).catch(() => [] as Row[]);
       setRows(r);
     } finally { setLoading(false); setRefreshing(false); }
-  }, [date]);
+  }, [date, deptFilter, locFilter]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  useEffect(() => {
+    api.get<Department[]>('/departments').then(setDepartments).catch(() => setDepartments([]));
+    api.get<Location[]>('/locations').then(setLocations).catch(() => setLocations([]));
+  }, []);
 
   // Pending attendance corrections + leave requests, for the Approvals button badge.
   useFocusEffect(useCallback(() => {
@@ -197,6 +213,24 @@ export default function OwnerAttendance() {
           <ActivityIndicator color={colors.brandPrimary} style={{ marginTop: 40 }} />
         ) : seg === 'today' ? (
           <>
+            {locations.length > 1 && (
+              <FilterChips
+                testID="attendance-loc-filter"
+                options={[{ key: 'all', label: 'All Locations' }, ...locations.map((l) => ({ key: l.id, label: l.name }))]}
+                value={locFilter}
+                onChange={setLocFilter}
+              />
+            )}
+            {departments.length > 1 && (
+              <View style={{ marginTop: locations.length > 1 ? spacing.sm : 0 }}>
+                <FilterChips
+                  testID="attendance-dept-filter"
+                  options={[{ key: 'all', label: 'All Departments' }, ...departments.map((d) => ({ key: d.id, label: d.name }))]}
+                  value={deptFilter}
+                  onChange={setDeptFilter}
+                />
+              </View>
+            )}
             {/* Date filter — step back/forward a day to review past attendance. */}
             <View style={styles.dateNav}>
               <Pressable onPress={() => setDate((d) => localDateStr(new Date(new Date(d + 'T12:00:00').getTime() - 86400000)))} style={styles.dateArrow} testID="date-prev" hitSlop={8}>

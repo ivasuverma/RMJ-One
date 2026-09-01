@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, ActivityIndicator, Pressable, Platform, RefreshControl, Alert, Share,
 } from 'react-native';
@@ -12,18 +12,27 @@ import { displayDateOnly } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { RecordPhotos } from '@/src/components/RecordPhotos';
+import { SegmentedControl } from '@/src/components/ui/SegmentedControl';
 
 type IdProof = { id: string; name: string; uploaded_at: string };
+type Location = { id: string; name: string };
 
 type Emp = {
-  id: string; name: string; employee_code: string; department: string;
-  designation: string; shift: string; salary: number; joining_date?: string;
-  mobile: string; address: string; aadhaar: string; pan: string;
+  id: string; name: string; employee_code: string; department: string; location_id?: string | null;
+  designation: string; shift: string; salary: number; joining_date?: string; biometric_id?: string;
+  mobile: string; address: string; gender?: string | null; guardian_name?: string;
+  aadhaar: string; pan: string;
   bank_account: string; bank_ifsc: string; bank_name: string;
   status: 'active' | 'inactive' | 'on_leave'; notes: string; photo?: string;
   id_proofs?: IdProof[];
   auto_advance_amount?: number | null; auto_advance_day?: number | null;
 };
+
+type Tab = 'basic' | 'work' | 'salary' | 'legal' | 'bank';
+const TABS: { key: Tab; label: string }[] = [
+  { key: 'basic', label: 'Basic' }, { key: 'work', label: 'Work' }, { key: 'salary', label: 'Salary' },
+  { key: 'legal', label: 'Legal' }, { key: 'bank', label: 'Bank' },
+];
 
 function pickIdProofFile(): Promise<{ name: string; dataUri: string } | null> {
   return new Promise((resolve) => {
@@ -49,6 +58,7 @@ function pickIdProofFile(): Promise<{ name: string; dataUri: string } | null> {
 }
 
 const fmtJoinDate = (ds?: string) => (ds ? displayDateOnly(ds) : '—');
+const fmtGender = (g?: string | null) => (g ? g.charAt(0).toUpperCase() + g.slice(1) : '—');
 
 export default function EmployeeProfile() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -59,6 +69,8 @@ export default function EmployeeProfile() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [sharingCreds, setSharingCreds] = useState(false);
+  const [locations, setLocations] = useState<Location[]>([]);
+  const [tab, setTab] = useState<Tab>('basic');
 
   const load = useCallback(async () => {
     try {
@@ -73,6 +85,7 @@ export default function EmployeeProfile() {
   }, [id]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
+  useEffect(() => { api.get<Location[]>('/locations').then(setLocations).catch(() => setLocations([])); }, []);
 
   const onDelete = () => {
     confirmAction('Delete employee', 'This cannot be undone.', 'Delete', async () => {
@@ -135,6 +148,7 @@ export default function EmployeeProfile() {
   }
 
   const initials = emp.name.trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() || '').join('');
+  const locationName = locations.find((l) => l.id === emp.location_id)?.name || '—';
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="employee-profile">
@@ -160,7 +174,7 @@ export default function EmployeeProfile() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}
         showsVerticalScrollIndicator={false}
       >
-        {/* Identity block */}
+        {/* Identity block — photo, name, status. Actions live in the tabs below. */}
         <View style={styles.identity}>
           {emp.photo ? (
             <Image source={{ uri: emp.photo }} style={styles.bigAvatarPhoto} />
@@ -174,22 +188,70 @@ export default function EmployeeProfile() {
             <StatusChip status={emp.status} />
           </View>
 
-          <View style={styles.actionLinkRow}>
-            <Pressable onPress={() => router.push(`/ledger/${emp.id}`)} style={styles.ledgerLink} testID="open-ledger-btn">
-              <Ionicons name="book-outline" size={16} color={colors.onBrandPrimary} />
-              <Text style={styles.ledgerLinkText}>Open Ledger</Text>
-              <Ionicons name="chevron-forward" size={16} color={colors.onBrandPrimary} />
-            </Pressable>
-
-            <Pressable onPress={onShareCredentials} disabled={sharingCreds} style={styles.shareCredsLink} testID="share-credentials-btn">
-              {sharingCreds ? <ActivityIndicator size="small" color={colors.brandSecondary} /> : <Ionicons name="key-outline" size={16} color={colors.brandSecondary} />}
-              <Text style={styles.shareCredsLinkText}>Share Credentials</Text>
-            </Pressable>
-          </View>
+          <Pressable onPress={onShareCredentials} disabled={sharingCreds} style={styles.shareCredsLink} testID="share-credentials-btn">
+            {sharingCreds ? <ActivityIndicator size="small" color={colors.brandSecondary} /> : <Ionicons name="key-outline" size={16} color={colors.brandSecondary} />}
+            <Text style={styles.shareCredsLinkText}>Share Credentials</Text>
+          </Pressable>
         </View>
 
-        <View style={{ paddingHorizontal: spacing.lg }}>
-          <DetailsCard emp={emp} onReload={load} />
+        <View style={{ paddingHorizontal: spacing.lg, marginTop: spacing.md }}>
+          <SegmentedControl options={TABS.map((t) => ({ key: t.key, label: t.label }))} value={tab} onChange={(k) => setTab(k as Tab)} testID="profile-tabs" />
+        </View>
+
+        <View style={{ paddingHorizontal: spacing.lg, marginTop: spacing.lg }}>
+          <View style={styles.detailCard}>
+            {tab === 'basic' && (
+              <>
+                <DetailRow label="Mobile" value={emp.mobile || '—'} />
+                <DetailRow label="Address" value={emp.address || '—'} />
+                <DetailRow label="Gender" value={fmtGender(emp.gender)} />
+                <DetailRow label="Guardian's Name" value={emp.guardian_name || '—'} />
+                {!!emp.notes && (
+                  <>
+                    <SectionTitle text="Notes" />
+                    <Text style={styles.notes}>{emp.notes}</Text>
+                  </>
+                )}
+              </>
+            )}
+            {tab === 'work' && (
+              <>
+                <DetailRow label="Department" value={emp.department || '—'} />
+                <DetailRow label="Location / Branch" value={locationName} />
+                <DetailRow label="Designation" value={emp.designation || '—'} />
+                <DetailRow label="Shift" value={emp.shift || '—'} />
+                <DetailRow label="Joined" value={fmtJoinDate(emp.joining_date)} />
+                <DetailRow label="Biometric ID" value={emp.biometric_id || '—'} />
+              </>
+            )}
+            {tab === 'salary' && (
+              <>
+                <DetailRow label="Base Salary" value={`₹${Math.round(emp.salary || 0).toLocaleString('en-IN')}/mo`} />
+                <DetailRow label="Auto Advance" value={emp.auto_advance_amount ? `₹${Math.round(emp.auto_advance_amount).toLocaleString('en-IN')} on day ${emp.auto_advance_day}` : 'Off'} />
+                <Pressable onPress={() => router.push(`/ledger/${emp.id}`)} style={styles.ledgerLink} testID="open-ledger-btn">
+                  <Ionicons name="book-outline" size={16} color={colors.onBrandPrimary} />
+                  <Text style={styles.ledgerLinkText}>Open Ledger</Text>
+                  <Ionicons name="chevron-forward" size={16} color={colors.onBrandPrimary} />
+                </Pressable>
+              </>
+            )}
+            {tab === 'legal' && (
+              <>
+                <DetailRow label="Aadhaar" value={emp.aadhaar || '—'} />
+                <DetailRow label="PAN" value={emp.pan || '—'} />
+                <SectionTitle text="ID Proofs" />
+                <IdProofsSection empId={emp.id} proofs={emp.id_proofs || []} onChange={load} />
+                <RecordPhotos refType="employee" refId={emp.id} label="Photos" />
+              </>
+            )}
+            {tab === 'bank' && (
+              <>
+                <DetailRow label="Bank" value={emp.bank_name || '—'} />
+                <DetailRow label="Account" value={emp.bank_account || '—'} />
+                <DetailRow label="IFSC" value={emp.bank_ifsc || '—'} />
+              </>
+            )}
+          </View>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -208,43 +270,6 @@ function StatusChip({ status }: { status: Emp['status'] }) {
   return (
     <View style={[styles.statusChip, { backgroundColor: s.bg, borderColor: s.bd }]}>
       <Text style={[styles.statusChipText, { color: s.fg }]}>{s.label}</Text>
-    </View>
-  );
-}
-
-function DetailsCard({ emp, onReload }: { emp: Emp; onReload: () => void }) {
-  const { colors } = useTheme();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
-  return (
-    <View style={styles.detailCard}>
-      <SectionTitle text="Personal" />
-      <DetailRow label="Mobile" value={emp.mobile || '—'} />
-      <DetailRow label="Address" value={emp.address || '—'} />
-      <DetailRow label="Aadhaar" value={emp.aadhaar || '—'} />
-      <DetailRow label="PAN" value={emp.pan || '—'} />
-
-      <SectionTitle text="Job" />
-      <DetailRow label="Designation" value={emp.designation || '—'} />
-      <DetailRow label="Department" value={emp.department || '—'} />
-      <DetailRow label="Shift" value={emp.shift || '—'} />
-      <DetailRow label="Joined" value={fmtJoinDate(emp.joining_date)} />
-
-      <SectionTitle text="Bank" />
-      <DetailRow label="Bank" value={emp.bank_name || '—'} />
-      <DetailRow label="Account" value={emp.bank_account || '—'} />
-      <DetailRow label="IFSC" value={emp.bank_ifsc || '—'} />
-
-      <SectionTitle text="ID Proofs" />
-      <IdProofsSection empId={emp.id} proofs={emp.id_proofs || []} onChange={onReload} />
-
-      <RecordPhotos refType="employee" refId={emp.id} label="Photos" />
-
-      {!!emp.notes && (
-        <>
-          <SectionTitle text="Notes" />
-          <Text style={styles.notes}>{emp.notes}</Text>
-        </>
-      )}
     </View>
   );
 }
@@ -365,7 +390,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     borderWidth: 1, borderColor: colors.border,
   },
 
-  identity: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.md },
+  identity: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.md, alignItems: 'center' },
   bigAvatar: {
     width: 88, height: 88, borderRadius: 44, backgroundColor: colors.brandPrimary,
     alignItems: 'center', justifyContent: 'center',
@@ -375,21 +400,20 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
 
   name: {
     color: colors.onSurface, fontSize: 28, fontWeight: '600',
-    fontFamily: fonts.display, marginTop: spacing.md, letterSpacing: -0.5,
+    fontFamily: fonts.display, marginTop: spacing.md, letterSpacing: -0.5, textAlign: 'center',
   },
-  designation: { color: colors.onSurfaceTertiary, fontSize: 14, marginTop: 4 },
+  designation: { color: colors.onSurfaceTertiary, fontSize: 14, marginTop: 4, textAlign: 'center' },
   metaRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md, alignItems: 'center' },
-  actionLinkRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.md },
   ledgerLink: {
-    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
-    backgroundColor: colors.brandPrimary, paddingVertical: 10, paddingHorizontal: spacing.md,
-    borderRadius: radius.md, alignSelf: 'flex-start',
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm,
+    backgroundColor: colors.brandPrimary, paddingVertical: 12, paddingHorizontal: spacing.md,
+    borderRadius: radius.md, marginTop: spacing.sm,
   },
   ledgerLinkText: { color: colors.onBrandPrimary, fontWeight: '700', fontSize: 13 },
   shareCredsLink: {
     flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
     backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.brand,
-    paddingVertical: 10, paddingHorizontal: spacing.md, borderRadius: radius.md, alignSelf: 'flex-start',
+    paddingVertical: 10, paddingHorizontal: spacing.md, borderRadius: radius.md, marginTop: spacing.md,
   },
   shareCredsLinkText: { color: colors.brandSecondary, fontWeight: '700', fontSize: 13 },
   metaChip: {
@@ -408,7 +432,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     marginTop: spacing.md, marginBottom: spacing.sm,
   },
   detailRow: { flexDirection: 'row', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: colors.divider, gap: spacing.md },
-  detailLabel: { color: colors.mutedText, fontSize: 13, width: 100 },
+  detailLabel: { color: colors.mutedText, fontSize: 13, width: 120 },
   detailValue: { color: colors.onSurface, fontSize: 13, flex: 1, textAlign: 'right' },
   notes: { color: colors.onSurfaceSecondary, fontSize: 13, marginTop: 4 },
 
