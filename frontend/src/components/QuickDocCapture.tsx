@@ -3,7 +3,7 @@ import { Platform, Pressable, StyleSheet, Text, View, ActivityIndicator, TextInp
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '@/src/api/client';
 import { haptics } from '@/src/utils/haptics';
-import { enqueueUpload, updateOutboxNote } from '@/src/utils/uploadQueue';
+import { enqueueUpload, updateOutboxNote, kickUpload } from '@/src/utils/uploadQueue';
 import { Sheet } from '@/src/components/ui';
 import { pickWebFile, makeThumb, type DocCategory } from '@/src/components/DocumentCaptureSheet';
 import { spacing, radius, ThemeColors } from '@/src/theme';
@@ -68,8 +68,11 @@ export function QuickDocCapture({ visible, onClose, onSaved }: {
 
   const selectedCat = cats.find((c) => c.key === catKey);
 
+  const close = () => { kickUpload(); onClose(); };
+
   const shoot = async (key: string) => {
     if (shooting.current || Platform.OS !== 'web') return;
+    kickUpload();   // flush any previously-held photo before starting a new one
     shooting.current = true;
     try {
       const f = await pickWebFile('image/*', true);
@@ -79,7 +82,9 @@ export function QuickDocCapture({ visible, onClose, onSaved }: {
       const thumb = await makeThumb(f);
       const stamp = new Date().toISOString().slice(0, 10);
       const id = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
-      await enqueueUpload({ id, blob, filename: `${key}-${stamp}.jpg`, category_key: key, note: '', thumb });
+      // Hold the upload until the user leaves the Saved screen, so an optional
+      // remark can set the filename before the photo goes up.
+      await enqueueUpload({ id, blob, filename: `${key}-${stamp}.jpg`, category_key: key, note: '', thumb }, { drainNow: false });
       haptics.success();
       onSaved?.();
       setLastId(id); setRemark(''); setRemarkSaved(false);
@@ -93,7 +98,7 @@ export function QuickDocCapture({ visible, onClose, onSaved }: {
   const pickCategory = (key: string) => { setCatKey(key); shoot(key); };
 
   return (
-    <Sheet visible={visible} onClose={onClose} title={phase === 'saved' ? 'Saved' : 'Quick capture'} testID="quick-doc-capture">
+    <Sheet visible={visible} onClose={close} title={phase === 'saved' ? 'Saved' : 'Quick capture'} testID="quick-doc-capture">
       {Platform.OS !== 'web' ? (
         <Text style={styles.hint}>Open the RMJ One web app to capture documents.</Text>
       ) : phase === 'saving' ? (
@@ -127,10 +132,10 @@ export function QuickDocCapture({ visible, onClose, onSaved }: {
               <Ionicons name="camera" size={20} color={colors.onBrandPrimary} />
               <Text style={styles.btnPrimaryText}>Capture another</Text>
             </Pressable>
-            <Pressable onPress={() => setPhase('category')} style={styles.btnGhost} testID="quick-change-category">
+            <Pressable onPress={() => { kickUpload(); setPhase('category'); }} style={styles.btnGhost} testID="quick-change-category">
               <Text style={styles.btnGhostText}>Change category</Text>
             </Pressable>
-            <Pressable onPress={onClose} style={styles.btnGhost} testID="quick-done">
+            <Pressable onPress={close} style={styles.btnGhost} testID="quick-done">
               <Text style={styles.btnGhostText}>Done</Text>
             </Pressable>
           </View>

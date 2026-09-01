@@ -140,14 +140,19 @@ export async function cancelUpload(id: string): Promise<void> {
   await emitCount();
 }
 
-// Set/replace the note (remark) on a queued item — used by quick capture's
-// optional "add remark" after a photo is already queued. No-op if it already
-// uploaded and left the outbox.
+// Set/replace the note (remark) AND filename on a queued item — used by quick
+// capture's optional "add remark" (the remark becomes the document's name).
+// No-op if it already uploaded and left the outbox.
 export async function updateOutboxNote(id: string, note: string): Promise<void> {
   if (!hasIDB()) return;
   const item = await idbGet(id).catch(() => undefined);
   if (!item) return;
   item.note = note;
+  const clean = note.trim().replace(/[^\w -]+/g, '').replace(/\s+/g, '-').slice(0, 60);
+  if (clean) {
+    const ext = (item.filename.split('.').pop() || 'jpg');
+    item.filename = `${clean}.${ext}`;
+  }
   try { await idbPut(item); } catch { /* ignore */ }
 }
 
@@ -255,7 +260,7 @@ export type EnqueueInput = {
   endpoint?: string; category_key?: string; note?: string; ref_type?: string; ref_id?: string;
 };
 
-export async function enqueueUpload(input: EnqueueInput): Promise<void> {
+export async function enqueueUpload(input: EnqueueInput, opts?: { drainNow?: boolean }): Promise<void> {
   const { blob, ...rest } = input;
   const data = await blob.arrayBuffer();
   const rec: OutboxItem = { ...rest, data, mime: blob.type || 'application/octet-stream', created_at: Date.now(), tries: 0 };
@@ -266,6 +271,14 @@ export async function enqueueUpload(input: EnqueueInput): Promise<void> {
   }
   await idbPut(rec);
   await emitCount();
+  // Quick capture holds the drain (drainNow:false) until the user has had a
+  // chance to add a remark, so the remark/filename is applied before upload.
+  if (opts?.drainNow !== false) drain();
+}
+
+// Start uploading queued items now (used after a held enqueue, e.g. quick
+// capture once the optional remark step is done).
+export function kickUpload(): void {
   drain();
 }
 

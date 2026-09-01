@@ -4,7 +4,6 @@ import Animated, {
   useSharedValue, useAnimatedStyle, withSpring, withTiming, runOnJS, interpolate, Extrapolation,
 } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import { useReducedMotion } from '@/src/hooks/use-reduced-motion';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { radius, spacing, fonts, ThemeColors } from '@/src/theme';
 
@@ -25,7 +24,6 @@ export function Sheet({ visible, onClose, title, children, testID }: {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const { height: screenH } = useWindowDimensions();
-  const reduced = useReducedMotion();
   const [render, setRender] = useState(visible);
 
   const ty = useSharedValue(screenH);        // 0 = fully open, sheetH = fully dismissed
@@ -37,18 +35,17 @@ export function Sheet({ visible, onClose, title, children, testID }: {
 
   useEffect(() => {
     if (visible) {
+      // Open instantly — no enter/exit slide (requested). The drag-to-dismiss
+      // gesture still animates because that's driven by the finger.
       setRender(true);
-      backdrop.value = withTiming(1, { duration: 140 });
-      // A short timing slide is snappier (and steadier on the web export) than a
-      // full-screen-distance spring, which felt slow on open.
-      ty.value = reduced ? 0 : withTiming(0, { duration: 200 });
+      backdrop.value = 1;
+      ty.value = 0;
     } else if (render) {
-      backdrop.value = withTiming(0, { duration: 140 });
-      if (reduced) runOnJS(unmount)();
-      else ty.value = withTiming(sheetH.value, { duration: 180 }, (f) => { if (f) runOnJS(unmount)(); });
+      backdrop.value = 0;
+      unmount();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, reduced]);
+  }, [visible]);
 
   const pan = Gesture.Pan()
     .onBegin(() => { start.value = ty.value; })          // grab from the live value → interruptible
