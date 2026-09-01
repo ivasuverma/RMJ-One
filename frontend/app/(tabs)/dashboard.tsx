@@ -12,7 +12,7 @@ import { useDashboardStream } from '@/src/hooks/use-dashboard-stream';
 import { spacing, radius, images, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { Screen, Section, StatTile, Skeleton, ErrorState, DualBalance, Tone, Sheet } from '@/src/components/ui';
-import { DocumentCaptureSheet } from '@/src/components/DocumentCaptureSheet';
+import { QuickDocCapture } from '@/src/components/QuickDocCapture';
 import { UploadQueueBadge } from '@/src/components/UploadQueueBadge';
 
 type DashboardData = {
@@ -187,7 +187,7 @@ export default function DashboardScreen() {
       ) : null}
 
       <ComposeSheet visible={composeOpen} onClose={() => setComposeOpen(false)} />
-      <DocumentCaptureSheet visible={captureDoc} onClose={() => setCaptureDoc(false)} onSaved={refresh} />
+      <QuickDocCapture visible={captureDoc} onClose={() => setCaptureDoc(false)} onSaved={refresh} />
       <SearchOverlay visible={searchOpen} onClose={() => setSearchOpen(false)} />
     </Screen>
   );

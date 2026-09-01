@@ -8,7 +8,7 @@ import { useAuth } from '@/src/auth/AuthContext';
 import { todayIST } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
-import { DocumentCaptureSheet } from '@/src/components/DocumentCaptureSheet';
+import { QuickDocCapture } from '@/src/components/QuickDocCapture';
 import { UploadQueueBadge } from '@/src/components/UploadQueueBadge';
 import { AppSetupBanner } from '@/src/components/AppSetupBanner';
 
@@ -142,7 +142,7 @@ export default function EmployeeWorkScreen() {
 
         <View style={{ height: spacing.xxl }} />
       </ScrollView>
-      <DocumentCaptureSheet visible={captureDoc} onClose={() => setCaptureDoc(false)} onSaved={load} />
+      <QuickDocCapture visible={captureDoc} onClose={() => setCaptureDoc(false)} onSaved={load} />
     </SafeAreaView>
   );
 }

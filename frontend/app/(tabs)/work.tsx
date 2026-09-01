@@ -8,7 +8,7 @@ import { useAuth } from '@/src/auth/AuthContext';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { Skeleton, ErrorState, Sheet } from '@/src/components/ui';
-import { DocumentCaptureSheet } from '@/src/components/DocumentCaptureSheet';
+import { QuickDocCapture } from '@/src/components/QuickDocCapture';
 import { UploadQueueBadge } from '@/src/components/UploadQueueBadge';
 
 // Work — the operational hub, laid out to the v2 design comp: a search bar,
@@ -242,7 +242,7 @@ export default function WorkScreen() {
           ));
         })()}
       </Sheet>
-      <DocumentCaptureSheet visible={captureDoc} onClose={() => setCaptureDoc(false)} onSaved={load} />
+      <QuickDocCapture visible={captureDoc} onClose={() => setCaptureDoc(false)} onSaved={load} />
     </SafeAreaView>
   );
 }

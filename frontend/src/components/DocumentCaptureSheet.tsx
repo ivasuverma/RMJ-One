@@ -14,7 +14,7 @@ export type DocCategory = { id: string; key: string; label: string; icon: keyof 
 // The app ships as a web export, so capture uses a native file input — which
 // gives us camera (capture=environment), photo library, and Files/PDF for free
 // with no extra native module.
-function pickWebFile(accept: string, capture?: boolean): Promise<File | null> {
+export function pickWebFile(accept: string, capture?: boolean): Promise<File | null> {
   return new Promise((resolve) => {
     if (typeof document === 'undefined') { resolve(null); return; }
     const input = document.createElement('input');
@@ -46,7 +46,7 @@ function pickWebFile(accept: string, capture?: boolean): Promise<File | null> {
 // Downscale a captured photo before upload: a modern phone camera produces
 // 3–6 MB images, slow to upload and heavy to store. ~1600px / JPEG q0.8 keeps
 // receipts/IDs legible at a fraction of the size. Non-images pass through.
-async function shrinkImage(file: File): Promise<Blob> {
+export async function shrinkImage(file: File): Promise<Blob> {
   if (typeof document === 'undefined' || !file.type.startsWith('image/') || file.size < 900_000) return file;
   try {
     const url = URL.createObjectURL(file);
@@ -69,7 +69,7 @@ async function shrinkImage(file: File): Promise<Blob> {
 }
 
 // A tiny (~520px) JPEG kept locally after the full image lands in Drive.
-async function makeThumb(file: File): Promise<string> {
+export async function makeThumb(file: File): Promise<string> {
   if (typeof document === 'undefined' || !file.type.startsWith('image/')) return '';
   try {
     const url = URL.createObjectURL(file);

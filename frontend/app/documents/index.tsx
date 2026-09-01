@@ -14,6 +14,7 @@ import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { Sheet, useToast } from '@/src/components/ui';
 import { DocumentCaptureSheet } from '@/src/components/DocumentCaptureSheet';
+import { UploadQueueBadge } from '@/src/components/UploadQueueBadge';
 
 type Doc = {
   id: string; category_key: string; status: 'pending' | 'done'; upload_state: string;
@@ -265,6 +266,7 @@ export default function DocumentsScreen() {
             <Text style={styles.h1}>{doneCat ? (catMap[doneCat]?.label || 'Documents') : 'Documents'}</Text>
             {!doneCat && <Text style={styles.sub}>Snap · record · filed &amp; searchable.</Text>}
           </View>
+          <UploadQueueBadge />
           <View style={styles.drivePill}>
             {summary && summary.uploading_count > 0
               ? <><Ionicons name="cloud-upload-outline" size={13} color={colors.onWarning} /><Text style={[styles.drivePillText, { color: colors.onWarning }]}>{summary.uploading_count} uploading</Text></>
