@@ -164,27 +164,9 @@ export default function DashboardScreen() {
         <ErrorState message={error} onRetry={refresh} testID="dashboard-error" />
       ) : data ? (
         <>
-          {/* 1. Needs-attention briefing — only present when something's actually pending */}
-          {attnItems.length > 0 && <NeedsAttention items={attnItems} onGo={(r) => router.push(r as any)} />}
-
-          {/* 2. Today at a glance — three columns: Repairs, Samples, Tasks */}
-          <Text style={styles.glanceHeading}>Today at a glance</Text>
-          <View style={styles.glanceGrid} testID="section-glance">
-            {showRepairsTile && (
-              <GlanceCard icon="construct-outline" label="Repairs" value={data.repairs_summary.total_open}
-                sub={data.repairs_summary.overdue > 0 ? `${data.repairs_summary.overdue} overdue` : 'none overdue'} onPress={() => router.push('/repairs' as any)} testID="glance-repairs" />
-            )}
-            {hasModule('samples') && (
-              <GlanceCard icon="diamond-outline" label="Samples" value={data.samples_summary.with_karigar}
-                sub={data.samples_summary.overdue > 0 ? `${data.samples_summary.overdue} overdue` : 'none overdue'} onPress={() => router.push('/samples?status=with_karigar' as any)} testID="glance-samples" />
-            )}
-            {hasModule('tasks') && (
-              <GlanceCard icon="checkbox-outline" label="Tasks" value={data.tasks_summary.open_total}
-                sub={data.tasks_summary.overdue > 0 ? `${data.tasks_summary.overdue} overdue` : (data.tasks_summary.due_today > 0 ? `${data.tasks_summary.due_today} due today` : 'none overdue')} onPress={() => router.push('/tasks' as any)} testID="glance-tasks" />
-            )}
-          </View>
-
-          {/* Jump to — one tile per module (counts from the same payload). */}
+          {/* Jump to — one tile per module (counts + badges from the payload).
+              The old "Today at a glance" and needs-attention brief were dropped
+              because these tiles already show the same counts/overdue badges. */}
           <Text style={styles.glanceHeading}>Jump to</Text>
           <View style={styles.tileGrid} testID="dashboard-tiles">
             {(() => {
@@ -214,8 +196,8 @@ export default function DashboardScreen() {
             })()}
           </View>
 
-          {/* 3. Approvals + Leave */}
-          {hasModule('approvals') && (
+          {/* Approvals — only when something is actually pending. */}
+          {hasModule('approvals') && ((data.pending_approvals?.attendance_corrections || 0) + (data.pending_approvals?.leave_requests || 0)) > 0 && (
             <ApprovalsSection onChanged={refresh} />
           )}
 
