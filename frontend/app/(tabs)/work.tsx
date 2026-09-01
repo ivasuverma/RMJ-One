@@ -115,6 +115,14 @@ export default function WorkScreen() {
     badge: docSummary?.pending_count || undefined,
     segs: docSummary ? (docSummary.pending_count > 0 ? [{ text: `${docSummary.pending_count} pending to record`, tone: 'hot' }] : [{ text: 'All recorded' }]) : placeholder,
   });
+  if (hasModule('attendance')) rows.push({
+    key: 'attendance', title: 'Attendance & Payroll', icon: 'calendar-outline', route: '/(tabs)/attendance?from=work',
+    segs: data?.todays_attendance ? [
+      { text: `${data.todays_attendance.present} present`, tone: 'good' }, { text: ' · ' },
+      { text: `${data.todays_attendance.absent} absent`, tone: 'bad' },
+      ...(data.todays_attendance.late > 0 ? [{ text: ' · ' }, { text: `${data.todays_attendance.late} late` }] : []),
+    ] : placeholder,
+  });
 
   // Apply the user's saved order; unknown/new rows fall to the end.
   const idx = (k: string) => { const i = order.indexOf(k); return i === -1 ? 999 : i; };
@@ -166,7 +174,7 @@ export default function WorkScreen() {
               <Text style={styles.pt}>{r.title}</Text>
               <Text style={styles.pd} numberOfLines={1}>
                 {r.segs.map((s, i) => (
-                  <Text key={i} style={s.tone === 'hot' ? { color: colors.onWarning } : s.tone === 'bad' ? { color: colors.onError } : s.tone === 'strong' ? { color: colors.onSurface, fontWeight: '700' } : undefined}>
+                  <Text key={i} style={s.tone === 'hot' ? { color: colors.onWarning } : s.tone === 'bad' ? { color: colors.onError } : s.tone === 'good' ? { color: colors.onSuccess, fontWeight: '700' } : s.tone === 'strong' ? { color: colors.onSurface, fontWeight: '700' } : undefined}>
                     {s.text}
                   </Text>
                 ))}
@@ -184,27 +192,6 @@ export default function WorkScreen() {
             )}
           </Pressable>
         ))}
-
-        {/* Attendance & Payroll — same button style, part of the operational hub. */}
-        {hasModule('attendance') && (
-          <Pressable onPress={() => go('/(tabs)/attendance?from=work')} style={({ pressed }) => [styles.prow, pressed && { opacity: 0.85 }]} testID="work-attendance">
-            <View style={styles.pi}><Ionicons name="calendar-outline" size={22} color={colors.brandSecondary} /></View>
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <Text style={styles.pt}>Attendance &amp; Payroll</Text>
-              <Text style={styles.pd} numberOfLines={1}>
-                {data?.todays_attendance ? (
-                  <>
-                    <Text style={{ color: colors.onSuccess, fontWeight: '700' }}>{data.todays_attendance.present} present</Text>
-                    <Text> · </Text>
-                    <Text style={{ color: colors.onError, fontWeight: '700' }}>{data.todays_attendance.absent} absent</Text>
-                    {data.todays_attendance.late > 0 && <Text> · {data.todays_attendance.late} late</Text>}
-                  </>
-                ) : 'Daily in/out · calendar · monthly salary'}
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color={colors.mutedText} />
-          </Pressable>
-        )}
 
         {/* Ledgers — the per-party ledgers (job-wise). Employee wage ledgers
             live under Attendance › Ledgers. */}
