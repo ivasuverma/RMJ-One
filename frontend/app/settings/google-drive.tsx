@@ -88,6 +88,15 @@ export default function GoogleDriveScreen() {
             <Text style={styles.note}>Documents are uploaded into a “RMJ One Documents” folder in the shop&apos;s Drive, one sub-folder per category. RMJ One can only see files it creates.</Text>
           </>
         )}
+
+        <Pressable onPress={() => router.push('/settings/backup' as any)} style={styles.backupRow} testID="drive-backup-link">
+          <Ionicons name="save-outline" size={20} color={colors.brandSecondary} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.backupTitle}>Daily database backup</Text>
+            <Text style={styles.backupSub}>Automatic backup of all data to Drive</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.mutedText} />
+        </Pressable>
       </ScrollView>
     </SafeAreaView>
   );
@@ -98,6 +107,9 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg, paddingVertical: spacing.md, gap: spacing.md },
   iconBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surfaceSecondary, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border },
   title: { flex: 1, color: colors.onSurface, fontSize: 20, fontWeight: '700', fontFamily: fonts.display },
+  backupRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.xl, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: spacing.md },
+  backupTitle: { color: colors.onSurface, fontSize: 15, fontWeight: '700' },
+  backupSub: { color: colors.mutedText, fontSize: 12, marginTop: 2 },
   card: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.lg },
   statusDot: { width: 12, height: 12, borderRadius: 6 },
   statusTitle: { color: colors.onSurface, fontSize: 16, fontWeight: '700' },

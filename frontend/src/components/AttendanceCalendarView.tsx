@@ -123,6 +123,29 @@ export default function AttendanceCalendarView({ empId, onBack, title = 'Calenda
         </View>
       ) : (
         <ScrollView contentContainerStyle={{ padding: spacing.lg }} showsVerticalScrollIndicator={false}>
+          {days.length > 0 && (() => {
+            const c = { present: 0, late: 0, half: 0, absent: 0, leave: 0, off: 0 };
+            for (const d of days) {
+              if (d.status === 'present') { c.present += 1; if (d.is_late) c.late += 1; }
+              else if (d.status === 'half_day') c.half += 1;
+              else if (d.status === 'absent') c.absent += 1;
+              else if (d.status === 'leave') c.leave += 1;
+              else if (d.status === 'holiday' || d.status === 'weekly_off') c.off += 1;
+            }
+            const cell = (v: number, label: string, color: string) => (
+              <View style={styles.sumCell}><Text style={[styles.sumVal, { color }]}>{v}</Text><Text style={styles.sumLbl}>{label}</Text></View>
+            );
+            return (
+              <View style={styles.monthSummary} testID="calendar-month-summary">
+                {cell(c.present, 'Present', colors.onSuccess)}
+                {cell(c.late, 'Late', colors.onWarning)}
+                {cell(c.half, 'Half', colors.onWarning)}
+                {cell(c.absent, 'Absent', colors.onError)}
+                {cell(c.leave, 'Leave', colors.brandSecondary)}
+                {cell(c.off, 'Off', colors.mutedText)}
+              </View>
+            );
+          })()}
           <View style={styles.weekRow}>
             {WEEK_LABELS.map((w, i) => (
               <Text key={i} style={[styles.weekLabel, i === 6 && { color: colors.onError }]}>{w}</Text>
@@ -437,6 +460,10 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   monthLabel: { flex: 1, textAlign: 'center', color: colors.onSurface, fontWeight: '700', fontSize: 15 },
 
+  monthSummary: { flexDirection: 'row', backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, paddingVertical: spacing.sm, marginBottom: spacing.md },
+  sumCell: { flex: 1, alignItems: 'center' },
+  sumVal: { fontSize: 16, fontWeight: '800' },
+  sumLbl: { color: colors.mutedText, fontSize: 10, marginTop: 2 },
   weekRow: { flexDirection: 'row', marginBottom: spacing.sm },
   weekLabel: { flex: 1, textAlign: 'center', color: colors.mutedText, fontSize: 11, fontWeight: '700' },
   grid: { flexDirection: 'row', flexWrap: 'wrap' },

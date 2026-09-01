@@ -40,7 +40,7 @@ export default function EmployeesScreen() {
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [items, setItems] = useState<Emp[]>([]);
   const [q, setQ] = useState('');
-  const [filter, setFilter] = useState<string>('all');
+  const [filter, setFilter] = useState<string>('active');   // open on active staff by default
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 

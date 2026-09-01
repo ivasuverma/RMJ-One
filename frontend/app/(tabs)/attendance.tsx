@@ -267,6 +267,20 @@ export default function OwnerAttendance() {
                 <Ionicons name="chevron-forward" size={18} color={colors.onSurface} />
               </Pressable>
             </View>
+            {!!pay && pay.rows.length > 0 && (() => {
+              const total = pay.rows.reduce((s, r) => s + (r.net_salary || 0), 0);
+              const paid = pay.rows.filter((r) => r.paid).reduce((s, r) => s + (r.net_salary || 0), 0);
+              const pending = Math.max(0, total - paid);
+              return (
+                <View style={styles.paySummary} testID="payroll-summary">
+                  <View style={styles.paySumCell}><Text style={styles.paySumVal}>{fmtINR(total)}</Text><Text style={styles.paySumLbl}>Total</Text></View>
+                  <View style={styles.paySumDiv} />
+                  <View style={styles.paySumCell}><Text style={[styles.paySumVal, { color: colors.onSuccess }]}>{fmtINR(paid)}</Text><Text style={styles.paySumLbl}>Paid</Text></View>
+                  <View style={styles.paySumDiv} />
+                  <View style={styles.paySumCell}><Text style={[styles.paySumVal, { color: colors.onWarning }]}>{fmtINR(pending)}</Text><Text style={styles.paySumLbl}>Pending</Text></View>
+                </View>
+              );
+            })()}
             <Text style={styles.sec}>Employees · {isCurrentMonth ? 'this cycle' : `${MONTHS[month - 1]} ${year}`}</Text>
             {!pay || pay.rows.length === 0 ? (
               <Text style={styles.empty}>No payroll for this month yet.</Text>
@@ -398,6 +412,11 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   monthRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.lg, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: 6 },
   monthNav: { width: 34, height: 34, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center' },
   monthLabel: { flex: 1, textAlign: 'center', color: colors.onSurface, fontWeight: '700', fontSize: 14 },
+  paySummary: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, paddingVertical: spacing.md, marginTop: spacing.md },
+  paySumCell: { flex: 1, alignItems: 'center' },
+  paySumDiv: { width: 1, alignSelf: 'stretch', backgroundColor: colors.divider, marginVertical: 4 },
+  paySumVal: { color: colors.onSurface, fontSize: 15, fontWeight: '800' },
+  paySumLbl: { color: colors.mutedText, fontSize: 11, marginTop: 2 },
   empty: { color: colors.onSurfaceTertiary, marginTop: spacing.lg },
 
   erow: { flexDirection: 'row', alignItems: 'center', gap: 13, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, borderRadius: 15, padding: 13, marginBottom: 10 },
