@@ -1400,20 +1400,34 @@ def _ledger_sign(entry_type: str) -> int:
 
 async def _opening_balance(emp_id: str, up_to_date_exclusive: str) -> float:
     running = 0.0
-    async for e in db.timeline.find(
-        {'employee_id': emp_id, 'created_at': {'$lt': up_to_date_exclusive}}, {'_id': 0}
-    ).sort('created_at', 1):
+    async for e in db.timeline.find({'employee_id': emp_id}, {'_id': 0}).sort('created_at', 1):
         t = e.get('type')
-        if t in ('advance', 'bonus', 'fine', 'deduction', 'salary', 'salary_earned', 'salary_paid'):
-            amt = float(e.get('amount') or 0)
-            sign = e.get('sign', _ledger_sign(t))
-            if t in ('salary', 'salary_earned'):
-                delta = abs(amt)
-            elif t == 'salary_paid':
-                delta = -abs(amt)
-            else:
-                delta = sign * abs(amt)
-            running += delta
+        if t not in ('advance', 'bonus', 'fine', 'deduction', 'salary', 'salary_earned', 'salary_paid'):
+            continue
+        # salary_earned/salary_paid are tagged with the payroll month they belong
+        # to (year/month) — that's what decides whether they're "before" the
+        # cutoff, not created_at. Payroll for a month is normally generated and
+        # paid a day or more into the *next* month, so created_at alone would
+        # wrongly exclude last month's earned+paid pair (which cancel out) from
+        # this month's opening balance while still including a same-month
+        # advance/fine dated earlier — dropping the offsetting amount and
+        # corrupting the Payroll page's Opening Balance (the Ledger screen has
+        # no cutoff at all, so it stayed correct — hence the two disagreeing).
+        if t in ('salary_earned', 'salary_paid') and e.get('year') and e.get('month'):
+            effective_date = f"{int(e['year']):04d}-{int(e['month']):02d}-01"
+        else:
+            effective_date = e.get('created_at') or ''
+        if effective_date >= up_to_date_exclusive:
+            continue
+        amt = float(e.get('amount') or 0)
+        sign = e.get('sign', _ledger_sign(t))
+        if t in ('salary', 'salary_earned'):
+            delta = abs(amt)
+        elif t == 'salary_paid':
+            delta = -abs(amt)
+        else:
+            delta = sign * abs(amt)
+        running += delta
     return round(running, 2)
 
 
