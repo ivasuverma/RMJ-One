@@ -431,6 +431,32 @@ async def record_document(doc_id: str, body: RecordIn, user=Depends(get_current)
     return await db.documents.find_one({'id': doc_id}, _LIST_PROJECTION)
 
 
+class RecategorizeIn(BaseModel):
+    category_key: str
+
+
+@router.patch('/documents/{doc_id}/category')
+async def recategorize_document(doc_id: str, body: RecategorizeIn, user=Depends(get_current)):
+    """Move a document to a different category (e.g. it was filed under the wrong
+    one). Needs record permission on the target category."""
+    d = await db.documents.find_one({'id': doc_id, 'deleted': {'$ne': True}}, {'_id': 0, 'local_data': 0})
+    if not d:
+        raise HTTPException(status_code=404, detail='Document not found')
+    cats = await _categories_map()
+    rights = await _account_rights(user)
+    old = cats.get(d['category_key'])
+    new = cats.get(body.category_key)
+    if not new:
+        raise HTTPException(status_code=404, detail='Unknown category')
+    if not old or not _can_see(old, _role(user), rights):
+        raise HTTPException(status_code=403, detail='No access to this document')
+    if not _can_record(new, _role(user), rights):
+        raise HTTPException(status_code=403, detail='You do not have permission to file into that category')
+    await db.documents.update_one({'id': doc_id}, {'$set': {'category_key': body.category_key}})
+    await log_audit(user, 'documents.recategorize', 'document', doc_id, f"{d['category_key']} → {body.category_key}")
+    return await db.documents.find_one({'id': doc_id}, _LIST_PROJECTION)
+
+
 @router.delete('/documents/{doc_id}')
 async def delete_document(doc_id: str, user=Depends(get_current)):
     if _role(user) not in ('owner', 'admin'):

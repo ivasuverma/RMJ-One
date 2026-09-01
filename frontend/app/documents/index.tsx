@@ -70,6 +70,7 @@ export default function DocumentsScreen() {
   const [captureOpen, setCaptureOpen] = useState(capture === '1');
   const [recordDoc, setRecordDoc] = useState<Doc | null>(null);
   const [viewer, setViewer] = useState<Doc | null>(null);
+  const [recatDoc, setRecatDoc] = useState<Doc | null>(null);
   const [opening, setOpening] = useState(false);
   // Which day sections are expanded in the Done grid. Collapsed days don't
   // render their thumbnails, so only the day you open loads images — keeps a
@@ -336,7 +337,10 @@ export default function DocumentsScreen() {
       <QuickView doc={viewer} categoryLabel={viewer ? (catMap[viewer.category_key]?.label || viewer.category_key) : ''} token={token} fileUri={fileUri}
         onClose={() => setViewer(null)} onRecord={(d) => setRecordDoc(d)} canRecord={viewer ? canRecord(viewer.category_key) : false}
         canDelete={canDelete} onDelete={del} onOpenFile={openFile} opening={opening}
-        list={docs} onNavigate={(d) => setViewer(d)} />
+        list={docs} onNavigate={(d) => setViewer(d)} onChangeCategory={(d) => setRecatDoc(d)} />
+      <RecatSheet doc={recatDoc} cats={cats.filter((c) => canRecord(c.key))}
+        onClose={() => setRecatDoc(null)}
+        onDone={() => { setRecatDoc(null); setViewer(null); haptics.success(); toast.success('Category changed'); load(); }} />
     </SafeAreaView>
   );
 }
@@ -349,11 +353,11 @@ const TINTS = (c: ThemeColors) => [
 ];
 
 /* ---------------- Quick view (full-screen) ---------------- */
-function QuickView({ doc, categoryLabel, token, fileUri, onClose, onRecord, canRecord, canDelete, onDelete, onOpenFile, opening, list, onNavigate }: {
+function QuickView({ doc, categoryLabel, token, fileUri, onClose, onRecord, canRecord, canDelete, onDelete, onOpenFile, opening, list, onNavigate, onChangeCategory }: {
   doc: Doc | null; categoryLabel: string; token: string; fileUri: (id: string) => string;
   onClose: () => void; onRecord: (d: Doc) => void; canRecord: boolean; canDelete: boolean;
   onDelete: (id: string) => void; onOpenFile: (d: Doc) => void; opening: boolean;
-  list: Doc[]; onNavigate: (d: Doc) => void;
+  list: Doc[]; onNavigate: (d: Doc) => void; onChangeCategory: (d: Doc) => void;
 }) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
@@ -411,6 +415,9 @@ function QuickView({ doc, categoryLabel, token, fileUri, onClose, onRecord, canR
                 ? <Pressable onPress={() => onRecord(doc)} style={[styles.qvBtn, styles.qvBtnPrimary]} testID="qv-record"><Ionicons name="checkmark-done-outline" size={16} color={colors.onBrandPrimary} /><Text style={[styles.qvBtnText, { color: colors.onBrandPrimary }]}>Done</Text></Pressable>
                 : <Pressable onPress={() => onRecord(doc)} style={styles.qvBtn} testID="qv-edit-remark"><Ionicons name="create-outline" size={16} color={colors.onSurface} /><Text style={styles.qvBtnText}>Edit remark</Text></Pressable>
             )}
+            {canRecord && doc.status === 'done' && (
+              <Pressable onPress={() => onChangeCategory(doc)} style={styles.qvBtn} testID="qv-recat"><Ionicons name="swap-horizontal-outline" size={16} color={colors.onSurface} /><Text style={styles.qvBtnText}>Change category</Text></Pressable>
+            )}
           </View>
         </View>
       </View>
@@ -452,8 +459,43 @@ function RecordSheet({ doc, categoryLabel, onClose, onDone }: { doc: Doc | null;
   );
 }
 
+/* ---------------- Change category sheet ---------------- */
+function RecatSheet({ doc, cats, onClose, onDone }: { doc: Doc | null; cats: Cat[]; onClose: () => void; onDone: () => void }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+  const toast = useToast();
+  const [busy, setBusy] = useState('');
+  const options = cats.filter((c) => c.key !== doc?.category_key);
+
+  const pick = async (key: string) => {
+    if (!doc || busy) return;
+    setBusy(key);
+    try {
+      await api.patch(`/documents/${doc.id}/category`, { category_key: key });
+      setBusy(''); onDone();
+    } catch (e: any) { toast.error(e?.detail || 'Could not change category'); setBusy(''); }
+  };
+
+  return (
+    <Sheet visible={!!doc} onClose={onClose} title="Change category" testID="doc-recat-sheet">
+      <Text style={styles.recHint}>Move this document to a different category.</Text>
+      <View style={{ height: spacing.sm }} />
+      {options.map((c) => (
+        <Pressable key={c.key} onPress={() => pick(c.key)} disabled={!!busy} style={styles.recatRow} testID={`recat-${c.key}`}>
+          <Ionicons name="folder-outline" size={18} color={colors.brandSecondary} />
+          <Text style={styles.recatRowText}>{c.label}</Text>
+          {busy === c.key ? <ActivityIndicator size="small" color={colors.brandSecondary} /> : <Ionicons name="chevron-forward" size={16} color={colors.mutedText} />}
+        </Pressable>
+      ))}
+      {options.length === 0 && <Text style={styles.recHint}>No other category you can record into.</Text>}
+    </Sheet>
+  );
+}
+
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
+  recatRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 13, paddingHorizontal: 4, borderBottomWidth: 1, borderBottomColor: colors.border },
+  recatRowText: { flex: 1, color: colors.onSurface, fontSize: 16, fontWeight: '600' },
   scroll: { padding: spacing.lg, paddingBottom: spacing.xxxl },
   backRow: { flexDirection: 'row', alignItems: 'center', gap: 2, marginBottom: 6 },
   backText: { color: colors.brandPrimary, fontSize: 16, fontWeight: '500' },

@@ -27,7 +27,7 @@ type DashboardData = {
   };
   tasks_summary: { due_today: number; overdue: number; done_today: number; open_total: number };
   samples_summary: { with_karigar: number; overdue: number; received_today: number };
-  cashbook_summary: { received_today: number; paid_today: number; closing_balance: number };
+  cashbook_summary: { received_today: number; paid_today: number; closing_balance: number; counters?: { name: string; closing: number }[] };
   business_summary: {
     revenue_today: number; revenue_month: number; intake_today: number; active_employees: number;
     customers_open: number; karigars_open: number; fine_with_karigars: number; karigar_amt_payable: number;
@@ -172,17 +172,20 @@ export default function DashboardScreen() {
             {(() => {
               const a = data.todays_attendance; const b = data.business_summary;
               const pend = (data.pending_approvals?.attendance_corrections || 0) + (data.pending_approvals?.leave_requests || 0);
-              const tiles: { key: string; show: boolean; icon: keyof typeof Ionicons.glyphMap; label: string; value: string; sub: string; badge?: number; route: string }[] = [
-                { key: 'repairs', show: showRepairsTile, icon: 'construct-outline', label: 'Repairs', value: String(data.repairs_summary.total_open), sub: data.repairs_summary.overdue > 0 ? `${data.repairs_summary.overdue} overdue` : 'open', badge: data.repairs_summary.overdue || undefined, route: '/repairs' },
+              const counters = data.cashbook_summary.counters || [];
+              const cashSub = counters.length
+                ? counters.map((c) => `${c.name} ${fmtINR(c.closing)}`).join('  ·  ')
+                : 'closing';
+              const tiles: { key: string; show: boolean; icon: keyof typeof Ionicons.glyphMap; label: string; value: string; sub: string; badge?: number; route: string; subLines?: number }[] = [
+                { key: 'repairs', show: showRepairsTile, icon: 'construct-outline', label: 'Repairs', value: String(data.repairs_summary.total_open), sub: `${data.repairs_summary.with_karigar} issued · ${data.repairs_summary.ready} to receive`, badge: data.repairs_summary.overdue || undefined, route: '/repairs', subLines: 2 },
                 { key: 'stock', show: hasModule('samples'), icon: 'diamond-outline', label: 'Stock In/Out', value: String(data.samples_summary.with_karigar), sub: 'out', route: '/samples?status=with_karigar' },
-                { key: 'cash', show: hasModule('cash_book'), icon: 'wallet-outline', label: 'Cash Book', value: fmtINR(data.cashbook_summary.closing_balance), sub: 'closing', route: '/cashbook' },
+                { key: 'cash', show: hasModule('cash_book'), icon: 'wallet-outline', label: 'Cash Book', value: fmtINR(data.cashbook_summary.closing_balance), sub: cashSub, route: '/cashbook', subLines: 3 },
                 { key: 'documents', show: hasModule('documents'), icon: 'documents-outline', label: 'Documents', value: String(data.documents_pending || 0), sub: 'to record', badge: data.documents_pending || undefined, route: '/documents?tab=pending' },
-                { key: 'attendance', show: hasModule('attendance'), icon: 'people-outline', label: 'Attendance', value: `${a.present}/${a.total}`, sub: a.absent > 0 ? `${a.absent} absent` : 'in', route: '/(tabs)/attendance' },
-                { key: 'payroll', show: hasModule('payroll'), icon: 'cash-outline', label: 'Payroll', value: String(b.active_employees), sub: 'run salaries', route: '/(tabs)/attendance?seg=pay' },
+                { key: 'attendance', show: hasModule('attendance'), icon: 'people-outline', label: 'Attendance', value: `${a.present}/${a.total}`, sub: `in · ${a.not_checked_in} missing`, badge: a.not_checked_in || undefined, route: '/(tabs)/attendance' },
                 { key: 'tasks', show: hasModule('tasks'), icon: 'checkbox-outline', label: 'Tasks', value: String(data.tasks_summary.open_total), sub: data.tasks_summary.due_today > 0 ? `${data.tasks_summary.due_today} due today` : 'open', badge: data.tasks_summary.due_today || undefined, route: '/tasks' },
-                { key: 'customers', show: showRepairsTile || hasModule('customer_ledger'), icon: 'person-outline', label: 'Customers', value: String(b.customers_open), sub: 'ledger', route: '/reports/customer-ledger' },
-                { key: 'karigars', show: showRepairsTile || hasModule('karigar_ledger'), icon: 'hammer-outline', label: 'Karigars', value: String(b.karigars_open), sub: 'ledger', route: '/reports/karigar-ledger' },
-                { key: 'approvals', show: hasModule('approvals'), icon: 'checkmark-done-outline', label: 'Approvals', value: String(pend), sub: 'pending', badge: pend || undefined, route: '/approvals' },
+                { key: 'customers', show: showRepairsTile || hasModule('customer_ledger'), icon: 'person-outline', label: 'Customers', value: String(b.customers_open), sub: 'open ledgers', route: '/reports/customer-ledger' },
+                { key: 'karigars', show: showRepairsTile || hasModule('karigar_ledger'), icon: 'hammer-outline', label: 'Karigars', value: String(b.karigars_open), sub: `${b.fine_with_karigars.toFixed(2)}g due · ₹${Math.round(Math.abs(b.karigar_amt_payable)).toLocaleString('en-IN')} pay`, route: '/reports/karigar-ledger', subLines: 2 },
+                { key: 'approvals', show: hasModule('approvals') && pend > 0, icon: 'checkmark-done-outline', label: 'Approvals', value: String(pend), sub: 'pending', badge: pend || undefined, route: '/approvals' },
               ];
               return tiles.filter((t) => t.show).map((t) => (
                 <Pressable key={t.key} onPress={() => router.push(t.route as any)} style={({ pressed }) => [styles.tile, pressed && { opacity: 0.85 }]} testID={`dash-tile-${t.key}`}>
@@ -190,7 +193,7 @@ export default function DashboardScreen() {
                   <View style={styles.tileIcon}><Ionicons name={t.icon} size={20} color={colors.brandSecondary} /></View>
                   <Text style={styles.tileValue} numberOfLines={1}>{t.value}</Text>
                   <Text style={styles.tileLabel} numberOfLines={1}>{t.label}</Text>
-                  <Text style={styles.tileSub} numberOfLines={1}>{t.sub}</Text>
+                  <Text style={styles.tileSub} numberOfLines={t.subLines || 1}>{t.sub}</Text>
                 </Pressable>
               ));
             })()}
@@ -205,7 +208,7 @@ export default function DashboardScreen() {
           {(user?.role === 'owner' || user?.role === 'admin') && !!data.recent_activity && data.recent_activity.length > 0 && (
             <Section title="Recently recorded" icon="time-outline" testID="section-recent">
               <View style={styles.attnCard}>
-                {data.recent_activity.slice(0, 6).map((r, i, arr) => (
+                {data.recent_activity.slice(0, 5).map((r, i, arr) => (
                   <Pressable
                     key={`${r.kind}-${i}`}
                     onPress={() => router.push(r.route as any)}

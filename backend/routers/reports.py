@@ -253,12 +253,19 @@ async def _compute_dashboard() -> dict:
     # active counter (kept separate from cash_ledger / repair-bill cash
     # payments throughout, including here). Counter Bal here is the shop's
     # total cash position across all counters combined.
-    cb_counters = await db.cashbook_counters.find({'active': True}, {'_id': 0, 'id': 1}).to_list(200)
-    cb_entries_today = await db.cashbook_entries.find({'date': d}, {'_id': 0, 'type': 1, 'amount': 1}).to_list(5000)
+    cb_counters = await db.cashbook_counters.find({'active': True}, {'_id': 0, 'id': 1, 'name': 1}).to_list(200)
+    cb_entries_today = await db.cashbook_entries.find({'date': d}, {'_id': 0, 'type': 1, 'amount': 1, 'counter_id': 1}).to_list(5000)
     cb_received_today = sum(e['amount'] for e in cb_entries_today if e['type'] == 'received')
     cb_paid_today = sum(e['amount'] for e in cb_entries_today if e['type'] == 'paid')
-    cb_opening_total = sum(await asyncio.gather(*[_opening_balance_for(c['id'], d) for c in cb_counters])) if cb_counters else 0.0
+    cb_openings = await asyncio.gather(*[_opening_balance_for(c['id'], d) for c in cb_counters]) if cb_counters else []
+    cb_opening_total = sum(cb_openings)
     cb_closing = round(cb_opening_total + cb_received_today - cb_paid_today, 2)
+    # Per-counter closing so the dashboard can show each counter separately.
+    cb_counter_list = []
+    for c, opening in zip(cb_counters, cb_openings):
+        recv = sum(e['amount'] for e in cb_entries_today if e.get('counter_id') == c['id'] and e['type'] == 'received')
+        paid = sum(e['amount'] for e in cb_entries_today if e.get('counter_id') == c['id'] and e['type'] == 'paid')
+        cb_counter_list.append({'name': c.get('name', 'Counter'), 'closing': round(opening + recv - paid, 2)})
 
     return {
         'todays_attendance': {
@@ -284,7 +291,7 @@ async def _compute_dashboard() -> dict:
         },
         'cashbook_summary': {
             'received_today': round(cb_received_today, 2), 'paid_today': round(cb_paid_today, 2),
-            'closing_balance': cb_closing,
+            'closing_balance': cb_closing, 'counters': cb_counter_list,
         },
         'business_summary': {
             'revenue_today': round(revenue_today, 2), 'revenue_month': round(revenue_month, 2),
