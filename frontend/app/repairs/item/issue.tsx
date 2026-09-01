@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, Platform, KeyboardAvoidingView,
+  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, Platform, KeyboardAvoidingView, Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -37,6 +37,24 @@ export default function IssueToKarigarScreen() {
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const submittingRef = useRef(false);
+  // Inline "add karigar" from the picker.
+  const [kAddOpen, setKAddOpen] = useState(false);
+  const [newKName, setNewKName] = useState('');
+  const [newKMobile, setNewKMobile] = useState('');
+  const [savingK, setSavingK] = useState(false);
+
+  const createKarigar = async () => {
+    if (!newKName.trim()) { Alert.alert('Missing', 'Enter the karigar name'); return; }
+    if (newKMobile.replace(/\D/g, '').length < 7) { Alert.alert('Missing', 'A mobile number is required'); return; }
+    setSavingK(true);
+    try {
+      const k = await api.post<Karigar>('/karigars', { name: newKName.trim(), mobile: newKMobile.trim(), is_employee: false });
+      setKarigars((list) => [...list, k].sort((a, b) => a.name.localeCompare(b.name)));
+      setPickedKarigar(k);
+      setKAddOpen(false); setKPickerOpen(false); setNewKName(''); setNewKMobile('');
+    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Could not add karigar'); }
+    finally { setSavingK(false); }
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -178,6 +196,9 @@ export default function IssueToKarigarScreen() {
             </Pressable>
             {kPickerOpen && (
               <View style={styles.pickerList}>
+                <Pressable onPress={() => { setKAddOpen(true); setKPickerOpen(false); }} style={[styles.pickerRow, styles.addKarigarRow]} testID="issue-karigar-add">
+                  <Text style={styles.addKarigarText}>+ Add new karigar</Text>
+                </Pressable>
                 {karigars.map((k) => (
                   <Pressable key={k.id} onPress={() => { setPickedKarigar(k); setKPickerOpen(false); }} style={styles.pickerRow} testID={`issue-karigar-${k.id}`}>
                     <Text style={styles.pickerRowName}>{k.name}</Text>
@@ -216,6 +237,9 @@ export default function IssueToKarigarScreen() {
             </Pressable>
             {kPickerOpen && (
               <View style={styles.pickerList}>
+                <Pressable onPress={() => { setKAddOpen(true); setKPickerOpen(false); }} style={[styles.pickerRow, styles.addKarigarRow]} testID="issue-karigar-add">
+                  <Text style={styles.addKarigarText}>+ Add new karigar</Text>
+                </Pressable>
                 {karigars.map((k) => (
                   <Pressable key={k.id} onPress={() => { setPickedKarigar(k); setKPickerOpen(false); }} style={styles.pickerRow} testID={`issue-karigar-${k.id}`}>
                     <Text style={styles.pickerRowName}>{k.name}</Text>
@@ -237,6 +261,22 @@ export default function IssueToKarigarScreen() {
           </ScrollView>
         </KeyboardAvoidingView>
       ) : null}
+
+      <Modal visible={kAddOpen} transparent animationType="fade" onRequestClose={() => setKAddOpen(false)}>
+        <Pressable style={styles.kAddBackdrop} onPress={() => setKAddOpen(false)}>
+          <Pressable style={styles.kAddSheet} onPress={(e) => e.stopPropagation()}>
+            <Text style={styles.kAddTitle}>New karigar</Text>
+            <TextInput value={newKName} onChangeText={setNewKName} placeholder="Name" placeholderTextColor={colors.mutedText} style={styles.input} testID="new-karigar-name" />
+            <TextInput value={newKMobile} onChangeText={setNewKMobile} placeholder="Mobile number" placeholderTextColor={colors.mutedText} keyboardType="phone-pad" style={styles.input} testID="new-karigar-mobile" />
+            <View style={styles.kAddBtns}>
+              <Pressable onPress={() => setKAddOpen(false)} style={[styles.kAddBtn, styles.kAddCancel]}><Text style={styles.kAddCancelText}>Cancel</Text></Pressable>
+              <Pressable onPress={createKarigar} disabled={savingK} style={[styles.kAddBtn, styles.kAddSave, savingK && { opacity: 0.6 }]} testID="new-karigar-save">
+                {savingK ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.kAddSaveText}>Add karigar</Text>}
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -289,6 +329,17 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   pickerPlaceholder: { color: colors.mutedText, fontSize: 14 },
   pickerList: { backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, marginTop: spacing.xs, maxHeight: 220 },
   pickerRow: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: spacing.md, paddingVertical: 10 },
+  addKarigarRow: { borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: colors.brandTertiary },
+  addKarigarText: { color: colors.brandSecondary, fontSize: 14, fontWeight: '800' },
+  kAddBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: spacing.lg },
+  kAddSheet: { backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.lg, gap: spacing.sm },
+  kAddTitle: { color: colors.onSurface, fontSize: 18, fontWeight: '800', fontFamily: fonts.display, marginBottom: spacing.xs },
+  kAddBtns: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
+  kAddBtn: { flex: 1, paddingVertical: 13, borderRadius: radius.md, alignItems: 'center' },
+  kAddCancel: { backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border },
+  kAddCancelText: { color: colors.onSurfaceSecondary, fontWeight: '700' },
+  kAddSave: { backgroundColor: colors.brandPrimary },
+  kAddSaveText: { color: colors.onBrandPrimary, fontWeight: '800' },
   pickerRowName: { color: colors.onSurface, fontSize: 13, fontWeight: '600' },
   pickerRowMeta: { color: colors.mutedText, fontSize: 12 },
 
