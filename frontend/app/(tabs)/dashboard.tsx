@@ -155,7 +155,7 @@ export default function DashboardScreen() {
       {/* Search bar (Apple §16: direct, always-visible) */}
       <Pressable onPress={() => setSearchOpen(true)} style={styles.headerSearch} testID="dashboard-search-btn">
         <Ionicons name="search-outline" size={17} color={colors.mutedText} />
-        <Text style={styles.headerSearchText}>Search customers, karigars, staff…</Text>
+        <Text style={styles.headerSearchText}>Search customers, karigars, staff, transactions…</Text>
       </Pressable>
 
       {loading ? (
@@ -472,7 +472,7 @@ function ComposeSheet({ visible, onClose }: { visible: boolean; onClose: () => v
 }
 
 /* ---------------- Global search overlay ---------------- */
-type SearchHit = { kind: 'customer' | 'karigar' | 'employee'; id: string; name: string; sub?: string; route: string };
+type SearchHit = { kind: 'customer' | 'karigar' | 'employee' | 'transaction'; id: string; name: string; sub?: string; route: string };
 
 function SearchOverlay({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const { colors } = useTheme();
@@ -501,6 +501,9 @@ function SearchOverlay({ visible, onClose }: { visible: boolean; onClose: () => 
       if (hasModule('team') || hasModule('payroll')) {
         reqs.push(api.get<any[]>(`/employees?q=${encodeURIComponent(query)}`).then((es) => es.slice(0, 8).map((e) => ({ kind: 'employee' as const, id: e.id, name: e.name, sub: e.employee_code, route: `/ledger/${e.id}` }))).catch(() => []));
       }
+      if (hasModule('ledger')) {
+        reqs.push(api.get<any[]>(`/accounts/entries/search?q=${encodeURIComponent(query)}`).then((es) => es.slice(0, 8).map((e) => ({ kind: 'transaction' as const, id: e.id, name: e.particulars, sub: e.account_name, route: `/accounts/${e.account_id}` }))).catch(() => []));
+      }
       const results = (await Promise.all(reqs)).flat();
       setHits(results);
     } finally { setSearching(false); }
@@ -516,6 +519,7 @@ function SearchOverlay({ visible, onClose }: { visible: boolean; onClose: () => 
 
   const KIND_ICON: Record<SearchHit['kind'], keyof typeof Ionicons.glyphMap> = {
     customer: 'person-outline', karigar: 'hammer-outline', employee: 'people-outline',
+    transaction: 'receipt-outline',
   };
 
   return (
@@ -526,7 +530,7 @@ function SearchOverlay({ visible, onClose }: { visible: boolean; onClose: () => 
           <TextInput
             value={q}
             onChangeText={onChange}
-            placeholder="Search customers, karigars, staff…"
+            placeholder="Search customers, karigars, staff, transactions…"
             placeholderTextColor={colors.mutedText}
             style={styles.searchInput}
             autoFocus

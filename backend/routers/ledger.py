@@ -277,11 +277,11 @@ async def list_accounts(
     if type_id:
         query['type_id'] = type_id
     if q:
-        import re
         q_esc = re.escape(q)
         query['$or'] = [
             {'name': {'$regex': q_esc, '$options': 'i'}},
             {'phone': {'$regex': q_esc, '$options': 'i'}},
+            {'note': {'$regex': q_esc, '$options': 'i'}},
         ]
     accounts = await db.accounts.find(query, {'_id': 0}).sort('name', 1).to_list(2000)
     type_names = {t['id']: t['name'] async for t in db.account_types.find({}, {'_id': 0, 'id': 1, 'name': 1})}
@@ -301,6 +301,33 @@ async def list_accounts(
         'net_amount': round(net_amount, 2),
         'count': len(accounts),
     }
+
+
+@router.get('/accounts/entries/search')
+async def search_account_entries(q: str, _: dict = Depends(require_staff_or_module('ledger'))):
+    """Cross-account text search over manual ledger entries — matches
+    particulars/note, not account name (see GET /accounts?q= for that). Feeds
+    the global search on Dashboard/Work so a specific transaction (e.g. a
+    remark on a karigar entry) can be found without knowing which account it's
+    on."""
+    q = (q or '').strip()
+    if not q:
+        return []
+    q_esc = re.escape(q)
+    entries = await db.ledger_entries.find(
+        {'$or': [{'particulars': {'$regex': q_esc, '$options': 'i'}}, {'note': {'$regex': q_esc, '$options': 'i'}}]},
+        {'_id': 0},
+    ).sort('date', -1).to_list(20)
+    acc_ids = list({e['account_id'] for e in entries})
+    accounts = {a['id']: a async for a in db.accounts.find({'id': {'$in': acc_ids}}, {'_id': 0, 'id': 1, 'name': 1, 'type_id': 1})}
+    type_names = {t['id']: t['name'] async for t in db.account_types.find({}, {'_id': 0, 'id': 1, 'name': 1})}
+    out = []
+    for e in entries:
+        acc = accounts.get(e['account_id'])
+        if not acc:
+            continue
+        out.append({**e, 'account_name': acc['name'], 'account_type': type_names.get(acc.get('type_id'), '')})
+    return out
 
 
 @router.post('/accounts')
