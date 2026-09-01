@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, ActivityIndicator, Pressable, Platform, RefreshControl, Alert, Share,
+  View, Text, StyleSheet, ScrollView, ActivityIndicator, Pressable, Platform, RefreshControl, Alert, Share, Switch,
 } from 'react-native';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '@/src/api/client';
+import { useAuth } from '@/src/auth/AuthContext';
 import { confirmAction } from '@/src/utils/confirm';
 import { displayDateOnly } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
@@ -28,10 +29,25 @@ type Emp = {
   auto_advance_amount?: number | null; auto_advance_day?: number | null;
 };
 
-type Tab = 'basic' | 'work' | 'salary' | 'legal' | 'bank';
+// Access/notifications editor, imported here from Settings > People & Roles
+// (settings/person/[id].tsx) so an owner can manage a person's access right
+// from their profile instead of a separate screen.
+type ModuleDef = { key: string; label: string; default_roles: string[]; employee_assignable?: boolean };
+type Rights = { edit?: boolean; delete?: boolean };
+type Counter = { id: string; name: string };
+type NotifModule = { key: string; label: string; default_roles: string[]; events?: { key: string; label: string }[] };
+type AccessAccount = {
+  id: string; module_access: string[] | null; resolved_modules: string[];
+  module_rights?: Record<string, Rights>; cashbook_counter_ids?: string[];
+  notifications_enabled?: boolean; notif_prefs?: Record<string, boolean>;
+};
+
+type Tab = 'profile' | 'legal' | 'notifications' | 'access';
 const TABS: { key: Tab; label: string }[] = [
-  { key: 'basic', label: 'Basic' }, { key: 'work', label: 'Work' }, { key: 'salary', label: 'Salary' },
-  { key: 'legal', label: 'Legal' }, { key: 'bank', label: 'Bank' },
+  { key: 'profile', label: 'Profile' }, { key: 'legal', label: 'Legal & Bank' },
+];
+const OWNER_TABS: { key: Tab; label: string }[] = [
+  ...TABS, { key: 'notifications', label: 'Notifications' }, { key: 'access', label: 'Access' },
 ];
 
 function pickIdProofFile(): Promise<{ name: string; dataUri: string } | null> {
@@ -64,13 +80,26 @@ export default function EmployeeProfile() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { colors } = useTheme();
+  const { user } = useAuth();
+  const isOwner = user?.role === 'owner';
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [emp, setEmp] = useState<Emp | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [sharingCreds, setSharingCreds] = useState(false);
   const [locations, setLocations] = useState<Location[]>([]);
-  const [tab, setTab] = useState<Tab>('basic');
+  const [tab, setTab] = useState<Tab>('profile');
+
+  // Access tab state
+  const [modules, setModules] = useState<ModuleDef[]>([]);
+  const [notifModules, setNotifModules] = useState<NotifModule[]>([]);
+  const [counters, setCounters] = useState<Counter[]>([]);
+  const [mods, setMods] = useState<Set<string>>(new Set());
+  const [rights, setRights] = useState<Record<string, Rights>>({});
+  const [counterSel, setCounterSel] = useState<Set<string>>(new Set());
+  const [notifOn, setNotifOn] = useState(true);
+  const [notifPrefs, setNotifPrefs] = useState<Record<string, boolean>>({});
+  const [savingAccess, setSavingAccess] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -84,8 +113,62 @@ export default function EmployeeProfile() {
     }
   }, [id]);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  const loadAccess = useCallback(async () => {
+    if (!isOwner || !id) return;
+    try {
+      const [accts, m, nm, c] = await Promise.all([
+        api.get<AccessAccount[]>('/access/accounts'),
+        api.get<ModuleDef[]>('/access/modules'),
+        api.get<NotifModule[]>('/access/notification-modules').catch(() => []),
+        api.get<Counter[]>('/cashbook/counters').catch(() => []),
+      ]);
+      setModules(m); setNotifModules(nm); setCounters(c);
+      const a = accts.find((x) => x.id === id);
+      if (a) {
+        setMods(new Set(a.resolved_modules));
+        setRights({ ...(a.module_rights || {}) });
+        setCounterSel(new Set(a.cashbook_counter_ids || []));
+        setNotifOn(a.notifications_enabled !== false);
+        const prefs: Record<string, boolean> = {};
+        for (const nmod of nm) {
+          prefs[nmod.key] = a.notif_prefs && nmod.key in a.notif_prefs
+            ? !!a.notif_prefs[nmod.key]
+            : nmod.default_roles.includes('employee');
+        }
+        setNotifPrefs(prefs);
+      }
+    } catch { /* owner-only endpoint */ }
+  }, [id, isOwner]);
+
+  useFocusEffect(useCallback(() => { load(); loadAccess(); }, [load, loadAccess]));
   useEffect(() => { api.get<Location[]>('/locations').then(setLocations).catch(() => setLocations([])); }, []);
+
+  const availableModules = useMemo(() => modules.filter((m) => m.employee_assignable), [modules]);
+  const toggleMod = (k: string) => setMods((p) => { const n = new Set(p); n.has(k) ? n.delete(k) : n.add(k); return n; });
+  const toggleCounter = (cid: string) => setCounterSel((p) => { const n = new Set(p); n.has(cid) ? n.delete(cid) : n.add(cid); return n; });
+  const toggleRight = (k: string, which: 'edit' | 'delete') => setRights((p) => {
+    const r = { ...(p[k] || {}) }; r[which] = !r[which]; return { ...p, [k]: r };
+  });
+
+  const saveAccess = async () => {
+    if (!emp || savingAccess) return;
+    setSavingAccess(true);
+    try {
+      const mr: Record<string, Rights> = {};
+      for (const m of availableModules) {
+        if (!mods.has(m.key)) continue;
+        const r = rights[m.key];
+        if (r) mr[m.key] = { edit: !!r.edit, delete: !!r.delete };
+      }
+      await api.put(`/access/accounts/${emp.id}`, {
+        notifications_enabled: notifOn, notif_prefs: notifPrefs,
+        module_access: Array.from(mods), module_rights: mr,
+        cashbook_counter_ids: mods.has('cash_book') ? Array.from(counterSel) : [],
+      });
+      Alert.alert('Saved', 'Access & notification settings updated.');
+    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+    finally { setSavingAccess(false); }
+  };
 
   const onDelete = () => {
     confirmAction('Delete employee', 'This cannot be undone.', 'Delete', async () => {
@@ -149,6 +232,7 @@ export default function EmployeeProfile() {
 
   const initials = emp.name.trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() || '').join('');
   const locationName = locations.find((l) => l.id === emp.location_id)?.name || '—';
+  const tabsList = isOwner ? OWNER_TABS : TABS;
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="employee-profile">
@@ -171,7 +255,7 @@ export default function EmployeeProfile() {
 
       <ScrollView
         contentContainerStyle={{ paddingBottom: spacing.xxxl }}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); loadAccess(); }} tintColor={colors.brandPrimary} />}
         showsVerticalScrollIndicator={false}
       >
         {/* Identity block — photo, name, status. Actions live in the tabs below. */}
@@ -195,13 +279,14 @@ export default function EmployeeProfile() {
         </View>
 
         <View style={{ paddingHorizontal: spacing.lg, marginTop: spacing.md }}>
-          <SegmentedControl options={TABS.map((t) => ({ key: t.key, label: t.label }))} value={tab} onChange={(k) => setTab(k as Tab)} testID="profile-tabs" />
+          <SegmentedControl options={tabsList.map((t) => ({ key: t.key, label: t.label }))} value={tab} onChange={(k) => setTab(k as Tab)} testID="profile-tabs" />
         </View>
 
         <View style={{ paddingHorizontal: spacing.lg, marginTop: spacing.lg }}>
           <View style={styles.detailCard}>
-            {tab === 'basic' && (
+            {tab === 'profile' && (
               <>
+                <SectionTitle text="Basic" />
                 <DetailRow label="Mobile" value={emp.mobile || '—'} />
                 <DetailRow label="Address" value={emp.address || '—'} />
                 <DetailRow label="Gender" value={fmtGender(emp.gender)} />
@@ -212,20 +297,16 @@ export default function EmployeeProfile() {
                     <Text style={styles.notes}>{emp.notes}</Text>
                   </>
                 )}
-              </>
-            )}
-            {tab === 'work' && (
-              <>
+
+                <SectionTitle text="Work" />
                 <DetailRow label="Department" value={emp.department || '—'} />
                 <DetailRow label="Location / Branch" value={locationName} />
                 <DetailRow label="Designation" value={emp.designation || '—'} />
                 <DetailRow label="Shift" value={emp.shift || '—'} />
                 <DetailRow label="Joined" value={fmtJoinDate(emp.joining_date)} />
                 <DetailRow label="Biometric ID" value={emp.biometric_id || '—'} />
-              </>
-            )}
-            {tab === 'salary' && (
-              <>
+
+                <SectionTitle text="Salary" />
                 <DetailRow label="Base Salary" value={`₹${Math.round(emp.salary || 0).toLocaleString('en-IN')}/mo`} />
                 <DetailRow label="Auto Advance" value={emp.auto_advance_amount ? `₹${Math.round(emp.auto_advance_amount).toLocaleString('en-IN')} on day ${emp.auto_advance_day}` : 'Off'} />
                 <Pressable onPress={() => router.push(`/ledger/${emp.id}`)} style={styles.ledgerLink} testID="open-ledger-btn">
@@ -237,18 +318,110 @@ export default function EmployeeProfile() {
             )}
             {tab === 'legal' && (
               <>
+                <SectionTitle text="Legal" />
                 <DetailRow label="Aadhaar" value={emp.aadhaar || '—'} />
                 <DetailRow label="PAN" value={emp.pan || '—'} />
                 <SectionTitle text="ID Proofs" />
                 <IdProofsSection empId={emp.id} proofs={emp.id_proofs || []} onChange={load} />
                 <RecordPhotos refType="employee" refId={emp.id} label="Photos" />
-              </>
-            )}
-            {tab === 'bank' && (
-              <>
+
+                <SectionTitle text="Bank" />
                 <DetailRow label="Bank" value={emp.bank_name || '—'} />
                 <DetailRow label="Account" value={emp.bank_account || '—'} />
                 <DetailRow label="IFSC" value={emp.bank_ifsc || '—'} />
+              </>
+            )}
+            {tab === 'notifications' && isOwner && (
+              <>
+                <SectionTitle text="Notifications" />
+                <View style={styles.switchRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.switchTitle}>Allow notifications</Text>
+                    <Text style={styles.switchSub}>Push &amp; in-app alerts for this person</Text>
+                  </View>
+                  <Switch value={notifOn} onValueChange={setNotifOn} trackColor={{ true: colors.brandPrimary, false: colors.border }} thumbColor={colors.surface} testID="emp-notif-master" />
+                </View>
+                {notifOn && notifModules.map((nm) => {
+                  const on = notifPrefs[nm.key] !== false;
+                  return (
+                    <View key={nm.key}>
+                      <View style={styles.switchRow}>
+                        <Text style={styles.notifModLabel}>{nm.label}</Text>
+                        <Switch
+                          value={on}
+                          onValueChange={(v) => setNotifPrefs((p) => ({ ...p, [nm.key]: v }))}
+                          trackColor={{ true: colors.brandPrimary, false: colors.border }}
+                          thumbColor={colors.surface}
+                          testID={`emp-notif-${nm.key}`}
+                        />
+                      </View>
+                      {on && (nm.events || []).length > 0 && (
+                        <View style={styles.eventList}>
+                          {(nm.events || []).map((ev) => (
+                            <View key={ev.key} style={styles.eventRow}>
+                              <Ionicons name="ellipse" size={5} color={colors.brandSecondary} />
+                              <Text style={styles.eventText}>{ev.label}</Text>
+                            </View>
+                          ))}
+                        </View>
+                      )}
+                    </View>
+                  );
+                })}
+
+                <Pressable onPress={saveAccess} disabled={savingAccess} style={[styles.saveAccessBtn, savingAccess && { opacity: 0.6 }]} testID="emp-save-notifications">
+                  {savingAccess ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.saveAccessText}>Save notifications</Text>}
+                </Pressable>
+              </>
+            )}
+            {tab === 'access' && isOwner && (
+              <>
+                <SectionTitle text="Access" />
+                {availableModules.map((m) => {
+                  const on = mods.has(m.key);
+                  const showRights = on && m.employee_assignable;
+                  const r = rights[m.key] || {};
+                  return (
+                    <View key={m.key}>
+                      <Pressable onPress={() => toggleMod(m.key)} style={styles.modRow} testID={`emp-mod-${m.key}`}>
+                        <View style={[styles.checkbox, on && styles.checkboxOn]}>{on && <Ionicons name="checkmark" size={13} color={colors.onBrandPrimary} />}</View>
+                        <Text style={styles.modLabel}>{m.label}</Text>
+                      </Pressable>
+                      {showRights && (
+                        <View style={styles.chipRow}>
+                          <Pressable onPress={() => toggleRight(m.key, 'edit')} style={[styles.chip, r.edit && styles.chipOn]} testID={`emp-edit-${m.key}`}>
+                            <Ionicons name={r.edit ? 'checkmark-circle' : 'ellipse-outline'} size={13} color={r.edit ? colors.onBrandPrimary : colors.mutedText} />
+                            <Text style={[styles.chipText, r.edit && styles.chipTextOn]}>Edit</Text>
+                          </Pressable>
+                          <Pressable onPress={() => toggleRight(m.key, 'delete')} style={[styles.chip, r.delete && styles.chipOn]} testID={`emp-delete-${m.key}`}>
+                            <Ionicons name={r.delete ? 'checkmark-circle' : 'ellipse-outline'} size={13} color={r.delete ? colors.onBrandPrimary : colors.mutedText} />
+                            <Text style={[styles.chipText, r.delete && styles.chipTextOn]}>Delete</Text>
+                          </Pressable>
+                        </View>
+                      )}
+                      {on && m.key === 'cash_book' && (
+                        <View style={styles.countersBox}>
+                          <Text style={styles.countersLabel}>{counters.length === 0 ? 'No Cash Book counters yet' : 'Counters this person can see'}</Text>
+                          <View style={styles.chipRow}>
+                            {counters.map((c) => {
+                              const con = counterSel.has(c.id);
+                              return (
+                                <Pressable key={c.id} onPress={() => toggleCounter(c.id)} style={[styles.chip, con && styles.chipOn]} testID={`emp-counter-${c.id}`}>
+                                  <Ionicons name={con ? 'checkmark-circle' : 'ellipse-outline'} size={13} color={con ? colors.onBrandPrimary : colors.mutedText} />
+                                  <Text style={[styles.chipText, con && styles.chipTextOn]}>{c.name}</Text>
+                                </Pressable>
+                              );
+                            })}
+                          </View>
+                        </View>
+                      )}
+                    </View>
+                  );
+                })}
+
+                <Pressable onPress={saveAccess} disabled={savingAccess} style={[styles.saveAccessBtn, savingAccess && { opacity: 0.6 }]} testID="emp-save-access">
+                  {savingAccess ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.saveAccessText}>Save access</Text>}
+                </Pressable>
               </>
             )}
           </View>
@@ -453,4 +626,28 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     paddingVertical: 12, marginTop: spacing.xs,
   },
   uploadBtnText: { color: colors.brandPrimary, fontWeight: '700', fontSize: 13 },
+
+  // Access tab
+  switchRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.divider },
+  switchTitle: { color: colors.onSurface, fontSize: 14, fontWeight: '600' },
+  switchSub: { color: colors.mutedText, fontSize: 11.5, marginTop: 2 },
+  notifModLabel: { flex: 1, color: colors.onSurfaceSecondary, fontSize: 14 },
+  eventList: { paddingLeft: 4, paddingBottom: 10, gap: 5 },
+  eventRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  eventText: { color: colors.mutedText, fontSize: 12.5, flex: 1 },
+
+  modRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: 9 },
+  checkbox: { width: 20, height: 20, borderRadius: 5, borderWidth: 1.5, borderColor: colors.border, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface },
+  checkboxOn: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
+  modLabel: { color: colors.onSurface, fontSize: 14.5 },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, paddingLeft: 28, paddingBottom: 8 },
+  chip: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface },
+  chipOn: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
+  chipText: { color: colors.mutedText, fontSize: 11, fontWeight: '600' },
+  chipTextOn: { color: colors.onBrandPrimary },
+  countersBox: { paddingLeft: 28, paddingBottom: 6 },
+  countersLabel: { color: colors.mutedText, fontSize: 10.5, fontWeight: '600', marginBottom: 6 },
+
+  saveAccessBtn: { backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: 14, alignItems: 'center', marginTop: spacing.lg },
+  saveAccessText: { color: colors.onBrandPrimary, fontSize: 14, fontWeight: '700' },
 });

@@ -96,7 +96,7 @@ export default function PeopleScreen() {
     <SafeAreaView style={styles.root} edges={['top']} testID="people-screen">
       <View style={styles.header}>
         <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}><Ionicons name="chevron-back" size={22} color={colors.onSurface} /></Pressable>
-        <Text style={styles.title}>People & Roles</Text>
+        <Text style={styles.title}>Users</Text>
         <Pressable onPress={() => setShowAdd((v) => !v)} style={[styles.iconBtn, styles.addBtn]} testID="add-staff-btn" hitSlop={12}><Ionicons name={showAdd ? 'close' : 'add'} size={22} color={colors.onBrandPrimary} /></Pressable>
       </View>
 

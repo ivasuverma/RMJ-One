@@ -23,9 +23,8 @@ const GROUPS: GroupDef[] = [
     ],
   },
   {
-    title: 'Team & Hardware',
+    title: 'Hardware & Store',
     rows: [
-      { key: 'team', label: 'Employees', sub: 'Your team', icon: 'people-outline', route: '/(tabs)/employees' },
       { key: 'biometric', label: 'Biometric Devices', sub: 'Attendance hardware', icon: 'hardware-chip-outline', route: '/settings/biometric' },
       { key: 'store', label: 'Store Settings', sub: 'Shop profile & hours', icon: 'storefront-outline', route: '/store-settings' },
     ],
