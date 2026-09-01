@@ -106,8 +106,10 @@ export default function DocumentsScreen() {
     setToken((await storage.secureGet<string>(TOKEN_KEY, '')) || '');
     api.get<Cat[]>('/document-categories').then(setCats).catch(() => {});
     api.get<Summary>('/documents/summary').then(setSummary).catch(() => {});
-    // Folder view (Done, no category picked) needs no doc list — folders come from the summary.
-    if (tab === 'done' && !doneCat) { setDocs([]); setLoading(false); setRefreshing(false); return; }
+    // Folder view (Done, no category picked, no search) needs no doc list —
+    // folders come from the summary. But a search at the folder level runs a
+    // UNIVERSAL search across every category (no category param below).
+    if (tab === 'done' && !doneCat && !q.trim()) { setDocs([]); setLoading(false); setRefreshing(false); return; }
     const params = new URLSearchParams({ status: tab });
     const cat = tab === 'done' ? doneCat! : (catFilter !== 'all' ? catFilter : '');
     if (cat) params.set('category', cat);
@@ -175,15 +177,55 @@ export default function DocumentsScreen() {
           <View key={g.day}>
             <Text style={styles.dayHeader}>{istDisplayDate(g.items[0]?.created_at) || g.day}</Text>
             <View style={styles.grid}>
-              {g.items.map((d) => (
-                <Pressable key={d.id} onPress={() => setViewer(d)} style={styles.gridItem} testID={`doc-grid-${d.id}`}>
-                  <Thumb d={d} size={GRID} />
-                  {d.upload_state === 'synced' && <View style={styles.syncBadge}><Ionicons name="cloud-done" size={11} color={colors.onSuccess} /></View>}
-                </Pressable>
-              ))}
+              {g.items.map((d) => {
+                const cap = (d.note || d.linked_ref?.label || '').trim();
+                return (
+                  <Pressable key={d.id} onPress={() => setViewer(d)} style={[styles.gridItem, { width: GRID }]} testID={`doc-grid-${d.id}`}>
+                    <View>
+                      <Thumb d={d} size={GRID} />
+                      {d.upload_state === 'synced' && <View style={styles.syncBadge}><Ionicons name="cloud-done" size={11} color={colors.onSuccess} /></View>}
+                    </View>
+                    {!!cap && <Text style={styles.gridCaption} numberOfLines={2}>{cap}</Text>}
+                  </Pressable>
+                );
+              })}
             </View>
           </View>
         ))
+      )}
+    </>
+  );
+
+  // Done landing: one search box that searches EVERY category at once. With a
+  // query it shows cross-category results (each row tagged with its category);
+  // empty, it shows the category folders.
+  const doneRoot = () => (
+    <>
+      <View style={styles.searchWrap}>
+        <Ionicons name="search" size={16} color={colors.mutedText} />
+        <TextInput value={q} onChangeText={setQ} onSubmitEditing={load} placeholder="Search all recorded documents" placeholderTextColor={colors.mutedText} style={styles.searchInput} returnKeyType="search" testID="doc-done-search-all" />
+        {q.length > 0 && <Pressable onPress={() => { setQ(''); setTimeout(load, 0); }} hitSlop={8}><Ionicons name="close-circle" size={16} color={colors.mutedText} /></Pressable>}
+      </View>
+      {!q.trim() ? foldersView() : (
+        docs.length === 0 ? <View style={styles.empty}><Text style={styles.emptyText}>No matches across any category.</Text></View> : (
+          groupByDay(docs).map((g) => (
+            <View key={g.day}>
+              <Text style={styles.dayHeader}>{istDisplayDate(g.items[0]?.created_at) || g.day}</Text>
+              {g.items.map((d) => (
+                <View key={d.id} style={styles.row} testID={`doc-result-${d.id}`}>
+                  <Pressable onPress={() => setViewer(d)} style={styles.rowMain}>
+                    <Thumb d={d} size={46} />
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={styles.docName} numberOfLines={1}>{docTitle(d, catMap[d.category_key]?.label)}</Text>
+                      <Text style={styles.docMeta} numberOfLines={1}>{catMap[d.category_key]?.label || d.category_key} · {istTime(d.created_at)}{d.uploaded_by_name ? ` · ${d.uploaded_by_name}` : ''}</Text>
+                    </View>
+                  </Pressable>
+                  {d.upload_state === 'synced' && <Ionicons name="cloud-done" size={15} color={colors.onSuccess} />}
+                </View>
+              ))}
+            </View>
+          ))
+        )
       )}
     </>
   );
@@ -264,7 +306,7 @@ export default function DocumentsScreen() {
           </>
         )}
 
-        {tab === 'done' && (loading ? <ActivityIndicator color={colors.brandPrimary} style={{ marginTop: 30 }} /> : (doneCat ? gridView() : foldersView()))}
+        {tab === 'done' && (loading ? <ActivityIndicator color={colors.brandPrimary} style={{ marginTop: 30 }} /> : (doneCat ? gridView() : doneRoot()))}
 
         <View style={{ height: spacing.xxxl }} />
       </ScrollView>
@@ -284,7 +326,8 @@ export default function DocumentsScreen() {
   );
 }
 
-const GRID = Math.floor((360 - spacing.lg * 2 - 16) / 3);
+// 4-up condensed grid (was 3-up). Tighter gaps, smaller tiles.
+const GRID = Math.floor((360 - spacing.lg * 2 - 6 * 3) / 4);
 const TINTS = (c: ThemeColors) => [
   { bg: c.brandTertiary, fg: c.brandSecondary }, { bg: c.success, fg: c.onSuccess }, { bg: c.info, fg: c.onInfo },
   { bg: c.warning, fg: c.onWarning }, { bg: c.error, fg: c.onError },
@@ -440,8 +483,9 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   folderCount: { color: colors.mutedText, fontSize: 16, fontWeight: '600' },
 
   // Done grid
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: spacing.md },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: spacing.md },
   gridItem: { position: 'relative' },
+  gridCaption: { color: colors.onSurfaceSecondary, fontSize: 10, marginTop: 3, lineHeight: 13 },
   syncBadge: { position: 'absolute', right: 5, bottom: 5, width: 18, height: 18, borderRadius: 9, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center' },
 
   empty: { alignItems: 'center', paddingVertical: 40, gap: spacing.sm },
