@@ -254,14 +254,30 @@ export default function NewRepairOrderScreen() {
               </View>
             )}
 
-            <Text style={styles.label}>Description</Text>
-            <TextInput testID="item-description" value={draft.description} onChangeText={(v) => setDraft((d) => ({ ...d, description: v }))} placeholder="e.g. Gold chain, broken clasp" placeholderTextColor={colors.mutedText} style={styles.input} />
+            <View style={styles.row2}>
+              <View style={{ flex: 1.6 }}>
+                <Text style={styles.label}>Description</Text>
+                <TextInput testID="item-description" value={draft.description} onChangeText={(v) => setDraft((d) => ({ ...d, description: v }))} placeholder="e.g. Gold chain, clasp" placeholderTextColor={colors.mutedText} style={styles.input} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>Weight (g)</Text>
+                <TextInput testID="item-weight" value={draft.gross_weight} onChangeText={(v) => setDraft((d) => ({ ...d, gross_weight: v.replace(/[^0-9.]/g, '') }))} keyboardType="decimal-pad" placeholder="0.000" placeholderTextColor={colors.mutedText} style={styles.input} />
+              </View>
+            </View>
 
-            <Text style={styles.label}>Repair Type</Text>
-            <Pressable onPress={() => setRtPickerOpen((v) => !v)} style={styles.picker} testID="item-rt-toggle">
-              <Text style={draft.repair_type ? styles.pickerValue : styles.pickerPlaceholder}>{draft.repair_type || 'Choose a repair type (optional)'}</Text>
-              <Ionicons name={rtPickerOpen ? 'chevron-up' : 'chevron-down'} size={16} color={colors.mutedText} />
-            </Pressable>
+            <View style={styles.row2}>
+              <View style={{ flex: 1.4 }}>
+                <Text style={styles.label}>Repair Type</Text>
+                <Pressable onPress={() => setRtPickerOpen((v) => !v)} style={styles.picker} testID="item-rt-toggle">
+                  <Text style={draft.repair_type ? styles.pickerValue : styles.pickerPlaceholder} numberOfLines={1}>{draft.repair_type || 'Choose'}</Text>
+                  <Ionicons name={rtPickerOpen ? 'chevron-up' : 'chevron-down'} size={16} color={colors.mutedText} />
+                </Pressable>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>Labour (₹)</Text>
+                <TextInput testID="item-labour" value={draft.labour_charge} onChangeText={(v) => setDraft((d) => ({ ...d, labour_charge: v.replace(/[^0-9.]/g, '') }))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />
+              </View>
+            </View>
             {rtPickerOpen && (
               <View style={styles.pickerList}>
                 {repairTypes.filter((rt) => rt.active).map((rt) => (
@@ -274,23 +290,9 @@ export default function NewRepairOrderScreen() {
               </View>
             )}
 
-            <View style={styles.row2}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.label}>Gross Weight (g)</Text>
-                <TextInput testID="item-weight" value={draft.gross_weight} onChangeText={(v) => setDraft((d) => ({ ...d, gross_weight: v.replace(/[^0-9.]/g, '') }))} keyboardType="decimal-pad" placeholder="0.000" placeholderTextColor={colors.mutedText} style={styles.input} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.label}>Pieces</Text>
-                <TextInput testID="item-pcs" value={draft.pc_count} onChangeText={(v) => setDraft((d) => ({ ...d, pc_count: v.replace(/[^0-9]/g, '') }))} keyboardType="number-pad" placeholder="1" placeholderTextColor={colors.mutedText} style={styles.input} />
-              </View>
-            </View>
-
-            <Text style={styles.label}>Labour Charge (₹)</Text>
-            <TextInput testID="item-labour" value={draft.labour_charge} onChangeText={(v) => setDraft((d) => ({ ...d, labour_charge: v.replace(/[^0-9.]/g, '') }))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />
-
             <DateField label="Due Date" value={draft.due_date} onChange={(v) => setDraft((d) => ({ ...d, due_date: v }))} testID="item-due" />
             <View style={styles.chipRow}>
-              {[3, 7, 15, 30].map((n) => (
+              {[1, 3, 7, 15, 30].map((n) => (
                 <Pressable key={n} onPress={() => setDraft((d) => ({ ...d, due_date: addDays(n) }))} style={styles.dayChip} testID={`due-in-${n}`}>
                   <Text style={styles.dayChipText}>+{n}d</Text>
                 </Pressable>
@@ -301,9 +303,6 @@ export default function NewRepairOrderScreen() {
               <View style={[styles.checkbox, draft.needs_karigar && styles.checkboxOn]}>{draft.needs_karigar && <Ionicons name="checkmark" size={13} color={colors.onBrandPrimary} />}</View>
               <Text style={styles.checkLabel}>Needs to be issued to a karigar</Text>
             </Pressable>
-
-            <Text style={styles.label}>Notes (optional)</Text>
-            <TextInput testID="item-notes" value={draft.notes} onChangeText={(v) => setDraft((d) => ({ ...d, notes: v }))} placeholder="Stone details, special instructions…" placeholderTextColor={colors.mutedText} style={styles.input} />
 
             <Text style={styles.label}>Reference Photo (optional)</Text>
             {draft.intake_photo ? (
@@ -337,7 +336,7 @@ export default function NewRepairOrderScreen() {
                   {i.intake_photo ? <Image source={{ uri: i.intake_photo }} style={styles.itemThumb} /> : null}
                   <View style={{ flex: 1 }}>
                     <Text style={styles.cName}>{i.item_type_name ? `${i.item_type_name} · ` : ''}{i.description}</Text>
-                    <Text style={styles.cMeta}>{i.repair_type || 'No type'} · {i.gross_weight || '0'}g · {i.pc_count} pc{i.pc_count === '1' ? '' : 's'} · ₹{i.labour_charge || '0'}{i.needs_karigar ? ' · karigar' : ''}</Text>
+                    <Text style={styles.cMeta}>{i.repair_type || 'No type'} · {i.gross_weight || '0'}g · ₹{i.labour_charge || '0'}{i.needs_karigar ? ' · karigar' : ''}</Text>
                   </View>
                   <Pressable onPress={() => removeItem(i.key)} style={styles.delBtn} hitSlop={10} testID={`remove-item-${i.key}`}>
                     <Ionicons name="close" size={16} color={colors.onError} />
@@ -347,8 +346,8 @@ export default function NewRepairOrderScreen() {
             </>
           )}
 
-          <Pressable onPress={submit} disabled={saving} style={[styles.submitBtn, saving && { opacity: 0.6 }]} testID="submit-order-btn">
-            {saving ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.submitBtnText}>Create Repair Order</Text>}
+          <Pressable onPress={submit} disabled={saving || items.length === 0} style={[styles.submitBtn, (saving || items.length === 0) && { opacity: 0.5 }]} testID="submit-order-btn">
+            {saving ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.submitBtnText}>{items.length === 0 ? 'Add an item first' : 'Create Repair Order'}</Text>}
           </Pressable>
         </ScrollView>
       </KeyboardAvoidingView>
