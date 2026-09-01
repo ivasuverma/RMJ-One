@@ -109,7 +109,7 @@ async def list_employees(
     for d in docs:
         d['photo'] = d.pop('photo_thumb', '') or ''
     events = await db.timeline.find(
-        {'type': {'$in': ['advance', 'bonus', 'fine', 'deduction', 'salary']}},
+        {'type': {'$in': ['advance', 'bonus', 'fine', 'deduction', 'salary', 'salary_earned', 'salary_paid']}},
         {'_id': 0, 'employee_id': 1, 'type': 1, 'amount': 1, 'sign': 1},
     ).to_list(20000)
     balances: dict = {}
@@ -117,8 +117,13 @@ async def list_employees(
         eid = e.get('employee_id')
         if not eid: continue
         amount = float(e.get('amount') or 0)
-        sign = e.get('sign', _ledger_sign(e.get('type', 'other')))
-        delta = amount if e.get('type') == 'salary' else sign * abs(amount)
+        t = e.get('type', 'other')
+        if t in ('salary', 'salary_earned'):
+            delta = abs(amount)          # credit — owed to employee
+        elif t == 'salary_paid':
+            delta = -abs(amount)         # debit — cash paid out
+        else:
+            delta = e.get('sign', _ledger_sign(t)) * abs(amount)
         balances[eid] = balances.get(eid, 0) + delta
     for d in docs:
         d['closing_balance'] = round(balances.get(d['id'], 0), 2)

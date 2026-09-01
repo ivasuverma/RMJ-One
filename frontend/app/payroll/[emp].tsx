@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { api } from '@/src/api/client';
+import { confirmAction } from '@/src/utils/confirm';
 import { useAuth } from '@/src/auth/AuthContext';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
@@ -72,21 +73,19 @@ export default function PayrollDetail() {
 
   const undoPaid = () => {
     if (!row?.id) return;
-    Alert.alert(
+    // confirmAction is web-safe (Alert.alert with buttons doesn't fire callbacks
+    // on the web export — that's why the button appeared frozen).
+    confirmAction(
       'Undo paid?',
       'This removes all recorded payments and the salary ledger entries for this month, and resets it to unpaid so you can recalculate and pay again.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Undo paid', style: 'destructive', onPress: async () => {
-            if (payGuard.current) return;
-            payGuard.current = true;
-            try { await api.post(`/payroll/entry/${row.id}/unpay`, {}); await load(); }
-            catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
-            finally { payGuard.current = false; }
-          },
-        },
-      ],
+      'Undo paid',
+      async () => {
+        if (payGuard.current) return;
+        payGuard.current = true;
+        try { await api.post(`/payroll/entry/${row.id}/unpay`, {}); await load(); }
+        catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+        finally { payGuard.current = false; }
+      },
     );
   };
 
@@ -268,6 +267,10 @@ export default function PayrollDetail() {
               <Text style={styles.pdfText}>{row.paid ? 'Download Receipt' : 'Download Payslip'} (PDF)</Text>
             </Pressable>
           )}
+          <Pressable style={styles.pdfBtn} onPress={() => router.push(`/ledger/${emp}` as any)} testID="view-ledger-btn">
+            <Ionicons name="book-outline" size={18} color={colors.onSurface} />
+            <Text style={styles.pdfText}>View employee ledger</Text>
+          </Pressable>
           {row.paid && (
             <View style={styles.paidBanner}>
               <Ionicons name="checkmark-circle" size={20} color={colors.brandPrimary} />
