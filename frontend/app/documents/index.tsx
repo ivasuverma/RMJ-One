@@ -107,6 +107,10 @@ export default function DocumentsScreen() {
     try { await api.del(`/documents/${id}`); setViewer(null); toast.success('Deleted'); load(); }
     catch (e: any) { toast.error(e?.detail || 'Could not delete'); }
   });
+  const undo = (id: string) => confirmAction('Undo record?', 'Moves this document back to Pending, as if it was never recorded.', 'Undo', async () => {
+    try { await api.patch(`/documents/${id}/unrecord`, {}); setViewer(null); toast.success('Moved back to Pending'); load(); }
+    catch (e: any) { toast.error(e?.detail || 'Could not undo'); }
+  });
 
   const load = useCallback(async () => {
     setToken((await storage.secureGet<string>(TOKEN_KEY, '')) || '');
@@ -336,7 +340,7 @@ export default function DocumentsScreen() {
         onClose={() => setRecordDoc(null)} onDone={() => { setRecordDoc(null); setViewer(null); haptics.success(); toast.success('Recorded'); load(); }} />
       <QuickView doc={viewer} categoryLabel={viewer ? (catMap[viewer.category_key]?.label || viewer.category_key) : ''} token={token} fileUri={fileUri}
         onClose={() => setViewer(null)} onRecord={(d) => setRecordDoc(d)} canRecord={viewer ? canRecord(viewer.category_key) : false}
-        canDelete={canDelete} onDelete={del} onOpenFile={openFile} opening={opening}
+        canDelete={canDelete} onDelete={del} onUndo={undo} onOpenFile={openFile} opening={opening}
         list={docs} onNavigate={(d) => setViewer(d)} onChangeCategory={(d) => setRecatDoc(d)} />
       <RecatSheet doc={recatDoc} cats={cats.filter((c) => canRecord(c.key))}
         onClose={() => setRecatDoc(null)}
@@ -353,10 +357,10 @@ const TINTS = (c: ThemeColors) => [
 ];
 
 /* ---------------- Quick view (full-screen) ---------------- */
-function QuickView({ doc, categoryLabel, token, fileUri, onClose, onRecord, canRecord, canDelete, onDelete, onOpenFile, opening, list, onNavigate, onChangeCategory }: {
+function QuickView({ doc, categoryLabel, token, fileUri, onClose, onRecord, canRecord, canDelete, onDelete, onUndo, onOpenFile, opening, list, onNavigate, onChangeCategory }: {
   doc: Doc | null; categoryLabel: string; token: string; fileUri: (id: string) => string;
   onClose: () => void; onRecord: (d: Doc) => void; canRecord: boolean; canDelete: boolean;
-  onDelete: (id: string) => void; onOpenFile: (d: Doc) => void; opening: boolean;
+  onDelete: (id: string) => void; onUndo: (id: string) => void; onOpenFile: (d: Doc) => void; opening: boolean;
   list: Doc[]; onNavigate: (d: Doc) => void; onChangeCategory: (d: Doc) => void;
 }) {
   const { colors } = useTheme();
@@ -417,6 +421,9 @@ function QuickView({ doc, categoryLabel, token, fileUri, onClose, onRecord, canR
             )}
             {canRecord && doc.status === 'done' && (
               <Pressable onPress={() => onChangeCategory(doc)} style={styles.qvBtn} testID="qv-recat"><Ionicons name="swap-horizontal-outline" size={16} color={colors.onSurface} /><Text style={styles.qvBtnText}>Change category</Text></Pressable>
+            )}
+            {canRecord && doc.status === 'done' && (
+              <Pressable onPress={() => onUndo(doc.id)} style={styles.qvBtn} testID="qv-undo"><Ionicons name="arrow-undo-outline" size={16} color={colors.onSurface} /><Text style={styles.qvBtnText}>Undo</Text></Pressable>
             )}
           </View>
         </View>

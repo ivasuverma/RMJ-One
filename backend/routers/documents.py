@@ -431,6 +431,29 @@ async def record_document(doc_id: str, body: RecordIn, user=Depends(get_current)
     return await db.documents.find_one({'id': doc_id}, _LIST_PROJECTION)
 
 
+@router.patch('/documents/{doc_id}/unrecord')
+async def unrecord_document(doc_id: str, user=Depends(get_current)):
+    """Done → Pending. Undo an accidental record — same permission as recording
+    it in the first place (whoever can file a category can also un-file it)."""
+    d = await db.documents.find_one({'id': doc_id, 'deleted': {'$ne': True}}, {'_id': 0, 'local_data': 0})
+    if not d:
+        raise HTTPException(status_code=404, detail='Document not found')
+    if d.get('status') != 'done':
+        raise HTTPException(status_code=400, detail='This document is not recorded')
+    cats = await _categories_map()
+    cat = cats.get(d['category_key'])
+    rights = await _account_rights(user)
+    if not cat or not _can_see(cat, _role(user), rights):
+        raise HTTPException(status_code=403, detail='No access to this document')
+    if not _can_record(cat, _role(user), rights):
+        raise HTTPException(status_code=403, detail='You do not have permission to undo a record in this category')
+    await db.documents.update_one({'id': doc_id}, {'$set': {
+        'status': 'pending', 'recorded_at': None, 'recorded_by': None, 'linked_ref': None,
+    }})
+    await log_audit(user, 'documents.unrecord', 'document', doc_id, cat['label'])
+    return await db.documents.find_one({'id': doc_id}, _LIST_PROJECTION)
+
+
 class RecategorizeIn(BaseModel):
     category_key: str
 
