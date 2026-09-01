@@ -71,6 +71,10 @@ export default function DocumentsScreen() {
   const [recordDoc, setRecordDoc] = useState<Doc | null>(null);
   const [viewer, setViewer] = useState<Doc | null>(null);
   const [opening, setOpening] = useState(false);
+  // Which day sections are expanded in the Done grid. Collapsed days don't
+  // render their thumbnails, so only the day you open loads images — keeps a
+  // big Done folder fast to open.
+  const [openDays, setOpenDays] = useState<Record<string, boolean>>({});
 
   const base = process.env.EXPO_PUBLIC_BACKEND_URL || '';
   const catMap = useMemo(() => Object.fromEntries(cats.map((c) => [c.key, c])), [cats]);
@@ -174,25 +178,34 @@ export default function DocumentsScreen() {
         {q.length > 0 && <Pressable onPress={() => { setQ(''); setTimeout(load, 0); }} hitSlop={8}><Ionicons name="close-circle" size={16} color={colors.mutedText} /></Pressable>}
       </View>
       {docs.length === 0 ? <View style={styles.empty}><Text style={styles.emptyText}>{q ? 'No matches.' : 'Empty folder.'}</Text></View> : (
-        groupByDay(docs).map((g) => (
+        groupByDay(docs).map((g, gi) => {
+          const open = openDays[g.day] ?? (gi === 0);   // newest day open by default
+          return (
           <View key={g.day}>
-            <Text style={styles.dayHeader}>{istDisplayDate(g.items[0]?.created_at) || g.day}</Text>
-            <View style={styles.grid}>
-              {g.items.map((d) => {
-                const cap = (d.note || d.linked_ref?.label || '').trim();
-                return (
-                  <Pressable key={d.id} onPress={() => setViewer(d)} style={[styles.gridItem, { width: GRID }]} testID={`doc-grid-${d.id}`}>
-                    <View>
-                      <Thumb d={d} size={GRID} />
-                      {d.upload_state === 'synced' && <View style={styles.syncBadge}><Ionicons name="cloud-done" size={11} color={colors.onSuccess} /></View>}
-                    </View>
-                    {!!cap && <Text style={styles.gridCaption} numberOfLines={2}>{cap}</Text>}
-                  </Pressable>
-                );
-              })}
-            </View>
+            <Pressable onPress={() => setOpenDays((m) => ({ ...m, [g.day]: !open }))} style={styles.dayHeaderRow} testID={`doc-day-${g.day}`}>
+              <Text style={[styles.dayHeader, { flex: 1 }]}>{istDisplayDate(g.items[0]?.created_at) || g.day}</Text>
+              <Text style={styles.dayCount}>{g.items.length}</Text>
+              <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={16} color={colors.mutedText} />
+            </Pressable>
+            {open && (
+              <View style={styles.grid}>
+                {g.items.map((d) => {
+                  const cap = (d.note || d.linked_ref?.label || '').trim();
+                  return (
+                    <Pressable key={d.id} onPress={() => setViewer(d)} style={[styles.gridItem, { width: GRID }]} testID={`doc-grid-${d.id}`}>
+                      <View>
+                        <Thumb d={d} size={GRID} />
+                        {d.upload_state === 'synced' && <View style={styles.syncBadge}><Ionicons name="cloud-done" size={11} color={colors.onSuccess} /></View>}
+                      </View>
+                      {!!cap && <Text style={styles.gridCaption} numberOfLines={2}>{cap}</Text>}
+                    </Pressable>
+                  );
+                })}
+              </View>
+            )}
           </View>
-        ))
+          );
+        })
       )}
     </>
   );
@@ -471,6 +484,8 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   thumb: { backgroundColor: colors.surfaceTertiary, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   thumbLoading: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceTertiary },
   dayHeader: { color: colors.mutedText, fontSize: 12, fontWeight: '800', letterSpacing: 0.4, textTransform: 'uppercase', marginTop: spacing.md, marginBottom: 2 },
+  dayHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  dayCount: { color: colors.mutedText, fontSize: 12, fontWeight: '700' },
   docName: { color: colors.onSurface, fontSize: 15, fontWeight: '600' },
   docMeta: { color: colors.mutedText, fontSize: 12.5, marginTop: 2 },
   recBtn: { backgroundColor: colors.brandPrimary, paddingHorizontal: 14, paddingVertical: 9, borderRadius: 10 },
