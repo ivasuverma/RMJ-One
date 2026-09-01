@@ -329,8 +329,12 @@ function QuickView({ doc, categoryLabel, token, fileUri, onClose, onRecord, canR
         <View style={styles.qvImgWrap} {...pan.panHandlers}>
           <Pressable style={StyleSheet.absoluteFill} onPress={() => !isImage && onOpenFile(doc)} />
           {isImage && token
-            ? <Image key={doc.id} source={{ uri: fileUri(doc.id), headers: { Authorization: `Bearer ${token}` } }} style={styles.qvImg} contentFit="contain" onLoadEnd={() => setImgLoaded(true)} />
-            : <View style={{ alignItems: 'center', gap: 10 }}><Ionicons name="document-text-outline" size={64} color={colors.mutedText} /><Text style={{ color: '#fff', fontWeight: '700' }}>Tap to open PDF</Text></View>}
+            ? <Image key={doc.id} source={{ uri: `${fileUri(doc.id)}?full=1`, headers: { Authorization: `Bearer ${token}` } }} style={styles.qvImg} contentFit="contain" onLoadEnd={() => setImgLoaded(true)} />
+            : <View style={{ alignItems: 'center', gap: 10 }}>
+                {opening
+                  ? <><ActivityIndicator color="#fff" size="large" /><Text style={{ color: '#fff', fontWeight: '700' }}>Opening…</Text></>
+                  : <><Ionicons name="document-text-outline" size={64} color={colors.mutedText} /><Text style={{ color: '#fff', fontWeight: '700' }}>Tap to open PDF</Text></>}
+              </View>}
           {isImage && !imgLoaded && <View style={styles.qvImgLoading} pointerEvents="none"><ActivityIndicator color="#fff" size="large" /></View>}
           {idx > 0 && <Pressable onPress={() => go(-1)} style={[styles.qvNav, { left: 6 }]} testID="qv-prev"><Ionicons name="chevron-back" size={26} color="#fff" /></Pressable>}
           {idx >= 0 && idx < list.length - 1 && <Pressable onPress={() => go(1)} style={[styles.qvNav, { right: 6 }]} testID="qv-next"><Ionicons name="chevron-forward" size={26} color="#fff" /></Pressable>}
@@ -340,12 +344,10 @@ function QuickView({ doc, categoryLabel, token, fileUri, onClose, onRecord, canR
           <Text style={styles.qvName} numberOfLines={2}>{docTitle(doc, categoryLabel)}</Text>
           <Text style={styles.qvMeta}>{doc.uploaded_by_name ? `By ${doc.uploaded_by_name} · ` : ''}{istDisplayDateTime(doc.recorded_at || doc.created_at)}</Text>
           <View style={styles.qvActions}>
-            {isImage && (
-              <Pressable onPress={() => onOpenFile(doc)} disabled={opening} style={styles.qvBtn} testID="qv-open">
-                {opening ? <ActivityIndicator size="small" color={colors.onSurface} /> : <Ionicons name="expand-outline" size={16} color={colors.onSurface} />}
-                <Text style={styles.qvBtnText}>{opening ? 'Opening…' : 'Open full size'}</Text>
-              </Pressable>
-            )}
+            <Pressable onPress={() => onOpenFile(doc)} disabled={opening} style={styles.qvBtn} testID="qv-open">
+              {opening ? <ActivityIndicator size="small" color={colors.onSurface} /> : <Ionicons name="expand-outline" size={16} color={colors.onSurface} />}
+              <Text style={styles.qvBtnText}>{opening ? 'Opening…' : (isImage ? 'Open full size' : 'Open PDF')}</Text>
+            </Pressable>
             {canRecord && (
               doc.status === 'pending'
                 ? <Pressable onPress={() => onRecord(doc)} style={[styles.qvBtn, styles.qvBtnPrimary]} testID="qv-record"><Ionicons name="checkmark-done-outline" size={16} color={colors.onBrandPrimary} /><Text style={[styles.qvBtnText, { color: colors.onBrandPrimary }]}>Done</Text></Pressable>

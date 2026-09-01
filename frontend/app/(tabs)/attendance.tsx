@@ -71,8 +71,16 @@ export default function OwnerAttendance() {
   const [todayFilter, setTodayFilter] = useState<Bucket | 'all'>('all');
   const isToday = date === todayIST();
   const now = new Date();
-  const [year] = useState(now.getFullYear());
-  const [month] = useState(now.getMonth() + 1);
+  const [year, setYear] = useState(now.getFullYear());
+  const [month, setMonth] = useState(now.getMonth() + 1);
+  const stepMonth = (delta: number) => {
+    let m = month + delta;
+    let y = year;
+    if (m > 12) { m = 1; y += 1; }
+    if (m < 1) { m = 12; y -= 1; }
+    setMonth(m); setYear(y);
+  };
+  const isCurrentMonth = year === now.getFullYear() && month === now.getMonth() + 1;
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [running, setRunning] = useState(false);
@@ -232,7 +240,18 @@ export default function OwnerAttendance() {
           ))
         ) : (
           <>
-            <Text style={styles.sec}>Employees · this cycle</Text>
+            {/* Month picker — pay last month's salary in the first week of the
+                next month by stepping back to it here. */}
+            <View style={styles.monthRow}>
+              <Pressable onPress={() => stepMonth(-1)} style={styles.monthNav} testID="payroll-prev-month" hitSlop={8}>
+                <Ionicons name="chevron-back" size={18} color={colors.onSurface} />
+              </Pressable>
+              <Text style={styles.monthLabel}>{MONTHS[month - 1]} {year}</Text>
+              <Pressable onPress={() => !isCurrentMonth && stepMonth(1)} disabled={isCurrentMonth} style={[styles.monthNav, isCurrentMonth && { opacity: 0.3 }]} testID="payroll-next-month" hitSlop={8}>
+                <Ionicons name="chevron-forward" size={18} color={colors.onSurface} />
+              </Pressable>
+            </View>
+            <Text style={styles.sec}>Employees · {isCurrentMonth ? 'this cycle' : `${MONTHS[month - 1]} ${year}`}</Text>
             {!pay || pay.rows.length === 0 ? (
               <Text style={styles.empty}>No payroll for this month yet.</Text>
             ) : pay.rows.map((p) => (
@@ -314,6 +333,9 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   scL: { fontSize: 11, color: colors.mutedText, marginTop: 3, fontWeight: '600' },
 
   sec: { fontSize: 13, fontWeight: '700', letterSpacing: 0.7, color: colors.mutedText, textTransform: 'uppercase', marginTop: spacing.xl, marginBottom: spacing.md },
+  monthRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.lg, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: 6 },
+  monthNav: { width: 34, height: 34, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center' },
+  monthLabel: { flex: 1, textAlign: 'center', color: colors.onSurface, fontWeight: '700', fontSize: 14 },
   empty: { color: colors.onSurfaceTertiary, marginTop: spacing.lg },
 
   erow: { flexDirection: 'row', alignItems: 'center', gap: 13, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, borderRadius: 15, padding: 13, marginBottom: 10 },
