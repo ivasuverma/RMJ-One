@@ -422,20 +422,28 @@ def _month_is_complete(year: int, month: int) -> bool:
     return (year, month) < (today.year, today.month)
 
 
-async def _upsert_salary_earned(employee_id: str, year: int, month: int, earned: float, entry_id: str) -> None:
+async def _upsert_salary_earned(employee_id: str, year: int, month: int, earned: float, net_exact: float, net_salary: float, entry_id: str) -> None:
     """Post/refresh the month's salary as a RECEIVABLE (owed to the employee) in
     the wage ledger once that month has ended — so the ledger shows what's owed
     before payment, and a later payment (salary_paid) clears it. Idempotent per
     employee+month. If an entry was already posted for a month that turns out
     to still be in progress, remove it instead of updating it (self-heals a
-    premature post from before this guard existed)."""
+    premature post from before this guard existed).
+
+    Posts `earned` PLUS the round-to-nearest-10 adjustment (net_salary -
+    net_exact), not `earned` alone — round_net_salary only rounds the final
+    net figure, and salary_paid is later recorded against that rounded
+    net_salary. Without folding the same adjustment in here, a fully-paid
+    month would leave a stray ±5 residual in the ledger (and in next month's
+    opening balance) instead of netting to zero."""
     if not _month_is_complete(year, month):
         await db.timeline.delete_one({'employee_id': employee_id, 'type': 'salary_earned', 'year': year, 'month': month})
         return
     ym = f"{year}-{month:02d}"
+    amount = round(float(earned or 0) + (float(net_salary or 0) - float(net_exact or 0)), 2)
     doc_set = {
         'title': f'Salary earned {ym}', 'description': f'Earned ₹{earned:.0f}',
-        'amount': round(float(earned or 0), 2), 'sign': 1, 'year': year, 'month': month, 'entry_id': entry_id,
+        'amount': amount, 'sign': 1, 'year': year, 'month': month, 'entry_id': entry_id,
     }
     existing = await db.timeline.find_one(
         {'employee_id': employee_id, 'type': 'salary_earned', 'year': year, 'month': month}, {'_id': 0, 'id': 1},
@@ -470,7 +478,7 @@ async def _refresh_unpaid_payroll(employee_id: str, year: int, month: int) -> No
     await db.payroll_entries.update_one(
         {'id': existing['id']}, {'$set': {**r, 'net_salary_exact': net_exact, 'net_salary': net_salary}},
     )
-    await _upsert_salary_earned(employee_id, year, month, r['earned'], existing['id'])
+    await _upsert_salary_earned(employee_id, year, month, r['earned'], net_exact, net_salary, existing['id'])
 
 
 def _entry_year_month(e: dict) -> tuple:
@@ -538,7 +546,7 @@ async def payroll_save(body: PayrollGenerateIn, user=Depends(require_payroll_wri
         }
         await db.payroll_entries.update_one({'id': entry_id}, {'$set': doc}, upsert=True)
         # Post/refresh the month's salary as a receivable in the wage ledger.
-        await _upsert_salary_earned(r['employee_id'], body.year, body.month, r['earned'], entry_id)
+        await _upsert_salary_earned(r['employee_id'], body.year, body.month, r['earned'], net_exact, net_salary, entry_id)
         refreshed += 1
 
     await db.payroll_locks.update_one(
@@ -672,7 +680,10 @@ async def add_payroll_payment(entry_id: str, body: PayrollPaymentIn, user=Depend
     # receivable exists (posted at save), then debit THIS payment — so two
     # payments show as two lines in the wage ledger.
     ym = f"{entry['year']}-{entry['month']:02d}"
-    await _upsert_salary_earned(entry['employee_id'], entry['year'], entry['month'], float(entry.get('earned') or 0), entry_id)
+    await _upsert_salary_earned(
+        entry['employee_id'], entry['year'], entry['month'], float(entry.get('earned') or 0),
+        float(entry.get('net_salary_exact') or 0), float(entry.get('net_salary') or 0), entry_id,
+    )
     await db.timeline.insert_one({
         'id': str(uuid.uuid4()), 'employee_id': entry['employee_id'], 'type': 'salary_paid',
         'title': f'Salary paid {ym}', 'description': f"₹{float(body.amount):.0f} · {body.payment_mode.upper()}" + (f" — {body.note}" if body.note else ''),
