@@ -134,15 +134,24 @@ export default function PayrollDetail() {
           </View>
         </View>
 
-        <Pressable
-          style={styles.modifyBtn}
-          testID="modify-attendance-btn"
-          onPress={() => router.push(`/attendance/calendar/${row.employee_id}`)}
-        >
-          <Ionicons name="calendar-outline" size={16} color={colors.onSurface} />
-          <Text style={styles.modifyBtnText}>Modify attendance for this month</Text>
-          <Ionicons name="chevron-forward" size={16} color={colors.onSurface} />
-        </Pressable>
+        <View style={styles.topBtnRow}>
+          <Pressable
+            style={styles.topBtn}
+            testID="modify-attendance-btn"
+            onPress={() => router.push(`/attendance/calendar/${row.employee_id}`)}
+          >
+            <Ionicons name="calendar-outline" size={16} color={colors.onSurface} />
+            <Text style={styles.topBtnText}>Attendance</Text>
+          </Pressable>
+          <Pressable
+            style={styles.topBtn}
+            testID="view-ledger-btn"
+            onPress={() => router.push(`/ledger/${emp}` as any)}
+          >
+            <Ionicons name="book-outline" size={16} color={colors.onSurface} />
+            <Text style={styles.topBtnText}>Ledger</Text>
+          </Pressable>
+        </View>
 
         <Line label="Base Salary" value={fmtINR(row.base_salary)} />
         <SectionTitle text="Days Summary" />
@@ -209,10 +218,6 @@ export default function PayrollDetail() {
           onPress={() => openLedgerMonth('deduction', 'Manual Deduction')} testID="breakdown-deduction"
         />
 
-        {row._saved && canWrite && !row._locked && !row.paid && (
-          <OverridesEditor row={row} onSaved={load} />
-        )}
-
         <View style={styles.netBox}>
           <Text style={styles.netLabel}>NET SALARY</Text>
           <Text style={styles.netVal}>{fmtINR(row.net_salary)}</Text>
@@ -267,10 +272,6 @@ export default function PayrollDetail() {
               <Text style={styles.pdfText}>{row.paid ? 'Download Receipt' : 'Download Payslip'} (PDF)</Text>
             </Pressable>
           )}
-          <Pressable style={styles.pdfBtn} onPress={() => router.push(`/ledger/${emp}` as any)} testID="view-ledger-btn">
-            <Ionicons name="book-outline" size={18} color={colors.onSurface} />
-            <Text style={styles.pdfText}>View employee ledger</Text>
-          </Pressable>
           {row.paid && (
             <View style={styles.paidBanner}>
               <Ionicons name="checkmark-circle" size={20} color={colors.brandPrimary} />
@@ -380,67 +381,6 @@ function RecordPaymentForm({ remaining, onCancel, onConfirm }: {
   );
 }
 
-function OverridesEditor({ row, onSaved }: { row: any; onSaved: () => void }) {
-  const { colors } = useTheme();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
-  const stylesOv = useMemo(() => makeStylesOv(colors), [colors]);
-  const [bonus, setBonus] = useState(String(row.bonus || ''));
-  const [fine, setFine] = useState(String(row.fine || ''));
-  const [ded, setDed] = useState(String(row.manual_deduction || ''));
-  const [note, setNote] = useState(row.note || '');
-  const [saving, setSaving] = useState(false);
-  const submittingRef = useRef(false);
-
-  const save = async () => {
-    if (submittingRef.current) return;
-    submittingRef.current = true;
-    setSaving(true);
-    try {
-      await api.put(`/payroll/entry/${row.id}`, {
-        bonus_override: parseFloat(bonus || '0'),
-        fine_override: parseFloat(fine || '0'),
-        manual_deduction_override: parseFloat(ded || '0'),
-        note,
-      });
-      onSaved();
-    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
-    finally { setSaving(false); submittingRef.current = false; }
-  };
-
-  return (
-    <View style={{ marginTop: spacing.lg }} testID="overrides-editor">
-      <SectionTitle text="Adjust (before payment)" />
-      <View style={{ flexDirection: 'row', gap: spacing.sm }}>
-        <NumField label="Bonus" v={bonus} onC={setBonus} testID="ov-bonus" />
-        <NumField label="Fine" v={fine} onC={setFine} testID="ov-fine" />
-        <NumField label="Deduction" v={ded} onC={setDed} testID="ov-ded" />
-      </View>
-      <Text style={styles.section}>Note (shows on PDF)</Text>
-      <TextInput
-        testID="ov-note"
-        value={note} onChangeText={setNote} multiline
-        placeholder="Optional payslip note"
-        placeholderTextColor={colors.mutedText}
-        style={stylesOv.noteInput}
-      />
-      <Pressable onPress={save} disabled={saving} style={[stylesOv.saveBtn, saving && { opacity: 0.6 }]} testID="save-overrides-btn">
-        {saving ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={stylesOv.saveText}>Save Adjustments</Text>}
-      </Pressable>
-    </View>
-  );
-}
-
-function NumField({ label, v, onC, testID }: { label: string; v: string; onC: (s: string) => void; testID?: string }) {
-  const { colors } = useTheme();
-  const stylesOv = useMemo(() => makeStylesOv(colors), [colors]);
-  return (
-    <View style={{ flex: 1 }}>
-      <Text style={stylesOv.numLabel}>{label}</Text>
-      <TextInput testID={testID} value={v} onChangeText={(x) => onC(x.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={stylesOv.numInput} />
-    </View>
-  );
-}
-
 const makeStylesOv = (colors: ThemeColors) => StyleSheet.create({
   numLabel: { color: colors.mutedText, fontSize: 11, marginBottom: 4 },
   numInput: {
@@ -532,12 +472,13 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     fontFamily: fonts.display,
   },
 
-  modifyBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.md,
+  topBtnRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md },
+  topBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
     backgroundColor: colors.surfaceSecondary, borderColor: colors.brand, borderWidth: 1,
-    borderRadius: radius.md, padding: spacing.md,
+    borderRadius: radius.md, paddingVertical: 12,
   },
-  modifyBtnText: { flex: 1, color: colors.onSurface, fontWeight: '700', fontSize: 13 },
+  topBtnText: { color: colors.onSurface, fontWeight: '700', fontSize: 13.5 },
   formulaBox: {
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1,
     borderColor: colors.border, padding: spacing.md, marginBottom: spacing.sm,

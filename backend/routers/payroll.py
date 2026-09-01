@@ -50,6 +50,10 @@ async def add_ledger_entry(body: LedgerEntryIn, user=Depends(require_staff), _mo
         'sign': _ledger_sign(body.entry_type), 'created_at': when, 'added_by': user['name'],
     }
     await db.timeline.insert_one(dict(doc))
+    if body.entry_type in ('advance', 'bonus', 'fine', 'deduction'):
+        _y, _m = _entry_year_month(doc)
+        if _y:
+            await _refresh_unpaid_payroll(body.employee_id, _y, _m)
     await log_audit(user, 'ledger.create', 'ledger', doc['id'], emp.get('employee_code', ''),
                      {'type': body.entry_type, 'amount': body.amount})
     # Personal alert to the employee when money is recorded against/for them.
@@ -144,6 +148,9 @@ async def edit_ledger_entry(entry_id: str, body: LedgerEntryEdit, user=Depends(r
         'sign': _ledger_sign(body.entry_type),
     }
     await db.timeline.update_one({'id': entry_id}, {'$set': update})
+    _y, _m = _entry_year_month(existing)
+    if _y and existing.get('employee_id'):
+        await _refresh_unpaid_payroll(existing['employee_id'], _y, _m)
     await log_audit(user, 'ledger.edit', 'ledger', entry_id,
                      f"{existing.get('employee_id')} · {update['title']} · {update['amount']}", {})
     return {**existing, **update}
@@ -157,6 +164,9 @@ async def delete_ledger_entry(entry_id: str, user=Depends(require_admin), _mod=D
     if existing.get('type') not in _LEDGER_EDITABLE_TYPES:
         raise HTTPException(status_code=400, detail='This entry cannot be deleted')
     await db.timeline.delete_one({'id': entry_id})
+    _y, _m = _entry_year_month(existing)
+    if _y and existing.get('employee_id'):
+        await _refresh_unpaid_payroll(existing['employee_id'], _y, _m)
     await log_audit(user, 'ledger.delete', 'ledger', entry_id,
                      f"{existing.get('employee_id')} · {existing.get('title')} · {existing.get('amount')}", {})
     return {'ok': True}
@@ -370,6 +380,68 @@ async def _compute_payroll(year: int, month: int) -> list:
     return rows
 
 
+async def _upsert_salary_earned(employee_id: str, year: int, month: int, earned: float, entry_id: str) -> None:
+    """Post/refresh the month's salary as a RECEIVABLE (owed to the employee) in
+    the wage ledger the moment payroll is generated — so the ledger shows what's
+    owed before payment, and a later payment (salary_paid) clears it. Idempotent
+    per employee+month."""
+    ym = f"{year}-{month:02d}"
+    doc_set = {
+        'title': f'Salary earned {ym}', 'description': f'Earned ₹{earned:.0f}',
+        'amount': round(float(earned or 0), 2), 'sign': 1, 'year': year, 'month': month, 'entry_id': entry_id,
+    }
+    existing = await db.timeline.find_one(
+        {'employee_id': employee_id, 'type': 'salary_earned', 'year': year, 'month': month}, {'_id': 0, 'id': 1},
+    )
+    if existing:
+        await db.timeline.update_one({'id': existing['id']}, {'$set': doc_set})
+    else:
+        await db.timeline.insert_one({
+            'id': str(uuid.uuid4()), 'employee_id': employee_id, 'type': 'salary_earned',
+            'created_at': now_utc().isoformat(), **doc_set,
+        })
+
+
+async def _refresh_unpaid_payroll(employee_id: str, year: int, month: int) -> None:
+    """Recompute a saved-but-unpaid payroll entry from the current attendance +
+    ledger — so deleting/adding an advance (or bonus/fine/deduction) in the
+    ledger flows straight through to that month's payroll instead of showing a
+    stale figure. No-op if the month is locked, already paid, or not saved."""
+    lock = await db.payroll_locks.find_one({'year': year, 'month': month}, {'_id': 0})
+    if lock and lock.get('locked'):
+        return
+    existing = await db.payroll_entries.find_one({'year': year, 'month': month, 'employee_id': employee_id}, {'_id': 0})
+    if not existing or existing.get('paid'):
+        return
+    rows = await _compute_payroll(year, month)
+    r = next((x for x in rows if x['employee_id'] == employee_id), None)
+    if not r:
+        return
+    store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
+    net_exact = round(r['earned'] + r['bonus'] - r['advance'] - r['fine'] - r['manual_deduction'] + r['opening_balance'], 2)
+    net_salary = round(net_exact / 10) * 10 if store.get('round_net_salary') else net_exact
+    await db.payroll_entries.update_one(
+        {'id': existing['id']}, {'$set': {**r, 'net_salary_exact': net_exact, 'net_salary': net_salary}},
+    )
+    await _upsert_salary_earned(employee_id, year, month, r['earned'], existing['id'])
+
+
+def _entry_year_month(e: dict) -> tuple:
+    """Which payroll month a ledger entry belongs to — its for_month tag if
+    present (auto-advances set this), else the month of its date/created_at."""
+    fm = e.get('for_month')
+    if isinstance(fm, str) and len(fm) >= 7 and fm[4] == '-':
+        try:
+            return int(fm[:4]), int(fm[5:7])
+        except ValueError:
+            pass
+    c = (e.get('created_at') or e.get('date') or '')[:7]
+    try:
+        return int(c[:4]), int(c[5:7])
+    except ValueError:
+        return 0, 0
+
+
 @router.post('/payroll/compute')
 async def payroll_compute(body: PayrollGenerateIn, _: dict = Depends(require_payroll_writer), _mod=Depends(require_module('payroll'))):
     rows = await _compute_payroll(body.year, body.month)
@@ -405,22 +477,21 @@ async def payroll_save(body: PayrollGenerateIn, user=Depends(require_payroll_wri
             kept_paid += 1
             continue
         entry_id = prior['id'] if prior else str(uuid.uuid4())
-        # Preserve any manual adjustments the owner/accountant already made on this
-        # (unpaid) entry; only the attendance-derived figures get refreshed.
-        bonus = prior.get('bonus', r['bonus']) if prior else r['bonus']
-        fine = prior.get('fine', r['fine']) if prior else r['fine']
-        manual_deduction = prior.get('manual_deduction', r['manual_deduction']) if prior else r['manual_deduction']
+        # Bonus/fine/deduction now come purely from the ledger (the inline
+        # "adjust" panel was removed) — always take the freshly-computed figures
+        # so a ledger edit flows straight through on regenerate.
         note = prior.get('note', '') if prior else ''
         payment_mode = prior.get('payment_mode') if prior else None
-        net_exact = round(r['earned'] + bonus - r['advance'] - fine - manual_deduction + r['opening_balance'], 2)
+        net_exact = round(r['earned'] + r['bonus'] - r['advance'] - r['fine'] - r['manual_deduction'] + r['opening_balance'], 2)
         net_salary = round(net_exact / 10) * 10 if round_nearest_10 else net_exact
         doc = {
             'id': entry_id, 'year': body.year, 'month': body.month, **r,
-            'bonus': bonus, 'fine': fine, 'manual_deduction': manual_deduction,
             'net_salary_exact': net_exact, 'net_salary': net_salary, 'note': note, 'payment_mode': payment_mode,
             'paid': False, 'generated_at': iso, 'generated_by': user['name'],
         }
         await db.payroll_entries.update_one({'id': entry_id}, {'$set': doc}, upsert=True)
+        # Post/refresh the month's salary as a receivable in the wage ledger.
+        await _upsert_salary_earned(r['employee_id'], body.year, body.month, r['earned'], entry_id)
         refreshed += 1
 
     await db.payroll_locks.update_one(
@@ -566,15 +637,14 @@ async def add_payroll_payment(entry_id: str, body: PayrollPaymentIn, user=Depend
         # entries, so the earned credit minus every payout (advance + net)
         # settles the month to nil — no more double-counting the advance.
         ym = f"{entry['year']}-{entry['month']:02d}"
-        earned = float(entry.get('earned') or 0)
-        await db.timeline.insert_many([
-            {'id': str(uuid.uuid4()), 'employee_id': entry['employee_id'], 'type': 'salary_earned',
-             'title': f"Salary earned {ym}", 'description': f"Earned ₹{earned:.0f}", 'amount': earned,
-             'sign': 1, 'created_at': iso, 'year': entry['year'], 'month': entry['month'], 'entry_id': entry_id},
+        # Make sure the receivable exists (normally posted at save), then record
+        # the actual net paid as a debit so the month settles in the ledger.
+        await _upsert_salary_earned(entry['employee_id'], entry['year'], entry['month'], float(entry.get('earned') or 0), entry_id)
+        await db.timeline.insert_one(
             {'id': str(uuid.uuid4()), 'employee_id': entry['employee_id'], 'type': 'salary_paid',
              'title': f"Salary paid {ym}", 'description': f"Net paid ₹{net:.0f}", 'amount': net,
              'sign': -1, 'created_at': iso, 'year': entry['year'], 'month': entry['month'], 'entry_id': entry_id},
-        ])
+        )
         await notify_user(entry['employee_id'], 'Salary paid',
                            f"Your salary for {ym} (₹{net:.0f}) has been paid", '/profile')
     await log_audit(user, 'payroll.payment.add', 'payroll_entry', entry_id, entry.get('employee_code', ''),
@@ -583,15 +653,15 @@ async def add_payroll_payment(entry_id: str, body: PayrollPaymentIn, user=Depend
 
 
 async def _remove_salary_ledger_entries(entry: dict) -> None:
-    """Delete the wage-ledger entries a salary payment created for a month —
-    the earned credit + net-paid debit (and any legacy single 'salary' entry).
-    Called when a month is un-paid or drops below fully-paid, so the ledger
-    doesn't keep a salary that's no longer settled."""
+    """Remove the PAYMENT record when a month is un-paid or drops below
+    fully-paid — the salary_paid debit (and any legacy single 'salary' +net
+    entry). The salary_earned RECEIVABLE is intentionally kept, so the employee
+    still shows as owed their salary for the month until it's paid again."""
     ym = f"{entry['year']}-{entry['month']:02d}"
     await db.timeline.delete_many({
         'employee_id': entry['employee_id'],
         '$or': [
-            {'entry_id': entry['id'], 'type': {'$in': ['salary_earned', 'salary_paid']}},
+            {'entry_id': entry['id'], 'type': 'salary_paid'},
             {'type': 'salary', 'title': f'Salary {ym}'},   # legacy single +net entry
         ],
     })

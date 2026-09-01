@@ -24,6 +24,7 @@ type Row = {
 type PayRow = {
   employee_id: string; name: string; designation: string; photo?: string;
   total_days: number; effective_days: number; advance: number; net_salary: number; paid?: boolean; id?: string;
+  present_days?: number; absent_days?: number; half_days?: number;
 };
 type PayrollResp = { year: number; month: number; rows: PayRow[]; total_net: number };
 type Ev = { id: string; employee_name: string; type: 'check_in' | 'check_out'; timestamp: string; is_late?: boolean; working_hours?: number; source?: string };
@@ -259,11 +260,18 @@ export default function OwnerAttendance() {
                 <Avatar photo={p.photo} name={p.name} colors={colors} />
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <Text style={styles.en} numberOfLines={1}>{p.name}</Text>
-                  <Text style={styles.et} numberOfLines={1}>{p.effective_days} payable of {p.total_days} days{p.advance ? ` · ${fmtINR(p.advance)} adv` : ''}</Text>
+                  <Text style={styles.et} numberOfLines={1}>
+                    <Text style={{ color: colors.onSuccess, fontWeight: '700' }}>{p.present_days ?? 0}P</Text>
+                    {'  '}<Text style={{ color: colors.onError, fontWeight: '700' }}>{p.absent_days ?? 0}A</Text>
+                    {'  '}<Text style={{ color: colors.onWarning, fontWeight: '700' }}>{p.half_days ?? 0}HD</Text>
+                    {p.advance ? `  ·  ${fmtINR(p.advance)} adv` : ''}
+                  </Text>
                 </View>
                 <View style={{ alignItems: 'flex-end' }}>
                   <Text style={styles.payV}>{fmtINR(p.net_salary)}</Text>
-                  <Text style={styles.payS}>{p.paid ? 'paid' : 'net payable'}</Text>
+                  {p.paid
+                    ? <View style={styles.paidTick}><Ionicons name="checkmark-circle" size={13} color={colors.onSuccess} /><Text style={[styles.payS, { color: colors.onSuccess }]}>paid</Text></View>
+                    : <Text style={styles.payS}>net payable</Text>}
                 </View>
               </Pressable>
             ))}
@@ -364,6 +372,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
 
   payV: { fontSize: 16, fontWeight: '800', color: colors.brandSecondary },
   payS: { fontSize: 11, color: colors.mutedText, marginTop: 2 },
+  paidTick: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 2 },
   twoBtn: { flexDirection: 'row', gap: 10, marginTop: spacing.md },
   btn: { flex: 1, alignItems: 'center', paddingVertical: 14, borderRadius: 13 },
   btnPri: { backgroundColor: colors.brandPrimary },
