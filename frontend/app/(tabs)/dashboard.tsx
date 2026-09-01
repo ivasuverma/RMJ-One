@@ -158,29 +158,37 @@ export default function DashboardScreen() {
         <ErrorState message={error} onRetry={refresh} testID="dashboard-error" />
       ) : data ? (
         <>
-          {/* Today at a glance — quick tiles. (The needs-attention brief and the
-              recently-recorded feed were removed to keep the dashboard fast and
-              uncluttered — everything is one tap away via the tiles + Work.) */}
-          <Text style={styles.glanceHeading}>Today at a glance</Text>
-          <View style={styles.glanceGrid} testID="section-glance">
-            {showRepairsTile && (
-              <GlanceCard icon="construct-outline" label="Repairs" value={data.repairs_summary.total_open}
-                sub={data.repairs_summary.overdue > 0 ? `${data.repairs_summary.overdue} overdue` : 'none overdue'} onPress={() => router.push('/repairs' as any)} testID="glance-repairs" />
-            )}
-            {hasModule('samples') && (
-              <GlanceCard icon="diamond-outline" label="Samples" value={data.samples_summary.with_karigar}
-                sub={data.samples_summary.overdue > 0 ? `${data.samples_summary.overdue} overdue` : 'none overdue'} onPress={() => router.push('/samples?status=with_karigar' as any)} testID="glance-samples" />
-            )}
-            {hasModule('tasks') && (
-              <GlanceCard icon="checkbox-outline" label="Tasks" value={data.tasks_summary.open_total}
-                sub={data.tasks_summary.overdue > 0 ? `${data.tasks_summary.overdue} overdue` : (data.tasks_summary.due_today > 0 ? `${data.tasks_summary.due_today} due today` : 'none overdue')} onPress={() => router.push('/tasks' as any)} testID="glance-tasks" />
-            )}
+          {/* One tile per module — the fast, uncluttered dashboard. Counts come
+              from the single /dashboard payload (no extra calls), so it renders
+              quickly. */}
+          <Text style={styles.glanceHeading}>Jump to</Text>
+          <View style={styles.tileGrid} testID="dashboard-tiles">
+            {(() => {
+              const a = data.todays_attendance; const b = data.business_summary;
+              const pend = (data.pending_approvals?.attendance_corrections || 0) + (data.pending_approvals?.leave_requests || 0);
+              const tiles: { key: string; show: boolean; icon: keyof typeof Ionicons.glyphMap; label: string; value: string; sub: string; badge?: number; route: string }[] = [
+                { key: 'repairs', show: showRepairsTile, icon: 'construct-outline', label: 'Repairs', value: String(data.repairs_summary.total_open), sub: data.repairs_summary.overdue > 0 ? `${data.repairs_summary.overdue} overdue` : 'open', badge: data.repairs_summary.overdue || undefined, route: '/repairs' },
+                { key: 'stock', show: hasModule('samples'), icon: 'diamond-outline', label: 'Stock In/Out', value: String(data.samples_summary.with_karigar), sub: 'out', route: '/samples?status=with_karigar' },
+                { key: 'cash', show: hasModule('cash_book'), icon: 'wallet-outline', label: 'Cash Book', value: fmtINR(data.cashbook_summary.closing_balance), sub: 'closing', route: '/cashbook' },
+                { key: 'documents', show: hasModule('documents'), icon: 'documents-outline', label: 'Documents', value: String(data.documents_pending || 0), sub: 'to record', badge: data.documents_pending || undefined, route: '/documents?tab=pending' },
+                { key: 'attendance', show: hasModule('attendance'), icon: 'people-outline', label: 'Attendance', value: `${a.present}/${a.total}`, sub: a.absent > 0 ? `${a.absent} absent` : 'in', route: '/(tabs)/attendance' },
+                { key: 'payroll', show: hasModule('payroll'), icon: 'cash-outline', label: 'Payroll', value: String(b.active_employees), sub: 'run salaries', route: '/(tabs)/attendance?seg=pay' },
+                { key: 'tasks', show: hasModule('tasks'), icon: 'checkbox-outline', label: 'Tasks', value: String(data.tasks_summary.open_total), sub: data.tasks_summary.due_today > 0 ? `${data.tasks_summary.due_today} due today` : 'open', badge: data.tasks_summary.due_today || undefined, route: '/tasks' },
+                { key: 'customers', show: showRepairsTile || hasModule('customer_ledger'), icon: 'person-outline', label: 'Customers', value: String(b.customers_open), sub: 'ledger', route: '/reports/customer-ledger' },
+                { key: 'karigars', show: showRepairsTile || hasModule('karigar_ledger'), icon: 'hammer-outline', label: 'Karigars', value: String(b.karigars_open), sub: 'ledger', route: '/reports/karigar-ledger' },
+                { key: 'approvals', show: hasModule('approvals'), icon: 'checkmark-done-outline', label: 'Approvals', value: String(pend), sub: 'pending', badge: pend || undefined, route: '/approvals' },
+              ];
+              return tiles.filter((t) => t.show).map((t) => (
+                <Pressable key={t.key} onPress={() => router.push(t.route as any)} style={({ pressed }) => [styles.tile, pressed && { opacity: 0.85 }]} testID={`dash-tile-${t.key}`}>
+                  {!!t.badge && <View style={styles.tileBadge}><Text style={styles.tileBadgeText}>{t.badge}</Text></View>}
+                  <View style={styles.tileIcon}><Ionicons name={t.icon} size={20} color={colors.brandSecondary} /></View>
+                  <Text style={styles.tileValue} numberOfLines={1}>{t.value}</Text>
+                  <Text style={styles.tileLabel} numberOfLines={1}>{t.label}</Text>
+                  <Text style={styles.tileSub} numberOfLines={1}>{t.sub}</Text>
+                </Pressable>
+              ));
+            })()}
           </View>
-
-          {/* Approvals + Leave — the one actionable list kept on the dashboard. */}
-          {hasModule('approvals') && (
-            <ApprovalsSection onChanged={refresh} />
-          )}
 
           <View style={{ height: 96 }} />
         </>
@@ -562,6 +570,18 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
 
   // Glance — 2-col grid of stat cards
   glanceHeading: { color: colors.mutedText, fontSize: 12, fontWeight: '700', letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: spacing.sm, marginTop: 2 },
+  tileGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.xl },
+  tile: {
+    flexBasis: '31%', flexGrow: 1, minWidth: 100, position: 'relative',
+    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    padding: spacing.md, gap: 2,
+  },
+  tileIcon: { width: 40, height: 40, borderRadius: 11, backgroundColor: colors.surfaceTertiary, alignItems: 'center', justifyContent: 'center', marginBottom: 6 },
+  tileValue: { color: colors.onSurface, fontSize: 18, fontWeight: '800' },
+  tileLabel: { color: colors.onSurface, fontSize: 13, fontWeight: '700' },
+  tileSub: { color: colors.mutedText, fontSize: 11 },
+  tileBadge: { position: 'absolute', top: 8, right: 8, minWidth: 20, height: 20, paddingHorizontal: 5, borderRadius: 10, backgroundColor: colors.error, alignItems: 'center', justifyContent: 'center' },
+  tileBadgeText: { color: colors.onError, fontSize: 11, fontWeight: '800' },
   glanceGrid: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.xl },
   glanceCard: {
     flex: 1, minWidth: 0,
