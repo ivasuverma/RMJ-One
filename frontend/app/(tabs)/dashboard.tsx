@@ -5,6 +5,7 @@ import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '@/src/api/client';
+import { storage } from '@/src/utils/storage';
 import { useAuth } from '@/src/auth/AuthContext';
 import { nowISTLongLabel } from '@/src/utils/datetime';
 import { useCountUp } from '@/src/hooks/use-count-up';
@@ -60,6 +61,27 @@ function timeAgo(d: Date | null) {
 // non-zero count, and always deep-links to the exact place it's fixed.
 type AttnItem = { key: string; label: string; icon: keyof typeof Ionicons.glyphMap; tone: Tone; route: string };
 
+// "Jump to" tile order — user-sortable (see ReorderSheet), persisted per device.
+// Approvals sits last by default: it's a to-do card, not a glance stat, so it
+// shouldn't crowd out the always-useful tiles above it.
+const TILE_KEYS = ['attendance', 'tasks', 'documents', 'stock', 'customers', 'karigars', 'repairs', 'cashbook', 'approvals'] as const;
+type TileKey = typeof TILE_KEYS[number];
+const DEFAULT_TILE_ORDER: TileKey[] = ['attendance', 'tasks', 'documents', 'stock', 'customers', 'karigars', 'repairs', 'cashbook', 'approvals'];
+const TILE_ORDER_STORAGE_KEY = 'dashboard_tile_order_v1';
+const TILE_LABEL: Record<TileKey, string> = {
+  attendance: 'Attendance', tasks: 'Tasks', documents: 'Documents', stock: 'Stock In/Out',
+  customers: 'Customers', karigars: 'Karigars', repairs: 'Repairs', cashbook: 'Cash Book', approvals: 'Approvals',
+};
+
+// Reconciles a saved order with the canonical key list: drops keys that no
+// longer exist, appends any new ones (e.g. after an app update) at the end.
+function sanitizeOrder(saved: string[] | null): TileKey[] {
+  if (!saved || !Array.isArray(saved)) return DEFAULT_TILE_ORDER;
+  const known = saved.filter((k): k is TileKey => (TILE_KEYS as readonly string[]).includes(k));
+  const missing = TILE_KEYS.filter((k) => !known.includes(k));
+  return [...known, ...missing];
+}
+
 export default function DashboardScreen() {
   const { user, hasModule } = useAuth();
   const { colors } = useTheme();
@@ -76,6 +98,8 @@ export default function DashboardScreen() {
   const [composeOpen, setComposeOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [captureDoc, setCaptureDoc] = useState(false);
+  const [tileOrder, setTileOrder] = useState<TileKey[]>(DEFAULT_TILE_ORDER);
+  const [reorderOpen, setReorderOpen] = useState(false);
 
   const isWide = width >= 900;
 
@@ -85,6 +109,30 @@ export default function DashboardScreen() {
     const clock = setInterval(() => forceTick((t) => t + 1), 15000);
     return () => clearInterval(clock);
   }, []));
+
+  useFocusEffect(useCallback(() => {
+    storage.getItem<string>(TILE_ORDER_STORAGE_KEY, '').then((raw) => {
+      if (!raw) return;
+      try { setTileOrder(sanitizeOrder(JSON.parse(raw))); } catch { /* keep default */ }
+    });
+  }, []));
+
+  const saveTileOrder = useCallback((next: TileKey[]) => {
+    setTileOrder(next);
+    storage.setItem(TILE_ORDER_STORAGE_KEY, JSON.stringify(next));
+  }, []);
+
+  const moveTile = useCallback((key: TileKey, dir: -1 | 1) => {
+    setTileOrder((prev) => {
+      const i = prev.indexOf(key);
+      const j = i + dir;
+      if (i < 0 || j < 0 || j >= prev.length) return prev;
+      const next = prev.slice();
+      [next[i], next[j]] = [next[j], next[i]];
+      storage.setItem(TILE_ORDER_STORAGE_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
 
   const onRefresh = async () => { setRefreshing(true); await refresh(); setRefreshing(false); };
 
@@ -166,66 +214,50 @@ export default function DashboardScreen() {
         <>
           {/* Jump to — one tile per module (counts + badges from the payload).
               The old "Today at a glance" and needs-attention brief were dropped
-              because these tiles already show the same counts/overdue badges. */}
-          <Text style={styles.glanceHeading}>Jump to</Text>
+              because these tiles already show the same counts/overdue badges.
+              Order is user-sortable (see ReorderSheet) and persisted per device. */}
+          <View style={styles.glanceHeadingRow}>
+            <Text style={styles.glanceHeading}>Jump to</Text>
+            <Pressable onPress={() => setReorderOpen(true)} style={styles.reorderBtn} hitSlop={10} testID="dashboard-reorder-btn">
+              <Ionicons name="swap-vertical-outline" size={14} color={colors.brandSecondary} />
+              <Text style={styles.reorderBtnText}>Reorder</Text>
+            </Pressable>
+          </View>
           <View style={styles.tileGrid} testID="dashboard-tiles">
             {(() => {
               const a = data.todays_attendance; const b = data.business_summary;
               const pend = (data.pending_approvals?.attendance_corrections || 0) + (data.pending_approvals?.leave_requests || 0);
-              const counters = data.cashbook_summary.counters || [];
               const r = data.repairs_summary;
-              const tiles: { key: string; show: boolean; icon: keyof typeof Ionicons.glyphMap; label: string; value: string; sub: string; badge?: number; route: string; subLines?: number }[] = [
-                { key: 'attendance', show: hasModule('attendance'), icon: 'people-outline', label: 'Attendance', value: `${a.present}/${a.total}`, sub: `in · ${a.not_checked_in} missing`, badge: a.not_checked_in || undefined, route: '/(tabs)/attendance' },
-                { key: 'tasks', show: hasModule('tasks'), icon: 'checkbox-outline', label: 'Tasks', value: String(data.tasks_summary.open_total), sub: data.tasks_summary.due_today > 0 ? `${data.tasks_summary.due_today} due today` : 'open', badge: data.tasks_summary.due_today || undefined, route: '/tasks' },
-                { key: 'documents', show: hasModule('documents'), icon: 'documents-outline', label: 'Documents', value: String(data.documents_pending || 0), sub: 'to record', badge: data.documents_pending || undefined, route: '/documents?tab=pending' },
-                { key: 'stock', show: hasModule('samples'), icon: 'diamond-outline', label: 'Stock In/Out', value: String(data.samples_summary.with_karigar), sub: 'out', route: '/samples?status=with_karigar' },
-                { key: 'customers', show: showRepairsTile || hasModule('customer_ledger'), icon: 'person-outline', label: 'Customers', value: String(b.customers_open), sub: 'open ledgers', route: '/reports/customer-ledger' },
-                { key: 'karigars', show: showRepairsTile || hasModule('karigar_ledger'), icon: 'hammer-outline', label: 'Karigars', value: String(b.karigars_open), sub: `${b.fine_with_karigars.toFixed(2)}g due · ₹${Math.round(Math.abs(b.karigar_amt_payable)).toLocaleString('en-IN')} pay`, route: '/reports/karigar-ledger', subLines: 2 },
-                { key: 'approvals', show: hasModule('approvals') && pend > 0, icon: 'checkmark-done-outline', label: 'Approvals', value: String(pend), sub: 'pending', badge: pend || undefined, route: '/approvals' },
-              ];
+              const smallTiles: Record<string, { show: boolean; icon: keyof typeof Ionicons.glyphMap; label: string; value: string; sub: string; badge?: number; route: string; subLines?: number }> = {
+                attendance: { show: hasModule('attendance'), icon: 'people-outline', label: 'Attendance', value: `${a.present}/${a.total}`, sub: `in · ${a.not_checked_in} missing`, badge: a.not_checked_in || undefined, route: '/(tabs)/attendance' },
+                tasks: { show: hasModule('tasks'), icon: 'checkbox-outline', label: 'Tasks', value: String(data.tasks_summary.open_total), sub: data.tasks_summary.due_today > 0 ? `${data.tasks_summary.due_today} due today` : 'open', badge: data.tasks_summary.due_today || undefined, route: '/tasks' },
+                documents: { show: hasModule('documents'), icon: 'documents-outline', label: 'Documents', value: String(data.documents_pending || 0), sub: 'to record', badge: data.documents_pending || undefined, route: '/documents?tab=pending' },
+                stock: { show: hasModule('samples'), icon: 'diamond-outline', label: 'Stock In/Out', value: String(data.samples_summary.with_karigar), sub: 'out', route: '/samples?status=with_karigar' },
+                customers: { show: showRepairsTile || hasModule('customer_ledger'), icon: 'person-outline', label: 'Customers', value: String(b.customers_open), sub: 'open ledgers', route: '/reports/customer-ledger' },
+                karigars: { show: showRepairsTile || hasModule('karigar_ledger'), icon: 'hammer-outline', label: 'Karigars', value: String(b.karigars_open), sub: `${b.fine_with_karigars.toFixed(2)}g due · ₹${Math.round(Math.abs(b.karigar_amt_payable)).toLocaleString('en-IN')} pay`, route: '/reports/karigar-ledger', subLines: 2 },
+                approvals: { show: hasModule('approvals') && pend > 0, icon: 'checkmark-done-outline', label: 'Approvals', value: String(pend), sub: 'pending', badge: pend || undefined, route: '/approvals' },
+              };
               return (
                 <>
-                  {tiles.filter((t) => t.show).map((t) => (
-                    <Pressable key={t.key} onPress={() => router.push(t.route as any)} style={({ pressed }) => [styles.tile, pressed && { opacity: 0.85 }]} testID={`dash-tile-${t.key}`}>
-                      {!!t.badge && <View style={styles.tileBadge}><Text style={styles.tileBadgeText}>{t.badge}</Text></View>}
-                      <View style={styles.tileIcon}><Ionicons name={t.icon} size={20} color={colors.brandSecondary} /></View>
-                      <Text style={styles.tileValue} numberOfLines={1}>{t.value}</Text>
-                      <Text style={styles.tileLabel} numberOfLines={1}>{t.label}</Text>
-                      <Text style={styles.tileSub} numberOfLines={t.subLines || 1}>{t.sub}</Text>
-                    </Pressable>
-                  ))}
-
-                  {showRepairsTile && (
-                    <Pressable onPress={() => router.push('/repairs' as any)} style={({ pressed }) => [styles.wideTile, pressed && { opacity: 0.85 }]} testID="dash-tile-repairs">
-                      {r.overdue > 0 && <View style={styles.tileBadge}><Text style={styles.tileBadgeText}>{r.overdue}</Text></View>}
-                      <View style={styles.tileIcon}><Ionicons name="construct-outline" size={20} color={colors.brandSecondary} /></View>
-                      <Text style={styles.wideValue}>{r.total_open}</Text>
-                      <Text style={styles.tileLabel}>Repairs</Text>
-                      <View style={styles.wideRows}>
-                        <View style={styles.wideRow}><Text style={styles.wideRowLabel}>Issued</Text><Text style={styles.wideRowVal}>{r.with_karigar}</Text></View>
-                        <View style={styles.wideRow}><Text style={styles.wideRowLabel}>To receive</Text><Text style={styles.wideRowVal}>{r.ready}</Text></View>
-                        <View style={styles.wideRow}><Text style={styles.wideRowLabel}>Delivered today</Text><Text style={styles.wideRowVal}>{r.delivered_today}</Text></View>
-                      </View>
-                    </Pressable>
-                  )}
-
-                  {hasModule('cash_book') && (
-                    <Pressable onPress={() => router.push('/cashbook' as any)} style={({ pressed }) => [styles.wideTile, pressed && { opacity: 0.85 }]} testID="dash-tile-cash">
-                      <View style={styles.tileIcon}><Ionicons name="wallet-outline" size={20} color={colors.brandSecondary} /></View>
-                      <Text style={styles.wideValue} numberOfLines={1} adjustsFontSizeToFit>{fmtINR(data.cashbook_summary.closing_balance)}</Text>
-                      <Text style={styles.tileLabel}>Cash Book</Text>
-                      {counters.length > 0 && (
-                        <View style={styles.wideRows}>
-                          {counters.map((c) => (
-                            <View key={c.name} style={styles.wideRow}>
-                              <Text style={styles.wideRowLabel} numberOfLines={1}>{c.name}</Text>
-                              <Text style={styles.wideRowVal} numberOfLines={1}>{fmtINR(c.closing)}</Text>
-                            </View>
-                          ))}
-                        </View>
-                      )}
-                    </Pressable>
-                  )}
+                  {tileOrder.map((key) => {
+                    if (key === 'repairs') {
+                      return showRepairsTile ? <RepairsCard key="repairs" r={r} onPress={() => router.push('/repairs' as any)} /> : null;
+                    }
+                    if (key === 'cashbook') {
+                      return hasModule('cash_book') ? <CashBookCard key="cashbook" summary={data.cashbook_summary} onPress={() => router.push('/cashbook' as any)} /> : null;
+                    }
+                    const t = smallTiles[key];
+                    if (!t || !t.show) return null;
+                    return (
+                      <Pressable key={key} onPress={() => router.push(t.route as any)} style={({ pressed }) => [styles.tile, pressed && { opacity: 0.85 }]} testID={`dash-tile-${key}`}>
+                        {!!t.badge && <View style={styles.tileBadge}><Text style={styles.tileBadgeText}>{t.badge}</Text></View>}
+                        <View style={styles.tileIcon}><Ionicons name={t.icon} size={20} color={colors.brandSecondary} /></View>
+                        <Text style={styles.tileValue} numberOfLines={1}>{t.value}</Text>
+                        <Text style={styles.tileLabel} numberOfLines={1}>{t.label}</Text>
+                        <Text style={styles.tileSub} numberOfLines={t.subLines || 1}>{t.sub}</Text>
+                      </Pressable>
+                    );
+                  })}
                 </>
               );
             })()}
@@ -265,6 +297,13 @@ export default function DashboardScreen() {
       <ComposeSheet visible={composeOpen} onClose={() => setComposeOpen(false)} />
       <QuickDocCapture visible={captureDoc} onClose={() => setCaptureDoc(false)} onSaved={refresh} />
       <SearchOverlay visible={searchOpen} onClose={() => setSearchOpen(false)} />
+      <ReorderSheet
+        visible={reorderOpen}
+        onClose={() => setReorderOpen(false)}
+        order={tileOrder}
+        onMove={moveTile}
+        onReset={() => saveTileOrder(DEFAULT_TILE_ORDER)}
+      />
     </Screen>
   );
 }
@@ -312,6 +351,119 @@ function NeedsAttention({ items, onGo }: { items: AttnItem[]; onGo: (route: stri
         })}
       </View>
     </View>
+  );
+}
+
+/* ---------------- Collapsible wide tiles (Repairs / Cash Book) ---------------- */
+type RepairsSummary = { with_karigar: number; ready: number; delivered_today: number; overdue: number; total_open: number };
+
+function RepairsCard({ r, onPress }: { r: RepairsSummary; onPress: () => void }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+  const [collapsed, setCollapsed] = useState(false);
+  return (
+    <View style={styles.wideTile} testID="dash-tile-repairs">
+      {r.overdue > 0 && <View style={styles.tileBadge}><Text style={styles.tileBadgeText}>{r.overdue}</Text></View>}
+      <Pressable onPress={onPress} style={({ pressed }) => pressed && { opacity: 0.85 }}>
+        <View style={styles.tileIcon}><Ionicons name="construct-outline" size={20} color={colors.brandSecondary} /></View>
+        <Text style={styles.wideValue}>{r.total_open}</Text>
+        <View style={styles.wideLabelRow}>
+          <Text style={styles.tileLabel}>Repairs</Text>
+          <Pressable onPress={() => setCollapsed((c) => !c)} hitSlop={10} testID="dash-tile-repairs-collapse">
+            <Ionicons name={collapsed ? 'chevron-down' : 'chevron-up'} size={16} color={colors.mutedText} />
+          </Pressable>
+        </View>
+      </Pressable>
+      {!collapsed && (
+        <Pressable onPress={onPress} style={({ pressed }) => pressed && { opacity: 0.85 }}>
+          <View style={styles.wideRows}>
+            <View style={styles.wideRow}><Text style={styles.wideRowLabel}>Issued</Text><Text style={styles.wideRowVal}>{r.with_karigar}</Text></View>
+            <View style={styles.wideRow}><Text style={styles.wideRowLabel}>To receive</Text><Text style={styles.wideRowVal}>{r.ready}</Text></View>
+            <View style={styles.wideRow}><Text style={styles.wideRowLabel}>Delivered today</Text><Text style={styles.wideRowVal}>{r.delivered_today}</Text></View>
+          </View>
+        </Pressable>
+      )}
+    </View>
+  );
+}
+
+type CashbookSummary = { closing_balance: number; counters?: { name: string; closing: number }[] };
+
+function CashBookCard({ summary, onPress }: { summary: CashbookSummary; onPress: () => void }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+  const [collapsed, setCollapsed] = useState(false);
+  const counters = summary.counters || [];
+  return (
+    <View style={styles.wideTile} testID="dash-tile-cash">
+      <Pressable onPress={onPress} style={({ pressed }) => pressed && { opacity: 0.85 }}>
+        <View style={styles.tileIcon}><Ionicons name="wallet-outline" size={20} color={colors.brandSecondary} /></View>
+        <Text style={styles.wideValue} numberOfLines={1} adjustsFontSizeToFit>{fmtINR(summary.closing_balance)}</Text>
+        <View style={styles.wideLabelRow}>
+          <Text style={styles.tileLabel}>Cash Book</Text>
+          {counters.length > 0 && (
+            <Pressable onPress={() => setCollapsed((c) => !c)} hitSlop={10} testID="dash-tile-cash-collapse">
+              <Ionicons name={collapsed ? 'chevron-down' : 'chevron-up'} size={16} color={colors.mutedText} />
+            </Pressable>
+          )}
+        </View>
+      </Pressable>
+      {!collapsed && counters.length > 0 && (
+        <Pressable onPress={onPress} style={({ pressed }) => pressed && { opacity: 0.85 }}>
+          <View style={styles.wideRows}>
+            {counters.map((c) => (
+              <View key={c.name} style={styles.wideRow}>
+                <Text style={styles.wideRowLabel} numberOfLines={1}>{c.name}</Text>
+                <Text style={styles.wideRowVal} numberOfLines={1}>{fmtINR(c.closing)}</Text>
+              </View>
+            ))}
+          </View>
+        </Pressable>
+      )}
+    </View>
+  );
+}
+
+/* ---------------- Reorder sheet — tap-to-move "sortable" dashboard ----------------
+   No drag library in this project, and drag gestures fight the pull-to-refresh
+   ScrollView on both web and native, so reordering is up/down buttons in a list —
+   just as "sortable" for a 9-item dashboard, with none of the gesture conflicts. */
+function ReorderSheet({ visible, onClose, order, onMove, onReset }: {
+  visible: boolean; onClose: () => void; order: TileKey[]; onMove: (key: TileKey, dir: -1 | 1) => void; onReset: () => void;
+}) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+  return (
+    <Sheet visible={visible} onClose={onClose} title="Reorder dashboard" testID="reorder-sheet">
+      {order.map((key, i) => (
+        <View key={key} style={styles.reorderRow} testID={`reorder-row-${key}`}>
+          <Text style={styles.reorderLabel}>{TILE_LABEL[key]}</Text>
+          <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+            <Pressable
+              onPress={() => onMove(key, -1)}
+              disabled={i === 0}
+              style={[styles.reorderArrow, i === 0 && styles.reorderArrowDisabled]}
+              hitSlop={8}
+              testID={`reorder-up-${key}`}
+            >
+              <Ionicons name="chevron-up" size={18} color={i === 0 ? colors.mutedText : colors.onSurface} />
+            </Pressable>
+            <Pressable
+              onPress={() => onMove(key, 1)}
+              disabled={i === order.length - 1}
+              style={[styles.reorderArrow, i === order.length - 1 && styles.reorderArrowDisabled]}
+              hitSlop={8}
+              testID={`reorder-down-${key}`}
+            >
+              <Ionicons name="chevron-down" size={18} color={i === order.length - 1 ? colors.mutedText : colors.onSurface} />
+            </Pressable>
+          </View>
+        </View>
+      ))}
+      <Pressable onPress={onReset} style={styles.reorderReset} testID="reorder-reset">
+        <Text style={styles.reorderResetText}>Reset to default order</Text>
+      </Pressable>
+    </Sheet>
   );
 }
 
@@ -641,7 +793,10 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   allClearSub: { color: colors.onSuccess, fontSize: 12, marginTop: 1, opacity: 0.9 },
 
   // Glance — 2-col grid of stat cards
-  glanceHeading: { color: colors.mutedText, fontSize: 12, fontWeight: '700', letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: spacing.sm, marginTop: 2 },
+  glanceHeadingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.sm, marginTop: 2 },
+  glanceHeading: { color: colors.mutedText, fontSize: 12, fontWeight: '700', letterSpacing: 0.8, textTransform: 'uppercase' },
+  reorderBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  reorderBtnText: { color: colors.brandSecondary, fontSize: 12, fontWeight: '700' },
   glanceGrid: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.xl },
   tileGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.xl },
   tile: {
@@ -661,6 +816,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     padding: spacing.md, gap: 2,
   },
   wideValue: { color: colors.onSurface, fontSize: 20, fontWeight: '800' },
+  wideLabelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   wideRows: { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.sm, gap: 6 },
   wideRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   wideRowLabel: { color: colors.mutedText, fontSize: 13, flex: 1 },
@@ -714,6 +870,20 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   sheetRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: 13 },
   sheetIcon: { width: 34, height: 34, borderRadius: radius.md, backgroundColor: colors.surfaceTertiary, alignItems: 'center', justifyContent: 'center' },
   sheetLabel: { flex: 1, color: colors.onSurface, fontSize: 14, fontWeight: '600' },
+
+  // Reorder sheet
+  reorderRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingVertical: 11, borderTopWidth: 1, borderTopColor: colors.divider,
+  },
+  reorderLabel: { color: colors.onSurface, fontSize: 14, fontWeight: '600' },
+  reorderArrow: {
+    width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.surfaceTertiary, borderWidth: 1, borderColor: colors.border,
+  },
+  reorderArrowDisabled: { opacity: 0.4 },
+  reorderReset: { alignItems: 'center', paddingVertical: spacing.md, marginTop: spacing.sm },
+  reorderResetText: { color: colors.brandSecondary, fontSize: 13, fontWeight: '700' },
 
   // Search overlay
   searchRoot: { flex: 1, backgroundColor: colors.surface, paddingTop: 56, paddingHorizontal: spacing.lg },
