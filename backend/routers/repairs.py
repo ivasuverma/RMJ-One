@@ -69,7 +69,23 @@ async def _mirror_party_account(kind: str, ref: str, name: str, phone: str) -> N
 
 # ---------------- Repairs: Customers ----------------
 @router.get('/customers')
-async def list_customers(q: Optional[str] = None, _: dict = Depends(require_staff_or_module(['repairs', 'customer_ledger']))):
+async def list_customers(
+    q: Optional[str] = None, cursor: Optional[str] = None, limit: Optional[int] = None,
+    _: dict = Depends(require_staff_or_module(['repairs', 'customer_ledger'])),
+):
+    """Pagination is opt-in: callers that never pass `limit` (the intake/
+    search pickers in work.tsx, repairs/new.tsx, dashboard search — they
+    want the full set for instant client-side matching or, for work.tsx,
+    to sum open_items/open_weight across every customer) get back exactly
+    what they always did — a bare array, unpaginated. Only a caller that
+    passes `limit` (customers/index.tsx, the real browsing list) gets the
+    new {items, next_cursor} shape.
+
+    The cursor is an offset (not a keyset on `name`) because customer names
+    aren't unique — a $gt cursor on a duplicate name would silently skip
+    the tied customer. Safe here since the whole matching set is already
+    materialized in memory below regardless (to compute balances), so
+    slicing it in Python costs nothing extra."""
     query: dict = {'active': {'$ne': False}}  # hide customers deactivated via the ledger
     if q:
         q_esc = re.escape(q)
@@ -94,7 +110,16 @@ async def list_customers(q: Optional[str] = None, _: dict = Depends(require_staf
         b = balances.get(c['id'], {'open_items': 0, 'open_weight': 0.0})
         c['open_items'] = b['open_items']
         c['open_weight'] = round(b['open_weight'], 3)
-    return customers
+    if limit is None:
+        return customers
+    page_limit = min(max(1, limit), 200)
+    offset = 0
+    if cursor:
+        try: offset = max(0, int(cursor))
+        except ValueError: offset = 0
+    page = customers[offset:offset + page_limit]
+    next_cursor = str(offset + page_limit) if offset + page_limit < len(customers) else None
+    return {'items': page, 'next_cursor': next_cursor}
 
 
 @router.get('/customers/{cid}')
@@ -148,7 +173,14 @@ async def delete_customer(cid: str, user=Depends(require_owner), _mod=Depends(re
 # ---------------- Repairs: Karigars ----------------
 
 @router.get('/karigars')
-async def list_karigars(q: Optional[str] = None, _: dict = Depends(require_staff_or_module(['repairs', 'karigar_ledger']))):
+async def list_karigars(
+    q: Optional[str] = None, cursor: Optional[str] = None, limit: Optional[int] = None,
+    _: dict = Depends(require_staff_or_module(['repairs', 'karigar_ledger'])),
+):
+    """Pagination is opt-in — see GET /customers's docstring for why (same
+    pattern: pickers that never pass `limit` keep getting a bare array,
+    karigars/index.tsx's real browsing list passes `limit` and gets
+    {items, next_cursor}, offset-based since names aren't unique)."""
     query: dict = {'active': {'$ne': False}}  # hide karigars deactivated via the ledger
     if q:
         # Mirror the customer search: escape regex specials, match name/mobile
@@ -166,7 +198,16 @@ async def list_karigars(q: Optional[str] = None, _: dict = Depends(require_staff
         k['weight_balance'] = round(b.get('weight_bal', 0), 3)
         k['fine_weight_balance'] = round(b.get('fine_bal', 0), 3)
         k['amount_due'] = round(b.get('amt_due', 0), 2)
-    return karigars
+    if limit is None:
+        return karigars
+    page_limit = min(max(1, limit), 200)
+    offset = 0
+    if cursor:
+        try: offset = max(0, int(cursor))
+        except ValueError: offset = 0
+    page = karigars[offset:offset + page_limit]
+    next_cursor = str(offset + page_limit) if offset + page_limit < len(karigars) else None
+    return {'items': page, 'next_cursor': next_cursor}
 
 
 @router.post('/karigars')

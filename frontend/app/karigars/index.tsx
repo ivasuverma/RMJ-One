@@ -20,6 +20,8 @@ export default function KarigarsScreen() {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [karigars, setKarigars] = useState<Karigar[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [employees, setEmployees] = useState<Emp[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -36,12 +38,26 @@ export default function KarigarsScreen() {
 
   const load = useCallback(async () => {
     try {
-      const [k, e] = await Promise.all([api.get<Karigar[]>('/karigars'), api.get<Emp[]>('/employees?status=active')]);
-      setKarigars(k); setEmployees(e);
+      const [k, e] = await Promise.all([
+        api.get<{ items: Karigar[]; next_cursor: string | null }>('/karigars?limit=50'),
+        api.get<Emp[]>('/employees?status=active'),
+      ]);
+      setKarigars(k.items); setNextCursor(k.next_cursor); setEmployees(e);
     } catch (_e) { /* ignore */ }
     finally { setRefreshing(false); }
   }, []);
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  const loadMore = async () => {
+    if (!nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const res = await api.get<{ items: Karigar[]; next_cursor: string | null }>(`/karigars?limit=50&cursor=${nextCursor}`);
+      setKarigars((prev) => [...prev, ...res.items]);
+      setNextCursor(res.next_cursor);
+    } catch (_e) { /* keep what's already loaded */ }
+    finally { setLoadingMore(false); }
+  };
 
   const resetForm = () => {
     setEditingId(null); setIsEmployee(true); setName(''); setMobile(''); setActive(true);
@@ -186,6 +202,11 @@ export default function KarigarsScreen() {
               <Ionicons name="pencil-outline" size={16} color={colors.mutedText} />
             </Pressable>
           ))}
+          {!!nextCursor && (
+            <Pressable onPress={loadMore} disabled={loadingMore} style={styles.loadMoreBtn} testID="karigars-load-more">
+              {loadingMore ? <ActivityIndicator color={colors.brandPrimary} /> : <Text style={styles.loadMoreText}>Load more</Text>}
+            </Pressable>
+          )}
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -254,4 +275,10 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   cName: { color: colors.onSurface, fontWeight: '700', fontSize: 14 },
   cMeta: { color: colors.onSurfaceTertiary, fontSize: 12, marginTop: 2 },
+  loadMoreBtn: {
+    alignItems: 'center', justifyContent: 'center', paddingVertical: spacing.md,
+    borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    backgroundColor: colors.surfaceSecondary, marginTop: spacing.xs,
+  },
+  loadMoreText: { color: colors.brandSecondary, fontSize: 13, fontWeight: '700' },
 });

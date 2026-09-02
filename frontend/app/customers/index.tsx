@@ -19,6 +19,8 @@ export default function CustomersScreen() {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [query, setQuery] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -31,11 +33,28 @@ export default function CustomersScreen() {
   const submittingRef = useRef(false);
 
   const load = useCallback(async (q?: string) => {
-    try { setCustomers(await api.get<Customer[]>(`/customers${q ? `?q=${encodeURIComponent(q)}` : ''}`)); }
-    catch (_e) { setCustomers([]); }
+    try {
+      const params = new URLSearchParams({ limit: '50' });
+      if (q) params.set('q', q);
+      const res = await api.get<{ items: Customer[]; next_cursor: string | null }>(`/customers?${params.toString()}`);
+      setCustomers(res.items); setNextCursor(res.next_cursor);
+    } catch (_e) { setCustomers([]); setNextCursor(null); }
     finally { setRefreshing(false); }
   }, []);
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  const loadMore = async () => {
+    if (!nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const params = new URLSearchParams({ limit: '50', cursor: nextCursor });
+      if (query) params.set('q', query);
+      const res = await api.get<{ items: Customer[]; next_cursor: string | null }>(`/customers?${params.toString()}`);
+      setCustomers((prev) => [...prev, ...res.items]);
+      setNextCursor(res.next_cursor);
+    } catch (_e) { /* keep what's already loaded */ }
+    finally { setLoadingMore(false); }
+  };
 
   const resetForm = () => { setName(''); setMobile(''); setAddress(''); setEditingId(null); setShowForm(false); };
 
@@ -140,6 +159,11 @@ export default function CustomersScreen() {
               <Ionicons name="pencil-outline" size={16} color={colors.mutedText} />
             </Pressable>
           ))}
+          {!!nextCursor && (
+            <Pressable onPress={loadMore} disabled={loadingMore} style={styles.loadMoreBtn} testID="customers-load-more">
+              {loadingMore ? <ActivityIndicator color={colors.brandPrimary} /> : <Text style={styles.loadMoreText}>Load more</Text>}
+            </Pressable>
+          )}
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -194,4 +218,10 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   cName: { color: colors.onSurface, fontWeight: '700', fontSize: 14 },
   cMeta: { color: colors.onSurfaceTertiary, fontSize: 12, marginTop: 2 },
+  loadMoreBtn: {
+    alignItems: 'center', justifyContent: 'center', paddingVertical: spacing.md,
+    borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    backgroundColor: colors.surfaceSecondary, marginTop: spacing.xs,
+  },
+  loadMoreText: { color: colors.brandSecondary, fontSize: 13, fontWeight: '700' },
 });
