@@ -1836,6 +1836,9 @@ async def _check_daily_absentee_summary():
 
     absent_names = []
     async for emp in db.employees.find({'status': 'active'}, {'_id': 0, 'password_hash': 0}):
+        shift = await db.shifts.find_one({'name': emp.get('shift')}, {'_id': 0})
+        if shift and shift.get('remote'):
+            continue  # work-from-home — no attendance is tracked, so never "absent"
         att = await db.attendance.find_one({'employee_id': emp['id'], 'date': today}, {'_id': 0})
         if att and (att.get('check_in') or att.get('status') in ('leave', 'holiday', 'weekly_off')):
             continue
