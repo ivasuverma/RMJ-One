@@ -11,6 +11,7 @@ import { istDate } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { useAuth } from '@/src/auth/AuthContext';
+import { ErrorState } from '@/src/components/ui';
 
 type Karigar = { id: string; name: string; mobile: string; is_employee: boolean };
 type Entry = {
@@ -43,15 +44,17 @@ export default function KarigarLedgerScreen() {
   const [fineWeightBalance, setFineWeightBalance] = useState(0);
   const [amountDue, setAmountDue] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [deletingId, setDeletingId] = useState('');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [previewPhoto, setPreviewPhoto] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
+      setError('');
       const res = await api.get<{ karigar: Karigar; entries: Entry[]; weight_balance: number; fine_weight_balance?: number; amount_due: number }>(`/karigars/${id}/ledger`);
       setKarigar(res.karigar); setEntries(res.entries); setWeightBalance(res.weight_balance); setFineWeightBalance(res.fine_weight_balance ?? 0); setAmountDue(res.amount_due);
-    } catch (_e) { /* ignore */ }
+    } catch (e: any) { setError(e?.detail || 'Failed to load karigar'); }
     finally { setLoading(false); }
   }, [id]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
@@ -149,7 +152,11 @@ export default function KarigarLedgerScreen() {
           <View style={{ flex: 1 }} />
           <View style={{ width: 40 }} />
         </View>
-        <View style={styles.loader}><ActivityIndicator color={colors.brandPrimary} /></View>
+        {loading ? (
+          <View style={styles.loader}><ActivityIndicator color={colors.brandPrimary} /></View>
+        ) : (
+          <View style={{ padding: spacing.lg }}><ErrorState message={error || 'Karigar not found'} onRetry={load} testID="karigar-detail-error" /></View>
+        )}
       </SafeAreaView>
     );
   }
