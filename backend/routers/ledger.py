@@ -270,9 +270,25 @@ async def delete_account_type(type_id: str, user=Depends(require_owner)):
 # ---------------- Accounts ----------------
 @router.get('/accounts')
 async def list_accounts(
-    type_id: Optional[str] = None, q: Optional[str] = None,
+    type_id: Optional[str] = None, q: Optional[str] = None, balance: Optional[str] = None,
+    cursor: Optional[str] = None, limit: int = 50,
     _: dict = Depends(require_staff_or_module('ledger')),
 ):
+    """balance: 'with' | 'nil' narrows to accounts with/without an
+    outstanding balance (moved server-side from what used to be a
+    client-side filter, so it still works correctly once the list result is
+    paginated — a client-side filter over just the current page would've
+    silently missed matching accounts sitting on a page that isn't loaded
+    yet).
+
+    Note: computing net_fine/net_amount requires visiting every matching
+    account's ledger (see _balance_for) regardless of pagination — that N+1
+    query pattern is unrelated to and not fixed by this pagination, it's a
+    separate, more involved change (batching balances into one aggregation)
+    worth doing later. Pagination here only trims the response payload and
+    on-screen list length; the offset-style cursor is safe specifically
+    because the whole filtered+balanced set is already materialized
+    in-memory once per request before it's sliced."""
     query: dict = {'active': {'$ne': False}}
     if type_id:
         query['type_id'] = type_id
@@ -286,20 +302,31 @@ async def list_accounts(
     accounts = await db.accounts.find(query, {'_id': 0}).sort('name', 1).to_list(2000)
     type_names = {t['id']: t['name'] async for t in db.account_types.find({}, {'_id': 0, 'id': 1, 'name': 1})}
 
-    net_fine = 0.0
-    net_amount = 0.0
     for a in accounts:
         bal = await _balance_for(a)
         a['fine_balance'] = bal['fine_balance']
         a['amount_balance'] = bal['amount_balance']
         a['type_name'] = type_names.get(a['type_id'], '—')
-        net_fine += bal['fine_balance']
-        net_amount += bal['amount_balance']
+
+    if balance in ('with', 'nil'):
+        def _is_nil(a: dict) -> bool:
+            return abs(a['fine_balance']) < 0.0005 and abs(a['amount_balance']) < 0.005
+        accounts = [a for a in accounts if _is_nil(a) == (balance == 'nil')]
+
+    net_fine = round(sum(a['fine_balance'] for a in accounts), 3)
+    net_amount = round(sum(a['amount_balance'] for a in accounts), 2)
+
+    limit = max(1, min(limit, 200))
+    offset = 0
+    if cursor:
+        try: offset = max(0, int(cursor))
+        except ValueError: offset = 0
+    page = accounts[offset:offset + limit]
+    next_cursor = str(offset + limit) if offset + limit < len(accounts) else None
+
     return {
-        'accounts': accounts,
-        'net_fine': round(net_fine, 3),
-        'net_amount': round(net_amount, 2),
-        'count': len(accounts),
+        'accounts': page, 'next_cursor': next_cursor,
+        'net_fine': net_fine, 'net_amount': net_amount, 'count': len(accounts),
     }
 
 

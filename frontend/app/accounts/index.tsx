@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '@/src/api/client';
@@ -17,7 +17,7 @@ type Account = {
   id: string; name: string; type_id: string; type_name: string; phone?: string;
   fine_balance: number; amount_balance: number;
 };
-type ListResp = { accounts: Account[]; net_fine: number; net_amount: number; count: number };
+type ListResp = { accounts: Account[]; next_cursor: string | null; net_fine: number; net_amount: number; count: number };
 
 // A Karigar/Difference account normally has the shop owing gold/absorbing loss,
 // so "advance"/"loss" reads better than "advance" everywhere — but direction
@@ -34,6 +34,7 @@ export default function LedgerScreen() {
   const [q, setQ] = useState('');
   const [data, setData] = useState<ListResp | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
 
@@ -41,36 +42,45 @@ export default function LedgerScreen() {
     try { setTypes(await api.get<AccountType[]>('/account-types')); } catch { /* ignore */ }
   }, []);
 
+  // Balance filter ('with'/'nil') is applied server-side, before pagination
+  // slicing — a client-side filter over just the loaded page would silently
+  // miss matching accounts sitting on a page that isn't loaded yet.
+  const buildParams = useCallback((cursor?: string) => {
+    const params = new URLSearchParams();
+    if (typeFilter !== 'all') params.set('type_id', typeFilter);
+    if (q.trim()) params.set('q', q.trim());
+    if (balanceFilter !== 'all') params.set('balance', balanceFilter);
+    if (cursor) params.set('cursor', cursor);
+    return params;
+  }, [typeFilter, q, balanceFilter]);
+
   const load = useCallback(async () => {
     try {
       setError('');
-      const params = new URLSearchParams();
-      if (typeFilter !== 'all') params.set('type_id', typeFilter);
-      if (q.trim()) params.set('q', q.trim());
+      const params = buildParams();
       const path = `/accounts${params.toString() ? `?${params.toString()}` : ''}`;
       setData(await api.get<ListResp>(path));
     } catch (e: any) {
       setError(e?.detail || 'Failed to load accounts');
     } finally { setLoading(false); setRefreshing(false); }
-  }, [typeFilter, q]);
+  }, [buildParams]);
 
   useFocusEffect(useCallback(() => { loadTypes(); }, [loadTypes]));
   useFocusEffect(useCallback(() => { setLoading(true); load(); }, [load]));
 
-  const typeKeyById = useMemo(() => Object.fromEntries(types.map((t) => [t.id, t.key])), [types]);
+  const loadMore = async () => {
+    if (!data?.next_cursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const params = buildParams(data.next_cursor);
+      const res = await api.get<ListResp>(`/accounts?${params.toString()}`);
+      setData((prev) => (prev ? { ...res, accounts: [...prev.accounts, ...res.accounts] } : res));
+    } catch { /* keep what's already loaded */ }
+    finally { setLoadingMore(false); }
+  };
 
-  // Client-side balance filter over the loaded accounts. "Nil" = both fine and
-  // cash are effectively zero; "With balance" = something is outstanding either
-  // way. Net totals are recomputed from the filtered set so the header agrees.
-  const isNil = (a: Account) => Math.abs(a.fine_balance) < 0.0005 && Math.abs(a.amount_balance) < 0.005;
-  const view = useMemo(() => {
-    const all = data?.accounts ?? [];
-    const accounts = balanceFilter === 'all' ? all : all.filter((a) => (balanceFilter === 'nil' ? isNil(a) : !isNil(a)));
-    if (balanceFilter === 'all' && data) return { accounts, net_fine: data.net_fine, net_amount: data.net_amount };
-    let nf = 0; let na = 0;
-    accounts.forEach((a) => { nf += a.fine_balance; na += a.amount_balance; });
-    return { accounts, net_fine: Math.round(nf * 1000) / 1000, net_amount: Math.round(na * 100) / 100 };
-  }, [data, balanceFilter]);
+  const typeKeyById = useMemo(() => Object.fromEntries(types.map((t) => [t.id, t.key])), [types]);
+  const view = useMemo(() => ({ accounts: data?.accounts ?? [], net_fine: data?.net_fine ?? 0, net_amount: data?.net_amount ?? 0 }), [data]);
 
   return (
     <Screen scroll={false} testID="ledger-screen">
@@ -170,6 +180,11 @@ export default function LedgerScreen() {
               />
             </Card>
           ))}
+          {!!data?.next_cursor && (
+            <Pressable onPress={loadMore} disabled={loadingMore} style={styles.loadMoreBtn} testID="ledger-load-more">
+              {loadingMore ? <ActivityIndicator color={colors.brandPrimary} /> : <Text style={styles.loadMoreText}>Load more</Text>}
+            </Pressable>
+          )}
           <View style={{ height: spacing.xxl }} />
         </ScrollView>
       )}
@@ -232,4 +247,10 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   rowTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   rowName: { color: colors.onSurface, fontSize: 14.5, fontWeight: '700' },
   rowType: { color: colors.mutedText, fontSize: 11.5, marginTop: 1 },
+  loadMoreBtn: {
+    alignItems: 'center', justifyContent: 'center', paddingVertical: spacing.md,
+    borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    backgroundColor: colors.surfaceSecondary,
+  },
+  loadMoreText: { color: colors.brandSecondary, fontSize: 13, fontWeight: '700' },
 });

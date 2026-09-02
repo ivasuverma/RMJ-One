@@ -340,11 +340,13 @@ async def _notify_record_holders(cat: dict, doc: dict, actor: dict) -> None:
 @router.get('/documents')
 async def list_documents(
     status: Optional[str] = None, category: Optional[str] = None, q: Optional[str] = None,
+    cursor: Optional[str] = None, limit: int = 50,
     user=Depends(get_current),
 ):
     role = _role(user)
     rights = await _account_rights(user)
     visible = await _visible_keys(role, rights)
+    limit = max(1, min(limit, 200))
     query: dict = {'deleted': {'$ne': True}, 'category_key': {'$in': list(visible)}}
     if category and category != 'all':
         if category not in visible:
@@ -353,7 +355,7 @@ async def list_documents(
     if status in ('pending', 'done'):
         # Someone without Done-folder access can never list done documents.
         if status == 'done' and not _can_see_done(user, rights):
-            return []
+            return {'items': [], 'next_cursor': None}
         query['status'] = status
     if q and q.strip():
         q_esc = re.escape(q.strip())
@@ -362,7 +364,11 @@ async def list_documents(
             {'file.orig_name': {'$regex': q_esc, '$options': 'i'}},
             {'linked_ref.label': {'$regex': q_esc, '$options': 'i'}},
         ]
-    return await db.documents.find(query, _LIST_PROJECTION).sort('created_at', -1).to_list(2000)
+    if cursor:
+        query['created_at'] = {'$lt': cursor}
+    items = await db.documents.find(query, _LIST_PROJECTION).sort('created_at', -1).to_list(limit + 1)
+    next_cursor = items[limit]['created_at'] if len(items) > limit else None
+    return {'items': items[:limit], 'next_cursor': next_cursor}
 
 
 @router.get('/documents/summary')

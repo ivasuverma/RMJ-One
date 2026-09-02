@@ -62,6 +62,8 @@ export default function DocumentsScreen() {
   const [catFilter, setCatFilter] = useState('all');
   const [q, setQ] = useState('');
   const [docs, setDocs] = useState<Doc[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [cats, setCats] = useState<Cat[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [token, setToken] = useState('');
@@ -119,15 +121,33 @@ export default function DocumentsScreen() {
     // Folder view (Done, no category picked, no search) needs no doc list —
     // folders come from the summary. But a search at the folder level runs a
     // UNIVERSAL search across every category (no category param below).
-    if (tab === 'done' && !doneCat && !q.trim()) { setDocs([]); setLoading(false); setRefreshing(false); return; }
+    if (tab === 'done' && !doneCat && !q.trim()) { setDocs([]); setNextCursor(null); setLoading(false); setRefreshing(false); return; }
     const params = new URLSearchParams({ status: tab });
     const cat = tab === 'done' ? doneCat! : (catFilter !== 'all' ? catFilter : '');
     if (cat) params.set('category', cat);
     if (q.trim()) params.set('q', q.trim());
-    try { setDocs(await api.get<Doc[]>(`/documents?${params.toString()}`)); } catch { setDocs([]); }
+    try {
+      const res = await api.get<{ items: Doc[]; next_cursor: string | null }>(`/documents?${params.toString()}`);
+      setDocs(res.items); setNextCursor(res.next_cursor);
+    } catch { setDocs([]); setNextCursor(null); }
     finally { setLoading(false); setRefreshing(false); }
   }, [tab, catFilter, q, doneCat]);
   useFocusEffect(useCallback(() => { setLoading(true); load(); }, [load]));
+
+  const loadMoreDocs = async () => {
+    if (!nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const params = new URLSearchParams({ status: tab, cursor: nextCursor });
+      const cat = tab === 'done' ? doneCat! : (catFilter !== 'all' ? catFilter : '');
+      if (cat) params.set('category', cat);
+      if (q.trim()) params.set('q', q.trim());
+      const res = await api.get<{ items: Doc[]; next_cursor: string | null }>(`/documents?${params.toString()}`);
+      setDocs((prev) => [...prev, ...res.items]);
+      setNextCursor(res.next_cursor);
+    } catch { /* keep what's already loaded */ }
+    finally { setLoadingMore(false); }
+  };
 
   const switchTab = (t: 'pending' | 'done') => { if (t === tab) return; haptics.selection(); setTab(t); setDoneCat(null); setLoading(true); };
 
@@ -327,6 +347,12 @@ export default function DocumentsScreen() {
         )}
 
         {tab === 'done' && (loading ? <ActivityIndicator color={colors.brandPrimary} style={{ marginTop: 30 }} /> : (doneCat ? gridView() : doneRoot()))}
+
+        {!loading && !!nextCursor && (
+          <Pressable onPress={loadMoreDocs} disabled={loadingMore} style={styles.loadMoreBtn} testID="documents-load-more">
+            {loadingMore ? <ActivityIndicator color={colors.brandPrimary} /> : <Text style={styles.loadMoreText}>Load more</Text>}
+          </Pressable>
+        )}
 
         <View style={{ height: spacing.xxxl }} />
       </ScrollView>
@@ -602,4 +628,10 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   recPrimaryText: { color: colors.onBrandPrimary, fontSize: 15, fontWeight: '700' },
   recGhost: { paddingVertical: 12, alignItems: 'center', marginTop: 4 },
   recGhostText: { color: colors.mutedText, fontSize: 14, fontWeight: '600' },
+  loadMoreBtn: {
+    alignItems: 'center', justifyContent: 'center', paddingVertical: spacing.md,
+    borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    backgroundColor: colors.surfaceSecondary, marginTop: spacing.md,
+  },
+  loadMoreText: { color: colors.brandSecondary, fontSize: 13, fontWeight: '700' },
 });
