@@ -7,6 +7,7 @@ import { api } from '@/src/api/client';
 import { istDate } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { ErrorState } from '@/src/components/ui';
 
 type Customer = { id: string; name: string; mobile: string; address: string };
 type Order = { id: string; order_no: string; created_at: string; status: string; item_count?: number };
@@ -19,12 +20,14 @@ export default function CustomerDetailScreen() {
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   const load = useCallback(async () => {
     try {
+      setError('');
       const res = await api.get<{ customer: Customer; orders: Order[] }>(`/customers/${id}`);
       setCustomer(res.customer); setOrders(res.orders);
-    } catch (_e) { /* ignore */ }
+    } catch (e: any) { setError(e?.detail || 'Failed to load customer'); }
     finally { setLoading(false); }
   }, [id]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
@@ -39,7 +42,11 @@ export default function CustomerDetailScreen() {
           <View style={{ flex: 1 }} />
           <View style={{ width: 40 }} />
         </View>
-        <View style={styles.loader}><ActivityIndicator color={colors.brandPrimary} /></View>
+        {loading ? (
+          <View style={styles.loader}><ActivityIndicator color={colors.brandPrimary} /></View>
+        ) : (
+          <View style={{ padding: spacing.lg }}><ErrorState message={error || 'Customer not found'} onRetry={load} testID="customer-detail-error" /></View>
+        )}
       </SafeAreaView>
     );
   }
