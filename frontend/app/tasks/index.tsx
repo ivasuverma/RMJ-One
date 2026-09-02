@@ -7,6 +7,7 @@ import { api } from '@/src/api/client';
 import { todayIST } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { ErrorState } from '@/src/components/ui';
 
 type Task = {
   id: string; title: string; priority: 'low' | 'normal' | 'urgent'; due_date: string | null; due_time: string | null;
@@ -23,11 +24,12 @@ export default function TasksListScreen() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState('');
   const [filter, setFilter] = useState<Filter>('open');
 
   const load = useCallback(async () => {
-    try { setTasks(await api.get<Task[]>('/tasks')); }
-    catch (_e) { setTasks([]); }
+    try { setError(''); setTasks(await api.get<Task[]>('/tasks')); }
+    catch (e: any) { setTasks([]); setError(e?.detail || 'Failed to load tasks'); }
     finally { setLoading(false); setRefreshing(false); }
   }, []);
 
@@ -71,6 +73,8 @@ export default function TasksListScreen() {
 
       {loading ? (
         <View style={styles.loader}><ActivityIndicator color={colors.brandPrimary} /></View>
+      ) : error && tasks.length === 0 ? (
+        <View style={{ padding: spacing.lg }}><ErrorState message={error} onRetry={load} testID="tasks-error" /></View>
       ) : (
         <ScrollView
           contentContainerStyle={{ padding: spacing.lg, paddingBottom: 60 }}
