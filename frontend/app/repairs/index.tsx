@@ -8,6 +8,7 @@ import { REPAIR_STATUS_LABEL, RepairItemStatus } from '@/src/utils/repairStatus'
 import { todayIST } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { ErrorState } from '@/src/components/ui';
 
 type Item = {
   id: string; item_code: string; customer_name: string; description: string;
@@ -43,10 +44,12 @@ export default function RepairOrdersScreen() {
   const [filter, setFilter] = useState<FilterKey>(initialFilter);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const triedFallbackRef = useRef(!!routeFilter);
 
   const load = useCallback(async (f: FilterKey) => {
     try {
+      setError('');
       api.get<Pipe>('/repairs/dashboard').then(setPipe).catch(() => {});
       const res = await api.get<Item[]>(`/repair-items?status=${f}`);
       if (f === 'received' && res.length === 0 && !triedFallbackRef.current) {
@@ -55,7 +58,10 @@ export default function RepairOrdersScreen() {
         return;
       }
       setItems(res);
-    } catch (_e) { setItems([]); }
+    } catch (e: any) {
+      setItems([]);
+      setError(e?.detail || 'Failed to load repairs');
+    }
     finally { setRefreshing(false); setLoading(false); }
   }, []);
   useFocusEffect(useCallback(() => { load(filter); }, [load, filter]));
@@ -114,6 +120,8 @@ export default function RepairOrdersScreen() {
         <Text style={styles.sectionLabel}>Items</Text>
         {loading ? (
           <ActivityIndicator color={colors.brandPrimary} style={{ marginTop: 30 }} />
+        ) : error && items.length === 0 ? (
+          <ErrorState message={error} onRetry={() => load(filter)} testID="repairs-error" />
         ) : items.length === 0 ? (
           <View style={styles.empty}><Ionicons name="construct-outline" size={34} color={colors.mutedText} /><Text style={styles.emptyText}>No repairs in this stage</Text></View>
         ) : items.map((i) => {
