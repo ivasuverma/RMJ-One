@@ -18,6 +18,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '@/src/api/client';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { ErrorState } from '@/src/components/ui';
 
 type Emp = {
   id: string; name: string; employee_code: string; department: string;
@@ -43,9 +44,11 @@ export default function EmployeesScreen() {
   const [filter, setFilter] = useState<string>('active');   // open on active staff by default
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState('');
 
   const load = useCallback(async () => {
     try {
+      setError('');
       const query = new URLSearchParams();
       if (q.trim()) query.set('q', q.trim());
       const chip = CHIPS.find((c) => c.key === filter);
@@ -53,8 +56,9 @@ export default function EmployeesScreen() {
       const path = `/employees${query.toString() ? `?${query.toString()}` : ''}`;
       const res = await api.get<Emp[]>(path);
       setItems(res || []);
-    } catch (_e) {
+    } catch (e: any) {
       setItems([]);
+      setError(e?.detail || 'Failed to load employees');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -133,6 +137,8 @@ export default function EmployeesScreen() {
         <View style={styles.center}>
           <ActivityIndicator color={colors.brandPrimary} size="large" />
         </View>
+      ) : error && items.length === 0 ? (
+        <View style={{ padding: spacing.lg }}><ErrorState message={error} onRetry={load} testID="employees-error" /></View>
       ) : empty ? (
         <View style={styles.center} testID="employees-empty">
           <Ionicons name="people-outline" size={48} color={colors.mutedText} />
