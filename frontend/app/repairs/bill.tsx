@@ -49,6 +49,16 @@ const BILL_FILTERS: { key: BillFilterKey; label: string; icon: any }[] = [
 ];
 const billFilterQuery = (f: BillFilterKey) => (f === 'all' ? 'ready,pending_delivery,delivered' : f);
 const BILL_FILTER_KEYS = new Set(BILL_FILTERS.map((f) => f.key));
+// "All" and "Delivered" both include every delivered tag ever billed — an
+// unbounded, ever-growing fetch. Nobody scrolls a billing queue by year, so
+// bound it to the last 90 days by default (a specific old tag is still
+// reachable by its own detail screen, e.g. from the customer's history).
+const billFromDate = (f: BillFilterKey) => {
+  if (f !== 'all' && f !== 'delivered') return null;
+  const d = new Date();
+  d.setDate(d.getDate() - 90);
+  return d.toISOString().slice(0, 10);
+};
 
 function round3(n: number) { return Math.round(n * 1000) / 1000; }
 
@@ -119,7 +129,9 @@ export default function RepairBillScreen() {
 
   const loadBills = useCallback(async (f: BillFilterKey) => {
     try {
-      const res = await api.get<Item[]>(`/repair-items?status=${billFilterQuery(f)}`);
+      const fromDate = billFromDate(f);
+      const path = `/repair-items?status=${billFilterQuery(f)}${fromDate ? `&from_date=${fromDate}` : ''}`;
+      const res = await api.get<Item[]>(path);
       if (f === 'ready' && res.length === 0 && !triedFallbackRef.current) {
         triedFallbackRef.current = true;
         setFilter('pending_delivery');
@@ -393,6 +405,10 @@ export default function RepairBillScreen() {
             </Pressable>
           ))}
         </ScrollView>
+      )}
+
+      {mode === 'list' && !!billFromDate(filter) && (
+        <Text style={styles.dateBoundHint}>Showing the last 90 days</Text>
       )}
 
       {mode === 'list' && (
@@ -679,6 +695,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
 
   filterScroll: { flexGrow: 0, flexShrink: 0 },
   filterRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: 2 },
+  dateBoundHint: { color: colors.mutedText, fontSize: 11, paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
   filterChip: {
     flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 5,
     paddingHorizontal: spacing.md, paddingVertical: 8, borderRadius: radius.pill,

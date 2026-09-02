@@ -474,9 +474,17 @@ async def repair_order_slip_print(order_id: str, user: dict = Depends(require_st
 async def list_repair_items(
     status_: Optional[str] = Query(default=None, alias='status'),
     q: Optional[str] = None,
+    from_date: Optional[str] = None,
     _: dict = Depends(require_staff_or_module(['repairs'])),
 ):
     query: dict = {}
+    if from_date and not q:
+        # Only the Repair Bill screen's "All" filter (spanning delivered
+        # history) uses this, and only when it isn't also searching — a
+        # search should still be able to find an old item by code/customer,
+        # date-bounding would defeat the point. Bounds what used to be a
+        # fully unbounded fetch of every delivered item ever billed.
+        query['created_at'] = {'$gte': from_date}
     if status_ == 'overdue':
         today = today_str()
         query['due_date'] = {'$ne': None, '$lt': today}
