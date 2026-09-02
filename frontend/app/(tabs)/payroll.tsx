@@ -10,6 +10,7 @@ import { api } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthContext';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { ErrorState, useToast } from '@/src/components/ui';
 
 type Row = {
   employee_id: string; employee_code: string; name: string; designation: string; department: string;
@@ -29,6 +30,7 @@ export default function OwnerPayroll() {
   const goBack = () => { if (from === 'work' || from === 'transactions') router.replace('/(tabs)/work' as any); else router.back(); };
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+  const toast = useToast();
   const { user } = useAuth();
   const isAccountantOrOwner = user?.role === 'owner' || user?.role === 'accountant';
   const now = new Date();
@@ -36,15 +38,18 @@ export default function OwnerPayroll() {
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [data, setData] = useState<PayrollResp | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const submittingRef = useRef(false);
 
   const load = useCallback(async () => {
     try {
+      setError('');
       const res = await api.get<PayrollResp>(`/payroll/${year}/${month}`);
       setData(res);
-    } catch (_e) {
+    } catch (e: any) {
       setData(null);
+      setError(e?.detail || 'Failed to load payroll');
     } finally {
       setLoading(false);
     }
@@ -73,7 +78,7 @@ export default function OwnerPayroll() {
           (res.kept_paid ? ` ${res.kept_paid} already-paid entr${res.kept_paid === 1 ? 'y was' : 'ies were'} left untouched.` : ''),
         );
       } else {
-        Alert.alert('Saved', 'Payroll generated. You can now mark employees paid or lock the month.');
+        toast.success('Payroll generated. You can now mark employees paid or lock the month.');
       }
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
     finally { setSaving(false); submittingRef.current = false; }
@@ -81,7 +86,7 @@ export default function OwnerPayroll() {
 
   const toggleLock = async () => {
     if (submittingRef.current) return;
-    if (!data?.saved) { Alert.alert('Save first', 'Generate payroll before locking'); return; }
+    if (!data?.saved) { toast.error('Generate payroll before locking'); return; }
     submittingRef.current = true;
     try {
       if (data.locked) await api.post(`/payroll/${year}/${month}/unlock`);
@@ -119,6 +124,8 @@ export default function OwnerPayroll() {
 
       {loading ? (
         <View style={styles.centered}><ActivityIndicator color={colors.brandPrimary} size="large" /></View>
+      ) : error && !data ? (
+        <View style={{ padding: spacing.lg }}><ErrorState message={error} onRetry={load} testID="payroll-error" /></View>
       ) : (
         <ScrollView
           contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: 120 }}
