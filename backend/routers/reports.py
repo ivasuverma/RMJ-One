@@ -314,18 +314,24 @@ async def _compute_dashboard() -> dict:
 async def audit_list(
     actor: Optional[str] = None, entity_type: Optional[str] = None,
     from_date: Optional[str] = None, to_date: Optional[str] = None,
-    limit: int = 200, _: dict = Depends(require_owner),
+    cursor: Optional[str] = None, limit: int = 200, _: dict = Depends(require_owner),
     _mod: dict = Depends(require_module('audit')),
 ):
+    limit = max(1, min(limit, 500))
     q: dict = {}
     if actor: q['actor_id'] = actor
     if entity_type: q['entity_type'] = entity_type
-    if from_date or to_date:
-        rng: dict = {}
-        if from_date: rng['$gte'] = from_date
-        if to_date: rng['$lte'] = to_date + 'T23:59:59'
-        q['created_at'] = rng
-    return await db.audit_logs.find(q, {'_id': 0}).sort('created_at', -1).limit(limit).to_list(limit)
+    rng: dict = {}
+    if from_date: rng['$gte'] = from_date
+    if to_date: rng['$lte'] = to_date + 'T23:59:59'
+    # cursor (the previous page's oldest created_at) keeps "load older" precise
+    # to the millisecond, unlike to_date which is only day-granular and could
+    # duplicate/skip entries at a day boundary.
+    if cursor: rng['$lt'] = cursor
+    if rng: q['created_at'] = rng
+    items = await db.audit_logs.find(q, {'_id': 0}).sort('created_at', -1).to_list(limit + 1)
+    next_cursor = items[limit]['created_at'] if len(items) > limit else None
+    return {'items': items[:limit], 'next_cursor': next_cursor}
 
 @router.get('/reports/{kind}/pdf')
 async def report_pdf(

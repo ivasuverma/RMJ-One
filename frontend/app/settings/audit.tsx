@@ -28,16 +28,31 @@ export default function AuditLogsScreen() {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [items, setItems] = useState<Log[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
-    try { setItems(await api.get<Log[]>('/audit/logs?limit=200')); }
-    catch (_e) { setItems([]); }
+    try {
+      const res = await api.get<{ items: Log[]; next_cursor: string | null }>('/audit/logs?limit=200');
+      setItems(res.items); setNextCursor(res.next_cursor);
+    } catch (_e) { setItems([]); setNextCursor(null); }
     finally { setLoading(false); setRefreshing(false); }
   }, []);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  const loadMore = async () => {
+    if (!nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const res = await api.get<{ items: Log[]; next_cursor: string | null }>(`/audit/logs?limit=200&cursor=${encodeURIComponent(nextCursor)}`);
+      setItems((prev) => [...prev, ...res.items]);
+      setNextCursor(res.next_cursor);
+    } catch (_e) { /* keep what's already loaded */ }
+    finally { setLoadingMore(false); }
+  };
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="audit-screen">
@@ -80,6 +95,11 @@ export default function AuditLogsScreen() {
               <Text style={styles.when}>{fmtWhen(l.created_at)}</Text>
             </View>
           ))}
+          {!!nextCursor && (
+            <Pressable onPress={loadMore} disabled={loadingMore} style={styles.loadMoreBtn} testID="audit-load-more">
+              {loadingMore ? <ActivityIndicator color={colors.brandPrimary} /> : <Text style={styles.loadMoreText}>Load older</Text>}
+            </Pressable>
+          )}
         </ScrollView>
       )}
     </SafeAreaView>
@@ -115,4 +135,10 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   when: { color: colors.mutedText, fontSize: 10, marginLeft: spacing.sm },
   empty: { alignItems: 'center', paddingVertical: 60, gap: spacing.sm },
   emptyText: { color: colors.onSurfaceTertiary },
+  loadMoreBtn: {
+    alignItems: 'center', justifyContent: 'center', paddingVertical: spacing.md,
+    borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    backgroundColor: colors.surfaceSecondary, marginTop: spacing.xs,
+  },
+  loadMoreText: { color: colors.brandSecondary, fontSize: 13, fontWeight: '700' },
 });
