@@ -12,6 +12,7 @@ import { confirmAction } from '@/src/utils/confirm';
 import { istDisplayDate } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { ErrorState } from '@/src/components/ui';
 
 const fmtINR = (n: number) => `₹${(Math.abs(n) || 0).toLocaleString('en-IN')}`;
 const fmtDate = (s?: string) => istDisplayDate(s);
@@ -54,10 +55,12 @@ export default function EmployeeLedger() {
   const [data, setData] = useState<{ entries: any[]; closing_balance?: number; total?: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState('');
   const [editing, setEditing] = useState<any | null>(null);
 
   const load = useCallback(async () => {
     try {
+      setError('');
       if (isScoped) {
         const q = scopedType ? `?type=${scopedType}` : '';
         setData(await api.get<any>(`/ledger/${id}/month/${year}/${month}${q}`));
@@ -65,7 +68,7 @@ export default function EmployeeLedger() {
         setData(await api.get<any>(`/ledger/${id}`));
       }
     }
-    catch (_e) { setData({ entries: [], closing_balance: 0, total: 0 }); }
+    catch (e: any) { setData(null); setError(e?.detail || 'Failed to load ledger'); }
     finally { setLoading(false); setRefreshing(false); }
   }, [id, isScoped, year, month, scopedType]);
 
@@ -98,6 +101,8 @@ export default function EmployeeLedger() {
 
       {loading ? (
         <View style={styles.centered}><ActivityIndicator color={colors.brandPrimary} size="large" /></View>
+      ) : error && !data ? (
+        <View style={{ padding: spacing.lg }}><ErrorState message={error} onRetry={load} testID="ledger-error" /></View>
       ) : (
         <>
           {isScoped ? (
