@@ -17,6 +17,7 @@ import { PunchCaptureModal, PunchResult } from '@/src/components/PunchCaptureMod
 import { UploadQueueBadge } from '@/src/components/UploadQueueBadge';
 import { AppSetupBanner } from '@/src/components/AppSetupBanner';
 import { haptics } from '@/src/utils/haptics';
+import { useToast } from '@/src/components/ui';
 
 type Att = {
   id?: string;
@@ -42,6 +43,7 @@ export default function EmployeeHome() {
   const isRemote = !!user?.remote;
   const { colors, scheme } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+  const toast = useToast();
   const heroGradient = scheme === 'light'
     ? ['rgba(247,241,230,0.4)', 'rgba(247,241,230,0.98)'] as const
     : ['rgba(13,13,13,0.5)', 'rgba(13,13,13,0.98)'] as const;
@@ -84,7 +86,7 @@ export default function EmployeeHome() {
       haptics.success();
       setShowPunch(null);
       await load();
-      Alert.alert('Success', showPunch === 'check_in' ? 'Checked in successfully.' : 'Checked out successfully.');
+      toast.success(showPunch === 'check_in' ? 'Checked in successfully.' : 'Checked out successfully.');
     } catch (e: any) {
       haptics.error();
       Alert.alert('Failed', e?.detail || 'Please try again');
