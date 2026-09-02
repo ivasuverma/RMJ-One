@@ -6,17 +6,25 @@ name: Deploy to RMJ Server
 # cloned at E:\Rmj-One) to fast-forward to what was just pushed, rebuilds the
 # frontend web export, and restarts both NSSM services.
 #
+# Deploy is manual-only (workflow_dispatch), not triggered by every push to
+# main. The dev machine and the live server are the same box, so an
+# automatic on-push deploy meant every push - including mid-session,
+# WIP pushes just to sync across devices - did a live `git reset --hard`
+# (discarding any uncommitted work sitting in the working tree) plus a
+# backend restart and frontend rebuild+swap, with no way to push code
+# without also going live. Trigger a deploy explicitly (Actions tab ->
+# "Run workflow", or `gh workflow run deploy.yml`) once you actually want
+# what's on main to go live.
+#
 # Post-deploy verification is a smoke test only: it confirms the backend
 # process actually came back up and is answering HTTP requests. It
 # deliberately does NOT run backend/tests/*.py - that suite logs in as the
 # real owner account and creates/deletes real employee records against
 # whatever data your shop actually has, so it's not safe to run
-# unattended on every push. Run it yourself manually when you want it
+# unattended on every deploy. Run it yourself manually when you want it
 # (see backend/tests/README, or just `pytest tests/` with
 # EXPO_PUBLIC_BACKEND_URL pointed at this server) - never as part of deploy.
 on:
-  push:
-    branches: [main]
   workflow_dispatch: {}
 
 jobs:
