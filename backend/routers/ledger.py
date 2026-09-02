@@ -375,8 +375,15 @@ async def create_account(body: LedgerAccountIn, user=Depends(require_staff_or_mo
     return {k: v for k, v in doc.items() if k != '_id'}
 
 
-@router.get('/accounts/{account_id}')
-async def get_account(account_id: str, _: dict = Depends(require_staff_or_module('ledger'))):
+async def _account_statement(account_id: str) -> dict:
+    """The full statement, oldest-first, every entry's running balance
+    computed sequentially from the account's opening position — this part
+    can't be paginated away, the whole history has to be walked regardless
+    of how much of it the caller ultimately wants to see. Shared by the
+    paginated GET /accounts/{id} endpoint below and by account_pdf, which
+    (unlike the endpoint) needs the complete, unpaginated statement for the
+    exported PDF — it calls this directly rather than going through
+    get_account's pagination."""
     account = await _get_account(account_id)
     t = await db.account_types.find_one({'id': account['type_id']}, {'_id': 0, 'name': 1})
     manual = await db.ledger_entries.find({'account_id': account_id}, {'_id': 0}).to_list(5000)
@@ -402,8 +409,28 @@ async def get_account(account_id: str, _: dict = Depends(require_staff_or_module
         'type_name': (t or {}).get('name', '—'),
         'fine_balance': bal['fine_balance'],
         'amount_balance': bal['amount_balance'],
-        'entries': entries,
+        'entries': entries,  # oldest-first, full history
     }
+
+
+@router.get('/accounts/{account_id}')
+async def get_account(
+    account_id: str, cursor: Optional[str] = None, limit: int = 100,
+    _: dict = Depends(require_staff_or_module('ledger')),
+):
+    """Reverses the full statement to newest-first (the current balance is
+    what matters most) and paginates it with an offset cursor, safe because
+    _account_statement already materializes the whole thing in memory."""
+    detail = await _account_statement(account_id)
+    entries = list(reversed(detail['entries']))
+    page_limit = max(1, min(limit, 300))
+    offset = 0
+    if cursor:
+        try: offset = max(0, int(cursor))
+        except ValueError: offset = 0
+    page = entries[offset:offset + page_limit]
+    next_cursor = str(offset + page_limit) if offset + page_limit < len(entries) else None
+    return {**detail, 'entries': page, 'next_cursor': next_cursor}
 
 
 @router.put('/accounts/{account_id}')
@@ -517,7 +544,7 @@ async def delete_entry(account_id: str, entry_id: str, user=Depends(require_staf
 
 @router.get('/accounts/{account_id}/pdf')
 async def account_pdf(account_id: str, _: dict = Depends(require_staff_or_module('ledger'))):
-    detail = await get_account(account_id, _)
+    detail = await _account_statement(account_id)  # full history, oldest-first — the correct order for a printed statement
     account = detail['account']
     entries = detail['entries']
 

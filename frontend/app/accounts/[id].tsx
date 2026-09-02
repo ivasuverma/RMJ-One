@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import {
-  KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View,
+  ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,7 +21,7 @@ type Entry = {
 };
 type Detail = {
   account: { id: string; name: string; phone?: string; type_id?: string; note?: string; active?: boolean; opening_fine: number; opening_amount: number };
-  type_name: string; fine_balance: number; amount_balance: number; entries: Entry[];
+  type_name: string; fine_balance: number; amount_balance: number; entries: Entry[]; next_cursor: string | null;
 };
 type AccountType = { id: string; name: string; key: string };
 
@@ -40,6 +40,7 @@ export default function AccountDetailScreen() {
 
   const [data, setData] = useState<Detail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
   const [addOpen, setAddOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -71,6 +72,16 @@ export default function AccountDetailScreen() {
       setError(e?.detail || 'Failed to load account');
     } finally { setLoading(false); }
   }, [id]);
+
+  const loadMoreEntries = async () => {
+    if (!data?.next_cursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const res = await api.get<Detail>(`/accounts/${id}?cursor=${encodeURIComponent(data.next_cursor)}`);
+      setData((prev) => (prev ? { ...res, entries: [...prev.entries, ...res.entries] } : res));
+    } catch (_e) { /* keep what's already loaded */ }
+    finally { setLoadingMore(false); }
+  };
 
   useFocusEffect(useCallback(() => { setLoading(true); load(); }, [load]));
   useFocusEffect(useCallback(() => { api.get<AccountType[]>('/account-types').then(setTypes).catch(() => {}); }, []));
@@ -233,13 +244,6 @@ export default function AccountDetailScreen() {
             <Text style={[styles.stmtH, styles.colNum]}>Amount ±</Text>
           </View>
 
-          <View style={styles.openingRow}>
-            <Text style={[styles.openingText, styles.colDate]}>—</Text>
-            <Text style={[styles.openingText, styles.colPart]}>Opening balance</Text>
-            <Text style={[styles.openingText, styles.colNum]}>{data.account.opening_fine ? data.account.opening_fine.toFixed(3) : '—'}</Text>
-            <Text style={[styles.openingText, styles.colNum]}>{data.account.opening_amount ? Math.round(data.account.opening_amount).toLocaleString('en-IN') : '—'}</Text>
-          </View>
-
           {data.entries.length === 0 ? (
             <Text style={styles.noEntries}>No entries yet. Add the first one below.</Text>
           ) : data.entries.map((e) => (
@@ -264,6 +268,24 @@ export default function AccountDetailScreen() {
             </Pressable>
           ))}
           {data.entries.length > 0 && <Text style={styles.longPressHint}>Long-press a manual entry to delete it.</Text>}
+
+          {!!data.next_cursor && (
+            <Pressable onPress={loadMoreEntries} disabled={loadingMore} style={styles.loadMoreBtn} testID="account-load-more">
+              {loadingMore ? <ActivityIndicator color={colors.brandPrimary} /> : <Text style={styles.loadMoreText}>Load older entries</Text>}
+            </Pressable>
+          )}
+
+          {/* Shown only once the whole history is loaded (no next_cursor) —
+              it's the chronological start of the statement, which now reads
+              newest-first, so "opening" belongs at the end, not the top. */}
+          {!data.next_cursor && (
+            <View style={styles.openingRow}>
+              <Text style={[styles.openingText, styles.colDate]}>—</Text>
+              <Text style={[styles.openingText, styles.colPart]}>Opening balance</Text>
+              <Text style={[styles.openingText, styles.colNum]}>{data.account.opening_fine ? data.account.opening_fine.toFixed(3) : '—'}</Text>
+              <Text style={[styles.openingText, styles.colNum]}>{data.account.opening_amount ? Math.round(data.account.opening_amount).toLocaleString('en-IN') : '—'}</Text>
+            </View>
+          )}
         </ScrollView>
       ) : null}
 
@@ -417,6 +439,12 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
 
   noEntries: { color: colors.mutedText, fontSize: 13, textAlign: 'center', paddingVertical: spacing.xl },
   longPressHint: { color: colors.mutedText, fontSize: 11, textAlign: 'center', marginTop: spacing.md },
+  loadMoreBtn: {
+    alignItems: 'center', justifyContent: 'center', paddingVertical: spacing.md,
+    borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    backgroundColor: colors.surfaceSecondary, marginTop: spacing.md,
+  },
+  loadMoreText: { color: colors.brandSecondary, fontSize: 13, fontWeight: '700' },
 
   fab: {
     position: 'absolute', right: spacing.lg, bottom: spacing.lg,
