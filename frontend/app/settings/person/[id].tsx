@@ -8,8 +8,11 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useToast } from '@/src/components/ui';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { useAuth } from '@/src/auth/AuthContext';
 import { useAccessEditor } from '@/src/hooks/use-access-editor';
 import { NotificationsSection, AccessSection } from '@/src/components/AccessEditorSections';
+import { api } from '@/src/api/client';
+import { confirmAction } from '@/src/utils/confirm';
 
 const ROLE_LABEL: Record<string, string> = { owner: 'Owner', admin: 'Admin', accountant: 'Accountant', employee: 'Sales / Staff' };
 
@@ -19,12 +22,14 @@ export default function PersonScreen() {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const toast = useToast();
+  const { user: me } = useAuth();
 
   const editor = useAccessEditor(id);
   const acc = editor.acc;
   const isOwner = editor.isOwner;
   const isEmployee = editor.isEmployee;
   const [newPass, setNewPass] = useState('');
+  const [deleting, setDeleting] = useState(false);
 
   const save = async () => {
     const res = await editor.save({ newPassword: newPass });
@@ -35,6 +40,27 @@ export default function PersonScreen() {
     } else {
       Alert.alert('Failed', res.error);
     }
+  };
+
+  // Staff logins only (owner/admin/accountant) — employees are deleted/marked
+  // Left from their own profile (employee/[id].tsx), not here. Owner and the
+  // account you're logged in as can never be deleted, matching the backend's
+  // guard, so the button doesn't even show for those.
+  const canDelete = !!acc && acc.account_type === 'user' && !isOwner && acc.id !== me?.id;
+
+  const onDelete = () => {
+    if (!acc) return;
+    confirmAction('Delete user', `Delete ${acc.name}'s login? This cannot be undone.`, 'Delete', async () => {
+      setDeleting(true);
+      try {
+        await api.del(`/users/${acc.id}`);
+        router.replace('/settings/user-roles' as any);
+      } catch (e: any) {
+        Alert.alert('Failed', e?.detail || 'Could not delete this user. Please try again.');
+      } finally {
+        setDeleting(false);
+      }
+    });
   };
 
   if (editor.loading) {
@@ -64,7 +90,13 @@ export default function PersonScreen() {
       <View style={styles.header}>
         <Pressable onPress={() => router.back()} style={styles.iconBtn} hitSlop={12} testID="back-btn"><Ionicons name="chevron-back" size={22} color={colors.onSurface} /></Pressable>
         <Text style={styles.title} numberOfLines={1}>{acc.name}</Text>
-        <View style={styles.iconBtn} />
+        {canDelete ? (
+          <Pressable onPress={onDelete} disabled={deleting} style={styles.iconBtn} hitSlop={12} testID="delete-user-btn">
+            {deleting ? <ActivityIndicator size="small" color={colors.onError} /> : <Ionicons name="trash-outline" size={20} color={colors.onError} />}
+          </Pressable>
+        ) : (
+          <View style={styles.iconBtn} />
+        )}
       </View>
 
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 120 }} showsVerticalScrollIndicator={false}>
