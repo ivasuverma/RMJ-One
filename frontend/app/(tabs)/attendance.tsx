@@ -9,7 +9,7 @@ import { istTime, istDate, todayIST, nowISTLongLabel, displayDateOnlyWithWeekday
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { haptics } from '@/src/utils/haptics';
-import { FilterChips } from '@/src/components/ui';
+import { FilterChips, useToast } from '@/src/components/ui';
 
 // Attendance & Payroll — one screen inside Work, three segments (matches the
 // v2 design comp): Today (daily in/out), Calendar (pick a person, edit any
@@ -67,6 +67,7 @@ export default function OwnerAttendance() {
   const { from, seg: segParam } = useLocalSearchParams<{ from?: string; seg?: string }>();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+  const toast = useToast();
   const goBack = () => { if (from === 'work' || from === 'transactions') router.replace('/(tabs)/work' as any); else router.back(); };
 
   const [seg, setSeg] = useState<Seg>(segParam === 'pay' ? 'pay' : segParam === 'live' ? 'live' : 'today');
@@ -80,6 +81,7 @@ export default function OwnerAttendance() {
   const [deptFilter, setDeptFilter] = useState('all');
   const [locFilter, setLocFilter] = useState('all');
   const [empLedgers, setEmpLedgers] = useState<EmpLedgerRow[] | null>(null);
+  const [empLedgersError, setEmpLedgersError] = useState('');
   const [empQ, setEmpQ] = useState('');
   const [liveOpen, setLiveOpen] = useState<Record<string, boolean>>({});
   const isToday = date === todayIST();
@@ -139,7 +141,8 @@ export default function OwnerAttendance() {
     try {
       const qs = empQ.trim() ? `?q=${encodeURIComponent(empQ.trim())}` : '';
       setEmpLedgers(await api.get<EmpLedgerRow[]>(`/employees${qs}`));
-    } catch { setEmpLedgers([]); }
+      setEmpLedgersError('');
+    } catch (e: any) { setEmpLedgers([]); setEmpLedgersError(e?.detail || 'Failed to load'); }
   }, [empQ]);
   useFocusEffect(useCallback(() => { if (seg === 'ledgers') loadEmpLedgers(); }, [seg, loadEmpLedgers]));
 
@@ -165,7 +168,7 @@ export default function OwnerAttendance() {
 
   const runPayroll = async () => {
     setRunning(true);
-    try { await api.post('/payroll/save', { year, month }); await loadPay(); Alert.alert('Payroll saved', `${MONTHS[month - 1]} ${year} salary is locked to the current attendance.`); }
+    try { await api.post('/payroll/save', { year, month }); await loadPay(); toast.success(`${MONTHS[month - 1]} ${year} salary is locked to the current attendance.`); }
     catch (e: any) { Alert.alert('Could not run payroll', e?.detail || 'Please try again'); }
     finally { setRunning(false); }
   };
@@ -371,6 +374,8 @@ export default function OwnerAttendance() {
             </View>
             {!empLedgers ? (
               <ActivityIndicator color={colors.brandPrimary} style={{ marginTop: 30 }} />
+            ) : empLedgersError && empLedgers.length === 0 ? (
+              <Text style={styles.empty}>{empLedgersError}</Text>
             ) : empLedgers.length === 0 ? (
               <Text style={styles.empty}>No employees found.</Text>
             ) : empLedgers.map((e) => {
