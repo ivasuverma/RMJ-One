@@ -13,6 +13,7 @@ import { displayDateOnlyWithWeekday, localDateStr, todayIST } from '@/src/utils/
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { useAuth } from '@/src/auth/AuthContext';
+import { ErrorState } from '@/src/components/ui';
 
 type EntryType = 'received' | 'paid';
 type Entry = {
@@ -50,6 +51,7 @@ export default function CashBookScreen() {
 
   const [date, setDate] = useState(todayIST());
   const [day, setDay] = useState<DayData | null>(null);
+  const [dayError, setDayError] = useState('');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [mode, setMode] = useState<Mode>('view');
@@ -109,11 +111,12 @@ export default function CashBookScreen() {
   useFocusEffect(useCallback(() => { loadRefs(); }, [loadRefs]));
 
   const load = useCallback(async (d: string, cid: string) => {
+    setDayError('');
     if (!cid) { setDay(null); setLoading(false); setRefreshing(false); return; }
     try {
       const res = await api.get<DayData>(`/cashbook/day?date=${d}&counter_id=${cid}`);
       setDay(res);
-    } catch (_e) { setDay(null); }
+    } catch (e: any) { setDay(null); setDayError(e?.detail || 'Failed to load this day'); }
     finally { setLoading(false); setRefreshing(false); }
   }, []);
   useFocusEffect(useCallback(() => {
@@ -327,6 +330,8 @@ export default function CashBookScreen() {
 
           {countersLoading || loading ? (
             <View style={styles.loader}><ActivityIndicator color={colors.brandPrimary} /></View>
+          ) : dayError ? (
+            <View style={{ padding: spacing.lg }}><ErrorState message={dayError} onRetry={() => load(date, counterId)} testID="cashbook-day-error" /></View>
           ) : counters.length === 0 ? (
             <View style={styles.empty}>
               <Ionicons name="wallet-outline" size={36} color={colors.mutedText} />
