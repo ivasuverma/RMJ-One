@@ -15,6 +15,7 @@ import { PhotoCaptureModal } from '@/src/components/PhotoCaptureModal';
 import { DateField } from '@/src/components/DateField';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { ErrorState } from '@/src/components/ui';
 
 type Sample = {
   id: string; sample_code: string; description: string; tag_number: string;
@@ -37,6 +38,7 @@ export default function SampleDetailScreen() {
 
   const [sample, setSample] = useState<Sample | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [deleting, setDeleting] = useState(false);
 
   const [showEdit, setShowEdit] = useState(false);
@@ -53,8 +55,8 @@ export default function SampleDetailScreen() {
   const [cameraOpen, setCameraOpen] = useState(false);
 
   const load = useCallback(async () => {
-    try { setSample(await api.get<Sample>(`/samples/${id}`)); }
-    catch (_e) { /* ignore */ }
+    try { setError(''); setSample(await api.get<Sample>(`/samples/${id}`)); }
+    catch (e: any) { setError(e?.detail || 'Failed to load sample'); }
     finally { setLoading(false); }
   }, [id]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
@@ -137,7 +139,11 @@ export default function SampleDetailScreen() {
           <View style={{ flex: 1 }} />
           <View style={{ width: 40 }} />
         </View>
-        <View style={styles.loader}><ActivityIndicator color={colors.brandPrimary} /></View>
+        {loading ? (
+          <View style={styles.loader}><ActivityIndicator color={colors.brandPrimary} /></View>
+        ) : (
+          <View style={{ padding: spacing.lg }}><ErrorState message={error || 'Sample not found'} onRetry={load} testID="sample-detail-error" /></View>
+        )}
       </SafeAreaView>
     );
   }
