@@ -139,7 +139,7 @@ async def get_customer(cid: str, _: dict = Depends(require_staff_or_module(['rep
 
 
 @router.post('/customers')
-async def create_customer(body: CustomerIn, user=Depends(require_admin_or_module('repairs'))):
+async def create_customer(body: CustomerIn, user=Depends(require_admin_or_module(['repairs', 'customer_ledger']))):
     if len(re.sub(r'\D', '', body.mobile or '')) < 7:
         raise HTTPException(status_code=400, detail='A mobile number is required')
     doc = {'id': str(uuid.uuid4()), **body.model_dump(), 'created_at': now_utc().isoformat()}
@@ -211,7 +211,7 @@ async def list_karigars(
 
 
 @router.post('/karigars')
-async def create_karigar(body: KarigarIn, user=Depends(require_admin_or_module('repairs'))):
+async def create_karigar(body: KarigarIn, user=Depends(require_admin_or_module(['repairs', 'karigar_ledger']))):
     name = body.name
     if body.is_employee:
         if not body.employee_id:

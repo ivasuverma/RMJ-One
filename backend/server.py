@@ -292,10 +292,24 @@ def require_staff_or_module(key):
     return _check
 
 
+def _accountant_has_any_module(key) -> bool:
+    keys = [key] if isinstance(key, str) else key
+    return any('accountant' in MODULE_DEFAULT_ROLES.get(k, set()) for k in keys)
+
+
 def require_admin_or_module(key):
     def _check(user=Depends(get_current)):
         role = user.get('role')
         if role in ('owner', 'admin'):
+            return user
+        # An accountant gets the same "do the job" pass as admin, but only for
+        # modules that actually list accountant as a default role (e.g.
+        # customer_ledger, karigar_ledger, cash_book) — modules like repairs or
+        # samples that don't include accountant stay owner/admin-only, same as
+        # before. Otherwise accountant could view a module (require_staff_or_module
+        # always lets accountant through) but never act on it, which is the bug
+        # this closes.
+        if role == 'accountant' and _accountant_has_any_module(key):
             return user
         if role == 'employee' and _has_any_module(user, key):
             return user
@@ -307,6 +321,11 @@ def require_admin_or_module_right(key: str, right: str):
     def _check(user=Depends(get_current)):
         role = user.get('role')
         if role in ('owner', 'admin'):
+            return user
+        # See require_admin_or_module above — accountant is trusted like admin
+        # (no separate module_rights concept for accountant accounts), but only
+        # for modules where accountant is a configured default role.
+        if role == 'accountant' and 'accountant' in MODULE_DEFAULT_ROLES.get(key, set()):
             return user
         if role == 'employee' and key in resolve_modules(user):
             rights = (user.get('module_rights') or {}).get(key) or {}
