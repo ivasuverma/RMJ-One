@@ -9,6 +9,7 @@ import { istDate } from '@/src/utils/datetime';
 import { REPAIR_STATUS_LABEL, repairStatusColors } from '@/src/utils/repairStatus';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { ErrorState } from '@/src/components/ui';
 
 type Order = { id: string; order_no: string; customer_name: string; customer_mobile: string; created_at: string; created_by: string; status: string };
 type Item = {
@@ -26,13 +27,15 @@ export default function RepairOrderDetailScreen() {
   const [order, setOrder] = useState<Order | null>(null);
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [printing, setPrinting] = useState(false);
 
   const load = useCallback(async () => {
     try {
+      setError('');
       const res = await api.get<{ order: Order; items: Item[] }>(`/repair-orders/${id}`);
       setOrder(res.order); setItems(res.items);
-    } catch (_e) { /* ignore */ }
+    } catch (e: any) { setError(e?.detail || 'Failed to load repair order'); }
     finally { setLoading(false); }
   }, [id]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
@@ -76,7 +79,11 @@ export default function RepairOrderDetailScreen() {
           <View style={{ flex: 1 }} />
           <View style={{ width: 40 }} />
         </View>
-        <View style={styles.loader}><ActivityIndicator color={colors.brandPrimary} /></View>
+        {loading ? (
+          <View style={styles.loader}><ActivityIndicator color={colors.brandPrimary} /></View>
+        ) : (
+          <View style={{ padding: spacing.lg }}><ErrorState message={error || 'Repair order not found'} onRetry={load} testID="repair-order-error" /></View>
+        )}
       </SafeAreaView>
     );
   }
