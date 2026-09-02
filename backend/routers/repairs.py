@@ -1014,14 +1014,41 @@ async def delete_bill(item_id: str, user=Depends(require_admin_or_module_right('
 
 
 @router.get('/cash-ledger')
-async def cash_ledger(_: dict = Depends(require_staff_or_module('repairs'))):
+async def cash_ledger(cursor: Optional[str] = None, limit: int = 50, _: dict = Depends(require_staff_or_module('repairs'))):
     """Every cash movement tied to a repair bill — receipts from customers
     and refunds paid back to them (e.g. when an item's weight decreased) —
-    newest first, with running totals."""
-    entries = await db.cash_ledger.find({}, {'_id': 0}).sort('created_at', -1).to_list(2000)
-    total_received = round(sum(e['amount'] for e in entries if e['type'] == 'receipt'), 2)
-    total_paid_out = round(sum(e['amount'] for e in entries if e['type'] == 'refund'), 2)
-    return {'entries': entries, 'total_received': total_received, 'total_paid_out': total_paid_out,
+    newest first, with running totals.
+
+    Keyset-paginated on created_at (newest page has no cursor; pass the
+    previous page's next_cursor to keep going). Totals are computed via a
+    separate full-collection aggregation, not from the paginated page, so
+    they stay accurate regardless of how many pages have been fetched."""
+    limit = max(1, min(limit, 200))
+    query: dict = {'created_at': {'$lt': cursor}} if cursor else {}
+    entries = await db.cash_ledger.find(query, {'_id': 0}).sort('created_at', -1).to_list(limit + 1)
+    next_cursor = entries[limit]['created_at'] if len(entries) > limit else None
+    entries = entries[:limit]
+    totals = {t['_id']: t['total'] async for t in db.cash_ledger.aggregate([
+        {'$group': {'_id': '$type', 'total': {'$sum': '$amount'}}},
+    ])}
+    total_received = round(totals.get('receipt', 0), 2)
+    total_paid_out = round(totals.get('refund', 0), 2)
+    # By-payment-mode rollup, same full-dataset treatment as the totals above
+    # — the frontend used to compute this client-side from `entries`, which
+    # broke once entries became paginated (it would've only reflected
+    # whatever page was currently loaded).
+    by_mode_agg = [m async for m in db.cash_ledger.aggregate([
+        {'$group': {
+            '_id': '$payment_mode',
+            'received': {'$sum': {'$cond': [{'$eq': ['$type', 'receipt']}, '$amount', 0]}},
+            'refunded': {'$sum': {'$cond': [{'$eq': ['$type', 'refund']}, '$amount', 0]}},
+            'count': {'$sum': 1},
+        }},
+        {'$sort': {'received': -1}},
+    ])]
+    by_mode = [{'mode': m['_id'] or 'cash', 'received': round(m['received'], 2), 'refunded': round(m['refunded'], 2), 'count': m['count']} for m in by_mode_agg]
+    return {'entries': entries, 'next_cursor': next_cursor, 'by_mode': by_mode,
+            'total_received': total_received, 'total_paid_out': total_paid_out,
             'net': round(total_received - total_paid_out, 2)}
 
 
@@ -1121,18 +1148,39 @@ async def repair_item_issue_slip_print(item_id: str, user: dict = Depends(requir
 
 # ---------------- Repairs: Loss Ledger ----------------
 @router.get('/karigars/loss-ledger')
-async def loss_ledger(_: dict = Depends(require_staff_or_module(['repairs', 'karigar_ledger']))):
+async def loss_ledger(cursor: Optional[str] = None, limit: int = 50, _: dict = Depends(require_staff_or_module(['repairs', 'karigar_ledger']))):
     """Every declared process-loss entry across all karigars, newest first —
     an audit trail of how much gold is being written off as loss, and by
-    whom, that's otherwise buried inside individual receive transactions."""
-    entries = await db.karigar_ledger.find({'type': 'loss'}, {'_id': 0}).sort('created_at', -1).to_list(2000)
+    whom, that's otherwise buried inside individual receive transactions.
+
+    Keyset-paginated on created_at, same shape as GET /cash-ledger — totals
+    come from a full-collection aggregation, independent of the page size."""
+    limit = max(1, min(limit, 200))
+    query: dict = {'type': 'loss'}
+    if cursor:
+        query['created_at'] = {'$lt': cursor}
+    entries = await db.karigar_ledger.find(query, {'_id': 0}).sort('created_at', -1).to_list(limit + 1)
+    next_cursor = entries[limit]['created_at'] if len(entries) > limit else None
+    entries = entries[:limit]
     karigars = await db.karigars.find({}, {'_id': 0, 'id': 1, 'name': 1}).to_list(500)
     names = {k['id']: k['name'] for k in karigars}
     for e in entries:
         e['karigar_name'] = names.get(e.get('karigar_id'), '')
-    total_weight = round(sum(e.get('weight') or 0 for e in entries), 3)
-    total_fine = round(sum(e.get('fine_weight') or 0 for e in entries), 3)
-    return {'entries': entries, 'total_weight': total_weight, 'total_fine_weight': total_fine}
+    totals = [t async for t in db.karigar_ledger.aggregate([
+        {'$match': {'type': 'loss'}},
+        {'$group': {'_id': None, 'weight': {'$sum': '$weight'}, 'fine_weight': {'$sum': '$fine_weight'}}},
+    ])]
+    total_weight = round((totals[0]['weight'] if totals else 0) or 0, 3)
+    total_fine = round((totals[0]['fine_weight'] if totals else 0) or 0, 3)
+    # By-karigar rollup, same full-dataset treatment — used to be computed
+    # client-side from `entries`, which broke once entries became paginated.
+    by_karigar_agg = [k async for k in db.karigar_ledger.aggregate([
+        {'$match': {'type': 'loss'}},
+        {'$group': {'_id': '$karigar_id', 'weight': {'$sum': '$weight'}, 'fine': {'$sum': '$fine_weight'}, 'count': {'$sum': 1}}},
+        {'$sort': {'fine': -1}},
+    ])]
+    by_karigar = [{'karigar_id': k['_id'], 'name': names.get(k['_id'], 'Unknown'), 'weight': round((k['weight'] or 0), 3), 'fine': round((k['fine'] or 0), 3), 'count': k['count']} for k in by_karigar_agg]
+    return {'entries': entries, 'next_cursor': next_cursor, 'by_karigar': by_karigar, 'total_weight': total_weight, 'total_fine_weight': total_fine}
 
 
 # ---------------- Repairs: Karigar Ledger ----------------

@@ -12,40 +12,51 @@ type LossEntry = {
   id: string; karigar_id: string; karigar_name: string; weight: number; fine_weight: number;
   item_id?: string | null; item_code: string | null; note: string; created_at: string; created_by: string;
 };
+type ByKarigar = { karigar_id: string; name: string; weight: number; fine: number; count: number };
+type LossLedgerRes = {
+  entries: LossEntry[]; next_cursor: string | null; by_karigar: ByKarigar[];
+  total_weight: number; total_fine_weight: number;
+};
 
 // Every declared process-loss entry across all karigars — an audit trail for
 // how much gold is being written off as "loss" on receives, and by whom,
 // rather than that figure sitting invisibly inside each receive transaction.
+// Keyset-paginated (50/page) — the totals and by-karigar rollup below always
+// reflect the full history regardless of how many pages are loaded, since
+// they come from the backend, not from summing whatever's on screen.
 export default function LossLedgerScreen() {
   const router = useRouter();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [entries, setEntries] = useState<LossEntry[]>([]);
+  const [byKarigar, setByKarigar] = useState<ByKarigar[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [totalWeight, setTotalWeight] = useState(0);
   const [totalFine, setTotalFine] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const res = await api.get<{ entries: LossEntry[]; total_weight: number; total_fine_weight: number }>('/karigars/loss-ledger');
-      setEntries(res.entries); setTotalWeight(res.total_weight); setTotalFine(res.total_fine_weight);
+      const res = await api.get<LossLedgerRes>('/karigars/loss-ledger');
+      setEntries(res.entries); setNextCursor(res.next_cursor); setByKarigar(res.by_karigar);
+      setTotalWeight(res.total_weight); setTotalFine(res.total_fine_weight);
     } catch (_e) { setEntries([]); }
     finally { setLoading(false); setRefreshing(false); }
   }, []);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  // Quick per-karigar rollup so a pattern (one karigar declaring most of the
-  // loss) is visible at a glance above the full chronological list.
-  const byKarigar = useMemo(() => {
-    const map = new Map<string, { name: string; weight: number; fine: number; count: number }>();
-    for (const e of entries) {
-      const row = map.get(e.karigar_id) || { name: e.karigar_name || 'Unknown', weight: 0, fine: 0, count: 0 };
-      row.weight += e.weight || 0; row.fine += e.fine_weight || 0; row.count += 1;
-      map.set(e.karigar_id, row);
-    }
-    return Array.from(map.values()).sort((a, b) => b.fine - a.fine);
-  }, [entries]);
+  const loadMore = async () => {
+    if (!nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const res = await api.get<LossLedgerRes>(`/karigars/loss-ledger?cursor=${encodeURIComponent(nextCursor)}`);
+      setEntries((prev) => [...prev, ...res.entries]);
+      setNextCursor(res.next_cursor);
+    } catch (_e) { /* keep what's already loaded */ }
+    finally { setLoadingMore(false); }
+  };
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="loss-ledger-screen">
@@ -79,7 +90,7 @@ export default function LossLedgerScreen() {
             <>
               <Text style={styles.section}>By Karigar</Text>
               {byKarigar.map((row) => (
-                <View key={row.name} style={styles.karigarRow} testID={`loss-by-karigar-${row.name}`}>
+                <View key={row.karigar_id} style={styles.karigarRow} testID={`loss-by-karigar-${row.karigar_id}`}>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.cName}>{row.name}</Text>
                     <Text style={styles.cMeta}>{row.count} receive{row.count === 1 ? '' : 's'}</Text>
@@ -90,7 +101,7 @@ export default function LossLedgerScreen() {
             </>
           )}
 
-          <Text style={[styles.section, { marginTop: spacing.md }]}>All Entries · {entries.length}</Text>
+          <Text style={[styles.section, { marginTop: spacing.md }]}>Entries · {entries.length}{nextCursor ? '+' : ''}</Text>
           {entries.length === 0 ? (
             <View style={styles.empty}><Text style={styles.emptyText}>No loss declared yet</Text></View>
           ) : entries.map((e) => (
@@ -111,6 +122,11 @@ export default function LossLedgerScreen() {
               </View>
             </Pressable>
           ))}
+          {!!nextCursor && (
+            <Pressable onPress={loadMore} disabled={loadingMore} style={styles.loadMoreBtn} testID="loss-ledger-load-more">
+              {loadingMore ? <ActivityIndicator color={colors.brandPrimary} /> : <Text style={styles.loadMoreText}>Load more</Text>}
+            </Pressable>
+          )}
         </ScrollView>
       )}
     </SafeAreaView>
@@ -156,4 +172,10 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   cMeta: { color: colors.mutedText, fontSize: 11, marginTop: 2 },
   entryValue: { color: colors.onSurface, fontSize: 13, fontWeight: '700' },
   entryFine: { color: colors.mutedText, fontSize: 11, marginTop: 2 },
+  loadMoreBtn: {
+    alignItems: 'center', justifyContent: 'center', paddingVertical: spacing.md,
+    borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    backgroundColor: colors.surfaceSecondary, marginTop: spacing.xs,
+  },
+  loadMoreText: { color: colors.brandSecondary, fontSize: 13, fontWeight: '700' },
 });

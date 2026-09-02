@@ -13,43 +13,53 @@ type CashEntry = {
   item_id: string; item_code: string; customer_name: string; payment_mode: string;
   note: string; created_at: string; created_by: string;
 };
+type ByMode = { mode: string; received: number; refunded: number; count: number };
+type CashLedgerRes = {
+  entries: CashEntry[]; next_cursor: string | null; by_mode: ByMode[];
+  total_received: number; total_paid_out: number; net: number;
+};
 
 // Every cash movement tied to a repair bill — what customers paid, and any
 // refunds owed back to them (e.g. an item that came back lighter than it
 // went in). This is the shop's cash-in/cash-out record for repairs, kept
 // separate from the karigar and loss ledgers since it's a different party.
+// Keyset-paginated (50/page) — the totals and by-mode rollup below always
+// reflect the full history regardless of how many pages are loaded, since
+// they come from the backend, not from summing whatever's on screen.
 export default function CashLedgerScreen() {
   const router = useRouter();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [entries, setEntries] = useState<CashEntry[]>([]);
+  const [byMode, setByMode] = useState<ByMode[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [totalReceived, setTotalReceived] = useState(0);
   const [totalPaidOut, setTotalPaidOut] = useState(0);
   const [net, setNet] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const res = await api.get<{ entries: CashEntry[]; total_received: number; total_paid_out: number; net: number }>('/cash-ledger');
-      setEntries(res.entries); setTotalReceived(res.total_received); setTotalPaidOut(res.total_paid_out); setNet(res.net);
+      const res = await api.get<CashLedgerRes>('/cash-ledger');
+      setEntries(res.entries); setNextCursor(res.next_cursor); setByMode(res.by_mode);
+      setTotalReceived(res.total_received); setTotalPaidOut(res.total_paid_out); setNet(res.net);
     } catch (_e) { setEntries([]); }
     finally { setLoading(false); setRefreshing(false); }
   }, []);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  // Quick per-payment-mode rollup — how much of what's been received is
-  // cash vs UPI vs card, at a glance.
-  const byMode = useMemo(() => {
-    const map = new Map<string, { mode: string; received: number; refunded: number; count: number }>();
-    for (const e of entries) {
-      const row = map.get(e.payment_mode) || { mode: e.payment_mode, received: 0, refunded: 0, count: 0 };
-      if (e.type === 'receipt') row.received += e.amount; else row.refunded += e.amount;
-      row.count += 1;
-      map.set(e.payment_mode, row);
-    }
-    return Array.from(map.values()).sort((a, b) => b.received - a.received);
-  }, [entries]);
+  const loadMore = async () => {
+    if (!nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const res = await api.get<CashLedgerRes>(`/cash-ledger?cursor=${encodeURIComponent(nextCursor)}`);
+      setEntries((prev) => [...prev, ...res.entries]);
+      setNextCursor(res.next_cursor);
+    } catch (_e) { /* keep what's already loaded */ }
+    finally { setLoadingMore(false); }
+  };
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="cash-ledger-screen">
@@ -101,7 +111,7 @@ export default function CashLedgerScreen() {
             </>
           )}
 
-          <Text style={[styles.section, { marginTop: spacing.md }]}>All Entries · {entries.length}</Text>
+          <Text style={[styles.section, { marginTop: spacing.md }]}>Entries · {entries.length}{nextCursor ? '+' : ''}</Text>
           {entries.length === 0 ? (
             <View style={styles.empty}><Text style={styles.emptyText}>No repair cash entries yet</Text></View>
           ) : entries.map((e) => (
@@ -123,6 +133,11 @@ export default function CashLedgerScreen() {
               </Text>
             </Pressable>
           ))}
+          {!!nextCursor && (
+            <Pressable onPress={loadMore} disabled={loadingMore} style={styles.loadMoreBtn} testID="cash-ledger-load-more">
+              {loadingMore ? <ActivityIndicator color={colors.brandPrimary} /> : <Text style={styles.loadMoreText}>Load more</Text>}
+            </Pressable>
+          )}
         </ScrollView>
       )}
     </SafeAreaView>
@@ -168,4 +183,10 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   cName: { color: colors.onSurface, fontWeight: '700', fontSize: 13 },
   cMeta: { color: colors.mutedText, fontSize: 11, marginTop: 2 },
   entryValue: { fontSize: 13, fontWeight: '700' },
+  loadMoreBtn: {
+    alignItems: 'center', justifyContent: 'center', paddingVertical: spacing.md,
+    borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    backgroundColor: colors.surfaceSecondary, marginTop: spacing.xs,
+  },
+  loadMoreText: { color: colors.brandSecondary, fontSize: 13, fontWeight: '700' },
 });
