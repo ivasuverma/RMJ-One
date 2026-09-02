@@ -293,9 +293,19 @@ async def _compute_payroll(year: int, month: int) -> list:
         # requires BOTH a check-in and a check-out within shift timing (a
         # checked-in-but-never-checked-out day settles to 'missing_punch',
         # not 'present' — no free full-day pay just for showing up).
+        # Window this employee was actually employed within the month — a day
+        # before joining_date or after left_date is neither present nor
+        # absent, it just didn't happen for them. Sliced to 10 chars in case
+        # either field is ever a full timestamp rather than a plain date.
+        join_date = (e.get('joining_date') or '')[:10]
+        left_date = (e.get('left_date') or '')[:10]
+
         day_state: dict = {}
         late_days = 0
         for ds in all_month_dates:
+            if (join_date and ds < join_date) or (left_date and ds > left_date):
+                day_state[ds] = 'not_employed'
+                continue
             if ds in leave_dates:
                 day_state[ds] = 'leave'
                 continue
@@ -350,6 +360,7 @@ async def _compute_payroll(year: int, month: int) -> list:
         absent = sum(1 for v in day_state.values() if v == 'absent')
         holiday_days = sum(1 for v in day_state.values() if v == 'holiday')
         weekly_off_days = sum(1 for v in day_state.values() if v == 'weekly_off')
+        not_employed_days = sum(1 for v in day_state.values() if v == 'not_employed')
         # Sunday-work bonus: half a day's extra pay for a Sunday that
         # resolved to a real present/half-day (shop opened, employee
         # actually worked it) — on top of normal pay for that day, not
@@ -367,17 +378,20 @@ async def _compute_payroll(year: int, month: int) -> list:
         earned = round(per_day * min(effective, total_days) + per_day * 0.5 * sunday_work, 2)
 
         # Work-from-home shift: no attendance is tracked, so pay the full set
-        # salary for the month. Nothing is counted as absent/late/half; the
-        # whole month reads as paid days. Ledger entries (advance/bonus/fine)
-        # and opening balance still apply below, exactly like any other row.
+        # salary for whatever days they were actually employed this month —
+        # nothing is counted as absent/late/half, but a join/left date still
+        # prorates the total the same as it would for an on-site employee.
+        # Ledger entries (advance/bonus/fine) and opening balance still apply
+        # below, exactly like any other row.
         is_remote = bool(shift and shift.get('remote'))
         if is_remote:
-            present = total_days
+            employed_days = total_days - not_employed_days
+            present = employed_days
             half = missing_punch = absent = 0
             holiday_days = weekly_off_days = sunday_work = late_days = 0
             leave_days = 0
-            effective = total_days
-            earned = round(base, 2)
+            effective = employed_days
+            earned = round(per_day * employed_days, 2)
 
         # Ledger tallies in month
         month_advance = 0.0
@@ -403,6 +417,7 @@ async def _compute_payroll(year: int, month: int) -> list:
             'absent_days': absent, 'missing_punch_days': missing_punch,
             'sunday_work': sunday_work, 'leave_days': leave_days, 'late_days': late_days,
             'holiday_days': holiday_days, 'weekly_off_days': weekly_off_days,
+            'not_employed_days': not_employed_days,
             'total_days': total_days, 'effective_days': round(min(effective, total_days), 2),
             'per_day_rate': round(per_day, 2),
             'earned': earned, 'advance': round(month_advance, 2), 'bonus': round(month_bonus, 2),

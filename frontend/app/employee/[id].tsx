@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, ActivityIndicator, Pressable, Platform, RefreshControl, Alert, Share,
+  View, Text, StyleSheet, ScrollView, ActivityIndicator, Pressable, Platform, RefreshControl, Alert, Share, Modal,
 } from 'react-native';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { Image } from 'expo-image';
@@ -9,11 +9,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthContext';
 import { confirmAction } from '@/src/utils/confirm';
-import { displayDateOnly } from '@/src/utils/datetime';
+import { displayDateOnly, todayIST } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { RecordPhotos } from '@/src/components/RecordPhotos';
 import { SegmentedControl } from '@/src/components/ui/SegmentedControl';
+import { DateField } from '@/src/components/DateField';
 import { useAccessEditor } from '@/src/hooks/use-access-editor';
 import { NotificationsSection, AccessSection } from '@/src/components/AccessEditorSections';
 
@@ -29,6 +30,7 @@ type Emp = {
   status: 'active' | 'inactive' | 'on_leave'; notes: string; photo?: string;
   id_proofs?: IdProof[];
   auto_advance_amount?: number | null; auto_advance_day?: number | null;
+  left_date?: string | null;
 };
 
 type Tab = 'profile' | 'legal' | 'notifications' | 'access';
@@ -78,6 +80,9 @@ export default function EmployeeProfile() {
   const [sharingCreds, setSharingCreds] = useState(false);
   const [locations, setLocations] = useState<Location[]>([]);
   const [tab, setTab] = useState<Tab>('profile');
+  const [leftFlowOpen, setLeftFlowOpen] = useState(false);
+  const [leftDate, setLeftDate] = useState(todayIST());
+  const [markingLeft, setMarkingLeft] = useState(false);
 
   // Notifications/Access/Documents editor — shared with Settings > Users'
   // per-person editor (settings/person/[id].tsx) so the two never drift.
@@ -104,11 +109,32 @@ export default function EmployeeProfile() {
     else Alert.alert('Failed', res.error);
   };
 
-  const onDelete = () => {
+  // Active employee: primary action is "Mark as Left" (opens the sheet
+  // below), not delete — a real employee's history must never be
+  // destroyable. Already-inactive employee: the button becomes a real
+  // delete, which the backend only allows when there's no attendance/
+  // payroll/ledger history to lose (a same-day mistake, essentially).
+  const onDeletePress = () => {
+    if (emp?.status === 'active') { setLeftDate(todayIST()); setLeftFlowOpen(true); return; }
     confirmAction('Delete employee', 'This cannot be undone.', 'Delete', async () => {
       try { await api.del(`/employees/${id}`); router.replace('/(tabs)/employees'); }
       catch (e: any) { Alert.alert('Failed', e?.detail || 'Could not delete this employee. Please try again.'); }
     });
+  };
+
+  const confirmMarkLeft = async () => {
+    if (!emp || !leftDate) return;
+    setMarkingLeft(true);
+    try {
+      await api.put(`/employees/${id}`, { ...emp, status: 'inactive', left_date: leftDate });
+      setLeftFlowOpen(false);
+      await load();
+      Alert.alert('Marked as Left', `${emp.name} is now inactive as of ${displayDateOnly(leftDate)}.`);
+    } catch (e: any) {
+      Alert.alert('Failed', e?.detail || 'Could not update this employee. Please try again.');
+    } finally {
+      setMarkingLeft(false);
+    }
   };
 
   // Actually share credentials: generate a fresh temporary password and open
@@ -182,8 +208,10 @@ export default function EmployeeProfile() {
         <Pressable onPress={() => router.push(`/employee/edit/${emp.id}`)} style={[styles.iconBtn, { marginLeft: spacing.sm }]} testID="edit-btn" hitSlop={12}>
           <Ionicons name="create-outline" size={20} color={colors.onSurface} />
         </Pressable>
-        <Pressable onPress={onDelete} style={[styles.iconBtn, { marginLeft: spacing.sm }]} testID="delete-btn" hitSlop={12}>
-          <Ionicons name="trash-outline" size={20} color={colors.onError} />
+        <Pressable onPress={onDeletePress} style={[styles.iconBtn, { marginLeft: spacing.sm }]} testID="delete-btn" hitSlop={12}>
+          {emp.status === 'active'
+            ? <Ionicons name="log-out-outline" size={20} color={colors.onWarning} />
+            : <Ionicons name="trash-outline" size={20} color={colors.onError} />}
         </Pressable>
       </View>
 
@@ -240,6 +268,7 @@ export default function EmployeeProfile() {
                 <DetailRow label="Designation" value={emp.designation || '—'} />
                 <DetailRow label="Shift" value={emp.shift || '—'} />
                 <DetailRow label="Joined" value={fmtJoinDate(emp.joining_date)} />
+                {!!emp.left_date && <DetailRow label="Left" value={fmtJoinDate(emp.left_date)} />}
                 <DetailRow label="Biometric ID" value={emp.biometric_id || '—'} />
 
                 <SectionTitle text="Salary" />
@@ -296,6 +325,32 @@ export default function EmployeeProfile() {
           </View>
         </View>
       </ScrollView>
+
+      <Modal visible={leftFlowOpen} animationType="slide" transparent onRequestClose={() => setLeftFlowOpen(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Mark {emp.name} as Left</Text>
+            <DateField label="Last working day" value={leftDate} onChange={setLeftDate} testID="left-date-field" />
+            <Text style={styles.modalHint}>This will:</Text>
+            <View style={styles.modalList}>
+              <Text style={styles.modalListItem}>• Turn off their login</Text>
+              <Text style={styles.modalListItem}>• Stop attendance being expected from this date on</Text>
+              <Text style={styles.modalListItem}>• Stop auto-paid Sundays after this date</Text>
+              <Text style={styles.modalListItem}>• Turn off their notifications</Text>
+              <Text style={styles.modalListItem}>• Prorate this month&apos;s salary up to this date</Text>
+            </View>
+            <Text style={styles.modalHint}>Once their final salary is paid and the ledger is settled, they&apos;ll move to the Left filter in Employees.</Text>
+            <View style={styles.modalActions}>
+              <Pressable onPress={() => setLeftFlowOpen(false)} style={styles.modalCancelBtn} testID="left-flow-cancel">
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </Pressable>
+              <Pressable onPress={confirmMarkLeft} disabled={markingLeft || !leftDate} style={[styles.modalConfirmBtn, (markingLeft || !leftDate) && { opacity: 0.6 }]} testID="left-flow-confirm">
+                {markingLeft ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.modalConfirmText}>Mark as Left</Text>}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -515,4 +570,19 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
 
   saveAccessBtn: { backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: 14, alignItems: 'center', marginTop: spacing.lg },
   saveAccessText: { color: colors.onBrandPrimary, fontSize: 14, fontWeight: '700' },
+
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalCard: {
+    backgroundColor: colors.surface, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl,
+    padding: spacing.lg, paddingBottom: spacing.xl, gap: spacing.sm,
+  },
+  modalTitle: { color: colors.onSurface, fontSize: 18, fontWeight: '700', fontFamily: fonts.display, marginBottom: spacing.xs },
+  modalHint: { color: colors.mutedText, fontSize: 12.5, marginTop: spacing.sm, lineHeight: 18 },
+  modalList: { gap: 4 },
+  modalListItem: { color: colors.onSurfaceSecondary, fontSize: 13 },
+  modalActions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg },
+  modalCancelBtn: { flex: 1, alignItems: 'center', paddingVertical: 14, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border },
+  modalCancelText: { color: colors.onSurfaceSecondary, fontWeight: '700', fontSize: 14 },
+  modalConfirmBtn: { flex: 1, alignItems: 'center', paddingVertical: 14, borderRadius: radius.md, backgroundColor: colors.onWarning },
+  modalConfirmText: { color: colors.surface, fontWeight: '700', fontSize: 14 },
 });

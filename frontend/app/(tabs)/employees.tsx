@@ -26,11 +26,16 @@ type Emp = {
   salary: number;
 };
 
+// 'left' isn't a real status value the backend stores — it's inactive AND
+// settled (final salary paid, ledger nil) AND deactivated 30+ days ago (see
+// GET /employees). "Inactive" here means "recently left, dues pending";
+// once settled they graduate out of that chip and into this one.
 const CHIPS: { key: string; label: string; status?: string }[] = [
   { key: 'all', label: 'All' },
   { key: 'active', label: 'Active', status: 'active' },
   { key: 'on_leave', label: 'On Leave', status: 'on_leave' },
   { key: 'inactive', label: 'Inactive', status: 'inactive' },
+  { key: 'left', label: 'Left', status: 'left' },
 ];
 
 export default function EmployeesScreen() {

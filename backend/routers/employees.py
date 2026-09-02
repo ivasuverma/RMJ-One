@@ -7,6 +7,7 @@ only where the code lives."""
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from typing import Optional
+from datetime import timedelta
 import uuid
 import re
 import secrets
@@ -117,6 +118,15 @@ async def list_employees(
     user: dict = Depends(get_current),
 ):
     full = _can_see_team_data(user)
+    # 'left' isn't a real status value — it's status='inactive' AND settled
+    # (fully paid out, ledger nil) AND deactivated 30+ days ago, same rule
+    # payroll already uses to drop long-gone staff from the payroll list
+    # (see _compute_payroll). Surfaced here as its own filter so a plain
+    # 'inactive' query naturally excludes anyone who's graduated to it —
+    # "Inactive" becomes "recently left, dues pending", "Left" becomes
+    # "fully departed and settled".
+    is_left_query = status_ == 'left'
+    needs_settled_check = status_ in ('inactive', 'left')
     query: dict = {}
     if q:
         # re.escape() so special regex chars in free-text search (., *, (, etc.)
@@ -134,7 +144,8 @@ async def list_employees(
     if department: query['department'] = department
     if department_id: query['department_id'] = department_id
     if location_id: query['location_id'] = location_id
-    if status_: query['status'] = status_
+    if is_left_query: query['status'] = 'inactive'
+    elif status_: query['status'] = status_
     # 'photo' excluded — this list only ever shows a small avatar, so it gets
     # photo_thumb (~5-10KB) swapped in as `photo` below instead of the full
     # ~50-150KB capture. The employee's own detail page still fetches the
@@ -152,7 +163,7 @@ async def list_employees(
     docs = await db.employees.find(query, proj).sort('name', 1).to_list(1000)
     for d in docs:
         d['photo'] = d.pop('photo_thumb', '') or ''
-    if full:
+    if full or needs_settled_check:
         events = await db.timeline.find(
             {'type': {'$in': ['advance', 'bonus', 'fine', 'deduction', 'salary', 'salary_earned', 'salary_paid']}},
             {'_id': 0, 'employee_id': 1, 'type': 1, 'amount': 1, 'sign': 1},
@@ -170,8 +181,17 @@ async def list_employees(
             else:
                 delta = e.get('sign', _ledger_sign(t)) * abs(amount)
             balances[eid] = balances.get(eid, 0) + delta
-        for d in docs:
-            d['closing_balance'] = round(balances.get(d['id'], 0), 2)
+        if full:
+            for d in docs:
+                d['closing_balance'] = round(balances.get(d['id'], 0), 2)
+        if needs_settled_check:
+            cutoff = (now_utc() - timedelta(days=30)).isoformat()
+
+            def _is_settled_left(d: dict) -> bool:
+                da = d.get('deactivated_at') or d.get('updated_at') or ''
+                return bool(da) and da < cutoff and abs(balances.get(d['id'], 0)) < 0.5
+
+            docs = [d for d in docs if _is_settled_left(d) == is_left_query]
     return docs
 
 
@@ -258,10 +278,16 @@ async def update_employee(emp_id: str, body: EmployeeIn, user: dict = Depends(re
     set_fields = {**data, 'photo_thumb': photo_thumb, 'updated_at': iso}
     # Stamp when an employee is deactivated (and clear it if reactivated) — used
     # to hide long-gone, fully-settled staff from payroll after a grace month.
+    # Notifications and left_date follow the same transition: silenced (and
+    # left_date kept, for payroll proration) while inactive; restored and
+    # cleared on reactivation.
     if data.get('status') == 'inactive' and existing.get('status') != 'inactive':
         set_fields['deactivated_at'] = iso
+        set_fields['notifications_enabled'] = False
     elif data.get('status') != 'inactive' and existing.get('status') == 'inactive':
         set_fields['deactivated_at'] = None
+        set_fields['notifications_enabled'] = True
+        set_fields['left_date'] = None
     await db.employees.update_one({'id': emp_id}, {'$set': set_fields})
     if float(existing.get('salary') or 0) != float(data.get('salary') or 0):
         await db.timeline.insert_one({
@@ -278,9 +304,17 @@ async def update_employee(emp_id: str, body: EmployeeIn, user: dict = Depends(re
 @router.delete('/employees/{emp_id}')
 async def delete_employee(emp_id: str, user: dict = Depends(require_owner), _mod=Depends(require_module('team'))):
     existing = await db.employees.find_one({'id': emp_id}, {'_id': 0})
+    if not existing: raise HTTPException(status_code=404, detail='Employee not found')
+    # Delete is only for a same-day mistake — a real employee's attendance,
+    # payroll, and ledger history must never be destroyable. Mark them
+    # inactive (Left) instead once there's any history to preserve.
+    has_timeline = await db.timeline.find_one({'employee_id': emp_id}, {'_id': 1})
+    has_attendance = await db.attendance.find_one({'employee_id': emp_id}, {'_id': 1})
+    has_payroll = await db.payroll_entries.find_one({'employee_id': emp_id}, {'_id': 1})
+    if has_timeline or has_attendance or has_payroll:
+        raise HTTPException(status_code=400, detail='This employee has attendance, payroll, or ledger history — mark them as Left instead of deleting.')
     r = await db.employees.delete_one({'id': emp_id})
     if r.deleted_count == 0: raise HTTPException(status_code=404, detail='Employee not found')
-    await db.timeline.delete_many({'employee_id': emp_id})
     await log_audit(user, 'employee.delete', 'employee', emp_id, (existing or {}).get('employee_code', ''), {'name': (existing or {}).get('name')})
     return {'ok': True}
 

@@ -355,6 +355,11 @@ class EmployeeIn(BaseModel):
     bank_name: Optional[str] = ''
     photo: Optional[str] = ''
     status: Literal['active', 'inactive', 'on_leave'] = 'active'
+    # Last working day (inclusive) — set when marking an employee as left.
+    # Feeds payroll's day-window proration (see _compute_payroll) so a month
+    # they departed mid-way through isn't paid in full. Cleared on
+    # reactivation, same as deactivated_at.
+    left_date: Optional[str] = None
     notes: Optional[str] = ''
     # Recurring monthly advance — e.g. a fixed ₹5,000 auto-recorded as a salary
     # advance every 5th of the month. Flows into the existing 'advance' ledger
