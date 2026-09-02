@@ -8,7 +8,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
-import { Input, Button, Skeleton, useToast } from '@/src/components/ui';
+import { Input, Button, Skeleton, ErrorState, useToast } from '@/src/components/ui';
 import { confirmAction } from '@/src/utils/confirm';
 
 // Account-type master editor (v2 Phase 6). The types here generate the Ledger's
@@ -24,6 +24,7 @@ export default function AccountTypesScreen() {
   const toast = useToast();
 
   const [types, setTypes] = useState<AccountType[] | null>(null);
+  const [error, setError] = useState('');
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState('');
   const [busy, setBusy] = useState(false);
@@ -31,8 +32,8 @@ export default function AccountTypesScreen() {
   const [editName, setEditName] = useState('');
 
   const load = useCallback(async () => {
-    try { setTypes(await api.get<AccountType[]>('/account-types')); }
-    catch { setTypes([]); }
+    try { setError(''); setTypes(await api.get<AccountType[]>('/account-types')); }
+    catch (e: any) { setTypes([]); setError(e?.detail || 'Failed to load account types'); }
   }, []);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
@@ -87,6 +88,8 @@ export default function AccountTypesScreen() {
 
           {types === null ? (
             <View style={{ gap: spacing.sm }}>{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} width="100%" height={52} radius={radius.md} />)}</View>
+          ) : error && types.length === 0 ? (
+            <ErrorState message={error} onRetry={load} testID="account-types-error" />
           ) : (
             <View style={styles.card}>
               {types.map((t, i) => (
