@@ -62,11 +62,15 @@ export function PhotoCaptureModal({ visible, title, onClose, onCapture, highRes 
     }
     setBusy(true);
     try {
-      const photo = await camRef.current?.takePictureAsync({ quality: 0.5, base64: false, skipProcessing: true });
+      // quality here is the raw sensor capture itself — it was fixed at 0.5
+      // for every caller, so `highRes` only ever changed the downstream
+      // resize/compress step and the actual capture stayed low-fidelity no
+      // matter what. Now the capture quality follows `highRes` too.
+      const photo = await camRef.current?.takePictureAsync({ quality: highRes ? 0.92 : 0.5, base64: false, skipProcessing: true });
       if (!photo?.uri) throw new Error('Failed to capture');
       const shrunk = await manipulateAsync(
-        photo.uri, [{ resize: { width: highRes ? 1600 : 720 } }],
-        { compress: highRes ? 0.75 : 0.6, format: SaveFormat.JPEG, base64: true },
+        photo.uri, [{ resize: { width: highRes ? 2000 : 720 } }],
+        { compress: highRes ? 0.85 : 0.6, format: SaveFormat.JPEG, base64: true },
       );
       const dataUri = `data:image/jpeg;base64,${shrunk.base64}`;
       // Land on a review step (with optional crop) instead of saving straight away.

@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, Platform, KeyboardAvoidingView, Image,
+  View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Alert, Platform, KeyboardAvoidingView, Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -11,8 +11,6 @@ import { useAuth } from '@/src/auth/AuthContext';
 import { RecordPhotos } from '@/src/components/RecordPhotos';
 import { confirmAction } from '@/src/utils/confirm';
 import { istDateTime } from '@/src/utils/datetime';
-import { PhotoCaptureModal } from '@/src/components/PhotoCaptureModal';
-import { DateField } from '@/src/components/DateField';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { ErrorState } from '@/src/components/ui';
@@ -41,18 +39,7 @@ export default function SampleDetailScreen() {
   const [error, setError] = useState('');
   const [deleting, setDeleting] = useState(false);
 
-  const [showEdit, setShowEdit] = useState(false);
-  const [editDescription, setEditDescription] = useState('');
-  const [editTagNumber, setEditTagNumber] = useState('');
-  const [editWeight, setEditWeight] = useState('');
-  const [editPcCount, setEditPcCount] = useState('');
-  const [editIssueType, setEditIssueType] = useState('');
-  const [editDueDate, setEditDueDate] = useState('');
-  const [editPhoto, setEditPhoto] = useState('');
-  const [editNote, setEditNote] = useState('');
-  const [savingEdit, setSavingEdit] = useState(false);
   const [printing, setPrinting] = useState(false);
-  const [cameraOpen, setCameraOpen] = useState(false);
 
   const load = useCallback(async () => {
     try { setError(''); setSample(await api.get<Sample>(`/samples/${id}`)); }
@@ -60,33 +47,6 @@ export default function SampleDetailScreen() {
     finally { setLoading(false); }
   }, [id]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
-
-  const openEdit = () => {
-    if (!sample) return;
-    setEditDescription(sample.description); setEditTagNumber(sample.tag_number || '');
-    setEditWeight(String(sample.weight ?? '')); setEditPcCount(String(sample.pc_count ?? '1'));
-    setEditIssueType(sample.issue_type || ''); setEditDueDate(sample.due_date || '');
-    setEditPhoto(sample.photo || ''); setEditNote('');
-    setShowEdit(true);
-  };
-
-  const saveEdit = async () => {
-    if (!editDescription.trim()) { Alert.alert('Missing', 'Description cannot be empty'); return; }
-    const w = parseFloat(editWeight);
-    if (!w || w <= 0) { Alert.alert('Missing', 'Enter a weight greater than 0'); return; }
-    setSavingEdit(true);
-    try {
-      await api.put(`/samples/${id}`, {
-        description: editDescription.trim(), tag_number: editTagNumber.trim(),
-        weight: w, pc_count: parseInt(editPcCount, 10) || 1,
-        issue_type: editIssueType.trim(), due_date: editDueDate || null,
-        photo: editPhoto, note: editNote,
-      });
-      setShowEdit(false);
-      await load();
-    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
-    finally { setSavingEdit(false); }
-  };
 
   const printThermal = async () => {
     setPrinting(true);
@@ -158,7 +118,7 @@ export default function SampleDetailScreen() {
         </Pressable>
         <Text style={styles.title} numberOfLines={1}>{sample.sample_code}</Text>
         {isWithKarigar && canEdit && (
-          <Pressable onPress={openEdit} style={styles.iconBtn} testID="edit-sample-btn" hitSlop={12}>
+          <Pressable onPress={() => router.push(`/samples/new?id=${sample.id}` as any)} style={styles.iconBtn} testID="edit-sample-btn" hitSlop={12}>
             <Ionicons name="pencil-outline" size={18} color={colors.onSurface} />
           </Pressable>
         )}
@@ -224,76 +184,16 @@ export default function SampleDetailScreen() {
             )}
           </View>
 
-          {isWithKarigar && showEdit && (
-            <View style={styles.formCard} testID="edit-sample-form">
-              <Text style={styles.formHeaderText}>Edit Sample</Text>
-              <Text style={styles.formHint}>Same voucher as issue — editing the weight keeps {sample.karigar_name}'s gold ledger entry in sync.</Text>
-              <Text style={styles.label}>Description</Text>
-              <TextInput testID="edit-description" value={editDescription} onChangeText={setEditDescription} placeholderTextColor={colors.mutedText} style={styles.input} />
-              <Text style={styles.label}>Tag Number</Text>
-              <TextInput testID="edit-tag-number" value={editTagNumber} onChangeText={setEditTagNumber} placeholderTextColor={colors.mutedText} style={styles.input} />
-              <View style={{ flexDirection: 'row', gap: spacing.sm }}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.label}>Weight (g)</Text>
-                  <TextInput testID="edit-weight" value={editWeight} onChangeText={(v) => setEditWeight(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholderTextColor={colors.mutedText} style={styles.input} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.label}>Pieces</Text>
-                  <TextInput testID="edit-pc-count" value={editPcCount} onChangeText={(v) => setEditPcCount(v.replace(/[^0-9]/g, ''))} keyboardType="number-pad" placeholderTextColor={colors.mutedText} style={styles.input} />
-                </View>
-              </View>
-              <Text style={styles.label}>Type of Issue</Text>
-              <TextInput testID="edit-issue-type" value={editIssueType} onChangeText={setEditIssueType} placeholder="e.g. Quoting, Reference" placeholderTextColor={colors.mutedText} style={styles.input} />
-              <DateField label="Due back" value={editDueDate} onChange={setEditDueDate} testID="edit-due-date" />
+          <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+            <Pressable onPress={printPdf} disabled={printingPdf} style={[styles.actionBtn, { flex: 1 }]} testID="print-sample-issue-slip-pdf-btn">
+              {printingPdf ? <ActivityIndicator color={colors.onSurfaceSecondary} /> : <><Ionicons name="document-text-outline" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>Print PDF</Text></>}
+            </Pressable>
+            <Pressable onPress={printThermal} disabled={printing} style={[styles.actionBtn, { flex: 1 }]} testID="print-sample-issue-slip-btn">
+              {printing ? <ActivityIndicator color={colors.onSurfaceSecondary} /> : <><Ionicons name="print-outline" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>Print Receipt</Text></>}
+            </Pressable>
+          </View>
 
-              <Text style={styles.label}>Photo</Text>
-              {editPhoto ? (
-                <View style={styles.photoRow}>
-                  <Image source={{ uri: editPhoto }} style={styles.photoThumb} />
-                  <Pressable onPress={() => setCameraOpen(true)} style={styles.smallBtn} testID="edit-retake-photo">
-                    <Text style={styles.smallBtnText}>Retake</Text>
-                  </Pressable>
-                  <Pressable onPress={() => setEditPhoto('')} style={styles.delBtn} hitSlop={10} testID="edit-remove-photo">
-                    <Ionicons name="close" size={16} color={colors.onError} />
-                  </Pressable>
-                </View>
-              ) : (
-                <Pressable onPress={() => setCameraOpen(true)} style={styles.photoBtn} testID="edit-add-photo">
-                  <Ionicons name="camera-outline" size={16} color={colors.onSurfaceSecondary} />
-                  <Text style={styles.smallBtnText}>Add Photo</Text>
-                </Pressable>
-              )}
-
-              <Text style={styles.label}>Add a note (optional)</Text>
-              <TextInput testID="edit-note" value={editNote} onChangeText={setEditNote} placeholderTextColor={colors.mutedText} style={styles.input} multiline />
-              <Pressable style={[styles.primaryBtn, savingEdit && { opacity: 0.6 }]} disabled={savingEdit} onPress={saveEdit} testID="save-edit-sample-btn">
-                {savingEdit ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.primaryBtnText}>Save Changes</Text>}
-              </Pressable>
-              <Pressable style={styles.secondaryBtn} onPress={() => setShowEdit(false)} testID="cancel-edit-sample-btn">
-                <Text style={styles.secondaryBtnText}>Cancel</Text>
-              </Pressable>
-            </View>
-          )}
-
-          <PhotoCaptureModal
-            visible={cameraOpen}
-            title="Sample Photo"
-            onClose={() => setCameraOpen(false)}
-            onCapture={async (photo) => { setEditPhoto(photo); setCameraOpen(false); }}
-          />
-
-          {!showEdit && (
-            <View style={{ flexDirection: 'row', gap: spacing.sm }}>
-              <Pressable onPress={printPdf} disabled={printingPdf} style={[styles.actionBtn, { flex: 1 }]} testID="print-sample-issue-slip-pdf-btn">
-                {printingPdf ? <ActivityIndicator color={colors.onSurfaceSecondary} /> : <><Ionicons name="document-text-outline" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>Print PDF</Text></>}
-              </Pressable>
-              <Pressable onPress={printThermal} disabled={printing} style={[styles.actionBtn, { flex: 1 }]} testID="print-sample-issue-slip-btn">
-                {printing ? <ActivityIndicator color={colors.onSurfaceSecondary} /> : <><Ionicons name="print-outline" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>Print Receipt</Text></>}
-              </Pressable>
-            </View>
-          )}
-
-          {isWithKarigar && !showEdit && (
+          {isWithKarigar && (
             <Pressable style={styles.primaryBtn} onPress={() => router.push(`/samples/receive?id=${id}` as any)} testID="open-receive-sample-btn">
               <Text style={styles.primaryBtnText}>Receive Back</Text>
             </Pressable>
@@ -342,26 +242,6 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   detailLabel: { color: colors.mutedText, fontSize: 12 },
   detailValue: { color: colors.onSurface, fontSize: 13, fontWeight: '600' },
 
-  formCard: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.lg, marginBottom: spacing.md },
-  formHeaderText: { color: colors.onSurface, fontSize: 13, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
-  formHint: { color: colors.mutedText, fontSize: 11, marginTop: 4, marginBottom: spacing.sm },
-  label: { color: colors.onSurfaceSecondary, fontSize: 12, marginTop: spacing.md, marginBottom: 6 },
-  input: {
-    backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1,
-    borderColor: colors.border, color: colors.onSurface, paddingHorizontal: spacing.md, paddingVertical: 12, fontSize: 14,
-  },
-  photoRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: 4 },
-  photoThumb: { width: 52, height: 52, borderRadius: radius.md, backgroundColor: colors.surfaceTertiary },
-  photoBtn: {
-    flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, paddingVertical: 12, marginTop: 4,
-  },
-  smallBtn: { backgroundColor: colors.surfaceTertiary, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, borderColor: colors.border },
-  smallBtnText: { color: colors.onSurfaceSecondary, fontSize: 11, fontWeight: '700' },
-  delBtn: {
-    width: 30, height: 30, borderRadius: 15, backgroundColor: colors.error,
-    borderColor: colors.onError, borderWidth: 1, alignItems: 'center', justifyContent: 'center',
-  },
   primaryBtn: { backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: 14, alignItems: 'center', marginTop: spacing.lg },
   primaryBtnText: { color: colors.onBrandPrimary, fontWeight: '800', fontSize: 14 },
   actionBtn: {
@@ -370,6 +250,4 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     paddingVertical: 12, marginTop: spacing.lg,
   },
   actionBtnText: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '700' },
-  secondaryBtn: { borderRadius: radius.md, paddingVertical: 12, alignItems: 'center', marginTop: spacing.sm },
-  secondaryBtnText: { color: colors.mutedText, fontWeight: '700', fontSize: 13 },
 });

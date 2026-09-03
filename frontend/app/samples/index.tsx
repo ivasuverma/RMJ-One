@@ -119,24 +119,33 @@ export default function SamplesScreen() {
           const at = s.status === 'received' ? s.received_at : s.issued_at;
           return (
             <Pressable key={s.id} onPress={() => router.push(`/samples/${s.id}` as any)} style={styles.card} testID={`sample-${s.id}`}>
-              <View style={styles.iconBox}><Ionicons name="diamond-outline" size={18} color={colors.brandSecondary} /></View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.cName}>{s.karigar_name}</Text>
-                <Text style={styles.cMeta} numberOfLines={1}>
-                  {s.sample_code}{s.tag_number ? ` · Tag ${s.tag_number}` : ''} · {s.description}
-                </Text>
-                <Text style={styles.cMeta2}>
-                  {s.weight.toFixed(3)}g
-                  {s.status === 'received' && s.weight_diff ? ` · diff ${s.weight_diff > 0 ? '+' : ''}${s.weight_diff.toFixed(3)}g` : ''}
-                  {at ? ` · ${istDateTime(at)}` : ''}
-                  {s.issued_by ? ` · by ${s.issued_by}` : ''}
-                </Text>
+              <View style={styles.cardTop}>
+                <View style={styles.iconBox}><Ionicons name="diamond-outline" size={18} color={colors.brandSecondary} /></View>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={styles.cName}>{s.karigar_name}</Text>
+                  <Text style={styles.cMeta} numberOfLines={1}>
+                    {s.sample_code}{s.tag_number ? ` · Tag ${s.tag_number}` : ''} · {s.description}
+                  </Text>
+                  <Text style={styles.cMeta2}>
+                    {s.weight.toFixed(3)}g
+                    {s.status === 'received' && s.weight_diff ? ` · diff ${s.weight_diff > 0 ? '+' : ''}${s.weight_diff.toFixed(3)}g` : ''}
+                    {at ? ` · ${istDateTime(at)}` : ''}
+                    {s.issued_by ? ` · by ${s.issued_by}` : ''}
+                  </Text>
+                </View>
+                <View style={[styles.badge, isOverdue ? styles.badgeOverdue : s.status === 'received' ? styles.badgeReceived : styles.badgeOut]}>
+                  <Text style={[styles.badgeText, isOverdue ? styles.badgeTextOverdue : s.status === 'received' ? styles.badgeTextReceived : styles.badgeTextOut]}>
+                    {isOverdue ? 'Overdue' : s.status === 'received' ? 'Received' : 'With Karigar'}
+                  </Text>
+                </View>
               </View>
-              <View style={[styles.badge, isOverdue ? styles.badgeOverdue : s.status === 'received' ? styles.badgeReceived : styles.badgeOut]}>
-                <Text style={[styles.badgeText, isOverdue ? styles.badgeTextOverdue : s.status === 'received' ? styles.badgeTextReceived : styles.badgeTextOut]}>
-                  {isOverdue ? 'Overdue' : s.status === 'received' ? 'Received' : 'With Karigar'}
-                </Text>
-              </View>
+              {s.status === 'with_karigar' && (
+                <View style={styles.actRow}>
+                  <Pressable onPress={() => router.push(`/samples/receive?id=${s.id}` as any)} style={styles.recvBtn} testID={`receive-${s.id}`}>
+                    <Text style={styles.recvBtnText}>Receive</Text>
+                  </Pressable>
+                </View>
+              )}
             </Pressable>
           );
         })}
@@ -180,10 +189,13 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   empty: { alignItems: 'center', paddingVertical: 40, gap: spacing.sm },
   emptyText: { color: colors.onSurfaceTertiary },
   card: {
-    flexDirection: 'row', alignItems: 'center', gap: spacing.md,
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md,
     borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.sm,
   },
+  cardTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  actRow: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 11 },
+  recvBtn: { backgroundColor: colors.brandPrimary, borderRadius: 10, paddingVertical: 9, paddingHorizontal: 16 },
+  recvBtnText: { color: colors.onBrandPrimary, fontSize: 13, fontWeight: '700' },
   iconBox: {
     width: 36, height: 36, borderRadius: 18, backgroundColor: colors.brandTertiary,
     alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.brand,

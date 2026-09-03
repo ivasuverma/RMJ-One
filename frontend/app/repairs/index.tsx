@@ -223,8 +223,8 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   detail: { color: colors.onSurfaceTertiary, fontSize: 11.5, marginTop: 3, lineHeight: 15 },
   pill: { paddingHorizontal: 9, paddingVertical: 4, borderRadius: 8 },
   pillText: { fontSize: 11, fontWeight: '700', letterSpacing: 0.2 },
-  actRow: { flexDirection: 'row', gap: 9, marginTop: 13 },
-  btn: { flex: 1, alignItems: 'center', paddingVertical: 11, borderRadius: 11 },
+  actRow: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 11 },
+  btn: { alignItems: 'center', paddingVertical: 9, paddingHorizontal: 16, borderRadius: 10 },
   btnPri: { backgroundColor: colors.brandPrimary },
-  btnPriText: { color: colors.onBrandPrimary, fontSize: 14, fontWeight: '700' },
+  btnPriText: { color: colors.onBrandPrimary, fontSize: 13, fontWeight: '700' },
 });
