@@ -1,11 +1,12 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, Platform, KeyboardAvoidingView,
+  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Platform, KeyboardAvoidingView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
+import { notify } from '@/src/utils/notify';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
@@ -33,7 +34,14 @@ export default function ReceiveSampleScreen() {
     try {
       const s = await api.get<Sample>(`/samples/${id}`);
       setSample(s);
-      setReceivedWeight(s.status === 'with_karigar' ? '' : String(s.weight));
+      // Prefilled with the issued weight rather than left blank behind a
+      // placeholder — a matching return is the common case, and a greyed-out
+      // placeholder that happens to equal the issued weight above it reads,
+      // at a glance, exactly like an already-entered value. Staff would tap
+      // Confirm on an actually-empty field, and since Alert.alert is a
+      // total no-op on web (see src/utils/notify.ts), the validation error
+      // never appeared either — the button just looked dead.
+      setReceivedWeight(String(s.weight));
     } catch (_e) { /* ignore */ }
     finally { setLoading(false); }
   }, [id]);
@@ -42,14 +50,14 @@ export default function ReceiveSampleScreen() {
   const submit = async () => {
     if (submittingRef.current || !sample) return;
     const w = parseFloat(receivedWeight);
-    if (!w || w <= 0) { Alert.alert('Missing', 'Enter the weight received back'); return; }
+    if (!w || w <= 0) { notify('Missing', 'Enter the weight received back'); return; }
     submittingRef.current = true;
     setBusy(true);
     try {
       await api.post(`/samples/${sample.id}/receive`, { received_weight: w, note: note.trim() });
       router.back();
     } catch (e: any) {
-      Alert.alert('Failed', e?.detail || 'Please try again');
+      notify('Failed', e?.detail || 'Please try again');
     } finally {
       setBusy(false);
       submittingRef.current = false;
@@ -104,7 +112,7 @@ export default function ReceiveSampleScreen() {
               <TextInput
                 testID="received-weight" value={receivedWeight}
                 onChangeText={(v) => setReceivedWeight(v.replace(/[^0-9.]/g, ''))}
-                keyboardType="decimal-pad" placeholder={sample.weight.toFixed(3)}
+                keyboardType="decimal-pad" placeholder="0.000"
                 placeholderTextColor={colors.mutedText} style={styles.input}
               />
 
