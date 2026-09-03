@@ -46,7 +46,13 @@ async def _next_loan_no() -> str:
 
 
 async def _get_loan(loan_id: str) -> dict:
-    loan = await db.gold_loans.find_one({'id': loan_id}, {'_id': 0})
+    # Excludes the legacy `photo` field some older docs may still carry — a
+    # single inline base64 pledge photo used to be stored right on the loan,
+    # which made every fetch here (payments, backfill, voucher generation,
+    # not just the detail screen) drag a multi-hundred-KB blob out of Mongo
+    # for no reason. Photos now live in record-photos (see RecordPhotos on
+    # the loan detail screen), same as repairs/samples.
+    loan = await db.gold_loans.find_one({'id': loan_id}, {'_id': 0, 'photo': 0})
     if not loan:
         raise HTTPException(status_code=404, detail='Loan not found')
     return loan
@@ -162,7 +168,6 @@ async def create_gold_loan(body: GoldLoanIn, user=Depends(require_admin_or_modul
         'id': loan_id, 'loan_no': await _next_loan_no(),
         'customer_id': customer['id'], 'customer_name': customer['name'], 'customer_mobile': customer.get('mobile', ''),
         'description': body.description.strip(), 'weight': body.weight, 'pc_count': max(1, body.pc_count),
-        'photo': body.photo or '',
         'principal': body.principal, 'interest_rate_percent': body.interest_rate_percent,
         'loan_date': body.loan_date or today_str(), 'estimate_return_date': body.estimate_return_date,
         'status': 'active', 'closed_at': None, 'closed_by': None,

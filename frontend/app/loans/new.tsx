@@ -8,12 +8,14 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
 import { PhotoCaptureModal } from '@/src/components/PhotoCaptureModal';
 import { DateField } from '@/src/components/DateField';
+import { enqueueRecordPhoto } from '@/src/utils/uploadQueue';
+import { makeThumbFromDataUri } from '@/src/utils/imageThumb';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
 type Customer = { id: string; name: string; mobile: string; address: string };
 type GoldLoan = {
-  id: string; customer_name: string; description: string; weight: number; pc_count?: number; photo: string;
+  id: string; customer_name: string; description: string; weight: number; pc_count?: number;
   principal: number; interest_rate_percent: number; loan_date: string; estimate_return_date: string | null; note: string;
 };
 
@@ -58,6 +60,10 @@ export default function NewGoldLoanScreen() {
   const [description, setDescription] = useState('');
   const [weight, setWeight] = useState('');
   const [pcCount, setPcCount] = useState('1');
+  // A freshly-captured pledge photo only, held locally until save — it goes
+  // to Drive via the record-photos queue after create/update (see submit),
+  // never sent inline in the loan body. Existing photos live in the
+  // RecordPhotos gallery on the loan detail screen, so nothing to preload here.
   const [photo, setPhoto] = useState('');
   const [cameraOpen, setCameraOpen] = useState(false);
   const [principal, setPrincipal] = useState('');
@@ -74,7 +80,7 @@ export default function NewGoldLoanScreen() {
         const l = await api.get<GoldLoan>(`/gold-loans/${editId}`);
         setCustomerName(l.customer_name);
         setDescription(l.description); setWeight(String(l.weight ?? ''));
-        setPcCount(String(l.pc_count ?? '1')); setPhoto(l.photo || '');
+        setPcCount(String(l.pc_count ?? '1'));
         setPrincipal(String(l.principal ?? '')); setRate(String(l.interest_rate_percent ?? ''));
         setLoanDate(l.loan_date || ''); setEstimateDate(l.estimate_return_date || ''); setNote(l.note || '');
       } catch (e: any) { Alert.alert('Failed', e?.detail || 'Could not load this loan'); router.back(); }
@@ -112,15 +118,15 @@ export default function NewGoldLoanScreen() {
     submittingRef.current = true;
     setSaving(true);
     try {
+      let loanId = editId as string;
       if (isEdit) {
         await api.put(`/gold-loans/${editId}`, {
-          description: description.trim(), weight: w, pc_count: parseInt(pcCount, 10) || 1, photo,
+          description: description.trim(), weight: w, pc_count: parseInt(pcCount, 10) || 1,
           estimate_return_date: estimateDate || null, note: note.trim(),
         });
-        router.back();
       } else {
         const body: any = {
-          description: description.trim(), weight: w, pc_count: parseInt(pcCount, 10) || 1, photo,
+          description: description.trim(), weight: w, pc_count: parseInt(pcCount, 10) || 1,
           principal: p, interest_rate_percent: r,
           loan_date: loanDate || null, estimate_return_date: estimateDate || null, note: note.trim(),
         };
@@ -128,8 +134,22 @@ export default function NewGoldLoanScreen() {
         else body.new_customer = { name: newName.trim(), mobile: newMobile, address: newAddress, notes: '' };
 
         const created = await api.post<{ id: string }>('/gold-loans', body);
-        router.replace(`/loans/${created.id}` as any);
+        loanId = created.id;
       }
+      // Pledge photo goes to Drive via the record-photos queue, same as
+      // repairs/samples — never sent inline in the loan body (that used to
+      // make every fetch of this loan, including voucher generation, drag a
+      // multi-hundred-KB base64 blob out of Mongo for no reason).
+      if (photo && loanId) {
+        try {
+          const full = await (await fetch(photo)).blob();
+          const thumb = await makeThumbFromDataUri(photo);
+          const pid = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+          await enqueueRecordPhoto({ id: pid, blob: full, filename: `gold-loan-${loanId}.jpg`, thumb, ref_type: 'gold_loan', ref_id: loanId });
+        } catch { /* a failed enqueue shouldn't block navigating away */ }
+      }
+      if (isEdit) router.back();
+      else router.replace(`/loans/${loanId}` as any);
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
     finally { setSaving(false); submittingRef.current = false; }
   };

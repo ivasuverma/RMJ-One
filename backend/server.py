@@ -870,7 +870,6 @@ class GoldLoanIn(BaseModel):
     description: str
     weight: float  # grams pledged (total, across however many pieces)
     pc_count: int = 1
-    photo: Optional[str] = ''
     principal: float  # amount paid out to the customer
     interest_rate_percent: float  # per month, on the outstanding principal
     loan_date: Optional[str] = None  # YYYY-MM-DD, defaults to today
@@ -885,7 +884,6 @@ class GoldLoanUpdateIn(BaseModel):
     description: Optional[str] = None
     weight: Optional[float] = None
     pc_count: Optional[int] = None
-    photo: Optional[str] = None
     estimate_return_date: Optional[str] = None
     note: Optional[str] = None
 

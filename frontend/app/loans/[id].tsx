@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Alert, Platform, Image, Modal } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Alert, Platform, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
@@ -16,7 +16,7 @@ import { ErrorState } from '@/src/components/ui';
 type InterestMonth = { period: string; date: string; amount: number; paid: boolean };
 type Loan = {
   id: string; loan_no: string; customer_name: string; customer_mobile: string;
-  description: string; weight: number; pc_count: number; photo: string;
+  description: string; weight: number; pc_count: number;
   principal: number; interest_rate_percent: number;
   loan_date: string; estimate_return_date: string | null;
   status: 'active' | 'closed'; closed_at: string | null; closed_by: string | null;
@@ -163,7 +163,6 @@ export default function GoldLoanDetailScreen() {
           </Text>
         </View>
 
-        {loan.photo ? <Image source={{ uri: loan.photo }} style={styles.photo} /> : null}
         <RecordPhotos refType="gold_loan" refId={loan.id} label="Photos" />
 
         <Text style={styles.description}>{loan.description}</Text>
@@ -333,7 +332,6 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   badgeTextActive: { color: colors.brandSecondary },
   badgeTextClosed: { color: colors.onSuccess },
 
-  photo: { width: '100%', height: 200, borderRadius: radius.lg, backgroundColor: colors.surfaceTertiary, marginBottom: spacing.md },
   description: { color: colors.onSurface, fontSize: 18, fontWeight: '700', fontFamily: fonts.display, marginTop: spacing.sm },
   subMeta: { color: colors.mutedText, fontSize: 13, marginTop: 2, marginBottom: spacing.md },
 
