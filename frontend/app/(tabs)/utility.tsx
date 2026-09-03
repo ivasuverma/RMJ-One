@@ -36,7 +36,7 @@ const GROUPS: GroupDef[] = [
   {
     title: 'Attendance & Payroll', ownerOnly: true,
     rows: [
-      { key: 'attendance-payroll', label: 'Attendance & Payroll', sub: 'Shifts, holidays, departments, locations, biometric, store', icon: 'time-outline', route: '/settings/attendance-payroll' },
+      { key: 'attendance-payroll', label: 'Attendance & Payroll', sub: 'Shifts, holidays, departments, locations, biometric, store, WhatsApp', icon: 'time-outline', route: '/settings/attendance-payroll' },
     ],
   },
   {
