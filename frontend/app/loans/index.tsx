@@ -130,21 +130,27 @@ export default function GoldLoansScreen() {
               </View>
             </View>
 
-            {l.overdue && l.interest_balance > 0 && (
+            {l.status === 'active' && (
               <View style={styles.overdueRow}>
-                <View>
-                  <Text style={styles.overdueLabel}>Interest pending</Text>
-                  <Text style={styles.overdueAmount}>
-                    {fmtINR(l.interest_balance)}{l.interest_months_pending ? ` · ${l.interest_months_pending} mo` : ''}
-                  </Text>
-                </View>
+                {l.overdue && l.interest_balance > 0 ? (
+                  <View>
+                    <Text style={styles.overdueLabel}>Interest pending</Text>
+                    <Text style={styles.overdueAmount}>
+                      {fmtINR(l.interest_balance)}{l.interest_months_pending ? ` · ${l.interest_months_pending} mo` : ''}
+                    </Text>
+                  </View>
+                ) : <View />}
                 <Pressable
-                  onPress={(e) => { e.stopPropagation(); router.push(`/loans/transact?id=${l.id}&type=interest&amount=${l.interest_balance}` as any); }}
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    const prefill = l.overdue && l.interest_balance > 0 ? `&type=interest&amount=${l.interest_balance}` : '';
+                    router.push(`/loans/transact?id=${l.id}${prefill}` as any);
+                  }}
                   style={styles.recordBtn}
-                  testID={`record-interest-${l.id}`}
+                  testID={`record-payment-${l.id}`}
                 >
                   <Ionicons name="cash-outline" size={14} color={colors.onBrandPrimary} />
-                  <Text style={styles.recordBtnText}>Record Interest</Text>
+                  <Text style={styles.recordBtnText}>{l.overdue && l.interest_balance > 0 ? 'Record Interest' : 'Record Payment'}</Text>
                 </Pressable>
               </View>
             )}
