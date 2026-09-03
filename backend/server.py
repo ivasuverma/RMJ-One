@@ -611,6 +611,8 @@ class TaskIn(BaseModel):
     # Caps how many repeat_reminder nudges get sent — None keeps nudging
     # until the task is done (the original, unbounded behavior).
     max_reminders: Optional[int] = None
+    # How often those nudges go out — every hour or once a day.
+    reminder_interval: Literal['hourly', 'daily'] = 'hourly'
 
 
 class TaskUpdateIn(BaseModel):
@@ -623,6 +625,7 @@ class TaskUpdateIn(BaseModel):
     points: Optional[int] = None
     repeat_reminder: Optional[bool] = None
     max_reminders: Optional[int] = None
+    reminder_interval: Optional[Literal['hourly', 'daily']] = None
 
 
 class TaskCommentIn(BaseModel):
@@ -647,6 +650,7 @@ class TaskTemplateIn(BaseModel):
     points: int = 0  # stars awarded per on-time completion of each generated instance
     repeat_reminder: bool = False  # each generated instance nudges the assignee until done
     max_reminders: Optional[int] = None
+    reminder_interval: Literal['hourly', 'daily'] = 'hourly'
     # At most one of these — how the recurrence ends. Neither set = repeats
     # indefinitely until paused/deleted.
     max_repetitions: Optional[int] = None  # capped at 120, matching the schedule-transfer UI this mirrors
@@ -2119,6 +2123,7 @@ async def _check_recurring_tasks():
             'points': tpl.get('points') or 0, 'points_awarded': None,
             'repeat_reminder': bool(tpl.get('repeat_reminder')), 'last_reminded_at': None,
             'max_reminders': tpl.get('max_reminders'), 'reminder_count': 0,
+            'reminder_interval': tpl.get('reminder_interval') or 'hourly',
             'comments': [], 'recurring_template_id': tpl['id'], 'overdue_notified_at': None,
             'created_at': iso, 'completed_at': None,
         })
@@ -2141,29 +2146,31 @@ async def _check_overdue_tasks():
                               script='task_overdue', admin_only=True)
 
 
-TASK_REPEAT_REMINDER_MIN = 180  # how often to re-nudge an assignee on a repeat_reminder task
+# How often to re-nudge an assignee on a repeat_reminder task — the assigner
+# picks one of these two per task/template (TaskIn.reminder_interval),
+# default 'hourly'. Cutoffs now vary per task, so the DB query can no longer
+# do the "due for another nudge" filtering itself (see below).
+REMINDER_INTERVAL_MINUTES = {'hourly': 60, 'daily': 24 * 60}
 
 
 async def _check_task_repeat_reminders():
     """For tasks created with 'repeat_reminder' on, keep nudging the assignee
-    every TASK_REPEAT_REMINDER_MIN minutes until it's marked done — separate
+    every reminder_interval (hourly/daily) until it's marked done — separate
     from (and in addition to) the one-time owner/admin overdue alert. Stops
     early once `max_reminders` nudges have gone out, if that cap is set —
     unset means keep nudging until done, same as the original behavior."""
-    cutoff = (now_utc() - timedelta(minutes=TASK_REPEAT_REMINDER_MIN)).isoformat()
-    async for t in db.tasks.find(
-        {'status': 'open', 'repeat_reminder': True,
-         '$or': [{'last_reminded_at': None}, {'last_reminded_at': {'$lt': cutoff}}]},
-        {'_id': 0},
-    ):
+    now_iso = now_utc().isoformat()
+    async for t in db.tasks.find({'status': 'open', 'repeat_reminder': True}, {'_id': 0}):
         if t.get('max_reminders') and (t.get('reminder_count') or 0) >= t['max_reminders']:
             continue
+        interval_min = REMINDER_INTERVAL_MINUTES.get(t.get('reminder_interval'), 60)
+        cutoff = (now_utc() - timedelta(minutes=interval_min)).isoformat()
         # Don't start nudging before the task even existed for one interval —
         # avoids an immediate duplicate of the "New task assigned" push.
         reference = t.get('last_reminded_at') or t.get('created_at')
         if reference and reference > cutoff:
             continue
-        await db.tasks.update_one({'id': t['id']}, {'$set': {'last_reminded_at': now_utc().isoformat()}, '$inc': {'reminder_count': 1}})
+        await db.tasks.update_one({'id': t['id']}, {'$set': {'last_reminded_at': now_iso}, '$inc': {'reminder_count': 1}})
         await notify_user(t['assigned_to'], 'Task reminder', f"Still pending: {t['title']}", '/(emp)/tasks')
 
 

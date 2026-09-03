@@ -40,7 +40,7 @@ async def create_task(body: TaskIn, user=Depends(require_admin_or_module('tasks'
         'priority': body.priority, 'due_date': body.due_date, 'due_time': body.due_time, 'status': 'open',
         'points': max(0, body.points or 0), 'points_awarded': None,
         'repeat_reminder': body.repeat_reminder, 'last_reminded_at': None,
-        'max_reminders': body.max_reminders, 'reminder_count': 0,
+        'max_reminders': body.max_reminders, 'reminder_count': 0, 'reminder_interval': body.reminder_interval,
         'comments': [], 'recurring_template_id': None, 'overdue_notified_at': None,
         'created_at': iso, 'completed_at': None,
     }

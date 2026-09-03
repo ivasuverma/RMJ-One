@@ -254,7 +254,7 @@ async def create_document(
         'client_id': client_id or None,
         'linked_ref': None, 'note': (note or '').strip(),
         'uploaded_by': user['id'], 'uploaded_by_name': user['name'],
-        'created_at': now_iso, 'recorded_at': None, 'recorded_by': None,
+        'created_at': now_iso, 'recorded_at': None, 'recorded_by': None, 'recorded_by_name': None,
         'last_pending_reminder_at': None,
         'ocr': {'text': None, 'fields': {}, 'status': 'none'},
         'deleted': False,
@@ -488,7 +488,7 @@ async def record_document(doc_id: str, body: RecordIn, user=Depends(get_current)
     if not _can_record(cat, _role(user), rights):
         raise HTTPException(status_code=403, detail='You do not have permission to record this category')
     upd = {
-        'status': 'done', 'recorded_at': now_utc().isoformat(), 'recorded_by': user['id'],
+        'status': 'done', 'recorded_at': now_utc().isoformat(), 'recorded_by': user['id'], 'recorded_by_name': user['name'],
         'linked_ref': ({'type': body.linked_ref_type, 'id': body.linked_ref_id, 'label': body.linked_ref_label}
                        if body.linked_ref_type else None),
     }
@@ -517,7 +517,7 @@ async def unrecord_document(doc_id: str, user=Depends(get_current)):
     if not _can_record(cat, _role(user), rights):
         raise HTTPException(status_code=403, detail='You do not have permission to undo a record in this category')
     await db.documents.update_one({'id': doc_id}, {'$set': {
-        'status': 'pending', 'recorded_at': None, 'recorded_by': None, 'linked_ref': None,
+        'status': 'pending', 'recorded_at': None, 'recorded_by': None, 'recorded_by_name': None, 'linked_ref': None,
     }})
     await log_audit(user, 'documents.unrecord', 'document', doc_id, cat['label'])
     return await db.documents.find_one({'id': doc_id}, _LIST_PROJECTION)

@@ -19,7 +19,7 @@ import { UploadQueueBadge } from '@/src/components/UploadQueueBadge';
 type Doc = {
   id: string; category_key: string; status: 'pending' | 'done'; upload_state: string;
   file: { mime: string; orig_name: string; drive_view_link?: string | null };
-  note?: string; created_at: string; recorded_at?: string | null; uploaded_by_name?: string;
+  note?: string; created_at: string; recorded_at?: string | null; uploaded_by_name?: string; recorded_by_name?: string | null;
   linked_ref?: { type: string; id: string; label?: string } | null;
 };
 type Cat = { key: string; label: string; icon: keyof typeof Ionicons.glyphMap; can_record_roles?: string[]; can_record?: boolean; can_view?: boolean };
@@ -256,7 +256,7 @@ export default function DocumentsScreen() {
                     <Thumb d={d} size={46} />
                     <View style={{ flex: 1, minWidth: 0 }}>
                       <Text style={styles.docName} numberOfLines={1}>{docTitle(d, catMap[d.category_key]?.label)}</Text>
-                      <Text style={styles.docMeta} numberOfLines={1}>{catMap[d.category_key]?.label || d.category_key} · {istTime(d.created_at)}{d.uploaded_by_name ? ` · ${d.uploaded_by_name}` : ''}</Text>
+                      <Text style={styles.docMeta} numberOfLines={1}>{catMap[d.category_key]?.label || d.category_key} · {istTime(d.created_at)}{d.recorded_by_name ? ` · Recorded by ${d.recorded_by_name}` : d.uploaded_by_name ? ` · ${d.uploaded_by_name}` : ''}</Text>
                     </View>
                   </Pressable>
                   {d.upload_state === 'synced' && <Ionicons name="cloud-done" size={15} color={colors.onSuccess} />}
@@ -434,7 +434,10 @@ function QuickView({ doc, categoryLabel, token, fileUri, onClose, onRecord, canR
         </View>
         <View style={styles.qvPanel}>
           <Text style={styles.qvName} numberOfLines={2}>{docTitle(doc, categoryLabel)}</Text>
-          <Text style={styles.qvMeta}>{doc.uploaded_by_name ? `By ${doc.uploaded_by_name} · ` : ''}{istDisplayDateTime(doc.recorded_at || doc.created_at)}</Text>
+          <Text style={styles.qvMeta}>
+            {doc.status === 'done' && doc.recorded_by_name ? `Recorded by ${doc.recorded_by_name} · ` : doc.uploaded_by_name ? `By ${doc.uploaded_by_name} · ` : ''}
+            {istDisplayDateTime(doc.recorded_at || doc.created_at)}
+          </Text>
           <View style={styles.qvActions}>
             <Pressable onPress={() => onOpenFile(doc)} disabled={opening} style={styles.qvBtn} testID="qv-open">
               {opening ? <ActivityIndicator size="small" color={colors.onSurface} /> : <Ionicons name="expand-outline" size={19} color={colors.onSurface} />}

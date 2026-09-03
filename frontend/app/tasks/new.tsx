@@ -25,6 +25,44 @@ const FREQ_OPTIONS: { key: Freq; label: string }[] = [
   { key: 'yearly', label: 'Yearly' },
 ];
 const MAX_REPETITIONS = 120;
+const REMINDER_INTERVALS: { key: 'hourly' | 'daily'; label: string }[] = [
+  { key: 'hourly', label: 'Hourly' },
+  { key: 'daily', label: 'Daily' },
+];
+
+function toISODate(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// Live preview only (the server independently derives the real schedule from
+// start_date + freq) — lets the "No. of repetitions" vs "End date" choice
+// show the OTHER value instead of leaving it to be worked out by hand.
+// Hourly has no simple day-based preview (many instances per day, see
+// _check_recurring_tasks), so both return null for it.
+function nthOccurrenceDate(startDate: string, freq: Freq, count: number): string | null {
+  if (!startDate || count < 1 || freq === 'hourly') return null;
+  const d = new Date(`${startDate}T00:00:00`);
+  if (freq === 'daily') d.setDate(d.getDate() + (count - 1));
+  else if (freq === 'weekly') d.setDate(d.getDate() + (count - 1) * 7);
+  else if (freq === 'monthly') d.setMonth(d.getMonth() + (count - 1));
+  else if (freq === 'yearly') d.setFullYear(d.getFullYear() + (count - 1));
+  return toISODate(d);
+}
+
+function occurrenceCountByDate(startDate: string, freq: Freq, endDate: string): number | null {
+  if (!startDate || !endDate || endDate < startDate || freq === 'hourly') return null;
+  const end = new Date(`${endDate}T00:00:00`);
+  const d = new Date(`${startDate}T00:00:00`);
+  let count = 0;
+  while (d <= end && count < 1000) {
+    count++;
+    if (freq === 'daily') d.setDate(d.getDate() + 1);
+    else if (freq === 'weekly') d.setDate(d.getDate() + 7);
+    else if (freq === 'monthly') d.setMonth(d.getMonth() + 1);
+    else if (freq === 'yearly') d.setFullYear(d.getFullYear() + 1);
+  }
+  return count;
+}
 
 // Single "New Task" screen for both a one-off task and a recurring one — the
 // "Repeat Task" toggle is what used to be a whole separate screen
@@ -49,6 +87,7 @@ export default function NewTaskScreen() {
   const [points, setPoints] = useState('');
   const [repeatReminder, setRepeatReminder] = useState(false);
   const [maxReminders, setMaxReminders] = useState('');
+  const [reminderInterval, setReminderInterval] = useState<'hourly' | 'daily'>('hourly');
   const [assignedTo, setAssignedTo] = useState<Emp | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -66,6 +105,15 @@ export default function NewTaskScreen() {
     try { setEmployees(await api.get<Emp[]>('/employees?status=active')); } catch { /* ignore */ }
   }, []);
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  // Auto-calculated preview of whichever end-condition value the owner
+  // DIDN'T pick — the server derives the real schedule independently from
+  // start_date + freq, this is purely to show them the other side (an end
+  // date implied by a repetition count, or vice versa) instead of making
+  // them work it out by hand.
+  const repetitionsN = parseInt(maxRepetitions, 10) || 0;
+  const previewEndDate = endCondition === 'repetitions' && repetitionsN > 0 ? nthOccurrenceDate(dueDate, freq, repetitionsN) : null;
+  const previewCount = endCondition === 'end_date' && endDate ? occurrenceCountByDate(dueDate, freq, endDate) : null;
 
   const submit = async () => {
     if (submittingRef.current) return;
@@ -94,6 +142,7 @@ export default function NewTaskScreen() {
           points: parseInt(points, 10) || 0,
           repeat_reminder: repeatReminder,
           max_reminders: repeatReminder && maxReminders ? (parseInt(maxReminders, 10) || null) : null,
+          reminder_interval: reminderInterval,
           max_repetitions: endCondition === 'repetitions' ? repetitions : null,
           end_date: endCondition === 'end_date' ? endDate : null,
           active: true,
@@ -113,6 +162,7 @@ export default function NewTaskScreen() {
         points: parseInt(points, 10) || 0,
         repeat_reminder: repeatReminder,
         max_reminders: repeatReminder && maxReminders ? (parseInt(maxReminders, 10) || null) : null,
+        reminder_interval: reminderInterval,
       });
       router.back();
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
@@ -169,9 +219,9 @@ export default function NewTaskScreen() {
             <Text style={styles.label}>{repeat ? 'Start date' : 'Due date (optional)'}</Text>
             <DateField value={dueDate} onChange={setDueDate} testID="task-due" />
 
-            {!repeat && !!dueDate && (
+            {!!dueDate && (
               <>
-                <Text style={styles.label}>Due time (HH:MM)</Text>
+                <Text style={styles.label}>{repeat ? 'Due time each occurrence (HH:MM, optional)' : 'Due time (HH:MM)'}</Text>
                 <TextInput
                   testID="task-due-time" value={dueTime}
                   onChangeText={(v) => setDueTime(v.replace(/[^0-9:]/g, ''))}
@@ -234,7 +284,7 @@ export default function NewTaskScreen() {
                       keyboardType="number-pad" placeholder="e.g. 12" placeholderTextColor={colors.mutedText}
                       style={styles.input}
                     />
-                    <Text style={styles.hintText}>Maximum {MAX_REPETITIONS} repetitions.</Text>
+                    <Text style={styles.hintText}>Maximum {MAX_REPETITIONS} repetitions.{previewEndDate ? ` Ends around ${previewEndDate}.` : ''}</Text>
                   </>
                 )}
 
@@ -244,7 +294,12 @@ export default function NewTaskScreen() {
                   </View>
                   <Text style={styles.radioLabel}>End date</Text>
                 </Pressable>
-                {endCondition === 'end_date' && <DateField value={endDate} onChange={setEndDate} testID="task-end-date" />}
+                {endCondition === 'end_date' && (
+                  <>
+                    <DateField value={endDate} onChange={setEndDate} testID="task-end-date" />
+                    {previewCount != null && <Text style={styles.hintText}>≈ {previewCount} occurrence{previewCount === 1 ? '' : 's'}.</Text>}
+                  </>
+                )}
               </>
             )}
           </View>
@@ -262,7 +317,7 @@ export default function NewTaskScreen() {
           <Pressable onPress={() => setRepeatReminder((v) => !v)} style={styles.toggleRow} testID="task-repeat-reminder-toggle">
             <View style={{ flex: 1 }}>
               <Text style={styles.toggleLabel}>Remind repeatedly until done</Text>
-              <Text style={styles.toggleSub}>Nudges the employee every few hours until marked done, instead of just once</Text>
+              <Text style={styles.toggleSub}>Nudges the employee until marked done, instead of just once</Text>
             </View>
             <View style={[styles.switch, repeatReminder && styles.switchOn]}>
               <View style={[styles.switchKnob, repeatReminder && styles.switchKnobOn]} />
@@ -270,6 +325,14 @@ export default function NewTaskScreen() {
           </Pressable>
           {repeatReminder && (
             <>
+              <Text style={styles.label}>Remind</Text>
+              <View style={styles.chipRow}>
+                {REMINDER_INTERVALS.map((r) => (
+                  <Pressable key={r.key} onPress={() => setReminderInterval(r.key)} style={[styles.chip, reminderInterval === r.key && styles.chipActive]} testID={`reminder-interval-${r.key}`}>
+                    <Text style={[styles.chipText, reminderInterval === r.key && styles.chipTextActive]}>{r.label}</Text>
+                  </Pressable>
+                ))}
+              </View>
               <Text style={styles.label}>Max reminders (optional)</Text>
               <TextInput
                 testID="task-max-reminders" value={maxReminders} onChangeText={(v) => setMaxReminders(v.replace(/[^0-9]/g, ''))}

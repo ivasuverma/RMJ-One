@@ -12,9 +12,9 @@ type Priority = 'low' | 'normal' | 'urgent';
 type Freq = 'hourly' | 'daily' | 'weekly' | 'monthly' | 'yearly';
 type Template = {
   id: string; title: string; description: string; assigned_to: string; assigned_to_name: string;
-  priority: Priority; freq: Freq; start_date: string; interval_hours: number | null; active: boolean;
-  points: number; repeat_reminder: boolean; max_repetitions: number | null; end_date: string | null;
-  generated_count: number;
+  priority: Priority; freq: Freq; start_date: string; interval_hours: number | null; due_time: string | null; active: boolean;
+  points: number; repeat_reminder: boolean; max_reminders: number | null; reminder_interval: 'hourly' | 'daily';
+  max_repetitions: number | null; end_date: string | null; generated_count: number;
 };
 
 const FREQ_LABEL: Record<Freq, string> = { hourly: 'hrs', daily: 'day', weekly: 'week', monthly: 'month', yearly: 'year' };
@@ -53,7 +53,8 @@ export default function RecurringTasksScreen() {
       await api.put(`/tasks/templates/${tpl.id}`, {
         title: tpl.title, description: tpl.description, assigned_to: tpl.assigned_to,
         priority: tpl.priority, freq: tpl.freq, start_date: tpl.start_date, interval_hours: tpl.interval_hours,
-        points: tpl.points, repeat_reminder: tpl.repeat_reminder,
+        due_time: tpl.due_time, points: tpl.points, repeat_reminder: tpl.repeat_reminder,
+        max_reminders: tpl.max_reminders, reminder_interval: tpl.reminder_interval,
         max_repetitions: tpl.max_repetitions, end_date: tpl.end_date, active: !tpl.active,
       });
       await load();
