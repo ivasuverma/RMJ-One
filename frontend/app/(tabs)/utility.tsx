@@ -36,7 +36,7 @@ const GROUPS: GroupDef[] = [
   {
     title: 'Attendance & Payroll', ownerOnly: true,
     rows: [
-      { key: 'attendance-payroll', label: 'Attendance & Payroll', sub: 'Shifts, holidays, departments, locations, biometric, store, WhatsApp', icon: 'time-outline', route: '/settings/attendance-payroll' },
+      { key: 'attendance-payroll', label: 'Attendance & Payroll', sub: 'Shifts, holidays, departments, locations, biometric', icon: 'time-outline', route: '/settings/attendance-payroll' },
     ],
   },
   {
@@ -57,6 +57,8 @@ const GROUPS: GroupDef[] = [
   {
     title: 'Business', ownerOnly: true,
     rows: [
+      { key: 'store', label: 'Store Settings', sub: 'Shop profile & hours', icon: 'storefront-outline', route: '/store-settings' },
+      { key: 'whatsapp', label: 'WhatsApp', sub: 'Connection status & notice toggles', icon: 'logo-whatsapp', route: '/settings/whatsapp' },
       { key: 'security', label: 'Security', sub: 'Auto sign-out after inactivity', icon: 'lock-closed-outline', route: '/settings/security' },
       { key: 'google-drive', label: 'Google Drive & Backup', sub: 'Document storage + daily database backup', icon: 'cloud-outline', route: '/settings/google-drive' },
       { key: 'audit', label: 'Audit Log', sub: 'Every change, logged', icon: 'document-lock-outline', route: '/settings/audit' },

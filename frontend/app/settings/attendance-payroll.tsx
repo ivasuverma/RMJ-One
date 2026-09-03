@@ -23,11 +23,9 @@ const GROUPS: GroupDef[] = [
     ],
   },
   {
-    title: 'Hardware & Store',
+    title: 'Hardware',
     rows: [
       { key: 'biometric', label: 'Biometric Devices', sub: 'Attendance hardware', icon: 'hardware-chip-outline', route: '/settings/biometric' },
-      { key: 'store', label: 'Store Settings', sub: 'Shop profile & hours', icon: 'storefront-outline', route: '/store-settings' },
-      { key: 'whatsapp', label: 'WhatsApp', sub: 'Connection status & notice toggles', icon: 'logo-whatsapp', route: '/settings/whatsapp' },
     ],
   },
 ];
