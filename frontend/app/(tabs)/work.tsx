@@ -52,13 +52,13 @@ export default function WorkScreen() {
 
   const [ledgerSummary, setLedgerSummary] = useState('');
   const [custSummary, setCustSummary] = useState('');
-  const [loanSummary, setLoanSummary] = useState<{ active: number; overdue: number; total_outstanding: number } | null>(null);
+  const [loanSummary, setLoanSummary] = useState<{ active: number; overdue: number; total_outstanding: number; total_interest_pending: number } | null>(null);
   const load = useCallback(async () => {
     try { setError(''); setData(await api.get<DashboardData>('/dashboard')); }
     catch (e: any) { setError(e?.detail || 'Failed to load'); }
     finally { setLoading(false); }
     if (hasModule('documents')) api.get<{ pending_count: number }>('/documents/summary').then(setDocSummary).catch(() => {});
-    if (hasModule('gold_loans')) api.get<{ active: number; overdue: number; total_outstanding: number }>('/gold-loans/dashboard').then(setLoanSummary).catch(() => {});
+    if (hasModule('gold_loans')) api.get<{ active: number; overdue: number; total_outstanding: number; total_interest_pending: number }>('/gold-loans/dashboard').then(setLoanSummary).catch(() => {});
     // Karigar ledger tile summary — total fine gold + cash owed to karigars.
     api.get<any[]>('/karigars').then((ks) => {
       const fine = ks.reduce((s, k) => s + (k.fine_weight_balance || 0), 0);
@@ -106,6 +106,7 @@ export default function WorkScreen() {
     segs: loanSummary ? [
       { text: `${loanSummary.active} active` },
       ...(loanSummary.overdue > 0 ? [{ text: ' · ' }, { text: `${loanSummary.overdue} overdue`, tone: 'bad' as const }] : []),
+      ...(loanSummary.total_interest_pending > 0 ? [{ text: ' · ' }, { text: `${fmtINR(loanSummary.total_interest_pending)} interest due`, tone: 'bad' as const }] : []),
       ...(loanSummary.total_outstanding > 0 ? [{ text: ' · ' }, { text: fmtINR(loanSummary.total_outstanding), tone: 'strong' as const }] : []),
     ] : placeholder,
   });

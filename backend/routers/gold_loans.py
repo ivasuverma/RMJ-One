@@ -206,10 +206,14 @@ async def gold_loans_dashboard(_: dict = Depends(require_staff_or_module('gold_l
     active = len(loans)
     overdue = sum(1 for l in loans if l.get('estimate_return_date') and l['estimate_return_date'] < today)
     txns_by_loan = await _bulk_loan_txns([l['id'] for l in loans])
-    total_outstanding = sum(
-        _compute_loan_state(l, txns_by_loan.get(l['id'], []))['total_outstanding'] for l in loans
-    )
-    return {'active': active, 'overdue': overdue, 'total_outstanding': round(total_outstanding, 2), 'closed_today': closed_today}
+    states = [_compute_loan_state(l, txns_by_loan.get(l['id'], [])) for l in loans]
+    total_outstanding = sum(s['total_outstanding'] for s in states)
+    total_interest_pending = sum(max(s['interest_balance'], 0) for s in states)
+    return {
+        'active': active, 'overdue': overdue, 'closed_today': closed_today,
+        'total_outstanding': round(total_outstanding, 2),
+        'total_interest_pending': round(total_interest_pending, 2),
+    }
 
 
 @router.get('/gold-loans/{loan_id}')
