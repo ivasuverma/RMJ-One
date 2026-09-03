@@ -11,13 +11,17 @@ import { useTheme } from '@/src/theme/ThemeContext';
 // this is the "transact" affordance it links to for recording a cash
 // payment against a gold loan (interest or principal, staff picks which).
 export default function GoldLoanTransactScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, type: typeParam, amount: amountParam } = useLocalSearchParams<{ id: string; type?: string; amount?: string }>();
   const router = useRouter();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
-  const [amount, setAmount] = useState('');
-  const [type, setType] = useState<'interest' | 'principal'>('interest');
+  // Pre-filled when arriving from a shortcut (e.g. the "Record Interest"
+  // button on an overdue loan's list tile, which already knows the exact
+  // pending amount) — still just a starting point, staff can adjust either
+  // field before saving.
+  const [amount, setAmount] = useState(amountParam ? String(Math.round(parseFloat(amountParam))) : '');
+  const [type, setType] = useState<'interest' | 'principal'>(typeParam === 'principal' ? 'principal' : 'interest');
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
 

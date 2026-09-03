@@ -12,6 +12,7 @@ type Loan = {
   id: string; loan_no: string; customer_name: string; customer_mobile: string;
   description: string; weight: number; status: 'active' | 'closed';
   principal: number; principal_balance: number; interest_balance: number; total_outstanding: number;
+  interest_months_pending: number;
   estimate_return_date: string | null; overdue: boolean; created_at: string;
 };
 type Pipe = { active: number; overdue: number; total_outstanding: number; closed_today: number };
@@ -128,6 +129,25 @@ export default function GoldLoansScreen() {
                 </Text>
               </View>
             </View>
+
+            {l.overdue && l.interest_balance > 0 && (
+              <View style={styles.overdueRow}>
+                <View>
+                  <Text style={styles.overdueLabel}>Interest pending</Text>
+                  <Text style={styles.overdueAmount}>
+                    {fmtINR(l.interest_balance)}{l.interest_months_pending ? ` · ${l.interest_months_pending} mo` : ''}
+                  </Text>
+                </View>
+                <Pressable
+                  onPress={(e) => { e.stopPropagation(); router.push(`/loans/transact?id=${l.id}&type=interest&amount=${l.interest_balance}` as any); }}
+                  style={styles.recordBtn}
+                  testID={`record-interest-${l.id}`}
+                >
+                  <Ionicons name="cash-outline" size={14} color={colors.onBrandPrimary} />
+                  <Text style={styles.recordBtnText}>Record Interest</Text>
+                </Pressable>
+              </View>
+            )}
           </Pressable>
         ))}
       </ScrollView>
@@ -190,4 +210,16 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   badgeTextActive: { color: colors.brandSecondary },
   badgeTextClosed: { color: colors.onSuccess },
   badgeTextOverdue: { color: colors.onError },
+
+  overdueRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    marginTop: spacing.sm, paddingTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border,
+  },
+  overdueLabel: { color: colors.mutedText, fontSize: 10 },
+  overdueAmount: { color: colors.onError, fontSize: 14, fontWeight: '800', marginTop: 1 },
+  recordBtn: {
+    flexDirection: 'row', gap: 5, alignItems: 'center', backgroundColor: colors.brandPrimary,
+    borderRadius: radius.sm, paddingHorizontal: 10, paddingVertical: 7,
+  },
+  recordBtnText: { color: colors.onBrandPrimary, fontSize: 11, fontWeight: '700' },
 });
