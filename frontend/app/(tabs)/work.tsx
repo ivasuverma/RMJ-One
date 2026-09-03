@@ -102,7 +102,7 @@ export default function WorkScreen() {
     ] : placeholder,
   });
   if (hasModule('gold_loans')) rows.push({
-    key: 'loans', title: 'Gold Loans', icon: 'diamond-outline', route: '/loans',
+    key: 'loans', title: 'Gold Loans', icon: 'cash-outline', route: '/loans',
     segs: loanSummary ? [
       { text: `${loanSummary.active} active` },
       ...(loanSummary.overdue > 0 ? [{ text: ' · ' }, { text: `${loanSummary.overdue} overdue`, tone: 'bad' as const }] : []),
@@ -235,7 +235,7 @@ export default function WorkScreen() {
             { key: 'task', label: 'New task', icon: 'checkbox-outline', route: '/tasks/new', show: hasModule('tasks') },
             { key: 'repair', label: 'New repair', icon: 'construct-outline', route: '/repairs/new', show: hasModule('repairs') },
             { key: 'stock', label: 'Stock In/Out', icon: 'diamond-outline', route: '/samples/new', show: hasModule('samples') },
-            { key: 'loan', label: 'New gold loan', icon: 'diamond-outline', route: '/loans/new', show: hasModule('gold_loans') },
+            { key: 'loan', label: 'New gold loan', icon: 'cash-outline', route: '/loans/new', show: hasModule('gold_loans') },
             { key: 'adv-ded', label: 'Advance / Deduction', icon: 'swap-vertical-outline', route: '/(tabs)/employees?from=work', show: hasModule('team') || hasModule('payroll') },
             { key: 'cash', label: 'Cash in/out', icon: 'wallet-outline', route: '/cashbook', show: hasModule('cash_book') },
             { key: 'document', label: 'Add document', icon: 'document-attach-outline', route: '/documents?capture=1', show: hasModule('documents') },

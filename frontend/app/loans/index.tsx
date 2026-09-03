@@ -109,11 +109,11 @@ export default function GoldLoansScreen() {
         ) : error && loans.length === 0 ? (
           <ErrorState message={error} onRetry={load} testID="loans-error" />
         ) : loans.length === 0 ? (
-          <View style={styles.empty}><Ionicons name="diamond-outline" size={34} color={colors.mutedText} /><Text style={styles.emptyText}>No loans here</Text></View>
+          <View style={styles.empty}><Ionicons name="cash-outline" size={34} color={colors.mutedText} /><Text style={styles.emptyText}>No loans here</Text></View>
         ) : loans.map((l) => (
           <Pressable key={l.id} onPress={() => router.push(`/loans/${l.id}` as any)} style={({ pressed }) => [styles.card, pressed && { opacity: 0.85 }]} testID={`loan-${l.id}`}>
             <View style={styles.cardTop}>
-              <View style={styles.iconBox}><Ionicons name="diamond-outline" size={18} color={colors.brandSecondary} /></View>
+              <View style={styles.iconBox}><Ionicons name="cash-outline" size={18} color={colors.brandSecondary} /></View>
               <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={styles.cName}>{l.customer_name}</Text>
                 <Text style={styles.cMeta} numberOfLines={1}>{l.loan_no} · {l.description}</Text>
