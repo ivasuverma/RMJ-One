@@ -418,17 +418,17 @@ export default function ReceiveFromKarigarScreen() {
 
             <View style={[styles.formulaRow, { marginTop: spacing.sm, alignItems: 'flex-start' }]}>
               <View style={styles.fieldColFlex}>
-                <Text style={[styles.label, styles.labelCompact]}>Pay (fine g)</Text>
-                <TextInput testID="pay-metal-weight" value={payMetalWeight} onChangeText={(v) => setPayMetalWeight(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0.000" placeholderTextColor={colors.mutedText} style={[styles.input, styles.inputCompact]} />
+                <Text style={styles.label}>Pay (fine g)</Text>
+                <TextInput testID="pay-metal-weight" value={payMetalWeight} onChangeText={(v) => setPayMetalWeight(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0.000" placeholderTextColor={colors.mutedText} style={styles.input} />
               </View>
               <View style={styles.fieldColFlex}>
-                <Text style={[styles.label, styles.labelCompact]}>Receive (fine g)</Text>
-                <TextInput testID="recv-metal-weight" value={recvMetalWeight} onChangeText={(v) => setRecvMetalWeight(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0.000" placeholderTextColor={colors.mutedText} style={[styles.input, styles.inputCompact]} />
+                <Text style={styles.label}>Receive (fine g)</Text>
+                <TextInput testID="recv-metal-weight" value={recvMetalWeight} onChangeText={(v) => setRecvMetalWeight(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0.000" placeholderTextColor={colors.mutedText} style={styles.input} />
               </View>
               <View style={styles.fieldColFlex}>
-                <Text style={[styles.label, styles.labelCompact]}>Balance (fine g)</Text>
-                <View style={[styles.readonlyBox, styles.inputCompact]}>
-                  <Text style={[styles.readonlyBoxText, { fontSize: 12 }, remainingBalance != null && remainingBalance !== 0 ? { color: remainingBalance > 0 ? colors.onWarning : colors.onSuccess } : { color: colors.onSuccess }]}>
+                <Text style={styles.label}>Balance (fine g)</Text>
+                <View style={styles.readonlyBox}>
+                  <Text style={[styles.readonlyBoxText, remainingBalance != null && remainingBalance !== 0 ? { color: remainingBalance > 0 ? colors.onWarning : colors.onSuccess } : { color: colors.onSuccess }]}>
                     {remainingBalance == null ? '—' : remainingBalance === 0 ? '0.000g' : `${remainingBalance > 0 ? '+' : ''}${remainingBalance.toFixed(3)}g`}
                   </Text>
                 </View>
@@ -515,13 +515,11 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
 
   label: { color: colors.onSurfaceSecondary, fontSize: 12, marginBottom: 6, marginTop: spacing.sm },
   labelHighlight: { color: colors.brandPrimary, fontWeight: '800' },
-  labelCompact: { fontSize: 10.5, marginBottom: 4 },
   input: {
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
     color: colors.onSurface, paddingHorizontal: spacing.md, paddingVertical: 12, fontSize: 14,
   },
   inputHighlight: { borderColor: colors.brandPrimary, borderWidth: 2, backgroundColor: colors.brandTertiary },
-  inputCompact: { paddingHorizontal: 8, paddingVertical: 8, fontSize: 12 },
 
   fieldGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   fieldCol: { flexBasis: '21%', flexGrow: 1 },
