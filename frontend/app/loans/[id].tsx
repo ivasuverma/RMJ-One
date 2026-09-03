@@ -285,7 +285,7 @@ export default function GoldLoanDetailScreen() {
               {!calSelected.paid && isActive && (
                 <Pressable
                   style={styles.primaryBtn}
-                  onPress={() => { setCalSelected(null); router.push(`/loans/transact?id=${loan.id}&type=interest&amount=${calSelected.amount}` as any); }}
+                  onPress={() => { setCalSelected(null); router.push(`/loans/transact?id=${loan.id}&type=interest&amount=${calSelected.amount}&periods=${calSelected.period}` as any); }}
                   testID="cal-record-payment-btn"
                 >
                   <Text style={styles.primaryBtnText}>Record Payment</Text>

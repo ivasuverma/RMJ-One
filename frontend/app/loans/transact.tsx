@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, Platform, KeyboardAvoidingView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -7,30 +7,70 @@ import { api } from '@/src/api/client';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
+type InterestMonth = { period: string; date: string; amount: number; paid: boolean };
+type Loan = { interest_months: InterestMonth[] };
+
+const fmtINR = (n: number) => `₹${Math.round(n || 0).toLocaleString('en-IN')}`;
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
 // Split out of the loan detail screen so that screen stays summary-only —
 // this is the "transact" affordance it links to for recording a cash
 // payment against a gold loan (interest or principal, staff picks which).
+// For interest, staff can tap the specific pending month(s) this payment
+// covers on the same calendar the loan summary shows — that tags the
+// payment to those exact periods (see _compute_loan_state in
+// gold_loans.py) instead of leaving it to guess via FIFO matching.
 export default function GoldLoanTransactScreen() {
-  const { id, type: typeParam, amount: amountParam } = useLocalSearchParams<{ id: string; type?: string; amount?: string }>();
+  const { id, type: typeParam, amount: amountParam, periods: periodsParam } = useLocalSearchParams<{
+    id: string; type?: string; amount?: string; periods?: string;
+  }>();
   const router = useRouter();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
   // Pre-filled when arriving from a shortcut (e.g. the "Record Interest"
   // button on an overdue loan's list tile, which already knows the exact
-  // pending amount) — still just a starting point, staff can adjust either
-  // field before saving.
+  // pending amount, or a specific month tapped on the loan's own interest
+  // calendar) — still just a starting point, staff can adjust before saving.
   const [amount, setAmount] = useState(amountParam ? String(Math.round(parseFloat(amountParam))) : '');
   const [type, setType] = useState<'interest' | 'principal'>(typeParam === 'principal' ? 'principal' : 'interest');
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
+
+  const [pendingMonths, setPendingMonths] = useState<InterestMonth[]>([]);
+  const [calYear, setCalYear] = useState(new Date().getFullYear());
+  const [selected, setSelected] = useState<string[]>(periodsParam ? periodsParam.split(',').filter(Boolean) : []);
+
+  useEffect(() => {
+    api.get<Loan>(`/gold-loans/${id}`).then((loan) => {
+      const pending = loan.interest_months.filter((m) => !m.paid);
+      setPendingMonths(pending);
+      const withData = (periodsParam ? pending.filter((m) => selected.includes(m.period)) : pending);
+      if (withData.length > 0) setCalYear(parseInt(withData[withData.length - 1].period.slice(0, 4), 10));
+    }).catch(() => { /* month picker just won't show anything — amount entry still works */ });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
+
+  const toggleMonth = (m: InterestMonth) => {
+    setSelected((prev) => {
+      const next = prev.includes(m.period) ? prev.filter((p) => p !== m.period) : [...prev, m.period];
+      const sum = pendingMonths.filter((pm) => next.includes(pm.period)).reduce((s, pm) => s + pm.amount, 0);
+      if (next.length > 0) setAmount(String(Math.round(sum)));
+      return next;
+    });
+  };
+
+  const monthsByNum: Record<string, InterestMonth> = {};
+  pendingMonths.forEach((m) => { if (parseInt(m.period.slice(0, 4), 10) === calYear) monthsByNum[m.period.slice(5, 7)] = m; });
 
   const submit = async () => {
     const amt = parseFloat(amount);
     if (!amt || amt <= 0) { Alert.alert('Missing', 'Enter an amount greater than 0'); return; }
     setSaving(true);
     try {
-      await api.post(`/gold-loans/${id}/payment`, { amount: amt, type, note: note.trim() });
+      const body: any = { amount: amt, type, note: note.trim() };
+      if (type === 'interest' && selected.length > 0) body.periods = selected;
+      await api.post(`/gold-loans/${id}/payment`, body);
       router.back();
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
     finally { setSaving(false); }
@@ -50,13 +90,48 @@ export default function GoldLoanTransactScreen() {
         <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 100 }} keyboardShouldPersistTaps="handled">
           <Text style={styles.label}>Payment against</Text>
           <View style={styles.chipRow}>
-            <Pressable onPress={() => setType('interest')} style={[styles.chip, type === 'interest' && styles.chipActive]} testID="pay-type-interest">
+            <Pressable onPress={() => { setType('interest'); }} style={[styles.chip, type === 'interest' && styles.chipActive]} testID="pay-type-interest">
               <Text style={[styles.chipText, type === 'interest' && styles.chipTextActive]}>Interest</Text>
             </Pressable>
-            <Pressable onPress={() => setType('principal')} style={[styles.chip, type === 'principal' && styles.chipActive]} testID="pay-type-principal">
+            <Pressable onPress={() => { setType('principal'); setSelected([]); }} style={[styles.chip, type === 'principal' && styles.chipActive]} testID="pay-type-principal">
               <Text style={[styles.chipText, type === 'principal' && styles.chipTextActive]}>Principal / Redemption</Text>
             </Pressable>
           </View>
+
+          {type === 'interest' && pendingMonths.length > 0 && (
+            <View style={styles.calCard} testID="pay-month-picker">
+              <Text style={styles.calHeader}>Which month(s) is this for?</Text>
+              <View style={styles.calYearRow}>
+                <Pressable onPress={() => setCalYear((y) => y - 1)} style={styles.calYearNav} testID="pay-cal-prev-year">
+                  <Ionicons name="chevron-back" size={18} color={colors.onSurface} />
+                </Pressable>
+                <Text style={styles.calYearLabel}>{calYear}</Text>
+                <Pressable onPress={() => setCalYear((y) => y + 1)} style={styles.calYearNav} testID="pay-cal-next-year">
+                  <Ionicons name="chevron-forward" size={18} color={colors.onSurface} />
+                </Pressable>
+              </View>
+              <View style={styles.calGrid}>
+                {MONTHS.map((lbl, i) => {
+                  const mm = String(i + 1).padStart(2, '0');
+                  const m = monthsByNum[mm];
+                  const isSelected = m && selected.includes(m.period);
+                  const cellStyle = !m ? styles.calCellEmpty : isSelected ? styles.calCellSelected : styles.calCellPending;
+                  const textStyle = !m ? styles.calCellTextEmpty : isSelected ? styles.calCellTextSelected : styles.calCellTextPending;
+                  return (
+                    <Pressable key={mm} style={styles.calCellWrap} onPress={() => m && toggleMonth(m)} disabled={!m} testID={`pay-cal-${calYear}-${mm}`}>
+                      <View style={[styles.calCell, cellStyle]}>
+                        <Text style={[styles.calCellText, textStyle]}>{lbl}</Text>
+                        {!!m && <Text style={[styles.calCellAmount, textStyle]}>{fmtINR(m.amount)}</Text>}
+                      </View>
+                    </Pressable>
+                  );
+                })}
+              </View>
+              {selected.length > 0 && (
+                <Text style={styles.calSelectedText}>{selected.length} month{selected.length === 1 ? '' : 's'} selected · {fmtINR(pendingMonths.filter((m) => selected.includes(m.period)).reduce((s, m) => s + m.amount, 0))}</Text>
+              )}
+            </View>
+          )}
 
           <Text style={styles.label}>Amount (₹)</Text>
           <TextInput testID="pay-amount" value={amount} onChangeText={(v) => setAmount(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />
@@ -95,6 +170,30 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   chipActive: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
   chipText: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '700' },
   chipTextActive: { color: colors.onBrandPrimary },
+
+  calCard: {
+    backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border,
+    padding: spacing.md, marginTop: spacing.md,
+  },
+  calHeader: { color: colors.onSurface, fontSize: 13, fontWeight: '700' },
+  calYearRow: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.sm, marginBottom: spacing.md,
+    backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: 6,
+  },
+  calYearNav: { width: 32, height: 32, borderRadius: radius.md, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
+  calYearLabel: { flex: 1, textAlign: 'center', color: colors.onSurface, fontWeight: '700', fontSize: 15 },
+  calGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  calCellWrap: { width: '25%', aspectRatio: 1.3, padding: 4 },
+  calCell: { width: '100%', height: '100%', borderRadius: radius.sm, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
+  calCellText: { fontSize: 12, fontWeight: '700' },
+  calCellAmount: { fontSize: 9, fontWeight: '600', marginTop: 1 },
+  calCellEmpty: { backgroundColor: colors.surfaceTertiary, borderColor: colors.border },
+  calCellTextEmpty: { color: colors.mutedText },
+  calCellPending: { backgroundColor: colors.error, borderColor: colors.onError },
+  calCellTextPending: { color: colors.onError },
+  calCellSelected: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
+  calCellTextSelected: { color: colors.onBrandPrimary },
+  calSelectedText: { color: colors.brandSecondary, fontSize: 12, fontWeight: '700', marginTop: spacing.sm, textAlign: 'center' },
 
   submitBtn: {
     flexDirection: 'row', gap: spacing.sm, alignItems: 'center', justifyContent: 'center',

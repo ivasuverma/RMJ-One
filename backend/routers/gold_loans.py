@@ -57,33 +57,51 @@ def _compute_loan_state(loan: dict, txns: list) -> dict:
     need many loans at once (list/dashboard) can bulk-fetch transactions in a
     single query and share this math instead of round-tripping per loan.
 
-    Also derives "months received vs pending": payments aren't tagged to a
-    specific month (staff picks interest vs principal only, never which
-    month — see gold_loans design notes), so a paid-interest pool is walked
-    FIFO across the ordered interest_due entries to decide how many months
-    are fully covered. Display-only; doesn't change how payments are stored."""
+    Also derives "months received vs pending". Two ways a month can be
+    marked received:
+      1. Explicitly tagged — recording an interest payment can carry a
+         `periods` list (the months the staff picked on the interest
+         calendar when recording it). Any due period named there is
+         received, full stop.
+      2. Old-style / untagged payments (recorded before that picker existed,
+         or a lump-sum staff chose not to tag) — the leftover paid amount
+         after subtracting tagged payments is walked FIFO across the
+         remaining untagged due periods, oldest first, same as before.
+    Display-only; doesn't change how payments themselves are stored."""
     interest_due_txns = [t for t in txns if t['type'] == 'interest_due']
     interest_due = sum(t['amount'] for t in interest_due_txns)
-    interest_paid = sum(t['amount'] for t in txns if t['type'] == 'payment_interest')
+    interest_payments = [t for t in txns if t['type'] == 'payment_interest']
+    interest_paid = sum(t['amount'] for t in interest_payments)
     principal_paid = sum(t['amount'] for t in txns if t['type'] == 'payment_principal')
     principal_balance = round(loan['principal'] - principal_paid, 2)
     interest_balance = round(interest_due - interest_paid, 2)
 
+    tagged_periods: set = set()
+    tagged_amount = 0.0
+    for p in interest_payments:
+        periods = p.get('periods') or []
+        if periods:
+            tagged_periods.update(periods)
+            tagged_amount += p['amount']
+    untagged_pool = interest_paid - tagged_amount
+
     dues_sorted = sorted(interest_due_txns, key=lambda t: (t.get('period') or t['date']))
-    pool = interest_paid
     months_received = 0
     still_covering = True
     interest_months = []
     for d in dues_sorted:
-        paid = still_covering and pool + 0.01 >= d['amount']
-        if paid:
-            pool -= d['amount']
-            months_received += 1
+        period = d.get('period') or (d['date'] or '')[:7]
+        if period in tagged_periods:
+            paid = True
         else:
-            still_covering = False  # FIFO by month order — once one month is short, later months can't jump ahead of it
-        interest_months.append({
-            'period': d.get('period') or (d['date'] or '')[:7], 'date': d['date'], 'amount': d['amount'], 'paid': paid,
-        })
+            paid = still_covering and untagged_pool + 0.01 >= d['amount']
+            if paid:
+                untagged_pool -= d['amount']
+            else:
+                still_covering = False  # FIFO by month order — once one untagged month is short, later ones can't jump ahead of it
+        if paid:
+            months_received += 1
+        interest_months.append({'period': period, 'date': d['date'], 'amount': d['amount'], 'paid': paid})
 
     return {
         'principal': loan['principal'], 'principal_paid': round(principal_paid, 2), 'principal_balance': principal_balance,
@@ -269,6 +287,10 @@ async def record_gold_loan_payment(loan_id: str, body: GoldLoanPaymentIn, user=D
         'id': str(uuid.uuid4()), 'loan_id': loan_id,
         'type': 'payment_interest' if body.type == 'interest' else 'payment_principal',
         'amount': body.amount, 'date': body.date or today_str(), 'note': body.note or '',
+        # Months this payment covers, from the calendar picker — interest
+        # payments only; None/empty falls back to FIFO matching in
+        # _compute_loan_state (see its docstring).
+        'periods': (body.periods or None) if body.type == 'interest' else None,
         'auto': False, 'created_by': user['name'], 'created_by_id': user['id'], 'created_at': iso,
     }
     await db.gold_loan_transactions.insert_one(dict(txn))
@@ -397,19 +419,31 @@ def _principal_balance_for_period(loan: dict, principal_txns: list, period_start
     return round(max(balance, 0), 2)
 
 
+def _add_month(y: int, m: int) -> tuple:
+    m += 1
+    if m > 12:
+        return y + 1, 1
+    return y, m
+
+
 async def _backfill_loan_interest(loan: dict) -> None:
-    """Walks every calendar month from the one after the loan's start date up
-    through the current month, on the day-of-month matching the loan's own
-    start date (clamped to each month's length, same pattern as payroll's
-    auto-advance day — so a loan taken on the 31st still charges in a
-    30-day month instead of silently skipping it), and posts whichever of
-    those periods aren't in db.gold_loan_interest_generations yet.
+    """Walks every calendar month the loan has been running, posting
+    whichever of those periods aren't in db.gold_loan_interest_generations
+    yet. Two shop conventions decide the schedule:
+
+    - Which month interest starts from: gold received on the 1st-15th of a
+      month starts accruing interest from THAT SAME calendar month; received
+      on the 16th or later, accrual starts the following month.
+    - When each month's interest posts: on the LAST day of that calendar
+      month (not the loan's own day-of-month) — so a loan from 1 July posts
+      its July interest on 31 July, its August interest on 31 August, etc.
 
     Walking the whole span (not just "is today the due day") means a period
     is never permanently skipped just because this didn't happen to run on
     its exact due date. Each period's interest is computed against that
-    period's own principal balance under the day-15 cutoff rule (see
-    _principal_balance_for_period) rather than always using today's balance.
+    period's own principal balance under a separate day-15 cutoff rule (see
+    _principal_balance_for_period) — a different convention, about how a
+    mid-period principal repayment affects that same period's charge.
 
     Called from three places: the 15-minute reminder loop (check_interest_due,
     below) for the steady-state case, and synchronously from create/get/pay
@@ -420,11 +454,13 @@ async def _backfill_loan_interest(loan: dict) -> None:
     now_ist = now_utc().astimezone(IST)
     today = now_ist.date()
     try:
-        anchor = date.fromisoformat(loan['loan_date'])
+        loan_date = date.fromisoformat(loan['loan_date'])
     except (ValueError, KeyError):
         return
-    if today <= anchor:
-        return  # interest starts accruing a month after disbursement, not on day one
+
+    y, m = loan_date.year, loan_date.month
+    if loan_date.day > 15:
+        y, m = _add_month(y, m)
 
     raw_principal_txns = await db.gold_loan_transactions.find(
         {'loan_id': loan['id'], 'type': 'payment_principal'}, {'_id': 0},
@@ -436,28 +472,25 @@ async def _backfill_loan_interest(loan: dict) -> None:
         except (ValueError, KeyError):
             continue
 
-    y, m = anchor.year, anchor.month
-    period_start = anchor
     while True:
-        m += 1
-        if m > 12:
-            m = 1
-            y += 1
         last_day = monthrange(y, m)[1]
-        due_date = date(y, m, min(anchor.day, last_day))
+        due_date = date(y, m, last_day)  # posts on the last day of the month
         if due_date > today:
-            break  # this period hasn't come due yet — stop, don't post early
+            break  # this month hasn't ended yet — don't post early
+
+        period_start = date(y, m, 1)
+        next_y, next_m = _add_month(y, m)
+        period_end = date(next_y, next_m, 1)
 
         period = due_date.strftime('%Y-%m')
         gen_key = {'loan_id': loan['id'], 'period': period}
-        current_period_start = period_start
-        period_start = due_date  # advance the window for the next period regardless of what happens below
+        y, m = next_y, next_m  # advance to the next month regardless of what happens below
         if await db.gold_loan_interest_generations.find_one(gen_key, {'_id': 0}) is not None:
             continue  # already posted for this period
         await db.gold_loan_interest_generations.update_one(
             gen_key, {'$set': {**gen_key, 'created_at': now_utc().isoformat()}}, upsert=True,
         )
-        principal_balance = _principal_balance_for_period(loan, principal_txns, current_period_start, due_date)
+        principal_balance = _principal_balance_for_period(loan, principal_txns, period_start, period_end)
         if principal_balance <= 0:
             continue  # fully repaid (under this period's cutoff rule) — nothing left to charge interest on
         amount = round(principal_balance * (loan['interest_rate_percent'] / 100), 2)

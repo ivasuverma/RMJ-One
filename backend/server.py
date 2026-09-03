@@ -895,6 +895,7 @@ class GoldLoanPaymentIn(BaseModel):
     type: Literal['interest', 'principal']
     date: Optional[str] = None  # YYYY-MM-DD, defaults to today
     note: Optional[str] = ''
+    periods: Optional[List[str]] = None  # 'YYYY-MM' months this interest payment covers, from the calendar picker
 
 
 class GoldLoanTxnUpdateIn(BaseModel):
