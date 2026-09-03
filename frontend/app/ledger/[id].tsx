@@ -1,8 +1,9 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Platform, RefreshControl,
-  Modal, TextInput, Alert, KeyboardAvoidingView,
+  Modal, TextInput, KeyboardAvoidingView,
 } from 'react-native';
+import { notify } from '@/src/utils/notify';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
@@ -194,13 +195,13 @@ function EditEntrySheet({ entry, onClose, onSaved }: { entry: any; onClose: () =
   const save = async () => {
     if (submittingRef.current) return;
     const amt = parseFloat(amount);
-    if (!amt || amt <= 0) { Alert.alert('Invalid', 'Amount must be greater than 0'); return; }
+    if (!amt || amt <= 0) { notify('Invalid', 'Amount must be greater than 0'); return; }
     submittingRef.current = true;
     setSaving(true);
     try {
       await api.put(`/ledger/entries/${entry.id}`, { entry_type: type, amount: amt, note });
       onSaved();
-    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+    } catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
     finally { setSaving(false); submittingRef.current = false; }
   };
 
@@ -220,7 +221,7 @@ function EditEntrySheet({ entry, onClose, onSaved }: { entry: any; onClose: () =
     try {
       await api.del(`/ledger/entries/${entry.id}`);
       onSaved();
-    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+    } catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
     finally { setDeleting(false); submittingRef.current = false; }
   };
 

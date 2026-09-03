@@ -1,5 +1,6 @@
 import { ReactNode, useCallback, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator } from 'react-native';
+import { notify } from '@/src/utils/notify';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -78,14 +79,14 @@ export default function UtilityScreen() {
   }, []));
 
   const togglePush = async () => {
-    if (!isPushSupported()) { Alert.alert('Not supported', 'Notifications aren’t supported in this browser.'); return; }
+    if (!isPushSupported()) { notify('Not supported', 'Notifications aren’t supported in this browser.'); return; }
     setPushBusy(true);
     try {
       if (pushOn) { await unsubscribeFromPush(); setPushOn(false); }
       else {
         const res = await subscribeToPush();
         if (res.ok) setPushOn(true);
-        else Alert.alert('Couldn’t enable notifications', res.reason || 'Please try again');
+        else notify('Couldn’t enable notifications', res.reason || 'Please try again');
       }
     } finally { setPushBusy(false); }
   };

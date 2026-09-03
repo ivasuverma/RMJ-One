@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Alert, TextInput,
+  View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, TextInput,
 } from 'react-native';
+import { notify } from '@/src/utils/notify';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -38,7 +39,7 @@ export default function PersonScreen() {
       setNewPass('');
       router.back();
     } else {
-      Alert.alert('Failed', res.error);
+      notify('Failed', res.error);
     }
   };
 
@@ -56,7 +57,7 @@ export default function PersonScreen() {
         await api.del(`/users/${acc.id}`);
         router.replace('/settings/user-roles' as any);
       } catch (e: any) {
-        Alert.alert('Failed', e?.detail || 'Could not delete this user. Please try again.');
+        notify('Failed', e?.detail || 'Could not delete this user. Please try again.');
       } finally {
         setDeleting(false);
       }

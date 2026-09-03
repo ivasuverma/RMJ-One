@@ -1,7 +1,8 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, Platform, KeyboardAvoidingView, Image, Modal,
+  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Platform, KeyboardAvoidingView, Image, Modal,
 } from 'react-native';
+import { notify } from '@/src/utils/notify';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
@@ -92,7 +93,7 @@ export default function RepairItemDetailScreen() {
 
   const saveEdit = async () => {
     if (submittingRef.current || !item) return;
-    if (!editDescription.trim()) { Alert.alert('Missing', 'Enter a description'); return; }
+    if (!editDescription.trim()) { notify('Missing', 'Enter a description'); return; }
     submittingRef.current = true; setBusy(true);
     try {
       const body: any = {
@@ -103,7 +104,7 @@ export default function RepairItemDetailScreen() {
       if (!labourLocked) body.labour_charge = parseFloat(editLabourCharge) || 0;
       await api.put(`/repair-items/${id}`, body);
       setForm(null); await load();
-    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+    } catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
     finally { setBusy(false); submittingRef.current = false; }
   };
 
@@ -116,7 +117,7 @@ export default function RepairItemDetailScreen() {
         if (submittingRef.current) return;
         submittingRef.current = true; setBusy(true);
         try { await api.post(`/repair-items/${id}/unready`, {}); await load(); }
-        catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+        catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
         finally { setBusy(false); submittingRef.current = false; }
       },
     );
@@ -134,7 +135,7 @@ export default function RepairItemDetailScreen() {
         try {
           await api.del(`/repair-items/${id}`);
           router.back();
-        } catch (e: any) { Alert.alert('Failed', e?.detail || 'Could not delete this tag.'); }
+        } catch (e: any) { notify('Failed', e?.detail || 'Could not delete this tag.'); }
       },
     );
   };
@@ -153,7 +154,7 @@ export default function RepairItemDetailScreen() {
       'Delete',
       async () => {
         try { await api.del(`/repair-items/${id}/transactions/${t.id}`); await load(); }
-        catch (e: any) { Alert.alert('Failed', e?.detail || 'Could not delete this entry.'); }
+        catch (e: any) { notify('Failed', e?.detail || 'Could not delete this entry.'); }
       },
     );
   };
@@ -172,9 +173,9 @@ export default function RepairItemDetailScreen() {
         const blob = await res.blob();
         window.open(URL.createObjectURL(blob), '_blank');
       } else {
-        Alert.alert('Ready', 'PDF preview is available on the web app.');
+        notify('Ready', 'PDF preview is available on the web app.');
       }
-    } catch (e: any) { Alert.alert('Failed', e?.message || 'Please try again'); }
+    } catch (e: any) { notify('Failed', e?.message || 'Please try again'); }
     finally { setPrinting(false); }
   };
 
@@ -186,7 +187,7 @@ export default function RepairItemDetailScreen() {
     try {
       const path = kind === 'bill' ? `/repair-items/${id}/bill/print` : `/repair-items/${id}/issue-slip/print`;
       await api.post(path, {});
-    } catch (e: any) { Alert.alert('Print failed', e?.detail || 'Could not reach the printer. Check Store Settings.'); }
+    } catch (e: any) { notify('Print failed', e?.detail || 'Could not reach the printer. Check Store Settings.'); }
     finally { setThermalPrinting(false); }
   };
 
@@ -195,7 +196,7 @@ export default function RepairItemDetailScreen() {
   const printCustomerSlip = async () => {
     setThermalPrinting(true);
     try { await api.post(`/repair-orders/${item!.order_id}/slip/print`, {}); }
-    catch (e: any) { Alert.alert('Print failed', e?.detail || 'Could not reach the printer. Check Store Settings.'); }
+    catch (e: any) { notify('Print failed', e?.detail || 'Could not reach the printer. Check Store Settings.'); }
     finally { setThermalPrinting(false); }
   };
   const printCustomerSlipPdf = async () => {
@@ -207,8 +208,8 @@ export default function RepairItemDetailScreen() {
       const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
       if (!res.ok) throw new Error(`Print failed (${res.status})`);
       if (Platform.OS === 'web') { const blob = await res.blob(); window.open(URL.createObjectURL(blob), '_blank'); }
-      else Alert.alert('Ready', 'PDF preview is available on the web app.');
-    } catch (e: any) { Alert.alert('Failed', e?.message || 'Please try again'); }
+      else notify('Ready', 'PDF preview is available on the web app.');
+    } catch (e: any) { notify('Failed', e?.message || 'Please try again'); }
     finally { setPrinting(false); }
   };
 

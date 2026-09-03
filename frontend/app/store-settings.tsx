@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, Platform, KeyboardAvoidingView, Linking,
+  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Platform, KeyboardAvoidingView, Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as Location from 'expo-location';
 import { api } from '@/src/api/client';
+import { notify } from '@/src/utils/notify';
+import { confirmAction } from '@/src/utils/confirm';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
@@ -64,16 +66,13 @@ export default function StoreSettings() {
       let perm = existing;
       if (!existing.granted && existing.canAskAgain) perm = await Location.requestForegroundPermissionsAsync();
       if (!perm.granted) {
-        Alert.alert('Location denied', 'Enable location permission to use current location.', [
-          { text: 'Open Settings', onPress: () => Linking.openSettings() },
-          { text: 'Cancel', style: 'cancel' },
-        ]);
+        confirmAction('Location denied', 'Enable location permission to use current location.', 'Open Settings', () => Linking.openSettings());
         return;
       }
       const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
       setForm((f) => ({ ...f, latitude: pos.coords.latitude.toFixed(6), longitude: pos.coords.longitude.toFixed(6) }));
     } catch (_e) {
-      Alert.alert('Failed', 'Could not fetch current location.');
+      notify('Failed', 'Could not fetch current location.');
     } finally { setPickingLoc(false); }
   };
 
@@ -82,7 +81,7 @@ export default function StoreSettings() {
     if (submittingRef.current) return;
     const lat = parseFloat(form.latitude), lng = parseFloat(form.longitude);
     if (!form.name.trim() || Number.isNaN(lat) || Number.isNaN(lng)) {
-      Alert.alert('Missing', 'Store name and valid coordinates are required.'); return;
+      notify('Missing', 'Store name and valid coordinates are required.'); return;
     }
     submittingRef.current = true;
     setSaving(true);
@@ -101,7 +100,7 @@ export default function StoreSettings() {
       });
       router.back();
     } catch (e: any) {
-      Alert.alert('Failed', e?.detail || 'Please try again');
+      notify('Failed', e?.detail || 'Please try again');
     } finally { setSaving(false); submittingRef.current = false; }
   };
 

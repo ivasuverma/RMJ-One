@@ -1,7 +1,8 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, Platform, KeyboardAvoidingView, RefreshControl,
+  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Platform, KeyboardAvoidingView, RefreshControl,
 } from 'react-native';
+import { notify } from '@/src/utils/notify';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -77,11 +78,11 @@ export default function KarigarsScreen() {
 
   const save = async () => {
     if (submittingRef.current) return;
-    if (isEmployee && !pickedEmp) { Alert.alert('Missing', 'Pick which employee is this karigar'); return; }
-    if (!isEmployee && !name.trim()) { Alert.alert('Missing', 'Enter a name'); return; }
+    if (isEmployee && !pickedEmp) { notify('Missing', 'Pick which employee is this karigar'); return; }
+    if (!isEmployee && !name.trim()) { notify('Missing', 'Enter a name'); return; }
     // Same rule as a ledger account: an outside karigar needs a mobile number
     // (in-house karigars are employees and carry their own contact details).
-    if (!isEmployee && mobile.replace(/\D/g, '').length < 7) { Alert.alert('Missing', 'A mobile number is required'); return; }
+    if (!isEmployee && mobile.replace(/\D/g, '').length < 7) { notify('Missing', 'A mobile number is required'); return; }
     submittingRef.current = true;
     setSaving(true);
     try {
@@ -92,7 +93,7 @@ export default function KarigarsScreen() {
       if (editingId) await api.put(`/karigars/${editingId}`, body);
       else await api.post('/karigars', body);
       resetForm(); await load();
-    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+    } catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
     finally { setSaving(false); submittingRef.current = false; }
   };
 
@@ -105,7 +106,7 @@ export default function KarigarsScreen() {
       async () => {
         setDeleting(true);
         try { await api.del(`/karigars/${editingId}`); resetForm(); await load(); }
-        catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+        catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
         finally { setDeleting(false); }
       },
     );

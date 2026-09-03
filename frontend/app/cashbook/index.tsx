@@ -1,8 +1,9 @@
 import { useCallback, useMemo, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, Platform,
+  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Platform,
   KeyboardAvoidingView, RefreshControl,
 } from 'react-native';
+import { notify } from '@/src/utils/notify';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -151,7 +152,7 @@ export default function CashBookScreen() {
       setQuickNames((prev) => (prev.some((q) => q.id === created.id) ? prev : [...prev, created].sort((a, b) => a.name.localeCompare(b.name))));
       setName(created.name);
       setNewQuickName(''); setAddingQuickName(false);
-    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+    } catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
   };
 
   // Picking (or switching) the transfer counter refreshes the suggested
@@ -165,10 +166,10 @@ export default function CashBookScreen() {
 
   const submitEntry = async () => {
     const amt = parseFloat(amount);
-    if (!amt || amt <= 0) { Alert.alert('Invalid', 'Enter an amount greater than 0'); return; }
-    if (!name.trim()) { Alert.alert('Invalid', 'Enter a name / description'); return; }
-    if (!counterId) { Alert.alert('No counter selected', 'Add a Cash Book counter first.'); return; }
-    if (isTransfer && !transferCounterId) { Alert.alert('Invalid', 'Pick the other counter for this transfer'); return; }
+    if (!amt || amt <= 0) { notify('Invalid', 'Enter an amount greater than 0'); return; }
+    if (!name.trim()) { notify('Invalid', 'Enter a name / description'); return; }
+    if (!counterId) { notify('No counter selected', 'Add a Cash Book counter first.'); return; }
+    if (isTransfer && !transferCounterId) { notify('Invalid', 'Pick the other counter for this transfer'); return; }
     setBusy(true);
     const payload: any = { date, amount: amt, name: name.trim(), note };
     // A linked transfer entry can't change its type/counter (the backend
@@ -184,7 +185,7 @@ export default function CashBookScreen() {
       }
       setMode('view'); setLoading(true);
       await load(date, counterId);
-    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+    } catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
     finally { setBusy(false); }
   };
 
@@ -205,14 +206,14 @@ export default function CashBookScreen() {
       await api.del(`/cashbook/entries/${e.id}`);
       setMode('view'); setLoading(true);
       await load(date, counterId);
-    } catch (err: any) { Alert.alert('Failed', err?.detail || 'Please try again'); }
+    } catch (err: any) { notify('Failed', err?.detail || 'Please try again'); }
     finally { setDeletingId(''); }
   };
 
   const openManageCounters = () => { setCounterForm(null); setMode('settings'); };
   const saveCounter = async () => {
     if (!counterForm) return;
-    if (!counterForm.name.trim()) { Alert.alert('Invalid', 'Enter a name'); return; }
+    if (!counterForm.name.trim()) { notify('Invalid', 'Enter a name'); return; }
     setBusy(true);
     try {
       let selectId: string | undefined = counterForm.id || undefined;
@@ -228,7 +229,7 @@ export default function CashBookScreen() {
       }
       setCounterForm(null);
       await loadCounters(selectId);
-    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+    } catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
     finally { setBusy(false); }
   };
   const deactivateCounter = (c: Counter) => {
@@ -242,7 +243,7 @@ export default function CashBookScreen() {
           await api.put(`/cashbook/counters/${c.id}`, { active: false });
           setCounterForm(null);
           await loadCounters();
-        } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+        } catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
         finally { setBusy(false); }
       },
     );

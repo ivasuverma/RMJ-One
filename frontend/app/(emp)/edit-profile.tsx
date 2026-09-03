@@ -1,10 +1,11 @@
 import { useCallback, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
+import { notify } from '@/src/utils/notify';
 import { useAuth } from '@/src/auth/AuthContext';
 import { PhotoCaptureModal } from '@/src/components/PhotoCaptureModal';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
@@ -35,7 +36,7 @@ export default function EmployeeEditProfile() {
   const set = (k: keyof Emp, v: string) => setForm((f) => ({ ...f, [k]: v }));
 
   const save = async () => {
-    if (!form.name?.trim()) { Alert.alert('Missing', 'Your name is required'); return; }
+    if (!form.name?.trim()) { notify('Missing', 'Your name is required'); return; }
     setSaving(true);
     try {
       await api.put('/employees/me', {
@@ -46,7 +47,7 @@ export default function EmployeeEditProfile() {
       });
       await refresh();
       router.back();
-    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+    } catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
     finally { setSaving(false); }
   };
 

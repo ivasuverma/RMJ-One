@@ -1,7 +1,8 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Platform, Modal, TextInput, Alert, KeyboardAvoidingView,
+  View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Platform, Modal, TextInput, KeyboardAvoidingView,
 } from 'react-native';
+import { notify } from '@/src/utils/notify';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
 import { api } from '@/src/api/client';
@@ -275,7 +276,7 @@ function DayDetail({ day, empId, canEdit, shifts, onClose, onSaved }: {
         check_out_time: offStatus ? null : (outTime || null),
       });
       onSaved();
-    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+    } catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
     finally { setSaving(false); submittingRef.current = false; }
   };
 
@@ -295,7 +296,7 @@ function DayDetail({ day, empId, canEdit, shifts, onClose, onSaved }: {
     try {
       await api.del(`/attendance/day/${empId}/${day.date}`);
       onSaved();
-    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+    } catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
     finally { setDeleting(false); submittingRef.current = false; }
   };
 
@@ -309,7 +310,7 @@ function DayDetail({ day, empId, canEdit, shifts, onClose, onSaved }: {
         reason_type: 'other', note: 'Requested from calendar',
       });
       onSaved();
-    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+    } catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
     finally { setSaving(false); submittingRef.current = false; }
   };
 

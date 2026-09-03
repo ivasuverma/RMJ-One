@@ -1,7 +1,8 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, Platform, KeyboardAvoidingView, RefreshControl,
+  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Platform, KeyboardAvoidingView, RefreshControl,
 } from 'react-native';
+import { notify } from '@/src/utils/notify';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -42,21 +43,21 @@ export default function HolidaysScreen() {
   const add = async () => {
     if (submittingRef.current) return;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !name.trim()) {
-      Alert.alert('Missing', 'Enter date (YYYY-MM-DD) and holiday name'); return;
+      notify('Missing', 'Enter date (YYYY-MM-DD) and holiday name'); return;
     }
     submittingRef.current = true;
     setSaving(true);
     try {
       await api.post('/holidays', { date, name: name.trim(), type });
       setDate(''); setName(''); setType('public'); setShowForm(false); await load();
-    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+    } catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
     finally { setSaving(false); submittingRef.current = false; }
   };
 
   const remove = (h: H) => {
     confirmAction('Delete holiday', `Remove ${h.name}?`, 'Delete', async () => {
       try { await api.del(`/holidays/${h.id}`); await load(); }
-      catch (e: any) { Alert.alert('Failed', e?.detail || 'Could not delete this holiday. Please try again.'); }
+      catch (e: any) { notify('Failed', e?.detail || 'Could not delete this holiday. Please try again.'); }
     });
   };
 

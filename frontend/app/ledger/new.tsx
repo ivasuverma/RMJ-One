@@ -1,7 +1,8 @@
 import { useMemo, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, Platform, KeyboardAvoidingView,
+  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Platform, KeyboardAvoidingView,
 } from 'react-native';
+import { notify } from '@/src/utils/notify';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -34,18 +35,18 @@ export default function NewLedgerEntry() {
   const submit = async () => {
     if (submittingRef.current) return;
     const amt = parseFloat(amount);
-    if (!amt || amt <= 0) { Alert.alert('Invalid', 'Amount must be greater than 0'); return; }
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date.trim())) { Alert.alert('Invalid date', 'Use the format YYYY-MM-DD.'); return; }
+    if (!amt || amt <= 0) { notify('Invalid', 'Amount must be greater than 0'); return; }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date.trim())) { notify('Invalid date', 'Use the format YYYY-MM-DD.'); return; }
     submittingRef.current = true;
     setSaving(true);
     try {
       await api.post('/ledger/entries', { employee_id: emp, entry_type: type, amount: amt, note, date: date.trim() });
-      // Navigate back immediately rather than waiting on an Alert.alert() confirmation —
-      // multi-button Alert dialogs are unreliable on the web build, which made it look
-      // like nothing happened and led to double-tapping. Landing back on the ledger
-      // screen, where the new entry is now visible, is the confirmation.
+      // Navigate back immediately rather than waiting on a notify() confirmation —
+      // Alert.alert is a no-op on the web build, which made it look like nothing
+      // happened and led to double-tapping. Landing back on the ledger screen,
+      // where the new entry is now visible, is the confirmation.
       router.back();
-    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+    } catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
     finally { setSaving(false); submittingRef.current = false; }
   };
 

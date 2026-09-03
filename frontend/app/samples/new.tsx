@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, Platform, KeyboardAvoidingView, Image,
+  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Platform, KeyboardAvoidingView, Image,
 } from 'react-native';
+import { notify } from '@/src/utils/notify';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
@@ -62,7 +63,7 @@ export default function NewSampleScreen() {
         setIssueType(s.issue_type || ''); setDescription(s.description);
         setWeight(String(s.weight ?? '')); setPcCount(String(s.pc_count ?? '1'));
         setDueDate(s.due_date || ''); setNote(s.note || ''); setPhoto(s.photo || '');
-      } catch (e: any) { Alert.alert('Failed', e?.detail || 'Could not load this sample'); router.back(); }
+      } catch (e: any) { notify('Failed', e?.detail || 'Could not load this sample'); router.back(); }
       finally { setLoadingSample(false); }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -73,15 +74,15 @@ export default function NewSampleScreen() {
 
   const printIssueSlip = async (sampleId: string) => {
     try { await api.post(`/samples/${sampleId}/issue-slip/print`, {}); }
-    catch (e: any) { Alert.alert('Print failed', e?.detail || 'Could not reach the printer. Check Store Settings.'); }
+    catch (e: any) { notify('Print failed', e?.detail || 'Could not reach the printer. Check Store Settings.'); }
   };
 
   const submit = async () => {
     if (submittingRef.current) return;
-    if (!isEdit && !karigarId) { Alert.alert('Missing', 'Pick which karigar this sample goes to'); return; }
-    if (!description.trim()) { Alert.alert('Missing', 'Describe the sample piece'); return; }
+    if (!isEdit && !karigarId) { notify('Missing', 'Pick which karigar this sample goes to'); return; }
+    if (!description.trim()) { notify('Missing', 'Describe the sample piece'); return; }
     const w = parseFloat(weight);
-    if (!w || w <= 0) { Alert.alert('Missing', 'Enter a weight greater than 0'); return; }
+    if (!w || w <= 0) { notify('Missing', 'Enter a weight greater than 0'); return; }
     submittingRef.current = true;
     setSaving(true);
     try {
@@ -110,7 +111,7 @@ export default function NewSampleScreen() {
         if (rec?.id) printIssueSlip(rec.id);
         router.replace('/samples' as any);
       }
-    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+    } catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
     finally { setSaving(false); submittingRef.current = false; }
   };
 

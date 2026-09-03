@@ -1,7 +1,8 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, Platform, KeyboardAvoidingView, RefreshControl,
+  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Platform, KeyboardAvoidingView, RefreshControl,
 } from 'react-native';
+import { notify } from '@/src/utils/notify';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -65,21 +66,21 @@ export default function BiometricScreen() {
   const add = async () => {
     if (submittingRef.current) return;
     if (!serial.trim() || !label.trim() || !secret.trim()) {
-      Alert.alert('Missing', 'Serial, label and secret are all required'); return;
+      notify('Missing', 'Serial, label and secret are all required'); return;
     }
     submittingRef.current = true;
     setSaving(true);
     try {
       await api.post('/biometric/devices', { serial: serial.trim(), label: label.trim(), secret });
       setSerial(''); setLabel(''); setSecret(''); await load();
-    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+    } catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
     finally { setSaving(false); submittingRef.current = false; }
   };
 
   const remove = (d: Device) => {
     confirmAction('Delete device', `Remove ${d.label} (${d.serial})?`, 'Delete', async () => {
       try { await api.del(`/biometric/devices/${d.id}`); await load(); }
-      catch (e: any) { Alert.alert('Failed', e?.detail || 'Could not delete this device. Please try again.'); }
+      catch (e: any) { notify('Failed', e?.detail || 'Could not delete this device. Please try again.'); }
     });
   };
 
@@ -87,8 +88,8 @@ export default function BiometricScreen() {
     setPulling(d.id);
     try {
       const r = await api.post<{ note?: string }>(`/biometric/devices/${d.id}/pull`, {});
-      Alert.alert('Sync requested', r?.note || 'The device will re-send its recent punches shortly. Check the Logs tab in a few seconds.');
-    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Could not request a sync.'); }
+      notify('Sync requested', r?.note || 'The device will re-send its recent punches shortly. Check the Logs tab in a few seconds.');
+    } catch (e: any) { notify('Failed', e?.detail || 'Could not request a sync.'); }
     finally { setPulling(null); }
   };
 

@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert,
+  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator,
   Platform, KeyboardAvoidingView,
 } from 'react-native';
+import { notify } from '@/src/utils/notify';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
@@ -126,7 +127,7 @@ export default function NewTaskScreen() {
         if (t.max_repetitions) { setEndCondition('repetitions'); setMaxRepetitions(String(t.max_repetitions)); }
         else if (t.end_date) { setEndCondition('end_date'); setEndDate(t.end_date); }
         setTemplateActive(t.active !== false);
-      } catch (e: any) { Alert.alert('Failed', e?.detail || 'Could not load this recurring task'); router.back(); }
+      } catch (e: any) { notify('Failed', e?.detail || 'Could not load this recurring task'); router.back(); }
       finally { setLoadingTemplate(false); }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -143,19 +144,19 @@ export default function NewTaskScreen() {
 
   const submit = async () => {
     if (submittingRef.current) return;
-    if (!title.trim()) { Alert.alert('Missing', 'Title is required'); return; }
-    if (!assignedTo) { Alert.alert('Missing', 'Pick who this task is for'); return; }
+    if (!title.trim()) { notify('Missing', 'Title is required'); return; }
+    if (!assignedTo) { notify('Missing', 'Pick who this task is for'); return; }
 
     if (repeat) {
-      if (!dueDate) { Alert.alert('Missing', 'Pick a start date for the recurring task'); return; }
+      if (!dueDate) { notify('Missing', 'Pick a start date for the recurring task'); return; }
       const interval = parseInt(intervalHours, 10) || 0;
-      if (freq === 'hourly' && interval < 1) { Alert.alert('Invalid', 'Enter an interval of at least 1 hour'); return; }
+      if (freq === 'hourly' && interval < 1) { notify('Invalid', 'Enter an interval of at least 1 hour'); return; }
       const repetitions = parseInt(maxRepetitions, 10) || 0;
       if (endCondition === 'repetitions' && (repetitions < 1 || repetitions > MAX_REPETITIONS)) {
-        Alert.alert('Invalid', `Enter a number of repetitions between 1 and ${MAX_REPETITIONS}`); return;
+        notify('Invalid', `Enter a number of repetitions between 1 and ${MAX_REPETITIONS}`); return;
       }
-      if (endCondition === 'end_date' && !endDate) { Alert.alert('Missing', 'Pick an end date, or switch to No. of repetitions'); return; }
-      if (endCondition === 'end_date' && endDate < dueDate) { Alert.alert('Invalid', 'End date must be on or after the start date'); return; }
+      if (endCondition === 'end_date' && !endDate) { notify('Missing', 'Pick an end date, or switch to No. of repetitions'); return; }
+      if (endCondition === 'end_date' && endDate < dueDate) { notify('Invalid', 'End date must be on or after the start date'); return; }
 
       submittingRef.current = true;
       setSaving(true);
@@ -176,7 +177,7 @@ export default function NewTaskScreen() {
         if (editingTemplate) await api.put(`/tasks/templates/${templateId}`, body);
         else await api.post('/tasks/templates', body);
         router.back();
-      } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+      } catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
       finally { setSaving(false); submittingRef.current = false; }
       return;
     }
@@ -193,7 +194,7 @@ export default function NewTaskScreen() {
         reminder_interval: reminderInterval,
       });
       router.back();
-    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+    } catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
     finally { setSaving(false); submittingRef.current = false; }
   };
 

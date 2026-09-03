@@ -1,7 +1,8 @@
 import { useMemo, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, Platform, KeyboardAvoidingView,
+  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Platform, KeyboardAvoidingView,
 } from 'react-native';
+import { notify } from '@/src/utils/notify';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -26,17 +27,17 @@ export default function MyAccountScreen() {
   const save = async () => {
     if (submittingRef.current) return;
     if (!currentPassword) {
-      Alert.alert('Missing', 'Enter your current password to confirm changes.'); return;
+      notify('Missing', 'Enter your current password to confirm changes.'); return;
     }
     const nameChanged = newName.trim() !== (user?.name || '') && newName.trim().length > 0;
     const usernameChanged = newUsername.trim().toLowerCase() !== (user?.username || '');
     const passwordChanged = newPassword.length > 0;
     if (!nameChanged && !usernameChanged && !passwordChanged) {
-      Alert.alert('No changes', 'Enter a new name, username, or password to update.'); return;
+      notify('No changes', 'Enter a new name, username, or password to update.'); return;
     }
     if (passwordChanged) {
-      if (newPassword.length < 4) { Alert.alert('Too short', 'New password must be 4+ characters.'); return; }
-      if (newPassword !== confirmPassword) { Alert.alert('Mismatch', 'New password and confirmation don’t match.'); return; }
+      if (newPassword.length < 4) { notify('Too short', 'New password must be 4+ characters.'); return; }
+      if (newPassword !== confirmPassword) { notify('Mismatch', 'New password and confirmation don’t match.'); return; }
     }
     submittingRef.current = true;
     setSaving(true);
@@ -49,7 +50,7 @@ export default function MyAccountScreen() {
       );
       router.back();
     } catch (e: any) {
-      Alert.alert('Failed', e?.detail || 'Please try again');
+      notify('Failed', e?.detail || 'Please try again');
     } finally { setSaving(false); submittingRef.current = false; }
   };
 

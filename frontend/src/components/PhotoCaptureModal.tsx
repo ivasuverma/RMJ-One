@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, Pressable, ActivityIndicator, Modal, Alert, Linking, Platform, Image } from 'react-native';
+import { View, Text, StyleSheet, Pressable, ActivityIndicator, Modal, Linking, Platform, Image } from 'react-native';
+import { notify } from '@/src/utils/notify';
 import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
@@ -76,7 +77,7 @@ export function PhotoCaptureModal({ visible, title, onClose, onCapture, highRes 
       // Land on a review step (with optional crop) instead of saving straight away.
       setCaptured(dataUri);
     } catch (e: any) {
-      Alert.alert('Failed', e?.message || 'Please try again');
+      notify('Failed', e?.message || 'Please try again');
     } finally {
       setBusy(false);
       submittingRef.current = false;

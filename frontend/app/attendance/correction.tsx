@@ -1,12 +1,13 @@
 import { useMemo, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TextInput, Pressable, Alert,
+  View, Text, StyleSheet, ScrollView, TextInput, Pressable,
   ActivityIndicator, Platform, KeyboardAvoidingView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
+import { notify } from '@/src/utils/notify';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
@@ -32,11 +33,10 @@ export default function CorrectionForm() {
     setSaving(true);
     try {
       await api.post('/attendance/corrections', { reason_type: type, note });
-      Alert.alert('Submitted', 'Your correction request was sent to the owner.', [
-        { text: 'OK', onPress: () => router.back() },
-      ]);
+      notify('Submitted', 'Your correction request was sent to the owner.');
+      router.back();
     } catch (e: any) {
-      Alert.alert('Failed', e?.detail || 'Please try again');
+      notify('Failed', e?.detail || 'Please try again');
     } finally {
       setSaving(false);
       submittingRef.current = false;

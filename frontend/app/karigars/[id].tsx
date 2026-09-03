@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Alert, Image, Modal,
+  View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Image, Modal,
 } from 'react-native';
+import { notify } from '@/src/utils/notify';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
@@ -113,7 +114,7 @@ export default function KarigarLedgerScreen() {
       async () => {
         setDeletingId(e.id);
         try { await api.del(`/karigars/${id}/ledger/${e.id}`); await load(); }
-        catch (err: any) { Alert.alert('Failed', err?.detail || 'Could not delete this entry.'); }
+        catch (err: any) { notify('Failed', err?.detail || 'Could not delete this entry.'); }
         finally { setDeletingId(''); }
       },
     );

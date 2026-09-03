@@ -1,7 +1,8 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, Platform, KeyboardAvoidingView, Image,
+  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Platform, KeyboardAvoidingView, Image,
 } from 'react-native';
+import { notify } from '@/src/utils/notify';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -96,11 +97,11 @@ export default function NewRepairOrderScreen() {
 
   const submit = async () => {
     if (submittingRef.current) return;
-    if (mode === 'existing' && !selected) { Alert.alert('Missing', 'Pick a customer, or switch to New Customer'); return; }
-    if (mode === 'new' && !newName.trim()) { Alert.alert('Missing', 'Enter the customer name'); return; }
+    if (mode === 'existing' && !selected) { notify('Missing', 'Pick a customer, or switch to New Customer'); return; }
+    if (mode === 'new' && !newName.trim()) { notify('Missing', 'Enter the customer name'); return; }
     // Same rule as a ledger account: a new party must have a mobile number.
-    if (mode === 'new' && newMobile.replace(/\D/g, '').length < 7) { Alert.alert('Missing', 'A mobile number is required for a new customer'); return; }
-    if (!description.trim()) { Alert.alert('Missing', 'Enter a description for the item'); return; }
+    if (mode === 'new' && newMobile.replace(/\D/g, '').length < 7) { notify('Missing', 'A mobile number is required for a new customer'); return; }
+    if (!description.trim()) { notify('Missing', 'Enter a description for the item'); return; }
     submittingRef.current = true;
     setSaving(true);
     try {
@@ -131,7 +132,7 @@ export default function NewRepairOrderScreen() {
       // awaiting it here would stall navigation whenever it's unreachable.
       api.post(`/repair-orders/${res.order.id}/slip/print`, {}).catch(() => { /* saved either way */ });
       router.replace(`/repairs/${res.order.id}` as any);
-    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+    } catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
     finally { setSaving(false); submittingRef.current = false; }
   };
 

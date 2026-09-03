@@ -1,7 +1,8 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, Platform, KeyboardAvoidingView, RefreshControl,
+  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Platform, KeyboardAvoidingView, RefreshControl,
 } from 'react-native';
+import { notify } from '@/src/utils/notify';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -69,14 +70,14 @@ export default function CustomersScreen() {
 
   const save = async () => {
     if (submittingRef.current) return;
-    if (!name.trim()) { Alert.alert('Missing', 'Enter a name'); return; }
+    if (!name.trim()) { notify('Missing', 'Enter a name'); return; }
     submittingRef.current = true;
     setSaving(true);
     try {
       if (editingId) await api.put(`/customers/${editingId}`, { name: name.trim(), mobile, address, notes: '' });
       else await api.post('/customers', { name: name.trim(), mobile, address, notes: '' });
       resetForm(); await load(query);
-    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+    } catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
     finally { setSaving(false); submittingRef.current = false; }
   };
 
@@ -89,7 +90,7 @@ export default function CustomersScreen() {
       async () => {
         setDeleting(true);
         try { await api.del(`/customers/${editingId}`); resetForm(); await load(query); }
-        catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+        catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
         finally { setDeleting(false); }
       },
     );

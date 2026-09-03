@@ -1,7 +1,8 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, Platform, KeyboardAvoidingView, RefreshControl,
+  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Platform, KeyboardAvoidingView, RefreshControl,
 } from 'react-native';
+import { notify } from '@/src/utils/notify';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -42,9 +43,9 @@ export default function ItemMasterScreen() {
   const submittingRef = useRef(false);
   const add = async () => {
     if (submittingRef.current) return false;
-    if (!name.trim()) { Alert.alert('Missing', 'Enter a name for this item'); return false; }
+    if (!name.trim()) { notify('Missing', 'Enter a name for this item'); return false; }
     const p = parseFloat(purity);
-    if (!p || p <= 0 || p > 100) { Alert.alert('Invalid', 'Purity must be between 0 and 100'); return false; }
+    if (!p || p <= 0 || p > 100) { notify('Invalid', 'Purity must be between 0 and 100'); return false; }
     submittingRef.current = true;
     setSaving(true);
     try {
@@ -56,7 +57,7 @@ export default function ItemMasterScreen() {
       }
       setName(''); setCategory(''); setEditingId(null); await load();
       return true;
-    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); return false; }
+    } catch (e: any) { notify('Failed', e?.detail || 'Please try again'); return false; }
     finally { setSaving(false); submittingRef.current = false; }
   };
 
@@ -68,13 +69,13 @@ export default function ItemMasterScreen() {
 
   const toggleActive = async (it: ItemMaster) => {
     try { await api.put(`/item-master/${it.id}`, { ...it, active: !it.active }); await load(); }
-    catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+    catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
   };
 
   const remove = (it: ItemMaster) => {
     confirmAction('Delete item', `Remove "${it.name}"?`, 'Delete', async () => {
       try { await api.del(`/item-master/${it.id}`); await load(); }
-      catch (e: any) { Alert.alert('Failed', e?.detail || 'Could not delete this item.'); }
+      catch (e: any) { notify('Failed', e?.detail || 'Could not delete this item.'); }
     });
   };
 

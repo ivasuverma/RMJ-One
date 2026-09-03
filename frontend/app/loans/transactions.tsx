@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, RefreshControl } from 'react-native';
+import { notify } from '@/src/utils/notify';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
@@ -64,19 +65,19 @@ export default function GoldLoanTransactionsScreen() {
   const cancelEdit = () => setEditingId(null);
   const saveEdit = async (txnId: string) => {
     const amt = parseFloat(eAmount);
-    if (!amt || amt <= 0) { Alert.alert('Missing', 'Enter an amount greater than 0'); return; }
+    if (!amt || amt <= 0) { notify('Missing', 'Enter an amount greater than 0'); return; }
     setSavingEdit(true);
     try {
       await api.put(`/gold-loans/${id}/transactions/${txnId}`, { amount: amt, date: eDate, note: eNote.trim() });
       setEditingId(null);
       await loadFirstPage();
-    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+    } catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
     finally { setSavingEdit(false); }
   };
   const removeTxn = (t: Txn) => {
     confirmAction('Delete this entry?', `Remove the ${TXN_LABEL[t.type].toLowerCase()} of ${fmtINR(t.amount)} on ${t.date}? This cannot be undone.`, 'Delete', async () => {
       try { await api.del(`/gold-loans/${id}/transactions/${t.id}`); await loadFirstPage(); }
-      catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+      catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
     });
   };
 

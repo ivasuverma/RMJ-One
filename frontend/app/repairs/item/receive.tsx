@@ -1,11 +1,12 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, Platform, KeyboardAvoidingView, Image,
+  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Platform, KeyboardAvoidingView, Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
+import { notify } from '@/src/utils/notify';
 import { PhotoCaptureModal } from '@/src/components/PhotoCaptureModal';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
@@ -130,7 +131,7 @@ export default function ReceiveFromKarigarScreen() {
     if (submittingRef.current || bulkItems.length === 0) return;
     const rows = bulkItems.map((it) => ({ it, row: bulkRows[it.id] || { weight: '', wastageWeight: '' } }));
     const missing = rows.filter(({ row }) => !parseFloat(row.weight));
-    if (missing.length > 0) { Alert.alert('Missing', `Enter the weight received for: ${missing.map((m) => m.it.item_code).join(', ')}`); return; }
+    if (missing.length > 0) { notify('Missing', `Enter the weight received for: ${missing.map((m) => m.it.item_code).join(', ')}`); return; }
     submittingRef.current = true; setBusy(true);
     let okCount = 0;
     const failed: string[] = [];
@@ -144,12 +145,12 @@ export default function ReceiveFromKarigarScreen() {
     }
     setBusy(false); submittingRef.current = false;
     if (failed.length === 0) {
-      Alert.alert('Done', `Received ${okCount} tag${okCount === 1 ? '' : 's'} back`);
+      notify('Done', `Received ${okCount} tag${okCount === 1 ? '' : 's'} back`);
       // Everything just received is now sitting in Pending to Bill — land the
       // user there instead of back on a (now empty) with-karigar list.
       router.replace('/repairs/bill?filter=ready' as any);
     } else {
-      Alert.alert('Partial success', `Received ${okCount} tag(s). Failed: ${failed.join(', ')}`);
+      notify('Partial success', `Received ${okCount} tag(s). Failed: ${failed.join(', ')}`);
       await load();
     }
   };
@@ -157,7 +158,7 @@ export default function ReceiveFromKarigarScreen() {
   const submit = async () => {
     if (submittingRef.current || !item) return;
     const w = parseFloat(weight);
-    if (!w || w <= 0) { Alert.alert('Invalid', 'Enter the weight received back'); return; }
+    if (!w || w <= 0) { notify('Invalid', 'Enter the weight received back'); return; }
     submittingRef.current = true; setBusy(true);
     const payload = {
       weight: w, note, slip_photo: slipPhoto,
@@ -179,7 +180,7 @@ export default function ReceiveFromKarigarScreen() {
       // Every step lands on the tag's summary — where print/PDF/edit/delete and
       // the "Create bill" next-step action all live.
       router.replace(`/repairs/item/${item.id}` as any);
-    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+    } catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
     finally { setBusy(false); submittingRef.current = false; }
   };
 

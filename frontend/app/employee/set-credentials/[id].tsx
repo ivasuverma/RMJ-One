@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, TextInput, Pressable, ActivityIndicator, Alert, Platform, KeyboardAvoidingView, Share,
+  View, Text, StyleSheet, TextInput, Pressable, ActivityIndicator, Platform, KeyboardAvoidingView, Share,
 } from 'react-native';
+import { notify } from '@/src/utils/notify';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -33,9 +34,9 @@ export default function SetEmployeeCredentials() {
 
   const submit = async () => {
     if (submittingRef.current) return;
-    if (!username.trim()) { Alert.alert('Invalid', 'Username is required'); return; }
-    if (password.length < 4) { Alert.alert('Invalid', 'Password must be at least 4 characters'); return; }
-    if (password !== confirm) { Alert.alert('Mismatch', 'Password and confirmation don\'t match'); return; }
+    if (!username.trim()) { notify('Invalid', 'Username is required'); return; }
+    if (password.length < 4) { notify('Invalid', 'Password must be at least 4 characters'); return; }
+    if (password !== confirm) { notify('Mismatch', 'Password and confirmation don\'t match'); return; }
     submittingRef.current = true;
     setSaving(true);
     try {
@@ -45,7 +46,7 @@ export default function SetEmployeeCredentials() {
         message: `RMJ-One login${empName ? ` for ${empName}` : ''}\nUsername: ${username.trim()}\nPassword: ${password}`,
       }).catch(() => {});
     } catch (e: any) {
-      Alert.alert('Failed', e?.detail || 'Please try again');
+      notify('Failed', e?.detail || 'Please try again');
     } finally { setSaving(false); submittingRef.current = false; }
   };
 

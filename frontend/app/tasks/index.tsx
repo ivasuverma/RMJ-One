@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, RefreshControl, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, RefreshControl } from 'react-native';
+import { notify } from '@/src/utils/notify';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -75,13 +76,13 @@ export default function TasksListScreen() {
       const full = await api.get<any>(`/tasks/templates/${tpl.id}`);
       await api.put(`/tasks/templates/${tpl.id}`, { ...full, active: !tpl.active });
       await load();
-    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+    } catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
   };
 
   const removeTemplate = (tpl: Template) => {
     confirmAction('Delete recurring task', `Stop repeating "${tpl.title}"? Past instances already created stay as-is.`, 'Delete', async () => {
       try { await api.del(`/tasks/templates/${tpl.id}`); await load(); }
-      catch (e: any) { Alert.alert('Failed', e?.detail || 'Could not delete this template.'); }
+      catch (e: any) { notify('Failed', e?.detail || 'Could not delete this template.'); }
     });
   };
 

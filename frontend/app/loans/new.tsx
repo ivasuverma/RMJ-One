@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, Platform, KeyboardAvoidingView, Image,
+  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Platform, KeyboardAvoidingView, Image,
 } from 'react-native';
+import { notify } from '@/src/utils/notify';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
@@ -83,7 +84,7 @@ export default function NewGoldLoanScreen() {
         setPcCount(String(l.pc_count ?? '1'));
         setPrincipal(String(l.principal ?? '')); setRate(String(l.interest_rate_percent ?? ''));
         setLoanDate(l.loan_date || ''); setEstimateDate(l.estimate_return_date || ''); setNote(l.note || '');
-      } catch (e: any) { Alert.alert('Failed', e?.detail || 'Could not load this loan'); router.back(); }
+      } catch (e: any) { notify('Failed', e?.detail || 'Could not load this loan'); router.back(); }
       finally { setLoadingLoan(false); }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -104,16 +105,16 @@ export default function NewGoldLoanScreen() {
 
   const submit = async () => {
     if (submittingRef.current) return;
-    if (!isEdit && mode === 'existing' && !selected) { Alert.alert('Missing', 'Pick a customer, or switch to New Customer'); return; }
-    if (!isEdit && mode === 'new' && !newName.trim()) { Alert.alert('Missing', 'Enter the customer name'); return; }
-    if (!isEdit && mode === 'new' && newMobile.replace(/\D/g, '').length < 7) { Alert.alert('Missing', 'A mobile number is required for a new customer'); return; }
-    if (!description.trim()) { Alert.alert('Missing', 'Describe what is being pledged'); return; }
+    if (!isEdit && mode === 'existing' && !selected) { notify('Missing', 'Pick a customer, or switch to New Customer'); return; }
+    if (!isEdit && mode === 'new' && !newName.trim()) { notify('Missing', 'Enter the customer name'); return; }
+    if (!isEdit && mode === 'new' && newMobile.replace(/\D/g, '').length < 7) { notify('Missing', 'A mobile number is required for a new customer'); return; }
+    if (!description.trim()) { notify('Missing', 'Describe what is being pledged'); return; }
     const w = parseFloat(weight);
-    if (!w || w <= 0) { Alert.alert('Missing', 'Enter a weight greater than 0'); return; }
+    if (!w || w <= 0) { notify('Missing', 'Enter a weight greater than 0'); return; }
     const p = parseFloat(principal);
-    if (!p || p <= 0) { Alert.alert('Missing', 'Enter the amount paid to the customer'); return; }
+    if (!p || p <= 0) { notify('Missing', 'Enter the amount paid to the customer'); return; }
     const r = parseFloat(rate);
-    if (!rate || r < 0) { Alert.alert('Missing', 'Enter the monthly interest rate'); return; }
+    if (!rate || r < 0) { notify('Missing', 'Enter the monthly interest rate'); return; }
 
     submittingRef.current = true;
     setSaving(true);
@@ -150,7 +151,7 @@ export default function NewGoldLoanScreen() {
       }
       if (isEdit) router.back();
       else router.replace(`/loans/${loanId}` as any);
-    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+    } catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
     finally { setSaving(false); submittingRef.current = false; }
   };
 

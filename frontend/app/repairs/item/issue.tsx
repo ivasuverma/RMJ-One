@@ -1,11 +1,13 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, Platform, KeyboardAvoidingView, Modal,
+  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Platform, KeyboardAvoidingView, Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
+import { notify } from '@/src/utils/notify';
+import { promptChoice } from '@/src/utils/choicePrompt';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
@@ -44,15 +46,15 @@ export default function IssueToKarigarScreen() {
   const [savingK, setSavingK] = useState(false);
 
   const createKarigar = async () => {
-    if (!newKName.trim()) { Alert.alert('Missing', 'Enter the karigar name'); return; }
-    if (newKMobile.replace(/\D/g, '').length < 7) { Alert.alert('Missing', 'A mobile number is required'); return; }
+    if (!newKName.trim()) { notify('Missing', 'Enter the karigar name'); return; }
+    if (newKMobile.replace(/\D/g, '').length < 7) { notify('Missing', 'A mobile number is required'); return; }
     setSavingK(true);
     try {
       const k = await api.post<Karigar>('/karigars', { name: newKName.trim(), mobile: newKMobile.trim(), is_employee: false });
       setKarigars((list) => [...list, k].sort((a, b) => a.name.localeCompare(b.name)));
       setPickedKarigar(k);
       setKAddOpen(false); setKPickerOpen(false); setNewKName(''); setNewKMobile('');
-    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Could not add karigar'); }
+    } catch (e: any) { notify('Failed', e?.detail || 'Could not add karigar'); }
     finally { setSavingK(false); }
   };
 
@@ -89,25 +91,7 @@ export default function IssueToKarigarScreen() {
 
   const printIssueSlip = async (itemId: string) => {
     try { await api.post(`/repair-items/${itemId}/issue-slip/print`, {}); }
-    catch (e: any) { Alert.alert('Print failed', e?.detail || 'Could not reach the printer. Check Store Settings.'); }
-  };
-
-  // Alert.alert with multiple buttons silently does nothing on web (same
-  // gap documented in src/utils/confirm.ts) — the issue itself had already
-  // gone through by the time this fires, so a broken dialog here made the
-  // whole action look like it did nothing. window.confirm is the web-safe
-  // equivalent; Alert.alert still works fine on native.
-  const promptPrint = (title: string, message: string, onPrint: () => void, onSkip: () => void) => {
-    if (Platform.OS === 'web') {
-      // eslint-disable-next-line no-alert
-      if (typeof window !== 'undefined' && window.confirm(`${title}\n\n${message}\n\nPrint now?`)) onPrint();
-      else onSkip();
-      return;
-    }
-    Alert.alert(title, message, [
-      { text: 'Skip', style: 'cancel', onPress: onSkip },
-      { text: 'Print Slip', onPress: onPrint },
-    ]);
+    catch (e: any) { notify('Print failed', e?.detail || 'Could not reach the printer. Check Store Settings.'); }
   };
 
   const submit = async () => {
@@ -115,7 +99,7 @@ export default function IssueToKarigarScreen() {
     // Editing an existing issue transaction always needs a karigar (it's a real
     // record of who has the item). A fresh issue can skip the karigar entirely —
     // the backend then moves the tag straight to "Pending to Bill".
-    if (isEdit && !pickedKarigar) { Alert.alert('Missing', 'Pick a karigar'); return; }
+    if (isEdit && !pickedKarigar) { notify('Missing', 'Pick a karigar'); return; }
     submittingRef.current = true; setBusy(true);
     try {
       if (isEdit) {
@@ -127,8 +111,8 @@ export default function IssueToKarigarScreen() {
       // Only a real karigar issue produces a challan to print — "Mark Pending
       // to Bill" (no karigar picked) has nothing to hand anyone.
       if (pickedKarigar) {
-        promptPrint(
-          'Issued', `Handed to ${pickedKarigar.name}.`,
+        promptChoice(
+          'Issued', `Handed to ${pickedKarigar.name}.`, 'Print Slip',
           async () => { await printIssueSlip(item.id); router.replace(`/repairs/item/${item.id}` as any); },
           () => router.replace(`/repairs/item/${item.id}` as any),
         );
@@ -137,13 +121,13 @@ export default function IssueToKarigarScreen() {
         router.replace(`/repairs/item/${item.id}` as any);
       }
       return;
-    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+    } catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
     finally { setBusy(false); submittingRef.current = false; }
   };
 
   const submitBulk = async () => {
     if (submittingRef.current || bulkItems.length === 0) return;
-    if (!pickedKarigar) { Alert.alert('Missing', 'Pick a karigar'); return; }
+    if (!pickedKarigar) { notify('Missing', 'Pick a karigar'); return; }
     submittingRef.current = true; setBusy(true);
     let okCount = 0;
     const issuedIds: string[] = [];
@@ -154,13 +138,13 @@ export default function IssueToKarigarScreen() {
     }
     setBusy(false); submittingRef.current = false;
     if (failed.length === 0) {
-      promptPrint(
-        'Done', `Issued ${okCount} tag${okCount === 1 ? '' : 's'} to ${pickedKarigar.name}`,
+      promptChoice(
+        'Done', `Issued ${okCount} tag${okCount === 1 ? '' : 's'} to ${pickedKarigar.name}`, 'Print Slips',
         async () => { for (const iid of issuedIds) await printIssueSlip(iid); router.back(); },
         () => router.back(),
       );
     } else {
-      Alert.alert('Partial success', `Issued ${okCount} tag(s). Failed: ${failed.join(', ')}`);
+      notify('Partial success', `Issued ${okCount} tag(s). Failed: ${failed.join(', ')}`);
       await load();
     }
   };

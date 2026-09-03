@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, Platform, Linking,
+  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Platform, Linking,
 } from 'react-native';
+import { notify } from '@/src/utils/notify';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -55,7 +56,7 @@ export default function Reports() {
       if (cfg.needsRange) { qs.set('from_date', from); qs.set('to_date', to); }
       if (cfg.needsMonth) { qs.set('year', year); qs.set('month', month); }
       if (cfg.needsEmp) {
-        if (!empId) { Alert.alert('Select employee', 'Ledger report needs an employee'); return; }
+        if (!empId) { notify('Select employee', 'Ledger report needs an employee'); return; }
         qs.set('employee_id', empId);
       }
       const base = process.env.EXPO_PUBLIC_BACKEND_URL || '';
@@ -70,10 +71,10 @@ export default function Reports() {
         window.open(objUrl, '_blank');
       } else {
         // On native, opening the authenticated URL won't work — inform user.
-        Alert.alert('Preview', 'Report generated successfully on server. Native PDF viewing will be available after deploy. URL: ' + url);
+        notify('Preview', 'Report generated successfully on server. Native PDF viewing will be available after deploy. URL: ' + url);
       }
     } catch (e: any) {
-      Alert.alert('Failed', e?.message || 'Please try again');
+      notify('Failed', e?.message || 'Please try again');
     } finally { setBusy(false); }
   };
 

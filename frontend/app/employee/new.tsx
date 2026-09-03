@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TextInput, ScrollView, Pressable,
-  KeyboardAvoidingView, Platform, ActivityIndicator, Alert, Share,
+  KeyboardAvoidingView, Platform, ActivityIndicator, Share,
 } from 'react-native';
+import { notify } from '@/src/utils/notify';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -83,7 +84,7 @@ export default function EmployeeForm() {
           photo: e.photo || '',
         });
       } catch (_e) {
-        Alert.alert('Failed to load employee');
+        notify('Failed', 'Could not load employee');
       } finally { setLoading(false); }
     })();
   }, [id, isEdit]);
@@ -140,7 +141,7 @@ export default function EmployeeForm() {
         }
       }
     } catch (e: any) {
-      Alert.alert('Save failed', e?.detail || 'Please try again');
+      notify('Save failed', e?.detail || 'Please try again');
     } finally {
       setSaving(false);
       submittingRef.current = false;

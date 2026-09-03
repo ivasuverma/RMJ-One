@@ -1,8 +1,9 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert,
+  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator,
   Platform, KeyboardAvoidingView,
 } from 'react-native';
+import { notify } from '@/src/utils/notify';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
@@ -64,7 +65,7 @@ export default function TaskDetailScreen() {
       setETitle(t.title); setEDesc(t.description || ''); setEPriority(t.priority); setEDue(t.due_date || '');
       setEDueTime(t.due_time || ''); setEPoints(t.points || 0); setERepeatReminder(!!t.repeat_reminder);
       setEMaxReminders(t.max_reminders ? String(t.max_reminders) : ''); setEReminderInterval(t.reminder_interval || 'hourly');
-    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Could not load this task'); router.back(); }
+    } catch (e: any) { notify('Failed', e?.detail || 'Could not load this task'); router.back(); }
     finally { setLoading(false); }
   }, [id, router]);
 
@@ -73,26 +74,26 @@ export default function TaskDetailScreen() {
   const markDone = async () => {
     setBusy(true);
     try { await api.post(`/tasks/${id}/complete`); await load(); }
-    catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+    catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
     finally { setBusy(false); }
   };
 
   const reopen = async () => {
     setBusy(true);
     try { await api.post(`/tasks/${id}/reopen`); await load(); }
-    catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+    catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
     finally { setBusy(false); }
   };
 
   const remove = () => {
     confirmAction('Delete task', `Delete "${task?.title}"? This cannot be undone.`, 'Delete', async () => {
       try { await api.del(`/tasks/${id}`); router.back(); }
-      catch (e: any) { Alert.alert('Failed', e?.detail || 'Could not delete this task.'); }
+      catch (e: any) { notify('Failed', e?.detail || 'Could not delete this task.'); }
     });
   };
 
   const saveEdit = async () => {
-    if (!eTitle.trim()) { Alert.alert('Missing', 'Title is required'); return; }
+    if (!eTitle.trim()) { notify('Missing', 'Title is required'); return; }
     setBusy(true);
     try {
       await api.put(`/tasks/${id}`, {
@@ -104,7 +105,7 @@ export default function TaskDetailScreen() {
       });
       setEditing(false);
       await load();
-    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+    } catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
     finally { setBusy(false); }
   };
 
@@ -118,7 +119,7 @@ export default function TaskDetailScreen() {
   const reassign = async (emp: Emp) => {
     setBusy(true);
     try { await api.put(`/tasks/${id}`, { assigned_to: emp.id }); setReassignOpen(false); await load(); }
-    catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+    catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
     finally { setBusy(false); }
   };
 
@@ -127,7 +128,7 @@ export default function TaskDetailScreen() {
     submittingRef.current = true;
     setSendingComment(true);
     try { await api.post(`/tasks/${id}/comments`, { text: comment.trim() }); setComment(''); await load(); }
-    catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+    catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
     finally { setSendingComment(false); submittingRef.current = false; }
   };
 

@@ -1,8 +1,9 @@
 import { useCallback, useMemo, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable, RefreshControl,
-  ActivityIndicator, Platform, Alert,
+  ActivityIndicator, Platform,
 } from 'react-native';
+import { notify } from '@/src/utils/notify';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -89,7 +90,7 @@ export default function EmployeeHome() {
       toast.success(showPunch === 'check_in' ? 'Checked in successfully.' : 'Checked out successfully.');
     } catch (e: any) {
       haptics.error();
-      Alert.alert('Failed', e?.detail || 'Please try again');
+      notify('Failed', e?.detail || 'Please try again');
     }
   };
 

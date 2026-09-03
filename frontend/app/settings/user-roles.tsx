@@ -1,7 +1,8 @@
 import { useCallback, useMemo, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Alert, RefreshControl, TextInput,
+  View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, RefreshControl, TextInput,
 } from 'react-native';
+import { notify } from '@/src/utils/notify';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -48,26 +49,26 @@ export default function PeopleScreen() {
 
   const createStaff = async () => {
     if (!addName.trim() || !addUser.trim() || addPass.length < 4) {
-      Alert.alert('Missing', 'Name, username and a password of 4+ chars are required.'); return;
+      notify('Missing', 'Name, username and a password of 4+ chars are required.'); return;
     }
     setAdding(true);
     try {
       await api.post('/users', { name: addName.trim(), username: addUser.trim(), password: addPass, role: addRole });
       setShowAdd(false); setAddName(''); setAddUser(''); setAddPass(''); setAddRole('admin');
       await load();
-    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+    } catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
     finally { setAdding(false); }
   };
 
   const resetAll = () => {
     const customizable = accounts.filter((a) => a.account_type === 'user' && a.role !== 'owner' && a.module_access !== null);
-    if (customizable.length === 0) { Alert.alert('Nothing to reset', 'Everyone is already on their role default.'); return; }
+    if (customizable.length === 0) { notify('Nothing to reset', 'Everyone is already on their role default.'); return; }
     confirmAction('Reset all to default', `Clear custom access for ${customizable.length} account${customizable.length === 1 ? '' : 's'} and fall back to role defaults?`, 'Reset All', async () => {
       setResettingAll(true);
       try {
         await Promise.all(customizable.map((a) => api.put(`/access/accounts/${a.id}`, { module_access: null, module_rights: null, cashbook_counter_ids: null })));
         await load();
-      } catch (e: any) { Alert.alert('Failed', e?.detail || 'Some accounts could not be reset.'); }
+      } catch (e: any) { notify('Failed', e?.detail || 'Some accounts could not be reset.'); }
       finally { setResettingAll(false); }
     });
   };

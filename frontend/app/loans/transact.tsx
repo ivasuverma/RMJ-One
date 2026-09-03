@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, Platform, KeyboardAvoidingView } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Platform, KeyboardAvoidingView } from 'react-native';
+import { notify } from '@/src/utils/notify';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -106,14 +107,14 @@ export default function GoldLoanTransactScreen() {
 
   const submit = async () => {
     const amt = parseFloat(amount);
-    if (!amt || amt <= 0) { Alert.alert('Missing', 'Enter an amount greater than 0'); return; }
+    if (!amt || amt <= 0) { notify('Missing', 'Enter an amount greater than 0'); return; }
     setSaving(true);
     try {
       const body: any = { amount: amt, type, note: note.trim() };
       if (type === 'interest' && selected.length > 0) body.periods = selected;
       await api.post(`/gold-loans/${id}/payment`, body);
       router.back();
-    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+    } catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
     finally { setSaving(false); }
   };
 

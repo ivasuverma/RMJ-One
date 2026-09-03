@@ -1,7 +1,8 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, Platform, KeyboardAvoidingView, RefreshControl,
+  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Platform, KeyboardAvoidingView, RefreshControl,
 } from 'react-native';
+import { notify } from '@/src/utils/notify';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -35,7 +36,7 @@ export default function RepairTypesScreen() {
   const submittingRef = useRef(false);
   const add = async () => {
     if (submittingRef.current) return false;
-    if (!name.trim()) { Alert.alert('Missing', 'Enter a name for this repair type'); return false; }
+    if (!name.trim()) { notify('Missing', 'Enter a name for this repair type'); return false; }
     submittingRef.current = true;
     setSaving(true);
     try {
@@ -50,7 +51,7 @@ export default function RepairTypesScreen() {
       }
       setName(''); setLabour(''); setNeedsKarigar(false); setEditingId(null); await load();
       return true;
-    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); return false; }
+    } catch (e: any) { notify('Failed', e?.detail || 'Please try again'); return false; }
     finally { setSaving(false); submittingRef.current = false; }
   };
 
@@ -62,13 +63,13 @@ export default function RepairTypesScreen() {
 
   const toggleActive = async (rt: RT) => {
     try { await api.put(`/repair-types/${rt.id}`, { ...rt, active: !rt.active }); await load(); }
-    catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+    catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
   };
 
   const remove = (rt: RT) => {
     confirmAction('Delete repair type', `Remove "${rt.name}"?`, 'Delete', async () => {
       try { await api.del(`/repair-types/${rt.id}`); await load(); }
-      catch (e: any) { Alert.alert('Failed', e?.detail || 'Could not delete this repair type.'); }
+      catch (e: any) { notify('Failed', e?.detail || 'Could not delete this repair type.'); }
     });
   };
 

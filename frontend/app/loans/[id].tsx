@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Alert, Platform, Modal } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Platform, Modal } from 'react-native';
+import { notify } from '@/src/utils/notify';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
@@ -77,7 +78,7 @@ export default function GoldLoanDetailScreen() {
     confirmAction('Close this loan?', `Marks ${loan.loan_no} as redeemed — the customer collects the pledge back.`, 'Close Loan', async () => {
       setClosing(true);
       try { await api.post(`/gold-loans/${id}/close`, {}); await load(); }
-      catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+      catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
       finally { setClosing(false); }
     });
   };
@@ -87,14 +88,14 @@ export default function GoldLoanDetailScreen() {
     confirmAction('Delete loan?', `Remove ${loan.loan_no}? Only possible before any interest or payment has been recorded. This cannot be undone.`, 'Delete', async () => {
       setDeleting(true);
       try { await api.del(`/gold-loans/${id}`); router.back(); }
-      catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+      catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
       finally { setDeleting(false); }
     });
   };
 
   const printThermal = async () => {
     try { await api.post(`/gold-loans/${id}/voucher/print`, {}); }
-    catch (e: any) { Alert.alert('Print failed', e?.detail || 'Could not reach the printer. Check Store Settings.'); }
+    catch (e: any) { notify('Print failed', e?.detail || 'Could not reach the printer. Check Store Settings.'); }
   };
   const [printingPdf, setPrintingPdf] = useState(false);
   const printPdf = async () => {
@@ -106,8 +107,8 @@ export default function GoldLoanDetailScreen() {
       const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
       if (!res.ok) throw new Error(`Print failed (${res.status})`);
       if (Platform.OS === 'web') { const blob = await res.blob(); window.open(URL.createObjectURL(blob), '_blank'); }
-      else Alert.alert('Ready', 'PDF preview is available on the web app.');
-    } catch (e: any) { Alert.alert('Failed', e?.message || 'Please try again'); }
+      else notify('Ready', 'PDF preview is available on the web app.');
+    } catch (e: any) { notify('Failed', e?.message || 'Please try again'); }
     finally { setPrintingPdf(false); }
   };
 

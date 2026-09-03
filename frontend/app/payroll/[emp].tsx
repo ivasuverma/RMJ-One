@@ -1,7 +1,8 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Platform, Alert, Linking, TextInput,
+  View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Platform, Linking, TextInput,
 } from 'react-native';
+import { notify } from '@/src/utils/notify';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
@@ -48,16 +49,16 @@ export default function PayrollDetail() {
 
   const addPayment = async (mode: 'cash' | 'bank' | 'upi' | 'cheque', amount: number, note: string) => {
     if (payGuard.current) return; // stop rapid double/triple taps from double-firing
-    if (!row?.id) { Alert.alert('Generate payroll first', 'Save the payroll for this month before recording a payment.'); return; }
+    if (!row?.id) { notify('Generate payroll first', 'Save the payroll for this month before recording a payment.'); return; }
     payGuard.current = true;
     try {
       const res = await api.post<any>(`/payroll/entry/${row.id}/payments`, { payment_mode: mode, amount, note });
       setAddPaymentOpen(false);
       await load();
-      Alert.alert(res.fully_paid ? 'Marked paid' : 'Payment recorded', res.fully_paid
+      notify(res.fully_paid ? 'Marked paid' : 'Payment recorded', res.fully_paid
         ? 'Salary receipt is ready to download.'
         : `₹${res.remaining.toLocaleString('en-IN')} still remaining.`);
-    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+    } catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
     finally { payGuard.current = false; }
   };
 
@@ -67,7 +68,7 @@ export default function PayrollDetail() {
     try {
       await api.del(`/payroll/entry/${row.id}/payments/${paymentId}`);
       await load();
-    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+    } catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
     finally { payGuard.current = false; }
   };
 
@@ -83,18 +84,18 @@ export default function PayrollDetail() {
         if (payGuard.current) return;
         payGuard.current = true;
         try { await api.post(`/payroll/entry/${row.id}/unpay`, {}); await load(); }
-        catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+        catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
         finally { payGuard.current = false; }
       },
     );
   };
 
   const downloadPdf = () => {
-    if (!row?.id) { Alert.alert('Generate payroll first', 'Save the payroll for this month first.'); return; }
+    if (!row?.id) { notify('Generate payroll first', 'Save the payroll for this month first.'); return; }
     const base = process.env.EXPO_PUBLIC_BACKEND_URL || '';
     const url = `${base}/api/payroll/entry/${row.id}/pdf`;
     // Server requires auth header; open via a signed URL not possible here so use API and open in browser after we fetch token — for now open via Linking; user is authed cookie-free so this is limited. For mobile, prefer expo-web-browser. Keep simple: alert with URL.
-    Linking.openURL(url).catch(() => Alert.alert('Preview only', 'Deploy the app to download PDFs on device. Current URL: ' + url));
+    Linking.openURL(url).catch(() => notify('Preview only', 'Deploy the app to download PDFs on device. Current URL: ' + url));
   };
 
   // Drill-down from a Breakdown row (Bonus/Advance/Fine/Deduction) into exactly
@@ -325,9 +326,9 @@ function RecordPaymentForm({ remaining, onCancel, onConfirm }: {
 
   const confirm = () => {
     const amt = parseFloat(amount);
-    if (!mode) { Alert.alert('Select a mode', 'Choose how this payment was made.'); return; }
-    if (!amt || amt <= 0) { Alert.alert('Invalid amount', 'Enter an amount greater than 0.'); return; }
-    if (amt > remaining + 0.5) { Alert.alert('Too much', `That's more than the ₹${remaining.toLocaleString('en-IN')} remaining.`); return; }
+    if (!mode) { notify('Select a mode', 'Choose how this payment was made.'); return; }
+    if (!amt || amt <= 0) { notify('Invalid amount', 'Enter an amount greater than 0.'); return; }
+    if (amt > remaining + 0.5) { notify('Too much', `That's more than the ₹${remaining.toLocaleString('en-IN')} remaining.`); return; }
     setConfirming(true);
     onConfirm(mode, amt, note);
   };

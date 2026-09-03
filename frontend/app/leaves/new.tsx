@@ -1,8 +1,9 @@
 import { useMemo, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TextInput, Pressable, Alert,
+  View, Text, StyleSheet, ScrollView, TextInput, Pressable,
   ActivityIndicator, Platform, KeyboardAvoidingView,
 } from 'react-native';
+import { notify } from '@/src/utils/notify';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -29,7 +30,7 @@ export default function NewLeave() {
   const submit = async () => {
     if (submittingRef.current) return;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
-      Alert.alert('Invalid date', 'Use format YYYY-MM-DD'); return;
+      notify('Invalid date', 'Use format YYYY-MM-DD'); return;
     }
     submittingRef.current = true;
     setSaving(true);
@@ -37,7 +38,7 @@ export default function NewLeave() {
       await api.post('/leaves', { from_date: from, to_date: to, leave_type: type, reason });
       router.back();
     } catch (e: any) {
-      Alert.alert('Failed', e?.detail || 'Please try again');
+      notify('Failed', e?.detail || 'Please try again');
     } finally { setSaving(false); submittingRef.current = false; }
   };
 

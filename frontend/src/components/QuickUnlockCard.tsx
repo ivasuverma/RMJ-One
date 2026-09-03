@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, Pressable, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, StyleSheet, Pressable, ActivityIndicator } from 'react-native';
+import { notify } from '@/src/utils/notify';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
 import { useAuth } from '@/src/auth/AuthContext';
@@ -35,7 +36,7 @@ export function QuickUnlockCard() {
     try {
       const res = await enableQuickUnlock(user.id, user.username, user.name);
       if (res.ok) setEnabled(true);
-      else if (res.reason && res.reason !== 'Cancelled') Alert.alert('Couldn’t enable', res.reason);
+      else if (res.reason && res.reason !== 'Cancelled') notify('Couldn’t enable', res.reason);
     } finally { setBusy(false); }
   };
 

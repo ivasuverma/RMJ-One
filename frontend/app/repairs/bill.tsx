@@ -1,7 +1,8 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, Platform, KeyboardAvoidingView, RefreshControl, Image,
+  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Platform, KeyboardAvoidingView, RefreshControl, Image,
 } from 'react-native';
+import { notify } from '@/src/utils/notify';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
@@ -160,7 +161,7 @@ export default function RepairBillScreen() {
       if (routeItemId) { router.replace(`/repairs/item/${routeItemId}` as any); return; }
       setCloseItem(null); setMode('list'); setLoading(true);
       await loadBills(filter);
-    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+    } catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
     finally { setBusy(false); submittingRef.current = false; }
   };
 
@@ -228,7 +229,7 @@ export default function RepairBillScreen() {
     setLoading(true);
     api.get<{ item: Item }>(`/repair-items/${routeItemId}`)
       .then((res) => (res.item.status === 'pending_delivery' && routeMode !== 'edit' ? openCloseForm(res.item) : pickItem(res.item)))
-      .catch(() => Alert.alert('Failed', 'Could not load this tag.'))
+      .catch(() => notify('Failed', 'Could not load this tag.'))
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routeItemId, routeMode, picked, closeItem]));
@@ -270,9 +271,9 @@ export default function RepairBillScreen() {
     // billTotal can legitimately be negative now — a credit back to the
     // customer when the item's weight decreased (see New Wt above). Only
     // block on a genuinely broken number, not on sign.
-    if (Number.isNaN(billTotal)) { Alert.alert('Invalid', 'Check the amounts entered — the total is not a valid number.'); return; }
+    if (Number.isNaN(billTotal)) { notify('Invalid', 'Check the amounts entered — the total is not a valid number.'); return; }
     if (canEditWeights && lastTxnId && (!receivedWeightStr || receivedWeight <= 0)) {
-      Alert.alert('Invalid', 'Received weight must be greater than 0.'); return;
+      notify('Invalid', 'Received weight must be greater than 0.'); return;
     }
     submittingRef.current = true; setBusy(true);
     try {
@@ -296,7 +297,7 @@ export default function RepairBillScreen() {
           recv_metal_weight: lastTxn.recv_metal_weight || 0,
         });
       }
-    } catch (e: any) { setBusy(false); submittingRef.current = false; Alert.alert('Failed', e?.detail || 'Could not save the weight correction.'); return; }
+    } catch (e: any) { setBusy(false); submittingRef.current = false; notify('Failed', e?.detail || 'Could not save the weight correction.'); return; }
     const payload = {
       labour_charge: parseFloat(billLabour) || 0, material_adjustment: weightCharge,
       extra_charges: parseFloat(billExtra) || 0, extra_charges_note: billExtraNote,
@@ -314,7 +315,7 @@ export default function RepairBillScreen() {
       if (routeItemId) { router.replace(`/repairs/item/${routeItemId}` as any); return; }
       setPicked(null); setMode('list'); setLoading(true);
       await loadBills(filter);
-    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+    } catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
     finally { setBusy(false); submittingRef.current = false; }
   };
 
@@ -337,7 +338,7 @@ export default function RepairBillScreen() {
       if (routeItemId) { router.replace(`/repairs/item/${routeItemId}` as any); return; }
       setPicked(null); setMode('list'); setLoading(true);
       await loadBills(filter);
-    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+    } catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
     finally { setDeletingId(''); }
   };
 
@@ -353,9 +354,9 @@ export default function RepairBillScreen() {
         const blob = await res.blob();
         window.open(URL.createObjectURL(blob), '_blank');
       } else {
-        Alert.alert('Ready', 'PDF preview is available on the web app.');
+        notify('Ready', 'PDF preview is available on the web app.');
       }
-    } catch (e: any) { Alert.alert('Failed', e?.message || 'Please try again'); }
+    } catch (e: any) { notify('Failed', e?.message || 'Please try again'); }
     finally { setPrintingId(''); }
   };
 
@@ -366,7 +367,7 @@ export default function RepairBillScreen() {
     setThermalPrintingId(item.id);
     try {
       await api.post(`/repair-items/${item.id}/bill/print`, {});
-    } catch (e: any) { Alert.alert('Print failed', e?.detail || 'Could not reach the printer. Check Store Settings.'); }
+    } catch (e: any) { notify('Print failed', e?.detail || 'Could not reach the printer. Check Store Settings.'); }
     finally { setThermalPrintingId(''); }
   };
 

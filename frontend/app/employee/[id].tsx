@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, ActivityIndicator, Pressable, Platform, RefreshControl, Alert, Share, Modal,
+  View, Text, StyleSheet, ScrollView, ActivityIndicator, Pressable, Platform, RefreshControl, Share, Modal,
 } from 'react-native';
+import { notify } from '@/src/utils/notify';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
@@ -51,7 +52,7 @@ function pickIdProofFile(): Promise<{ name: string; dataUri: string } | null> {
       const file = input.files && input.files[0];
       if (!file) { resolve(null); return; }
       if (file.size > 8 * 1024 * 1024) {
-        Alert.alert('Too large', 'Please choose a file under 8 MB.');
+        notify('Too large', 'Please choose a file under 8 MB.');
         resolve(null);
         return;
       }
@@ -105,8 +106,8 @@ export default function EmployeeProfile() {
 
   const saveAccess = async () => {
     const res = await editor.save();
-    if (res.ok) Alert.alert('Saved', 'Access & notification settings updated.');
-    else Alert.alert('Failed', res.error);
+    if (res.ok) notify('Saved', 'Access & notification settings updated.');
+    else notify('Failed', res.error);
   };
 
   // Active employee: primary action is "Mark as Left" (opens the sheet
@@ -118,7 +119,7 @@ export default function EmployeeProfile() {
     if (emp?.status === 'active') { setLeftDate(todayIST()); setLeftFlowOpen(true); return; }
     confirmAction('Delete employee', 'This cannot be undone.', 'Delete', async () => {
       try { await api.del(`/employees/${id}`); router.replace('/(tabs)/employees'); }
-      catch (e: any) { Alert.alert('Failed', e?.detail || 'Could not delete this employee. Please try again.'); }
+      catch (e: any) { notify('Failed', e?.detail || 'Could not delete this employee. Please try again.'); }
     });
   };
 
@@ -129,9 +130,9 @@ export default function EmployeeProfile() {
       await api.put(`/employees/${id}`, { ...emp, status: 'inactive', left_date: leftDate });
       setLeftFlowOpen(false);
       await load();
-      Alert.alert('Marked as Left', `${emp.name} is now inactive as of ${displayDateOnly(leftDate)}.`);
+      notify('Marked as Left', `${emp.name} is now inactive as of ${displayDateOnly(leftDate)}.`);
     } catch (e: any) {
-      Alert.alert('Failed', e?.detail || 'Could not update this employee. Please try again.');
+      notify('Failed', e?.detail || 'Could not update this employee. Please try again.');
     } finally {
       setMarkingLeft(false);
     }
@@ -155,7 +156,7 @@ export default function EmployeeProfile() {
             message: `RMJ-One login for ${name}\nUsername: ${res.username}\nTemporary Password: ${res.password}\n\nPlease log in and set your own password when asked.`,
           }).catch(() => {});
         } catch (e: any) {
-          Alert.alert('Failed', e?.detail || 'Could not reset credentials. Please try again.');
+          notify('Failed', e?.detail || 'Could not reset credentials. Please try again.');
         } finally {
           setSharingCreds(false);
         }
@@ -399,7 +400,7 @@ function IdProofsSection({ empId, proofs, onChange }: { empId: string; proofs: I
       await api.post(`/employees/${empId}/id-proofs`, { name: file.name, data_uri: file.dataUri });
       onChange();
     } catch (e: any) {
-      Alert.alert('Upload failed', e?.detail || 'Please try again');
+      notify('Upload failed', e?.detail || 'Please try again');
     } finally {
       setUploading(false);
     }
@@ -412,7 +413,7 @@ function IdProofsSection({ empId, proofs, onChange }: { empId: string; proofs: I
         await api.del(`/employees/${empId}/id-proofs/${p.id}`);
         onChange();
       } catch (e: any) {
-        Alert.alert('Failed', e?.detail || 'Could not delete this document');
+        notify('Failed', e?.detail || 'Could not delete this document');
       } finally {
         setDeletingId(null);
       }
@@ -427,7 +428,7 @@ function IdProofsSection({ empId, proofs, onChange }: { empId: string; proofs: I
       const res = await api.get<{ data_uri: string }>(`/employees/${empId}/id-proofs/${p.id}`);
       if (res.data_uri && Platform.OS === 'web' && typeof window !== 'undefined') window.open(res.data_uri, '_blank');
     } catch (e: any) {
-      Alert.alert('Failed', e?.detail || 'Could not open this document');
+      notify('Failed', e?.detail || 'Could not open this document');
     } finally {
       setOpeningId(null);
     }

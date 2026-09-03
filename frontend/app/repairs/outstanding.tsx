@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Alert, Platform, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Platform, RefreshControl } from 'react-native';
+import { notify } from '@/src/utils/notify';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -53,9 +54,9 @@ export default function OutstandingRepairsScreen() {
         const blob = await res.blob();
         window.open(URL.createObjectURL(blob), '_blank');
       } else {
-        Alert.alert('Report generated', 'PDF preview is available on the web app.');
+        notify('Report generated', 'PDF preview is available on the web app.');
       }
-    } catch (e: any) { Alert.alert('Failed', e?.message || 'Please try again'); }
+    } catch (e: any) { notify('Failed', e?.message || 'Please try again'); }
     finally { setPrinting(false); }
   };
 

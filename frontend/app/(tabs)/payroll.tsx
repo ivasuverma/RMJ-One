@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Platform, RefreshControl, Alert,
+  View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Platform, RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthContext';
+import { notify } from '@/src/utils/notify';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { ErrorState, useToast } from '@/src/components/ui';
@@ -72,7 +73,7 @@ export default function OwnerPayroll() {
       const res = await api.post<{ entries: number; kept_paid: number }>('/payroll/save', { year, month });
       await load();
       if (isRegenerate) {
-        Alert.alert(
+        notify(
           'Regenerated',
           `Refreshed ${res.entries} employee${res.entries === 1 ? '' : 's'} from the latest attendance.` +
           (res.kept_paid ? ` ${res.kept_paid} already-paid entr${res.kept_paid === 1 ? 'y was' : 'ies were'} left untouched.` : ''),
@@ -80,7 +81,7 @@ export default function OwnerPayroll() {
       } else {
         toast.success('Payroll generated. You can now mark employees paid or lock the month.');
       }
-    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+    } catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
     finally { setSaving(false); submittingRef.current = false; }
   };
 
@@ -92,7 +93,7 @@ export default function OwnerPayroll() {
       if (data.locked) await api.post(`/payroll/${year}/${month}/unlock`);
       else await api.post(`/payroll/${year}/${month}/lock`);
       await load();
-    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+    } catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
     finally { submittingRef.current = false; }
   };
 

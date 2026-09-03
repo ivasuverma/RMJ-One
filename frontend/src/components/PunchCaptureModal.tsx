@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, Pressable, ActivityIndicator, Modal, Alert, Linking, Platform,
+  View, Text, StyleSheet, Pressable, ActivityIndicator, Modal, Linking, Platform,
 } from 'react-native';
+import { notify } from '@/src/utils/notify';
 import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Location from 'expo-location';
@@ -127,7 +128,7 @@ export function PunchCaptureModal({ visible, mode, onClose, onCapture }: Props) 
       await onCapture({ selfie, latitude: pos.latitude, longitude: pos.longitude });
       setStatusMsg('');
     } catch (e: any) {
-      Alert.alert('Failed', e?.detail || e?.message || 'Please try again');
+      notify('Failed', e?.detail || e?.message || 'Please try again');
     } finally {
       setBusy(false);
       submittingRef.current = false;

@@ -14,7 +14,7 @@ type State = { hasError: boolean; error: Error | null };
 // Note: like all React error boundaries, this only catches render/lifecycle
 // errors in its children, not errors thrown inside event handlers or async
 // callbacks (e.g. an onPress's try/catch) — those are already handled
-// per-screen via Alert.alert(...), which is the right place for them.
+// per-screen via notify(...), which is the right place for them.
 export class ErrorBoundary extends React.Component<Props, State> {
   state: State = { hasError: false, error: null };
 

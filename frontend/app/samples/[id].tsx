@@ -1,7 +1,8 @@
 import { useCallback, useMemo, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Alert, Platform, KeyboardAvoidingView, Image,
+  View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Platform, KeyboardAvoidingView, Image,
 } from 'react-native';
+import { notify } from '@/src/utils/notify';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
@@ -51,7 +52,7 @@ export default function SampleDetailScreen() {
   const printThermal = async () => {
     setPrinting(true);
     try { await api.post(`/samples/${id}/issue-slip/print`, {}); }
-    catch (e: any) { Alert.alert('Print failed', e?.detail || 'Could not reach the printer. Check Store Settings.'); }
+    catch (e: any) { notify('Print failed', e?.detail || 'Could not reach the printer. Check Store Settings.'); }
     finally { setPrinting(false); }
   };
 
@@ -68,9 +69,9 @@ export default function SampleDetailScreen() {
         const blob = await res.blob();
         window.open(URL.createObjectURL(blob), '_blank');
       } else {
-        Alert.alert('Ready', 'PDF preview is available on the web app.');
+        notify('Ready', 'PDF preview is available on the web app.');
       }
-    } catch (e: any) { Alert.alert('Failed', e?.message || 'Please try again'); }
+    } catch (e: any) { notify('Failed', e?.message || 'Please try again'); }
     finally { setPrintingPdf(false); }
   };
 
@@ -83,7 +84,7 @@ export default function SampleDetailScreen() {
       async () => {
         setDeleting(true);
         try { await api.del(`/samples/${id}`); router.back(); }
-        catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+        catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
         finally { setDeleting(false); }
       },
     );

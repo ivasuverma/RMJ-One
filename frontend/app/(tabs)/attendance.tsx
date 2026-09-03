@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, ActivityIndicator, Alert, TextInput } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, ActivityIndicator, TextInput } from 'react-native';
+import { notify } from '@/src/utils/notify';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
@@ -169,7 +170,7 @@ export default function OwnerAttendance() {
   const runPayroll = async () => {
     setRunning(true);
     try { await api.post('/payroll/save', { year, month }); await loadPay(); toast.success(`${MONTHS[month - 1]} ${year} salary is locked to the current attendance.`); }
-    catch (e: any) { Alert.alert('Could not run payroll', e?.detail || 'Please try again'); }
+    catch (e: any) { notify('Could not run payroll', e?.detail || 'Please try again'); }
     finally { setRunning(false); }
   };
 

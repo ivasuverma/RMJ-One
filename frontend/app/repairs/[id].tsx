@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Alert, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Platform } from 'react-native';
+import { notify } from '@/src/utils/notify';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
@@ -52,9 +53,9 @@ export default function RepairOrderDetailScreen() {
         const blob = await res.blob();
         window.open(URL.createObjectURL(blob), '_blank');
       } else {
-        Alert.alert('Slip generated', 'PDF preview is available on the web app.');
+        notify('Slip generated', 'PDF preview is available on the web app.');
       }
-    } catch (e: any) { Alert.alert('Failed', e?.message || 'Please try again'); }
+    } catch (e: any) { notify('Failed', e?.message || 'Please try again'); }
     finally { setPrinting(false); }
   };
 
@@ -65,7 +66,7 @@ export default function RepairOrderDetailScreen() {
     setThermalPrinting(true);
     try {
       await api.post(`/repair-orders/${id}/slip/print`, {});
-    } catch (e: any) { Alert.alert('Print failed', e?.detail || 'Could not reach the printer. Check Store Settings.'); }
+    } catch (e: any) { notify('Print failed', e?.detail || 'Could not reach the printer. Check Store Settings.'); }
     finally { setThermalPrinting(false); }
   };
 
@@ -76,7 +77,7 @@ export default function RepairOrderDetailScreen() {
     setTagPrinting(true);
     try {
       await api.post(`/repair-orders/${id}/tags/print`, {});
-    } catch (e: any) { Alert.alert('Print failed', e?.detail || 'Could not reach the printer. Check Store Settings.'); }
+    } catch (e: any) { notify('Print failed', e?.detail || 'Could not reach the printer. Check Store Settings.'); }
     finally { setTagPrinting(false); }
   };
 
@@ -93,9 +94,9 @@ export default function RepairOrderDetailScreen() {
         const blob = await res.blob();
         window.open(URL.createObjectURL(blob), '_blank');
       } else {
-        Alert.alert('Tags generated', 'PDF preview is available on the web app.');
+        notify('Tags generated', 'PDF preview is available on the web app.');
       }
-    } catch (e: any) { Alert.alert('Failed', e?.message || 'Please try again'); }
+    } catch (e: any) { notify('Failed', e?.message || 'Please try again'); }
     finally { setTagPdfLoading(false); }
   };
 
