@@ -422,29 +422,6 @@ class StoreSettingsIn(BaseModel):
     biometric_webhook_secret: Optional[str] = None
 
 
-class NotificationModuleSettingsIn(BaseModel):
-    enabled: bool = True
-    # Broad recipients by role. `None` (the default, when a module hasn't
-    # been touched yet) means "use that module's built-in default roles" —
-    # an explicit [] means the owner deliberately cleared all roles (e.g.
-    # relying on user_ids alone, or just muting it for everyone but keeping
-    # it enabled=false would achieve the same thing more simply).
-    roles: Optional[List[Literal['owner', 'admin', 'accountant', 'employee']]] = None
-    # Specific staff/employee ids to notify in addition to the role-matched
-    # set above — lets an owner say "always also ping Rahul" without having
-    # to make Rahul an admin.
-    # Finer-grained than the module's overall on/off: individual notification
-    # "scripts" (specific events within the module — see NOTIFICATION_SCRIPTS
-    # below) an owner has turned off while leaving the rest of the module on.
-    # A script not listed here is enabled by default.
-    disabled_scripts: List[str] = []
-    user_ids: List[str] = []
-
-
-class NotificationSettingsIn(BaseModel):
-    modules: Dict[str, NotificationModuleSettingsIn] = {}
-
-
 class PunchIn(BaseModel):
     latitude: float
     longitude: float
@@ -1667,25 +1644,32 @@ NOTIFICATION_MODULE_DEFAULT_ROLES = {m['key']: m['default_roles'] for m in NOTIF
 # key; two call sites can legitimately share one script key when they're the
 # same kind of event fired from two code paths (e.g. a repair item becoming
 # ready via two different actions).
+# `admin_only: True` — this event NEVER reaches an employee no matter what
+# they toggle (see _notify_module_impl's admin_only branch, and documents.py's
+# equivalent checks) — it's metadata for the People > Alerts screen so it can
+# hide/grey out toggles that can never fire for the account being edited,
+# instead of showing a switch that quietly does nothing. Keep this in sync
+# with each call site's own admin_only=True / (no subject_employee_id) choice
+# below — it's descriptive of the code, not enforced from here.
 NOTIFICATION_SCRIPTS = [
-    {'key': 'attendance_checkin', 'module': 'attendance', 'label': 'Employee checked in'},
-    {'key': 'attendance_checkout', 'module': 'attendance', 'label': 'Employee checked out'},
-    {'key': 'attendance_discrepancy', 'module': 'attendance', 'label': 'Missed punch / attendance discrepancy'},
-    {'key': 'attendance_absentee_summary', 'module': 'attendance', 'label': 'Daily absentee summary (9 PM)'},
-    {'key': 'attendance_correction_request', 'module': 'attendance', 'label': 'New attendance correction request'},
-    {'key': 'attendance_leave_request', 'module': 'attendance', 'label': 'New leave request'},
-    {'key': 'task_overdue', 'module': 'tasks', 'label': 'Task overdue'},
-    {'key': 'task_comment', 'module': 'tasks', 'label': 'Employee commented on a task'},
-    {'key': 'payroll_auto_advance', 'module': 'payroll', 'label': 'Auto advance recorded'},
-    {'key': 'repair_new_order', 'module': 'repairs', 'label': 'New repair order created'},
-    {'key': 'repair_item_ready', 'module': 'repairs', 'label': 'Repair item ready / back from karigar'},
-    {'key': 'sample_issued', 'module': 'samples', 'label': 'Sample(s) issued'},
-    {'key': 'sample_received', 'module': 'samples', 'label': 'Sample received back'},
-    {'key': 'cashbook_transfer', 'module': 'cash_book', 'label': 'Cash transferred between counters'},
-    {'key': 'cashbook_entry', 'module': 'cash_book', 'label': 'Employee recorded cash in / out'},
-    {'key': 'cashbook_edit', 'module': 'cash_book', 'label': 'Employee edited a cash entry'},
-    {'key': 'document_recorded', 'module': 'documents', 'label': 'Document recorded to Done'},
-    {'key': 'document_pending_reminder', 'module': 'documents', 'label': 'Document pending more than 1 day (daily reminder)'},
+    {'key': 'attendance_checkin', 'module': 'attendance', 'label': 'Employee checked in', 'admin_only': False},
+    {'key': 'attendance_checkout', 'module': 'attendance', 'label': 'Employee checked out', 'admin_only': False},
+    {'key': 'attendance_discrepancy', 'module': 'attendance', 'label': 'Missed punch / attendance discrepancy', 'admin_only': True},
+    {'key': 'attendance_absentee_summary', 'module': 'attendance', 'label': 'Daily absentee summary (9 PM)', 'admin_only': True},
+    {'key': 'attendance_correction_request', 'module': 'attendance', 'label': 'New attendance correction request', 'admin_only': True},
+    {'key': 'attendance_leave_request', 'module': 'attendance', 'label': 'New leave request', 'admin_only': True},
+    {'key': 'task_overdue', 'module': 'tasks', 'label': 'Task overdue', 'admin_only': True},
+    {'key': 'task_comment', 'module': 'tasks', 'label': 'Employee commented on a task', 'admin_only': True},
+    {'key': 'payroll_auto_advance', 'module': 'payroll', 'label': 'Auto advance recorded', 'admin_only': True},
+    {'key': 'repair_new_order', 'module': 'repairs', 'label': 'New repair order created', 'admin_only': False},
+    {'key': 'repair_item_ready', 'module': 'repairs', 'label': 'Repair item ready / back from karigar', 'admin_only': False},
+    {'key': 'sample_issued', 'module': 'samples', 'label': 'Sample(s) issued', 'admin_only': False},
+    {'key': 'sample_received', 'module': 'samples', 'label': 'Sample received back', 'admin_only': False},
+    {'key': 'cashbook_transfer', 'module': 'cash_book', 'label': 'Cash transferred between counters', 'admin_only': True},
+    {'key': 'cashbook_entry', 'module': 'cash_book', 'label': 'Employee recorded cash in / out', 'admin_only': True},
+    {'key': 'cashbook_edit', 'module': 'cash_book', 'label': 'Employee edited a cash entry', 'admin_only': True},
+    {'key': 'document_recorded', 'module': 'documents', 'label': 'Document recorded to Done', 'admin_only': True},
+    {'key': 'document_pending_reminder', 'module': 'documents', 'label': 'Document pending more than 1 day (daily reminder)', 'admin_only': False},
 ]
 NOTIFICATION_SCRIPTS_BY_MODULE: Dict[str, list] = {}
 for _s in NOTIFICATION_SCRIPTS:
@@ -1693,14 +1677,20 @@ for _s in NOTIFICATION_SCRIPTS:
 NOTIFICATION_SCRIPT_KEYS = {s['key'] for s in NOTIFICATION_SCRIPTS}
 
 
-def _wants_module(acc: dict, role: str, module: str) -> bool:
-    """Whether this account should receive `module` broadcasts. Decided per
-    person on their People page: the master switch gates everything, then
-    notif_prefs[module] (on/off) wins if set, otherwise it falls back to the
-    module's default roles."""
+def _wants_script(acc: dict, role: str, module: str, script: Optional[str] = None) -> bool:
+    """Whether this account should receive this event. Decided per person on
+    their People page: the master switch gates everything, then a specific
+    notif_prefs[script] override (if that one event has ever been toggled
+    individually) wins, else notif_prefs[module] (the whole module's on/off)
+    wins if set, else it falls back to the module's default roles. `script`
+    and `module` share one flat notif_prefs dict — their key spaces never
+    collide (script keys are always more specific than module keys), so no
+    separate storage is needed for the fine-grained overrides."""
     if acc.get('notifications_enabled') is False:
         return False
     prefs = acc.get('notif_prefs') or {}
+    if script and script in prefs:
+        return bool(prefs[script])
     if module in prefs:
         return bool(prefs[module])
     return role in set(NOTIFICATION_MODULE_DEFAULT_ROLES.get(module, ['owner', 'admin']))
@@ -1730,14 +1720,14 @@ async def _notify_module_impl(module: str, title: str, body: str, url: str = '/'
     try:
         proj = {'_id': 0, 'id': 1, 'role': 1, 'notifications_enabled': 1, 'notif_prefs': 1}
         async for u in db.users.find({}, proj):
-            if _wants_module(u, u.get('role', ''), module):
+            if _wants_script(u, u.get('role', ''), module, script):
                 await notify_user(u['id'], title, body, url)
         if admin_only:
             return
         async for e in db.employees.find({'status': {'$ne': 'inactive'}}, proj):
             if subject_employee_id is not None and e['id'] != subject_employee_id:
                 continue
-            if _wants_module(e, 'employee', module):
+            if _wants_script(e, 'employee', module, script):
                 await notify_user(e['id'], title, body, url)
     except Exception as e:
         logger.warning(f'_notify_module failed for {module}: {e}')

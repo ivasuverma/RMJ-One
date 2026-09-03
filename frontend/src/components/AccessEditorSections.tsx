@@ -9,10 +9,19 @@ import { AccessEditor } from '@/src/hooks/use-access-editor';
 // in whatever container matches their own screen: a tabbed detail card on
 // the employee profile, a titled Section card on the staff-login editor).
 
+// Only owner/admin accounts ever receive an `admin_only` event (see
+// server.py's NOTIFICATION_SCRIPTS) — showing that toggle to anyone else
+// would be a switch that visibly does nothing, so it's filtered out per the
+// account being edited rather than shown identically to everyone.
+function canReceiveAdminOnly(role?: string) {
+  return role === 'owner' || role === 'admin';
+}
+
 export function NotificationsSection({ editor, testIdPrefix }: { editor: AccessEditor; testIdPrefix: string }) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
-  const { notifOn, setNotifOn, notifModules, notifPrefs, setNotifPrefs } = editor;
+  const { acc, notifOn, setNotifOn, notifModules, notifPrefs, setNotifPrefs } = editor;
+  const canAdminOnly = canReceiveAdminOnly(acc?.role);
   return (
     <>
       <View style={styles.switchRow}>
@@ -24,6 +33,15 @@ export function NotificationsSection({ editor, testIdPrefix }: { editor: AccessE
       </View>
       {notifOn && notifModules.map((nm) => {
         const on = notifPrefs[nm.key] !== false;
+        const allEvents = nm.events || [];
+        // Hide events that can never fire for this account — and if EVERY
+        // event under this module is one of those (e.g. Tasks/Payroll/Cash
+        // Book for a regular employee — every event they carry is
+        // admin_only), the whole module toggle does nothing for this
+        // account either, so skip rendering it entirely rather than show a
+        // switch with no effect.
+        const events = canAdminOnly ? allEvents : allEvents.filter((ev) => !ev.admin_only);
+        if (allEvents.length > 0 && events.length === 0) return null;
         return (
           <View key={nm.key}>
             <View style={styles.switchRow}>
@@ -36,14 +54,27 @@ export function NotificationsSection({ editor, testIdPrefix }: { editor: AccessE
                 testID={`${testIdPrefix}-notif-${nm.key}`}
               />
             </View>
-            {on && (nm.events || []).length > 0 && (
+            {on && events.length > 0 && (
               <View style={styles.eventList}>
-                {(nm.events || []).map((ev) => (
-                  <View key={ev.key} style={styles.eventRow}>
-                    <Ionicons name="ellipse" size={5} color={colors.brandSecondary} />
-                    <Text style={styles.eventText}>{ev.label}</Text>
-                  </View>
-                ))}
+                {events.map((ev) => {
+                  // Unset (never individually toggled) visually inherits the
+                  // module's own current state — toggling it pins an
+                  // explicit override for just this one event.
+                  const evOn = ev.key in notifPrefs ? notifPrefs[ev.key] !== false : on;
+                  return (
+                    <View key={ev.key} style={styles.eventRow}>
+                      <Text style={styles.eventText}>{ev.label}</Text>
+                      <Switch
+                        value={evOn}
+                        onValueChange={(v) => setNotifPrefs((p) => ({ ...p, [ev.key]: v }))}
+                        trackColor={{ true: colors.brandPrimary, false: colors.border }}
+                        thumbColor={colors.surface}
+                        style={styles.eventSwitch}
+                        testID={`${testIdPrefix}-notif-${ev.key}`}
+                      />
+                    </View>
+                  );
+                })}
               </View>
             )}
           </View>
@@ -148,8 +179,9 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   switchSub: { color: colors.mutedText, fontSize: 11.5, marginTop: 2 },
   notifModLabel: { flex: 1, color: colors.onSurfaceSecondary, fontSize: 14 },
   eventList: { paddingLeft: 4, paddingBottom: 10, gap: 5 },
-  eventRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  eventRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   eventText: { color: colors.mutedText, fontSize: 12.5, flex: 1 },
+  eventSwitch: { transform: [{ scaleX: 0.8 }, { scaleY: 0.8 }] },
 
   modRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: 9 },
   checkbox: { width: 20, height: 20, borderRadius: 5, borderWidth: 1.5, borderColor: colors.border, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface },

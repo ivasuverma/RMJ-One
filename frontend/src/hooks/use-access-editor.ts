@@ -13,7 +13,7 @@ export type Rights = { edit?: boolean; delete?: boolean };
 export type DocRight = { view?: boolean; record?: boolean };
 export type Counter = { id: string; name: string };
 export type DocCategory = { key: string; label: string };
-export type NotifModule = { key: string; label: string; default_roles: string[]; events?: { key: string; label: string }[] };
+export type NotifModule = { key: string; label: string; default_roles: string[]; events?: { key: string; label: string; admin_only?: boolean }[] };
 export type AccessAccount = {
   id: string; name: string; username?: string; role: string; account_type: 'user' | 'employee';
   designation?: string; status?: string; module_access: string[] | null; resolved_modules: string[];

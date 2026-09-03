@@ -341,10 +341,10 @@ async def _notify_record_holders(cat: dict, doc: dict, actor: dict) -> None:
 
 async def _notify_document_done(cat: dict, doc: dict, actor: dict) -> None:
     """Tell owner/admin a document was filed into Done — gated by each
-    recipient's 'documents' notification preference (Settings › People),
-    same toggle as the pending-reminder nudge below. Skips the actor
-    themselves, same as the pending-doc notify above."""
-    from server import notify_user, _wants_module
+    recipient's own 'document_recorded' preference (Settings › People ›
+    Alerts), independent of the pending-reminder toggle below. Skips the
+    actor themselves, same as the pending-doc notify above."""
+    from server import notify_user, _wants_script
     title = f'{cat.get("label", "Document")} recorded'
     body = ((doc.get('linked_ref') or {}).get('label') or doc.get('note') or 'Moved to Done.')[:120]
     proj = {'_id': 0, 'id': 1, 'role': 1, 'notifications_enabled': 1, 'notif_prefs': 1}
@@ -352,7 +352,7 @@ async def _notify_document_done(cat: dict, doc: dict, actor: dict) -> None:
         async for u in db.users.find({'role': {'$in': ['owner', 'admin']}}, proj):
             if u['id'] == actor.get('id'):
                 continue
-            if _wants_module(u, u.get('role', ''), 'documents'):
+            if _wants_script(u, u.get('role', ''), 'documents', 'document_recorded'):
                 await notify_user(u['id'], title, body, '/documents?tab=done')
     except Exception:
         pass
@@ -365,10 +365,11 @@ async def check_pending_reminders() -> None:
     """Daily nudge: any document still pending after PENDING_REMINDER_GRACE_HOURS
     gets its record-holders notified again — same audience as the initial
     "new document to record" alert — repeating roughly once a day until it's
-    recorded (or deleted). Gated by each recipient's 'documents' notification
-    preference. Called from the server's existing 15-minute reminder loop, not
-    a dedicated one — this only ever needs day-granularity."""
-    from server import notify_user, now_utc, _wants_module
+    recorded (or deleted). Gated by each recipient's own
+    'document_pending_reminder' preference, independent of the "recorded"
+    toggle above. Called from the server's existing 15-minute reminder loop,
+    not a dedicated one — this only ever needs day-granularity."""
+    from server import notify_user, now_utc, _wants_script
     cutoff = (now_utc() - timedelta(hours=PENDING_REMINDER_GRACE_HOURS)).isoformat()
     cats = await _categories_map()
     async for d in db.documents.find(
@@ -386,13 +387,13 @@ async def check_pending_reminders() -> None:
         sent = set()
         try:
             async for u in db.users.find({}, proj):
-                if _can_record(cat, u.get('role', ''), u) and _wants_module(u, u.get('role', ''), 'documents'):
+                if _can_record(cat, u.get('role', ''), u) and _wants_script(u, u.get('role', ''), 'documents', 'document_pending_reminder'):
                     await notify_user(u['id'], title, body, '/documents?tab=pending')
                     sent.add(u['id'])
             async for e in db.employees.find({'status': {'$ne': 'inactive'}}, proj):
                 if e['id'] in sent:
                     continue
-                if _can_record(cat, 'employee', e) and _wants_module(e, 'employee', 'documents'):
+                if _can_record(cat, 'employee', e) and _wants_script(e, 'employee', 'documents', 'document_pending_reminder'):
                     await notify_user(e['id'], title, body, '/documents?tab=pending')
         except Exception:
             pass

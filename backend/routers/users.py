@@ -25,6 +25,7 @@ from server import (
     ModuleAccessUpdateIn,
     NOTIFICATION_MODULES,
     NOTIFICATION_MODULE_KEYS,
+    NOTIFICATION_SCRIPT_KEYS,
     NOTIFICATION_SCRIPTS_BY_MODULE,
     log_audit,
 )
@@ -148,9 +149,13 @@ async def list_modules(_: dict = Depends(require_owner), _mod=Depends(require_mo
 async def list_notification_modules(_: dict = Depends(require_owner), _mod=Depends(require_module('user_roles'))):
     """The notification categories a person can opt in/out of, each with the
     roles that receive it by default and the individual alerts it sends (shown
-    line-by-line under the toggle)."""
+    line-by-line under the toggle, each individually switchable). `admin_only`
+    on an event tells the client it can never reach an employee — the Alerts
+    screen uses that to hide toggles that would do nothing for the account
+    being edited, rather than showing a switch with no effect."""
     return [
-        {**m, 'events': [{'key': s['key'], 'label': s['label']} for s in NOTIFICATION_SCRIPTS_BY_MODULE.get(m['key'], [])]}
+        {**m, 'events': [{'key': s['key'], 'label': s['label'], 'admin_only': bool(s.get('admin_only'))}
+                          for s in NOTIFICATION_SCRIPTS_BY_MODULE.get(m['key'], [])]}
         for m in NOTIFICATION_MODULES
     ]
 
@@ -204,7 +209,11 @@ async def update_access(account_id: str, body: ModuleAccessUpdateIn, user=Depend
     if body.notifications_enabled is not None:
         extra['notifications_enabled'] = bool(body.notifications_enabled)
     if body.notif_prefs is not None:
-        extra['notif_prefs'] = {k: bool(v) for k, v in (body.notif_prefs or {}).items() if k in NOTIFICATION_MODULE_KEYS}
+        # Keys are either a whole module's on/off or one individual script's
+        # override within it — both namespaces are valid here (see
+        # _wants_script in server.py for how the two are resolved together).
+        allowed_notif_keys = NOTIFICATION_MODULE_KEYS | NOTIFICATION_SCRIPT_KEYS
+        extra['notif_prefs'] = {k: bool(v) for k, v in (body.notif_prefs or {}).items() if k in allowed_notif_keys}
     if body.doc_category_rights is not None:
         extra['doc_category_rights'] = {
             k: {'view': bool((v or {}).get('view')), 'record': bool((v or {}).get('record'))}
