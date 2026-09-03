@@ -1685,31 +1685,51 @@ def _wants_module(acc: dict, role: str, module: str) -> bool:
     return role in set(NOTIFICATION_MODULE_DEFAULT_ROLES.get(module, ['owner', 'admin']))
 
 
-async def _notify_module_impl(module: str, title: str, body: str, url: str = '/', script: Optional[str] = None):
+async def _notify_module_impl(module: str, title: str, body: str, url: str = '/', script: Optional[str] = None,
+                               subject_employee_id: Optional[str] = None, admin_only: bool = False):
     """Broadcast a module event to whichever people opted in for it. Recipients
     are now resolved per account (Settings › People › <person> › Notifications)
     rather than from a single global config — each person controls which module
     alerts they get, gated by their master notification switch. `script` is kept
-    for call-site compatibility but is no longer separately silenceable."""
+    for call-site compatibility but is no longer separately silenceable.
+
+    `subject_employee_id`: set this when the event is about one specific
+    employee (e.g. "so-and-so checked in") — owners/admins still see every
+    such event (that's the point of the broadcast), but among employees only
+    the subject themselves is eligible, even if a coworker has this module's
+    notifications turned on. Without it, every opted-in employee gets the
+    broadcast, same as before — appropriate for shop-wide events with no
+    single subject (a new repair order, samples issued, etc.).
+
+    `admin_only`: set this for events that are inherently owner/admin
+    business — an approval-queue item (a correction/leave request) or a
+    multi-employee daily report (absentee summary) — that no employee should
+    ever get, even if they've opted into the module and even if it happens to
+    be about them (they already know they filed their own request)."""
     try:
         proj = {'_id': 0, 'id': 1, 'role': 1, 'notifications_enabled': 1, 'notif_prefs': 1}
         async for u in db.users.find({}, proj):
             if _wants_module(u, u.get('role', ''), module):
                 await notify_user(u['id'], title, body, url)
+        if admin_only:
+            return
         async for e in db.employees.find({'status': {'$ne': 'inactive'}}, proj):
+            if subject_employee_id is not None and e['id'] != subject_employee_id:
+                continue
             if _wants_module(e, 'employee', module):
                 await notify_user(e['id'], title, body, url)
     except Exception as e:
         logger.warning(f'_notify_module failed for {module}: {e}')
 
 
-async def _notify_module(module: str, title: str, body: str, url: str = '/', script: Optional[str] = None):
+async def _notify_module(module: str, title: str, body: str, url: str = '/', script: Optional[str] = None,
+                          subject_employee_id: Optional[str] = None, admin_only: bool = False):
     # Same rationale as notify_user/notify_roles above — this is the entry
     # point ~30 write endpoints call synchronously; without backgrounding it,
     # every repair/sample/task/leave save waits on a settings lookup, a
     # per-recipient notification insert loop, and sequential outbound
     # web-push HTTP calls before the client sees "saved".
-    asyncio.create_task(_notify_module_impl(module, title, body, url, script))
+    asyncio.create_task(_notify_module_impl(module, title, body, url, script, subject_employee_id, admin_only))
 
 
 MISSED_ATTENDANCE_GRACE_MIN = 30  # keep in sync with attendance.py's NOT_CHECKED_IN_GRACE_MIN (same criteria, UI filter vs push reminder)
@@ -1797,7 +1817,7 @@ async def _check_missed_checkout():
         # broadcast, not a personal nudge.
         await _notify_module('attendance', 'Attendance discrepancy',
                               f"{emp['name']} checked in but hasn't checked out — no punch recorded past shift end.",
-                              '/(tabs)/attendance', script='attendance_discrepancy')
+                              '/(tabs)/attendance', script='attendance_discrepancy', admin_only=True)
         await db.checkout_reminders.update_one(
             {'employee_id': emp['id'], 'date': today},
             {'$set': {'employee_id': emp['id'], 'date': today, 'sent_at': now_utc().isoformat()}},
@@ -1833,7 +1853,7 @@ async def _check_attendance_anomalies():
     )
     await _notify_module('attendance', 'Attendance discrepancy',
                           f"Check-out recorded with no check-in for: {_summarize_codes(names)}",
-                          '/(tabs)/attendance', script='attendance_discrepancy')
+                          '/(tabs)/attendance', script='attendance_discrepancy', admin_only=True)
 
 
 async def _check_daily_absentee_summary():
@@ -1882,6 +1902,7 @@ async def _check_daily_absentee_summary():
             'attendance',
             f"{len(absent_names)} absent today",
             shown, '/(tabs)/attendance', script='attendance_absentee_summary',
+            admin_only=True,
         )
 
 
@@ -2009,7 +2030,8 @@ async def _check_auto_advances():
         await notify_user(emp['id'], 'Advance credited',
                            f"₹{amount:.0f} advance has been recorded for you this month.", '/')
         await _notify_module('payroll', 'Auto advance recorded',
-                              f"₹{amount:.0f} auto-advance recorded for {emp['name']}", '/(tabs)/payroll', script='payroll_auto_advance')
+                              f"₹{amount:.0f} auto-advance recorded for {emp['name']}", '/(tabs)/payroll',
+                              script='payroll_auto_advance', admin_only=True)
 
 
 async def _check_recurring_tasks():
@@ -2069,7 +2091,8 @@ async def _check_overdue_tasks():
     ):
         await db.tasks.update_one({'id': t['id']}, {'$set': {'overdue_notified_at': now_utc().isoformat()}})
         await _notify_module('tasks', 'Task overdue',
-                              f"{t.get('assigned_to_name', 'Someone')}: {t['title']} was due {t['due_date']}", '/tasks', script='task_overdue')
+                              f"{t.get('assigned_to_name', 'Someone')}: {t['title']} was due {t['due_date']}", '/tasks',
+                              script='task_overdue', admin_only=True)
 
 
 TASK_REPEAT_REMINDER_MIN = 180  # how often to re-nudge an assignee on a repeat_reminder task

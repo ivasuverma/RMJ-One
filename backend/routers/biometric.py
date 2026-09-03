@@ -210,11 +210,11 @@ async def _ingest_biometric_punch(serial: str, user_id: str, ts: datetime, event
         if kind == 'check_in':
             await _notify_module('attendance', f"{emp['name']} checked in",
                                  f"{now_local.strftime('%I:%M %p')}{' · Late' if result.get('is_late') else ''} · Biometric",
-                                 '/(tabs)/attendance', script='attendance_checkin')
+                                 '/(tabs)/attendance', script='attendance_checkin', subject_employee_id=emp['id'])
         elif kind == 'check_out':
             await _notify_module('attendance', f"{emp['name']} checked out",
                                  f"Worked {result.get('working_hours', 0)}h today · Biometric",
-                                 '/(tabs)/attendance', script='attendance_checkout')
+                                 '/(tabs)/attendance', script='attendance_checkout', subject_employee_id=emp['id'])
     return {'ok': True, 'action': kind, 'employee': emp['name'], 'attendance_id': result['attendance_id']}
 
 

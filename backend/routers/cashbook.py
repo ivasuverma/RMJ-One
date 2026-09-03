@@ -253,14 +253,14 @@ async def create_cashbook_entry(body: CashBookEntryIn, user=Depends(require_admi
         await _notify_module(
             'cash_book', 'Cash transferred between counters',
             f"{amt}: {src['name']} → {dst['name']} · by {user['name']}",
-            '/cashbook', script='cashbook_transfer',
+            '/cashbook', script='cashbook_transfer', admin_only=True,
         )
     elif user.get('role') == 'employee':
         direction = 'in' if body.type == 'received' else 'out'
         await _notify_module(
             'cash_book', f"{user['name']} recorded cash {direction}",
             f"{amt} · {counter['name']} · {body.name.strip()}",
-            '/cashbook', script='cashbook_entry',
+            '/cashbook', script='cashbook_entry', admin_only=True,
         )
     return {k: v for k, v in entry.items() if k != '_id'}
 
@@ -319,7 +319,7 @@ async def update_cashbook_entry(entry_id: str, body: CashBookEntryUpdateIn, user
             if changes:
                 await _notify_module(
                     'cash_book', f"{user['name']} edited a cash entry",
-                    ('; '.join(changes))[:300], '/cashbook', script='cashbook_edit',
+                    ('; '.join(changes))[:300], '/cashbook', script='cashbook_edit', admin_only=True,
                 )
     return await db.cashbook_entries.find_one({'id': entry_id}, {'_id': 0})
 
