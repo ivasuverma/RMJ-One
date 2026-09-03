@@ -463,8 +463,9 @@ function Tile({ t, folded, onToggleFold, onPress }: {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const hasDetails = !!t.details && t.details.length > 0;
+  const expanded = hasDetails && !folded;
   return (
-    <View style={styles.tile} testID={`dash-tile-${t.key}`}>
+    <View style={[styles.tile, expanded && styles.tileExpanded]} testID={`dash-tile-${t.key}`}>
       <Pressable onPress={onPress} style={({ pressed }) => pressed && { opacity: 0.85 }}>
         <View style={styles.tileTopRow}>
           <View style={styles.tileIcon}><Ionicons name={t.icon} size={20} color={colors.brandSecondary} /></View>
@@ -883,12 +884,17 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   tileGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.xl },
   // flexGrow: 0 (fixed width) so all nine tiles stay the same size no matter
   // how many land in a given row — an uneven last row (e.g. Repairs + Cash
-  // Book alone) leaves blank space instead of stretching to fill it.
+  // Book alone) leaves blank space instead of stretching to fill it. Two per
+  // row (not three) so labels and detail rows have room without truncating.
   tile: {
-    flexBasis: '31%', flexGrow: 0, flexShrink: 0, minWidth: 100, position: 'relative',
+    flexBasis: '48%', flexGrow: 0, flexShrink: 0, minWidth: 150, position: 'relative',
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
     padding: spacing.md, gap: 2,
   },
+  // Applied on top of `tile` while a tile with details is unfolded — spans
+  // the full row so even a long custom cash-counter name has room to show
+  // in full instead of truncating.
+  tileExpanded: { flexBasis: '100%' },
   tileTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
   tileIcon: { width: 40, height: 40, borderRadius: 11, backgroundColor: colors.surfaceTertiary, alignItems: 'center', justifyContent: 'center' },
   tileValueTop: { color: colors.onSurface, fontSize: 15, fontWeight: '800', flexShrink: 1, marginLeft: spacing.sm },
