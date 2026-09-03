@@ -320,10 +320,13 @@ export default function DashboardScreen() {
                   ],
                 },
                 cashbook: {
+                  // Closing balance intentionally not shown on this shared
+                  // dashboard tile — cash-in-hand totals stay masked here
+                  // (per-counter or overall); today's activity is fine to show.
                   key: 'cashbook', show: hasModule('cash_book'), icon: 'wallet-outline', label: 'Cash Book',
-                  value: fmtINR(cb.closing_balance), route: '/cashbook',
+                  value: '•••••', route: '/cashbook',
                   details: (cb.counters && cb.counters.length > 0)
-                    ? cb.counters.map((c) => ({ label: c.name, value: fmtINR(c.closing) }))
+                    ? cb.counters.map((c) => ({ label: c.name, value: '•••••' }))
                     : [{ label: 'Received today', value: fmtINR(cb.received_today) }, { label: 'Paid today', value: fmtINR(cb.paid_today) }],
                 },
                 approvals: {

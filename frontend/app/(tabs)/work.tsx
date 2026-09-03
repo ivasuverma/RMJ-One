@@ -112,7 +112,9 @@ export default function WorkScreen() {
   });
   if (hasModule('cash_book')) rows.push({
     key: 'cash', title: 'Cash Book', icon: 'wallet-outline', route: '/cashbook',
-    segs: data ? [{ text: 'Closing ' }, { text: fmtINR(data.cashbook_summary.closing_balance), tone: 'strong' }] : placeholder,
+    // Closing balance intentionally not shown here — a tile visible on the
+    // shared Work board shouldn't surface the cash total at a glance.
+    segs: [{ text: 'Tap to view entries' }],
   });
   if (hasModule('tasks')) rows.push({
     key: 'tasks', title: 'Tasks', icon: 'checkbox-outline', route: '/tasks', badge: data?.tasks_summary.due_today || undefined,
