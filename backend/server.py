@@ -624,13 +624,16 @@ class TaskIn(BaseModel):
     priority: Literal['low', 'normal', 'urgent'] = 'normal'
     due_date: Optional[str] = None  # YYYY-MM-DD
     due_time: Optional[str] = None  # HH:MM, optional — paired with due_date
-    # Points earned by the assignee if this task is completed by its due
-    # date/time. 0 = no points system on this task (e.g. routine work).
+    # Points (shown to the assignee as stars) earned if this task is
+    # completed by its due date/time. 0 = no points system on this task.
     points: int = 0
     # When true, the assignee gets a repeating nudge notification every few
     # hours until the task is marked done — not extra recipients, just
     # persistence, for tasks that tend to get forgotten.
     repeat_reminder: bool = False
+    # Caps how many repeat_reminder nudges get sent — None keeps nudging
+    # until the task is done (the original, unbounded behavior).
+    max_reminders: Optional[int] = None
 
 
 class TaskUpdateIn(BaseModel):
@@ -642,6 +645,7 @@ class TaskUpdateIn(BaseModel):
     due_time: Optional[str] = None
     points: Optional[int] = None
     repeat_reminder: Optional[bool] = None
+    max_reminders: Optional[int] = None
 
 
 class TaskCommentIn(BaseModel):
@@ -653,9 +657,23 @@ class TaskTemplateIn(BaseModel):
     description: Optional[str] = ''
     assigned_to: str
     priority: Literal['low', 'normal', 'urgent'] = 'normal'
-    freq: Literal['daily', 'weekly', 'hourly'] = 'daily'
-    weekday: Optional[int] = None  # 0=Monday..6=Sunday, required when freq='weekly'
+    freq: Literal['hourly', 'daily', 'weekly', 'monthly', 'yearly'] = 'daily'
+    # First date this template is eligible to generate an instance — also
+    # the anchor for weekly/monthly/yearly (same weekday / day-of-month /
+    # month+day as this date), so there's no separate weekday picker.
+    # Optional only so a template predating this field (weekly, anchored by
+    # the old standalone `weekday`) can still be edited/paused without
+    # suddenly needing one — _check_recurring_tasks falls back accordingly.
+    start_date: Optional[str] = None
     interval_hours: Optional[int] = 1  # required when freq='hourly' — spawn a fresh instance every N hours
+    due_time: Optional[str] = None  # optional due time-of-day applied to each generated instance
+    points: int = 0  # stars awarded per on-time completion of each generated instance
+    repeat_reminder: bool = False  # each generated instance nudges the assignee until done
+    max_reminders: Optional[int] = None
+    # At most one of these — how the recurrence ends. Neither set = repeats
+    # indefinitely until paused/deleted.
+    max_repetitions: Optional[int] = None  # capped at 120, matching the schedule-transfer UI this mirrors
+    end_date: Optional[str] = None
     active: bool = True
 
 
@@ -2035,20 +2053,52 @@ async def _check_auto_advances():
 
 
 async def _check_recurring_tasks():
-    """Spawns task instances from each active recurring template. Daily/weekly
-    templates get one instance per day (or matching weekday); hourly templates
-    get a fresh instance every `interval_hours` hours. Idempotent via
-    `db.task_generations` (keyed by template + date, plus an hour-bucket for
-    hourly templates) so the 15-minute poll can safely re-check. A missed or
-    completed instance never blocks the next one — each cycle is its own
-    independent task, not a chain."""
+    """Spawns task instances from each active recurring template.
+    Weekly/monthly/yearly templates recur on the same weekday / day-of-month
+    / month+day as the template's `start_date` — no separate weekday picker,
+    the start date itself is the anchor (clamped to the month's length for
+    monthly, so a 31st-anchored template still fires in a 30-day month).
+    Hourly templates get a fresh instance every `interval_hours` hours.
+    Idempotent via `db.task_generations` (keyed by template + date, plus an
+    hour-bucket for hourly templates) so the 15-minute poll can safely
+    re-check. A missed or completed instance never blocks the next one —
+    each cycle is its own independent task, not a chain.
+
+    A template stops generating once it hits its `end_date` or
+    `max_repetitions` (at most one of those is ever set) — it's flipped to
+    inactive at that point rather than silently going quiet, so it reads the
+    same as a manually-paused template everywhere it's listed."""
     now_ist = now_utc().astimezone(IST)
     today = now_ist.date()
     today_iso = today.isoformat()
 
     async for tpl in db.task_templates.find({'active': True}, {'_id': 0}):
-        if tpl['freq'] == 'weekly' and tpl.get('weekday') is not None and today.weekday() != int(tpl['weekday']):
+        try:
+            start = date.fromisoformat(tpl['start_date']) if tpl.get('start_date') else None
+        except ValueError:
+            start = None
+        if start and today < start:
+            continue  # scheduled for later, not yet due to start
+
+        if tpl.get('end_date') and today_iso > tpl['end_date']:
+            await db.task_templates.update_one({'id': tpl['id']}, {'$set': {'active': False}})
             continue
+        if tpl.get('max_repetitions') and (tpl.get('generated_count') or 0) >= tpl['max_repetitions']:
+            await db.task_templates.update_one({'id': tpl['id']}, {'$set': {'active': False}})
+            continue
+
+        if tpl['freq'] == 'weekly':
+            anchor_weekday = start.weekday() if start else tpl.get('weekday')
+            if anchor_weekday is not None and today.weekday() != int(anchor_weekday):
+                continue
+        elif tpl['freq'] == 'monthly' and start:
+            from calendar import monthrange
+            last_day = monthrange(today.year, today.month)[1]
+            if today.day != min(start.day, last_day):
+                continue
+        elif tpl['freq'] == 'yearly' and start:
+            if (today.month, today.day) != (start.month, start.day):
+                continue
 
         if tpl['freq'] == 'hourly':
             interval = max(1, int(tpl.get('interval_hours') or 1))
@@ -2072,11 +2122,14 @@ async def _check_recurring_tasks():
         await db.tasks.insert_one({
             'id': task_id, 'title': title, 'description': tpl.get('description', ''),
             'assigned_to': tpl['assigned_to'], 'assigned_to_name': emp['name'], 'assigned_by': 'Recurring',
-            'priority': tpl.get('priority', 'normal'), 'due_date': today_iso, 'due_time': None, 'status': 'open',
-            'points': 0, 'points_awarded': None, 'repeat_reminder': False, 'last_reminded_at': None,
+            'priority': tpl.get('priority', 'normal'), 'due_date': today_iso, 'due_time': tpl.get('due_time'), 'status': 'open',
+            'points': tpl.get('points') or 0, 'points_awarded': None,
+            'repeat_reminder': bool(tpl.get('repeat_reminder')), 'last_reminded_at': None,
+            'max_reminders': tpl.get('max_reminders'), 'reminder_count': 0,
             'comments': [], 'recurring_template_id': tpl['id'], 'overdue_notified_at': None,
             'created_at': iso, 'completed_at': None,
         })
+        await db.task_templates.update_one({'id': tpl['id']}, {'$inc': {'generated_count': 1}})
         await notify_user(tpl['assigned_to'], 'New task assigned', title, '/(emp)/tasks')
 
 
@@ -2101,19 +2154,23 @@ TASK_REPEAT_REMINDER_MIN = 180  # how often to re-nudge an assignee on a repeat_
 async def _check_task_repeat_reminders():
     """For tasks created with 'repeat_reminder' on, keep nudging the assignee
     every TASK_REPEAT_REMINDER_MIN minutes until it's marked done — separate
-    from (and in addition to) the one-time owner/admin overdue alert."""
+    from (and in addition to) the one-time owner/admin overdue alert. Stops
+    early once `max_reminders` nudges have gone out, if that cap is set —
+    unset means keep nudging until done, same as the original behavior."""
     cutoff = (now_utc() - timedelta(minutes=TASK_REPEAT_REMINDER_MIN)).isoformat()
     async for t in db.tasks.find(
         {'status': 'open', 'repeat_reminder': True,
          '$or': [{'last_reminded_at': None}, {'last_reminded_at': {'$lt': cutoff}}]},
         {'_id': 0},
     ):
+        if t.get('max_reminders') and (t.get('reminder_count') or 0) >= t['max_reminders']:
+            continue
         # Don't start nudging before the task even existed for one interval —
         # avoids an immediate duplicate of the "New task assigned" push.
         reference = t.get('last_reminded_at') or t.get('created_at')
         if reference and reference > cutoff:
             continue
-        await db.tasks.update_one({'id': t['id']}, {'$set': {'last_reminded_at': now_utc().isoformat()}})
+        await db.tasks.update_one({'id': t['id']}, {'$set': {'last_reminded_at': now_utc().isoformat()}, '$inc': {'reminder_count': 1}})
         await notify_user(t['assigned_to'], 'Task reminder', f"Still pending: {t['title']}", '/(emp)/tasks')
 
 

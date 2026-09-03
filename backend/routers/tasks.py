@@ -40,6 +40,7 @@ async def create_task(body: TaskIn, user=Depends(require_admin_or_module('tasks'
         'priority': body.priority, 'due_date': body.due_date, 'due_time': body.due_time, 'status': 'open',
         'points': max(0, body.points or 0), 'points_awarded': None,
         'repeat_reminder': body.repeat_reminder, 'last_reminded_at': None,
+        'max_reminders': body.max_reminders, 'reminder_count': 0,
         'comments': [], 'recurring_template_id': None, 'overdue_notified_at': None,
         'created_at': iso, 'completed_at': None,
     }
@@ -198,13 +199,31 @@ async def add_task_comment(task_id: str, body: TaskCommentIn, user=Depends(get_c
 
 
 # ---------------- Task Templates (recurring) ----------------
+def _validate_template(body: TaskTemplateIn):
+    if body.freq == 'hourly' and (not body.interval_hours or body.interval_hours < 1):
+        raise HTTPException(status_code=400, detail='Enter an interval of at least 1 hour')
+    # monthly/yearly have no legacy anchor to fall back on (unlike weekly's
+    # old standalone `weekday`) — a start_date is the only way they know
+    # which day to recur on, so it's mandatory for those two.
+    if body.freq in ('monthly', 'yearly') and not body.start_date:
+        raise HTTPException(status_code=400, detail='A start date is required for monthly/yearly templates')
+    if body.max_repetitions is not None and body.end_date is not None:
+        raise HTTPException(status_code=400, detail='Choose either a number of repetitions or an end date, not both')
+    if body.max_repetitions is not None and not (1 <= body.max_repetitions <= 120):
+        raise HTTPException(status_code=400, detail='Number of repetitions must be between 1 and 120')
+    if body.end_date is not None and body.end_date < body.start_date:
+        raise HTTPException(status_code=400, detail='End date must be on or after the start date')
+
+
 @router.post('/tasks/templates')
 async def create_task_template(body: TaskTemplateIn, user=Depends(require_admin), _mod=Depends(require_module('tasks'))):
     emp = await db.employees.find_one({'id': body.assigned_to}, {'_id': 0})
     if not emp: raise HTTPException(status_code=404, detail='Employee not found')
-    if body.freq == 'weekly' and body.weekday is None:
-        raise HTTPException(status_code=400, detail='weekday is required for a weekly template')
-    doc = {'id': str(uuid.uuid4()), **body.model_dump(), 'assigned_to_name': emp['name'], 'created_at': now_utc().isoformat()}
+    _validate_template(body)
+    doc = {
+        'id': str(uuid.uuid4()), **body.model_dump(), 'assigned_to_name': emp['name'],
+        'generated_count': 0, 'created_at': now_utc().isoformat(),
+    }
     await db.task_templates.insert_one(dict(doc))
     await log_audit(user, 'task_template.create', 'task_template', doc['id'], body.title)
     return {k: v for k, v in doc.items() if k != '_id'}
@@ -216,6 +235,7 @@ async def update_task_template(template_id: str, body: TaskTemplateIn, user=Depe
         raise HTTPException(status_code=404, detail='Template not found')
     emp = await db.employees.find_one({'id': body.assigned_to}, {'_id': 0})
     if not emp: raise HTTPException(status_code=404, detail='Employee not found')
+    _validate_template(body)
     await db.task_templates.update_one({'id': template_id}, {'$set': {**body.model_dump(), 'assigned_to_name': emp['name']}})
     await log_audit(user, 'task_template.update', 'task_template', template_id, body.title)
     return await db.task_templates.find_one({'id': template_id}, {'_id': 0})
