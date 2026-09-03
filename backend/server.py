@@ -201,6 +201,11 @@ MODULE_DEFS = [
     # statements. Per-category role visibility is layered on top (see
     # document_categories); this module just gates the Work-tab row.
     {'key': 'documents', 'label': 'Documents', 'default_roles': ['owner', 'admin', 'accountant'], 'employee_assignable': True},
+    # Not employee_assignable by default — this module hands shop cash to a
+    # customer against collateral and auto-accrues interest, a different risk
+    # level than issuing a repair/sample tag; owner/admin/accountant only
+    # unless an owner deliberately grants it further.
+    {'key': 'gold_loans', 'label': 'Gold Loans', 'default_roles': ['owner', 'admin', 'accountant']},
 ]
 MODULE_KEYS = {m['key'] for m in MODULE_DEFS}
 MODULE_DEFAULT_ROLES = {m['key']: set(m['default_roles']) for m in MODULE_DEFS}
@@ -855,6 +860,40 @@ class SampleUpdateIn(BaseModel):
 
 class SampleReceiveIn(BaseModel):
     received_weight: float
+    note: Optional[str] = ''
+
+
+# ---------------- Loan Against Gold — see routers/gold_loans.py ----------------
+class GoldLoanIn(BaseModel):
+    customer_id: Optional[str] = None  # existing customer, or...
+    new_customer: Optional[CustomerIn] = None  # ...create one inline
+    description: str
+    weight: float  # grams pledged (total, across however many pieces)
+    pc_count: int = 1
+    photo: Optional[str] = ''
+    principal: float  # amount paid out to the customer
+    interest_rate_percent: float  # per month, on the outstanding principal
+    loan_date: Optional[str] = None  # YYYY-MM-DD, defaults to today
+    estimate_return_date: Optional[str] = None
+    note: Optional[str] = ''
+
+
+class GoldLoanUpdateIn(BaseModel):
+    # Deliberately excludes principal/interest_rate_percent/customer — changing
+    # those after the fact would retroactively distort interest already posted
+    # against them. Close the loan and start a new one for a genuine renegotiation.
+    description: Optional[str] = None
+    weight: Optional[float] = None
+    pc_count: Optional[int] = None
+    photo: Optional[str] = None
+    estimate_return_date: Optional[str] = None
+    note: Optional[str] = None
+
+
+class GoldLoanPaymentIn(BaseModel):
+    amount: float
+    type: Literal['interest', 'principal']
+    date: Optional[str] = None  # YYYY-MM-DD, defaults to today
     note: Optional[str] = ''
 
 
@@ -1638,6 +1677,7 @@ NOTIFICATION_MODULES = [
     {'key': 'samples', 'label': 'Stock In/Out', 'default_roles': ['owner', 'admin']},
     {'key': 'cash_book', 'label': 'Cash Book', 'default_roles': ['owner', 'admin']},
     {'key': 'documents', 'label': 'Documents', 'default_roles': ['owner', 'admin']},
+    {'key': 'gold_loans', 'label': 'Gold Loans', 'default_roles': ['owner', 'admin']},
 ]
 NOTIFICATION_MODULE_KEYS = {m['key'] for m in NOTIFICATION_MODULES}
 NOTIFICATION_MODULE_DEFAULT_ROLES = {m['key']: m['default_roles'] for m in NOTIFICATION_MODULES}
@@ -1674,6 +1714,8 @@ NOTIFICATION_SCRIPTS = [
     {'key': 'cashbook_edit', 'module': 'cash_book', 'label': 'Employee edited a cash entry', 'admin_only': True},
     {'key': 'document_recorded', 'module': 'documents', 'label': 'Document recorded to Done', 'admin_only': True},
     {'key': 'document_pending_reminder', 'module': 'documents', 'label': 'Document pending more than 1 day (daily reminder)', 'admin_only': False},
+    {'key': 'gold_loan_created', 'module': 'gold_loans', 'label': 'New gold loan created', 'admin_only': True},
+    {'key': 'gold_loan_interest_posted', 'module': 'gold_loans', 'label': 'Monthly interest posted', 'admin_only': True},
 ]
 NOTIFICATION_SCRIPTS_BY_MODULE: Dict[str, list] = {}
 for _s in NOTIFICATION_SCRIPTS:
@@ -2189,6 +2231,8 @@ async def _attendance_reminder_loop():
             await _check_task_repeat_reminders()
             from routers.documents import check_pending_reminders
             await check_pending_reminders()
+            from routers.gold_loans import check_interest_due
+            await check_interest_due()
         except Exception as e:
             logger.warning(f'attendance reminder loop error: {e}')
 
@@ -2283,7 +2327,7 @@ def _make_photo_thumb(photo_data_uri: Optional[str]) -> str:
 from routers import (
     auth, employees, settings as settings_router, attendance, tasks, repairs,
     users, payroll, notifications, biometric, reports, assistant, samples,
-    cashbook, ledger, documents, backup, record_photos,
+    cashbook, ledger, documents, backup, record_photos, gold_loans,
 )
 
 # ---------------- Mount ----------------
@@ -2304,6 +2348,7 @@ api.include_router(cashbook.router)
 api.include_router(ledger.router)
 api.include_router(documents.router)
 api.include_router(record_photos.router)
+api.include_router(gold_loans.router)
 api.include_router(backup.router)
 
 app.include_router(api)

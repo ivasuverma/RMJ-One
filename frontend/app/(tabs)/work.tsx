@@ -52,11 +52,13 @@ export default function WorkScreen() {
 
   const [ledgerSummary, setLedgerSummary] = useState('');
   const [custSummary, setCustSummary] = useState('');
+  const [loanSummary, setLoanSummary] = useState<{ active: number; overdue: number; total_outstanding: number } | null>(null);
   const load = useCallback(async () => {
     try { setError(''); setData(await api.get<DashboardData>('/dashboard')); }
     catch (e: any) { setError(e?.detail || 'Failed to load'); }
     finally { setLoading(false); }
     if (hasModule('documents')) api.get<{ pending_count: number }>('/documents/summary').then(setDocSummary).catch(() => {});
+    if (hasModule('gold_loans')) api.get<{ active: number; overdue: number; total_outstanding: number }>('/gold-loans/dashboard').then(setLoanSummary).catch(() => {});
     // Karigar ledger tile summary — total fine gold + cash owed to karigars.
     api.get<any[]>('/karigars').then((ks) => {
       const fine = ks.reduce((s, k) => s + (k.fine_weight_balance || 0), 0);
@@ -97,6 +99,14 @@ export default function WorkScreen() {
     segs: data ? [
       { text: `${data.samples_summary.with_karigar} samples out` },
       ...(data.samples_summary.overdue > 0 ? [{ text: ' · ' }, { text: `${data.samples_summary.overdue} overdue`, tone: 'bad' as const }] : []),
+    ] : placeholder,
+  });
+  if (hasModule('gold_loans')) rows.push({
+    key: 'loans', title: 'Gold Loans', icon: 'diamond-outline', route: '/loans',
+    segs: loanSummary ? [
+      { text: `${loanSummary.active} active` },
+      ...(loanSummary.overdue > 0 ? [{ text: ' · ' }, { text: `${loanSummary.overdue} overdue`, tone: 'bad' as const }] : []),
+      ...(loanSummary.total_outstanding > 0 ? [{ text: ' · ' }, { text: fmtINR(loanSummary.total_outstanding), tone: 'strong' as const }] : []),
     ] : placeholder,
   });
   if (hasModule('cash_book')) rows.push({
@@ -225,6 +235,7 @@ export default function WorkScreen() {
             { key: 'task', label: 'New task', icon: 'checkbox-outline', route: '/tasks/new', show: hasModule('tasks') },
             { key: 'repair', label: 'New repair', icon: 'construct-outline', route: '/repairs/new', show: hasModule('repairs') },
             { key: 'stock', label: 'Stock In/Out', icon: 'diamond-outline', route: '/samples/new', show: hasModule('samples') },
+            { key: 'loan', label: 'New gold loan', icon: 'diamond-outline', route: '/loans/new', show: hasModule('gold_loans') },
             { key: 'adv-ded', label: 'Advance / Deduction', icon: 'swap-vertical-outline', route: '/(tabs)/employees?from=work', show: hasModule('team') || hasModule('payroll') },
             { key: 'cash', label: 'Cash in/out', icon: 'wallet-outline', route: '/cashbook', show: hasModule('cash_book') },
             { key: 'document', label: 'Add document', icon: 'document-attach-outline', route: '/documents?capture=1', show: hasModule('documents') },

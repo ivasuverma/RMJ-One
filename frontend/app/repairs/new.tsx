@@ -8,21 +8,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
 import { PhotoCaptureModal } from '@/src/components/PhotoCaptureModal';
 import { enqueueRecordPhoto } from '@/src/utils/uploadQueue';
-
-// Small (~420px) thumbnail kept for fast display after the full image lands in Drive.
-async function makeIntakeThumb(dataUri: string): Promise<string> {
-  if (typeof document === 'undefined') return '';
-  try {
-    const img = await new Promise<HTMLImageElement>((res, rej) => {
-      const im = new (window as any).Image(); im.onload = () => res(im); im.onerror = rej; im.src = dataUri;
-    });
-    const scale = Math.min(1, 420 / Math.max(img.width, img.height));
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.round(img.width * scale); canvas.height = Math.round(img.height * scale);
-    canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height);
-    return canvas.toDataURL('image/jpeg', 0.7).split(',', 2)[1] || '';
-  } catch { return ''; }
-}
+import { makeThumbFromDataUri } from '@/src/utils/imageThumb';
 import { DateField } from '@/src/components/DateField';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
@@ -31,25 +17,18 @@ type Customer = { id: string; name: string; mobile: string; address: string };
 type RepairType = { id: string; name: string; default_labour: number; requires_karigar_default: boolean; active: boolean };
 type ItemMaster = { id: string; name: string; purity: number; category: string; active: boolean };
 
-type DraftItem = {
-  key: string; item_master_id: string; item_type_name: string;
-  description: string; repair_type: string;
-  gross_weight: string; pc_count: string; labour_charge: string; needs_karigar: boolean;
-  due_date: string; notes: string; intake_photo: string;
-};
-
-const blankItem = (): DraftItem => ({
-  key: String(Date.now() + Math.random()), item_master_id: '', item_type_name: '',
-  description: '', repair_type: '',
-  gross_weight: '', pc_count: '1', labour_charge: '', needs_karigar: false, due_date: '', notes: '', intake_photo: '',
-});
-
 const addDays = (n: number) => {
   const d = new Date();
   d.setDate(d.getDate() + n);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
+// One item, one intake, one save — matches the same simplification already
+// applied to Stock In/Out and Gold Loans: no batch-building UI, a small
+// side photo button instead of a full-width bar, and a single "Save &
+// Print" action that creates the order and immediately prints the
+// customer's copy (the item tag is still printable separately from the
+// order screen, for however many pieces the order ends up with).
 export default function NewRepairOrderScreen() {
   const router = useRouter();
   const { colors } = useTheme();
@@ -87,34 +66,30 @@ export default function NewRepairOrderScreen() {
 
   const pickCustomer = (c: Customer) => { setSelected(c); setCustPickerOpen(false); setQuery(''); };
 
-  // Items
-  const [items, setItems] = useState<DraftItem[]>([]);
-  const [draft, setDraft] = useState<DraftItem>(blankItem());
+  // The one item
+  const [itemMasterId, setItemMasterId] = useState('');
+  const [itemTypeName, setItemTypeName] = useState('');
+  const [description, setDescription] = useState('');
+  const [repairType, setRepairType] = useState('');
+  const [weight, setWeight] = useState('');
+  const [labour, setLabour] = useState('');
+  const [needsKarigar, setNeedsKarigar] = useState(false);
+  const [dueDate, setDueDate] = useState('');
+  const [photo, setPhoto] = useState('');
   const [rtPickerOpen, setRtPickerOpen] = useState(false);
   const [imPickerOpen, setImPickerOpen] = useState(false);
+  const [cameraOpen, setCameraOpen] = useState(false);
 
   const pickRepairType = (rt: RepairType) => {
-    setDraft((d) => ({
-      ...d, repair_type: rt.name,
-      labour_charge: rt.default_labour ? String(rt.default_labour) : d.labour_charge,
-      needs_karigar: rt.requires_karigar_default,
-    }));
+    setRepairType(rt.name);
+    if (rt.default_labour) setLabour(String(rt.default_labour));
+    setNeedsKarigar(rt.requires_karigar_default);
     setRtPickerOpen(false);
   };
-
   const pickItemMaster = (im: ItemMaster) => {
-    setDraft((d) => ({ ...d, item_master_id: im.id, item_type_name: `${im.name} (${im.purity}%)` }));
+    setItemMasterId(im.id); setItemTypeName(`${im.name} (${im.purity}%)`);
     setImPickerOpen(false);
   };
-
-  const addItem = () => {
-    if (!draft.description.trim()) { Alert.alert('Missing', 'Enter a description for this item'); return; }
-    setItems((prev) => [...prev, draft]);
-    setDraft(blankItem());
-  };
-  const removeItem = (key: string) => setItems((prev) => prev.filter((i) => i.key !== key));
-
-  const [cameraOpen, setCameraOpen] = useState(false);
 
   const [saving, setSaving] = useState(false);
   const submittingRef = useRef(false);
@@ -125,37 +100,34 @@ export default function NewRepairOrderScreen() {
     if (mode === 'new' && !newName.trim()) { Alert.alert('Missing', 'Enter the customer name'); return; }
     // Same rule as a ledger account: a new party must have a mobile number.
     if (mode === 'new' && newMobile.replace(/\D/g, '').length < 7) { Alert.alert('Missing', 'A mobile number is required for a new customer'); return; }
-    if (items.length === 0) { Alert.alert('Missing', 'Add at least one item to this order'); return; }
+    if (!description.trim()) { Alert.alert('Missing', 'Enter a description for the item'); return; }
     submittingRef.current = true;
     setSaving(true);
     try {
       const body: any = {
-        items: items.map((i) => ({
-          item_master_id: i.item_master_id || null,
-          description: i.description.trim(), repair_type: i.repair_type,
-          gross_weight: parseFloat(i.gross_weight) || 0, pc_count: parseInt(i.pc_count, 10) || 1,
-          labour_charge: parseFloat(i.labour_charge) || 0, needs_karigar: i.needs_karigar,
-          // Intake photos no longer live as base64 on the item — the high-res
-          // goes to Drive via the record-photos queue after the item is created.
-          due_date: i.due_date || null, notes: i.notes, intake_photo: '',
-        })),
+        items: [{
+          item_master_id: itemMasterId || null,
+          description: description.trim(), repair_type: repairType,
+          gross_weight: parseFloat(weight) || 0, pc_count: 1,
+          labour_charge: parseFloat(labour) || 0, needs_karigar: needsKarigar,
+          // Intake photo goes to Drive via the record-photos queue after create.
+          due_date: dueDate || null, notes: '', intake_photo: '',
+        }],
       };
       if (mode === 'existing') body.customer_id = selected!.id;
       else body.new_customer = { name: newName.trim(), mobile: newMobile, address: newAddress, notes: '' };
 
       const res = await api.post<{ order: { id: string }; items: { id: string }[] }>('/repair-orders', body);
-      // Queue each captured intake photo against its freshly-created item
-      // (the response returns items in the same order we sent them).
-      await Promise.all(items.map(async (it, idx) => {
-        const created = res.items?.[idx];
-        if (!it.intake_photo || !created?.id) return;
+      const createdItem = res.items?.[0];
+      if (photo && createdItem?.id) {
         try {
-          const full = await (await fetch(it.intake_photo)).blob();
-          const thumb = await makeIntakeThumb(it.intake_photo);
-          const pid = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `${Date.now()}-${idx}`;
-          await enqueueRecordPhoto({ id: pid, blob: full, filename: `repair-${created.id}.jpg`, thumb, ref_type: 'repair_item', ref_id: created.id });
+          const full = await (await fetch(photo)).blob();
+          const thumb = await makeThumbFromDataUri(photo);
+          const pid = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `${Date.now()}`;
+          await enqueueRecordPhoto({ id: pid, blob: full, filename: `repair-${createdItem.id}.jpg`, thumb, ref_type: 'repair_item', ref_id: createdItem.id });
         } catch { /* a failed enqueue shouldn't block navigating to the order */ }
-      }));
+      }
+      try { await api.post(`/repair-orders/${res.order.id}/slip/print`, {}); } catch { /* saved either way */ }
       router.replace(`/repairs/${res.order.id}` as any);
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
     finally { setSaving(false); submittingRef.current = false; }
@@ -210,7 +182,7 @@ export default function NewRepairOrderScreen() {
                         style={styles.searchInput}
                       />
                     </View>
-                    <ScrollView style={{ maxHeight: 260 }} keyboardShouldPersistTaps="handled">
+                    <ScrollView style={{ maxHeight: 260 }} nestedScrollEnabled keyboardShouldPersistTaps="handled">
                       {filteredCustomers.length === 0 ? (
                         <Text style={[styles.pickerRowMeta, { padding: spacing.md }]}>No customers found</Text>
                       ) : filteredCustomers.map((c) => (
@@ -235,119 +207,80 @@ export default function NewRepairOrderScreen() {
             </View>
           )}
 
-          <Text style={[styles.section, { marginTop: spacing.xl }]}>Add Item</Text>
-          <View style={styles.formCard} testID="item-draft-form">
-            <Text style={styles.label}>Item</Text>
-            <Pressable onPress={() => setImPickerOpen((v) => !v)} style={styles.picker} testID="item-im-toggle">
-              <Text style={draft.item_type_name ? styles.pickerValue : styles.pickerPlaceholder}>{draft.item_type_name || 'Choose an item type (optional)'}</Text>
-              <Ionicons name={imPickerOpen ? 'chevron-up' : 'chevron-down'} size={16} color={colors.mutedText} />
-            </Pressable>
-            {imPickerOpen && (
-              <View style={styles.pickerList}>
-                {itemMasters.filter((im) => im.active).map((im) => (
-                  <Pressable key={im.id} onPress={() => pickItemMaster(im)} style={styles.pickerRow} testID={`item-im-${im.id}`}>
-                    <Text style={styles.pickerRowName}>{im.name}</Text>
-                    <Text style={styles.pickerRowMeta}>{im.purity}%</Text>
-                  </Pressable>
-                ))}
-                {itemMasters.length === 0 && <Text style={[styles.pickerRowMeta, { padding: spacing.md }]}>No items set up yet — set purity for one in Utility &gt; Items &amp; Purity</Text>}
-              </View>
-            )}
-
-            <View style={styles.row2}>
-              <View style={{ flex: 1.6 }}>
-                <Text style={styles.label}>Description</Text>
-                <TextInput testID="item-description" value={draft.description} onChangeText={(v) => setDraft((d) => ({ ...d, description: v }))} placeholder="e.g. Gold chain, clasp" placeholderTextColor={colors.mutedText} style={styles.input} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.label}>Weight (g)</Text>
-                <TextInput testID="item-weight" value={draft.gross_weight} onChangeText={(v) => setDraft((d) => ({ ...d, gross_weight: v.replace(/[^0-9.]/g, '') }))} keyboardType="decimal-pad" placeholder="0.000" placeholderTextColor={colors.mutedText} style={styles.input} />
-              </View>
-            </View>
-
-            <View style={styles.row2}>
-              <View style={{ flex: 1.4 }}>
-                <Text style={styles.label}>Repair Type</Text>
-                <Pressable onPress={() => setRtPickerOpen((v) => !v)} style={styles.picker} testID="item-rt-toggle">
-                  <Text style={draft.repair_type ? styles.pickerValue : styles.pickerPlaceholder} numberOfLines={1}>{draft.repair_type || 'Choose'}</Text>
-                  <Ionicons name={rtPickerOpen ? 'chevron-up' : 'chevron-down'} size={16} color={colors.mutedText} />
-                </Pressable>
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.label}>Labour (₹)</Text>
-                <TextInput testID="item-labour" value={draft.labour_charge} onChangeText={(v) => setDraft((d) => ({ ...d, labour_charge: v.replace(/[^0-9.]/g, '') }))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />
-              </View>
-            </View>
-            {rtPickerOpen && (
-              <View style={styles.pickerList}>
-                {repairTypes.filter((rt) => rt.active).map((rt) => (
-                  <Pressable key={rt.id} onPress={() => pickRepairType(rt)} style={styles.pickerRow} testID={`item-rt-${rt.id}`}>
-                    <Text style={styles.pickerRowName}>{rt.name}</Text>
-                    <Text style={styles.pickerRowMeta}>₹{rt.default_labour.toFixed(0)}</Text>
-                  </Pressable>
-                ))}
-                {repairTypes.length === 0 && <Text style={[styles.pickerRowMeta, { padding: spacing.md }]}>No repair types set up yet</Text>}
-              </View>
-            )}
-
-            <DateField label="Due Date" value={draft.due_date} onChange={(v) => setDraft((d) => ({ ...d, due_date: v }))} testID="item-due" />
-            <View style={styles.chipRow}>
-              {[1, 3, 7, 15, 30].map((n) => (
-                <Pressable key={n} onPress={() => setDraft((d) => ({ ...d, due_date: addDays(n) }))} style={styles.dayChip} testID={`due-in-${n}`}>
-                  <Text style={styles.dayChipText}>+{n}d</Text>
+          <Text style={[styles.section, { marginTop: spacing.xl }]}>Item</Text>
+          <Pressable onPress={() => setImPickerOpen((v) => !v)} style={styles.picker} testID="item-im-toggle">
+            <Text style={itemTypeName ? styles.pickerValue : styles.pickerPlaceholder}>{itemTypeName || 'Choose an item type (optional)'}</Text>
+            <Ionicons name={imPickerOpen ? 'chevron-up' : 'chevron-down'} size={16} color={colors.mutedText} />
+          </Pressable>
+          {imPickerOpen && (
+            <View style={styles.pickerList}>
+              {itemMasters.filter((im) => im.active).map((im) => (
+                <Pressable key={im.id} onPress={() => pickItemMaster(im)} style={styles.pickerRow} testID={`item-im-${im.id}`}>
+                  <Text style={styles.pickerRowName}>{im.name}</Text>
+                  <Text style={styles.pickerRowMeta}>{im.purity}%</Text>
                 </Pressable>
               ))}
+              {itemMasters.length === 0 && <Text style={[styles.pickerRowMeta, { padding: spacing.md }]}>No items set up yet — set purity for one in Utility &gt; Items &amp; Purity</Text>}
             </View>
-
-            <Pressable onPress={() => setDraft((d) => ({ ...d, needs_karigar: !d.needs_karigar }))} style={styles.checkRow} testID="item-needs-karigar">
-              <View style={[styles.checkbox, draft.needs_karigar && styles.checkboxOn]}>{draft.needs_karigar && <Ionicons name="checkmark" size={13} color={colors.onBrandPrimary} />}</View>
-              <Text style={styles.checkLabel}>Needs to be issued to a karigar</Text>
-            </Pressable>
-
-            <Text style={styles.label}>Reference Photo (optional)</Text>
-            {draft.intake_photo ? (
-              <View style={styles.photoRow}>
-                <Image source={{ uri: draft.intake_photo }} style={styles.photoThumb} />
-                <Pressable onPress={() => setCameraOpen(true)} style={styles.smallBtn} testID="item-retake-photo">
-                  <Text style={styles.smallBtnText}>Retake</Text>
-                </Pressable>
-                <Pressable onPress={() => setDraft((d) => ({ ...d, intake_photo: '' }))} style={styles.delBtn} hitSlop={10} testID="item-remove-photo">
-                  <Ionicons name="close" size={16} color={colors.onError} />
-                </Pressable>
-              </View>
-            ) : (
-              <Pressable onPress={() => setCameraOpen(true)} style={styles.photoBtn} testID="item-add-photo">
-                <Ionicons name="camera-outline" size={16} color={colors.onSurfaceSecondary} />
-                <Text style={styles.actionBtnText}>Add Photo</Text>
-              </Pressable>
-            )}
-
-            <Pressable onPress={addItem} style={styles.addItemBtn} testID="add-item-btn">
-              <Ionicons name="add" size={16} color={colors.onBrandPrimary} />
-              <Text style={styles.addItemBtnText}>Add Item to Order</Text>
-            </Pressable>
-          </View>
-
-          {items.length > 0 && (
-            <>
-              <Text style={[styles.section, { marginTop: spacing.xl }]}>Items in this Order · {items.length}</Text>
-              {items.map((i) => (
-                <View key={i.key} style={styles.itemRow} testID={`draft-item-${i.key}`}>
-                  {i.intake_photo ? <Image source={{ uri: i.intake_photo }} style={styles.itemThumb} /> : null}
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.cName}>{i.item_type_name ? `${i.item_type_name} · ` : ''}{i.description}</Text>
-                    <Text style={styles.cMeta}>{i.repair_type || 'No type'} · {i.gross_weight || '0'}g · ₹{i.labour_charge || '0'}{i.needs_karigar ? ' · karigar' : ''}</Text>
-                  </View>
-                  <Pressable onPress={() => removeItem(i.key)} style={styles.delBtn} hitSlop={10} testID={`remove-item-${i.key}`}>
-                    <Ionicons name="close" size={16} color={colors.onError} />
-                  </Pressable>
-                </View>
-              ))}
-            </>
           )}
 
-          <Pressable onPress={submit} disabled={saving || items.length === 0} style={[styles.submitBtn, (saving || items.length === 0) && { opacity: 0.5 }]} testID="submit-order-btn">
-            {saving ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.submitBtnText}>{items.length === 0 ? 'Add an item first' : 'Create Repair Order'}</Text>}
+          <Text style={styles.label}>Description</Text>
+          <TextInput testID="item-description" value={description} onChangeText={setDescription} placeholder="e.g. Gold chain, clasp" placeholderTextColor={colors.mutedText} style={styles.input} />
+
+          <View style={{ flexDirection: 'row', gap: spacing.sm, alignItems: 'flex-end' }}>
+            <View style={{ flex: 1.4 }}>
+              <Text style={styles.label}>Repair Type</Text>
+              <Pressable onPress={() => setRtPickerOpen((v) => !v)} style={styles.picker} testID="item-rt-toggle">
+                <Text style={repairType ? styles.pickerValue : styles.pickerPlaceholder} numberOfLines={1}>{repairType || 'Choose'}</Text>
+                <Ionicons name={rtPickerOpen ? 'chevron-up' : 'chevron-down'} size={16} color={colors.mutedText} />
+              </Pressable>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.label}>Weight (g)</Text>
+              <TextInput testID="item-weight" value={weight} onChangeText={(v) => setWeight(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0.000" placeholderTextColor={colors.mutedText} style={styles.input} />
+            </View>
+            <Pressable onPress={() => setCameraOpen(true)} style={styles.photoSmallBtn} testID="item-photo-btn">
+              {photo ? <Image source={{ uri: photo }} style={styles.photoSmallImg} /> : <Ionicons name="camera-outline" size={20} color={colors.onSurfaceSecondary} />}
+            </Pressable>
+          </View>
+          {!!photo && (
+            <Pressable onPress={() => setPhoto('')} style={styles.removePhotoLink} testID="item-remove-photo">
+              <Text style={styles.removePhotoText}>Remove photo</Text>
+            </Pressable>
+          )}
+          {rtPickerOpen && (
+            <View style={styles.pickerList}>
+              {repairTypes.filter((rt) => rt.active).map((rt) => (
+                <Pressable key={rt.id} onPress={() => pickRepairType(rt)} style={styles.pickerRow} testID={`item-rt-${rt.id}`}>
+                  <Text style={styles.pickerRowName}>{rt.name}</Text>
+                  <Text style={styles.pickerRowMeta}>₹{rt.default_labour.toFixed(0)}</Text>
+                </Pressable>
+              ))}
+              {repairTypes.length === 0 && <Text style={[styles.pickerRowMeta, { padding: spacing.md }]}>No repair types set up yet</Text>}
+            </View>
+          )}
+
+          <Text style={styles.label}>Labour (₹)</Text>
+          <TextInput testID="item-labour" value={labour} onChangeText={(v) => setLabour(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />
+
+          <DateField label="Due Date" value={dueDate} onChange={setDueDate} testID="item-due" />
+          <View style={styles.chipRow}>
+            {[1, 3, 7, 15, 30].map((n) => (
+              <Pressable key={n} onPress={() => setDueDate(addDays(n))} style={styles.dayChip} testID={`due-in-${n}`}>
+                <Text style={styles.dayChipText}>+{n}d</Text>
+              </Pressable>
+            ))}
+          </View>
+
+          <Pressable onPress={() => setNeedsKarigar((v) => !v)} style={styles.checkRow} testID="item-needs-karigar">
+            <View style={[styles.checkbox, needsKarigar && styles.checkboxOn]}>{needsKarigar && <Ionicons name="checkmark" size={13} color={colors.onBrandPrimary} />}</View>
+            <Text style={styles.checkLabel}>Needs to be issued to a karigar</Text>
+          </Pressable>
+
+          <Pressable onPress={submit} disabled={saving} style={[styles.submitBtn, saving && { opacity: 0.6 }]} testID="submit-order-btn">
+            {saving ? <ActivityIndicator color={colors.onBrandPrimary} /> : (
+              <><Ionicons name="print-outline" size={17} color={colors.onBrandPrimary} /><Text style={styles.submitBtnText}>Save & Print</Text></>
+            )}
           </Pressable>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -357,7 +290,7 @@ export default function NewRepairOrderScreen() {
         title="Item Photo"
         highRes
         onClose={() => setCameraOpen(false)}
-        onCapture={async (photo) => { setDraft((d) => ({ ...d, intake_photo: photo })); setCameraOpen(false); }}
+        onCapture={async (p) => { setPhoto(p); setCameraOpen(false); }}
       />
     </SafeAreaView>
   );
@@ -389,25 +322,20 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     borderRadius: radius.pill, borderWidth: 1, borderColor: colors.border, paddingHorizontal: spacing.md, marginBottom: spacing.sm,
   },
   searchInput: { flex: 1, color: colors.onSurface, paddingVertical: 12, fontSize: 14 },
-  resultRow: {
-    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
-    padding: spacing.md, marginBottom: spacing.sm,
-  },
   selectedCard: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surfaceSecondary, borderRadius: radius.md,
     borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.md,
   },
 
   formCard: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.lg, marginBottom: spacing.md },
-  label: { color: colors.onSurfaceSecondary, fontSize: 12, marginBottom: 6, marginTop: spacing.sm },
+  label: { color: colors.onSurfaceSecondary, fontSize: 12, marginBottom: 6, marginTop: spacing.md },
   input: {
-    backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
     color: colors.onSurface, paddingHorizontal: spacing.md, paddingVertical: 12, fontSize: 14,
   },
-  row2: { flexDirection: 'row', gap: spacing.sm },
   picker: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
     paddingHorizontal: spacing.md, paddingVertical: 12,
   },
   pickerValue: { color: colors.onSurface, fontSize: 14, fontWeight: '600' },
@@ -422,35 +350,22 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   checkboxOn: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
   checkLabel: { color: colors.onSurfaceSecondary, fontSize: 13 },
 
-  photoBtn: {
-    flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, paddingVertical: 12, marginTop: 4,
+  photoSmallBtn: {
+    width: 44, height: 44, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, overflow: 'hidden',
   },
-  actionBtnText: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '700' },
-  photoRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: 4 },
-  photoThumb: { width: 52, height: 52, borderRadius: radius.md, backgroundColor: colors.surfaceTertiary },
-  itemThumb: { width: 40, height: 40, borderRadius: radius.md, backgroundColor: colors.surfaceTertiary },
+  photoSmallImg: { width: '100%', height: '100%' },
+  removePhotoLink: { alignSelf: 'flex-end', marginTop: 6 },
+  removePhotoText: { color: colors.onError, fontSize: 11, fontWeight: '700' },
 
-  addItemBtn: {
-    flexDirection: 'row', gap: spacing.sm, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, paddingVertical: 12, marginTop: spacing.md,
-  },
-  addItemBtnText: { color: colors.onSurface, fontWeight: '700', fontSize: 13 },
-
-  itemRow: {
-    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
-    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
-    padding: spacing.md, marginBottom: spacing.sm,
-  },
   cName: { color: colors.onSurface, fontWeight: '700', fontSize: 14 },
   cMeta: { color: colors.onSurfaceTertiary, fontSize: 12, marginTop: 2 },
   smallBtn: { backgroundColor: colors.surfaceTertiary, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, borderColor: colors.border },
   smallBtnText: { color: colors.onSurfaceSecondary, fontSize: 11, fontWeight: '700' },
-  delBtn: {
-    width: 30, height: 30, borderRadius: 15, backgroundColor: colors.error,
-    borderColor: colors.onError, borderWidth: 1, alignItems: 'center', justifyContent: 'center',
-  },
 
-  submitBtn: { backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: 15, alignItems: 'center', marginTop: spacing.xl },
+  submitBtn: {
+    flexDirection: 'row', gap: spacing.sm, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: 15, marginTop: spacing.xl,
+  },
   submitBtnText: { color: colors.onBrandPrimary, fontWeight: '800', fontSize: 15 },
 });

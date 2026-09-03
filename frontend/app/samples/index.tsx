@@ -120,10 +120,9 @@ export default function SamplesScreen() {
           return (
             <Pressable key={s.id} onPress={() => router.push(`/samples/${s.id}` as any)} style={styles.card} testID={`sample-${s.id}`}>
               <View style={styles.cardTop}>
-                <View style={styles.iconBox}><Ionicons name="diamond-outline" size={18} color={colors.brandSecondary} /></View>
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <Text style={styles.cName}>{s.karigar_name}</Text>
-                  <Text style={styles.cMeta} numberOfLines={1}>
+                  <Text style={styles.cMeta} numberOfLines={2}>
                     {s.sample_code}{s.tag_number ? ` · Tag ${s.tag_number}` : ''} · {s.description}
                   </Text>
                   <Text style={styles.cMeta2}>
@@ -192,14 +191,10 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md,
     borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.sm,
   },
-  cardTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  actRow: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 11 },
-  recvBtn: { backgroundColor: colors.brandPrimary, borderRadius: 10, paddingVertical: 9, paddingHorizontal: 16 },
-  recvBtnText: { color: colors.onBrandPrimary, fontSize: 13, fontWeight: '700' },
-  iconBox: {
-    width: 36, height: 36, borderRadius: 18, backgroundColor: colors.brandTertiary,
-    alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.brand,
-  },
+  cardTop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
+  actRow: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 6 },
+  recvBtn: { backgroundColor: colors.brandPrimary, borderRadius: 8, paddingVertical: 6, paddingHorizontal: 12 },
+  recvBtnText: { color: colors.onBrandPrimary, fontSize: 12, fontWeight: '700' },
   cName: { color: colors.onSurface, fontWeight: '700', fontSize: 14 },
   cMeta: { color: colors.onSurfaceTertiary, fontSize: 12, marginTop: 2 },
   cMeta2: { color: colors.mutedText, fontSize: 11, marginTop: 2 },

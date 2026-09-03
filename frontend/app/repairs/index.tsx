@@ -166,7 +166,7 @@ export default function RepairOrdersScreen() {
               <View style={styles.itemTop}>
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <Text style={styles.code}>{i.item_code}</Text>
-                  <Text style={styles.cust} numberOfLines={1}>{i.customer_name} — {i.description}</Text>
+                  <Text style={styles.cust} numberOfLines={2}>{i.customer_name} — {i.description}</Text>
                   <Text style={styles.detail} numberOfLines={2}>{detailParts.join(' · ')}</Text>
                 </View>
                 <View style={[styles.pill, { backgroundColor: toneBg(pill.tone) }]}><Text style={[styles.pillText, { color: toneColor(pill.tone) }]}>{pill.label}</Text></View>
@@ -223,8 +223,8 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   detail: { color: colors.onSurfaceTertiary, fontSize: 11.5, marginTop: 3, lineHeight: 15 },
   pill: { paddingHorizontal: 9, paddingVertical: 4, borderRadius: 8 },
   pillText: { fontSize: 11, fontWeight: '700', letterSpacing: 0.2 },
-  actRow: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 11 },
-  btn: { alignItems: 'center', paddingVertical: 9, paddingHorizontal: 16, borderRadius: 10 },
+  actRow: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 6 },
+  btn: { alignItems: 'center', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 8 },
   btnPri: { backgroundColor: colors.brandPrimary },
-  btnPriText: { color: colors.onBrandPrimary, fontSize: 13, fontWeight: '700' },
+  btnPriText: { color: colors.onBrandPrimary, fontSize: 12, fontWeight: '700' },
 });
