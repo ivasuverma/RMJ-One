@@ -38,6 +38,7 @@ from server import (
     _notify_module,
     _pdf_response,
     send_whatsapp,
+    whatsapp_flow_enabled,
 )
 
 router = APIRouter()
@@ -1027,25 +1028,47 @@ async def bill_item(item_id: str, body: DeliverIn, user=Depends(require_admin_or
     updated = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
     await _sync_cash_ledger_entry(updated, billed_amount, body.payment_mode, user, iso)
     await log_audit(user, 'repair_item.bill', 'repair_item', item_id, item['item_code'], {'billed_amount': billed_amount})
-
-    # Customer-facing "ready for pickup" WhatsApp notice — fired here, not on
-    # the earlier 'ready' transition, because that one just means back from
-    # the karigar and awaiting billing (an internal, staff-facing signal —
-    # see the repair_item_ready _notify_module calls elsewhere in this file).
-    # This is the actual moment the customer has something to come collect.
-    # Fire-and-forget: never let a WhatsApp hiccup slow down or fail billing.
-    order = await db.repair_orders.find_one({'id': item.get('order_id')}, {'_id': 0, 'customer_mobile': 1})
-    if order and order.get('customer_mobile'):
-        store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
-        shop_name = store.get('name') or 'Ram Murti Jewellers'
-        amount_line = f"You have a credit of Rs.{abs(billed_amount):.0f} on this item." if billed_amount < 0 else f"Bill amount: Rs.{billed_amount:.0f}."
-        msg = (
-            f"Hi {item.get('customer_name', '')}, your item {item['item_code']} ({item.get('description', '')}) "
-            f"is ready for pickup at {shop_name}. {amount_line} Thank you!"
-        )
-        asyncio.create_task(send_whatsapp(order['customer_mobile'], msg))
-
+    # WhatsApp notice to the customer is a separate, manual step from here —
+    # POST /repair-items/{item_id}/notify-whatsapp below — not automatic on
+    # billing. Staff explicitly choose when (and whether) to send it.
     return updated
+
+
+async def _repair_ready_whatsapp_text(item: dict) -> str:
+    """Same 'ready for pickup' message regardless of who triggers the send."""
+    store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
+    shop_name = store.get('name') or 'Ram Murti Jewellers'
+    billed_amount = item.get('billed_amount') or 0
+    amount_line = f"You have a credit of Rs.{abs(billed_amount):.0f} on this item." if billed_amount < 0 else f"Bill amount: Rs.{billed_amount:.0f}."
+    return (
+        f"Hi {item.get('customer_name', '')}, your item {item['item_code']} ({item.get('description', '')}) "
+        f"is ready for pickup at {shop_name}. {amount_line} Thank you!"
+    )
+
+
+@router.post('/repair-items/{item_id}/notify-whatsapp')
+async def notify_whatsapp(item_id: str, user=Depends(require_admin_or_module(['repairs']))):
+    """Manually send the 'ready for pickup' WhatsApp notice for a billed tag —
+    staff-triggered from the tag detail screen, with its own confirm step in
+    the UI. Not automatic (see bill_item above): a real, awaited send here
+    (unlike the fire-and-forget notify_user/notify_roles pattern) so the
+    caller gets back whether it actually went out, not just that it was
+    scheduled."""
+    if not await whatsapp_flow_enabled('repair_ready_notice'):
+        raise HTTPException(status_code=400, detail='WhatsApp notices are turned off in Store Settings.')
+    item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
+    if not item: raise HTTPException(status_code=404, detail='Item not found')
+    if item['status'] not in ('pending_delivery', 'delivered'):
+        raise HTTPException(status_code=400, detail='Item must be billed before sending a WhatsApp notice')
+    order = await db.repair_orders.find_one({'id': item.get('order_id')}, {'_id': 0, 'customer_mobile': 1})
+    if not order or not order.get('customer_mobile'):
+        raise HTTPException(status_code=400, detail='No mobile number on file for this order')
+    text = await _repair_ready_whatsapp_text(item)
+    ok = await send_whatsapp(order['customer_mobile'], text)
+    if not ok:
+        raise HTTPException(status_code=502, detail='Could not send — check the WhatsApp service is connected (Store Settings).')
+    await log_audit(user, 'repair_item.notify_whatsapp', 'repair_item', item_id, item['item_code'], {})
+    return {'ok': True}
 
 
 @router.post('/repair-items/{item_id}/close-delivery')

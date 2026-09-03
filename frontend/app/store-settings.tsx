@@ -19,6 +19,8 @@ type Form = {
   printer_ip: string; printer_port: string;
   biometric_webhook_secret: string;
   app_checkin_enabled: boolean;
+  whatsapp_enabled: boolean;
+  whatsapp_repair_ready_notice: boolean;
 };
 
 const EMPTY: Form = {
@@ -28,7 +30,11 @@ const EMPTY: Form = {
   printer_ip: '', printer_port: '9100',
   biometric_webhook_secret: '',
   app_checkin_enabled: true,
+  whatsapp_enabled: true,
+  whatsapp_repair_ready_notice: true,
 };
+
+type WhatsAppStatus = { configured: boolean; connected: boolean; phone: string | null };
 
 export default function StoreSettings() {
   const router = useRouter();
@@ -38,13 +44,18 @@ export default function StoreSettings() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [pickingLoc, setPickingLoc] = useState(false);
+  const [waStatus, setWaStatus] = useState<WhatsAppStatus | null>(null);
 
   useEffect(() => {
     (async () => {
       try {
-        const s = await api.get<any>('/settings/store');
+        const [s, w] = await Promise.all([
+          api.get<any>('/settings/store'),
+          api.get<any>('/settings/whatsapp').catch(() => null),
+        ]);
         if (s?.id) {
-          setForm({
+          setForm((f) => ({
+            ...f,
             name: s.name || '', latitude: String(s.latitude ?? ''), longitude: String(s.longitude ?? ''),
             radius_m: String(s.radius_m ?? 150), work_start: s.work_start || '10:00',
             work_end: s.work_end || '19:30', grace_min: String(s.grace_min ?? 15),
@@ -53,7 +64,15 @@ export default function StoreSettings() {
             printer_ip: s.printer_ip || '', printer_port: String(s.printer_port ?? 9100),
             biometric_webhook_secret: s.biometric_webhook_secret || '',
             app_checkin_enabled: s.app_checkin_enabled !== false,
-          });
+          }));
+        }
+        if (w) {
+          setForm((f) => ({
+            ...f,
+            whatsapp_enabled: w.enabled !== false,
+            whatsapp_repair_ready_notice: w.repair_ready_notice !== false,
+          }));
+          setWaStatus({ configured: !!w.configured, connected: !!w.connected, phone: w.phone || null });
         }
       } finally { setLoading(false); }
     })();
@@ -86,18 +105,24 @@ export default function StoreSettings() {
     submittingRef.current = true;
     setSaving(true);
     try {
-      await api.put('/settings/store', {
-        name: form.name.trim(), latitude: lat, longitude: lng,
-        radius_m: parseInt(form.radius_m || '150', 10),
-        work_start: form.work_start, work_end: form.work_end,
-        grace_min: parseInt(form.grace_min || '15', 10),
-        round_net_salary: form.round_net_salary,
-        unpaid_sunday_after_absent_week: form.unpaid_sunday_after_absent_week,
-        printer_ip: form.printer_ip.trim() || null,
-        printer_port: parseInt(form.printer_port || '9100', 10),
-        biometric_webhook_secret: form.biometric_webhook_secret.trim() || null,
-        app_checkin_enabled: form.app_checkin_enabled,
-      });
+      await Promise.all([
+        api.put('/settings/store', {
+          name: form.name.trim(), latitude: lat, longitude: lng,
+          radius_m: parseInt(form.radius_m || '150', 10),
+          work_start: form.work_start, work_end: form.work_end,
+          grace_min: parseInt(form.grace_min || '15', 10),
+          round_net_salary: form.round_net_salary,
+          unpaid_sunday_after_absent_week: form.unpaid_sunday_after_absent_week,
+          printer_ip: form.printer_ip.trim() || null,
+          printer_port: parseInt(form.printer_port || '9100', 10),
+          biometric_webhook_secret: form.biometric_webhook_secret.trim() || null,
+          app_checkin_enabled: form.app_checkin_enabled,
+        }),
+        api.put('/settings/whatsapp', {
+          enabled: form.whatsapp_enabled,
+          repair_ready_notice: form.whatsapp_repair_ready_notice,
+        }),
+      ]);
       router.back();
     } catch (e: any) {
       notify('Failed', e?.detail || 'Please try again');
@@ -235,6 +260,46 @@ export default function StoreSettings() {
               Optional — if set, only pushes with this key in the webhook URL are accepted. Set it here, then find the full webhook URL to paste into eBioServer under Settings → Biometric Devices.
             </Text>
           </View>
+
+          <SectionTitle text="WhatsApp" />
+          <View style={[styles.infoBox, waStatus?.connected ? styles.infoBoxOk : styles.infoBoxWarn]} testID="ss-whatsapp-status">
+            <Ionicons name={waStatus?.connected ? 'logo-whatsapp' : 'alert-circle-outline'} size={16} color={waStatus?.connected ? colors.onSuccess : colors.onWarning} />
+            <Text style={[styles.infoText, { color: waStatus?.connected ? colors.onSuccess : colors.onWarning }]}>
+              {waStatus === null ? 'Checking connection…'
+                : !waStatus.configured ? 'WhatsApp gateway not configured on the server.'
+                : waStatus.connected ? `Connected — sending as ${waStatus.phone}`
+                : 'Gateway configured but not connected — scan the QR again in the WhatsApp dashboard.'}
+            </Text>
+          </View>
+
+          <Pressable
+            onPress={() => setForm({ ...form, whatsapp_enabled: !form.whatsapp_enabled })}
+            style={styles.toggleRow}
+            testID="ss-whatsapp-enabled-toggle"
+          >
+            <View style={{ flex: 1 }}>
+              <Text style={styles.toggleLabel}>Enable WhatsApp notices</Text>
+              <Text style={styles.toggleSub}>Master switch for every customer-facing WhatsApp message below</Text>
+            </View>
+            <View style={[styles.switch, form.whatsapp_enabled && styles.switchOn]}>
+              <View style={[styles.switchKnob, form.whatsapp_enabled && styles.switchKnobOn]} />
+            </View>
+          </Pressable>
+
+          <Pressable
+            onPress={() => form.whatsapp_enabled && setForm({ ...form, whatsapp_repair_ready_notice: !form.whatsapp_repair_ready_notice })}
+            style={[styles.toggleRow, !form.whatsapp_enabled && { opacity: 0.5 }]}
+            disabled={!form.whatsapp_enabled}
+            testID="ss-whatsapp-repair-ready-toggle"
+          >
+            <View style={{ flex: 1 }}>
+              <Text style={styles.toggleLabel}>Repair ready-for-pickup notice</Text>
+              <Text style={styles.toggleSub}>Lets staff send a "your item is ready" WhatsApp message from a billed tag's detail screen</Text>
+            </View>
+            <View style={[styles.switch, form.whatsapp_enabled && form.whatsapp_repair_ready_notice && styles.switchOn]}>
+              <View style={[styles.switchKnob, form.whatsapp_enabled && form.whatsapp_repair_ready_notice && styles.switchKnobOn]} />
+            </View>
+          </Pressable>
         </ScrollView>
       </KeyboardAvoidingView>
 
@@ -315,6 +380,8 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     flexDirection: 'row', gap: spacing.sm, alignItems: 'center', backgroundColor: colors.surfaceTertiary,
     borderRadius: radius.md, padding: spacing.md, borderWidth: 1, borderColor: colors.border, marginTop: spacing.md,
   },
+  infoBoxOk: { backgroundColor: colors.success, borderColor: colors.success },
+  infoBoxWarn: { backgroundColor: colors.warning, borderColor: colors.warning },
   infoText: { color: colors.onSurfaceTertiary, fontSize: 12, flex: 1 },
   footer: { position: 'absolute', left: 0, right: 0, bottom: 0, padding: spacing.lg, backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.divider },
   saveBtn: { backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: 16, alignItems: 'center' },

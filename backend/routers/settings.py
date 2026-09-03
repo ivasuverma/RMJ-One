@@ -14,6 +14,7 @@ from server import (
     require_module,
     StoreSettingsIn,
     log_audit,
+    get_whatsapp_status,
 )
 
 router = APIRouter()
@@ -60,3 +61,37 @@ async def update_security(body: SecuritySettingsIn, user: dict = Depends(require
     )
     await log_audit(user, 'settings.security.update', 'settings', 'security', str(mins))
     return {'auto_signout_minutes': mins}
+
+
+# ---------------- WhatsApp Settings ----------------
+# Master + per-flow toggles for customer-facing WhatsApp messages sent via
+# the OpenWA gateway (see server.py's send_whatsapp/whatsapp_flow_enabled).
+# Both default True: the feature works out of the box once OpenWA is
+# connected, and staff turn OFF what they don't want. New flows get their
+# own field here as they're added (only 'repair_ready_notice' exists today).
+class WhatsAppSettingsIn(BaseModel):
+    enabled: bool = True
+    repair_ready_notice: bool = True
+
+
+@router.get('/settings/whatsapp')
+async def get_whatsapp_settings(_: dict = Depends(get_current)):
+    doc = await db.settings.find_one({'id': 'whatsapp'}, {'_id': 0}) or {}
+    status = await get_whatsapp_status()
+    return {
+        'enabled': doc.get('enabled', True),
+        'repair_ready_notice': doc.get('repair_ready_notice', True),
+        **status,
+    }
+
+
+@router.put('/settings/whatsapp')
+async def update_whatsapp_settings(body: WhatsAppSettingsIn, user: dict = Depends(require_owner)):
+    payload = body.model_dump()
+    payload['id'] = 'whatsapp'
+    payload['updated_at'] = now_utc().isoformat()
+    await db.settings.update_one({'id': 'whatsapp'}, {'$set': payload}, upsert=True)
+    await log_audit(user, 'settings.whatsapp.update', 'settings', 'whatsapp', '')
+    doc = await db.settings.find_one({'id': 'whatsapp'}, {'_id': 0})
+    status = await get_whatsapp_status()
+    return {**doc, **status}

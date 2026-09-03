@@ -199,6 +199,24 @@ export default function RepairItemDetailScreen() {
     catch (e: any) { notify('Print failed', e?.detail || 'Could not reach the printer. Check Store Settings.'); }
     finally { setThermalPrinting(false); }
   };
+
+  const [sendingWhatsApp, setSendingWhatsApp] = useState(false);
+  const sendWhatsApp = () => {
+    if (!item) return;
+    confirmAction(
+      'Send WhatsApp notice?',
+      `Sends a "ready for pickup" message to ${item.customer_name}'s number on file for this order.`,
+      'Send',
+      async () => {
+        setSendingWhatsApp(true);
+        try {
+          await api.post(`/repair-items/${id}/notify-whatsapp`, {});
+          notify('Sent', `WhatsApp notice sent to ${item.customer_name}.`);
+        } catch (e: any) { notify('Failed', e?.detail || 'Could not send — please try again.'); }
+        finally { setSendingWhatsApp(false); }
+      },
+    );
+  };
   const printCustomerSlipPdf = async () => {
     setPrinting(true);
     try {
@@ -396,7 +414,7 @@ export default function RepairItemDetailScreen() {
                   {printing ? <ActivityIndicator color={colors.onSurfaceSecondary} /> : <><Ionicons name="document-text-outline" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>Bill PDF</Text></>}
                 </Pressable>
               </View>
-              <View style={[styles.actionsRow, { marginBottom: spacing.lg }]}>
+              <View style={[styles.actionsRow, { marginBottom: spacing.sm }]}>
                 <Pressable onPress={() => router.push({ pathname: '/repairs/bill', params: { itemId: id } } as any)} style={[styles.actionBtn, styles.actionBtnPrimary, { flex: 1 }]} testID="close-delivery-btn">
                   <Ionicons name="checkmark-done-outline" size={16} color={colors.onBrandPrimary} /><Text style={styles.actionBtnPrimaryText}>Close Delivery</Text>
                 </Pressable>
@@ -406,10 +424,14 @@ export default function RepairItemDetailScreen() {
                   </Pressable>
                 )}
               </View>
+              <Pressable onPress={sendWhatsApp} disabled={sendingWhatsApp} style={[styles.actionBtn, { marginBottom: spacing.lg }]} testID="send-whatsapp-pending-btn">
+                {sendingWhatsApp ? <ActivityIndicator color={colors.onSurfaceSecondary} /> : <><Ionicons name="logo-whatsapp" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>Send WhatsApp Notice</Text></>}
+              </Pressable>
             </>
           )}
           {item.status === 'delivered' && (
-            <View style={[styles.actionsRow, { marginBottom: spacing.lg }]}>
+            <>
+            <View style={[styles.actionsRow, { marginBottom: spacing.sm }]}>
               <Pressable onPress={() => printThermal('bill')} disabled={thermalPrinting} style={[styles.actionBtn, styles.actionBtnPrimary, { flex: 1 }]} testID="print-bill-btn">
                 {thermalPrinting ? <ActivityIndicator color={colors.onBrandPrimary} /> : <><Ionicons name="print-outline" size={16} color={colors.onBrandPrimary} /><Text style={styles.actionBtnPrimaryText}>Print</Text></>}
               </Pressable>
@@ -422,8 +444,11 @@ export default function RepairItemDetailScreen() {
                 </Pressable>
               )}
             </View>
+            <Pressable onPress={sendWhatsApp} disabled={sendingWhatsApp} style={[styles.actionBtn, { marginBottom: spacing.lg }]} testID="send-whatsapp-btn">
+              {sendingWhatsApp ? <ActivityIndicator color={colors.onSurfaceSecondary} /> : <><Ionicons name="logo-whatsapp" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>Resend WhatsApp Notice</Text></>}
+            </Pressable>
+            </>
           )}
-
           <Text style={styles.section}>Tag History · {history.length}</Text>
           {history.length === 0 ? (
             <View style={styles.empty}><Text style={styles.emptyText}>No karigar transactions yet</Text></View>

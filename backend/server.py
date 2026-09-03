@@ -1764,6 +1764,41 @@ async def send_whatsapp(mobile: str, text: str) -> bool:
         return False
 
 
+async def get_whatsapp_status() -> dict:
+    """Connection status for Store Settings' WhatsApp panel. `configured`
+    means OPENWA_BASE_URL/OPENWA_API_KEY are set at all; `connected` means a
+    session named OPENWA_SESSION_NAME is actually paired and ready right
+    now — the two can differ (gateway configured but phone logged out)."""
+    if not OPENWA_BASE_URL or not OPENWA_API_KEY:
+        return {'configured': False, 'connected': False, 'phone': None}
+    try:
+        async with _httpx.AsyncClient(timeout=10) as client:
+            res = await client.get(
+                f'{OPENWA_BASE_URL}/api/sessions',
+                headers={'Authorization': f'Bearer {OPENWA_API_KEY}'},
+            )
+            res.raise_for_status()
+            for s in res.json():
+                if s.get('name') == OPENWA_SESSION_NAME:
+                    ready = s.get('status') == 'ready'
+                    return {'configured': True, 'connected': ready, 'phone': s.get('phone') if ready else None}
+            return {'configured': True, 'connected': False, 'phone': None}
+    except Exception as e:
+        logger.warning(f'openwa status check failed: {e}')
+        return {'configured': True, 'connected': False, 'phone': None}
+
+
+async def whatsapp_flow_enabled(flow: str) -> bool:
+    """Master + per-flow WhatsApp toggle (Store Settings > WhatsApp — see
+    WhatsAppSettingsIn in routers/settings.py). Both default True: the
+    feature works out of the box once OpenWA itself is connected, and staff
+    turn OFF specific flows rather than opt in to each one."""
+    doc = await db.settings.find_one({'id': 'whatsapp'}, {'_id': 0}) or {}
+    if not doc.get('enabled', True):
+        return False
+    return bool(doc.get(flow, True))
+
+
 # ---------------- Notification Settings (per-module on/off + recipients) ----------------
 # Lets an owner turn off the admin-facing "broadcast" notifications a given
 # business module fires (e.g. "someone checked in", "a repair was created"),
