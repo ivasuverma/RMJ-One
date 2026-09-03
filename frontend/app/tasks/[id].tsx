@@ -11,6 +11,8 @@ import { useAuth } from '@/src/auth/AuthContext';
 import { confirmAction } from '@/src/utils/confirm';
 import { todayIST } from '@/src/utils/datetime';
 import { DateField } from '@/src/components/DateField';
+import { StarPicker } from '@/src/components/StarPicker';
+import { RecordPhotos } from '@/src/components/RecordPhotos';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
@@ -20,6 +22,7 @@ type Task = {
   assigned_by: string; priority: 'low' | 'normal' | 'urgent'; due_date: string | null; due_time: string | null;
   status: 'open' | 'done'; comments: Comment[]; recurring_template_id: string | null;
   points?: number; points_awarded?: number | null; repeat_reminder?: boolean;
+  max_reminders?: number | null; reminder_interval?: 'hourly' | 'daily';
 };
 type Emp = { id: string; name: string; employee_code: string };
 
@@ -45,8 +48,10 @@ export default function TaskDetailScreen() {
   const [ePriority, setEPriority] = useState<Task['priority']>('normal');
   const [eDue, setEDue] = useState('');
   const [eDueTime, setEDueTime] = useState('');
-  const [ePoints, setEPoints] = useState('');
+  const [ePoints, setEPoints] = useState(0);
   const [eRepeatReminder, setERepeatReminder] = useState(false);
+  const [eMaxReminders, setEMaxReminders] = useState('');
+  const [eReminderInterval, setEReminderInterval] = useState<'hourly' | 'daily'>('hourly');
   const [reassignOpen, setReassignOpen] = useState(false);
   const [employees, setEmployees] = useState<Emp[]>([]);
 
@@ -57,7 +62,8 @@ export default function TaskDetailScreen() {
       const t = await api.get<Task>(`/tasks/${id}`);
       setTask(t);
       setETitle(t.title); setEDesc(t.description || ''); setEPriority(t.priority); setEDue(t.due_date || '');
-      setEDueTime(t.due_time || ''); setEPoints(t.points ? String(t.points) : ''); setERepeatReminder(!!t.repeat_reminder);
+      setEDueTime(t.due_time || ''); setEPoints(t.points || 0); setERepeatReminder(!!t.repeat_reminder);
+      setEMaxReminders(t.max_reminders ? String(t.max_reminders) : ''); setEReminderInterval(t.reminder_interval || 'hourly');
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Could not load this task'); router.back(); }
     finally { setLoading(false); }
   }, [id, router]);
@@ -91,8 +97,10 @@ export default function TaskDetailScreen() {
     try {
       await api.put(`/tasks/${id}`, {
         title: eTitle.trim(), description: eDesc, priority: ePriority, due_date: eDue || null,
-        due_time: eDue ? (eDueTime || null) : null, points: parseInt(ePoints, 10) || 0,
+        due_time: eDue ? (eDueTime || null) : null, points: ePoints,
         repeat_reminder: eRepeatReminder,
+        max_reminders: eRepeatReminder && eMaxReminders ? (parseInt(eMaxReminders, 10) || null) : null,
+        reminder_interval: eReminderInterval,
       });
       setEditing(false);
       await load();
@@ -184,18 +192,35 @@ export default function TaskDetailScreen() {
                 )}
               </View>
 
-              <Text style={styles.label}>Points (optional)</Text>
-              <TextInput testID="edit-points" value={ePoints} onChangeText={(v) => setEPoints(v.replace(/[^0-9]/g, ''))} keyboardType="number-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />
+              <Text style={styles.label}>Stars (optional)</Text>
+              <StarPicker value={ePoints} onChange={setEPoints} testID="edit-stars" />
 
               <Pressable onPress={() => setERepeatReminder((v) => !v)} style={styles.toggleRow} testID="edit-repeat-reminder-toggle">
                 <View style={{ flex: 1 }}>
                   <Text style={styles.toggleLabel}>Repeat reminder until done</Text>
-                  <Text style={styles.toggleSub}>Nudges the employee every few hours until marked done</Text>
+                  <Text style={styles.toggleSub}>Nudges the employee until marked done</Text>
                 </View>
                 <View style={[styles.switch, eRepeatReminder && styles.switchOn]}>
                   <View style={[styles.switchKnob, eRepeatReminder && styles.switchKnobOn]} />
                 </View>
               </Pressable>
+              {eRepeatReminder && (
+                <>
+                  <Text style={styles.label}>Remind</Text>
+                  <View style={styles.chipRow}>
+                    {(['hourly', 'daily'] as const).map((iv) => (
+                      <Pressable key={iv} onPress={() => setEReminderInterval(iv)} style={[styles.chip, eReminderInterval === iv && styles.chipActive]} testID={`edit-reminder-interval-${iv}`}>
+                        <Text style={[styles.chipText, eReminderInterval === iv && styles.chipTextActive]}>{iv === 'hourly' ? 'Hourly' : 'Daily'}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                  <Text style={styles.label}>Max reminders (optional)</Text>
+                  <TextInput
+                    testID="edit-max-reminders" value={eMaxReminders} onChangeText={(v) => setEMaxReminders(v.replace(/[^0-9]/g, ''))}
+                    keyboardType="number-pad" placeholder="Unlimited — reminds until done" placeholderTextColor={colors.mutedText} style={styles.input}
+                  />
+                </>
+              )}
 
               <View style={styles.editActions}>
                 <Pressable onPress={() => { setEditing(false); load(); }} style={styles.cancelBtn} testID="edit-cancel"><Text style={styles.cancelBtnText}>Cancel</Text></Pressable>
@@ -241,6 +266,8 @@ export default function TaskDetailScreen() {
                   ))}
                 </View>
               )}
+
+              <RecordPhotos refType="task" refId={task.id} label="Photos" />
 
               <View style={styles.actionsRow}>
                 {canMarkDone && (

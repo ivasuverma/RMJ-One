@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert,
   Platform, KeyboardAvoidingView,
@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
 import { DateField } from '@/src/components/DateField';
+import { StarPicker } from '@/src/components/StarPicker';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
@@ -65,16 +66,19 @@ function occurrenceCountByDate(startDate: string, freq: Freq, endDate: string): 
 }
 
 // Single "New Task" screen for both a one-off task and a recurring one — the
-// "Repeat Task" toggle is what used to be a whole separate screen
-// (tasks/recurring.tsx's inline form). Off: posts to /tasks like always. On:
-// the due date becomes the recurrence's start date, and the extra
-// frequency/end-condition fields below appear, then it posts to
-// /tasks/templates instead. Styled after a schedule-transfer pattern (Date
-// card, a repeat toggle, a frequency dropdown, and a "No. of repetitions" vs
-// "End date" choice) since it maps cleanly onto the same idea.
+// "Repeat Task" toggle used to be a whole separate screen (tasks/recurring.tsx),
+// now folded in here since recurring templates are just tasks that repeat.
+// Off: posts to /tasks like always. On: the due date becomes the recurrence's
+// start date, and the extra frequency/end-condition fields below appear, then
+// it posts to /tasks/templates instead (or PUTs one, when `templateId` is in
+// the route — see the Recurring tab on tasks/index.tsx, which also handles
+// pause/resume/delete). Styled after a schedule-transfer pattern (Date card,
+// a repeat toggle, a frequency dropdown, and a "No. of repetitions" vs "End
+// date" choice) since it maps cleanly onto the same idea.
 export default function NewTaskScreen() {
   const router = useRouter();
-  const { repeat: repeatParam } = useLocalSearchParams<{ repeat?: string }>();
+  const { repeat: repeatParam, templateId } = useLocalSearchParams<{ repeat?: string; templateId?: string }>();
+  const editingTemplate = !!templateId;
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
@@ -84,7 +88,7 @@ export default function NewTaskScreen() {
   const [priority, setPriority] = useState<Priority>('normal');
   const [dueDate, setDueDate] = useState('');
   const [dueTime, setDueTime] = useState('');
-  const [points, setPoints] = useState('');
+  const [points, setPoints] = useState(0);
   const [repeatReminder, setRepeatReminder] = useState(false);
   const [maxReminders, setMaxReminders] = useState('');
   const [reminderInterval, setReminderInterval] = useState<'hourly' | 'daily'>('hourly');
@@ -93,18 +97,40 @@ export default function NewTaskScreen() {
   const [saving, setSaving] = useState(false);
   const submittingRef = useRef(false);
 
-  const [repeat, setRepeat] = useState(repeatParam === '1');
+  const [repeat, setRepeat] = useState(repeatParam === '1' || editingTemplate);
   const [freq, setFreq] = useState<Freq>('daily');
   const [freqPickerOpen, setFreqPickerOpen] = useState(false);
   const [intervalHours, setIntervalHours] = useState('2');
   const [endCondition, setEndCondition] = useState<EndCondition>('repetitions');
   const [maxRepetitions, setMaxRepetitions] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [loadingTemplate, setLoadingTemplate] = useState(editingTemplate);
+  const [templateActive, setTemplateActive] = useState(true);
 
   const load = useCallback(async () => {
     try { setEmployees(await api.get<Emp[]>('/employees?status=active')); } catch { /* ignore */ }
   }, []);
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  useEffect(() => {
+    if (!templateId) return;
+    (async () => {
+      try {
+        const t = await api.get<any>(`/tasks/templates/${templateId}`);
+        setTitle(t.title); setDescription(t.description || ''); setPriority(t.priority || 'normal');
+        setAssignedTo({ id: t.assigned_to, name: t.assigned_to_name, employee_code: '' });
+        setDueDate(t.start_date || ''); setDueTime(t.due_time || '');
+        setFreq(t.freq || 'daily'); setIntervalHours(String(t.interval_hours || 2));
+        setPoints(t.points || 0); setRepeatReminder(!!t.repeat_reminder);
+        setMaxReminders(t.max_reminders ? String(t.max_reminders) : ''); setReminderInterval(t.reminder_interval || 'hourly');
+        if (t.max_repetitions) { setEndCondition('repetitions'); setMaxRepetitions(String(t.max_repetitions)); }
+        else if (t.end_date) { setEndCondition('end_date'); setEndDate(t.end_date); }
+        setTemplateActive(t.active !== false);
+      } catch (e: any) { Alert.alert('Failed', e?.detail || 'Could not load this recurring task'); router.back(); }
+      finally { setLoadingTemplate(false); }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [templateId]);
 
   // Auto-calculated preview of whichever end-condition value the owner
   // DIDN'T pick — the server derives the real schedule independently from
@@ -134,19 +160,21 @@ export default function NewTaskScreen() {
       submittingRef.current = true;
       setSaving(true);
       try {
-        await api.post('/tasks/templates', {
+        const body = {
           title: title.trim(), description, assigned_to: assignedTo.id, priority, freq,
           start_date: dueDate,
           interval_hours: freq === 'hourly' ? interval : 1,
           due_time: dueTime || null,
-          points: parseInt(points, 10) || 0,
+          points,
           repeat_reminder: repeatReminder,
           max_reminders: repeatReminder && maxReminders ? (parseInt(maxReminders, 10) || null) : null,
           reminder_interval: reminderInterval,
           max_repetitions: endCondition === 'repetitions' ? repetitions : null,
           end_date: endCondition === 'end_date' ? endDate : null,
-          active: true,
-        });
+          active: editingTemplate ? templateActive : true,
+        };
+        if (editingTemplate) await api.put(`/tasks/templates/${templateId}`, body);
+        else await api.post('/tasks/templates', body);
         router.back();
       } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
       finally { setSaving(false); submittingRef.current = false; }
@@ -159,7 +187,7 @@ export default function NewTaskScreen() {
       await api.post('/tasks', {
         title: title.trim(), description, assigned_to: assignedTo.id, priority, due_date: dueDate || null,
         due_time: dueDate ? (dueTime || null) : null,
-        points: parseInt(points, 10) || 0,
+        points,
         repeat_reminder: repeatReminder,
         max_reminders: repeatReminder && maxReminders ? (parseInt(maxReminders, 10) || null) : null,
         reminder_interval: reminderInterval,
@@ -175,10 +203,13 @@ export default function NewTaskScreen() {
         <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
-        <Text style={styles.title}>{repeat ? 'New Recurring Task' : 'Assign Task'}</Text>
+        <Text style={styles.title}>{editingTemplate ? 'Edit Recurring Task' : repeat ? 'New Recurring Task' : 'Assign Task'}</Text>
         <View style={{ width: 40 }} />
       </View>
 
+      {loadingTemplate ? (
+        <View style={styles.loader}><ActivityIndicator color={colors.brandPrimary} /></View>
+      ) : (
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 120 }} keyboardShouldPersistTaps="handled">
           <Text style={styles.label}>Assign to</Text>
@@ -230,15 +261,17 @@ export default function NewTaskScreen() {
               </>
             )}
 
-            <Pressable onPress={() => setRepeat((v) => !v)} style={styles.toggleRow} testID="task-repeat-toggle">
-              <View style={{ flex: 1 }}>
-                <Text style={styles.toggleLabel}>Repeat Task</Text>
-                <Text style={styles.toggleSub}>Spawns a fresh copy of this task automatically, on a schedule</Text>
-              </View>
-              <View style={[styles.switch, repeat && styles.switchOn]}>
-                <View style={[styles.switchKnob, repeat && styles.switchKnobOn]} />
-              </View>
-            </Pressable>
+            {!editingTemplate && (
+              <Pressable onPress={() => setRepeat((v) => !v)} style={styles.toggleRow} testID="task-repeat-toggle">
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.toggleLabel}>Repeat Task</Text>
+                  <Text style={styles.toggleSub}>Spawns a fresh copy of this task automatically, on a schedule</Text>
+                </View>
+                <View style={[styles.switch, repeat && styles.switchOn]}>
+                  <View style={[styles.switchKnob, repeat && styles.switchKnobOn]} />
+                </View>
+              </Pressable>
+            )}
 
             {repeat && (
               <>
@@ -304,14 +337,11 @@ export default function NewTaskScreen() {
             )}
           </View>
 
-          <Text style={styles.label}>Points (optional)</Text>
-          <TextInput
-            testID="task-points" value={points} onChangeText={(v) => setPoints(v.replace(/[^0-9]/g, ''))}
-            keyboardType="number-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input}
-          />
+          <Text style={styles.label}>Stars (optional)</Text>
+          <StarPicker value={points} onChange={setPoints} testID="task-stars" />
           <View style={styles.hintRow}>
             <Ionicons name="star" size={12} color={colors.onWarning} />
-            <Text style={styles.hintText}>Awarded to the employee only if {repeat ? 'each occurrence is' : 'this task is'} completed by its due date/time. Leave 0 for routine tasks with no scoring.</Text>
+            <Text style={styles.hintText}>Awarded to the employee only if {repeat ? 'each occurrence is' : 'this task is'} completed by its due date/time. Pick None for routine tasks with no scoring.</Text>
           </View>
 
           <Pressable onPress={() => setRepeatReminder((v) => !v)} style={styles.toggleRow} testID="task-repeat-reminder-toggle">
@@ -342,18 +372,22 @@ export default function NewTaskScreen() {
           )}
         </ScrollView>
       </KeyboardAvoidingView>
+      )}
 
-      <View style={styles.footer}>
-        <Pressable style={[styles.submit, saving && { opacity: 0.6 }]} disabled={saving} onPress={submit} testID="task-save-btn">
-          {saving ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.submitText}>{repeat ? 'Create Recurring Task' : 'Assign Task'}</Text>}
-        </Pressable>
-      </View>
+      {!loadingTemplate && (
+        <View style={styles.footer}>
+          <Pressable style={[styles.submit, saving && { opacity: 0.6 }]} disabled={saving} onPress={submit} testID="task-save-btn">
+            {saving ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.submitText}>{editingTemplate ? 'Save' : repeat ? 'Create Recurring Task' : 'Assign Task'}</Text>}
+          </Pressable>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
 
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
+  loader: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   header: {
     flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md, gap: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.divider,

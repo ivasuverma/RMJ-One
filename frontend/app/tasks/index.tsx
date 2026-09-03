@@ -1,9 +1,10 @@
 import { useCallback, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, RefreshControl, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
+import { confirmAction } from '@/src/utils/confirm';
 import { todayIST } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
@@ -15,33 +16,84 @@ type Task = {
   points?: number; points_awarded?: number | null; repeat_reminder?: boolean;
 };
 
-type Filter = 'open' | 'done' | 'all';
+type TplFreq = 'hourly' | 'daily' | 'weekly' | 'monthly' | 'yearly';
+type Template = {
+  id: string; title: string; assigned_to_name: string; priority: Task['priority'];
+  freq: TplFreq; interval_hours: number | null; active: boolean;
+  points: number; max_repetitions: number | null; end_date: string | null; generated_count: number;
+};
 
+type Filter = 'open' | 'done' | 'all' | 'recurring';
+
+const FREQ_LABEL: Record<TplFreq, string> = { hourly: 'hrs', daily: 'day', weekly: 'week', monthly: 'month', yearly: 'year' };
+
+function repeatsLabel(t: Template) {
+  if (t.freq === 'hourly') return `Every ${t.interval_hours || 1}h`;
+  return `Every ${FREQ_LABEL[t.freq]}`;
+}
+
+function endsLabel(t: Template) {
+  if (t.max_repetitions) return `${t.generated_count}/${t.max_repetitions} runs`;
+  if (t.end_date) return `until ${t.end_date}`;
+  return 'no end';
+}
+
+// Recurring templates are managed right here (Recurring tab) instead of on
+// their own screen — same list, same "+" button (with repeat pre-toggled),
+// so there's one Tasks screen instead of two navigation destinations.
 export default function TasksListScreen() {
   const router = useRouter();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [filter, setFilter] = useState<Filter>('open');
 
   const load = useCallback(async () => {
-    try { setError(''); setTasks(await api.get<Task[]>('/tasks')); }
-    catch (e: any) { setTasks([]); setError(e?.detail || 'Failed to load tasks'); }
+    try {
+      setError('');
+      const [t, tpl] = await Promise.all([
+        api.get<Task[]>('/tasks'),
+        api.get<Template[]>('/tasks/templates').catch(() => []),
+      ]);
+      setTasks(t); setTemplates(tpl);
+    } catch (e: any) { setTasks([]); setError(e?.detail || 'Failed to load tasks'); }
     finally { setLoading(false); setRefreshing(false); }
   }, []);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
+  // Pause/Resume re-sends the template's full current body (fetched fresh,
+  // not the trimmed list-row shape) with just `active` flipped — a partial
+  // payload here would silently reset whatever fields this list doesn't
+  // carry (see the toggle-active bug fixed for the old recurring.tsx page).
+  const toggleTemplateActive = async (tpl: Template) => {
+    try {
+      const full = await api.get<any>(`/tasks/templates/${tpl.id}`);
+      await api.put(`/tasks/templates/${tpl.id}`, { ...full, active: !tpl.active });
+      await load();
+    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
+  };
+
+  const removeTemplate = (tpl: Template) => {
+    confirmAction('Delete recurring task', `Stop repeating "${tpl.title}"? Past instances already created stay as-is.`, 'Delete', async () => {
+      try { await api.del(`/tasks/templates/${tpl.id}`); await load(); }
+      catch (e: any) { Alert.alert('Failed', e?.detail || 'Could not delete this template.'); }
+    });
+  };
+
   const today = todayIST();
   const filtered = tasks
-    .filter((t) => filter === 'all' || t.status === filter)
+    .filter((t) => filter === 'open' ? t.status === 'open' : filter === 'done' ? t.status === 'done' : filter === 'all')
     .sort((a, b) => (a.due_date || '9999').localeCompare(b.due_date || '9999'));
 
   const openCount = tasks.filter((t) => t.status === 'open').length;
   const overdueCount = tasks.filter((t) => t.status === 'open' && t.due_date && t.due_date < today).length;
+
+  const addRoute = filter === 'recurring' ? '/tasks/new?repeat=1' : '/tasks/new';
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="tasks-list-screen">
@@ -50,10 +102,7 @@ export default function TasksListScreen() {
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
         <Text style={styles.title}>Tasks</Text>
-        <Pressable onPress={() => router.push('/tasks/recurring' as any)} style={styles.iconBtn} testID="recurring-btn" hitSlop={12}>
-          <Ionicons name="repeat-outline" size={20} color={colors.onSurface} />
-        </Pressable>
-        <Pressable onPress={() => router.push('/tasks/new' as any)} style={[styles.iconBtn, styles.addBtn]} testID="new-task-btn" hitSlop={12}>
+        <Pressable onPress={() => router.push(addRoute as any)} style={[styles.iconBtn, styles.addBtn]} testID="new-task-btn" hitSlop={12}>
           <Ionicons name="add" size={22} color={colors.onBrandPrimary} />
         </Pressable>
       </View>
@@ -64,7 +113,7 @@ export default function TasksListScreen() {
       </View>
 
       <View style={styles.segRow}>
-        {(['open', 'done', 'all'] as Filter[]).map((f) => (
+        {(['open', 'done', 'all', 'recurring'] as Filter[]).map((f) => (
           <Pressable key={f} testID={`filter-${f}`} onPress={() => setFilter(f)} style={[styles.segBtn, filter === f && styles.segBtnActive]}>
             <Text style={[styles.segText, filter === f && styles.segTextActive]}>{f.toUpperCase()}</Text>
           </Pressable>
@@ -80,7 +129,28 @@ export default function TasksListScreen() {
           contentContainerStyle={{ padding: spacing.lg, paddingBottom: 60 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}
         >
-          {filtered.length === 0 ? (
+          {filter === 'recurring' ? (
+            templates.length === 0 ? (
+              <View style={styles.empty}><Ionicons name="repeat-outline" size={36} color={colors.mutedText} /><Text style={styles.emptyText}>No recurring tasks yet</Text></View>
+            ) : templates.map((t) => (
+              <View key={t.id} style={[styles.card, !t.active && { opacity: 0.55 }]} testID={`template-${t.id}`}>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={styles.cardTitle} numberOfLines={1}>{t.title}</Text>
+                  <Text style={styles.cardMeta}>{t.assigned_to_name} · {repeatsLabel(t)} · {t.priority}</Text>
+                  <Text style={styles.cardMeta}>{endsLabel(t)}{!!t.points && ` · ${t.points}★ on time`}</Text>
+                </View>
+                <Pressable onPress={() => router.push(`/tasks/new?templateId=${t.id}` as any)} style={styles.smallBtn} testID={`edit-template-${t.id}`}>
+                  <Ionicons name="create-outline" size={14} color={colors.onSurfaceSecondary} />
+                </Pressable>
+                <Pressable onPress={() => toggleTemplateActive(t)} style={styles.smallBtn} testID={`toggle-${t.id}`}>
+                  <Text style={styles.smallBtnText}>{t.active ? 'Pause' : 'Resume'}</Text>
+                </Pressable>
+                <Pressable onPress={() => removeTemplate(t)} style={styles.deleteBtn} testID={`delete-template-${t.id}`}>
+                  <Ionicons name="trash-outline" size={16} color={colors.onError} />
+                </Pressable>
+              </View>
+            ))
+          ) : filtered.length === 0 ? (
             <View style={styles.empty}><Ionicons name="checkbox-outline" size={36} color={colors.mutedText} /><Text style={styles.emptyText}>No {filter === 'all' ? '' : filter} tasks</Text></View>
           ) : filtered.map((t) => {
             const overdue = t.status === 'open' && !!t.due_date && t.due_date < today;
@@ -160,4 +230,8 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 3,
   },
   pointsText: { color: colors.onWarning, fontSize: 11, fontWeight: '700' },
+
+  smallBtn: { backgroundColor: colors.surfaceTertiary, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, borderColor: colors.border },
+  smallBtnText: { color: colors.onSurfaceSecondary, fontSize: 11, fontWeight: '700' },
+  deleteBtn: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.error, borderWidth: 1, borderColor: colors.onError },
 });

@@ -100,6 +100,14 @@ async def list_task_templates(_: dict = Depends(require_admin), _mod=Depends(req
     return await db.task_templates.find({}, {'_id': 0}).sort('created_at', -1).to_list(500)
 
 
+@router.get('/tasks/templates/{template_id}')
+async def get_task_template(template_id: str, _: dict = Depends(require_admin), _mod=Depends(require_module('tasks'))):
+    t = await db.task_templates.find_one({'id': template_id}, {'_id': 0})
+    if not t:
+        raise HTTPException(status_code=404, detail='Template not found')
+    return t
+
+
 @router.get('/tasks/{task_id}')
 async def get_task(task_id: str, user=Depends(get_current)):
     t = await db.tasks.find_one({'id': task_id}, {'_id': 0})
