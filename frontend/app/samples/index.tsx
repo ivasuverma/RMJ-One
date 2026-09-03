@@ -15,6 +15,7 @@ type Sample = {
   due_date: string | null; issue_type?: string;
   issued_at: string; received_at: string | null; issued_by?: string;
 };
+type Pipe = { with_karigar: number; overdue: number; received_today: number };
 
 const STATUS_TABS: { key: string; label: string }[] = [
   { key: 'with_karigar', label: 'With Karigar' },
@@ -24,6 +25,16 @@ const STATUS_TABS: { key: string; label: string }[] = [
 ];
 const STATUS_TAB_KEYS = new Set(STATUS_TABS.map((t) => t.key));
 
+type StageTone = 'info' | 'bad' | 'good';
+// Same pipeline treatment as Repairs — a tappable stage bar instead of plain
+// chips, backed by the same /samples/dashboard counts already used
+// elsewhere (Work row, Home needs-attention).
+const STAGES: { key: string; label: string; tone: StageTone; countKey: keyof Pipe }[] = [
+  { key: 'with_karigar', label: 'Issued', tone: 'info', countKey: 'with_karigar' },
+  { key: 'overdue', label: 'Overdue', tone: 'bad', countKey: 'overdue' },
+  { key: 'received', label: 'Received\ntoday', tone: 'good', countKey: 'received_today' },
+];
+
 export default function SamplesScreen() {
   const router = useRouter();
   const { status: routeStatus } = useLocalSearchParams<{ status?: string }>();
@@ -31,6 +42,7 @@ export default function SamplesScreen() {
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const [samples, setSamples] = useState<Sample[]>([]);
+  const [pipe, setPipe] = useState<Pipe | null>(null);
   const initialStatus = routeStatus && STATUS_TAB_KEYS.has(routeStatus) ? routeStatus : 'with_karigar';
   const [statusTab, setStatusTab] = useState(initialStatus);
   const [query, setQuery] = useState('');
@@ -38,6 +50,7 @@ export default function SamplesScreen() {
 
   const load = useCallback(async () => {
     try {
+      api.get<Pipe>('/samples/dashboard').then(setPipe).catch(() => {});
       const params = new URLSearchParams();
       if (statusTab !== 'all') params.set('status', statusTab);
       if (query.trim()) params.set('q', query.trim());
@@ -46,6 +59,8 @@ export default function SamplesScreen() {
     finally { setRefreshing(false); }
   }, [statusTab, query]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  const toneColor = (t: StageTone) => (t === 'info' ? colors.onInfo : t === 'good' ? colors.onSuccess : colors.onError);
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="samples-screen">
@@ -67,18 +82,34 @@ export default function SamplesScreen() {
         contentContainerStyle={{ padding: spacing.lg }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}
       >
-        <View style={styles.tabRow}>
-          {STATUS_TABS.map((t) => (
-            <Pressable key={t.key} onPress={() => setStatusTab(t.key)} style={[styles.tab, statusTab === t.key && styles.tabActive]} testID={`sample-tab-${t.key}`}>
-              <Text style={[styles.tabText, statusTab === t.key && styles.tabTextActive]}>{t.label}</Text>
+        <View style={styles.pipe}>
+          <View style={styles.pipeHeadRow}>
+            <Text style={styles.pipeHead}>Pipeline</Text>
+            <Pressable onPress={() => setStatusTab('all')} testID="sample-tab-all" hitSlop={8}>
+              <Text style={[styles.pipeAllLink, statusTab === 'all' && styles.pipeAllLinkActive]}>All</Text>
             </Pressable>
-          ))}
+          </View>
+          <View style={styles.stages}>
+            {STAGES.map((s) => {
+              const active = statusTab === s.key;
+              const count = pipe ? (pipe[s.countKey] as number) : 0;
+              return (
+                <Pressable key={s.key} style={styles.stage} onPress={() => setStatusTab(s.key)} testID={`stage-${s.key}`}>
+                  <View style={styles.stageBar}>
+                    <View style={{ height: '100%', borderRadius: 3, backgroundColor: toneColor(s.tone), width: active ? '100%' : count > 0 ? '55%' : '18%', opacity: active ? 1 : 0.65 }} />
+                  </View>
+                  <Text style={[styles.stageNum, active && { color: toneColor(s.tone) }]}>{count}</Text>
+                  <Text style={styles.stageLbl}>{s.label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
         </View>
 
         <TextInput
           testID="samples-search" value={query} onChangeText={setQuery}
           placeholder="Search by tag, description, or karigar" placeholderTextColor={colors.mutedText}
-          style={[styles.input, { marginBottom: spacing.md }]}
+          style={[styles.input, { marginTop: spacing.lg, marginBottom: spacing.md }]}
         />
 
         {samples.length === 0 ? (
@@ -132,11 +163,19 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     borderColor: colors.border, color: colors.onSurface, paddingHorizontal: spacing.md, paddingVertical: 12, fontSize: 14,
   },
 
-  tabRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md },
-  tab: { flex: 1, alignItems: 'center', paddingVertical: 9, borderRadius: radius.md, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border },
-  tabActive: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
-  tabText: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '700' },
-  tabTextActive: { color: colors.onBrandPrimary },
+  pipe: {
+    backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border,
+    padding: spacing.md,
+  },
+  pipeHeadRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 13 },
+  pipeHead: { color: colors.mutedText, fontSize: 13, fontWeight: '600' },
+  pipeAllLink: { color: colors.mutedText, fontSize: 12, fontWeight: '700' },
+  pipeAllLinkActive: { color: colors.brandSecondary },
+  stages: { flexDirection: 'row', gap: 7 },
+  stage: { flex: 1, alignItems: 'center' },
+  stageBar: { height: 5, borderRadius: 3, backgroundColor: colors.surfaceTertiary, alignSelf: 'stretch', overflow: 'hidden', marginBottom: 9 },
+  stageNum: { color: colors.onSurface, fontSize: 19, fontWeight: '700', letterSpacing: -0.4 },
+  stageLbl: { color: colors.mutedText, fontSize: 10.5, textAlign: 'center', marginTop: 2, lineHeight: 13 },
 
   empty: { alignItems: 'center', paddingVertical: 40, gap: spacing.sm },
   emptyText: { color: colors.onSurfaceTertiary },
