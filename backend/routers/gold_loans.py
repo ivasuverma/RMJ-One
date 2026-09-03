@@ -373,6 +373,26 @@ async def gold_loan_voucher_print(loan_id: str, user=Depends(require_staff_or_mo
 
 
 # ---------------- Monthly interest auto-post ----------------
+def _principal_balance_for_period(loan: dict, principal_txns: list, period_start: date, period_end: date) -> float:
+    """Principal balance to charge THIS period's interest on — the shop's
+    own day-15 cutoff convention: a principal repayment made by the 15th of
+    the calendar month it falls in reduces the balance for the period it
+    lands in; made on or after the 15th, that period still bills interest
+    on the pre-payment balance in full, and the lower balance only takes
+    effect starting the following period. (Day 15 itself counts as "on/after
+    15" — not reduced.) This only controls the timing of one period's
+    interest charge; the loan's overall principal_balance (see
+    _compute_loan_state, used for display and for "how much is owed now")
+    already reflects every repayment immediately regardless of date."""
+    balance = loan['principal']
+    for d, amt in principal_txns:
+        if d < period_start:
+            balance -= amt
+        elif period_start <= d < period_end and d.day < 15:
+            balance -= amt
+    return round(max(balance, 0), 2)
+
+
 async def _backfill_loan_interest(loan: dict) -> None:
     """Walks every calendar month from the one after the loan's start date up
     through the current month, on the day-of-month matching the loan's own
@@ -383,9 +403,9 @@ async def _backfill_loan_interest(loan: dict) -> None:
 
     Walking the whole span (not just "is today the due day") means a period
     is never permanently skipped just because this didn't happen to run on
-    its exact due date. Interest is computed on the CURRENT outstanding
-    principal, not the original amount, so a partial principal repayment
-    correctly lowers the next unposted month's charge.
+    its exact due date. Each period's interest is computed against that
+    period's own principal balance under the day-15 cutoff rule (see
+    _principal_balance_for_period) rather than always using today's balance.
 
     Called from three places: the 15-minute reminder loop (check_interest_due,
     below) for the steady-state case, and synchronously from create/get/pay
@@ -402,7 +422,18 @@ async def _backfill_loan_interest(loan: dict) -> None:
     if today <= anchor:
         return  # interest starts accruing a month after disbursement, not on day one
 
+    raw_principal_txns = await db.gold_loan_transactions.find(
+        {'loan_id': loan['id'], 'type': 'payment_principal'}, {'_id': 0},
+    ).to_list(5000)
+    principal_txns = []
+    for t in raw_principal_txns:
+        try:
+            principal_txns.append((date.fromisoformat(t['date']), t['amount']))
+        except (ValueError, KeyError):
+            continue
+
     y, m = anchor.year, anchor.month
+    period_start = anchor
     while True:
         m += 1
         if m > 12:
@@ -415,15 +446,17 @@ async def _backfill_loan_interest(loan: dict) -> None:
 
         period = due_date.strftime('%Y-%m')
         gen_key = {'loan_id': loan['id'], 'period': period}
+        current_period_start = period_start
+        period_start = due_date  # advance the window for the next period regardless of what happens below
         if await db.gold_loan_interest_generations.find_one(gen_key, {'_id': 0}) is not None:
             continue  # already posted for this period
         await db.gold_loan_interest_generations.update_one(
             gen_key, {'$set': {**gen_key, 'created_at': now_utc().isoformat()}}, upsert=True,
         )
-        bal = await _loan_balances(loan)
-        if bal['principal_balance'] <= 0:
-            continue  # fully repaid but not yet formally closed — nothing left to charge interest on
-        amount = round(bal['principal_balance'] * (loan['interest_rate_percent'] / 100), 2)
+        principal_balance = _principal_balance_for_period(loan, principal_txns, current_period_start, due_date)
+        if principal_balance <= 0:
+            continue  # fully repaid (under this period's cutoff rule) — nothing left to charge interest on
+        amount = round(principal_balance * (loan['interest_rate_percent'] / 100), 2)
         if amount <= 0:
             continue
         await db.gold_loan_transactions.insert_one({
