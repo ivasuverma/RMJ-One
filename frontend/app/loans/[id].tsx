@@ -63,6 +63,7 @@ export default function GoldLoanDetailScreen() {
   // is booked per calendar month, not per day.
   const [calYear, setCalYear] = useState(new Date().getFullYear());
   const [calSelected, setCalSelected] = useState<InterestMonth | null>(null);
+  const [calExpanded, setCalExpanded] = useState(false);
   useEffect(() => {
     if (loan && loan.interest_months.length > 0) {
       const years = loan.interest_months.map((m) => parseInt(m.period.slice(0, 4), 10));
@@ -180,42 +181,52 @@ export default function GoldLoanDetailScreen() {
         </View>
 
         <View style={styles.calCard} testID="interest-calendar">
-          <Text style={styles.formHeaderText}>Interest Calendar</Text>
+          <Pressable style={styles.calToggleRow} onPress={() => setCalExpanded((v) => !v)} testID="cal-toggle">
+            <Text style={styles.formHeaderText}>Interest Calendar</Text>
+            {loan.interest_months_pending > 0 && (
+              <Text style={styles.calToggleHint}>{loan.interest_months_pending} pending</Text>
+            )}
+            <Ionicons name={calExpanded ? 'chevron-up' : 'chevron-down'} size={18} color={colors.onSurfaceSecondary} />
+          </Pressable>
 
-          <View style={styles.calYearRow}>
-            <Pressable onPress={() => setCalYear((y) => y - 1)} style={styles.calYearNav} testID="cal-prev-year">
-              <Ionicons name="chevron-back" size={18} color={colors.onSurface} />
-            </Pressable>
-            <Text style={styles.calYearLabel}>{calYear}</Text>
-            <Pressable onPress={() => setCalYear((y) => y + 1)} style={styles.calYearNav} testID="cal-next-year">
-              <Ionicons name="chevron-forward" size={18} color={colors.onSurface} />
-            </Pressable>
-          </View>
-
-          <View style={styles.calGrid}>
-            {MONTHS.map((lbl, i) => {
-              const mm = String(i + 1).padStart(2, '0');
-              const cell = calMonthByNum[mm];
-              const cellStyle = cell ? (cell.paid ? styles.calCellPaid : styles.calCellPending) : styles.calCellEmpty;
-              const textStyle = cell ? (cell.paid ? styles.calCellTextPaid : styles.calCellTextPending) : styles.calCellTextEmpty;
-              return (
-                <Pressable
-                  key={mm} style={styles.calCellWrap} testID={`cal-${calYear}-${mm}`}
-                  onPress={() => cell && setCalSelected(cell)} disabled={!cell}
-                >
-                  <View style={[styles.calCell, cellStyle]}>
-                    <Text style={[styles.calCellText, textStyle]}>{lbl}</Text>
-                  </View>
+          {calExpanded && (
+            <>
+              <View style={styles.calYearRow}>
+                <Pressable onPress={() => setCalYear((y) => y - 1)} style={styles.calYearNav} testID="cal-prev-year">
+                  <Ionicons name="chevron-back" size={18} color={colors.onSurface} />
                 </Pressable>
-              );
-            })}
-          </View>
+                <Text style={styles.calYearLabel}>{calYear}</Text>
+                <Pressable onPress={() => setCalYear((y) => y + 1)} style={styles.calYearNav} testID="cal-next-year">
+                  <Ionicons name="chevron-forward" size={18} color={colors.onSurface} />
+                </Pressable>
+              </View>
 
-          <View style={styles.legend}>
-            <View style={styles.legendItem}><View style={[styles.legendDot, styles.calCellPending]} /><Text style={styles.legendText}>Pending</Text></View>
-            <View style={styles.legendItem}><View style={[styles.legendDot, styles.calCellPaid]} /><Text style={styles.legendText}>Received</Text></View>
-            <View style={styles.legendItem}><View style={[styles.legendDot, styles.calCellEmpty]} /><Text style={styles.legendText}>Not due yet</Text></View>
-          </View>
+              <View style={styles.calGrid}>
+                {MONTHS.map((lbl, i) => {
+                  const mm = String(i + 1).padStart(2, '0');
+                  const cell = calMonthByNum[mm];
+                  const cellStyle = cell ? (cell.paid ? styles.calCellPaid : styles.calCellPending) : styles.calCellEmpty;
+                  const textStyle = cell ? (cell.paid ? styles.calCellTextPaid : styles.calCellTextPending) : styles.calCellTextEmpty;
+                  return (
+                    <Pressable
+                      key={mm} style={styles.calCellWrap} testID={`cal-${calYear}-${mm}`}
+                      onPress={() => cell && setCalSelected(cell)} disabled={!cell}
+                    >
+                      <View style={[styles.calCell, cellStyle]}>
+                        <Text style={[styles.calCellText, textStyle]}>{lbl}</Text>
+                      </View>
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              <View style={styles.legend}>
+                <View style={styles.legendItem}><View style={[styles.legendDot, styles.calCellPending]} /><Text style={styles.legendText}>Pending</Text></View>
+                <View style={styles.legendItem}><View style={[styles.legendDot, styles.calCellPaid]} /><Text style={styles.legendText}>Received</Text></View>
+                <View style={styles.legendItem}><View style={[styles.legendDot, styles.calCellEmpty]} /><Text style={styles.legendText}>Not due yet</Text></View>
+              </View>
+            </>
+          )}
         </View>
 
         <View style={styles.detailCard}>
@@ -340,6 +351,8 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border,
     padding: spacing.md, marginBottom: spacing.md,
   },
+  calToggleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  calToggleHint: { flex: 1, textAlign: 'right', color: colors.onWarning, fontSize: 12, fontWeight: '600' },
   calYearRow: {
     flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.sm, marginBottom: spacing.md,
     backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: 6,

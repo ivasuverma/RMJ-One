@@ -118,6 +118,11 @@ export default function DashboardScreen() {
   const [hiddenTiles, setHiddenTiles] = useState<Set<TileKey>>(new Set());
   const [foldedTiles, setFoldedTiles] = useState<Set<TileKey>>(new Set());
   const [reorderOpen, setReorderOpen] = useState(false);
+  // Cash Book's total is sensitive enough to stay masked by default even
+  // though every other tile's fold state defaults to expanded and persists
+  // per device — this one resets to hidden every time the screen mounts,
+  // and reuses the same fold chevron to reveal it instead of a separate control.
+  const [cashRevealed, setCashRevealed] = useState(false);
 
   const isWide = width >= 900;
 
@@ -320,13 +325,12 @@ export default function DashboardScreen() {
                   ],
                 },
                 cashbook: {
-                  // Closing balance intentionally not shown on this shared
-                  // dashboard tile — cash-in-hand totals stay masked here
-                  // (per-counter or overall); today's activity is fine to show.
+                  // Masked by default — tap the fold chevron to reveal the
+                  // closing balance and today's figures (see cashRevealed).
                   key: 'cashbook', show: hasModule('cash_book'), icon: 'wallet-outline', label: 'Cash Book',
-                  value: '•••••', route: '/cashbook',
+                  value: cashRevealed ? fmtINR(cb.closing_balance) : '•••••', route: '/cashbook',
                   details: (cb.counters && cb.counters.length > 0)
-                    ? cb.counters.map((c) => ({ label: c.name, value: '•••••' }))
+                    ? cb.counters.map((c) => ({ label: c.name, value: fmtINR(c.closing) }))
                     : [{ label: 'Received today', value: fmtINR(cb.received_today) }, { label: 'Paid today', value: fmtINR(cb.paid_today) }],
                 },
                 approvals: {
@@ -348,8 +352,8 @@ export default function DashboardScreen() {
                       <Tile
                         key={key}
                         t={t}
-                        folded={foldedTiles.has(key)}
-                        onToggleFold={() => toggleFolded(key)}
+                        folded={key === 'cashbook' ? !cashRevealed : foldedTiles.has(key)}
+                        onToggleFold={key === 'cashbook' ? () => setCashRevealed((v) => !v) : () => toggleFolded(key)}
                         onPress={() => router.push(t.route as any)}
                       />
                     );

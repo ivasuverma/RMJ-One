@@ -7,8 +7,13 @@ import { api } from '@/src/api/client';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
-type InterestMonth = { period: string; date: string; amount: number; paid: boolean };
-type Loan = { interest_months: InterestMonth[] };
+type InterestMonth = { period: string; date: string; amount: number; paid: boolean; projected?: boolean };
+type Loan = {
+  interest_months: InterestMonth[];
+  principal_balance?: number; interest_rate_percent?: number; loan_date?: string;
+};
+
+const addMonth = (y: number, m: number): [number, number] => (m === 12 ? [y + 1, 1] : [y, m + 1]);
 
 const fmtINR = (n: number) => `₹${Math.round(n || 0).toLocaleString('en-IN')}`;
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -38,6 +43,7 @@ export default function GoldLoanTransactScreen() {
   const [saving, setSaving] = useState(false);
 
   const [pendingMonths, setPendingMonths] = useState<InterestMonth[]>([]);
+  const [futureMonths, setFutureMonths] = useState<InterestMonth[]>([]);
   const [calYear, setCalYear] = useState(new Date().getFullYear());
   const [selected, setSelected] = useState<string[]>(periodsParam ? periodsParam.split(',').filter(Boolean) : []);
 
@@ -45,23 +51,58 @@ export default function GoldLoanTransactScreen() {
     api.get<Loan>(`/gold-loans/${id}`).then((loan) => {
       const pending = loan.interest_months.filter((m) => !m.paid);
       setPendingMonths(pending);
-      const withData = (periodsParam ? pending.filter((m) => selected.includes(m.period)) : pending);
+
+      // Months not yet due can still be recorded against (advance/prepaid
+      // interest) — project them forward from the last known period (or
+      // from the loan's own start period, using the same 1-15 cutoff the
+      // backend uses) at the current outstanding balance and rate. Once
+      // the real due entry posts on schedule, it'll match this period tag
+      // and show as paid — see _compute_loan_state in gold_loans.py.
+      const rate = loan.interest_rate_percent || 0;
+      const bal = loan.principal_balance || 0;
+      const projAmount = Math.round(bal * rate / 100);
+      const future: InterestMonth[] = [];
+      if (projAmount > 0) {
+        let ay: number; let am: number;
+        if (loan.interest_months.length > 0) {
+          const maxPeriod = loan.interest_months.reduce((mx, mo) => (mo.period > mx ? mo.period : mx), loan.interest_months[0].period);
+          ay = parseInt(maxPeriod.slice(0, 4), 10); am = parseInt(maxPeriod.slice(5, 7), 10);
+          [ay, am] = addMonth(ay, am);
+        } else if (loan.loan_date) {
+          const ld = new Date(`${loan.loan_date}T00:00:00`);
+          ay = ld.getFullYear(); am = ld.getMonth() + 1;
+          if (ld.getDate() > 15) [ay, am] = addMonth(ay, am);
+        } else {
+          const now = new Date(); ay = now.getFullYear(); am = now.getMonth() + 1;
+        }
+        let y = ay; let m = am;
+        for (let i = 0; i < 24; i += 1) {
+          future.push({ period: `${y}-${String(m).padStart(2, '0')}`, date: '', amount: projAmount, paid: false, projected: true });
+          [y, m] = addMonth(y, m);
+        }
+      }
+      setFutureMonths(future);
+
+      const combined = [...pending, ...future];
+      const withData = (periodsParam ? combined.filter((m) => selected.includes(m.period)) : pending);
       if (withData.length > 0) setCalYear(parseInt(withData[withData.length - 1].period.slice(0, 4), 10));
     }).catch(() => { /* month picker just won't show anything — amount entry still works */ });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
+  const allMonths = [...pendingMonths, ...futureMonths];
+
   const toggleMonth = (m: InterestMonth) => {
     setSelected((prev) => {
       const next = prev.includes(m.period) ? prev.filter((p) => p !== m.period) : [...prev, m.period];
-      const sum = pendingMonths.filter((pm) => next.includes(pm.period)).reduce((s, pm) => s + pm.amount, 0);
+      const sum = allMonths.filter((pm) => next.includes(pm.period)).reduce((s, pm) => s + pm.amount, 0);
       if (next.length > 0) setAmount(String(Math.round(sum)));
       return next;
     });
   };
 
   const monthsByNum: Record<string, InterestMonth> = {};
-  pendingMonths.forEach((m) => { if (parseInt(m.period.slice(0, 4), 10) === calYear) monthsByNum[m.period.slice(5, 7)] = m; });
+  allMonths.forEach((m) => { if (parseInt(m.period.slice(0, 4), 10) === calYear) monthsByNum[m.period.slice(5, 7)] = m; });
 
   const submit = async () => {
     const amt = parseFloat(amount);
@@ -98,9 +139,19 @@ export default function GoldLoanTransactScreen() {
             </Pressable>
           </View>
 
-          {type === 'interest' && pendingMonths.length > 0 && (
+          {type === 'interest' && allMonths.length > 0 && (
             <View style={styles.calCard} testID="pay-month-picker">
               <Text style={styles.calHeader}>Which month(s) is this for?</Text>
+              <View style={styles.legendRow}>
+                <View style={styles.legendItem}>
+                  <View style={[styles.legendDot, { backgroundColor: colors.onError }]} />
+                  <Text style={styles.legendText}>Due</Text>
+                </View>
+                <View style={styles.legendItem}>
+                  <View style={[styles.legendDot, { backgroundColor: colors.onInfo }]} />
+                  <Text style={styles.legendText}>Future (advance)</Text>
+                </View>
+              </View>
               <View style={styles.calYearRow}>
                 <Pressable onPress={() => setCalYear((y) => y - 1)} style={styles.calYearNav} testID="pay-cal-prev-year">
                   <Ionicons name="chevron-back" size={18} color={colors.onSurface} />
@@ -115,8 +166,8 @@ export default function GoldLoanTransactScreen() {
                   const mm = String(i + 1).padStart(2, '0');
                   const m = monthsByNum[mm];
                   const isSelected = m && selected.includes(m.period);
-                  const cellStyle = !m ? styles.calCellEmpty : isSelected ? styles.calCellSelected : styles.calCellPending;
-                  const textStyle = !m ? styles.calCellTextEmpty : isSelected ? styles.calCellTextSelected : styles.calCellTextPending;
+                  const cellStyle = !m ? styles.calCellEmpty : isSelected ? styles.calCellSelected : m.projected ? styles.calCellFuture : styles.calCellPending;
+                  const textStyle = !m ? styles.calCellTextEmpty : isSelected ? styles.calCellTextSelected : m.projected ? styles.calCellTextFuture : styles.calCellTextPending;
                   return (
                     <Pressable key={mm} style={styles.calCellWrap} onPress={() => m && toggleMonth(m)} disabled={!m} testID={`pay-cal-${calYear}-${mm}`}>
                       <View style={[styles.calCell, cellStyle]}>
@@ -128,7 +179,7 @@ export default function GoldLoanTransactScreen() {
                 })}
               </View>
               {selected.length > 0 && (
-                <Text style={styles.calSelectedText}>{selected.length} month{selected.length === 1 ? '' : 's'} selected · {fmtINR(pendingMonths.filter((m) => selected.includes(m.period)).reduce((s, m) => s + m.amount, 0))}</Text>
+                <Text style={styles.calSelectedText}>{selected.length} month{selected.length === 1 ? '' : 's'} selected · {fmtINR(allMonths.filter((m) => selected.includes(m.period)).reduce((s, m) => s + m.amount, 0))}</Text>
               )}
             </View>
           )}
@@ -191,9 +242,15 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   calCellTextEmpty: { color: colors.mutedText },
   calCellPending: { backgroundColor: colors.error, borderColor: colors.onError },
   calCellTextPending: { color: colors.onError },
+  calCellFuture: { backgroundColor: colors.info, borderColor: colors.onInfo },
+  calCellTextFuture: { color: colors.onInfo },
   calCellSelected: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
   calCellTextSelected: { color: colors.onBrandPrimary },
   calSelectedText: { color: colors.brandSecondary, fontSize: 12, fontWeight: '700', marginTop: spacing.sm, textAlign: 'center' },
+  legendRow: { flexDirection: 'row', gap: spacing.md, marginTop: 6 },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  legendDot: { width: 8, height: 8, borderRadius: 4 },
+  legendText: { color: colors.mutedText, fontSize: 10 },
 
   submitBtn: {
     flexDirection: 'row', gap: spacing.sm, alignItems: 'center', justifyContent: 'center',
