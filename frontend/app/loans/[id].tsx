@@ -1,5 +1,5 @@
-import { useCallback, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Alert, Platform, Image } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Alert, Platform, Image, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
@@ -28,7 +28,7 @@ type Loan = {
 };
 
 const fmtINR = (n: number) => `₹${Math.round(n || 0).toLocaleString('en-IN')}`;
-const MONTH_LABELS = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 // This screen is summary only — balances, terms, and an at-a-glance
 // interest calendar. Recording a payment and browsing/editing the full
@@ -56,6 +56,20 @@ export default function GoldLoanDetailScreen() {
     finally { setLoading(false); }
   }, [id]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  // Interest calendar — year picker + a selected-month detail sheet, same
+  // pattern as AttendanceCalendarView's month view, just one level up (a
+  // whole year of months instead of a month of days), since interest here
+  // is booked per calendar month, not per day.
+  const [calYear, setCalYear] = useState(new Date().getFullYear());
+  const [calSelected, setCalSelected] = useState<InterestMonth | null>(null);
+  useEffect(() => {
+    if (loan && loan.interest_months.length > 0) {
+      const years = loan.interest_months.map((m) => parseInt(m.period.slice(0, 4), 10));
+      setCalYear(years[years.length - 1]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loan?.id]);
 
   const closeLoan = () => {
     if (!loan) return;
@@ -114,15 +128,13 @@ export default function GoldLoanDetailScreen() {
   const isActive = loan.status === 'active';
   const canClose = isActive && loan.total_outstanding <= 0.01;
 
-  // Group the flat interest_months list into year → month-number → status,
-  // for a compact 12-cell-per-year calendar grid.
-  const calByYear: Record<string, Record<string, InterestMonth>> = {};
+  // Month-number -> entry for the currently-viewed year only — the year
+  // stepper (below) swaps this out instead of rendering every year at once.
+  const calMonthByNum: Record<string, InterestMonth> = {};
   loan.interest_months.forEach((m) => {
     const [y, mm] = m.period.split('-');
-    if (!calByYear[y]) calByYear[y] = {};
-    calByYear[y][mm] = m;
+    if (parseInt(y, 10) === calYear) calMonthByNum[mm] = m;
   });
-  const calYears = Object.keys(calByYear).sort();
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="loan-detail-screen">
@@ -167,34 +179,44 @@ export default function GoldLoanDetailScreen() {
           <View style={[styles.balRow, { marginTop: 6 }]}><Text style={styles.balTotalLabel}>Total outstanding</Text><Text style={styles.balTotalValue}>{fmtINR(loan.total_outstanding)}</Text></View>
         </View>
 
-        {calYears.length > 0 && (
-          <View style={styles.calCard} testID="interest-calendar">
-            <Text style={styles.formHeaderText}>Interest Calendar</Text>
-            {calYears.map((y) => (
-              <View key={y} style={{ marginTop: spacing.sm }}>
-                <Text style={styles.calYear}>{y}</Text>
-                <View style={styles.calGrid}>
-                  {MONTH_LABELS.map((lbl, i) => {
-                    const mm = String(i + 1).padStart(2, '0');
-                    const cell = calByYear[y][mm];
-                    const cellStyle = cell ? (cell.paid ? styles.calCellPaid : styles.calCellPending) : styles.calCellEmpty;
-                    const textStyle = cell ? (cell.paid ? styles.calCellTextPaid : styles.calCellTextPending) : styles.calCellTextEmpty;
-                    return (
-                      <View key={mm} style={[styles.calCell, cellStyle]} testID={`cal-${y}-${mm}`}>
-                        <Text style={[styles.calCellText, textStyle]}>{lbl}</Text>
-                      </View>
-                    );
-                  })}
-                </View>
-              </View>
-            ))}
-            <View style={styles.calLegendRow}>
-              <View style={styles.calLegendItem}><View style={[styles.calLegendDot, styles.calCellPending]} /><Text style={styles.calLegendText}>Pending</Text></View>
-              <View style={styles.calLegendItem}><View style={[styles.calLegendDot, styles.calCellPaid]} /><Text style={styles.calLegendText}>Received</Text></View>
-              <View style={styles.calLegendItem}><View style={[styles.calLegendDot, styles.calCellEmpty]} /><Text style={styles.calLegendText}>Not due yet</Text></View>
-            </View>
+        <View style={styles.calCard} testID="interest-calendar">
+          <Text style={styles.formHeaderText}>Interest Calendar</Text>
+
+          <View style={styles.calYearRow}>
+            <Pressable onPress={() => setCalYear((y) => y - 1)} style={styles.calYearNav} testID="cal-prev-year">
+              <Ionicons name="chevron-back" size={18} color={colors.onSurface} />
+            </Pressable>
+            <Text style={styles.calYearLabel}>{calYear}</Text>
+            <Pressable onPress={() => setCalYear((y) => y + 1)} style={styles.calYearNav} testID="cal-next-year">
+              <Ionicons name="chevron-forward" size={18} color={colors.onSurface} />
+            </Pressable>
           </View>
-        )}
+
+          <View style={styles.calGrid}>
+            {MONTHS.map((lbl, i) => {
+              const mm = String(i + 1).padStart(2, '0');
+              const cell = calMonthByNum[mm];
+              const cellStyle = cell ? (cell.paid ? styles.calCellPaid : styles.calCellPending) : styles.calCellEmpty;
+              const textStyle = cell ? (cell.paid ? styles.calCellTextPaid : styles.calCellTextPending) : styles.calCellTextEmpty;
+              return (
+                <Pressable
+                  key={mm} style={styles.calCellWrap} testID={`cal-${calYear}-${mm}`}
+                  onPress={() => cell && setCalSelected(cell)} disabled={!cell}
+                >
+                  <View style={[styles.calCell, cellStyle]}>
+                    <Text style={[styles.calCellText, textStyle]}>{lbl}</Text>
+                  </View>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          <View style={styles.legend}>
+            <View style={styles.legendItem}><View style={[styles.legendDot, styles.calCellPending]} /><Text style={styles.legendText}>Pending</Text></View>
+            <View style={styles.legendItem}><View style={[styles.legendDot, styles.calCellPaid]} /><Text style={styles.legendText}>Received</Text></View>
+            <View style={styles.legendItem}><View style={[styles.legendDot, styles.calCellEmpty]} /><Text style={styles.legendText}>Not due yet</Text></View>
+          </View>
+        </View>
 
         <View style={styles.detailCard}>
           <View style={styles.detailRow}><Text style={styles.detailLabel}>Interest rate</Text><Text style={styles.detailValue}>{loan.interest_rate_percent.toFixed(2)}% / month</Text></View>
@@ -244,6 +266,38 @@ export default function GoldLoanDetailScreen() {
           </Pressable>
         )}
       </ScrollView>
+
+      {calSelected && (
+        <Modal visible transparent animationType="slide" onRequestClose={() => setCalSelected(null)}>
+          <View style={styles.modalBg}>
+            <Pressable style={{ flex: 1 }} onPress={() => setCalSelected(null)} />
+            <View style={styles.sheet} testID="cal-month-sheet">
+              <View style={styles.sheetGrip} />
+              <Text style={styles.sheetTitle}>{MONTHS[parseInt(calSelected.period.slice(5, 7), 10) - 1]} {calSelected.period.slice(0, 4)}</Text>
+              <View style={styles.detailRow}><Text style={styles.detailLabel}>Amount</Text><Text style={styles.detailValue}>{fmtINR(calSelected.amount)}</Text></View>
+              <View style={styles.detailRow}><Text style={styles.detailLabel}>Due date</Text><Text style={styles.detailValue}>{calSelected.date}</Text></View>
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Status</Text>
+                <Text style={[styles.detailValue, calSelected.paid ? { color: colors.onSuccess } : { color: colors.onError }]}>
+                  {calSelected.paid ? 'Received' : 'Pending'}
+                </Text>
+              </View>
+              {!calSelected.paid && isActive && (
+                <Pressable
+                  style={styles.primaryBtn}
+                  onPress={() => { setCalSelected(null); router.push(`/loans/transact?id=${loan.id}` as any); }}
+                  testID="cal-record-payment-btn"
+                >
+                  <Text style={styles.primaryBtnText}>Record Payment</Text>
+                </Pressable>
+              )}
+              <Pressable style={styles.secondaryBtn} onPress={() => setCalSelected(null)} testID="cal-close-btn">
+                <Text style={styles.secondaryBtnText}>Close</Text>
+              </Pressable>
+            </View>
+          </View>
+        </Modal>
+      )}
     </SafeAreaView>
   );
 }
@@ -286,20 +340,28 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border,
     padding: spacing.md, marginBottom: spacing.md,
   },
-  calYear: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '700', marginBottom: 6 },
-  calGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  calCell: { width: 26, height: 26, borderRadius: 6, alignItems: 'center', justifyContent: 'center' },
-  calCellText: { fontSize: 11, fontWeight: '700' },
-  calCellEmpty: { backgroundColor: colors.surfaceTertiary, borderWidth: 1, borderColor: colors.border },
+  calYearRow: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.sm, marginBottom: spacing.md,
+    backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: 6,
+  },
+  calYearNav: { width: 32, height: 32, borderRadius: radius.md, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
+  calYearLabel: { flex: 1, textAlign: 'center', color: colors.onSurface, fontWeight: '700', fontSize: 15 },
+  // 4 columns x 3 rows for the 12 months — same filled-rounded-cell language
+  // as AttendanceCalendarView's day grid (which uses 7 columns for weekdays).
+  calGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  calCellWrap: { width: '25%', aspectRatio: 1.6, padding: 4 },
+  calCell: { width: '100%', height: '100%', borderRadius: radius.sm, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
+  calCellText: { fontSize: 12, fontWeight: '700' },
+  calCellEmpty: { backgroundColor: colors.surfaceTertiary, borderColor: colors.border },
   calCellTextEmpty: { color: colors.mutedText },
-  calCellPaid: { backgroundColor: colors.success },
+  calCellPaid: { backgroundColor: colors.success, borderColor: colors.onSuccess },
   calCellTextPaid: { color: colors.onSuccess },
-  calCellPending: { backgroundColor: colors.error },
+  calCellPending: { backgroundColor: colors.error, borderColor: colors.onError },
   calCellTextPending: { color: colors.onError },
-  calLegendRow: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.md, flexWrap: 'wrap' },
-  calLegendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  calLegendDot: { width: 10, height: 10, borderRadius: 3 },
-  calLegendText: { color: colors.mutedText, fontSize: 11 },
+  legend: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md, marginTop: spacing.md },
+  legendItem: { flexDirection: 'row', gap: 4, alignItems: 'center' },
+  legendDot: { width: 10, height: 10, borderRadius: 3, borderWidth: 1.5 },
+  legendText: { color: colors.onSurfaceTertiary, fontSize: 11 },
 
   detailCard: {
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border,
@@ -320,4 +382,14 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   actionBtnPrimary: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
   actionBtnText: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '700' },
+  secondaryBtn: { borderRadius: radius.md, paddingVertical: 12, alignItems: 'center', marginTop: spacing.sm },
+  secondaryBtnText: { color: colors.mutedText, fontWeight: '700', fontSize: 13 },
+
+  modalBg: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)' },
+  sheet: {
+    backgroundColor: colors.surfaceSecondary, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg,
+    borderColor: colors.brand, borderTopWidth: 1, padding: spacing.lg, paddingBottom: 36,
+  },
+  sheetGrip: { width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: spacing.md },
+  sheetTitle: { color: colors.onSurface, fontSize: 18, fontWeight: '700', marginBottom: spacing.sm },
 });

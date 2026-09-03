@@ -362,13 +362,21 @@ async def gold_loan_voucher_print(loan_id: str, user=Depends(require_staff_or_mo
 
 # ---------------- Monthly interest auto-post ----------------
 async def check_interest_due() -> None:
-    """Runs from the server's existing 15-minute reminder loop. Fires once per
-    loan per calendar month, on the day-of-month matching the loan's own
-    start date (clamped to the month's length, same pattern as payroll's
-    auto-advance day) — so a loan taken on the 31st still charges in a
-    30-day month instead of silently skipping it. Interest is computed on
-    the CURRENT outstanding principal, not the original amount, so a partial
-    principal repayment correctly lowers next month's charge."""
+    """Runs from the server's existing 15-minute reminder loop. Walks every
+    calendar month from the one after the loan's start date up through the
+    current month, on the day-of-month matching the loan's own start date
+    (clamped to each month's length, same pattern as payroll's auto-advance
+    day — so a loan taken on the 31st still charges in a 30-day month
+    instead of silently skipping it), and posts whichever of those periods
+    aren't in db.gold_loan_interest_generations yet.
+
+    Walking the whole span (not just "is today the due day") means a period
+    is never permanently skipped just because the poll didn't happen to run
+    on its exact due date (server downtime, a missed 15-minute tick, etc.)
+    — the ledger stays true to "one interest entry per elapsed month" no
+    matter how the polling actually landed. Interest is computed on the
+    CURRENT outstanding principal, not the original amount, so a partial
+    principal repayment correctly lowers the next unposted month's charge."""
     now_ist = now_utc().astimezone(IST)
     today = now_ist.date()
     async for loan in db.gold_loans.find({'status': 'active'}, {'_id': 0}):
@@ -378,30 +386,38 @@ async def check_interest_due() -> None:
             continue
         if today <= anchor:
             continue  # interest starts accruing a month after disbursement, not on day one
-        last_day = monthrange(today.year, today.month)[1]
-        target_day = min(anchor.day, last_day)
-        if today.day != target_day:
-            continue
-        period = today.strftime('%Y-%m')
-        gen_key = {'loan_id': loan['id'], 'period': period}
-        if await db.gold_loan_interest_generations.find_one(gen_key, {'_id': 0}) is not None:
-            continue
-        await db.gold_loan_interest_generations.update_one(
-            gen_key, {'$set': {**gen_key, 'created_at': now_utc().isoformat()}}, upsert=True,
-        )
-        bal = await _loan_balances(loan)
-        if bal['principal_balance'] <= 0:
-            continue  # fully repaid but not yet formally closed — nothing left to charge interest on
-        amount = round(bal['principal_balance'] * (loan['interest_rate_percent'] / 100), 2)
-        if amount <= 0:
-            continue
-        await db.gold_loan_transactions.insert_one({
-            'id': str(uuid.uuid4()), 'loan_id': loan['id'], 'type': 'interest_due', 'period': period,
-            'amount': amount, 'date': today.isoformat(), 'note': f'Interest for {period}',
-            'auto': True, 'created_by': 'system', 'created_by_id': None, 'created_at': now_utc().isoformat(),
-        })
-        await _notify_module(
-            'gold_loans', 'Gold loan interest posted',
-            f"{loan['loan_no']} · {loan['customer_name']} · {_inr(amount)}", '/loans',
-            script='gold_loan_interest_posted', admin_only=True,
-        )
+
+        y, m = anchor.year, anchor.month
+        while True:
+            m += 1
+            if m > 12:
+                m = 1
+                y += 1
+            last_day = monthrange(y, m)[1]
+            due_date = date(y, m, min(anchor.day, last_day))
+            if due_date > today:
+                break  # this period hasn't come due yet — stop, don't post early
+
+            period = due_date.strftime('%Y-%m')
+            gen_key = {'loan_id': loan['id'], 'period': period}
+            if await db.gold_loan_interest_generations.find_one(gen_key, {'_id': 0}) is not None:
+                continue  # already posted for this period
+            await db.gold_loan_interest_generations.update_one(
+                gen_key, {'$set': {**gen_key, 'created_at': now_utc().isoformat()}}, upsert=True,
+            )
+            bal = await _loan_balances(loan)
+            if bal['principal_balance'] <= 0:
+                continue  # fully repaid but not yet formally closed — nothing left to charge interest on
+            amount = round(bal['principal_balance'] * (loan['interest_rate_percent'] / 100), 2)
+            if amount <= 0:
+                continue
+            await db.gold_loan_transactions.insert_one({
+                'id': str(uuid.uuid4()), 'loan_id': loan['id'], 'type': 'interest_due', 'period': period,
+                'amount': amount, 'date': due_date.isoformat(), 'note': f'Interest for {period}',
+                'auto': True, 'created_by': 'system', 'created_by_id': None, 'created_at': now_utc().isoformat(),
+            })
+            await _notify_module(
+                'gold_loans', 'Gold loan interest posted',
+                f"{loan['loan_no']} · {loan['customer_name']} · {_inr(amount)}", '/loans',
+                script='gold_loan_interest_posted', admin_only=True,
+            )
