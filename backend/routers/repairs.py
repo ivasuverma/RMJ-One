@@ -37,6 +37,7 @@ from server import (
     notify_user,
     _notify_module,
     _pdf_response,
+    send_whatsapp,
 )
 
 router = APIRouter()
@@ -1026,6 +1027,24 @@ async def bill_item(item_id: str, body: DeliverIn, user=Depends(require_admin_or
     updated = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
     await _sync_cash_ledger_entry(updated, billed_amount, body.payment_mode, user, iso)
     await log_audit(user, 'repair_item.bill', 'repair_item', item_id, item['item_code'], {'billed_amount': billed_amount})
+
+    # Customer-facing "ready for pickup" WhatsApp notice — fired here, not on
+    # the earlier 'ready' transition, because that one just means back from
+    # the karigar and awaiting billing (an internal, staff-facing signal —
+    # see the repair_item_ready _notify_module calls elsewhere in this file).
+    # This is the actual moment the customer has something to come collect.
+    # Fire-and-forget: never let a WhatsApp hiccup slow down or fail billing.
+    order = await db.repair_orders.find_one({'id': item.get('order_id')}, {'_id': 0, 'customer_mobile': 1})
+    if order and order.get('customer_mobile'):
+        store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
+        shop_name = store.get('name') or 'Ram Murti Jewellers'
+        amount_line = f"You have a credit of Rs.{abs(billed_amount):.0f} on this item." if billed_amount < 0 else f"Bill amount: Rs.{billed_amount:.0f}."
+        msg = (
+            f"Hi {item.get('customer_name', '')}, your item {item['item_code']} ({item.get('description', '')}) "
+            f"is ready for pickup at {shop_name}. {amount_line} Thank you!"
+        )
+        asyncio.create_task(send_whatsapp(order['customer_mobile'], msg))
+
     return updated
 
 

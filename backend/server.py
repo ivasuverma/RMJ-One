@@ -27,6 +27,12 @@ VAPID_PUBLIC_KEY = os.environ.get('VAPID_PUBLIC_KEY', '')
 VAPID_PRIVATE_KEY = os.environ.get('VAPID_PRIVATE_KEY', '')
 VAPID_SUBJECT = os.environ.get('VAPID_SUBJECT', 'mailto:admin@example.com')
 
+# Self-hosted OpenWA WhatsApp gateway (E:/OpenWA on this same box, NSSM
+# service RMJOneWhatsApp) — see send_whatsapp() below.
+OPENWA_BASE_URL = os.environ.get('OPENWA_BASE_URL', '')
+OPENWA_API_KEY = os.environ.get('OPENWA_API_KEY', '')
+OPENWA_SESSION_NAME = os.environ.get('OPENWA_SESSION_NAME', 'main')
+
 # Comma-separated list of origins allowed to call this API, e.g.
 # "https://app.ramjewellers.in,https://admin.ramjewellers.in". Defaults to
 # "*" (anything) so local/dev setups keep working without extra config —
@@ -1676,6 +1682,86 @@ async def notify_roles(roles: list, title: str, body: str, url: str = '/'):
     # Same rationale as notify_user: don't block the caller on the recipient
     # resolution + per-recipient inserts + push delivery below.
     asyncio.create_task(_notify_roles_impl(roles, title, body, url))
+
+
+# ---------------- WhatsApp (OpenWA gateway) ----------------
+import httpx as _httpx
+
+# The session's id can change if it's ever re-paired (already happened once
+# during setup), so resolve it by name each time rather than pinning a UUID
+# in .env — cached in-process and refreshed on a 404 (stale id after a
+# re-pair) or a cache miss.
+_openwa_session_id_cache: Optional[str] = None
+
+
+def _to_whatsapp_chat_id(mobile: str) -> Optional[str]:
+    """Normalizes a stored customer/karigar mobile number (usually a bare
+    10-digit Indian number) into OpenWA's `<countrycode><number>@c.us` chat
+    id. Returns None for anything too short to be a real number."""
+    digits = ''.join(c for c in (mobile or '') if c.isdigit())
+    if not digits:
+        return None
+    if len(digits) == 10:
+        digits = '91' + digits
+    elif len(digits) == 11 and digits.startswith('0'):
+        digits = '91' + digits[1:]
+    if len(digits) < 11:
+        return None
+    return f'{digits}@c.us'
+
+
+async def _resolve_openwa_session_id(client: '_httpx.AsyncClient') -> Optional[str]:
+    global _openwa_session_id_cache
+    if _openwa_session_id_cache:
+        return _openwa_session_id_cache
+    res = await client.get(
+        f'{OPENWA_BASE_URL}/api/sessions',
+        headers={'Authorization': f'Bearer {OPENWA_API_KEY}'},
+    )
+    res.raise_for_status()
+    for s in res.json():
+        if s.get('name') == OPENWA_SESSION_NAME and s.get('status') == 'ready':
+            _openwa_session_id_cache = s['id']
+            return _openwa_session_id_cache
+    return None
+
+
+async def send_whatsapp(mobile: str, text: str) -> bool:
+    """Best-effort WhatsApp send via the self-hosted OpenWA gateway. Never
+    raises — a WhatsApp failure (gateway down, session logged out, bad
+    number) must not block or roll back whatever business action triggered
+    it, same convention as the push-notification helpers above. Returns
+    whether the send actually went out, so a caller that wants to know can
+    check it without needing a try/except of its own."""
+    if not OPENWA_BASE_URL or not OPENWA_API_KEY:
+        return False
+    chat_id = _to_whatsapp_chat_id(mobile)
+    if not chat_id:
+        return False
+    try:
+        async with _httpx.AsyncClient(timeout=15) as client:
+            session_id = await _resolve_openwa_session_id(client)
+            if not session_id:
+                logger.warning('openwa send skipped: no ready session named ' + OPENWA_SESSION_NAME)
+                return False
+            payload = {'chatId': chat_id, 'text': text}
+            headers = {'Authorization': f'Bearer {OPENWA_API_KEY}'}
+            res = await client.post(f'{OPENWA_BASE_URL}/api/sessions/{session_id}/messages/send-text', headers=headers, json=payload)
+            if res.status_code == 404:
+                # Cached id is stale (session was re-paired) — refresh once and retry.
+                global _openwa_session_id_cache
+                _openwa_session_id_cache = None
+                session_id = await _resolve_openwa_session_id(client)
+                if not session_id:
+                    return False
+                res = await client.post(f'{OPENWA_BASE_URL}/api/sessions/{session_id}/messages/send-text', headers=headers, json=payload)
+            if res.status_code == 201:
+                return True
+            logger.warning(f'openwa send failed: {res.status_code} {res.text[:200]}')
+            return False
+    except Exception as e:
+        logger.warning(f'openwa send failed: {e}')
+        return False
 
 
 # ---------------- Notification Settings (per-module on/off + recipients) ----------------
