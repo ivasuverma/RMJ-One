@@ -1601,7 +1601,20 @@ async def _send_push_to_subs(subs: list, title: str, body: str, url: str = '/'):
             await asyncio.to_thread(_do_send)
         except WebPushException as e:
             status = getattr(getattr(e, 'response', None), 'status_code', None)
-            if status in (404, 410):
+            resp_text = getattr(getattr(e, 'response', None), 'text', '') or ''
+            # 404/410 means the browser/OS dropped the subscription. A 400
+            # "VapidPkHashMismatch" or 403 "credentials ... do not correspond"
+            # means this subscription was created under a VAPID key pair that
+            # no longer matches VAPID_PRIVATE_KEY (e.g. the keys were
+            # regenerated) — just as permanently dead, but the browser still
+            # thinks it's subscribed, so it'll otherwise fail silently on
+            # every single notification forever. Purge it so a stale row
+            # doesn't linger — the affected person still needs to toggle
+            # notifications off/on once to get a fresh subscription, since
+            # the browser holds its own (now-orphaned) subscription object
+            # that only an explicit unsubscribe/resubscribe replaces.
+            vapid_mismatch = 'VapidPkHashMismatch' in resp_text or 'do not correspond' in resp_text
+            if status in (404, 410) or vapid_mismatch:
                 await db.push_subscriptions.delete_one({'id': sub['id']})
             else:
                 logger.warning(f'push send failed: {e}')
