@@ -69,6 +69,36 @@ export default function RepairOrderDetailScreen() {
     finally { setThermalPrinting(false); }
   };
 
+  const [tagPrinting, setTagPrinting] = useState(false);
+  // One small tag per item — meant to be torn off and attached to the
+  // physical piece, separate from the customer's own copy above.
+  const printTagThermal = async () => {
+    setTagPrinting(true);
+    try {
+      await api.post(`/repair-orders/${id}/tags/print`, {});
+    } catch (e: any) { Alert.alert('Print failed', e?.detail || 'Could not reach the printer. Check Store Settings.'); }
+    finally { setTagPrinting(false); }
+  };
+
+  const [tagPdfLoading, setTagPdfLoading] = useState(false);
+  const printTagPdf = async () => {
+    setTagPdfLoading(true);
+    try {
+      const base = process.env.EXPO_PUBLIC_BACKEND_URL || '';
+      const url = `${base}/api/repair-orders/${id}/tags/pdf`;
+      const token = (await storage.secureGet<string>(TOKEN_KEY, '')) || '';
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) throw new Error(`Tags failed (${res.status})`);
+      if (Platform.OS === 'web') {
+        const blob = await res.blob();
+        window.open(URL.createObjectURL(blob), '_blank');
+      } else {
+        Alert.alert('Tags generated', 'PDF preview is available on the web app.');
+      }
+    } catch (e: any) { Alert.alert('Failed', e?.message || 'Please try again'); }
+    finally { setTagPdfLoading(false); }
+  };
+
   if (loading || !order) {
     return (
       <SafeAreaView style={styles.root} edges={['top']}>
@@ -106,12 +136,23 @@ export default function RepairOrderDetailScreen() {
           <MetaRow icon="person-circle-outline" label="Taken by" value={order.created_by} colors={colors} />
         </View>
 
+        <Text style={styles.printLabel}>Customer copy</Text>
         <View style={styles.printRow}>
           <Pressable onPress={printThermal} disabled={thermalPrinting} style={[styles.printBtn, { flex: 1 }, thermalPrinting && { opacity: 0.6 }]} testID="print-slip-btn">
             {thermalPrinting ? <ActivityIndicator color={colors.onBrandPrimary} /> : <><Ionicons name="print-outline" size={16} color={colors.onBrandPrimary} /><Text style={styles.printBtnText}>Print Receipt</Text></>}
           </Pressable>
           <Pressable onPress={printSlip} disabled={printing} style={[styles.pdfBtn, printing && { opacity: 0.6 }]} testID="print-slip-pdf-btn">
             {printing ? <ActivityIndicator color={colors.onSurfaceSecondary} /> : <><Ionicons name="document-text-outline" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.pdfBtnText}>PDF</Text></>}
+          </Pressable>
+        </View>
+
+        <Text style={styles.printLabel}>Item tag{items.length === 1 ? '' : 's'} — to attach with the item</Text>
+        <View style={[styles.printRow, { marginBottom: spacing.xl }]}>
+          <Pressable onPress={printTagThermal} disabled={tagPrinting} style={[styles.printBtn, { flex: 1 }, tagPrinting && { opacity: 0.6 }]} testID="print-tags-btn">
+            {tagPrinting ? <ActivityIndicator color={colors.onBrandPrimary} /> : <><Ionicons name="pricetag-outline" size={16} color={colors.onBrandPrimary} /><Text style={styles.printBtnText}>Print Tag{items.length === 1 ? '' : 's'}</Text></>}
+          </Pressable>
+          <Pressable onPress={printTagPdf} disabled={tagPdfLoading} style={[styles.pdfBtn, tagPdfLoading && { opacity: 0.6 }]} testID="print-tags-pdf-btn">
+            {tagPdfLoading ? <ActivityIndicator color={colors.onSurfaceSecondary} /> : <><Ionicons name="document-text-outline" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.pdfBtnText}>PDF</Text></>}
           </Pressable>
         </View>
 
@@ -166,7 +207,8 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   metaLabel: { color: colors.mutedText, fontSize: 12, width: 80 },
   metaValue: { flex: 1, color: colors.onSurface, fontSize: 13, fontWeight: '600' },
 
-  printRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.xl },
+  printLabel: { color: colors.mutedText, fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: spacing.xs },
+  printRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md },
   printBtn: {
     flexDirection: 'row', gap: spacing.sm, alignItems: 'center', justifyContent: 'center',
     backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: 13,

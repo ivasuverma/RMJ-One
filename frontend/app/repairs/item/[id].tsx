@@ -329,7 +329,12 @@ export default function RepairItemDetailScreen() {
           {/* High-res reference photos (uploaded to Drive, thumbnail kept). */}
           <RecordPhotos refType="repair_item" refId={item.id} label="Photos" />
 
-          {item.karigar_name && (
+          {/* With the item still at the karigar, the print button pairs up
+              with Receive in one row below instead of sitting on its own —
+              for every other status (ready/pending_delivery/delivered) that
+              still has a karigar on record, it stays a standalone row since
+              there's no receive action to pair it with there. */}
+          {item.karigar_name && item.status !== 'with_karigar' && (
             <Pressable onPress={() => printThermal('issue-slip')} disabled={thermalPrinting} style={[styles.actionBtn, { marginBottom: spacing.md }]} testID="print-issue-slip-btn">
               {thermalPrinting ? <ActivityIndicator color={colors.onSurfaceSecondary} /> : <><Ionicons name="print-outline" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>Print Thermal Slip (Karigar Issue)</Text></>}
             </Pressable>
@@ -370,6 +375,11 @@ export default function RepairItemDetailScreen() {
           )}
           {item.status === 'with_karigar' && (
             <View style={styles.actionsRow}>
+              {item.karigar_name && (
+                <Pressable onPress={() => printThermal('issue-slip')} disabled={thermalPrinting} style={[styles.actionBtn, { flex: 1 }]} testID="print-issue-slip-btn">
+                  {thermalPrinting ? <ActivityIndicator color={colors.onSurfaceSecondary} /> : <><Ionicons name="print-outline" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>Print Slip</Text></>}
+                </Pressable>
+              )}
               <Pressable onPress={() => router.push({ pathname: '/repairs/item/receive', params: { itemId: id } } as any)} style={[styles.actionBtn, styles.actionBtnPrimary, { flex: 1 }]} testID="show-receive-form">
                 <Ionicons name="arrow-undo-outline" size={16} color={colors.onBrandPrimary} /><Text style={styles.actionBtnPrimaryText}>Receive from Karigar</Text>
               </Pressable>

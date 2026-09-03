@@ -14,6 +14,7 @@ from server import (
     db,
     now_utc,
     today_str,
+    IST,
     require_owner,
     require_module,
     require_staff_or_module,
@@ -467,6 +468,51 @@ async def repair_order_slip_print(order_id: str, user: dict = Depends(require_st
                             f"Repair Intake — {order['order_no']}", _intake_receipt_lines(order, items))
     await _print_escpos(data)
     await log_audit(user, 'repair_order.slip_print', 'repair_order', order_id, order['order_no'], {})
+    return {'ok': True}
+
+
+def _item_tag_lines(order: dict, item: dict) -> list:
+    """A small tag meant to be torn off and physically attached to the item
+    itself — just enough to identify it (no customer signature line, unlike
+    the full intake receipt)."""
+    return [
+        ('Tag', item['item_code']),
+        ('Customer', order['customer_name']),
+        ('Item', item['description']),
+        ('Repair Type', item['repair_type'] or '—'),
+        ('Weight', f"{item['gross_weight']:.3f}g"),
+        ('Pcs', str(item['pc_count'])),
+        ('Due Date', item['due_date'] or '—'),
+    ]
+
+
+@router.get('/repair-orders/{order_id}/tags/pdf')
+async def repair_order_tags_pdf(order_id: str, _: dict = Depends(require_staff_or_module('repairs'))):
+    """One small tag per item in the order, meant to be attached to the
+    physical piece — separate from the customer-facing intake receipt above."""
+    order = await db.repair_orders.find_one({'id': order_id}, {'_id': 0})
+    if not order: raise HTTPException(status_code=404, detail='Order not found')
+    items = await db.repair_items.find({'order_id': order_id}, {'_id': 0}).sort('created_at', 1).to_list(200)
+    if not items: raise HTTPException(status_code=404, detail='This order has no items')
+    store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
+    pdf = _thermal_tags_pdf(store.get('name') or 'Ram Murti Jewellers', order, items)
+    return _pdf_response(pdf, f'item-tags-{order["order_no"]}.pdf')
+
+
+@router.post('/repair-orders/{order_id}/tags/print')
+async def repair_order_tags_print(order_id: str, user: dict = Depends(require_staff_or_module('repairs'))):
+    """Sends one tag per item straight to the WiFi thermal printer, one after
+    another (the printer's auto-cutter separates them)."""
+    order = await db.repair_orders.find_one({'id': order_id}, {'_id': 0})
+    if not order: raise HTTPException(status_code=404, detail='Order not found')
+    items = await db.repair_items.find({'order_id': order_id}, {'_id': 0}).sort('created_at', 1).to_list(200)
+    if not items: raise HTTPException(status_code=404, detail='This order has no items')
+    store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
+    shop_name = store.get('name') or 'Ram Murti Jewellers'
+    for item in items:
+        data = _escpos_receipt(shop_name, f"Item Tag — {item['item_code']}", _item_tag_lines(order, item))
+        await _print_escpos(data)
+    await log_audit(user, 'repair_order.tags_print', 'repair_order', order_id, order['order_no'], {'items': len(items)})
     return {'ok': True}
 
 
@@ -1286,6 +1332,13 @@ async def delete_karigar_ledger_entry(kid: str, entry_id: str, user=Depends(requ
     await log_audit(user, 'karigar_ledger.delete', 'karigar', kid, '', {'entry_id': entry_id, 'type': entry.get('type')})
     return {'ok': True}
 
+# Printed under the shop name on every thermal slip/receipt (intake, issue,
+# bill). Not in Store Settings — this app targets one shop, and the number
+# was given directly for the print templates rather than as a configurable
+# field.
+STORE_MOBILE = '97818-00888'
+
+
 def _thermal_slip_pdf(shop_name: str, heading: str, lines: list) -> bytes:
     """Narrow (80mm) receipt-style PDF meant to be printed on a thermal
     receipt printer via the browser's print dialog. `lines` is a list of
@@ -1301,7 +1354,8 @@ def _thermal_slip_pdf(shop_name: str, heading: str, lines: list) -> bytes:
     styles = getSampleStyleSheet()
     dark = rlcolors.HexColor('#0D0D0D')
     els = [
-        Paragraph(f"<b>{shop_name}</b>", ParagraphStyle('shop', parent=styles['Normal'], alignment=1, fontSize=13, textColor=dark)),
+        Paragraph(f"<b>{shop_name}</b>", ParagraphStyle('shop', parent=styles['Normal'], alignment=1, fontSize=11, textColor=dark)),
+        Paragraph(f"Mobile: {STORE_MOBILE}", ParagraphStyle('mob', parent=styles['Normal'], alignment=1, fontSize=9, textColor=rlcolors.HexColor('#555'))),
         Paragraph(heading, ParagraphStyle('head', parent=styles['Normal'], alignment=1, fontSize=10, textColor=rlcolors.HexColor('#555'))),
         Spacer(1, 3*mm), HRFlowable(width='100%', color=rlcolors.HexColor('#999')), Spacer(1, 2*mm),
     ]
@@ -1316,7 +1370,38 @@ def _thermal_slip_pdf(shop_name: str, heading: str, lines: list) -> bytes:
             if item:
                 els.append(Paragraph(item, ParagraphStyle('n', parent=styles['Normal'], fontSize=9, textColor=rlcolors.HexColor('#555'))))
     els.append(Spacer(1, 6*mm))
-    els.append(Paragraph(f"Generated {now_utc().strftime('%d %b %Y %H:%M')}", ParagraphStyle('f', parent=styles['Normal'], fontSize=7, alignment=1, textColor=rlcolors.HexColor('#999'))))
+    els.append(Paragraph(f"Generated {now_utc().astimezone(IST).strftime('%d %b %Y %H:%M')}", ParagraphStyle('f', parent=styles['Normal'], fontSize=7, alignment=1, textColor=rlcolors.HexColor('#999'))))
+    doc.build(els)
+    pdf = buf.getvalue(); buf.close()
+    return pdf
+
+
+def _thermal_tags_pdf(shop_name: str, order: dict, items: list) -> bytes:
+    """One small item tag per page — same narrow 80mm format as
+    _thermal_slip_pdf, but a page break between items instead of one long
+    receipt, since these get cut apart and attached to separate pieces."""
+    from io import BytesIO
+    from reportlab.lib import colors as rlcolors
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import mm
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable, PageBreak
+    buf = BytesIO()
+    width = 80 * mm
+    doc = SimpleDocTemplate(buf, pagesize=(width, 100 * mm), leftMargin=4*mm, rightMargin=4*mm, topMargin=4*mm, bottomMargin=4*mm)
+    styles = getSampleStyleSheet()
+    dark = rlcolors.HexColor('#0D0D0D')
+    els: list = []
+    for i, item in enumerate(items):
+        if i > 0:
+            els.append(PageBreak())
+        els += [
+            Paragraph(f"<b>{shop_name}</b>", ParagraphStyle('shop', parent=styles['Normal'], alignment=1, fontSize=11, textColor=dark)),
+            Paragraph(f"Mobile: {STORE_MOBILE}", ParagraphStyle('mob', parent=styles['Normal'], alignment=1, fontSize=9, textColor=rlcolors.HexColor('#555'))),
+            Paragraph(f"Item Tag — {item['item_code']}", ParagraphStyle('head', parent=styles['Normal'], alignment=1, fontSize=10, textColor=rlcolors.HexColor('#555'))),
+            Spacer(1, 3*mm), HRFlowable(width='100%', color=rlcolors.HexColor('#999')), Spacer(1, 2*mm),
+        ]
+        for label, value in _item_tag_lines(order, item):
+            els.append(Paragraph(f"<b>{label}:</b> {value}", ParagraphStyle('l', parent=styles['Normal'], fontSize=10, textColor=dark, spaceAfter=3)))
     doc.build(els)
     pdf = buf.getvalue(); buf.close()
     return pdf
@@ -1397,9 +1482,10 @@ def _escpos_receipt(shop_name: str, heading: str, lines: list) -> bytes:
     enc = _escpos_enc
     out = bytearray()
     out += _ESCPOS_INIT + _ESCPOS_LINE_SPACING
-    out += _ESCPOS_ALIGN_CENTER + _ESCPOS_BOLD_ON + _ESCPOS_SIZE_BIG
+    out += _ESCPOS_ALIGN_CENTER + _ESCPOS_BOLD_ON + _ESCPOS_SIZE_TALL
     out += enc(shop_name) + b'\n'
-    out += _ESCPOS_SIZE_NORMAL + _ESCPOS_BOLD_OFF
+    out += _ESCPOS_SIZE_NORMAL
+    out += enc(f'Mobile: {STORE_MOBILE}') + b'\n' + _ESCPOS_BOLD_OFF
     out += enc(heading) + b'\n\n'
     out += enc('=' * _ESCPOS_WIDTH_CHARS) + b'\n\n'
     out += _ESCPOS_ALIGN_LEFT
@@ -1425,7 +1511,7 @@ def _escpos_receipt(shop_name: str, heading: str, lines: list) -> bytes:
 
     out += enc('=' * _ESCPOS_WIDTH_CHARS) + b'\n'
     out += _ESCPOS_ALIGN_CENTER
-    out += enc(f"Generated {now_utc().strftime('%d %b %Y %H:%M')}") + b'\n'
+    out += enc(f"Generated {now_utc().astimezone(IST).strftime('%d %b %Y %H:%M')}") + b'\n'
     out += _ESCPOS_FEED_BEFORE_CUT
     out += _ESCPOS_CUT
     return bytes(out)
@@ -1475,9 +1561,10 @@ def _escpos_bill_table(shop_name: str, item: dict) -> bytes:
 
     out = bytearray()
     out += _ESCPOS_INIT + _ESCPOS_LINE_SPACING
-    out += _ESCPOS_ALIGN_CENTER + _ESCPOS_BOLD_ON + _ESCPOS_SIZE_BIG
+    out += _ESCPOS_ALIGN_CENTER + _ESCPOS_BOLD_ON + _ESCPOS_SIZE_TALL
     out += _escpos_enc(shop_name) + b'\n'
-    out += _ESCPOS_SIZE_NORMAL + _ESCPOS_BOLD_OFF
+    out += _ESCPOS_SIZE_NORMAL
+    out += _escpos_enc(f'Mobile: {STORE_MOBILE}') + b'\n' + _ESCPOS_BOLD_OFF
     out += _escpos_enc(f"Repair Quotation — {item['item_code']}") + b'\n'
     out += _escpos_enc(item.get('customer_name', '')) + b'\n\n'
     out += _ESCPOS_ALIGN_LEFT
@@ -1509,7 +1596,7 @@ def _escpos_bill_table(shop_name: str, item: dict) -> bytes:
 
     out += b'\n'
     out += _ESCPOS_ALIGN_CENTER
-    out += _escpos_enc(f"Generated {now_utc().strftime('%d %b %Y %H:%M')}") + b'\n'
+    out += _escpos_enc(f"Generated {now_utc().astimezone(IST).strftime('%d %b %Y %H:%M')}") + b'\n'
     out += _ESCPOS_FEED_BEFORE_CUT
     out += _ESCPOS_CUT
     return bytes(out)

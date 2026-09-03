@@ -5,7 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { api } from '@/src/api/client';
 import { REPAIR_STATUS_LABEL, RepairItemStatus } from '@/src/utils/repairStatus';
-import { todayIST } from '@/src/utils/datetime';
+import { todayIST, istDateTime } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { ErrorState } from '@/src/components/ui';
@@ -14,6 +14,7 @@ type Item = {
   id: string; item_code: string; customer_name: string; description: string;
   status: RepairItemStatus; karigar_name: string | null;
   gross_weight: number; due_date: string | null; created_at: string; created_by?: string;
+  issued_by?: string | null; delivered_by?: string | null; delivered_at?: string | null;
 };
 type Pipe = { received: number; with_karigar: number; ready: number; pending_delivery: number; delivered_today: number; overdue: number };
 
@@ -134,33 +135,50 @@ export default function RepairOrdersScreen() {
             : i.status === 'pending_delivery' ? { label: 'To deliver', tone: 'brand' }
             : i.status === 'delivered' ? { label: 'Delivered', tone: 'muted' }
             : { label: REPAIR_STATUS_LABEL[i.status], tone: 'muted' };
-          // Primary action moves the item to its next stage. Ready → bill it;
-          // billed/pending-delivery → hand it over (bill.tsx opens the close-
-          // delivery form for a pending_delivery item). Everything else opens
-          // the item, where issue/receive happens.
-          const primary = i.status === 'ready' ? { label: 'Create bill', route: `/repairs/bill?itemId=${i.id}` }
+          // One action per stage, moving the tag to its next stage — tapping
+          // the tile itself (anywhere else on it) opens the item instead of a
+          // separate "Open" button. Delivered is the end of the line, so it
+          // gets none; the tile is still tappable to review the record.
+          const action = i.status === 'received' ? { label: 'Issue to Karigar', route: `/repairs/item/issue?itemId=${i.id}` }
+            : i.status === 'with_karigar' ? { label: 'Receive', route: `/repairs/item/receive?itemId=${i.id}` }
+            : i.status === 'ready' ? { label: 'Create bill', route: `/repairs/bill?itemId=${i.id}` }
             : i.status === 'pending_delivery' ? { label: 'Deliver', route: `/repairs/bill?itemId=${i.id}` }
             : null;
+          // Extra context per stage — weight/due date always, then whichever
+          // people/dates matter for that particular stage.
+          const detailParts = [`${i.gross_weight.toFixed(3)}g`];
+          if (i.due_date && i.status !== 'delivered') detailParts.push(`Due ${i.due_date}`);
+          if (i.status === 'with_karigar' && i.karigar_name) detailParts.push(`With ${i.karigar_name}`);
+          if (i.status === 'delivered') {
+            if (i.karigar_name) detailParts.push(`Issued to ${i.karigar_name}`);
+            if (i.delivered_by) detailParts.push(`Delivered by ${i.delivered_by}`);
+            if (i.delivered_at) detailParts.push(istDateTime(i.delivered_at));
+          } else if (i.issued_by) {
+            detailParts.push(`Issued by ${i.issued_by}`);
+          }
           return (
-            <View key={i.id} style={styles.item} testID={`item-${i.id}`}>
+            <Pressable
+              key={i.id}
+              onPress={() => router.push(`/repairs/item/${i.id}` as any)}
+              style={({ pressed }) => [styles.item, pressed && { opacity: 0.85 }]}
+              testID={`item-${i.id}`}
+            >
               <View style={styles.itemTop}>
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <Text style={styles.code}>{i.item_code}</Text>
                   <Text style={styles.cust} numberOfLines={1}>{i.customer_name} — {i.description}</Text>
+                  <Text style={styles.detail} numberOfLines={2}>{detailParts.join(' · ')}</Text>
                 </View>
                 <View style={[styles.pill, { backgroundColor: toneBg(pill.tone) }]}><Text style={[styles.pillText, { color: toneColor(pill.tone) }]}>{pill.label}</Text></View>
               </View>
-              <View style={styles.actRow}>
-                {primary && (
-                  <Pressable onPress={() => router.push(primary.route as any)} style={[styles.btn, styles.btnPri]} testID={`primary-${i.id}`}>
-                    <Text style={styles.btnPriText}>{primary.label}</Text>
+              {action && (
+                <View style={styles.actRow}>
+                  <Pressable onPress={() => router.push(action.route as any)} style={[styles.btn, styles.btnPri]} testID={`primary-${i.id}`}>
+                    <Text style={styles.btnPriText}>{action.label}</Text>
                   </Pressable>
-                )}
-                <Pressable onPress={() => router.push(`/repairs/item/${i.id}` as any)} style={[styles.btn, styles.btnGhost]} testID={`open-${i.id}`}>
-                  <Text style={styles.btnGhostText}>{primary ? 'Open' : 'Open item'}</Text>
-                </Pressable>
-              </View>
-            </View>
+                </View>
+              )}
+            </Pressable>
           );
         })}
         <View style={{ height: spacing.xxl }} />
@@ -199,15 +217,14 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
     padding: spacing.md, marginBottom: 10,
   },
-  itemTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  itemTop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
   code: { color: colors.onSurface, fontSize: 15, fontWeight: '600' },
   cust: { color: colors.mutedText, fontSize: 13, marginTop: 1 },
+  detail: { color: colors.onSurfaceTertiary, fontSize: 11.5, marginTop: 3, lineHeight: 15 },
   pill: { paddingHorizontal: 9, paddingVertical: 4, borderRadius: 8 },
   pillText: { fontSize: 11, fontWeight: '700', letterSpacing: 0.2 },
   actRow: { flexDirection: 'row', gap: 9, marginTop: 13 },
   btn: { flex: 1, alignItems: 'center', paddingVertical: 11, borderRadius: 11 },
   btnPri: { backgroundColor: colors.brandPrimary },
   btnPriText: { color: colors.onBrandPrimary, fontSize: 14, fontWeight: '700' },
-  btnGhost: { backgroundColor: colors.surfaceTertiary, borderWidth: 1, borderColor: colors.borderStrong },
-  btnGhostText: { color: colors.onSurface, fontSize: 14, fontWeight: '600' },
 });

@@ -87,6 +87,11 @@ export default function IssueToKarigarScreen() {
 
   const pickItem = (it: Item) => { setPickedKarigar(null); setNote(''); setItem(it); setMode('form'); };
 
+  const printIssueSlip = async (itemId: string) => {
+    try { await api.post(`/repair-items/${itemId}/issue-slip/print`, {}); }
+    catch (e: any) { Alert.alert('Print failed', e?.detail || 'Could not reach the printer. Check Store Settings.'); }
+  };
+
   const submit = async () => {
     if (submittingRef.current || !item) return;
     // Editing an existing issue transaction always needs a karigar (it's a real
@@ -100,8 +105,19 @@ export default function IssueToKarigarScreen() {
       } else {
         await api.post(`/repair-items/${item.id}/issue`, { karigar_id: pickedKarigar?.id ?? null, note });
       }
-      // Land on the tag's summary — print/PDF/edit/delete all live there.
-      router.replace(`/repairs/item/${item.id}` as any);
+      setBusy(false); submittingRef.current = false;
+      // Only a real karigar issue produces a challan to print — "Mark Pending
+      // to Bill" (no karigar picked) has nothing to hand anyone.
+      if (pickedKarigar) {
+        Alert.alert('Issued', `Handed to ${pickedKarigar.name}.`, [
+          { text: 'Skip', style: 'cancel', onPress: () => router.replace(`/repairs/item/${item.id}` as any) },
+          { text: 'Print Slip', onPress: async () => { await printIssueSlip(item.id); router.replace(`/repairs/item/${item.id}` as any); } },
+        ]);
+      } else {
+        // Land on the tag's summary — print/PDF/edit/delete all live there.
+        router.replace(`/repairs/item/${item.id}` as any);
+      }
+      return;
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
     finally { setBusy(false); submittingRef.current = false; }
   };
@@ -111,15 +127,18 @@ export default function IssueToKarigarScreen() {
     if (!pickedKarigar) { Alert.alert('Missing', 'Pick a karigar'); return; }
     submittingRef.current = true; setBusy(true);
     let okCount = 0;
+    const issuedIds: string[] = [];
     const failed: string[] = [];
     for (const it of bulkItems) {
-      try { await api.post(`/repair-items/${it.id}/issue`, { karigar_id: pickedKarigar.id, note }); okCount += 1; }
+      try { await api.post(`/repair-items/${it.id}/issue`, { karigar_id: pickedKarigar.id, note }); okCount += 1; issuedIds.push(it.id); }
       catch (_e) { failed.push(it.item_code); }
     }
     setBusy(false); submittingRef.current = false;
     if (failed.length === 0) {
-      Alert.alert('Done', `Issued ${okCount} tag${okCount === 1 ? '' : 's'} to ${pickedKarigar.name}`);
-      router.back();
+      Alert.alert('Done', `Issued ${okCount} tag${okCount === 1 ? '' : 's'} to ${pickedKarigar.name}`, [
+        { text: 'Skip', style: 'cancel', onPress: () => router.back() },
+        { text: 'Print Slips', onPress: async () => { for (const iid of issuedIds) await printIssueSlip(iid); router.back(); } },
+      ]);
     } else {
       Alert.alert('Partial success', `Issued ${okCount} tag(s). Failed: ${failed.join(', ')}`);
       await load();
@@ -199,12 +218,14 @@ export default function IssueToKarigarScreen() {
                 <Pressable onPress={() => { setKAddOpen(true); setKPickerOpen(false); }} style={[styles.pickerRow, styles.addKarigarRow]} testID="issue-karigar-add">
                   <Text style={styles.addKarigarText}>+ Add new karigar</Text>
                 </Pressable>
-                {karigars.map((k) => (
-                  <Pressable key={k.id} onPress={() => { setPickedKarigar(k); setKPickerOpen(false); }} style={styles.pickerRow} testID={`issue-karigar-${k.id}`}>
-                    <Text style={styles.pickerRowName}>{k.name}</Text>
-                    <Text style={styles.pickerRowMeta}>{k.is_employee ? 'In-house' : 'Outside'}</Text>
-                  </Pressable>
-                ))}
+                <ScrollView style={styles.pickerScroll} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+                  {karigars.map((k) => (
+                    <Pressable key={k.id} onPress={() => { setPickedKarigar(k); setKPickerOpen(false); }} style={styles.pickerRow} testID={`issue-karigar-${k.id}`}>
+                      <Text style={styles.pickerRowName}>{k.name}</Text>
+                      <Text style={styles.pickerRowMeta}>{k.is_employee ? 'In-house' : 'Outside'}</Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
               </View>
             )}
             <Text style={styles.label}>Note (optional)</Text>
@@ -240,12 +261,14 @@ export default function IssueToKarigarScreen() {
                 <Pressable onPress={() => { setKAddOpen(true); setKPickerOpen(false); }} style={[styles.pickerRow, styles.addKarigarRow]} testID="issue-karigar-add">
                   <Text style={styles.addKarigarText}>+ Add new karigar</Text>
                 </Pressable>
-                {karigars.map((k) => (
-                  <Pressable key={k.id} onPress={() => { setPickedKarigar(k); setKPickerOpen(false); }} style={styles.pickerRow} testID={`issue-karigar-${k.id}`}>
-                    <Text style={styles.pickerRowName}>{k.name}</Text>
-                    <Text style={styles.pickerRowMeta}>{k.is_employee ? 'In-house' : 'Outside'}</Text>
-                  </Pressable>
-                ))}
+                <ScrollView style={styles.pickerScroll} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+                  {karigars.map((k) => (
+                    <Pressable key={k.id} onPress={() => { setPickedKarigar(k); setKPickerOpen(false); }} style={styles.pickerRow} testID={`issue-karigar-${k.id}`}>
+                      <Text style={styles.pickerRowName}>{k.name}</Text>
+                      <Text style={styles.pickerRowMeta}>{k.is_employee ? 'In-house' : 'Outside'}</Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
               </View>
             )}
             {!isEdit && !pickedKarigar && (
@@ -327,7 +350,12 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   pickerValue: { color: colors.onSurface, fontSize: 14, fontWeight: '600' },
   pickerPlaceholder: { color: colors.mutedText, fontSize: 14 },
-  pickerList: { backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, marginTop: spacing.xs, maxHeight: 220 },
+  // overflow: 'hidden' is what actually enforces maxHeight here — without it
+  // a plain View lets its content spill past the box and visually overlap
+  // whatever renders after it (the Note field, the save button) instead of
+  // being clipped/scrollable.
+  pickerList: { backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, marginTop: spacing.xs, maxHeight: 260, overflow: 'hidden' },
+  pickerScroll: { maxHeight: 220 },
   pickerRow: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: spacing.md, paddingVertical: 10 },
   addKarigarRow: { borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: colors.brandTertiary },
   addKarigarText: { color: colors.brandSecondary, fontSize: 14, fontWeight: '800' },
