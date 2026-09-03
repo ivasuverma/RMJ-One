@@ -265,7 +265,7 @@ export default function RepairBillScreen() {
   const prevBalanceNum = parseFloat(prevBalance) || 0;
   const billTotal = prevBalanceNum + (parseFloat(billLabour) || 0) + weightCharge + (parseFloat(billExtra) || 0);
 
-  const createBill = async () => {
+  const createBill = async (andPrint: boolean = false) => {
     if (submittingRef.current || !picked) return;
     // billTotal can legitimately be negative now — a credit back to the
     // customer when the item's weight decreased (see New Wt above). Only
@@ -310,6 +310,7 @@ export default function RepairBillScreen() {
       } else {
         await api.post(`/repair-items/${picked.id}/deliver`, payload);
       }
+      if (andPrint) { await printThermalBill(picked); }
       if (routeItemId) { router.replace(`/repairs/item/${routeItemId}` as any); return; }
       setPicked(null); setMode('list'); setLoading(true);
       await loadBills(filter);
@@ -563,11 +564,11 @@ export default function RepairBillScreen() {
               </View>
               <Text style={styles.opText}>−</Text>
               <View style={styles.fieldColFlex}>
-                <Text style={styles.label}>Received (g)</Text>
+                <Text style={[styles.label, styles.labelHighlight]}>Received (g)</Text>
                 {canEditWeights ? (
-                  <TextInput testID="bill-received-weight" value={receivedWeightStr} onChangeText={(v) => setReceivedWeightStr(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0.000" placeholderTextColor={colors.mutedText} style={styles.input} />
+                  <TextInput testID="bill-received-weight" value={receivedWeightStr} onChangeText={(v) => setReceivedWeightStr(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0.000" placeholderTextColor={colors.mutedText} style={[styles.input, styles.inputHighlight]} />
                 ) : (
-                  <View style={styles.readonlyBox}><Text style={styles.readonlyBoxText}>{receivedWeight.toFixed(3)}</Text></View>
+                  <View style={[styles.readonlyBox, styles.inputHighlight]}><Text style={styles.readonlyBoxText}>{receivedWeight.toFixed(3)}</Text></View>
                 )}
               </View>
             </View>
@@ -614,16 +615,22 @@ export default function RepairBillScreen() {
               <Text style={styles.hint}>Billable weight change: {billableWeightChange >= 0 ? '+' : ''}{billableWeightChange.toFixed(3)}g (−New Wt {weightChange >= 0 ? '+' : ''}{(-weightChange).toFixed(3)}g + value add {valueAddNum.toFixed(3)}g)</Text>
             )}
 
-            <Text style={styles.label}>Previous Balance, if any (₹)</Text>
-            <TextInput testID="bill-prev-balance" value={prevBalance} onChangeText={(v) => setPrevBalance(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />
-
-            <Text style={styles.label}>Labour Charge (₹)</Text>
-            <TextInput testID="bill-labour" value={billLabour} onChangeText={(v) => setBillLabour(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />
-
-            <Text style={styles.label}>Extra Charges (₹)</Text>
-            <TextInput testID="bill-extra" value={billExtra} onChangeText={(v) => setBillExtra(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />
+            <View style={styles.formulaRow}>
+              <View style={styles.fieldColFlex}>
+                <Text style={styles.label}>Previous Balance (₹)</Text>
+                <TextInput testID="bill-prev-balance" value={prevBalance} onChangeText={(v) => setPrevBalance(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />
+              </View>
+              <View style={styles.fieldColFlex}>
+                <Text style={styles.label}>Labour Charge (₹)</Text>
+                <TextInput testID="bill-labour" value={billLabour} onChangeText={(v) => setBillLabour(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />
+              </View>
+              <View style={styles.fieldColFlex}>
+                <Text style={styles.label}>Extra Charges (₹)</Text>
+                <TextInput testID="bill-extra" value={billExtra} onChangeText={(v) => setBillExtra(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />
+              </View>
+            </View>
             {(parseFloat(billExtra) || 0) > 0 && (
-              <TextInput testID="bill-extra-note" value={billExtraNote} onChangeText={setBillExtraNote} placeholder="What's this extra charge for?" placeholderTextColor={colors.mutedText} style={styles.input} />
+              <TextInput testID="bill-extra-note" value={billExtraNote} onChangeText={setBillExtraNote} placeholder="What's this extra charge for?" placeholderTextColor={colors.mutedText} style={[styles.input, { marginTop: spacing.sm }]} />
             )}
 
             <View style={styles.totalRow} testID="bill-total">
@@ -645,27 +652,37 @@ export default function RepairBillScreen() {
               ))}
             </View>
 
-            <Text style={styles.label}>Final Photo (optional)</Text>
-            {finalPhoto ? (
-              <View style={styles.photoRow}>
-                <Image source={{ uri: finalPhoto }} style={styles.photoThumb} />
-                <Pressable onPress={() => setCameraOpen(true)} style={styles.smallBtn} testID="bill-retake-photo">
-                  <Text style={styles.smallBtnText}>Retake</Text>
+            <View style={styles.photoLineRow}>
+              <Text style={[styles.label, { marginTop: 0, flex: 1 }]}>Final Photo (optional)</Text>
+              {finalPhoto ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <Pressable onPress={() => setCameraOpen(true)} testID="bill-retake-photo">
+                    <Image source={{ uri: finalPhoto }} style={styles.photoThumbSmall} />
+                  </Pressable>
+                  <Pressable onPress={() => setFinalPhoto('')} style={styles.delBtnSmall} hitSlop={10} testID="bill-remove-photo">
+                    <Ionicons name="close" size={12} color={colors.onError} />
+                  </Pressable>
+                </View>
+              ) : (
+                <Pressable onPress={() => setCameraOpen(true)} style={styles.cameraBtn} testID="bill-add-photo">
+                  <Ionicons name="camera-outline" size={18} color={colors.onSurfaceSecondary} />
                 </Pressable>
-                <Pressable onPress={() => setFinalPhoto('')} style={styles.delBtn} hitSlop={10} testID="bill-remove-photo">
-                  <Ionicons name="close" size={16} color={colors.onError} />
-                </Pressable>
-              </View>
-            ) : (
-              <Pressable onPress={() => setCameraOpen(true)} style={styles.photoBtn} testID="bill-add-photo">
-                <Ionicons name="camera-outline" size={16} color={colors.onSurfaceSecondary} />
-                <Text style={styles.smallBtnText}>Add Photo</Text>
-              </Pressable>
-            )}
+              )}
+            </View>
 
-            <Pressable onPress={createBill} disabled={busy} style={[styles.saveBtn, busy && { opacity: 0.6 }]} testID="create-bill-btn">
-              {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.saveBtnText}>{isEditingBill ? 'Save Changes' : 'Create Bill'}</Text>}
-            </Pressable>
+            <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md }}>
+              <Pressable onPress={() => createBill(false)} disabled={busy} style={[styles.saveBtn, { flex: 1, marginTop: 0 }, busy && { opacity: 0.6 }]} testID="create-bill-btn">
+                {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.saveBtnText}>{isEditingBill ? 'Save Changes' : 'Create Bill'}</Text>}
+              </Pressable>
+              <Pressable onPress={() => createBill(true)} disabled={busy} style={[styles.saveBtnSecondary, busy && { opacity: 0.6 }]} testID="create-bill-print-btn">
+                {busy ? <ActivityIndicator color={colors.brandPrimary} /> : (
+                  <>
+                    <Ionicons name="print-outline" size={16} color={colors.brandPrimary} />
+                    <Text style={styles.saveBtnSecondaryText}>Save & Print</Text>
+                  </>
+                )}
+              </Pressable>
+            </View>
           </ScrollView>
         </KeyboardAvoidingView>
       )}
@@ -781,20 +798,20 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   readonlyBoxText: { color: colors.onSurface, fontSize: 13, fontWeight: '600', textAlign: 'center' },
   label: { color: colors.onSurfaceSecondary, fontSize: 12, marginBottom: 6, marginTop: spacing.sm },
+  labelHighlight: { color: colors.brandPrimary, fontWeight: '800' },
   input: {
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
     color: colors.onSurface, paddingHorizontal: spacing.md, paddingVertical: 12, fontSize: 14,
   },
-  photoBtn: {
-    flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, paddingVertical: 12, marginTop: 4,
+  inputHighlight: { borderColor: colors.brandPrimary, borderWidth: 2, backgroundColor: colors.brandTertiary },
+  photoLineRow: { flexDirection: 'row', alignItems: 'center', marginTop: spacing.sm },
+  cameraBtn: {
+    width: 40, height: 40, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border,
   },
-  photoRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: 4 },
-  photoThumb: { width: 52, height: 52, borderRadius: radius.md, backgroundColor: colors.surfaceTertiary },
-  smallBtn: { backgroundColor: colors.surfaceTertiary, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, borderColor: colors.border },
-  smallBtnText: { color: colors.onSurfaceSecondary, fontSize: 11, fontWeight: '700' },
-  delBtn: {
-    width: 30, height: 30, borderRadius: 15, backgroundColor: colors.error,
+  photoThumbSmall: { width: 40, height: 40, borderRadius: radius.md, backgroundColor: colors.surfaceTertiary },
+  delBtnSmall: {
+    width: 20, height: 20, borderRadius: 10, backgroundColor: colors.error,
     borderColor: colors.onError, borderWidth: 1, alignItems: 'center', justifyContent: 'center',
   },
   totalRow: {
@@ -810,4 +827,9 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   chipTextActive: { color: colors.onBrandPrimary },
   saveBtn: { backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: 14, alignItems: 'center', marginTop: spacing.md },
   saveBtnText: { color: colors.onBrandPrimary, fontWeight: '700' },
+  saveBtnSecondary: {
+    flex: 1, flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1.5, borderColor: colors.brandPrimary, paddingVertical: 13,
+  },
+  saveBtnSecondaryText: { color: colors.brandPrimary, fontWeight: '700', fontSize: 14 },
 });
