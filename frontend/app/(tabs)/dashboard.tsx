@@ -92,9 +92,10 @@ function sanitizeKeySet(saved: string[] | null): Set<TileKey> {
   return new Set(saved.filter((k): k is TileKey => (TILE_KEYS as readonly string[]).includes(k)));
 }
 
+type TileDetailRow = { label: string; value: string };
 type TileSpec = {
-  key: TileKey; show: boolean; icon: keyof typeof Ionicons.glyphMap; label: string; value: string; sub: string;
-  badge?: number; route: string; subLines?: number;
+  key: TileKey; show: boolean; icon: keyof typeof Ionicons.glyphMap; label: string; value: string;
+  route: string; details?: TileDetailRow[];
 };
 
 export default function DashboardScreen() {
@@ -272,18 +273,67 @@ export default function DashboardScreen() {
           <View style={styles.tileGrid} testID="dashboard-tiles">
             {(() => {
               const a = data.todays_attendance; const b = data.business_summary;
-              const pend = (data.pending_approvals?.attendance_corrections || 0) + (data.pending_approvals?.leave_requests || 0);
-              const r = data.repairs_summary; const cb = data.cashbook_summary;
+              const pa = data.pending_approvals;
+              const pend = (pa?.attendance_corrections || 0) + (pa?.leave_requests || 0);
+              const r = data.repairs_summary; const cb = data.cashbook_summary; const sm = data.samples_summary; const ts = data.tasks_summary;
               const tiles: Partial<Record<TileKey, TileSpec>> = {
-                attendance: { key: 'attendance', show: hasModule('attendance'), icon: 'people-outline', label: 'Attendance', value: `${a.present}/${a.total}`, sub: `in · ${a.not_checked_in} missing`, badge: a.not_checked_in || undefined, route: '/(tabs)/attendance' },
-                tasks: { key: 'tasks', show: hasModule('tasks'), icon: 'checkbox-outline', label: 'Tasks', value: String(data.tasks_summary.open_total), sub: data.tasks_summary.due_today > 0 ? `${data.tasks_summary.due_today} due today` : 'open', badge: data.tasks_summary.due_today || undefined, route: '/tasks' },
-                documents: { key: 'documents', show: hasModule('documents'), icon: 'documents-outline', label: 'Documents', value: String(data.documents_pending || 0), sub: 'to record', badge: data.documents_pending || undefined, route: '/documents?tab=pending' },
-                stock: { key: 'stock', show: hasModule('samples'), icon: 'diamond-outline', label: 'Stock In/Out', value: String(data.samples_summary.with_karigar), sub: 'out', route: '/samples?status=with_karigar' },
-                customers: { key: 'customers', show: showRepairsTile || hasModule('customer_ledger'), icon: 'person-outline', label: 'Customers', value: String(b.customers_open), sub: 'open ledgers', route: '/reports/customer-ledger' },
-                karigars: { key: 'karigars', show: showRepairsTile || hasModule('karigar_ledger'), icon: 'hammer-outline', label: 'Karigars', value: String(b.karigars_open), sub: `${b.fine_with_karigars.toFixed(2)}g due · ₹${Math.round(Math.abs(b.karigar_amt_payable)).toLocaleString('en-IN')} pay`, route: '/reports/karigar-ledger', subLines: 2 },
-                repairs: { key: 'repairs', show: showRepairsTile, icon: 'construct-outline', label: 'Repairs', value: String(r.total_open), sub: `${r.ready} ready · ${r.with_karigar} with karigar`, badge: r.overdue || undefined, route: '/repairs' },
-                cashbook: { key: 'cashbook', show: hasModule('cash_book'), icon: 'wallet-outline', label: 'Cash Book', value: fmtINR(cb.closing_balance), sub: (cb.counters?.length || 0) > 0 ? `${cb.counters!.length} counters` : 'closing balance', route: '/cashbook' },
-                approvals: { key: 'approvals', show: hasModule('approvals') && pend > 0, icon: 'checkmark-done-outline', label: 'Approvals', value: String(pend), sub: 'pending', badge: pend || undefined, route: '/approvals' },
+                attendance: {
+                  key: 'attendance', show: hasModule('attendance'), icon: 'people-outline', label: 'Attendance',
+                  value: `${a.present}/${a.total}`, route: '/(tabs)/attendance',
+                  details: [
+                    { label: 'Present', value: String(a.present) }, { label: 'Absent', value: String(a.absent) },
+                    { label: 'Late', value: String(a.late) }, { label: 'Not checked in', value: String(a.not_checked_in) },
+                  ],
+                },
+                tasks: {
+                  key: 'tasks', show: hasModule('tasks'), icon: 'checkbox-outline', label: 'Tasks',
+                  value: String(ts.open_total), route: '/tasks',
+                  details: [
+                    { label: 'Due today', value: String(ts.due_today) }, { label: 'Overdue', value: String(ts.overdue) },
+                    { label: 'Done today', value: String(ts.done_today) },
+                  ],
+                },
+                documents: { key: 'documents', show: hasModule('documents'), icon: 'documents-outline', label: 'Documents', value: String(data.documents_pending || 0), route: '/documents?tab=pending' },
+                stock: {
+                  key: 'stock', show: hasModule('samples'), icon: 'diamond-outline', label: 'Stock In/Out',
+                  value: String(sm.with_karigar), route: '/samples?status=with_karigar',
+                  details: [
+                    { label: 'With karigar', value: String(sm.with_karigar) }, { label: 'Overdue', value: String(sm.overdue) },
+                    { label: 'Received today', value: String(sm.received_today) },
+                  ],
+                },
+                customers: { key: 'customers', show: showRepairsTile || hasModule('customer_ledger'), icon: 'person-outline', label: 'Customers', value: String(b.customers_open), route: '/reports/customer-ledger' },
+                karigars: {
+                  key: 'karigars', show: showRepairsTile || hasModule('karigar_ledger'), icon: 'hammer-outline', label: 'Karigars',
+                  value: String(b.karigars_open), route: '/reports/karigar-ledger',
+                  details: [
+                    { label: 'Fine due', value: `${b.fine_with_karigars.toFixed(2)}g` },
+                    { label: 'Payable', value: `₹${Math.round(Math.abs(b.karigar_amt_payable)).toLocaleString('en-IN')}` },
+                  ],
+                },
+                repairs: {
+                  key: 'repairs', show: showRepairsTile, icon: 'construct-outline', label: 'Repairs',
+                  value: String(r.total_open), route: '/repairs',
+                  details: [
+                    { label: 'Issued', value: String(r.with_karigar) }, { label: 'Ready', value: String(r.ready) },
+                    { label: 'Delivered today', value: String(r.delivered_today) }, { label: 'Overdue', value: String(r.overdue) },
+                  ],
+                },
+                cashbook: {
+                  key: 'cashbook', show: hasModule('cash_book'), icon: 'wallet-outline', label: 'Cash Book',
+                  value: fmtINR(cb.closing_balance), route: '/cashbook',
+                  details: (cb.counters && cb.counters.length > 0)
+                    ? cb.counters.map((c) => ({ label: c.name, value: fmtINR(c.closing) }))
+                    : [{ label: 'Received today', value: fmtINR(cb.received_today) }, { label: 'Paid today', value: fmtINR(cb.paid_today) }],
+                },
+                approvals: {
+                  key: 'approvals', show: hasModule('approvals') && pend > 0, icon: 'checkmark-done-outline', label: 'Approvals',
+                  value: String(pend), route: '/approvals',
+                  details: [
+                    { label: 'Corrections', value: String(pa?.attendance_corrections || 0) },
+                    { label: 'Leave requests', value: String(pa?.leave_requests || 0) },
+                  ],
+                },
               };
               return (
                 <>
@@ -399,33 +449,44 @@ function NeedsAttention({ items, onGo }: { items: AttnItem[]; onGo: (route: stri
   );
 }
 
-/* ---------------- Tile — all nine "Jump to" tiles share one size and one
-   fold behavior. Folded, a tile shows just its icon and badge (if any); the
-   value/label/sub-line collapse away. The fold toggle sits in its own small
-   corner button so it doesn't fight the tile's own onPress (same nested-
-   Pressable pattern React Native already handles fine — the inner Pressable
-   captures the tap before it reaches the outer one). ---------------- */
+/* ---------------- Tile — all nine "Jump to" tiles share one fixed size.
+   The icon, the headline value (top-right, in place of where a badge used
+   to sit), and the label always stay visible — folding only hides/reveals
+   the extra breakdown rows (`details`), via a chevron next to the label.
+   Tiles with no details (nothing extra to show) render without a chevron
+   at all, so there's nothing to tap. Nested Pressables (fold button inside
+   the tile's own onPress) is the same pattern used before — the inner one
+   captures the tap before it reaches the outer. ---------------- */
 function Tile({ t, folded, onToggleFold, onPress }: {
   t: TileSpec; folded: boolean; onToggleFold: () => void; onPress: () => void;
 }) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+  const hasDetails = !!t.details && t.details.length > 0;
   return (
     <View style={styles.tile} testID={`dash-tile-${t.key}`}>
-      {!!t.badge && <View style={styles.tileBadge}><Text style={styles.tileBadgeText}>{t.badge}</Text></View>}
       <Pressable onPress={onPress} style={({ pressed }) => pressed && { opacity: 0.85 }}>
-        <View style={styles.tileIconRow}>
+        <View style={styles.tileTopRow}>
           <View style={styles.tileIcon}><Ionicons name={t.icon} size={20} color={colors.brandSecondary} /></View>
-          <Pressable onPress={onToggleFold} hitSlop={10} style={styles.tileFoldBtn} testID={`dash-tile-${t.key}-fold`}>
-            <Ionicons name={folded ? 'chevron-down' : 'chevron-up'} size={15} color={colors.mutedText} />
-          </Pressable>
+          <Text style={styles.tileValueTop} numberOfLines={1}>{t.value}</Text>
         </View>
-        {!folded && (
-          <>
-            <Text style={styles.tileValue} numberOfLines={1}>{t.value}</Text>
-            <Text style={styles.tileLabel} numberOfLines={1}>{t.label}</Text>
-            <Text style={styles.tileSub} numberOfLines={t.subLines || 1}>{t.sub}</Text>
-          </>
+        <View style={styles.tileLabelRow}>
+          <Text style={styles.tileLabel} numberOfLines={1}>{t.label}</Text>
+          {hasDetails && (
+            <Pressable onPress={onToggleFold} hitSlop={10} style={styles.tileFoldBtn} testID={`dash-tile-${t.key}-fold`}>
+              <Ionicons name={folded ? 'chevron-down' : 'chevron-up'} size={15} color={colors.mutedText} />
+            </Pressable>
+          )}
+        </View>
+        {hasDetails && !folded && (
+          <View style={styles.tileDetails}>
+            {t.details!.map((d) => (
+              <View key={d.label} style={styles.tileDetailRow}>
+                <Text style={styles.tileDetailLabel} numberOfLines={1}>{d.label}</Text>
+                <Text style={styles.tileDetailValue} numberOfLines={1}>{d.value}</Text>
+              </View>
+            ))}
+          </View>
         )}
       </Pressable>
     </View>
@@ -820,19 +881,24 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   reorderBtnText: { color: colors.brandSecondary, fontSize: 12, fontWeight: '700' },
   glanceGrid: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.xl },
   tileGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.xl },
+  // flexGrow: 0 (fixed width) so all nine tiles stay the same size no matter
+  // how many land in a given row — an uneven last row (e.g. Repairs + Cash
+  // Book alone) leaves blank space instead of stretching to fill it.
   tile: {
-    flexBasis: '31%', flexGrow: 1, minWidth: 100, position: 'relative',
+    flexBasis: '31%', flexGrow: 0, flexShrink: 0, minWidth: 100, position: 'relative',
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
     padding: spacing.md, gap: 2,
   },
-  tileIconRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  tileIcon: { width: 40, height: 40, borderRadius: 11, backgroundColor: colors.surfaceTertiary, alignItems: 'center', justifyContent: 'center', marginBottom: 6 },
+  tileTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
+  tileIcon: { width: 40, height: 40, borderRadius: 11, backgroundColor: colors.surfaceTertiary, alignItems: 'center', justifyContent: 'center' },
+  tileValueTop: { color: colors.onSurface, fontSize: 15, fontWeight: '800', flexShrink: 1, marginLeft: spacing.sm },
+  tileLabelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   tileFoldBtn: { padding: 2 },
-  tileValue: { color: colors.onSurface, fontSize: 18, fontWeight: '800' },
   tileLabel: { color: colors.onSurface, fontSize: 13, fontWeight: '700' },
-  tileSub: { color: colors.mutedText, fontSize: 11 },
-  tileBadge: { position: 'absolute', top: 8, right: 8, minWidth: 20, height: 20, paddingHorizontal: 5, borderRadius: 10, backgroundColor: colors.error, alignItems: 'center', justifyContent: 'center' },
-  tileBadgeText: { color: colors.onError, fontSize: 11, fontWeight: '800' },
+  tileDetails: { borderTopWidth: 1, borderTopColor: colors.border, marginTop: spacing.sm, paddingTop: spacing.sm, gap: 6 },
+  tileDetailRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
+  tileDetailLabel: { color: colors.mutedText, fontSize: 12, flexShrink: 1 },
+  tileDetailValue: { color: colors.onSurface, fontSize: 12.5, fontWeight: '700' },
   glanceCard: {
     flex: 1, minWidth: 0,
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
