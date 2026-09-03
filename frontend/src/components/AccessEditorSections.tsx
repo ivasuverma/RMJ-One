@@ -119,7 +119,7 @@ export function AccessSection({ editor, testIdPrefix }: { editor: AccessEditor; 
                 <Text style={styles.docLabel} numberOfLines={1}>{dc.label}</Text>
                 <Pressable onPress={() => toggleDoc(dc.key, 'view')} style={[styles.chip, dr.view && styles.chipOn]} testID={`${testIdPrefix}-docview-${dc.key}`}>
                   <Ionicons name={dr.view ? 'checkmark-circle' : 'ellipse-outline'} size={13} color={dr.view ? colors.onBrandPrimary : colors.mutedText} />
-                  <Text style={[styles.chipText, dr.view && styles.chipTextOn]}>View</Text>
+                  <Text style={[styles.chipText, dr.view && styles.chipTextOn]}>Snap</Text>
                 </Pressable>
                 <Pressable onPress={() => toggleDoc(dc.key, 'record')} style={[styles.chip, dr.record && styles.chipOn]} testID={`${testIdPrefix}-docrec-${dc.key}`}>
                   <Ionicons name={dr.record ? 'checkmark-circle' : 'ellipse-outline'} size={13} color={dr.record ? colors.onBrandPrimary : colors.mutedText} />

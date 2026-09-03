@@ -1656,6 +1656,7 @@ NOTIFICATION_MODULES = [
     {'key': 'repairs', 'label': 'Repair', 'default_roles': ['owner', 'admin']},
     {'key': 'samples', 'label': 'Stock In/Out', 'default_roles': ['owner', 'admin']},
     {'key': 'cash_book', 'label': 'Cash Book', 'default_roles': ['owner', 'admin']},
+    {'key': 'documents', 'label': 'Documents', 'default_roles': ['owner', 'admin']},
 ]
 NOTIFICATION_MODULE_KEYS = {m['key'] for m in NOTIFICATION_MODULES}
 NOTIFICATION_MODULE_DEFAULT_ROLES = {m['key']: m['default_roles'] for m in NOTIFICATION_MODULES}
@@ -1683,6 +1684,8 @@ NOTIFICATION_SCRIPTS = [
     {'key': 'cashbook_transfer', 'module': 'cash_book', 'label': 'Cash transferred between counters'},
     {'key': 'cashbook_entry', 'module': 'cash_book', 'label': 'Employee recorded cash in / out'},
     {'key': 'cashbook_edit', 'module': 'cash_book', 'label': 'Employee edited a cash entry'},
+    {'key': 'document_recorded', 'module': 'documents', 'label': 'Document recorded to Done'},
+    {'key': 'document_pending_reminder', 'module': 'documents', 'label': 'Document pending more than 1 day (daily reminder)'},
 ]
 NOTIFICATION_SCRIPTS_BY_MODULE: Dict[str, list] = {}
 for _s in NOTIFICATION_SCRIPTS:
@@ -2187,6 +2190,8 @@ async def _attendance_reminder_loop():
             await _check_recurring_tasks()
             await _check_overdue_tasks()
             await _check_task_repeat_reminders()
+            from routers.documents import check_pending_reminders
+            await check_pending_reminders()
         except Exception as e:
             logger.warning(f'attendance reminder loop error: {e}')
 

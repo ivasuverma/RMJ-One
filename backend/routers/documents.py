@@ -24,6 +24,7 @@ import asyncio
 import base64
 import re
 import uuid
+from datetime import timedelta
 
 from server import db, now_utc, get_current, require_owner, log_audit
 
@@ -254,6 +255,7 @@ async def create_document(
         'linked_ref': None, 'note': (note or '').strip(),
         'uploaded_by': user['id'], 'uploaded_by_name': user['name'],
         'created_at': now_iso, 'recorded_at': None, 'recorded_by': None,
+        'last_pending_reminder_at': None,
         'ocr': {'text': None, 'fields': {}, 'status': 'none'},
         'deleted': False,
     }
@@ -335,6 +337,65 @@ async def _notify_record_holders(cat: dict, doc: dict, actor: dict) -> None:
                 await notify_user(e['id'], title, body, '/documents?tab=pending')
     except Exception:
         pass
+
+
+async def _notify_document_done(cat: dict, doc: dict, actor: dict) -> None:
+    """Tell owner/admin a document was filed into Done — gated by each
+    recipient's 'documents' notification preference (Settings › People),
+    same toggle as the pending-reminder nudge below. Skips the actor
+    themselves, same as the pending-doc notify above."""
+    from server import notify_user, _wants_module
+    title = f'{cat.get("label", "Document")} recorded'
+    body = ((doc.get('linked_ref') or {}).get('label') or doc.get('note') or 'Moved to Done.')[:120]
+    proj = {'_id': 0, 'id': 1, 'role': 1, 'notifications_enabled': 1, 'notif_prefs': 1}
+    try:
+        async for u in db.users.find({'role': {'$in': ['owner', 'admin']}}, proj):
+            if u['id'] == actor.get('id'):
+                continue
+            if _wants_module(u, u.get('role', ''), 'documents'):
+                await notify_user(u['id'], title, body, '/documents?tab=done')
+    except Exception:
+        pass
+
+
+PENDING_REMINDER_GRACE_HOURS = 24  # "pending for more than 1 day" — also the repeat spacing thereafter
+
+
+async def check_pending_reminders() -> None:
+    """Daily nudge: any document still pending after PENDING_REMINDER_GRACE_HOURS
+    gets its record-holders notified again — same audience as the initial
+    "new document to record" alert — repeating roughly once a day until it's
+    recorded (or deleted). Gated by each recipient's 'documents' notification
+    preference. Called from the server's existing 15-minute reminder loop, not
+    a dedicated one — this only ever needs day-granularity."""
+    from server import notify_user, now_utc, _wants_module
+    cutoff = (now_utc() - timedelta(hours=PENDING_REMINDER_GRACE_HOURS)).isoformat()
+    cats = await _categories_map()
+    async for d in db.documents.find(
+        {'deleted': {'$ne': True}, 'status': 'pending', 'created_at': {'$lt': cutoff},
+         '$or': [{'last_pending_reminder_at': None}, {'last_pending_reminder_at': {'$lt': cutoff}}]},
+        {'_id': 0},
+    ):
+        cat = cats.get(d['category_key'])
+        if not cat:
+            continue
+        await db.documents.update_one({'id': d['id']}, {'$set': {'last_pending_reminder_at': now_utc().isoformat()}})
+        title = f'Still pending: {cat.get("label", "document")}'
+        body = (d.get('note') or (d.get('file') or {}).get('orig_name') or 'Waiting to be recorded.')[:120]
+        proj = {'_id': 0, 'id': 1, 'role': 1, 'notifications_enabled': 1, 'notif_prefs': 1}
+        sent = set()
+        try:
+            async for u in db.users.find({}, proj):
+                if _can_record(cat, u.get('role', ''), u) and _wants_module(u, u.get('role', ''), 'documents'):
+                    await notify_user(u['id'], title, body, '/documents?tab=pending')
+                    sent.add(u['id'])
+            async for e in db.employees.find({'status': {'$ne': 'inactive'}}, proj):
+                if e['id'] in sent:
+                    continue
+                if _can_record(cat, 'employee', e) and _wants_module(e, 'employee', 'documents'):
+                    await notify_user(e['id'], title, body, '/documents?tab=pending')
+        except Exception:
+            pass
 
 
 @router.get('/documents')
@@ -434,6 +495,7 @@ async def record_document(doc_id: str, body: RecordIn, user=Depends(get_current)
         upd['note'] = body.note.strip()
     await db.documents.update_one({'id': doc_id}, {'$set': upd})
     await log_audit(user, 'documents.record', 'document', doc_id, body.linked_ref_label or cat['label'])
+    await _notify_document_done(cat, {**d, **upd}, user)
     return await db.documents.find_one({'id': doc_id}, _LIST_PROJECTION)
 
 
