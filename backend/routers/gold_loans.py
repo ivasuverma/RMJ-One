@@ -191,8 +191,11 @@ async def list_gold_loans(
 ):
     query: dict = {}
     if status_ == 'overdue':
+        # "Overdue" means unpaid interest, not a missed estimated-return
+        # date (that date is only ever a rough guess) — the interest
+        # balance is derived, so filter for it in Python below instead of
+        # in the Mongo query.
         query['status'] = 'active'
-        query['estimate_return_date'] = {'$ne': None, '$lt': today_str()}
     elif status_ and status_ != 'all':
         query['status'] = status_
     if q:
@@ -204,15 +207,14 @@ async def list_gold_loans(
             {'description': {'$regex': q_esc, '$options': 'i'}},
         ]
     loans = await db.gold_loans.find(query, {'_id': 0, 'photo': 0}).sort('created_at', -1).to_list(1000)
-    today = today_str()
     txns_by_loan = await _bulk_loan_txns([l['id'] for l in loans])
     out = []
     for loan in loans:
         state = {k: v for k, v in _compute_loan_state(loan, txns_by_loan.get(loan['id'], [])).items() if k != 'interest_months'}
-        out.append({
-            **loan, **state,
-            'overdue': loan['status'] == 'active' and bool(loan.get('estimate_return_date')) and loan['estimate_return_date'] < today,
-        })
+        overdue = loan['status'] == 'active' and state['interest_balance'] > 0.01
+        out.append({**loan, **state, 'overdue': overdue})
+    if status_ == 'overdue':
+        out = [l for l in out if l['overdue']]
     return out
 
 
@@ -222,9 +224,10 @@ async def gold_loans_dashboard(_: dict = Depends(require_staff_or_module('gold_l
     closed_today = await db.gold_loans.count_documents({'status': 'closed', 'closed_at': {'$regex': f'^{today}'}})
     loans = await db.gold_loans.find({'status': 'active'}, {'_id': 0}).to_list(5000)
     active = len(loans)
-    overdue = sum(1 for l in loans if l.get('estimate_return_date') and l['estimate_return_date'] < today)
     txns_by_loan = await _bulk_loan_txns([l['id'] for l in loans])
     states = [_compute_loan_state(l, txns_by_loan.get(l['id'], [])) for l in loans]
+    # Overdue = unpaid interest, not a missed (approximate) estimated-return date.
+    overdue = sum(1 for s in states if s['interest_balance'] > 0.01)
     total_outstanding = sum(s['total_outstanding'] for s in states)
     total_interest_pending = sum(max(s['interest_balance'], 0) for s in states)
     return {
@@ -513,3 +516,36 @@ async def check_interest_due() -> None:
     every active loan. See _backfill_loan_interest for the per-loan logic."""
     async for loan in db.gold_loans.find({'status': 'active'}, {'_id': 0}):
         await _backfill_loan_interest(loan)
+
+
+async def check_monthly_interest_collection_reminder() -> None:
+    """Once a month, nudge the owner/admin to go collect pending gold-loan
+    interest — a single digest is more useful than sifting through the
+    per-loan 'interest posted' notifications individually. Fires on/after
+    the 1st of the month (by when last month's interest has posted) and
+    only when something is actually outstanding; guarded by
+    db.gold_loan_collection_reminders so the 15-minute poll sends it once
+    per calendar month."""
+    now_ist = now_utc().astimezone(IST)
+    period = now_ist.strftime('%Y-%m')
+    if await db.gold_loan_collection_reminders.find_one({'period': period}, {'_id': 0}) is not None:
+        return
+
+    loans = await db.gold_loans.find({'status': 'active'}, {'_id': 0}).to_list(5000)
+    txns_by_loan = await _bulk_loan_txns([l['id'] for l in loans])
+    states = [_compute_loan_state(l, txns_by_loan.get(l['id'], [])) for l in loans]
+    pending = [s for s in states if s['interest_balance'] > 0.01]
+
+    await db.gold_loan_collection_reminders.update_one(
+        {'period': period},
+        {'$set': {'period': period, 'sent_at': now_utc().isoformat(), 'count': len(pending)}},
+        upsert=True,
+    )
+    if not pending:
+        return
+    total = round(sum(s['interest_balance'] for s in pending), 2)
+    await _notify_module(
+        'gold_loans', 'Gold loan interest due for collection',
+        f"{len(pending)} loan{'s' if len(pending) != 1 else ''} · {_inr(total)} pending interest",
+        '/loans?status=overdue', script='gold_loan_monthly_interest_reminder', admin_only=True,
+    )

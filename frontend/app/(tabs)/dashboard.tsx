@@ -64,16 +64,16 @@ type AttnItem = { key: string; label: string; icon: keyof typeof Ionicons.glyphM
 // "Jump to" tile order — user-sortable (see ReorderSheet), persisted per device.
 // Approvals sits last by default: it's a to-do card, not a glance stat, so it
 // shouldn't crowd out the always-useful tiles above it.
-const TILE_KEYS = ['attendance', 'tasks', 'documents', 'stock', 'customers', 'karigars', 'repairs', 'cashbook', 'approvals'] as const;
+const TILE_KEYS = ['attendance', 'tasks', 'documents', 'stock', 'customers', 'karigars', 'repairs', 'loans', 'cashbook', 'approvals'] as const;
 type TileKey = typeof TILE_KEYS[number];
-const DEFAULT_TILE_ORDER: TileKey[] = ['attendance', 'tasks', 'documents', 'stock', 'customers', 'karigars', 'repairs', 'cashbook', 'approvals'];
+const DEFAULT_TILE_ORDER: TileKey[] = ['attendance', 'tasks', 'documents', 'stock', 'customers', 'karigars', 'repairs', 'loans', 'cashbook', 'approvals'];
 const TILE_ORDER_STORAGE_KEY = 'dashboard_tile_order_v1';
 // Which tiles are hidden / folded — same per-device persistence as order.
 const TILE_HIDDEN_STORAGE_KEY = 'dashboard_hidden_tiles_v1';
 const TILE_FOLDED_STORAGE_KEY = 'dashboard_folded_tiles_v1';
 const TILE_LABEL: Record<TileKey, string> = {
   attendance: 'Attendance', tasks: 'Tasks', documents: 'Documents', stock: 'Stock In/Out',
-  customers: 'Customers', karigars: 'Karigars', repairs: 'Repairs', cashbook: 'Cash Book', approvals: 'Approvals',
+  customers: 'Customers', karigars: 'Karigars', repairs: 'Repairs', loans: 'Gold Loans', cashbook: 'Cash Book', approvals: 'Approvals',
 };
 
 // Reconciles a saved order with the canonical key list: drops keys that no
@@ -123,6 +123,7 @@ export default function DashboardScreen() {
   // per device — this one resets to hidden every time the screen mounts,
   // and reuses the same fold chevron to reveal it instead of a separate control.
   const [cashRevealed, setCashRevealed] = useState(false);
+  const [loanSummary, setLoanSummary] = useState<{ active: number; overdue: number; total_outstanding: number; total_interest_pending: number } | null>(null);
 
   const isWide = width >= 900;
 
@@ -132,6 +133,13 @@ export default function DashboardScreen() {
     const clock = setInterval(() => forceTick((t) => t + 1), 15000);
     return () => clearInterval(clock);
   }, []));
+
+  useFocusEffect(useCallback(() => {
+    if (hasModule('gold_loans')) {
+      api.get<{ active: number; overdue: number; total_outstanding: number; total_interest_pending: number }>('/gold-loans/dashboard')
+        .then(setLoanSummary).catch(() => {});
+    }
+  }, [hasModule]));
 
   useFocusEffect(useCallback(() => {
     Promise.all([
@@ -323,6 +331,15 @@ export default function DashboardScreen() {
                     { label: 'Issued', value: String(r.with_karigar) }, { label: 'Ready', value: String(r.ready) },
                     { label: 'Delivered today', value: String(r.delivered_today) }, { label: 'Overdue', value: String(r.overdue) },
                   ],
+                },
+                loans: {
+                  key: 'loans', show: hasModule('gold_loans') && !!loanSummary, icon: 'cash-outline', label: 'Gold Loans',
+                  value: String(loanSummary?.active || 0), route: '/loans',
+                  details: loanSummary ? [
+                    { label: 'Overdue interest', value: String(loanSummary.overdue) },
+                    { label: 'Interest pending', value: fmtINR(loanSummary.total_interest_pending) },
+                    { label: 'Total outstanding', value: fmtINR(loanSummary.total_outstanding) },
+                  ] : [],
                 },
                 cashbook: {
                   // Masked by default — tap the fold chevron to reveal the

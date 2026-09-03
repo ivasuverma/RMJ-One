@@ -1723,6 +1723,7 @@ NOTIFICATION_SCRIPTS = [
     {'key': 'document_pending_reminder', 'module': 'documents', 'label': 'Document pending more than 1 day (daily reminder)', 'admin_only': False},
     {'key': 'gold_loan_created', 'module': 'gold_loans', 'label': 'New gold loan created', 'admin_only': True},
     {'key': 'gold_loan_interest_posted', 'module': 'gold_loans', 'label': 'Monthly interest posted', 'admin_only': True},
+    {'key': 'gold_loan_monthly_interest_reminder', 'module': 'gold_loans', 'label': 'Monthly reminder to collect pending interest', 'admin_only': True},
 ]
 NOTIFICATION_SCRIPTS_BY_MODULE: Dict[str, list] = {}
 for _s in NOTIFICATION_SCRIPTS:
@@ -2238,8 +2239,9 @@ async def _attendance_reminder_loop():
             await _check_task_repeat_reminders()
             from routers.documents import check_pending_reminders
             await check_pending_reminders()
-            from routers.gold_loans import check_interest_due
+            from routers.gold_loans import check_interest_due, check_monthly_interest_collection_reminder
             await check_interest_due()
+            await check_monthly_interest_collection_reminder()
         except Exception as e:
             logger.warning(f'attendance reminder loop error: {e}')
 
