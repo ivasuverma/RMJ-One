@@ -92,6 +92,24 @@ export default function IssueToKarigarScreen() {
     catch (e: any) { Alert.alert('Print failed', e?.detail || 'Could not reach the printer. Check Store Settings.'); }
   };
 
+  // Alert.alert with multiple buttons silently does nothing on web (same
+  // gap documented in src/utils/confirm.ts) — the issue itself had already
+  // gone through by the time this fires, so a broken dialog here made the
+  // whole action look like it did nothing. window.confirm is the web-safe
+  // equivalent; Alert.alert still works fine on native.
+  const promptPrint = (title: string, message: string, onPrint: () => void, onSkip: () => void) => {
+    if (Platform.OS === 'web') {
+      // eslint-disable-next-line no-alert
+      if (typeof window !== 'undefined' && window.confirm(`${title}\n\n${message}\n\nPrint now?`)) onPrint();
+      else onSkip();
+      return;
+    }
+    Alert.alert(title, message, [
+      { text: 'Skip', style: 'cancel', onPress: onSkip },
+      { text: 'Print Slip', onPress: onPrint },
+    ]);
+  };
+
   const submit = async () => {
     if (submittingRef.current || !item) return;
     // Editing an existing issue transaction always needs a karigar (it's a real
@@ -109,10 +127,11 @@ export default function IssueToKarigarScreen() {
       // Only a real karigar issue produces a challan to print — "Mark Pending
       // to Bill" (no karigar picked) has nothing to hand anyone.
       if (pickedKarigar) {
-        Alert.alert('Issued', `Handed to ${pickedKarigar.name}.`, [
-          { text: 'Skip', style: 'cancel', onPress: () => router.replace(`/repairs/item/${item.id}` as any) },
-          { text: 'Print Slip', onPress: async () => { await printIssueSlip(item.id); router.replace(`/repairs/item/${item.id}` as any); } },
-        ]);
+        promptPrint(
+          'Issued', `Handed to ${pickedKarigar.name}.`,
+          async () => { await printIssueSlip(item.id); router.replace(`/repairs/item/${item.id}` as any); },
+          () => router.replace(`/repairs/item/${item.id}` as any),
+        );
       } else {
         // Land on the tag's summary — print/PDF/edit/delete all live there.
         router.replace(`/repairs/item/${item.id}` as any);
@@ -135,10 +154,11 @@ export default function IssueToKarigarScreen() {
     }
     setBusy(false); submittingRef.current = false;
     if (failed.length === 0) {
-      Alert.alert('Done', `Issued ${okCount} tag${okCount === 1 ? '' : 's'} to ${pickedKarigar.name}`, [
-        { text: 'Skip', style: 'cancel', onPress: () => router.back() },
-        { text: 'Print Slips', onPress: async () => { for (const iid of issuedIds) await printIssueSlip(iid); router.back(); } },
-      ]);
+      promptPrint(
+        'Done', `Issued ${okCount} tag${okCount === 1 ? '' : 's'} to ${pickedKarigar.name}`,
+        async () => { for (const iid of issuedIds) await printIssueSlip(iid); router.back(); },
+        () => router.back(),
+      );
     } else {
       Alert.alert('Partial success', `Issued ${okCount} tag(s). Failed: ${failed.join(', ')}`);
       await load();
