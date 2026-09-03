@@ -1,10 +1,10 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, Platform, KeyboardAvoidingView, Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
 import { PhotoCaptureModal } from '@/src/components/PhotoCaptureModal';
 import { DateField } from '@/src/components/DateField';
@@ -12,9 +12,23 @@ import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
 type Customer = { id: string; name: string; mobile: string; address: string };
+type GoldLoan = {
+  id: string; customer_name: string; description: string; weight: number; pc_count?: number; photo: string;
+  principal: number; interest_rate_percent: number; loan_date: string; estimate_return_date: string | null; note: string;
+};
 
+const fmtINR = (n: number) => `₹${Math.round(n || 0).toLocaleString('en-IN')}`;
+
+// One form for issuing a new gold loan (POST /gold-loans) and editing an
+// existing one (?id=..., PUT /gold-loans/{id}) — editing opens this exact
+// form pre-filled instead of a separately-coded copy, same pattern already
+// used by samples/new.tsx. Principal/rate/customer can't be changed once a
+// loan exists (GoldLoanUpdateIn excludes them — see server.py), so those
+// fields become read-only in edit mode.
 export default function NewGoldLoanScreen() {
   const router = useRouter();
+  const { id: editId } = useLocalSearchParams<{ id?: string }>();
+  const isEdit = !!editId;
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
@@ -40,6 +54,7 @@ export default function NewGoldLoanScreen() {
   }, [allCustomers, query]);
   const pickCustomer = (c: Customer) => { setSelected(c); setCustPickerOpen(false); setQuery(''); };
 
+  const [customerName, setCustomerName] = useState(''); // display-only in edit mode — customer can't be changed after issue
   const [description, setDescription] = useState('');
   const [weight, setWeight] = useState('');
   const [pcCount, setPcCount] = useState('1');
@@ -51,14 +66,41 @@ export default function NewGoldLoanScreen() {
   const [estimateDate, setEstimateDate] = useState('');
   const [note, setNote] = useState('');
 
+  const [loadingLoan, setLoadingLoan] = useState(isEdit);
+  useEffect(() => {
+    if (!editId) return;
+    (async () => {
+      try {
+        const l = await api.get<GoldLoan>(`/gold-loans/${editId}`);
+        setCustomerName(l.customer_name);
+        setDescription(l.description); setWeight(String(l.weight ?? ''));
+        setPcCount(String(l.pc_count ?? '1')); setPhoto(l.photo || '');
+        setPrincipal(String(l.principal ?? '')); setRate(String(l.interest_rate_percent ?? ''));
+        setLoanDate(l.loan_date || ''); setEstimateDate(l.estimate_return_date || ''); setNote(l.note || '');
+      } catch (e: any) { Alert.alert('Failed', e?.detail || 'Could not load this loan'); router.back(); }
+      finally { setLoadingLoan(false); }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editId]);
+
+  // Live preview shown right on the entry fields — same rate math as the
+  // backend's monthly auto-post (server.py's check_interest_due), just
+  // computed client-side against whatever is currently typed.
+  const monthlyInterest = useMemo(() => {
+    const p = parseFloat(principal);
+    const r = parseFloat(rate);
+    if (!p || p <= 0 || !r || r < 0) return null;
+    return p * (r / 100);
+  }, [principal, rate]);
+
   const [saving, setSaving] = useState(false);
   const submittingRef = useRef(false);
 
   const submit = async () => {
     if (submittingRef.current) return;
-    if (mode === 'existing' && !selected) { Alert.alert('Missing', 'Pick a customer, or switch to New Customer'); return; }
-    if (mode === 'new' && !newName.trim()) { Alert.alert('Missing', 'Enter the customer name'); return; }
-    if (mode === 'new' && newMobile.replace(/\D/g, '').length < 7) { Alert.alert('Missing', 'A mobile number is required for a new customer'); return; }
+    if (!isEdit && mode === 'existing' && !selected) { Alert.alert('Missing', 'Pick a customer, or switch to New Customer'); return; }
+    if (!isEdit && mode === 'new' && !newName.trim()) { Alert.alert('Missing', 'Enter the customer name'); return; }
+    if (!isEdit && mode === 'new' && newMobile.replace(/\D/g, '').length < 7) { Alert.alert('Missing', 'A mobile number is required for a new customer'); return; }
     if (!description.trim()) { Alert.alert('Missing', 'Describe what is being pledged'); return; }
     const w = parseFloat(weight);
     if (!w || w <= 0) { Alert.alert('Missing', 'Enter a weight greater than 0'); return; }
@@ -70,20 +112,41 @@ export default function NewGoldLoanScreen() {
     submittingRef.current = true;
     setSaving(true);
     try {
-      const body: any = {
-        description: description.trim(), weight: w, pc_count: parseInt(pcCount, 10) || 1, photo,
-        principal: p, interest_rate_percent: r,
-        loan_date: loanDate || null, estimate_return_date: estimateDate || null, note: note.trim(),
-      };
-      if (mode === 'existing') body.customer_id = selected!.id;
-      else body.new_customer = { name: newName.trim(), mobile: newMobile, address: newAddress, notes: '' };
+      if (isEdit) {
+        await api.put(`/gold-loans/${editId}`, {
+          description: description.trim(), weight: w, pc_count: parseInt(pcCount, 10) || 1, photo,
+          estimate_return_date: estimateDate || null, note: note.trim(),
+        });
+        router.back();
+      } else {
+        const body: any = {
+          description: description.trim(), weight: w, pc_count: parseInt(pcCount, 10) || 1, photo,
+          principal: p, interest_rate_percent: r,
+          loan_date: loanDate || null, estimate_return_date: estimateDate || null, note: note.trim(),
+        };
+        if (mode === 'existing') body.customer_id = selected!.id;
+        else body.new_customer = { name: newName.trim(), mobile: newMobile, address: newAddress, notes: '' };
 
-      const created = await api.post<{ id: string }>('/gold-loans', body);
-      try { await api.post(`/gold-loans/${created.id}/voucher/print`, {}); } catch { /* saved either way */ }
-      router.replace(`/loans/${created.id}` as any);
+        const created = await api.post<{ id: string }>('/gold-loans', body);
+        router.replace(`/loans/${created.id}` as any);
+      }
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
     finally { setSaving(false); submittingRef.current = false; }
   };
+
+  if (loadingLoan) {
+    return (
+      <SafeAreaView style={styles.root} edges={['top']}>
+        <View style={styles.header}>
+          <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
+            <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
+          </Pressable>
+          <View style={{ flex: 1 }} />
+        </View>
+        <View style={styles.loader}><ActivityIndicator color={colors.brandPrimary} /></View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="loan-new-screen">
@@ -91,48 +154,56 @@ export default function NewGoldLoanScreen() {
         <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
-        <Text style={styles.title}>Loan Against Gold</Text>
+        <Text style={styles.title}>{isEdit ? 'Edit Gold Loan' : 'Loan Against Gold'}</Text>
         <View style={{ width: 40 }} />
       </View>
 
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 100 }} keyboardShouldPersistTaps="handled">
           <Text style={styles.label}>Customer</Text>
-          <View style={styles.chipRow}>
-            <Pressable onPress={() => setMode('existing')} style={[styles.chip, mode === 'existing' && styles.chipActive]} testID="cust-mode-existing">
-              <Text style={[styles.chipText, mode === 'existing' && styles.chipTextActive]}>Existing</Text>
-            </Pressable>
-            <Pressable onPress={() => setMode('new')} style={[styles.chip, mode === 'new' && styles.chipActive]} testID="cust-mode-new">
-              <Text style={[styles.chipText, mode === 'new' && styles.chipTextActive]}>New Customer</Text>
-            </Pressable>
-          </View>
-
-          {mode === 'existing' ? (
-            <>
-              <Pressable onPress={() => setCustPickerOpen((v) => !v)} style={styles.picker} testID="loan-customer-toggle">
-                <Text style={selected ? styles.pickerValue : styles.pickerPlaceholder}>{selected ? selected.name : 'Choose a customer'}</Text>
-                <Ionicons name={custPickerOpen ? 'chevron-up' : 'chevron-down'} size={16} color={colors.mutedText} />
-              </Pressable>
-              {custPickerOpen && (
-                <View style={styles.pickerList}>
-                  <TextInput value={query} onChangeText={setQuery} placeholder="Search name or mobile" placeholderTextColor={colors.mutedText} style={styles.searchInput} testID="loan-customer-search" />
-                  <ScrollView style={{ maxHeight: 220 }} nestedScrollEnabled keyboardShouldPersistTaps="handled">
-                    {filteredCustomers.map((c) => (
-                      <Pressable key={c.id} onPress={() => pickCustomer(c)} style={styles.pickerRow} testID={`loan-cust-${c.id}`}>
-                        <Text style={styles.pickerRowName}>{c.name}</Text>
-                        <Text style={styles.pickerRowMeta}>{c.mobile}</Text>
-                      </Pressable>
-                    ))}
-                    {filteredCustomers.length === 0 && <Text style={[styles.pickerRowMeta, { padding: spacing.md }]}>No matches</Text>}
-                  </ScrollView>
-                </View>
-              )}
-            </>
+          {isEdit ? (
+            <View style={[styles.picker, styles.pickerDisabled]} testID="loan-customer-readonly">
+              <Text style={styles.pickerValue}>{customerName}</Text>
+            </View>
           ) : (
             <>
-              <TextInput testID="loan-new-name" value={newName} onChangeText={setNewName} placeholder="Customer name" placeholderTextColor={colors.mutedText} style={styles.input} />
-              <TextInput testID="loan-new-mobile" value={newMobile} onChangeText={setNewMobile} placeholder="Mobile number" placeholderTextColor={colors.mutedText} keyboardType="phone-pad" style={[styles.input, { marginTop: spacing.sm }]} />
-              <TextInput testID="loan-new-address" value={newAddress} onChangeText={setNewAddress} placeholder="Address (optional)" placeholderTextColor={colors.mutedText} style={[styles.input, { marginTop: spacing.sm }]} multiline />
+              <View style={styles.chipRow}>
+                <Pressable onPress={() => setMode('existing')} style={[styles.chip, mode === 'existing' && styles.chipActive]} testID="cust-mode-existing">
+                  <Text style={[styles.chipText, mode === 'existing' && styles.chipTextActive]}>Existing</Text>
+                </Pressable>
+                <Pressable onPress={() => setMode('new')} style={[styles.chip, mode === 'new' && styles.chipActive]} testID="cust-mode-new">
+                  <Text style={[styles.chipText, mode === 'new' && styles.chipTextActive]}>New Customer</Text>
+                </Pressable>
+              </View>
+
+              {mode === 'existing' ? (
+                <>
+                  <Pressable onPress={() => setCustPickerOpen((v) => !v)} style={styles.picker} testID="loan-customer-toggle">
+                    <Text style={selected ? styles.pickerValue : styles.pickerPlaceholder}>{selected ? selected.name : 'Choose a customer'}</Text>
+                    <Ionicons name={custPickerOpen ? 'chevron-up' : 'chevron-down'} size={16} color={colors.mutedText} />
+                  </Pressable>
+                  {custPickerOpen && (
+                    <View style={styles.pickerList}>
+                      <TextInput value={query} onChangeText={setQuery} placeholder="Search name or mobile" placeholderTextColor={colors.mutedText} style={styles.searchInput} testID="loan-customer-search" />
+                      <ScrollView style={{ maxHeight: 220 }} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+                        {filteredCustomers.map((c) => (
+                          <Pressable key={c.id} onPress={() => pickCustomer(c)} style={styles.pickerRow} testID={`loan-cust-${c.id}`}>
+                            <Text style={styles.pickerRowName}>{c.name}</Text>
+                            <Text style={styles.pickerRowMeta}>{c.mobile}</Text>
+                          </Pressable>
+                        ))}
+                        {filteredCustomers.length === 0 && <Text style={[styles.pickerRowMeta, { padding: spacing.md }]}>No matches</Text>}
+                      </ScrollView>
+                    </View>
+                  )}
+                </>
+              ) : (
+                <>
+                  <TextInput testID="loan-new-name" value={newName} onChangeText={setNewName} placeholder="Customer name" placeholderTextColor={colors.mutedText} style={styles.input} />
+                  <TextInput testID="loan-new-mobile" value={newMobile} onChangeText={setNewMobile} placeholder="Mobile number" placeholderTextColor={colors.mutedText} keyboardType="phone-pad" style={[styles.input, { marginTop: spacing.sm }]} />
+                  <TextInput testID="loan-new-address" value={newAddress} onChangeText={setNewAddress} placeholder="Address (optional)" placeholderTextColor={colors.mutedText} style={[styles.input, { marginTop: spacing.sm }]} multiline />
+                </>
+              )}
             </>
           )}
 
@@ -160,14 +231,36 @@ export default function NewGoldLoanScreen() {
 
           <View style={styles.moneyCard}>
             <Text style={styles.label}>Amount paid to customer (₹)</Text>
-            <TextInput testID="loan-principal" value={principal} onChangeText={(v) => setPrincipal(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />
+            {isEdit ? (
+              <View style={[styles.input, styles.readonlyInput]}><Text style={styles.readonlyText}>{fmtINR(parseFloat(principal) || 0)}</Text></View>
+            ) : (
+              <TextInput testID="loan-principal" value={principal} onChangeText={(v) => setPrincipal(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />
+            )}
 
             <Text style={styles.label}>Interest rate — per month (%)</Text>
-            <TextInput testID="loan-rate" value={rate} onChangeText={(v) => setRate(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="e.g. 2" placeholderTextColor={colors.mutedText} style={styles.input} />
-            <Text style={styles.hintText}>Interest posts automatically each month on the outstanding principal, starting one month after the loan date.</Text>
+            {isEdit ? (
+              <View style={[styles.input, styles.readonlyInput]}><Text style={styles.readonlyText}>{rate}%</Text></View>
+            ) : (
+              <TextInput testID="loan-rate" value={rate} onChangeText={(v) => setRate(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="e.g. 2" placeholderTextColor={colors.mutedText} style={styles.input} />
+            )}
+            {monthlyInterest !== null && (
+              <View style={styles.interestPreview} testID="loan-interest-preview">
+                <Text style={styles.interestPreviewLabel}>Interest per month</Text>
+                <Text style={styles.interestPreviewValue}>{fmtINR(monthlyInterest)}</Text>
+              </View>
+            )}
+            {!isEdit && <Text style={styles.hintText}>Interest posts automatically each month on the outstanding principal, starting one month after the loan date.</Text>}
+            {isEdit && <Text style={styles.hintText}>Amount and rate can&apos;t be changed after the loan is created — close this loan and open a new one for a renegotiation.</Text>}
           </View>
 
-          <DateField label="Loan date" value={loanDate} onChange={setLoanDate} testID="loan-date" />
+          {isEdit ? (
+            <>
+              <Text style={styles.label}>Loan date</Text>
+              <View style={[styles.input, styles.readonlyInput]}><Text style={styles.readonlyText}>{loanDate}</Text></View>
+            </>
+          ) : (
+            <DateField label="Loan date" value={loanDate} onChange={setLoanDate} testID="loan-date" />
+          )}
           <DateField label="Estimated return date (optional)" value={estimateDate} onChange={setEstimateDate} testID="loan-estimate-date" />
 
           <Text style={styles.label}>Note (optional)</Text>
@@ -175,7 +268,7 @@ export default function NewGoldLoanScreen() {
 
           <Pressable onPress={submit} disabled={saving} style={[styles.submitBtn, saving && { opacity: 0.6 }]} testID="submit-loan-btn">
             {saving ? <ActivityIndicator color={colors.onBrandPrimary} /> : (
-              <><Ionicons name="print-outline" size={17} color={colors.onBrandPrimary} /><Text style={styles.submitBtnText}>Save & Print</Text></>
+              <><Ionicons name="checkmark" size={17} color={colors.onBrandPrimary} /><Text style={styles.submitBtnText}>{isEdit ? 'Save Changes' : 'Save'}</Text></>
             )}
           </Pressable>
         </ScrollView>
@@ -188,6 +281,7 @@ export default function NewGoldLoanScreen() {
 
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
+  loader: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   header: {
     flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md, gap: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.divider,
@@ -226,6 +320,17 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   pickerRow: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: spacing.sm, paddingVertical: 10 },
   pickerRowName: { color: colors.onSurface, fontSize: 13, fontWeight: '600' },
   pickerRowMeta: { color: colors.mutedText, fontSize: 12 },
+  pickerDisabled: { opacity: 0.7 },
+  readonlyInput: { justifyContent: 'center' },
+  readonlyText: { color: colors.onSurfaceSecondary, fontSize: 14, fontWeight: '600' },
+
+  interestPreview: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    paddingHorizontal: spacing.md, paddingVertical: 10, marginTop: spacing.sm,
+  },
+  interestPreviewLabel: { color: colors.mutedText, fontSize: 12, fontWeight: '600' },
+  interestPreviewValue: { color: colors.brandPrimary, fontSize: 15, fontWeight: '800' },
 
   photoSmallBtn: {
     width: 44, height: 44, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center',

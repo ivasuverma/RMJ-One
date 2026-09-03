@@ -29,7 +29,7 @@ from server import (
 # Thermal-printer helpers live in routers/repairs.py (where they were first
 # built) rather than the shared core — reused here as-is instead of
 # duplicating the ESC/POS builder for a second module.
-from routers.repairs import _escpos_receipt, _print_escpos, _thermal_slip_pdf
+from routers.repairs import _escpos_receipt, _print_escpos, _thermal_slip_pdf, _inr, _dmy
 
 router = APIRouter()
 
@@ -188,7 +188,7 @@ def _sample_issue_slip_lines(sample: dict) -> list:
     purity/fine-weight fields samples don't track."""
     lines = [
         ('Sample No', sample['sample_code']),
-        ('Date', (sample.get('issued_at') or '')[:10]),
+        ('Date', _dmy((sample.get('issued_at') or '')[:10])),
         ('Karigar', sample['karigar_name']),
     ]
     if sample.get('tag_number'):
@@ -201,7 +201,7 @@ def _sample_issue_slip_lines(sample: dict) -> list:
     if sample.get('issue_type'):
         lines.append(('Issue Type', sample['issue_type']))
     if sample.get('due_date'):
-        lines.append(('Due Back', sample['due_date']))
+        lines.append(('Due Back', _dmy(sample['due_date'])))
     lines.append(('Issued By', sample.get('issued_by') or ''))
     if sample.get('note'):
         lines.append(('Note', sample['note']))

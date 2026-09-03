@@ -441,7 +441,7 @@ def _intake_receipt_lines(order: dict, items: list) -> list:
         ('Order No', order['order_no']),
         ('Customer', order['customer_name']),
         ('Mobile', order.get('customer_mobile') or '—'),
-        ('Received', order['created_at'][:10]),
+        ('Received', _dmy(order['created_at'][:10])),
     ]
     for idx, item in enumerate(items, 1):
         lines.append(f'Item {idx}' if len(items) > 1 else 'Item')
@@ -450,7 +450,7 @@ def _intake_receipt_lines(order: dict, items: list) -> list:
         lines.append(('Repair Type', item['repair_type'] or '—'))
         lines.append(('Weight', f"{item['gross_weight']:.3f}g"))
         lines.append(('Pcs', str(item['pc_count'])))
-        lines.append(('Due Date', item['due_date'] or '—'))
+        lines.append(('Due Date', _dmy(item['due_date'])))
     lines.append('')
     lines.append('Customer Signature: _____________________')
     return lines
@@ -482,7 +482,7 @@ def _item_tag_lines(order: dict, item: dict) -> list:
         ('Repair Type', item['repair_type'] or '—'),
         ('Weight', f"{item['gross_weight']:.3f}g"),
         ('Pcs', str(item['pc_count'])),
-        ('Due Date', item['due_date'] or '—'),
+        ('Due Date', _dmy(item['due_date'])),
     ]
 
 
@@ -1153,13 +1153,13 @@ def _bill_receipt_lines(item: dict) -> list:
     lines = [
         ('Item', item['description']), ('Tag', item['item_code']), ('Repair Type', item['repair_type'] or '—'),
         ('Weight', f"{item['gross_weight']:.3f}g"),
-        ('Labour Charge', f"₹{(item.get('bill_labour_charge') if item.get('bill_labour_charge') is not None else item.get('labour_charge', 0)):.0f}"),
+        ('Labour Charge', _inr(item.get('bill_labour_charge') if item.get('bill_labour_charge') is not None else item.get('labour_charge', 0))),
     ]
     if item.get('bill_material_adjustment'):
-        lines.append(('Material Adjustment', f"₹{item['bill_material_adjustment']:.0f}"))
+        lines.append(('Material Adjustment', _inr(item['bill_material_adjustment'])))
     if item.get('bill_extra_charges'):
-        lines.append((item.get('bill_extra_charges_note') or 'Extra Charges', f"₹{item['bill_extra_charges']:.0f}"))
-    lines.append(('Total Billed', f"₹{(item.get('billed_amount') or 0):.0f}"))
+        lines.append((item.get('bill_extra_charges_note') or 'Extra Charges', _inr(item['bill_extra_charges'])))
+    lines.append(('Total Billed', _inr(item.get('billed_amount') or 0)))
     lines.append(('Payment Mode', (item.get('payment_mode') or '—').title()))
     return lines
 
@@ -1197,7 +1197,7 @@ def _issue_slip_lines(item: dict, txn: dict) -> list:
     """Shared by the issue-slip PDF and the thermal receipt print."""
     lines = [
         ('Challan No', txn['challan_no']),
-        ('Date', txn['created_at'][:10]),
+        ('Date', _dmy(txn['created_at'][:10])),
         ('Karigar', txn['karigar_name']),
         ('Tag', item['item_code']),
         ('Item', item['description']),
@@ -1337,6 +1337,38 @@ async def delete_karigar_ledger_entry(kid: str, entry_id: str, user=Depends(requ
 # was given directly for the print templates rather than as a configurable
 # field.
 STORE_MOBILE = '97818-00888'
+
+
+def _inr(amount: float) -> str:
+    """Rupee amount grouped the Indian way (lakh/crore: 2-2-3 from the right
+    — '12,34,567' not '1,234,567'), for every thermal/PDF print across
+    Repairs, Stock In/Out and Gold Loans. Python's `:,` format spec only
+    does Western 3-digit grouping, so this is hand-rolled rather than a
+    one-line format spec."""
+    n = round(amount or 0)
+    sign = '-' if n < 0 else ''
+    s = str(abs(n))
+    if len(s) > 3:
+        last3 = s[-3:]
+        rest = s[:-3]
+        groups = []
+        while len(rest) > 2:
+            groups.insert(0, rest[-2:])
+            rest = rest[:-2]
+        if rest:
+            groups.insert(0, rest)
+        s = ','.join(groups) + ',' + last3
+    return f'{sign}Rs.{s}'
+
+
+def _dmy(iso_date: Optional[str]) -> str:
+    """A bare 'YYYY-MM-DD' calendar date (no time component) as 'DD/MM/YYYY'
+    — the Indian convention, for every date printed on a slip/receipt.
+    Parsed as plain text, not round-tripped through a real Date object."""
+    if not iso_date or len(iso_date) < 10:
+        return iso_date or '—'
+    y, m, d = iso_date[:10].split('-')
+    return f'{d}/{m}/{y}'
 
 
 def _thermal_slip_pdf(shop_name: str, heading: str, lines: list) -> bytes:
@@ -1556,7 +1588,7 @@ def _escpos_bill_table(shop_name: str, item: dict) -> bytes:
 
     def rs(n: float, signed: bool = False) -> str:
         sign = '+' if signed and n > 0 else '-' if n < 0 else ''
-        body = f"Rs.{abs(n):.0f}" if abs(n) >= 1 or n == 0 else f"Rs.{abs(n):.2f}"
+        body = _inr(abs(n)) if abs(n) >= 1 or n == 0 else f"Rs.{abs(n):.2f}"
         return sign + body
 
     out = bytearray()
@@ -1581,7 +1613,7 @@ def _escpos_bill_table(shop_name: str, item: dict) -> bytes:
     if value_add:
         out += _escpos_table_row('Value Add', f"{value_add:.3f}g")
     if rate:
-        out += _escpos_table_row('Rate', f"Rs.{rate:.0f}/g")
+        out += _escpos_table_row('Rate', f"{_inr(rate)}/g")
     out += _escpos_table_hline('├', '┼', '┤')
     out += _escpos_table_row('Weight Amount', rs(weight_amount, signed=True))
     out += _escpos_table_row('Labour Charge', rs(labour))

@@ -897,6 +897,12 @@ class GoldLoanPaymentIn(BaseModel):
     note: Optional[str] = ''
 
 
+class GoldLoanTxnUpdateIn(BaseModel):
+    amount: Optional[float] = None
+    date: Optional[str] = None
+    note: Optional[str] = None
+
+
 # ---------------- Cash Book (manual daily cash in/out ledger — see
 # routers/cashbook.py; deliberately kept separate from cash_ledger, which is
 # auto-populated from repair bill cash payments). Supports multiple named

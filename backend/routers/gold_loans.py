@@ -30,11 +30,12 @@ from server import (
     GoldLoanIn,
     GoldLoanUpdateIn,
     GoldLoanPaymentIn,
+    GoldLoanTxnUpdateIn,
     log_audit,
     _notify_module,
     _pdf_response,
 )
-from routers.repairs import _mirror_party_account, _escpos_receipt, _print_escpos, _thermal_slip_pdf
+from routers.repairs import _mirror_party_account, _escpos_receipt, _print_escpos, _thermal_slip_pdf, _inr, _dmy
 
 router = APIRouter()
 
@@ -51,21 +52,65 @@ async def _get_loan(loan_id: str) -> dict:
     return loan
 
 
-async def _loan_balances(loan: dict) -> dict:
-    """Everything downstream (list, detail, close-eligibility, interest
-    posting) reads through this — the transaction ledger is the only source
-    of truth, the loan doc itself never carries a running balance."""
-    txns = await db.gold_loan_transactions.find({'loan_id': loan['id']}, {'_id': 0}).to_list(5000)
-    interest_due = sum(t['amount'] for t in txns if t['type'] == 'interest_due')
+def _compute_loan_state(loan: dict, txns: list) -> dict:
+    """Pure function over an already-fetched transaction list, so callers that
+    need many loans at once (list/dashboard) can bulk-fetch transactions in a
+    single query and share this math instead of round-tripping per loan.
+
+    Also derives "months received vs pending": payments aren't tagged to a
+    specific month (staff picks interest vs principal only, never which
+    month — see gold_loans design notes), so a paid-interest pool is walked
+    FIFO across the ordered interest_due entries to decide how many months
+    are fully covered. Display-only; doesn't change how payments are stored."""
+    interest_due_txns = [t for t in txns if t['type'] == 'interest_due']
+    interest_due = sum(t['amount'] for t in interest_due_txns)
     interest_paid = sum(t['amount'] for t in txns if t['type'] == 'payment_interest')
     principal_paid = sum(t['amount'] for t in txns if t['type'] == 'payment_principal')
     principal_balance = round(loan['principal'] - principal_paid, 2)
     interest_balance = round(interest_due - interest_paid, 2)
+
+    dues_sorted = sorted(interest_due_txns, key=lambda t: (t.get('period') or t['date']))
+    pool = interest_paid
+    months_received = 0
+    still_covering = True
+    interest_months = []
+    for d in dues_sorted:
+        paid = still_covering and pool + 0.01 >= d['amount']
+        if paid:
+            pool -= d['amount']
+            months_received += 1
+        else:
+            still_covering = False  # FIFO by month order — once one month is short, later months can't jump ahead of it
+        interest_months.append({
+            'period': d.get('period') or (d['date'] or '')[:7], 'date': d['date'], 'amount': d['amount'], 'paid': paid,
+        })
+
     return {
         'principal': loan['principal'], 'principal_paid': round(principal_paid, 2), 'principal_balance': principal_balance,
         'interest_due': round(interest_due, 2), 'interest_paid': round(interest_paid, 2), 'interest_balance': interest_balance,
         'total_outstanding': round(principal_balance + interest_balance, 2),
+        'interest_months_total': len(dues_sorted), 'interest_months_received': months_received,
+        'interest_months_pending': len(dues_sorted) - months_received, 'interest_months': interest_months,
     }
+
+
+async def _loan_balances(loan: dict) -> dict:
+    """Everything downstream (detail, close-eligibility, interest posting)
+    that only needs one loan's numbers reads through this. List/dashboard
+    views use _bulk_loan_txns + _compute_loan_state directly to avoid
+    issuing one query per loan."""
+    txns = await db.gold_loan_transactions.find({'loan_id': loan['id']}, {'_id': 0}).to_list(5000)
+    return _compute_loan_state(loan, txns)
+
+
+async def _bulk_loan_txns(loan_ids: list) -> dict:
+    """One query for every loan's transactions, grouped by loan_id — used by
+    list/dashboard so they don't do the N+1 round-trip _loan_balances would."""
+    txns = await db.gold_loan_transactions.find({'loan_id': {'$in': loan_ids}}, {'_id': 0}).to_list(20000)
+    by_loan: dict = {}
+    for t in txns:
+        by_loan.setdefault(t['loan_id'], []).append(t)
+    return by_loan
 
 
 @router.post('/gold-loans')
@@ -109,7 +154,7 @@ async def create_gold_loan(body: GoldLoanIn, user=Depends(require_admin_or_modul
     await log_audit(user, 'gold_loan.create', 'gold_loan', loan_id, loan['loan_no'],
                      {'customer': customer['name'], 'principal': body.principal})
     await _notify_module('gold_loans', f"New gold loan {loan['loan_no']}",
-                          f"{customer['name']} · ₹{body.principal:,.0f} · by {user['name']}", '/loans',
+                          f"{customer['name']} · {_inr(body.principal)} · by {user['name']}", '/loans',
                           script='gold_loan_created', admin_only=True)
     return {k: v for k, v in loan.items() if k != '_id'}
 
@@ -136,11 +181,12 @@ async def list_gold_loans(
         ]
     loans = await db.gold_loans.find(query, {'_id': 0, 'photo': 0}).sort('created_at', -1).to_list(1000)
     today = today_str()
+    txns_by_loan = await _bulk_loan_txns([l['id'] for l in loans])
     out = []
     for loan in loans:
-        bal = await _loan_balances(loan)
+        state = {k: v for k, v in _compute_loan_state(loan, txns_by_loan.get(loan['id'], [])).items() if k != 'interest_months'}
         out.append({
-            **loan, **bal,
+            **loan, **state,
             'overdue': loan['status'] == 'active' and bool(loan.get('estimate_return_date')) and loan['estimate_return_date'] < today,
         })
     return out
@@ -149,25 +195,38 @@ async def list_gold_loans(
 @router.get('/gold-loans/dashboard')
 async def gold_loans_dashboard(_: dict = Depends(require_staff_or_module('gold_loans'))):
     today = today_str()
-    active = 0
-    overdue = 0
-    total_outstanding = 0.0
     closed_today = await db.gold_loans.count_documents({'status': 'closed', 'closed_at': {'$regex': f'^{today}'}})
-    async for loan in db.gold_loans.find({'status': 'active'}, {'_id': 0}):
-        active += 1
-        if loan.get('estimate_return_date') and loan['estimate_return_date'] < today:
-            overdue += 1
-        bal = await _loan_balances(loan)
-        total_outstanding += bal['total_outstanding']
+    loans = await db.gold_loans.find({'status': 'active'}, {'_id': 0}).to_list(5000)
+    active = len(loans)
+    overdue = sum(1 for l in loans if l.get('estimate_return_date') and l['estimate_return_date'] < today)
+    txns_by_loan = await _bulk_loan_txns([l['id'] for l in loans])
+    total_outstanding = sum(
+        _compute_loan_state(l, txns_by_loan.get(l['id'], []))['total_outstanding'] for l in loans
+    )
     return {'active': active, 'overdue': overdue, 'total_outstanding': round(total_outstanding, 2), 'closed_today': closed_today}
 
 
 @router.get('/gold-loans/{loan_id}')
 async def get_gold_loan(loan_id: str, _: dict = Depends(require_staff_or_module('gold_loans'))):
+    """Summary only — loan fields, derived balances, and the interest-month
+    calendar. The full transaction ledger is fetched separately (paginated,
+    see list_gold_loan_transactions below) so this detail load stays light
+    instead of pulling every payment/interest row up front."""
     loan = await _get_loan(loan_id)
     bal = await _loan_balances(loan)
-    txns = await db.gold_loan_transactions.find({'loan_id': loan_id}, {'_id': 0}).sort('created_at', -1).to_list(2000)
-    return {**loan, **bal, 'transactions': txns}
+    return {**loan, **bal}
+
+
+@router.get('/gold-loans/{loan_id}/transactions')
+async def list_gold_loan_transactions(
+    loan_id: str, skip: int = Query(default=0, ge=0), limit: int = Query(default=20, ge=1, le=200),
+    _: dict = Depends(require_staff_or_module('gold_loans')),
+):
+    await _get_loan(loan_id)
+    total = await db.gold_loan_transactions.count_documents({'loan_id': loan_id})
+    items = await db.gold_loan_transactions.find({'loan_id': loan_id}, {'_id': 0}) \
+        .sort('created_at', -1).skip(skip).limit(limit).to_list(limit)
+    return {'items': items, 'total': total, 'skip': skip, 'limit': limit}
 
 
 @router.put('/gold-loans/{loan_id}')
@@ -202,6 +261,38 @@ async def record_gold_loan_payment(loan_id: str, body: GoldLoanPaymentIn, user=D
     return {k: v for k, v in txn.items() if k != '_id'}
 
 
+@router.put('/gold-loans/{loan_id}/transactions/{txn_id}')
+async def update_gold_loan_transaction(
+    loan_id: str, txn_id: str, body: GoldLoanTxnUpdateIn,
+    user=Depends(require_admin_or_module_right('gold_loans', 'edit')),
+):
+    loan = await _get_loan(loan_id)
+    txn = await db.gold_loan_transactions.find_one({'id': txn_id, 'loan_id': loan_id}, {'_id': 0})
+    if not txn:
+        raise HTTPException(status_code=404, detail='Transaction not found')
+    upd = {k: v for k, v in body.model_dump().items() if v is not None}
+    if 'amount' in upd and upd['amount'] <= 0:
+        raise HTTPException(status_code=400, detail='Amount must be greater than 0')
+    if upd:
+        await db.gold_loan_transactions.update_one({'id': txn_id}, {'$set': upd})
+        await log_audit(user, 'gold_loan.transaction_update', 'gold_loan', loan_id, loan['loan_no'], {'txn_id': txn_id, **upd})
+    return await db.gold_loan_transactions.find_one({'id': txn_id}, {'_id': 0})
+
+
+@router.delete('/gold-loans/{loan_id}/transactions/{txn_id}')
+async def delete_gold_loan_transaction(
+    loan_id: str, txn_id: str, user=Depends(require_admin_or_module_right('gold_loans', 'edit')),
+):
+    loan = await _get_loan(loan_id)
+    txn = await db.gold_loan_transactions.find_one({'id': txn_id, 'loan_id': loan_id}, {'_id': 0})
+    if not txn:
+        raise HTTPException(status_code=404, detail='Transaction not found')
+    await db.gold_loan_transactions.delete_one({'id': txn_id})
+    await log_audit(user, 'gold_loan.transaction_delete', 'gold_loan', loan_id, loan['loan_no'],
+                     {'txn_id': txn_id, 'type': txn['type'], 'amount': txn['amount']})
+    return {'ok': True}
+
+
 @router.post('/gold-loans/{loan_id}/close')
 async def close_gold_loan(loan_id: str, user=Depends(require_admin_or_module('gold_loans'))):
     loan = await _get_loan(loan_id)
@@ -211,7 +302,7 @@ async def close_gold_loan(loan_id: str, user=Depends(require_admin_or_module('go
     if bal['total_outstanding'] > 0.01:
         raise HTTPException(
             status_code=400,
-            detail=f"₹{bal['total_outstanding']:,.2f} is still outstanding (₹{bal['principal_balance']:,.2f} principal + ₹{bal['interest_balance']:,.2f} interest) — collect it before closing.",
+            detail=f"{_inr(bal['total_outstanding'])} is still outstanding ({_inr(bal['principal_balance'])} principal + {_inr(bal['interest_balance'])} interest) — collect it before closing.",
         )
     iso = now_utc().isoformat()
     await db.gold_loans.update_one({'id': loan_id}, {'$set': {'status': 'closed', 'closed_at': iso, 'closed_by': user['name']}})
@@ -232,17 +323,17 @@ async def delete_gold_loan(loan_id: str, user=Depends(require_owner)):
 def _loan_voucher_lines(loan: dict) -> list:
     lines = [
         ('Loan No', loan['loan_no']),
-        ('Date', loan['loan_date']),
+        ('Date', _dmy(loan['loan_date'])),
         ('Customer', loan['customer_name']),
         ('Mobile', loan.get('customer_mobile') or '—'),
         ('Item', loan['description']),
         ('Weight', f"{loan['weight']:.3f}g"),
         ('Pieces', str(loan.get('pc_count') or 1)),
-        ('Principal', f"Rs.{loan['principal']:,.0f}"),
+        ('Principal', _inr(loan['principal'])),
         ('Interest Rate', f"{loan['interest_rate_percent']:.2f}% / month"),
     ]
     if loan.get('estimate_return_date'):
-        lines.append(('Est. Return', loan['estimate_return_date']))
+        lines.append(('Est. Return', _dmy(loan['estimate_return_date'])))
     lines.append(('Issued By', loan.get('created_by') or ''))
     if loan.get('note'):
         lines.append(('Note', loan['note']))
@@ -305,12 +396,12 @@ async def check_interest_due() -> None:
         if amount <= 0:
             continue
         await db.gold_loan_transactions.insert_one({
-            'id': str(uuid.uuid4()), 'loan_id': loan['id'], 'type': 'interest_due',
+            'id': str(uuid.uuid4()), 'loan_id': loan['id'], 'type': 'interest_due', 'period': period,
             'amount': amount, 'date': today.isoformat(), 'note': f'Interest for {period}',
             'auto': True, 'created_by': 'system', 'created_by_id': None, 'created_at': now_utc().isoformat(),
         })
         await _notify_module(
             'gold_loans', 'Gold loan interest posted',
-            f"{loan['loan_no']} · {loan['customer_name']} · Rs.{amount:,.0f}", '/loans',
+            f"{loan['loan_no']} · {loan['customer_name']} · {_inr(amount)}", '/loans',
             script='gold_loan_interest_posted', admin_only=True,
         )

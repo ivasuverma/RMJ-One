@@ -105,7 +105,9 @@ export default function NewSampleScreen() {
             await enqueueRecordPhoto({ id: pid, blob: full, filename: `sample-${rec.id}.jpg`, thumb, ref_type: 'sample', ref_id: rec.id });
           } catch { /* don't block navigation on a queue hiccup */ }
         }
-        if (rec?.id) await printIssueSlip(rec.id);
+        // Fire-and-forget — same reasoning as repairs/new.tsx: the printer
+        // socket has a multi-second timeout and shouldn't stall navigation.
+        if (rec?.id) printIssueSlip(rec.id);
         router.replace('/samples' as any);
       }
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }

@@ -1,7 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import {
-  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Alert, Platform, KeyboardAvoidingView, Image,
-} from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Alert, Platform, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
@@ -11,12 +9,11 @@ import { useAuth } from '@/src/auth/AuthContext';
 import { RecordPhotos } from '@/src/components/RecordPhotos';
 import { confirmAction } from '@/src/utils/confirm';
 import { istDateTime } from '@/src/utils/datetime';
-import { DateField } from '@/src/components/DateField';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { ErrorState } from '@/src/components/ui';
 
-type Txn = { id: string; type: 'interest_due' | 'payment_interest' | 'payment_principal'; amount: number; date: string; note: string; auto: boolean; created_by: string; created_at: string };
+type InterestMonth = { period: string; date: string; amount: number; paid: boolean };
 type Loan = {
   id: string; loan_no: string; customer_name: string; customer_mobile: string;
   description: string; weight: number; pc_count: number; photo: string;
@@ -26,12 +23,18 @@ type Loan = {
   note: string; created_at: string; created_by: string;
   principal_paid: number; principal_balance: number;
   interest_due: number; interest_paid: number; interest_balance: number; total_outstanding: number;
-  transactions: Txn[];
+  interest_months_total: number; interest_months_received: number; interest_months_pending: number;
+  interest_months: InterestMonth[];
 };
 
 const fmtINR = (n: number) => `₹${Math.round(n || 0).toLocaleString('en-IN')}`;
-const TXN_LABEL: Record<Txn['type'], string> = { interest_due: 'Interest posted', payment_interest: 'Interest received', payment_principal: 'Principal received' };
+const MONTH_LABELS = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];
 
+// This screen is summary only — balances, terms, and an at-a-glance
+// interest calendar. Recording a payment and browsing/editing the full
+// transaction ledger both live on their own screens (loans/transact.tsx,
+// loans/transactions.tsx) so this page stays a fast, light single fetch
+// instead of pulling every transaction up front.
 export default function GoldLoanDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -53,24 +56,6 @@ export default function GoldLoanDetailScreen() {
     finally { setLoading(false); }
   }, [id]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
-
-  // Payment form
-  const [payAmount, setPayAmount] = useState('');
-  const [payType, setPayType] = useState<'interest' | 'principal'>('interest');
-  const [payNote, setPayNote] = useState('');
-  const [paying, setPaying] = useState(false);
-
-  const recordPayment = async () => {
-    const amt = parseFloat(payAmount);
-    if (!amt || amt <= 0) { Alert.alert('Missing', 'Enter an amount greater than 0'); return; }
-    setPaying(true);
-    try {
-      await api.post(`/gold-loans/${id}/payment`, { amount: amt, type: payType, note: payNote.trim() });
-      setPayAmount(''); setPayNote('');
-      await load();
-    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
-    finally { setPaying(false); }
-  };
 
   const closeLoan = () => {
     if (!loan) return;
@@ -111,34 +96,6 @@ export default function GoldLoanDetailScreen() {
     finally { setPrintingPdf(false); }
   };
 
-  // Edit (limited fields — principal/rate/customer are fixed once created)
-  const [showEdit, setShowEdit] = useState(false);
-  const [eDescription, setEDescription] = useState('');
-  const [eWeight, setEWeight] = useState('');
-  const [ePcCount, setEPcCount] = useState('');
-  const [eEstimateDate, setEEstimateDate] = useState('');
-  const [eNote, setENote] = useState('');
-  const [savingEdit, setSavingEdit] = useState(false);
-  const openEdit = () => {
-    if (!loan) return;
-    setEDescription(loan.description); setEWeight(String(loan.weight)); setEPcCount(String(loan.pc_count));
-    setEEstimateDate(loan.estimate_return_date || ''); setENote(loan.note || '');
-    setShowEdit(true);
-  };
-  const saveEdit = async () => {
-    const w = parseFloat(eWeight);
-    if (!eDescription.trim() || !w || w <= 0) { Alert.alert('Missing', 'Description and weight are required'); return; }
-    setSavingEdit(true);
-    try {
-      await api.put(`/gold-loans/${id}`, {
-        description: eDescription.trim(), weight: w, pc_count: parseInt(ePcCount, 10) || 1,
-        estimate_return_date: eEstimateDate || null, note: eNote,
-      });
-      setShowEdit(false); await load();
-    } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
-    finally { setSavingEdit(false); }
-  };
-
   if (loading || !loan) {
     return (
       <SafeAreaView style={styles.root} edges={['top']}>
@@ -157,6 +114,16 @@ export default function GoldLoanDetailScreen() {
   const isActive = loan.status === 'active';
   const canClose = isActive && loan.total_outstanding <= 0.01;
 
+  // Group the flat interest_months list into year → month-number → status,
+  // for a compact 12-cell-per-year calendar grid.
+  const calByYear: Record<string, Record<string, InterestMonth>> = {};
+  loan.interest_months.forEach((m) => {
+    const [y, mm] = m.period.split('-');
+    if (!calByYear[y]) calByYear[y] = {};
+    calByYear[y][mm] = m;
+  });
+  const calYears = Object.keys(calByYear).sort();
+
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="loan-detail-screen">
       <View style={styles.header}>
@@ -165,7 +132,7 @@ export default function GoldLoanDetailScreen() {
         </Pressable>
         <Text style={styles.title} numberOfLines={1}>{loan.loan_no}</Text>
         {isActive && canEdit && (
-          <Pressable onPress={openEdit} style={styles.iconBtn} testID="edit-loan-btn" hitSlop={12}>
+          <Pressable onPress={() => router.push(`/loans/new?id=${loan.id}` as any)} style={styles.iconBtn} testID="edit-loan-btn" hitSlop={12}>
             <Ionicons name="pencil-outline" size={18} color={colors.onSurface} />
           </Pressable>
         )}
@@ -176,130 +143,107 @@ export default function GoldLoanDetailScreen() {
         )}
       </View>
 
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 60 }} keyboardShouldPersistTaps="handled">
-          <View style={[styles.badge, loan.status === 'closed' ? styles.badgeClosed : styles.badgeActive, { alignSelf: 'flex-start' }]}>
-            <Text style={[styles.badgeText, loan.status === 'closed' ? styles.badgeTextClosed : styles.badgeTextActive]}>
-              {loan.status === 'closed' ? 'Closed' : 'Active'}
-            </Text>
-          </View>
+      <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 60 }}>
+        <View style={[styles.badge, loan.status === 'closed' ? styles.badgeClosed : styles.badgeActive, { alignSelf: 'flex-start' }]}>
+          <Text style={[styles.badgeText, loan.status === 'closed' ? styles.badgeTextClosed : styles.badgeTextActive]}>
+            {loan.status === 'closed' ? 'Closed' : 'Active'}
+          </Text>
+        </View>
 
-          {loan.photo ? <Image source={{ uri: loan.photo }} style={styles.photo} /> : null}
-          <RecordPhotos refType="gold_loan" refId={loan.id} label="Photos" />
+        {loan.photo ? <Image source={{ uri: loan.photo }} style={styles.photo} /> : null}
+        <RecordPhotos refType="gold_loan" refId={loan.id} label="Photos" />
 
-          <Text style={styles.description}>{loan.description}</Text>
-          <Text style={styles.subMeta}>{loan.customer_name} · {loan.customer_mobile} · {loan.weight.toFixed(3)}g · {loan.pc_count} pc{loan.pc_count === 1 ? '' : 's'}</Text>
+        <Text style={styles.description}>{loan.description}</Text>
+        <Text style={styles.subMeta}>{loan.customer_name} · {loan.customer_mobile} · {loan.weight.toFixed(3)}g · {loan.pc_count} pc{loan.pc_count === 1 ? '' : 's'}</Text>
 
-          <View style={styles.balanceCard}>
-            <View style={styles.balRow}><Text style={styles.balLabel}>Principal</Text><Text style={styles.balValue}>{fmtINR(loan.principal)}</Text></View>
-            <View style={styles.balRow}><Text style={styles.balLabel}>Principal paid</Text><Text style={styles.balValue}>{fmtINR(loan.principal_paid)}</Text></View>
-            <View style={styles.balRow}><Text style={styles.balLabel}>Principal balance</Text><Text style={[styles.balValue, loan.principal_balance > 0 && { color: colors.onWarning }]}>{fmtINR(loan.principal_balance)}</Text></View>
-            <View style={[styles.balRow, { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 8, marginTop: 4 }]}><Text style={styles.balLabel}>Interest due (total posted)</Text><Text style={styles.balValue}>{fmtINR(loan.interest_due)}</Text></View>
-            <View style={styles.balRow}><Text style={styles.balLabel}>Interest paid</Text><Text style={styles.balValue}>{fmtINR(loan.interest_paid)}</Text></View>
-            <View style={styles.balRow}><Text style={styles.balLabel}>Interest balance</Text><Text style={[styles.balValue, loan.interest_balance > 0 && { color: colors.onWarning }]}>{fmtINR(loan.interest_balance)}</Text></View>
-            <View style={[styles.balRow, { marginTop: 6 }]}><Text style={styles.balTotalLabel}>Total outstanding</Text><Text style={styles.balTotalValue}>{fmtINR(loan.total_outstanding)}</Text></View>
-          </View>
+        <View style={styles.balanceCard}>
+          <View style={styles.balRow}><Text style={styles.balLabel}>Principal</Text><Text style={styles.balValue}>{fmtINR(loan.principal)}</Text></View>
+          <View style={styles.balRow}><Text style={styles.balLabel}>Principal paid</Text><Text style={styles.balValue}>{fmtINR(loan.principal_paid)}</Text></View>
+          <View style={styles.balRow}><Text style={styles.balLabel}>Principal balance</Text><Text style={[styles.balValue, loan.principal_balance > 0 && { color: colors.onWarning }]}>{fmtINR(loan.principal_balance)}</Text></View>
+          <View style={[styles.balRow, { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 8, marginTop: 4 }]}><Text style={styles.balLabel}>Interest due (total posted)</Text><Text style={styles.balValue}>{fmtINR(loan.interest_due)}</Text></View>
+          <View style={styles.balRow}><Text style={styles.balLabel}>Interest paid</Text><Text style={styles.balValue}>{fmtINR(loan.interest_paid)}</Text></View>
+          <View style={styles.balRow}><Text style={styles.balLabel}>Interest balance</Text><Text style={[styles.balValue, loan.interest_balance > 0 && { color: colors.onWarning }]}>{fmtINR(loan.interest_balance)}</Text></View>
+          <View style={styles.balRow}><Text style={styles.balLabel}>Interest months received / pending</Text><Text style={styles.balValue}>{loan.interest_months_received} / {loan.interest_months_pending}</Text></View>
+          <View style={[styles.balRow, { marginTop: 6 }]}><Text style={styles.balTotalLabel}>Total outstanding</Text><Text style={styles.balTotalValue}>{fmtINR(loan.total_outstanding)}</Text></View>
+        </View>
 
-          <View style={styles.detailCard}>
-            <View style={styles.detailRow}><Text style={styles.detailLabel}>Interest rate</Text><Text style={styles.detailValue}>{loan.interest_rate_percent.toFixed(2)}% / month</Text></View>
-            <View style={styles.detailRow}><Text style={styles.detailLabel}>Loan date</Text><Text style={styles.detailValue}>{loan.loan_date}</Text></View>
-            {!!loan.estimate_return_date && (
-              <View style={styles.detailRow}><Text style={styles.detailLabel}>Est. return</Text><Text style={styles.detailValue}>{loan.estimate_return_date}</Text></View>
-            )}
-            <View style={styles.detailRow}><Text style={styles.detailLabel}>Created</Text><Text style={styles.detailValue}>{istDateTime(loan.created_at)} · {loan.created_by}</Text></View>
-            {loan.closed_at && (
-              <View style={styles.detailRow}><Text style={styles.detailLabel}>Closed</Text><Text style={styles.detailValue}>{istDateTime(loan.closed_at)} · {loan.closed_by}</Text></View>
-            )}
-            {!!loan.note && (
-              <View style={[styles.detailRow, { flexDirection: 'column', alignItems: 'flex-start', gap: 4 }]}>
-                <Text style={styles.detailLabel}>Note</Text><Text style={styles.detailValue}>{loan.note}</Text>
-              </View>
-            )}
-          </View>
-
-          {showEdit && (
-            <View style={styles.formCard} testID="edit-loan-form">
-              <Text style={styles.label}>Description</Text>
-              <TextInput testID="edit-description" value={eDescription} onChangeText={setEDescription} placeholderTextColor={colors.mutedText} style={styles.input} />
-              <View style={{ flexDirection: 'row', gap: spacing.sm }}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.label}>Weight (g)</Text>
-                  <TextInput testID="edit-weight" value={eWeight} onChangeText={(v) => setEWeight(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholderTextColor={colors.mutedText} style={styles.input} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.label}>Pieces</Text>
-                  <TextInput testID="edit-pc-count" value={ePcCount} onChangeText={(v) => setEPcCount(v.replace(/[^0-9]/g, ''))} keyboardType="number-pad" placeholderTextColor={colors.mutedText} style={styles.input} />
+        {calYears.length > 0 && (
+          <View style={styles.calCard} testID="interest-calendar">
+            <Text style={styles.formHeaderText}>Interest Calendar</Text>
+            {calYears.map((y) => (
+              <View key={y} style={{ marginTop: spacing.sm }}>
+                <Text style={styles.calYear}>{y}</Text>
+                <View style={styles.calGrid}>
+                  {MONTH_LABELS.map((lbl, i) => {
+                    const mm = String(i + 1).padStart(2, '0');
+                    const cell = calByYear[y][mm];
+                    const cellStyle = cell ? (cell.paid ? styles.calCellPaid : styles.calCellPending) : styles.calCellEmpty;
+                    const textStyle = cell ? (cell.paid ? styles.calCellTextPaid : styles.calCellTextPending) : styles.calCellTextEmpty;
+                    return (
+                      <View key={mm} style={[styles.calCell, cellStyle]} testID={`cal-${y}-${mm}`}>
+                        <Text style={[styles.calCellText, textStyle]}>{lbl}</Text>
+                      </View>
+                    );
+                  })}
                 </View>
               </View>
-              <DateField label="Estimated return date" value={eEstimateDate} onChange={setEEstimateDate} testID="edit-estimate-date" />
-              <Text style={styles.label}>Note</Text>
-              <TextInput testID="edit-note" value={eNote} onChangeText={setENote} placeholderTextColor={colors.mutedText} style={styles.input} multiline />
-              <Pressable style={[styles.primaryBtn, savingEdit && { opacity: 0.6 }]} disabled={savingEdit} onPress={saveEdit} testID="save-edit-loan-btn">
-                {savingEdit ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.primaryBtnText}>Save Changes</Text>}
-              </Pressable>
-              <Pressable style={styles.secondaryBtn} onPress={() => setShowEdit(false)} testID="cancel-edit-loan-btn">
-                <Text style={styles.secondaryBtnText}>Cancel</Text>
-              </Pressable>
+            ))}
+            <View style={styles.calLegendRow}>
+              <View style={styles.calLegendItem}><View style={[styles.calLegendDot, styles.calCellPending]} /><Text style={styles.calLegendText}>Pending</Text></View>
+              <View style={styles.calLegendItem}><View style={[styles.calLegendDot, styles.calCellPaid]} /><Text style={styles.calLegendText}>Received</Text></View>
+              <View style={styles.calLegendItem}><View style={[styles.calLegendDot, styles.calCellEmpty]} /><Text style={styles.calLegendText}>Not due yet</Text></View>
             </View>
-          )}
-
-          <View style={{ flexDirection: 'row', gap: spacing.sm }}>
-            <Pressable onPress={printPdf} disabled={printingPdf} style={[styles.actionBtn, { flex: 1 }]} testID="print-loan-pdf-btn">
-              {printingPdf ? <ActivityIndicator color={colors.onSurfaceSecondary} /> : <><Ionicons name="document-text-outline" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>Print PDF</Text></>}
-            </Pressable>
-            <Pressable onPress={printThermal} style={[styles.actionBtn, { flex: 1 }]} testID="print-loan-btn">
-              <Ionicons name="print-outline" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>Print Receipt</Text>
-            </Pressable>
           </View>
+        )}
 
-          {isActive && (
-            <View style={styles.payCard} testID="loan-payment-form">
-              <Text style={styles.formHeaderText}>Record Payment</Text>
-              <View style={styles.chipRow}>
-                <Pressable onPress={() => setPayType('interest')} style={[styles.chip, payType === 'interest' && styles.chipActive]} testID="pay-type-interest">
-                  <Text style={[styles.chipText, payType === 'interest' && styles.chipTextActive]}>Interest</Text>
-                </Pressable>
-                <Pressable onPress={() => setPayType('principal')} style={[styles.chip, payType === 'principal' && styles.chipActive]} testID="pay-type-principal">
-                  <Text style={[styles.chipText, payType === 'principal' && styles.chipTextActive]}>Principal / Redemption</Text>
-                </Pressable>
-              </View>
-              <Text style={styles.label}>Amount (₹)</Text>
-              <TextInput testID="pay-amount" value={payAmount} onChangeText={(v) => setPayAmount(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />
-              <Text style={styles.label}>Note (optional)</Text>
-              <TextInput testID="pay-note" value={payNote} onChangeText={setPayNote} placeholderTextColor={colors.mutedText} style={styles.input} />
-              <Pressable onPress={recordPayment} disabled={paying} style={[styles.primaryBtn, paying && { opacity: 0.6 }]} testID="record-payment-btn">
-                {paying ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.primaryBtnText}>Record Payment</Text>}
-              </Pressable>
+        <View style={styles.detailCard}>
+          <View style={styles.detailRow}><Text style={styles.detailLabel}>Interest rate</Text><Text style={styles.detailValue}>{loan.interest_rate_percent.toFixed(2)}% / month</Text></View>
+          <View style={styles.detailRow}><Text style={styles.detailLabel}>Loan date</Text><Text style={styles.detailValue}>{loan.loan_date}</Text></View>
+          {!!loan.estimate_return_date && (
+            <View style={styles.detailRow}><Text style={styles.detailLabel}>Est. return</Text><Text style={styles.detailValue}>{loan.estimate_return_date}</Text></View>
+          )}
+          <View style={styles.detailRow}><Text style={styles.detailLabel}>Created</Text><Text style={styles.detailValue}>{istDateTime(loan.created_at)} · {loan.created_by}</Text></View>
+          {loan.closed_at && (
+            <View style={styles.detailRow}><Text style={styles.detailLabel}>Closed</Text><Text style={styles.detailValue}>{istDateTime(loan.closed_at)} · {loan.closed_by}</Text></View>
+          )}
+          {!!loan.note && (
+            <View style={[styles.detailRow, { flexDirection: 'column', alignItems: 'flex-start', gap: 4 }]}>
+              <Text style={styles.detailLabel}>Note</Text><Text style={styles.detailValue}>{loan.note}</Text>
             </View>
           )}
+        </View>
 
+        <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+          <Pressable onPress={printPdf} disabled={printingPdf} style={[styles.actionBtn, { flex: 1 }]} testID="print-loan-pdf-btn">
+            {printingPdf ? <ActivityIndicator color={colors.onSurfaceSecondary} /> : <><Ionicons name="document-text-outline" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>Print PDF</Text></>}
+          </Pressable>
+          <Pressable onPress={printThermal} style={[styles.actionBtn, { flex: 1 }]} testID="print-loan-btn">
+            <Ionicons name="print-outline" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>Print Receipt</Text>
+          </Pressable>
+        </View>
+
+        <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm }}>
           {isActive && (
-            <Pressable
-              style={[styles.primaryBtn, !canClose && { opacity: 0.4 }]} disabled={!canClose || closing}
-              onPress={closeLoan} testID="close-loan-btn"
-            >
-              {closing ? <ActivityIndicator color={colors.onBrandPrimary} /> : (
-                <Text style={styles.primaryBtnText}>{canClose ? 'Close Loan — Collected by Customer' : `Clear ${fmtINR(loan.total_outstanding)} to close`}</Text>
-              )}
+            <Pressable onPress={() => router.push(`/loans/transact?id=${loan.id}` as any)} style={[styles.actionBtn, styles.actionBtnPrimary, { flex: 1 }]} testID="record-payment-btn">
+              <Ionicons name="cash-outline" size={16} color={colors.onBrandPrimary} /><Text style={[styles.actionBtnText, { color: colors.onBrandPrimary }]}>Record Payment</Text>
             </Pressable>
           )}
+          <Pressable onPress={() => router.push(`/loans/transactions?id=${loan.id}` as any)} style={[styles.actionBtn, { flex: 1 }]} testID="view-transactions-btn">
+            <Ionicons name="list-outline" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>Transactions</Text>
+          </Pressable>
+        </View>
 
-          <Text style={[styles.formHeaderText, { marginTop: spacing.xl, marginBottom: spacing.sm }]}>History</Text>
-          {loan.transactions.length === 0 ? (
-            <Text style={styles.subMeta}>No interest or payments recorded yet.</Text>
-          ) : loan.transactions.map((t) => (
-            <View key={t.id} style={styles.txnRow} testID={`txn-${t.id}`}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.txnLabel}>{TXN_LABEL[t.type]}{t.auto ? ' (auto)' : ''}</Text>
-                <Text style={styles.txnMeta}>{t.date} · {t.created_by}{t.note ? ` · ${t.note}` : ''}</Text>
-              </View>
-              <Text style={[styles.txnAmount, t.type === 'interest_due' ? { color: colors.onWarning } : { color: colors.onSuccess }]}>
-                {t.type === 'interest_due' ? '+' : '−'}{fmtINR(t.amount)}
-              </Text>
-            </View>
-          ))}
-        </ScrollView>
-      </KeyboardAvoidingView>
+        {isActive && (
+          <Pressable
+            style={[styles.primaryBtn, !canClose && { opacity: 0.4 }]} disabled={!canClose || closing}
+            onPress={closeLoan} testID="close-loan-btn"
+          >
+            {closing ? <ActivityIndicator color={colors.onBrandPrimary} /> : (
+              <Text style={styles.primaryBtnText}>{canClose ? 'Close Loan — Collected by Customer' : `Clear ${fmtINR(loan.total_outstanding)} to close`}</Text>
+            )}
+          </Pressable>
+        )}
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -338,6 +282,25 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   balTotalLabel: { color: colors.onSurface, fontSize: 14, fontWeight: '800' },
   balTotalValue: { color: colors.brandSecondary, fontSize: 16, fontWeight: '800' },
 
+  calCard: {
+    backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border,
+    padding: spacing.md, marginBottom: spacing.md,
+  },
+  calYear: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '700', marginBottom: 6 },
+  calGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  calCell: { width: 26, height: 26, borderRadius: 6, alignItems: 'center', justifyContent: 'center' },
+  calCellText: { fontSize: 11, fontWeight: '700' },
+  calCellEmpty: { backgroundColor: colors.surfaceTertiary, borderWidth: 1, borderColor: colors.border },
+  calCellTextEmpty: { color: colors.mutedText },
+  calCellPaid: { backgroundColor: colors.success },
+  calCellTextPaid: { color: colors.onSuccess },
+  calCellPending: { backgroundColor: colors.error },
+  calCellTextPending: { color: colors.onError },
+  calLegendRow: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.md, flexWrap: 'wrap' },
+  calLegendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  calLegendDot: { width: 10, height: 10, borderRadius: 3 },
+  calLegendText: { color: colors.mutedText, fontSize: 11 },
+
   detailCard: {
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border,
     padding: spacing.md, marginBottom: spacing.lg,
@@ -346,37 +309,15 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   detailLabel: { color: colors.mutedText, fontSize: 12 },
   detailValue: { color: colors.onSurface, fontSize: 13, fontWeight: '600' },
 
-  formCard: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.lg, marginBottom: spacing.md },
-  payCard: { backgroundColor: colors.surfaceTertiary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.lg, marginTop: spacing.lg, marginBottom: spacing.md },
   formHeaderText: { color: colors.onSurface, fontSize: 13, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
-  label: { color: colors.onSurfaceSecondary, fontSize: 12, marginTop: spacing.md, marginBottom: 6 },
-  input: {
-    backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1,
-    borderColor: colors.border, color: colors.onSurface, paddingHorizontal: spacing.md, paddingVertical: 12, fontSize: 14,
-  },
-  chipRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
-  chip: { flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: radius.md, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
-  chipActive: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
-  chipText: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '700' },
-  chipTextActive: { color: colors.onBrandPrimary },
 
   primaryBtn: { backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: 14, alignItems: 'center', marginTop: spacing.lg },
   primaryBtnText: { color: colors.onBrandPrimary, fontWeight: '800', fontSize: 14 },
-  secondaryBtn: { borderRadius: radius.md, paddingVertical: 12, alignItems: 'center', marginTop: spacing.sm },
-  secondaryBtnText: { color: colors.mutedText, fontWeight: '700', fontSize: 13 },
   actionBtn: {
     flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center',
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
     paddingVertical: 12, marginTop: spacing.lg,
   },
+  actionBtnPrimary: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
   actionBtnText: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '700' },
-
-  txnRow: {
-    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
-    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
-    padding: spacing.md, marginBottom: spacing.sm,
-  },
-  txnLabel: { color: colors.onSurface, fontWeight: '700', fontSize: 13 },
-  txnMeta: { color: colors.mutedText, fontSize: 11, marginTop: 2 },
-  txnAmount: { fontSize: 14, fontWeight: '800' },
 });

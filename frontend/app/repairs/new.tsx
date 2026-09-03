@@ -127,7 +127,9 @@ export default function NewRepairOrderScreen() {
           await enqueueRecordPhoto({ id: pid, blob: full, filename: `repair-${createdItem.id}.jpg`, thumb, ref_type: 'repair_item', ref_id: createdItem.id });
         } catch { /* a failed enqueue shouldn't block navigating to the order */ }
       }
-      try { await api.post(`/repair-orders/${res.order.id}/slip/print`, {}); } catch { /* saved either way */ }
+      // Fire-and-forget — the printer socket has a multi-second timeout, and
+      // awaiting it here would stall navigation whenever it's unreachable.
+      api.post(`/repair-orders/${res.order.id}/slip/print`, {}).catch(() => { /* saved either way */ });
       router.replace(`/repairs/${res.order.id}` as any);
     } catch (e: any) { Alert.alert('Failed', e?.detail || 'Please try again'); }
     finally { setSaving(false); submittingRef.current = false; }
