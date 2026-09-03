@@ -29,7 +29,7 @@ from server import (
 # Thermal-printer helpers live in routers/repairs.py (where they were first
 # built) rather than the shared core — reused here as-is instead of
 # duplicating the ESC/POS builder for a second module.
-from routers.repairs import _escpos_receipt, _print_escpos, _thermal_slip_pdf, _inr, _dmy
+from routers.repairs import _escpos_receipt, _print_escpos, _thermal_slip_pdf, _dmy
 
 router = APIRouter()
 
