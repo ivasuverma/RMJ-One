@@ -7,6 +7,7 @@ import { api } from '@/src/api/client';
 import { notify } from '@/src/utils/notify';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { useToast } from '@/src/components/ui';
 
 type Form = { enabled: boolean; repair_ready_notice: boolean; repair_ready_template: string };
 const EMPTY: Form = { enabled: true, repair_ready_notice: true, repair_ready_template: '' };
@@ -25,11 +26,21 @@ export default function WhatsAppSettingsScreen() {
   const router = useRouter();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+  const toast = useToast();
   const [form, setForm] = useState<Form>(EMPTY);
   const [status, setStatus] = useState<WhatsAppStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const submittingRef = useRef(false);
+
+  // Gold rate fetch settings — moved here from the Gold Rate Channel screen
+  // (Work tab): fetching/sending is a task an employee can be assigned, but
+  // the schedule + margins are pricing policy, so they live in owner-only
+  // Settings instead.
+  const [fetchTime, setFetchTime] = useState('12:30');
+  const [goldMargin, setGoldMargin] = useState('0');
+  const [silverMargin, setSilverMargin] = useState('0');
+  const [grSaving, setGrSaving] = useState(false);
 
   const load = async () => {
     try {
@@ -38,8 +49,25 @@ export default function WhatsAppSettingsScreen() {
       setStatus({ configured: !!w.configured, connected: !!w.connected, phone: w.phone || null });
     } catch (_e) { /* ignore — form stays at defaults */ }
     finally { setLoading(false); }
+    try {
+      const g = await api.get<any>('/settings/gold-rate');
+      setFetchTime(g.fetch_time || '12:30');
+      setGoldMargin(String(g.gold_margin ?? 0));
+      setSilverMargin(String(g.silver_margin ?? 0));
+    } catch { /* not an owner, or gold-rate not reachable — leave defaults */ }
   };
   useEffect(() => { load(); }, []);
+
+  const saveGoldRateConfig = async () => {
+    setGrSaving(true);
+    try {
+      const gm = parseInt(goldMargin, 10) || 0;
+      const sm = parseInt(silverMargin, 10) || 0;
+      await api.put('/settings/gold-rate/config', { fetch_time: fetchTime, gold_margin: gm, silver_margin: sm });
+      toast.success('Fetch time & margins saved');
+    } catch (e: any) { toast.error(e?.detail || 'Could not save'); }
+    finally { setGrSaving(false); }
+  };
 
   const save = async () => {
     if (submittingRef.current) return;
@@ -145,6 +173,29 @@ export default function WhatsAppSettingsScreen() {
           <Ionicons name="information-circle-outline" size={16} color={colors.brandSecondary} />
           <Text style={styles.infoText}>More WhatsApp flows (gold loan reminders, etc.) will get their own toggle here as they're added. The daily gold rate broadcast now lives on the Work tab, under "Gold Rate Channel".</Text>
         </View>
+
+        <View style={styles.divider} />
+        <Text style={styles.section}>Gold Rate — Fetch Settings</Text>
+        <Text style={styles.hint}>When the daily rate auto-fetches, and the margin added on top of the scraped rate — fetching/sending itself happens on the Work tab.</Text>
+        <View style={styles.row2}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.fieldLabel}>Fetch time (24h, IST)</Text>
+            <TextInput value={fetchTime} onChangeText={setFetchTime} placeholder="12:30" placeholderTextColor={colors.mutedText} style={styles.input} testID="gold-rate-fetch-time" />
+          </View>
+        </View>
+        <View style={styles.row2}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.fieldLabel}>Gold margin (₹, +/-, rounds to ₹50)</Text>
+            <TextInput value={goldMargin} onChangeText={setGoldMargin} keyboardType="numeric" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} testID="gold-rate-gold-margin" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.fieldLabel}>Silver margin (₹, +/-, rounds to ₹100)</Text>
+            <TextInput value={silverMargin} onChangeText={setSilverMargin} keyboardType="numeric" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} testID="gold-rate-silver-margin" />
+          </View>
+        </View>
+        <Pressable onPress={saveGoldRateConfig} disabled={grSaving} style={[styles.altBtn, grSaving && { opacity: 0.6 }]} testID="gold-rate-save-config">
+          {grSaving ? <ActivityIndicator color={colors.brandSecondary} size="small" /> : <Text style={styles.altBtnText}>Save Fetch Settings</Text>}
+        </Pressable>
       </ScrollView>
 
       <View style={styles.footer}>
@@ -195,11 +246,18 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   infoText: { color: colors.onSurfaceTertiary, fontSize: 12, flex: 1 },
   hint: { color: colors.mutedText, fontSize: 12, marginBottom: spacing.md },
   fieldLabel: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '600', marginBottom: 6 },
+  divider: { height: 1, backgroundColor: colors.divider, marginTop: spacing.lg },
+  row2: { flexDirection: 'row', gap: spacing.sm },
   input: {
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
     color: colors.onSurface, paddingHorizontal: spacing.md, paddingVertical: 12, fontSize: 14, marginBottom: spacing.md,
   },
   inputMultiline: { minHeight: 90, textAlignVertical: 'top' },
+  altBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 12,
+    borderRadius: radius.md, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, marginBottom: spacing.md,
+  },
+  altBtnText: { color: colors.brandSecondary, fontSize: 13.5, fontWeight: '700' },
   footer: { position: 'absolute', left: 0, right: 0, bottom: 0, padding: spacing.lg, backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.divider },
   saveBtn: { backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: 16, alignItems: 'center' },
   saveText: { color: colors.onBrandPrimary, fontWeight: '700', fontSize: 15 },

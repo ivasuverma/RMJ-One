@@ -6,7 +6,6 @@ import { useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
 import { confirmAction } from '@/src/utils/confirm';
 import { istTime } from '@/src/utils/datetime';
-import { useAuth } from '@/src/auth/AuthContext';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { useToast } from '@/src/components/ui';
@@ -18,70 +17,63 @@ type Today = {
   error: string | null; manual: boolean; confirmed: boolean; sent_at: string | null; message: string | null;
 } | null;
 
+// Mirrors gold_rate.default_message() in the backend exactly — kept in sync
+// here so editing a rate field can regenerate the message instantly, without
+// a round trip.
+function buildMessage(goldRate: number, silverRate: number): string {
+  return `Today approx. rate update: \nGold 24k: ${goldRate} /tola\nSilver : ${silverRate} /kg\n\nClick bell icon above for notification \u{1F514}`;
+}
+
 export default function GoldRateScreen() {
   const router = useRouter();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const toast = useToast();
-  const { user } = useAuth();
-  const isOwner = user?.role === 'owner';
 
   const [loading, setLoading] = useState(true);
   const [fetchTime, setFetchTime] = useState('12:30');
-  const [goldMargin, setGoldMargin] = useState('0');
-  const [silverMargin, setSilverMargin] = useState('0');
   const [channelConnected, setChannelConnected] = useState(false);
   const [today, setToday] = useState<Today>(null);
+  const [goldRate, setGoldRate] = useState('');
+  const [silverRate, setSilverRate] = useState('');
   const [message, setMessage] = useState('');
-  const [manualGold, setManualGold] = useState('');
-  const [manualSilver, setManualSilver] = useState('');
-  const [busy, setBusy] = useState<'refetch' | 'send' | 'config' | 'manual' | null>(null);
+  const [busy, setBusy] = useState<'refetch' | 'send' | 'auto' | null>(null);
+
+  const applyToday = (doc: Today) => {
+    setToday(doc);
+    setGoldRate(doc?.gold_rate != null ? String(doc.gold_rate) : '');
+    setSilverRate(doc?.silver_rate != null ? String(doc.silver_rate) : '');
+    setMessage(doc?.message || '');
+  };
 
   const load = async () => {
     try {
       const g = await api.get<any>('/settings/gold-rate');
       setFetchTime(g.fetch_time || '12:30');
-      setGoldMargin(String(g.gold_margin ?? 0));
-      setSilverMargin(String(g.silver_margin ?? 0));
       setChannelConnected(!!g.channel_connected);
-      setToday(g.today || null);
-      setMessage(g.today?.message || '');
+      applyToday(g.today || null);
     } catch (e: any) { toast.error(e?.detail || 'Could not load'); }
     finally { setLoading(false); }
   };
   useEffect(() => { load(); }, []);
 
-  const saveConfig = async () => {
-    setBusy('config');
-    try {
-      const gm = parseInt(goldMargin, 10) || 0;
-      const sm = parseInt(silverMargin, 10) || 0;
-      await api.put('/settings/gold-rate/config', { fetch_time: fetchTime, gold_margin: gm, silver_margin: sm });
-      toast.success('Fetch time & margins saved');
-    } catch (e: any) { toast.error(e?.detail || 'Could not save'); }
-    finally { setBusy(null); }
+  // Editing either rate regenerates the message from the template — the
+  // message is derived from the rates, not tracked separately, so it can
+  // never drift from what the two fields actually show.
+  const onRateChange = (which: 'gold' | 'silver', v: string) => {
+    if (which === 'gold') setGoldRate(v); else setSilverRate(v);
+    const g = parseInt(which === 'gold' ? v : goldRate, 10);
+    const s = parseInt(which === 'silver' ? v : silverRate, 10);
+    if (g && s) setMessage(buildMessage(g, s));
   };
 
   const refetch = async () => {
     setBusy('refetch');
     try {
       const doc = await api.post<any>('/settings/gold-rate/refetch', {});
-      setToday(doc); setMessage(doc.message || '');
+      applyToday(doc);
       if (doc.error) toast.error(doc.error); else toast.success(`Fetched — Gold ₹${doc.gold_rate?.toLocaleString('en-IN')}, Silver ₹${doc.silver_rate?.toLocaleString('en-IN')}`);
     } catch (e: any) { toast.error(e?.detail || 'Could not fetch'); }
-    finally { setBusy(null); }
-  };
-
-  const setManual = async () => {
-    const g = parseInt(manualGold, 10);
-    const s = parseInt(manualSilver, 10);
-    if (!g || !s) { toast.error('Enter both gold and silver rates'); return; }
-    setBusy('manual');
-    try {
-      const doc = await api.put<any>('/settings/gold-rate', { gold_rate: g, silver_rate: s });
-      setToday(doc); setMessage(doc.message || ''); setManualGold(''); setManualSilver('');
-      toast.success('Rates set');
-    } catch (e: any) { toast.error(e?.detail || 'Could not save'); }
     finally { setBusy(null); }
   };
 
@@ -92,13 +84,38 @@ export default function GoldRateScreen() {
     async () => {
       setBusy('send');
       try {
-        await api.post('/settings/gold-rate/send', { message });
+        const g = parseInt(goldRate, 10);
+        const s = parseInt(silverRate, 10);
+        await api.post('/settings/gold-rate/send', { message, gold_rate: g || undefined, silver_rate: s || undefined });
         toast.success('Sent to Channel');
         load();
       } catch (e: any) { toast.error(e?.detail || 'Could not send'); }
       finally { setBusy(null); }
     },
   );
+
+  // One-tap path for when you trust today's number and don't need to review
+  // it first — still a deliberate tap + confirm, not a silent background
+  // send (that stays off; see gold_rate.py).
+  const fetchAndSend = () => confirmAction(
+    'Fetch & Send?',
+    "Fetches today's rate and immediately sends it to the Channel — skips the separate review step.",
+    'Fetch & Send',
+    async () => {
+      setBusy('auto');
+      try {
+        const doc = await api.post<any>('/settings/gold-rate/refetch', {});
+        applyToday(doc);
+        if (doc.error) { toast.error(doc.error); return; }
+        await api.post('/settings/gold-rate/send', { message: doc.message, gold_rate: doc.gold_rate, silver_rate: doc.silver_rate });
+        toast.success('Fetched and sent to Channel');
+        load();
+      } catch (e: any) { toast.error(e?.detail || 'Could not fetch/send'); }
+      finally { setBusy(null); }
+    },
+  );
+
+  const canSend = !!parseInt(goldRate, 10) && !!parseInt(silverRate, 10) && !!message.trim();
 
   if (loading) {
     return (
@@ -130,76 +147,52 @@ export default function GoldRateScreen() {
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 60 }} keyboardShouldPersistTaps="handled">
         <View style={styles.infoBox}>
           <Ionicons name="pricetag-outline" size={16} color={colors.brandSecondary} />
-          <Text style={styles.infoText}>Fetches a reference rate from your supplier once a day. Confirm — and adjust the rate or message if needed — before it's sent to the "Ram Murti Jewellers" WhatsApp Channel.</Text>
+          <Text style={styles.infoText}>Fetches a reference rate from your supplier once a day. Confirm — and adjust the rates or message if needed — before it's sent to the "Ram Murti Jewellers" WhatsApp Channel.</Text>
         </View>
 
         {today?.error ? (
           <View style={[styles.infoBox, styles.infoBoxWarn]}>
             <Ionicons name="alert-circle-outline" size={16} color={colors.onWarning} />
-            <Text style={[styles.infoText, { color: colors.onWarning }]}>Couldn't fetch today: {today.error}. Enter today's rates manually below.</Text>
+            <Text style={[styles.infoText, { color: colors.onWarning }]}>Couldn't fetch today: {today.error}. Enter today's rates below.</Text>
           </View>
-        ) : today?.gold_rate ? (
+        ) : today?.sent_at ? (
           <View style={[styles.infoBox, styles.infoBoxOk]}>
             <Ionicons name="checkmark-circle-outline" size={16} color={colors.onSuccess} />
-            <Text style={[styles.infoText, { color: colors.onSuccess }]}>
-              Gold ₹{today.gold_rate.toLocaleString('en-IN')} · Silver ₹{today.silver_rate?.toLocaleString('en-IN')}
-              {today.manual ? ' (entered manually)' : ''}
-              {today.sent_at ? ` · sent at ${istTime(today.sent_at)}` : ' · not sent yet'}
-            </Text>
+            <Text style={[styles.infoText, { color: colors.onSuccess }]}>Sent at {istTime(today.sent_at)}{today.manual ? ' (entered manually)' : ''}</Text>
           </View>
+        ) : today?.gold_rate ? (
+          <Text style={styles.hint}>Fetched — not sent yet.</Text>
         ) : (
           <Text style={styles.hint}>Not fetched yet today — will auto-fetch at {fetchTime} IST, or tap Fetch Now.</Text>
         )}
 
-        <Pressable onPress={refetch} disabled={busy === 'refetch'} style={[styles.altBtn, busy === 'refetch' && { opacity: 0.6 }]} testID="gold-rate-refetch">
-          {busy === 'refetch' ? <ActivityIndicator color={colors.brandSecondary} size="small" /> : <><Ionicons name="refresh" size={15} color={colors.brandSecondary} /><Text style={styles.altBtnText}>Fetch Now</Text></>}
-        </Pressable>
-
-        <Text style={styles.fieldLabel}>Enter rates manually</Text>
         <View style={styles.row2}>
-          <TextInput value={manualGold} onChangeText={setManualGold} keyboardType="numeric" placeholder="Gold /tola" placeholderTextColor={colors.mutedText} style={[styles.input, { flex: 1 }]} testID="gold-rate-manual-gold" />
-          <TextInput value={manualSilver} onChangeText={setManualSilver} keyboardType="numeric" placeholder="Silver /kg" placeholderTextColor={colors.mutedText} style={[styles.input, { flex: 1 }]} testID="gold-rate-manual-silver" />
-          <Pressable onPress={setManual} disabled={busy === 'manual'} style={[styles.altBtn, { flexGrow: 0, paddingHorizontal: spacing.lg, marginBottom: spacing.md }, busy === 'manual' && { opacity: 0.6 }]} testID="gold-rate-manual-set">
-            {busy === 'manual' ? <ActivityIndicator color={colors.brandSecondary} size="small" /> : <Text style={styles.altBtnText}>Set</Text>}
+          <Pressable onPress={refetch} disabled={!!busy} style={[styles.altBtn, { flex: 1 }, busy === 'refetch' && { opacity: 0.6 }]} testID="gold-rate-refetch">
+            {busy === 'refetch' ? <ActivityIndicator color={colors.brandSecondary} size="small" /> : <><Ionicons name="refresh" size={15} color={colors.brandSecondary} /><Text style={styles.altBtnText}>Fetch Now</Text></>}
+          </Pressable>
+          <Pressable onPress={fetchAndSend} disabled={!!busy || !channelConnected} style={[styles.altBtn, styles.autoBtn, { flex: 1 }, (busy === 'auto' || !channelConnected) && { opacity: 0.6 }]} testID="gold-rate-fetch-and-send">
+            {busy === 'auto' ? <ActivityIndicator color={colors.onBrandPrimary} size="small" /> : <><Ionicons name="flash" size={15} color={colors.onBrandPrimary} /><Text style={[styles.altBtnText, styles.autoBtnText]}>Fetch &amp; Send</Text></>}
           </Pressable>
         </View>
 
-        {!!today?.gold_rate && (
-          <>
-            <Text style={styles.fieldLabel}>Message to send</Text>
-            <TextInput value={message} onChangeText={setMessage} multiline style={[styles.input, styles.inputMultiline]} testID="gold-rate-message" />
-            <Pressable onPress={send} disabled={busy === 'send' || !channelConnected} style={[styles.opt, styles.optPrimary, (busy === 'send' || !channelConnected) && { opacity: 0.5 }]} testID="gold-rate-send">
-              {busy === 'send' ? <ActivityIndicator color={colors.onBrandPrimary} /> : <><Ionicons name="send" size={17} color={colors.onBrandPrimary} /><Text style={styles.optPrimaryText}>Confirm &amp; Send to Channel</Text></>}
-            </Pressable>
-            {!channelConnected && <Text style={styles.hint}>WhatsApp not connected — check Settings &gt; WhatsApp.</Text>}
-          </>
-        )}
+        <Text style={styles.fieldLabel}>Rates (editable — changes update the message below)</Text>
+        <View style={styles.row2}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.colLabel}>Gold (₹/tola)</Text>
+            <TextInput value={goldRate} onChangeText={(v) => onRateChange('gold', v)} keyboardType="numeric" placeholder="e.g. 151050" placeholderTextColor={colors.mutedText} style={styles.input} testID="gold-rate-gold-input" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.colLabel}>Silver (₹/kg)</Text>
+            <TextInput value={silverRate} onChangeText={(v) => onRateChange('silver', v)} keyboardType="numeric" placeholder="e.g. 242200" placeholderTextColor={colors.mutedText} style={styles.input} testID="gold-rate-silver-input" />
+          </View>
+        </View>
 
-        {isOwner && (
-          <>
-            <View style={styles.divider} />
-            <Text style={styles.section}>Fetch Settings (Owner)</Text>
-            <View style={styles.row2}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.fieldLabel}>Fetch time (24h, IST)</Text>
-                <TextInput value={fetchTime} onChangeText={setFetchTime} placeholder="12:30" placeholderTextColor={colors.mutedText} style={styles.input} testID="gold-rate-fetch-time" />
-              </View>
-            </View>
-            <View style={styles.row2}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.fieldLabel}>Gold margin (₹, +/-, rounds to ₹50)</Text>
-                <TextInput value={goldMargin} onChangeText={setGoldMargin} keyboardType="numeric" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} testID="gold-rate-gold-margin" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.fieldLabel}>Silver margin (₹, +/-, rounds to ₹100)</Text>
-                <TextInput value={silverMargin} onChangeText={setSilverMargin} keyboardType="numeric" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} testID="gold-rate-silver-margin" />
-              </View>
-            </View>
-            <Pressable onPress={saveConfig} disabled={busy === 'config'} style={[styles.altBtn, busy === 'config' && { opacity: 0.6 }]} testID="gold-rate-save-config">
-              {busy === 'config' ? <ActivityIndicator color={colors.brandSecondary} size="small" /> : <Text style={styles.altBtnText}>Save Fetch Settings</Text>}
-            </Pressable>
-          </>
-        )}
+        <Text style={styles.fieldLabel}>Message to send</Text>
+        <TextInput value={message} onChangeText={setMessage} multiline style={[styles.input, styles.inputMultiline]} testID="gold-rate-message" />
+        <Pressable onPress={send} disabled={busy === 'send' || !channelConnected || !canSend} style={[styles.opt, styles.optPrimary, (busy === 'send' || !channelConnected || !canSend) && { opacity: 0.5 }]} testID="gold-rate-send">
+          {busy === 'send' ? <ActivityIndicator color={colors.onBrandPrimary} /> : <><Ionicons name="send" size={17} color={colors.onBrandPrimary} /><Text style={styles.optPrimaryText}>Confirm &amp; Send to Channel</Text></>}
+        </Pressable>
+        {!channelConnected && <Text style={styles.hint}>WhatsApp not connected — check Settings &gt; WhatsApp.</Text>}
       </ScrollView>
     </SafeAreaView>
   );
@@ -217,11 +210,6 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border,
   },
   title: { flex: 1, color: colors.onSurface, fontSize: 20, fontWeight: '600', fontFamily: fonts.display, textAlign: 'center' },
-  section: {
-    color: colors.brandSecondary, fontSize: 11, letterSpacing: 1, textTransform: 'uppercase',
-    marginTop: spacing.md, marginBottom: spacing.sm,
-  },
-  divider: { height: 1, backgroundColor: colors.divider, marginTop: spacing.lg },
   infoBox: {
     flexDirection: 'row', gap: spacing.sm, alignItems: 'center', backgroundColor: colors.surfaceTertiary,
     borderRadius: radius.md, padding: spacing.md, borderWidth: 1, borderColor: colors.border, marginBottom: spacing.md,
@@ -231,7 +219,8 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   infoText: { color: colors.onSurfaceTertiary, fontSize: 12, flex: 1 },
   hint: { color: colors.mutedText, fontSize: 12, marginBottom: spacing.md },
   fieldLabel: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '600', marginBottom: 6 },
-  row2: { flexDirection: 'row', gap: spacing.sm, alignItems: 'flex-end' },
+  colLabel: { color: colors.mutedText, fontSize: 11, fontWeight: '600', marginBottom: 4 },
+  row2: { flexDirection: 'row', gap: spacing.sm },
   input: {
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
     color: colors.onSurface, paddingHorizontal: spacing.md, paddingVertical: 12, fontSize: 14, marginBottom: spacing.md,
@@ -242,6 +231,8 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     borderRadius: radius.md, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, marginBottom: spacing.md,
   },
   altBtnText: { color: colors.brandSecondary, fontSize: 13.5, fontWeight: '700' },
+  autoBtn: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
+  autoBtnText: { color: colors.onBrandPrimary },
   opt: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingVertical: 15, borderRadius: radius.md, marginBottom: spacing.sm },
   optPrimary: { backgroundColor: colors.brandPrimary },
   optPrimaryText: { color: colors.onBrandPrimary, fontSize: 15, fontWeight: '700' },

@@ -135,6 +135,11 @@ class GoldRateManualIn(BaseModel):
 
 class GoldRateSendIn(BaseModel):
     message: Optional[str] = None
+    # Present when the sender hand-edited the rate fields on the send screen
+    # (not just the message text) — persisted so today's record reflects what
+    # was actually broadcast, not just what was originally fetched.
+    gold_rate: Optional[int] = None
+    silver_rate: Optional[int] = None
 
 
 @router.get('/settings/gold-rate')
@@ -193,6 +198,11 @@ async def send_gold_rate(body: GoldRateSendIn, user: dict = Depends(require_admi
     ok = await send_whatsapp_channel(GOLD_RATE_CHANNEL_ID, message)
     if not ok:
         raise HTTPException(status_code=502, detail='Could not send — check the WhatsApp service is connected (Settings > WhatsApp)')
-    await db.settings.update_one({'id': 'gold_rate_today'}, {'$set': {'confirmed': True, 'sent_at': now_utc().isoformat(), 'message': message}}, upsert=True)
+    update = {'confirmed': True, 'sent_at': now_utc().isoformat(), 'message': message}
+    if body.gold_rate is not None:
+        update['gold_rate'] = body.gold_rate
+    if body.silver_rate is not None:
+        update['silver_rate'] = body.silver_rate
+    await db.settings.update_one({'id': 'gold_rate_today'}, {'$set': update}, upsert=True)
     await log_audit(user, 'settings.gold_rate.send', 'settings', 'gold_rate_today', message[:60])
     return {'ok': True}
