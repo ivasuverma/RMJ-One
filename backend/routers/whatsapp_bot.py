@@ -8,8 +8,8 @@ from data RMJ-One already has:
   RATE   -> today's gold/silver rate (gold_rate.py / gold_rate_today doc)
   STATUS -> the sender's most recent repair item's status
 
-Anything else gets a short "reply RATE or STATUS" hint. Deliberately no
-LLM, no freeform replies, no multi-turn state — a fixed keyword -> lookup
+Anything else gets no reply at all — silent, not a help prompt. Deliberately
+no LLM, no freeform replies, no multi-turn state — a fixed keyword -> lookup
 -> reply, same reasoning as the rest of this app's WhatsApp flows: a
 customer-facing message should never be something nobody reviewed the
 shape of. Off by default (see WhatsAppSettingsIn.chatbot_enabled) since,
@@ -28,8 +28,6 @@ from server import db, now_utc, IST, WHATSAPP_WEBHOOK_SECRET, send_whatsapp_raw,
 
 router = APIRouter()
 logger = logging.getLogger('whatsapp_bot')
-
-HELP_TEXT = "Hi! Reply RATE for today's gold/silver rate, or STATUS for your repair status."
 
 STATUS_LABELS = {
     'received': 'received at the shop, not yet with a karigar',
@@ -141,7 +139,9 @@ async def whatsapp_webhook(request: Request):
         digits = ''.join(c for c in (phone or chat_id) if c.isdigit())
         reply = await _status_reply(digits[-10:] if len(digits) >= 10 else digits)
     else:
-        reply = HELP_TEXT
+        # No recognized keyword — stay silent rather than send a help
+        # prompt. Also means no reply to a random/unrelated inbound message.
+        return {'ok': True, 'skipped': 'no keyword matched'}
 
     ok = await send_whatsapp_raw(chat_id, reply)
     if not ok:
