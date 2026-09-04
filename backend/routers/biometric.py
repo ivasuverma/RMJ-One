@@ -9,6 +9,8 @@ from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 from typing import Optional, Literal
 from datetime import datetime, timezone, timedelta
+import asyncio
+import logging
 import secrets
 import uuid
 from server import (
@@ -19,9 +21,12 @@ from server import (
     require_module,
     _apply_punch,
     _notify_module,
+    _notify_system_health,
     log_audit,
     IST,
 )
+
+logger = logging.getLogger('biometric')
 
 router = APIRouter()
 iclock_router = APIRouter()  # mounted directly on app, no /api prefix — real ADMS device protocol
@@ -43,6 +48,11 @@ PUNCH_COOLDOWN_MIN = 2
 # so they can't spam the log or re-toggle old days. Wide enough to still absorb
 # a genuine multi-day device/network outage on reconnect.
 BACKLOG_MAX_HOURS = 72
+
+# A device pings on every punch and on its own periodic ADMS handshake (every
+# few minutes when reachable), so going quiet this long means it's actually
+# offline/unplugged, not just between visits.
+DEVICE_OFFLINE_HOURS = 3
 
 # ---------------- Biometric (eSSL Cloud Push) ----------------
 class DeviceIn(BaseModel):
@@ -107,6 +117,36 @@ async def delete_device(did: str, user=Depends(require_owner), _mod=Depends(requ
 @router.get('/biometric/logs')
 async def biometric_logs(limit: int = 100, _: dict = Depends(require_staff), _mod: dict = Depends(require_module('biometric'))):
     return await db.biometric_logs.find({}, {'_id': 0}).sort('created_at', -1).limit(limit).to_list(limit)
+
+
+async def biometric_health_loop() -> None:
+    """There's no explicit disconnect signal from a biometric device, only
+    silence — flags a device 'offline' (once) when it hasn't been heard from
+    in DEVICE_OFFLINE_HOURS. Clears itself: any punch or ADMS handshake sets
+    status back to 'online' (see _ingest_biometric_punch / iclock_handshake),
+    so the next real check-in re-arms this check."""
+    await asyncio.sleep(120)
+    while True:
+        try:
+            now = now_utc()
+            async for d in db.biometric_devices.find({'status': {'$ne': 'offline'}}, {'_id': 0}):
+                last = d.get('last_seen')
+                if not last:
+                    continue
+                try:
+                    last_dt = datetime.fromisoformat(last)
+                except Exception:
+                    continue
+                if (now - last_dt).total_seconds() >= DEVICE_OFFLINE_HOURS * 3600:
+                    await db.biometric_devices.update_one({'id': d['id']}, {'$set': {'status': 'offline'}})
+                    await _notify_system_health(
+                        'biometric_device_offline', 'Biometric device offline',
+                        f"{d.get('label') or d.get('serial')} hasn't checked in for over {DEVICE_OFFLINE_HOURS} hours.",
+                        '/settings/biometric',
+                    )
+        except Exception as e:
+            logger.warning(f'biometric health loop error: {e}')
+        await asyncio.sleep(1800)
 
 
 async def _ingest_biometric_punch(serial: str, user_id: str, ts: datetime, event_type: str = 'auto', verify_mode: str = '') -> dict:

@@ -1320,6 +1320,9 @@ async def on_startup():
     asyncio.create_task(record_photo_worker())
     from gold_rate import gold_rate_loop  # daily reference gold-rate fetch
     asyncio.create_task(gold_rate_loop())
+    asyncio.create_task(_whatsapp_health_loop())
+    from routers.biometric import biometric_health_loop
+    asyncio.create_task(biometric_health_loop())
 
 
 @app.on_event('shutdown')
@@ -1889,6 +1892,35 @@ async def get_whatsapp_status() -> dict:
         return {'configured': True, 'connected': False, 'phone': None}
 
 
+WHATSAPP_HEALTH_CHECK_SEC = 900  # 15 min — get_whatsapp_status() is otherwise
+                                  # only ever checked when someone opens Settings
+
+
+async def _whatsapp_health_loop() -> None:
+    """Polls the OpenWA session periodically and alerts once on a
+    connected -> disconnected transition (e.g. phone logged out, session
+    expired) — nothing else notices this proactively."""
+    await asyncio.sleep(120)
+    while True:
+        try:
+            status = await get_whatsapp_status()
+            if status['configured']:
+                state = await db.settings.find_one({'id': 'system_health_state'}) or {}
+                was_connected = state.get('whatsapp_was_connected')
+                if was_connected is None:
+                    was_connected = status['connected']  # establish baseline, don't alert on first run
+                if was_connected and not status['connected']:
+                    await _notify_system_health(
+                        'whatsapp_disconnected', 'WhatsApp disconnected',
+                        'The WhatsApp gateway session has dropped — rate broadcasts and notices will not send until it is reconnected (Settings > WhatsApp).',
+                        '/settings/whatsapp',
+                    )
+                await db.settings.update_one({'id': 'system_health_state'}, {'$set': {'whatsapp_was_connected': status['connected']}}, upsert=True)
+        except Exception as e:
+            logger.warning(f'whatsapp health loop error: {e}')
+        await asyncio.sleep(WHATSAPP_HEALTH_CHECK_SEC)
+
+
 async def whatsapp_flow_enabled(flow: str) -> bool:
     """Master + per-flow WhatsApp toggle (Store Settings > WhatsApp — see
     WhatsAppSettingsIn in routers/settings.py). Both default True: the
@@ -1918,6 +1950,7 @@ NOTIFICATION_MODULES = [
     {'key': 'cash_book', 'label': 'Cash Book', 'default_roles': ['owner', 'admin']},
     {'key': 'documents', 'label': 'Documents', 'default_roles': ['owner', 'admin']},
     {'key': 'gold_loans', 'label': 'Gold Loans', 'default_roles': ['owner', 'admin']},
+    {'key': 'system_health', 'label': 'System Health', 'default_roles': ['owner', 'admin']},
 ]
 NOTIFICATION_MODULE_KEYS = {m['key'] for m in NOTIFICATION_MODULES}
 NOTIFICATION_MODULE_DEFAULT_ROLES = {m['key']: m['default_roles'] for m in NOTIFICATION_MODULES}
@@ -1957,6 +1990,11 @@ NOTIFICATION_SCRIPTS = [
     {'key': 'gold_loan_created', 'module': 'gold_loans', 'label': 'New gold loan created', 'admin_only': True},
     {'key': 'gold_loan_interest_posted', 'module': 'gold_loans', 'label': 'Monthly interest posted', 'admin_only': True},
     {'key': 'gold_loan_monthly_interest_reminder', 'module': 'gold_loans', 'label': 'Monthly reminder to collect pending interest', 'admin_only': True},
+    {'key': 'drive_upload_failed', 'module': 'system_health', 'label': 'Document/photo failed to upload to Google Drive', 'admin_only': True},
+    {'key': 'drive_disconnected', 'module': 'system_health', 'label': 'Google Drive disconnected (reauth needed)', 'admin_only': True},
+    {'key': 'whatsapp_disconnected', 'module': 'system_health', 'label': 'WhatsApp gateway disconnected', 'admin_only': True},
+    {'key': 'biometric_device_offline', 'module': 'system_health', 'label': 'Biometric device stopped responding', 'admin_only': True},
+    {'key': 'printer_failed', 'module': 'system_health', 'label': 'Thermal printer unreachable', 'admin_only': True},
 ]
 NOTIFICATION_SCRIPTS_BY_MODULE: Dict[str, list] = {}
 for _s in NOTIFICATION_SCRIPTS:
@@ -2028,6 +2066,30 @@ async def _notify_module(module: str, title: str, body: str, url: str = '/', scr
     # per-recipient notification insert loop, and sequential outbound
     # web-push HTTP calls before the client sees "saved".
     asyncio.create_task(_notify_module_impl(module, title, body, url, script, subject_employee_id, admin_only))
+
+
+SYSTEM_HEALTH_COOLDOWN_MIN = 30  # one outage (e.g. Drive token revoked) can fail many
+                                  # items in a row — this keeps it to one alert per
+                                  # script per window instead of one per failed item
+
+
+async def _notify_system_health(script: str, title: str, body: str, url: str = '/settings') -> None:
+    """Rate-limited wrapper around _notify_module for infra failures (Drive,
+    WhatsApp, biometric, printer) — see SYSTEM_HEALTH_COOLDOWN_MIN."""
+    try:
+        state = await db.settings.find_one({'id': 'system_health_state'}) or {}
+        last = state.get(script)
+        if last:
+            try:
+                if (now_utc() - datetime.fromisoformat(last)).total_seconds() < SYSTEM_HEALTH_COOLDOWN_MIN * 60:
+                    return
+            except Exception:
+                pass
+        await db.settings.update_one({'id': 'system_health_state'}, {'$set': {script: now_utc().isoformat()}}, upsert=True)
+    except Exception as e:
+        logger.warning(f'_notify_system_health cooldown check failed for {script}: {e}')
+        return
+    await _notify_module('system_health', title, body, url, script=script, admin_only=True)
 
 
 MISSED_ATTENDANCE_GRACE_MIN = 30  # keep in sync with attendance.py's NOT_CHECKED_IN_GRACE_MIN (same criteria, UI filter vs push reminder)

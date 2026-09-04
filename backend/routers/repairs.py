@@ -36,6 +36,7 @@ from server import (
     log_audit,
     notify_user,
     _notify_module,
+    _notify_system_health,
     _pdf_response,
     send_whatsapp,
     whatsapp_flow_enabled,
@@ -1754,4 +1755,6 @@ async def _print_escpos(data: bytes):
     try:
         await asyncio.to_thread(_send)
     except Exception as e:
+        await _notify_system_health('printer_failed', 'Printer unreachable',
+                                     f'Could not reach the thermal printer at {ip}:{port} — {e}', '/settings/store')
         raise HTTPException(status_code=502, detail=f'Could not reach the printer at {ip}:{port} — {e}')

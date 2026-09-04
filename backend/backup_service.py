@@ -13,7 +13,7 @@ import json
 import logging
 import asyncio
 
-from server import db, now_utc
+from server import db, now_utc, _notify_system_health
 
 logger = logging.getLogger('backup')
 
@@ -60,8 +60,15 @@ async def run_backup() -> dict:
     try:
         await drive_service.upload_backup(cfg, fname, gz)
     except Exception as e:
-        logger.warning(f'backup upload failed: {e}')
-        return {'ok': False, 'error': f'Upload to Drive failed: {str(e)[:200]}'}
+        err = str(e)[:200]
+        logger.warning(f'backup upload failed: {err}')
+        if 'invalid_grant' in err or 'invalid_client' in err:
+            await _notify_system_health('drive_disconnected', 'Google Drive disconnected',
+                                         'Google Drive needs to be reconnected — the nightly backup is paused (Settings > Google Drive).', '/settings/google-drive')
+        else:
+            await _notify_system_health('drive_upload_failed', 'Backup failed',
+                                         f'The database backup failed to upload to Google Drive: {err}', '/settings/google-drive')
+        return {'ok': False, 'error': f'Upload to Drive failed: {err}'}
     await _prune(cfg)
     await db.settings.update_one({'id': 'backup'}, {'$set': {
         'id': 'backup',

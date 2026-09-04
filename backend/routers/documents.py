@@ -26,7 +26,7 @@ import re
 import uuid
 from datetime import timedelta
 
-from server import db, now_utc, get_current, require_owner, log_audit
+from server import db, now_utc, get_current, require_owner, log_audit, _notify_system_health
 
 router = APIRouter()
 
@@ -712,7 +712,14 @@ async def upload_worker():
                         }
                         await db.documents.update_one({'id': doc['id']}, {'$set': set_fields})
                     except Exception as e:
-                        await db.documents.update_one({'id': doc['id']}, {'$set': {'upload_state': 'failed', 'upload_error': str(e)[:200]}})
+                        err = str(e)[:200]
+                        await db.documents.update_one({'id': doc['id']}, {'$set': {'upload_state': 'failed', 'upload_error': err}})
+                        if 'invalid_grant' in err or 'invalid_client' in err:
+                            await _notify_system_health('drive_disconnected', 'Google Drive disconnected',
+                                                         'Google Drive needs to be reconnected — document uploads and backups are paused (Settings > Google Drive).', '/settings/google-drive')
+                        else:
+                            await _notify_system_health('drive_upload_failed', 'Document upload failed',
+                                                         f'A document failed to upload to Google Drive: {err}', '/settings/google-drive')
                     continue  # grab the next queued doc without waiting
         except Exception:
             pass
