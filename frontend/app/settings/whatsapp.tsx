@@ -21,27 +21,6 @@ const EMPTY: Form = {
 };
 type WhatsAppStatus = { configured: boolean; connected: boolean; phone: string | null };
 
-const TEMPLATE_SAMPLE: Record<string, string> = {
-  customer_name: 'Ramesh Kumar', item_code: 'RJ-0231', description: 'Gold ring repair',
-  shop_name: 'Ram Murti Jewellers', amount_line: 'Bill amount: Rs.500.',
-};
-function renderTemplatePreview(tpl: string): string {
-  return (tpl || '').replace(/\{(\w+)\}/g, (m, k) => (k in TEMPLATE_SAMPLE ? TEMPLATE_SAMPLE[k] : m));
-}
-const DEFAULT_TEMPLATE = 'Hi {customer_name}, your item {item_code} ({description}) is ready for pickup at {shop_name}. {amount_line} Thank you!';
-
-const GOLD_RATE_SAMPLE: Record<string, string> = { gold_rate: '151050', silver_rate: '242200' };
-function renderGoldRatePreview(tpl: string): string {
-  return (tpl || '').replace(/\{(\w+)\}/g, (m, k) => (k in GOLD_RATE_SAMPLE ? GOLD_RATE_SAMPLE[k] : m));
-}
-const DEFAULT_GOLD_RATE_TEMPLATE = 'Today approx. rate update: \nGold 24k: {gold_rate} /tola\nSilver : {silver_rate} /kg\n\nClick bell icon above for notification \u{1F514}';
-
-const CHATBOT_RATE_SAMPLE: Record<string, string> = { gold_rate: '151050', silver_rate: '242200', date: '04 Sep 2026', time: '12:30 PM' };
-function renderChatbotRatePreview(tpl: string): string {
-  return (tpl || '').replace(/\{(\w+)\}/g, (m, k) => (k in CHATBOT_RATE_SAMPLE ? CHATBOT_RATE_SAMPLE[k] : m));
-}
-const DEFAULT_CHATBOT_RATE_TEMPLATE = "Today's approx rate (as on {date}, {time}):\nGold 24k: Rs.{gold_rate} /tola\nSilver: Rs.{silver_rate} /kg";
-
 export default function WhatsAppSettingsScreen() {
   const router = useRouter();
   const { colors } = useTheme();
@@ -56,7 +35,11 @@ export default function WhatsAppSettingsScreen() {
   // Gold rate fetch settings — moved here from the Gold Rate Channel screen
   // (Work tab): fetching/sending is a task an employee can be assigned, but
   // the schedule + margins are pricing policy, so they live in owner-only
-  // Settings instead.
+  // Settings instead. Templates themselves (repair_ready_template,
+  // chatbot_rate_template, goldRateTemplate) still load/save here — this
+  // screen just doesn't render their editors any more (see
+  // settings/whatsapp-templates.tsx) — but PUT replaces the whole doc, so
+  // the loaded values must still be carried through on every save below.
   const [fetchTime, setFetchTime] = useState('12:30');
   const [goldMargin, setGoldMargin] = useState('0');
   const [silverMargin, setSilverMargin] = useState('0');
@@ -167,6 +150,15 @@ export default function WhatsAppSettingsScreen() {
           </Text>
         </View>
 
+        <Pressable onPress={() => router.push('/settings/whatsapp-templates' as any)} style={styles.navRow} testID="whatsapp-templates-link">
+          <View style={styles.navIcon}><Ionicons name="document-text-outline" size={20} color={colors.brandSecondary} /></View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.toggleLabel}>Message Templates</Text>
+            <Text style={styles.toggleSub}>Repair notice, chatbot RATE reply, and gold rate broadcast text</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.mutedText} />
+        </Pressable>
+
         <Text style={styles.section}>Toggles</Text>
         <Pressable
           onPress={() => setForm((f) => ({ ...f, enabled: !f.enabled }))}
@@ -237,44 +229,6 @@ export default function WhatsAppSettingsScreen() {
           </Pressable>
         </View>
 
-        <Text style={styles.fieldLabel}>RATE reply template</Text>
-        <Text style={styles.hint}>Placeholders: {'{gold_rate}'} {'{silver_rate}'} {'{date}'} {'{time}'} — date/time are when the rate was fetched, not when the customer texts.</Text>
-        <TextInput
-          value={form.chatbot_rate_template}
-          onChangeText={(t) => setForm((f) => ({ ...f, chatbot_rate_template: t }))}
-          placeholder={DEFAULT_CHATBOT_RATE_TEMPLATE}
-          placeholderTextColor={colors.mutedText}
-          multiline
-          style={[styles.input, styles.inputMultiline]}
-          testID="whatsapp-chatbot-rate-template-input"
-        />
-        <Text style={styles.fieldLabel}>Preview</Text>
-        <View style={styles.infoBox}>
-          <Ionicons name="eye-outline" size={16} color={colors.brandSecondary} />
-          <Text style={styles.infoText} testID="whatsapp-chatbot-rate-template-preview">
-            {renderChatbotRatePreview(form.chatbot_rate_template || DEFAULT_CHATBOT_RATE_TEMPLATE)}
-          </Text>
-        </View>
-
-        <Text style={styles.section}>Repair Ready — Message Template</Text>
-        <Text style={styles.hint}>Placeholders: {'{customer_name}'} {'{item_code}'} {'{description}'} {'{shop_name}'} {'{amount_line}'}</Text>
-        <TextInput
-          value={form.repair_ready_template}
-          onChangeText={(t) => setForm((f) => ({ ...f, repair_ready_template: t }))}
-          placeholder={DEFAULT_TEMPLATE}
-          placeholderTextColor={colors.mutedText}
-          multiline
-          style={[styles.input, styles.inputMultiline]}
-          testID="whatsapp-repair-template-input"
-        />
-        <Text style={styles.fieldLabel}>Preview</Text>
-        <View style={styles.infoBox}>
-          <Ionicons name="eye-outline" size={16} color={colors.brandSecondary} />
-          <Text style={styles.infoText} testID="whatsapp-repair-template-preview">
-            {renderTemplatePreview(form.repair_ready_template || DEFAULT_TEMPLATE)}
-          </Text>
-        </View>
-
         <View style={styles.infoBox}>
           <Ionicons name="information-circle-outline" size={16} color={colors.brandSecondary} />
           <Text style={styles.infoText}>More WhatsApp flows (gold loan reminders, etc.) will get their own toggle here as they're added. The daily gold rate broadcast now lives on the Work tab, under "Gold Rate Channel".</Text>
@@ -298,24 +252,6 @@ export default function WhatsAppSettingsScreen() {
             <Text style={styles.fieldLabel}>Silver margin (₹, +/-, rounds to ₹100)</Text>
             <TextInput value={silverMargin} onChangeText={setSilverMargin} keyboardType="numeric" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} testID="gold-rate-silver-margin" />
           </View>
-        </View>
-        <Text style={styles.fieldLabel}>Broadcast message template</Text>
-        <Text style={styles.hint}>Placeholders: {'{gold_rate}'} {'{silver_rate}'} {'{date}'} {'{time}'} — date/time are when the rate was fetched.</Text>
-        <TextInput
-          value={goldRateTemplate}
-          onChangeText={setGoldRateTemplate}
-          placeholder={DEFAULT_GOLD_RATE_TEMPLATE}
-          placeholderTextColor={colors.mutedText}
-          multiline
-          style={[styles.input, styles.inputMultiline]}
-          testID="gold-rate-template-input"
-        />
-        <Text style={styles.fieldLabel}>Preview</Text>
-        <View style={styles.infoBox}>
-          <Ionicons name="eye-outline" size={16} color={colors.brandSecondary} />
-          <Text style={styles.infoText} testID="gold-rate-template-preview">
-            {renderGoldRatePreview(goldRateTemplate || DEFAULT_GOLD_RATE_TEMPLATE)}
-          </Text>
         </View>
 
         <Text style={styles.fieldLabel}>Chatbot rate freshness</Text>
@@ -388,6 +324,12 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border,
   },
   title: { flex: 1, color: colors.onSurface, fontSize: 22, fontWeight: '600', fontFamily: fonts.display },
+  navRow: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1,
+    borderColor: colors.border, padding: spacing.md, marginBottom: spacing.lg,
+  },
+  navIcon: { width: 36, height: 36, borderRadius: 10, backgroundColor: colors.surfaceTertiary, alignItems: 'center', justifyContent: 'center' },
   section: {
     color: colors.brandSecondary, fontSize: 11, letterSpacing: 1, textTransform: 'uppercase',
     marginTop: spacing.lg, marginBottom: spacing.sm,
@@ -427,7 +369,6 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
     color: colors.onSurface, paddingHorizontal: spacing.md, paddingVertical: 12, fontSize: 14, marginBottom: spacing.md,
   },
-  inputMultiline: { minHeight: 90, textAlignVertical: 'top' },
   altBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 12,
     borderRadius: radius.md, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, marginBottom: spacing.md,
