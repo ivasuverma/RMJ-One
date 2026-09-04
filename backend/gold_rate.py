@@ -90,23 +90,36 @@ async def fetch_rates_raw() -> dict:
         return {'ok': False, 'error': str(e)[:300]}
 
 
+# Owner-editable from Settings > WhatsApp (`template` field on the
+# gold_rate_config doc) — {gold_rate}/{silver_rate} are the only placeholders.
+DEFAULT_TEMPLATE = (
+    'Today approx. rate update: \n'
+    'Gold 24k: {gold_rate} /tola\n'
+    'Silver : {silver_rate} /kg\n'
+    '\n'
+    'Click bell icon above for notification \U0001F514'
+)
+
+
 async def get_config() -> dict:
     doc = await db.settings.find_one({'id': 'gold_rate_config'}, {'_id': 0}) or {}
     return {
         'fetch_time': doc.get('fetch_time') or DEFAULT_FETCH_TIME,
         'gold_margin': int(doc.get('gold_margin') or DEFAULT_GOLD_MARGIN),
         'silver_margin': int(doc.get('silver_margin') or DEFAULT_SILVER_MARGIN),
+        'template': doc.get('template') or DEFAULT_TEMPLATE,
     }
 
 
-def default_message(gold_rate: int, silver_rate: int) -> str:
-    return (
-        f'Today approx. rate update: \n'
-        f'Gold 24k: {gold_rate} /tola\n'
-        f'Silver : {silver_rate} /kg\n'
-        f'\n'
-        f'Click bell icon above for notification \U0001F514'
-    )
+async def default_message(gold_rate: int, silver_rate: int) -> str:
+    cfg = await get_config()
+    template = cfg['template']
+    try:
+        return template.format(gold_rate=gold_rate, silver_rate=silver_rate)
+    except Exception:
+        # A bad edit (typo'd placeholder) must not silently block every
+        # future send — fall back to the known-good default.
+        return DEFAULT_TEMPLATE.format(gold_rate=gold_rate, silver_rate=silver_rate)
 
 
 async def run_fetch_and_store() -> dict:
@@ -129,7 +142,7 @@ async def run_fetch_and_store() -> dict:
             'fetched_gold': fetched_gold, 'fetched_silver': fetched_silver,
             'gold_margin_applied': cfg['gold_margin'], 'silver_margin_applied': cfg['silver_margin'],
             'gold_rate': gold_rate, 'silver_rate': silver_rate, 'error': None,
-            'message': default_message(gold_rate, silver_rate),
+            'message': await default_message(gold_rate, silver_rate),
         })
         logger.info(f'rates fetched: gold {fetched_gold}+{cfg["gold_margin"]}->{gold_rate}, silver {fetched_silver}+{cfg["silver_margin"]}->{silver_rate}')
     else:

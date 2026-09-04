@@ -17,11 +17,14 @@ type Today = {
   error: string | null; manual: boolean; confirmed: boolean; sent_at: string | null; message: string | null;
 } | null;
 
-// Mirrors gold_rate.default_message() in the backend exactly — kept in sync
-// here so editing a rate field can regenerate the message instantly, without
-// a round trip.
-function buildMessage(goldRate: number, silverRate: number): string {
-  return `Today approx. rate update: \nGold 24k: ${goldRate} /tola\nSilver : ${silverRate} /kg\n\nClick bell icon above for notification \u{1F514}`;
+const DEFAULT_TEMPLATE = 'Today approx. rate update: \nGold 24k: {gold_rate} /tola\nSilver : {silver_rate} /kg\n\nClick bell icon above for notification \u{1F514}';
+
+// Renders the (possibly owner-edited, see Settings > WhatsApp) template
+// client-side so editing a rate field can regenerate the message instantly,
+// without a round trip.
+function buildMessage(template: string, goldRate: number, silverRate: number): string {
+  const vals: Record<string, string> = { gold_rate: String(goldRate), silver_rate: String(silverRate) };
+  return (template || DEFAULT_TEMPLATE).replace(/\{(\w+)\}/g, (m, k) => (k in vals ? vals[k] : m));
 }
 
 export default function GoldRateScreen() {
@@ -32,6 +35,7 @@ export default function GoldRateScreen() {
 
   const [loading, setLoading] = useState(true);
   const [fetchTime, setFetchTime] = useState('12:30');
+  const [template, setTemplate] = useState('');
   const [channelConnected, setChannelConnected] = useState(false);
   const [today, setToday] = useState<Today>(null);
   const [goldRate, setGoldRate] = useState('');
@@ -50,6 +54,7 @@ export default function GoldRateScreen() {
     try {
       const g = await api.get<any>('/settings/gold-rate');
       setFetchTime(g.fetch_time || '12:30');
+      setTemplate(g.template || '');
       setChannelConnected(!!g.channel_connected);
       applyToday(g.today || null);
     } catch (e: any) { toast.error(e?.detail || 'Could not load'); }
@@ -64,7 +69,7 @@ export default function GoldRateScreen() {
     if (which === 'gold') setGoldRate(v); else setSilverRate(v);
     const g = parseInt(which === 'gold' ? v : goldRate, 10);
     const s = parseInt(which === 'silver' ? v : silverRate, 10);
-    if (g && s) setMessage(buildMessage(g, s));
+    if (g && s) setMessage(buildMessage(template, g, s));
   };
 
   const refetch = async () => {

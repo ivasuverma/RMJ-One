@@ -22,6 +22,12 @@ function renderTemplatePreview(tpl: string): string {
 }
 const DEFAULT_TEMPLATE = 'Hi {customer_name}, your item {item_code} ({description}) is ready for pickup at {shop_name}. {amount_line} Thank you!';
 
+const GOLD_RATE_SAMPLE: Record<string, string> = { gold_rate: '151050', silver_rate: '242200' };
+function renderGoldRatePreview(tpl: string): string {
+  return (tpl || '').replace(/\{(\w+)\}/g, (m, k) => (k in GOLD_RATE_SAMPLE ? GOLD_RATE_SAMPLE[k] : m));
+}
+const DEFAULT_GOLD_RATE_TEMPLATE = 'Today approx. rate update: \nGold 24k: {gold_rate} /tola\nSilver : {silver_rate} /kg\n\nClick bell icon above for notification \u{1F514}';
+
 export default function WhatsAppSettingsScreen() {
   const router = useRouter();
   const { colors } = useTheme();
@@ -40,6 +46,7 @@ export default function WhatsAppSettingsScreen() {
   const [fetchTime, setFetchTime] = useState('12:30');
   const [goldMargin, setGoldMargin] = useState('0');
   const [silverMargin, setSilverMargin] = useState('0');
+  const [goldRateTemplate, setGoldRateTemplate] = useState('');
   const [grSaving, setGrSaving] = useState(false);
 
   const load = async () => {
@@ -54,6 +61,7 @@ export default function WhatsAppSettingsScreen() {
       setFetchTime(g.fetch_time || '12:30');
       setGoldMargin(String(g.gold_margin ?? 0));
       setSilverMargin(String(g.silver_margin ?? 0));
+      setGoldRateTemplate(g.template || '');
     } catch { /* not an owner, or gold-rate not reachable — leave defaults */ }
   };
   useEffect(() => { load(); }, []);
@@ -63,8 +71,8 @@ export default function WhatsAppSettingsScreen() {
     try {
       const gm = parseInt(goldMargin, 10) || 0;
       const sm = parseInt(silverMargin, 10) || 0;
-      await api.put('/settings/gold-rate/config', { fetch_time: fetchTime, gold_margin: gm, silver_margin: sm });
-      toast.success('Fetch time & margins saved');
+      await api.put('/settings/gold-rate/config', { fetch_time: fetchTime, gold_margin: gm, silver_margin: sm, template: goldRateTemplate || undefined });
+      toast.success('Fetch time, margins & template saved');
     } catch (e: any) { toast.error(e?.detail || 'Could not save'); }
     finally { setGrSaving(false); }
   };
@@ -193,6 +201,25 @@ export default function WhatsAppSettingsScreen() {
             <TextInput value={silverMargin} onChangeText={setSilverMargin} keyboardType="numeric" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} testID="gold-rate-silver-margin" />
           </View>
         </View>
+        <Text style={styles.fieldLabel}>Broadcast message template</Text>
+        <Text style={styles.hint}>Placeholders: {'{gold_rate}'} {'{silver_rate}'}</Text>
+        <TextInput
+          value={goldRateTemplate}
+          onChangeText={setGoldRateTemplate}
+          placeholder={DEFAULT_GOLD_RATE_TEMPLATE}
+          placeholderTextColor={colors.mutedText}
+          multiline
+          style={[styles.input, styles.inputMultiline]}
+          testID="gold-rate-template-input"
+        />
+        <Text style={styles.fieldLabel}>Preview</Text>
+        <View style={styles.infoBox}>
+          <Ionicons name="eye-outline" size={16} color={colors.brandSecondary} />
+          <Text style={styles.infoText} testID="gold-rate-template-preview">
+            {renderGoldRatePreview(goldRateTemplate || DEFAULT_GOLD_RATE_TEMPLATE)}
+          </Text>
+        </View>
+
         <Pressable onPress={saveGoldRateConfig} disabled={grSaving} style={[styles.altBtn, grSaving && { opacity: 0.6 }]} testID="gold-rate-save-config">
           {grSaving ? <ActivityIndicator color={colors.brandSecondary} size="small" /> : <Text style={styles.altBtnText}>Save Fetch Settings</Text>}
         </Pressable>

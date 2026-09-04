@@ -125,6 +125,7 @@ class GoldRateConfigIn(BaseModel):
     fetch_time: str = '12:30'   # "HH:MM", 24-hour, IST — mirrors gold_rate.DEFAULT_FETCH_TIME
     gold_margin: int = 0
     silver_margin: int = 0
+    template: Optional[str] = None   # None/blank = use the built-in default
 
 
 class GoldRateManualIn(BaseModel):
@@ -156,9 +157,15 @@ async def update_gold_rate_config(body: GoldRateConfigIn, user: dict = Depends(r
     import gold_rate
     if not re.match(r'^([01]\d|2[0-3]):[0-5]\d$', body.fetch_time):
         raise HTTPException(status_code=400, detail='fetch_time must be HH:MM (24-hour)')
+    if body.template:
+        try:
+            body.template.format(gold_rate=151050, silver_rate=242200)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f'Template has an unknown placeholder: {e}')
     payload = {
         'id': 'gold_rate_config', 'fetch_time': body.fetch_time,
-        'gold_margin': body.gold_margin, 'silver_margin': body.silver_margin, 'updated_at': now_utc().isoformat(),
+        'gold_margin': body.gold_margin, 'silver_margin': body.silver_margin, 'template': body.template,
+        'updated_at': now_utc().isoformat(),
     }
     await db.settings.update_one({'id': 'gold_rate_config'}, {'$set': payload}, upsert=True)
     await log_audit(user, 'settings.gold_rate.config_update', 'settings', 'gold_rate_config', f'{body.fetch_time} gold+{body.gold_margin} silver+{body.silver_margin}')
@@ -177,7 +184,7 @@ async def refetch_gold_rate(user: dict = Depends(require_admin_or_module('gold_r
 async def set_gold_rate_manual(body: GoldRateManualIn, user: dict = Depends(require_admin_or_module('gold_rate'))):
     import gold_rate
     date_str = gold_rate.today_ist()
-    message = (body.message or gold_rate.default_message(body.gold_rate, body.silver_rate)).strip()
+    message = (body.message or await gold_rate.default_message(body.gold_rate, body.silver_rate)).strip()
     doc = {
         'id': 'gold_rate_today', 'date': date_str, 'fetched_at': now_utc().isoformat(),
         'fetched_gold': None, 'fetched_silver': None, 'gold_margin_applied': None, 'silver_margin_applied': None,
