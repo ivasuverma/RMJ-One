@@ -9,8 +9,8 @@ import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { useToast } from '@/src/components/ui';
 
-type Form = { enabled: boolean; repair_ready_notice: boolean; repair_ready_template: string };
-const EMPTY: Form = { enabled: true, repair_ready_notice: true, repair_ready_template: '' };
+type Form = { enabled: boolean; repair_ready_notice: boolean; repair_ready_template: string; chatbot_enabled: boolean };
+const EMPTY: Form = { enabled: true, repair_ready_notice: true, repair_ready_template: '', chatbot_enabled: false };
 type WhatsAppStatus = { configured: boolean; connected: boolean; phone: string | null };
 
 const TEMPLATE_SAMPLE: Record<string, string> = {
@@ -52,7 +52,10 @@ export default function WhatsAppSettingsScreen() {
   const load = async () => {
     try {
       const w = await api.get<any>('/settings/whatsapp');
-      setForm({ enabled: w.enabled !== false, repair_ready_notice: w.repair_ready_notice !== false, repair_ready_template: w.repair_ready_template || '' });
+      setForm({
+        enabled: w.enabled !== false, repair_ready_notice: w.repair_ready_notice !== false,
+        repair_ready_template: w.repair_ready_template || '', chatbot_enabled: w.chatbot_enabled === true,
+      });
       setStatus({ configured: !!w.configured, connected: !!w.connected, phone: w.phone || null });
     } catch (_e) { /* ignore — form stays at defaults */ }
     finally { setLoading(false); }
@@ -155,6 +158,21 @@ export default function WhatsAppSettingsScreen() {
           </View>
           <View style={[styles.switch, form.enabled && form.repair_ready_notice && styles.switchOn]}>
             <View style={[styles.switchKnob, form.enabled && form.repair_ready_notice && styles.switchKnobOn]} />
+          </View>
+        </Pressable>
+
+        <Pressable
+          onPress={() => form.enabled && setForm((f) => ({ ...f, chatbot_enabled: !f.chatbot_enabled }))}
+          style={[styles.toggleRow, !form.enabled && { opacity: 0.5 }]}
+          disabled={!form.enabled}
+          testID="whatsapp-chatbot-toggle"
+        >
+          <View style={{ flex: 1 }}>
+            <Text style={styles.toggleLabel}>Auto-reply chatbot</Text>
+            <Text style={styles.toggleSub}>Customers who message the shop's WhatsApp number and reply RATE or STATUS get an automatic reply — no AI, fixed answers only. Off means no auto-reply of any kind.</Text>
+          </View>
+          <View style={[styles.switch, form.enabled && form.chatbot_enabled && styles.switchOn]}>
+            <View style={[styles.switchKnob, form.enabled && form.chatbot_enabled && styles.switchKnobOn]} />
           </View>
         </Pressable>
 

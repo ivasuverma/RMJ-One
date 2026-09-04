@@ -84,6 +84,10 @@ class WhatsAppSettingsIn(BaseModel):
     enabled: bool = True
     repair_ready_notice: bool = True
     repair_ready_template: Optional[str] = None   # None/blank = use the built-in default
+    # Inbound auto-reply bot (routers/whatsapp_bot.py) — defaults OFF, unlike
+    # every other flow here: this one replies to customers completely
+    # unsupervised, so it needs a deliberate opt-in rather than an opt-out.
+    chatbot_enabled: bool = False
 
 
 @router.get('/settings/whatsapp')
@@ -95,6 +99,7 @@ async def get_whatsapp_settings(_: dict = Depends(get_current)):
         'enabled': doc.get('enabled', True),
         'repair_ready_notice': doc.get('repair_ready_notice', True),
         'repair_ready_template': doc.get('repair_ready_template') or DEFAULT_REPAIR_READY_TEMPLATE,
+        'chatbot_enabled': doc.get('chatbot_enabled', False),
         **status,
     }
 

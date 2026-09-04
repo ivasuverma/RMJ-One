@@ -42,6 +42,12 @@ GOLD_RATE_SOURCE_URL = os.environ.get('GOLD_RATE_SOURCE_URL', 'https://ayodhyabu
 GOLD_RATE_ROW_LABEL = os.environ.get('GOLD_RATE_ROW_LABEL', 'GOLD RETAIL HAJIR')
 GOLD_RATE_SILVER_LABEL = os.environ.get('GOLD_RATE_SILVER_LABEL', 'SILVER RETAIL HAJIR')
 
+# Inbound WhatsApp auto-reply bot (see routers/whatsapp_bot.py) — verifies
+# OpenWA's `X-OpenWA-Signature: sha256=<hmac>` header on every webhook
+# delivery, so this endpoint can be public (no bearer token) while still only
+# accepting deliveries actually signed by this shop's OpenWA instance.
+WHATSAPP_WEBHOOK_SECRET = os.environ.get('WHATSAPP_WEBHOOK_SECRET', '')
+
 # Comma-separated list of origins allowed to call this API, e.g.
 # "https://app.ramjewellers.in,https://admin.ramjewellers.in". Defaults to
 # "*" (anything) so local/dev setups keep working without extra config —
@@ -1798,6 +1804,16 @@ async def send_whatsapp_channel(channel_id: str, text: str) -> bool:
     return await _openwa_send_text(channel_id, text)
 
 
+async def send_whatsapp_raw(chat_id: str, text: str) -> bool:
+    """Reply to an already-known OpenWA chat id verbatim (e.g. a `@c.us` id
+    lifted straight from an inbound webhook's `data.from`) — no phone-number
+    normalization, unlike send_whatsapp(). Used by the inbound bot
+    (routers/whatsapp_bot.py) to reply to whoever just messaged in."""
+    if not chat_id:
+        return False
+    return await _openwa_send_text(chat_id, text)
+
+
 async def get_whatsapp_status() -> dict:
     """Connection status for Store Settings' WhatsApp panel. `configured`
     means OPENWA_BASE_URL/OPENWA_API_KEY are set at all; `connected` means a
@@ -2502,7 +2518,7 @@ def _make_photo_thumb(photo_data_uri: Optional[str]) -> str:
 from routers import (
     auth, employees, settings as settings_router, attendance, tasks, repairs,
     users, payroll, notifications, biometric, reports, assistant, samples,
-    cashbook, ledger, documents, backup, record_photos, gold_loans,
+    cashbook, ledger, documents, backup, record_photos, gold_loans, whatsapp_bot,
 )
 
 # ---------------- Mount ----------------
@@ -2525,6 +2541,7 @@ api.include_router(documents.router)
 api.include_router(record_photos.router)
 api.include_router(gold_loans.router)
 api.include_router(backup.router)
+api.include_router(whatsapp_bot.router)
 
 app.include_router(api)
 app.include_router(biometric.iclock_router)  # /iclock/* — real device protocol, no /api prefix
