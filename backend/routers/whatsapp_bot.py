@@ -5,7 +5,9 @@ webhook on the OpenWA side, filtered to 1:1 text messages only — see
 project memory for the exact registration). Two commands, both answered
 from data RMJ-One already has:
 
-  RATE   -> today's gold/silver rate (gold_rate.py / gold_rate_today doc)
+  RATE   -> latest gold/silver rate (gold_rate.py's gold_rate_live cache,
+            refreshed periodically through the day — see
+            gold_rate._maybe_refresh_live_rate)
   STATUS -> the sender's most recent repair item's status
 
 Anything else gets no reply at all — silent, not a help prompt. Deliberately
@@ -14,7 +16,8 @@ no LLM, no freeform replies, no multi-turn state — a fixed keyword -> lookup
 customer-facing message should never be something nobody reviewed the
 shape of. Off by default (see WhatsAppSettingsIn.chatbot_enabled) since,
 unlike the other flows, there's no per-send human confirmation step here —
-turning it on is the confirmation.
+turning it on is the confirmation. Each keyword also has its own on/off
+toggle (chatbot_rate_enabled/chatbot_status_enabled).
 """
 import hashlib
 import hmac
@@ -55,11 +58,16 @@ def _verify_signature(raw_body: bytes, signature_header: str) -> bool:
 
 
 async def _rate_reply() -> str:
-    today = await db.settings.find_one({'id': 'gold_rate_today'}, {'_id': 0})
-    if not today or not today.get('gold_rate') or not today.get('silver_rate'):
+    # Reads the chatbot's own live-refresh cache (gold_rate.py's
+    # gold_rate_live, kept fresh independently of the once-daily broadcast
+    # doc — see _maybe_refresh_live_rate), not gold_rate_today, so RATE
+    # stays close to accurate through the day regardless of whether/when
+    # the broadcast was sent.
+    live = await db.settings.find_one({'id': 'gold_rate_live'}, {'_id': 0})
+    if not live or not live.get('gold_rate') or not live.get('silver_rate'):
         return "Today's rate isn't available right now — please call the store or check back later."
-    date_str, time_str = format_ist_date_time(today.get('fetched_at'))
-    fields = {'gold_rate': today['gold_rate'], 'silver_rate': today['silver_rate'], 'date': date_str, 'time': time_str}
+    date_str, time_str = format_ist_date_time(live.get('fetched_at'))
+    fields = {'gold_rate': live['gold_rate'], 'silver_rate': live['silver_rate'], 'date': date_str, 'time': time_str}
     wa = await db.settings.find_one({'id': 'whatsapp'}, {'_id': 0}) or {}
     template = wa.get('chatbot_rate_template') or DEFAULT_RATE_TEMPLATE
     try:
@@ -119,9 +127,9 @@ async def whatsapp_webhook(request: Request):
     if not chat_id or not body_text:
         return {'ok': True, 'skipped': 'no sender/body'}
 
-    if 'rate' in body_text:
+    if 'rate' in body_text and wa.get('chatbot_rate_enabled', True):
         reply = await _rate_reply()
-    elif 'status' in body_text:
+    elif 'status' in body_text and wa.get('chatbot_status_enabled', True):
         # `chat_id` is not always a `<digits>@c.us` phone JID — WhatsApp's
         # privacy-id rollout means an unsaved contact often arrives as an
         # opaque `<digits>@lid` instead, whose digits are NOT a phone number.
@@ -130,8 +138,8 @@ async def whatsapp_webhook(request: Request):
         digits = ''.join(c for c in (phone or chat_id) if c.isdigit())
         reply = await _status_reply(digits[-10:] if len(digits) >= 10 else digits)
     else:
-        # No recognized keyword — stay silent rather than send a help
-        # prompt. Also means no reply to a random/unrelated inbound message.
+        # No recognized (and enabled) keyword — stay silent rather than
+        # send a help prompt. Also covers a keyword whose own toggle is off.
         return {'ok': True, 'skipped': 'no keyword matched'}
 
     ok = await send_whatsapp_raw(chat_id, reply)

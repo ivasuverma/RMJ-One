@@ -12,10 +12,12 @@ import { useToast } from '@/src/components/ui';
 type Form = {
   enabled: boolean; repair_ready_notice: boolean; repair_ready_template: string;
   chatbot_enabled: boolean; chatbot_rate_template: string;
+  chatbot_rate_enabled: boolean; chatbot_status_enabled: boolean;
 };
 const EMPTY: Form = {
   enabled: true, repair_ready_notice: true, repair_ready_template: '',
   chatbot_enabled: false, chatbot_rate_template: '',
+  chatbot_rate_enabled: true, chatbot_status_enabled: true,
 };
 type WhatsAppStatus = { configured: boolean; connected: boolean; phone: string | null };
 
@@ -61,6 +63,15 @@ export default function WhatsAppSettingsScreen() {
   const [goldRateTemplate, setGoldRateTemplate] = useState('');
   const [grSaving, setGrSaving] = useState(false);
 
+  // Chatbot live-rate refresh — how often gold_rate_live is topped up so
+  // RATE stays close to accurate through the day, independent of fetchTime
+  // above (which is only the once-daily broadcast fetch).
+  const [refreshEnabled, setRefreshEnabled] = useState(true);
+  const [refreshInterval, setRefreshInterval] = useState('120');
+  const [refreshStart, setRefreshStart] = useState('12:30');
+  const [refreshEnd, setRefreshEnd] = useState('19:00');
+  const [autoSendEnabled, setAutoSendEnabled] = useState(false);
+
   const load = async () => {
     try {
       const w = await api.get<any>('/settings/whatsapp');
@@ -68,6 +79,7 @@ export default function WhatsAppSettingsScreen() {
         enabled: w.enabled !== false, repair_ready_notice: w.repair_ready_notice !== false,
         repair_ready_template: w.repair_ready_template || '', chatbot_enabled: w.chatbot_enabled === true,
         chatbot_rate_template: w.chatbot_rate_template || '',
+        chatbot_rate_enabled: w.chatbot_rate_enabled !== false, chatbot_status_enabled: w.chatbot_status_enabled !== false,
       });
       setStatus({ configured: !!w.configured, connected: !!w.connected, phone: w.phone || null });
     } catch (_e) { /* ignore — form stays at defaults */ }
@@ -78,6 +90,11 @@ export default function WhatsAppSettingsScreen() {
       setGoldMargin(String(g.gold_margin ?? 0));
       setSilverMargin(String(g.silver_margin ?? 0));
       setGoldRateTemplate(g.template || '');
+      setRefreshEnabled(g.chatbot_refresh_enabled !== false);
+      setRefreshInterval(String(g.chatbot_refresh_interval_min ?? 120));
+      setRefreshStart(g.chatbot_refresh_start || '12:30');
+      setRefreshEnd(g.chatbot_refresh_end || '19:00');
+      setAutoSendEnabled(g.auto_send_enabled === true);
     } catch { /* not an owner, or gold-rate not reachable — leave defaults */ }
   };
   useEffect(() => { load(); }, []);
@@ -87,8 +104,14 @@ export default function WhatsAppSettingsScreen() {
     try {
       const gm = parseInt(goldMargin, 10) || 0;
       const sm = parseInt(silverMargin, 10) || 0;
-      await api.put('/settings/gold-rate/config', { fetch_time: fetchTime, gold_margin: gm, silver_margin: sm, template: goldRateTemplate || undefined });
-      toast.success('Fetch time, margins & template saved');
+      const ri = parseInt(refreshInterval, 10) || 120;
+      await api.put('/settings/gold-rate/config', {
+        fetch_time: fetchTime, gold_margin: gm, silver_margin: sm, template: goldRateTemplate || undefined,
+        chatbot_refresh_enabled: refreshEnabled, chatbot_refresh_interval_min: ri,
+        chatbot_refresh_start: refreshStart, chatbot_refresh_end: refreshEnd,
+        auto_send_enabled: autoSendEnabled,
+      });
+      toast.success('Fetch settings saved');
     } catch (e: any) { toast.error(e?.detail || 'Could not save'); }
     finally { setGrSaving(false); }
   };
@@ -189,6 +212,31 @@ export default function WhatsAppSettingsScreen() {
           </View>
         </Pressable>
 
+        <View style={styles.row2}>
+          <Pressable
+            onPress={() => form.enabled && form.chatbot_enabled && setForm((f) => ({ ...f, chatbot_rate_enabled: !f.chatbot_rate_enabled }))}
+            style={[styles.keywordToggle, (!form.enabled || !form.chatbot_enabled) && { opacity: 0.5 }]}
+            disabled={!form.enabled || !form.chatbot_enabled}
+            testID="whatsapp-chatbot-rate-keyword-toggle"
+          >
+            <Text style={styles.toggleLabel}>RATE</Text>
+            <View style={[styles.switch, form.enabled && form.chatbot_enabled && form.chatbot_rate_enabled && styles.switchOn]}>
+              <View style={[styles.switchKnob, form.enabled && form.chatbot_enabled && form.chatbot_rate_enabled && styles.switchKnobOn]} />
+            </View>
+          </Pressable>
+          <Pressable
+            onPress={() => form.enabled && form.chatbot_enabled && setForm((f) => ({ ...f, chatbot_status_enabled: !f.chatbot_status_enabled }))}
+            style={[styles.keywordToggle, (!form.enabled || !form.chatbot_enabled) && { opacity: 0.5 }]}
+            disabled={!form.enabled || !form.chatbot_enabled}
+            testID="whatsapp-chatbot-status-keyword-toggle"
+          >
+            <Text style={styles.toggleLabel}>STATUS</Text>
+            <View style={[styles.switch, form.enabled && form.chatbot_enabled && form.chatbot_status_enabled && styles.switchOn]}>
+              <View style={[styles.switchKnob, form.enabled && form.chatbot_enabled && form.chatbot_status_enabled && styles.switchKnobOn]} />
+            </View>
+          </Pressable>
+        </View>
+
         <Text style={styles.fieldLabel}>RATE reply template</Text>
         <Text style={styles.hint}>Placeholders: {'{gold_rate}'} {'{silver_rate}'} {'{date}'} {'{time}'} — date/time are when the rate was fetched, not when the customer texts.</Text>
         <TextInput
@@ -270,6 +318,50 @@ export default function WhatsAppSettingsScreen() {
           </Text>
         </View>
 
+        <Text style={styles.fieldLabel}>Chatbot rate freshness</Text>
+        <Text style={styles.hint}>Keeps a separate rate cache topped up through the day so RATE replies close to accurate, without disturbing the daily broadcast above.</Text>
+        <Pressable
+          onPress={() => setRefreshEnabled((v) => !v)}
+          style={styles.toggleRow}
+          testID="gold-rate-refresh-enabled-toggle"
+        >
+          <View style={{ flex: 1 }}>
+            <Text style={styles.toggleLabel}>Auto-refresh for chatbot</Text>
+            <Text style={styles.toggleSub}>Off means RATE always answers with whatever the daily broadcast last fetched.</Text>
+          </View>
+          <View style={[styles.switch, refreshEnabled && styles.switchOn]}>
+            <View style={[styles.switchKnob, refreshEnabled && styles.switchKnobOn]} />
+          </View>
+        </Pressable>
+        <View style={[styles.row2, !refreshEnabled && { opacity: 0.5 }]}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.fieldLabel}>Every (minutes)</Text>
+            <TextInput value={refreshInterval} onChangeText={setRefreshInterval} keyboardType="numeric" editable={refreshEnabled} placeholder="120" placeholderTextColor={colors.mutedText} style={styles.input} testID="gold-rate-refresh-interval" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.fieldLabel}>From</Text>
+            <TextInput value={refreshStart} onChangeText={setRefreshStart} editable={refreshEnabled} placeholder="12:30" placeholderTextColor={colors.mutedText} style={styles.input} testID="gold-rate-refresh-start" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.fieldLabel}>To</Text>
+            <TextInput value={refreshEnd} onChangeText={setRefreshEnd} editable={refreshEnabled} placeholder="19:00" placeholderTextColor={colors.mutedText} style={styles.input} testID="gold-rate-refresh-end" />
+          </View>
+        </View>
+
+        <Pressable
+          onPress={() => setAutoSendEnabled((v) => !v)}
+          style={[styles.toggleRow, autoSendEnabled && styles.toggleRowWarn]}
+          testID="gold-rate-auto-send-toggle"
+        >
+          <View style={{ flex: 1 }}>
+            <Text style={styles.toggleLabel}>Fully automatic — fetch &amp; send daily, no review</Text>
+            <Text style={styles.toggleSub}>Every day's fetch (at the time above) goes straight to the Channel with no confirm step. Off means the Work-tab screen always waits for Confirm &amp; Send.</Text>
+          </View>
+          <View style={[styles.switch, autoSendEnabled && styles.switchOn]}>
+            <View style={[styles.switchKnob, autoSendEnabled && styles.switchKnobOn]} />
+          </View>
+        </Pressable>
+
         <Pressable onPress={saveGoldRateConfig} disabled={grSaving} style={[styles.altBtn, grSaving && { opacity: 0.6 }]} testID="gold-rate-save-config">
           {grSaving ? <ActivityIndicator color={colors.brandSecondary} size="small" /> : <Text style={styles.altBtnText}>Save Fetch Settings</Text>}
         </Pressable>
@@ -307,6 +399,12 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   toggleLabel: { color: colors.onSurface, fontSize: 14, fontWeight: '600' },
   toggleSub: { color: colors.mutedText, fontSize: 11, marginTop: 2 },
+  toggleRowWarn: { borderColor: colors.warning },
+  keywordToggle: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm,
+    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1,
+    borderColor: colors.border, padding: spacing.md, marginBottom: spacing.md,
+  },
   switch: {
     width: 44, height: 26, borderRadius: 13, backgroundColor: colors.surfaceTertiary,
     borderWidth: 1, borderColor: colors.border, padding: 2, justifyContent: 'center',

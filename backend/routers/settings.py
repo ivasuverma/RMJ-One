@@ -89,6 +89,10 @@ class WhatsAppSettingsIn(BaseModel):
     # unsupervised, so it needs a deliberate opt-in rather than an opt-out.
     chatbot_enabled: bool = False
     chatbot_rate_template: Optional[str] = None   # None/blank = use the built-in default
+    # Per-keyword on/off — a keyword whose toggle is off is treated as
+    # unrecognized (silent), same as if it didn't exist.
+    chatbot_rate_enabled: bool = True
+    chatbot_status_enabled: bool = True
 
 
 @router.get('/settings/whatsapp')
@@ -103,6 +107,8 @@ async def get_whatsapp_settings(_: dict = Depends(get_current)):
         'repair_ready_template': doc.get('repair_ready_template') or DEFAULT_REPAIR_READY_TEMPLATE,
         'chatbot_enabled': doc.get('chatbot_enabled', False),
         'chatbot_rate_template': doc.get('chatbot_rate_template') or DEFAULT_RATE_TEMPLATE,
+        'chatbot_rate_enabled': doc.get('chatbot_rate_enabled', True),
+        'chatbot_status_enabled': doc.get('chatbot_status_enabled', True),
         **status,
     }
 
@@ -139,6 +145,15 @@ class GoldRateConfigIn(BaseModel):
     gold_margin: int = 0
     silver_margin: int = 0
     template: Optional[str] = None   # None/blank = use the built-in default
+    # Chatbot live-rate refresh (RATE keyword freshness) — independent of
+    # fetch_time above, which is only the once-daily broadcast fetch.
+    chatbot_refresh_enabled: bool = True
+    chatbot_refresh_interval_min: int = 120
+    chatbot_refresh_start: str = '12:30'
+    chatbot_refresh_end: str = '19:00'
+    # Fully-automatic daily send — off by default, deliberate owner opt-in
+    # only (see gold_rate.py's DEFAULT_AUTO_SEND_ENABLED docstring).
+    auto_send_enabled: bool = False
 
 
 class GoldRateManualIn(BaseModel):
@@ -168,8 +183,9 @@ async def get_gold_rate(_: dict = Depends(require_staff_or_module('gold_rate')))
 @router.put('/settings/gold-rate/config')
 async def update_gold_rate_config(body: GoldRateConfigIn, user: dict = Depends(require_owner)):
     import gold_rate
-    if not re.match(r'^([01]\d|2[0-3]):[0-5]\d$', body.fetch_time):
-        raise HTTPException(status_code=400, detail='fetch_time must be HH:MM (24-hour)')
+    for label, val in (('fetch_time', body.fetch_time), ('chatbot_refresh_start', body.chatbot_refresh_start), ('chatbot_refresh_end', body.chatbot_refresh_end)):
+        if not re.match(r'^([01]\d|2[0-3]):[0-5]\d$', val):
+            raise HTTPException(status_code=400, detail=f'{label} must be HH:MM (24-hour)')
     if body.template:
         try:
             body.template.format(gold_rate=151050, silver_rate=242200, date='04 Sep 2026', time='12:30 PM')
@@ -178,10 +194,14 @@ async def update_gold_rate_config(body: GoldRateConfigIn, user: dict = Depends(r
     payload = {
         'id': 'gold_rate_config', 'fetch_time': body.fetch_time,
         'gold_margin': body.gold_margin, 'silver_margin': body.silver_margin, 'template': body.template,
+        'chatbot_refresh_enabled': body.chatbot_refresh_enabled,
+        'chatbot_refresh_interval_min': max(15, body.chatbot_refresh_interval_min),
+        'chatbot_refresh_start': body.chatbot_refresh_start, 'chatbot_refresh_end': body.chatbot_refresh_end,
+        'auto_send_enabled': body.auto_send_enabled,
         'updated_at': now_utc().isoformat(),
     }
     await db.settings.update_one({'id': 'gold_rate_config'}, {'$set': payload}, upsert=True)
-    await log_audit(user, 'settings.gold_rate.config_update', 'settings', 'gold_rate_config', f'{body.fetch_time} gold+{body.gold_margin} silver+{body.silver_margin}')
+    await log_audit(user, 'settings.gold_rate.config_update', 'settings', 'gold_rate_config', f'{body.fetch_time} gold+{body.gold_margin} silver+{body.silver_margin} auto_send={body.auto_send_enabled}')
     return await gold_rate.get_config()
 
 
