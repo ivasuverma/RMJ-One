@@ -7,6 +7,7 @@ import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { SimpleCropper } from '@/src/components/SimpleCropper';
+import { pickWebFile } from '@/src/components/DocumentCaptureSheet';
 
 async function dataUriToFile(uri: string): Promise<File> {
   const res = await fetch(uri);
@@ -35,6 +36,14 @@ type Props = {
 // Generic rear-camera capture modal (no location/selfie requirement) — used
 // wherever the app needs a plain reference photo, e.g. repair item intake
 // and final delivery photos.
+//
+// On web this hands the actual capture off to the phone's own native camera
+// app via a file input (capture=environment) — same approach as document
+// capture (DocumentCaptureSheet). A live in-page camera preview (the old
+// expo-camera CameraView route) can't get continuous autofocus in a mobile
+// browser on many phones, producing permanently-blurry captures; the native
+// camera app has full autofocus/flash/zoom. Native (compiled) builds keep
+// the CameraView flow since there's no DOM/file input there.
 export function PhotoCaptureModal({ visible, title, onClose, onCapture, highRes }: Props) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
@@ -54,6 +63,14 @@ export function PhotoCaptureModal({ visible, title, onClose, onCapture, highRes 
 
   const openSettings = () => Linking.openSettings().catch(() => {});
 
+  const processUri = useCallback(async (uri: string) => {
+    const shrunk = await manipulateAsync(
+      uri, [{ resize: { width: highRes ? 2000 : 720 } }],
+      { compress: highRes ? 0.85 : 0.6, format: SaveFormat.JPEG, base64: true },
+    );
+    return `data:image/jpeg;base64,${shrunk.base64}`;
+  }, [highRes]);
+
   const onTakePhoto = useCallback(async () => {
     if (submittingRef.current) return;
     submittingRef.current = true;
@@ -69,20 +86,34 @@ export function PhotoCaptureModal({ visible, title, onClose, onCapture, highRes 
       // matter what. Now the capture quality follows `highRes` too.
       const photo = await camRef.current?.takePictureAsync({ quality: highRes ? 0.92 : 0.5, base64: false, skipProcessing: true });
       if (!photo?.uri) throw new Error('Failed to capture');
-      const shrunk = await manipulateAsync(
-        photo.uri, [{ resize: { width: highRes ? 2000 : 720 } }],
-        { compress: highRes ? 0.85 : 0.6, format: SaveFormat.JPEG, base64: true },
-      );
-      const dataUri = `data:image/jpeg;base64,${shrunk.base64}`;
-      // Land on a review step (with optional crop) instead of saving straight away.
-      setCaptured(dataUri);
+      setCaptured(await processUri(photo.uri));
     } catch (e: any) {
       notify('Failed', e?.message || 'Please try again');
     } finally {
       setBusy(false);
       submittingRef.current = false;
     }
-  }, [camPerm, requestCamPerm, highRes]);
+  }, [camPerm, requestCamPerm, highRes, processUri]);
+
+  // Web: hand off to the OS camera (capture=true) or the photo library
+  // (capture=false) via a native file input, same as document capture.
+  const onPickWeb = useCallback(async (capture: boolean) => {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    setBusy(true);
+    try {
+      const f = await pickWebFile('image/*', capture);
+      if (!f) return;
+      const uri = URL.createObjectURL(f);
+      try { setCaptured(await processUri(uri)); }
+      finally { URL.revokeObjectURL(uri); }
+    } catch (e: any) {
+      notify('Failed', e?.message || 'Please try again');
+    } finally {
+      setBusy(false);
+      submittingRef.current = false;
+    }
+  }, [processUri]);
 
   const usePhoto = useCallback(async () => {
     if (!captured || submittingRef.current) return;
@@ -93,6 +124,7 @@ export function PhotoCaptureModal({ visible, title, onClose, onCapture, highRes 
   }, [captured, onCapture]);
 
   const camDenied = camPerm && !camPerm.granted && !camPerm.canAskAgain;
+  const isWeb = Platform.OS === 'web';
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose} transparent={false}>
@@ -108,6 +140,12 @@ export function PhotoCaptureModal({ visible, title, onClose, onCapture, highRes 
         <View style={styles.cameraWrap}>
           {captured ? (
             <Image source={{ uri: captured }} style={StyleSheet.absoluteFill} resizeMode="contain" />
+          ) : isWeb ? (
+            <View style={styles.permBox}>
+              <Ionicons name="camera-outline" size={44} color={colors.brandSecondary} />
+              <Text style={styles.permTitle}>Ready to capture</Text>
+              <Text style={styles.permSub}>Uses your phone&apos;s own camera app for a sharp, in-focus photo.</Text>
+            </View>
           ) : camPerm?.granted ? (
             <CameraView ref={(r) => { camRef.current = r; }} facing="back" style={StyleSheet.absoluteFill} />
           ) : (
@@ -132,11 +170,26 @@ export function PhotoCaptureModal({ visible, title, onClose, onCapture, highRes 
           {captured ? (
             <View style={styles.reviewRow}>
               <Pressable onPress={() => setCaptured(null)} style={styles.ghostBtn} testID="photo-retake"><Ionicons name="camera-reverse-outline" size={18} color={colors.onSurface} /><Text style={styles.ghostText}>Retake</Text></Pressable>
-              {Platform.OS === 'web' && (
+              {isWeb && (
                 <Pressable onPress={openCrop} style={styles.ghostBtn} testID="photo-crop"><Ionicons name="scan" size={18} color={colors.brandSecondary} /><Text style={styles.ghostText}>Crop</Text></Pressable>
               )}
               <Pressable onPress={usePhoto} disabled={busy} style={[styles.captureBtn, styles.usePhotoBtn, busy && { opacity: 0.6 }]} testID="photo-use">
                 {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <><Ionicons name="checkmark" size={20} color={colors.onBrandPrimary} /><Text style={styles.captureText}>Use photo</Text></>}
+              </Pressable>
+            </View>
+          ) : isWeb ? (
+            <View style={{ gap: spacing.sm }}>
+              <Pressable
+                testID="photo-capture-btn" onPress={() => onPickWeb(true)} disabled={busy}
+                style={({ pressed }) => [styles.captureBtn, busy && { opacity: 0.5 }, pressed && { transform: [{ scale: 0.98 }] }]}
+              >
+                {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : (
+                  <><Ionicons name="camera" size={20} color={colors.onBrandPrimary} /><Text style={styles.captureText}>Open Camera</Text></>
+                )}
+              </Pressable>
+              <Pressable onPress={() => onPickWeb(false)} disabled={busy} style={[styles.ghostBtn, styles.galleryBtn, busy && { opacity: 0.5 }]} testID="photo-gallery-btn">
+                <Ionicons name="images-outline" size={18} color={colors.brandSecondary} />
+                <Text style={styles.ghostText}>Choose from Gallery</Text>
               </Pressable>
             </View>
           ) : (
@@ -190,5 +243,5 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   ghostBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 14, paddingHorizontal: 14, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceSecondary },
   ghostText: { color: colors.onSurface, fontSize: 14, fontWeight: '700' },
   usePhotoBtn: { flex: 1, paddingVertical: 14 },
+  galleryBtn: { justifyContent: 'center', paddingVertical: 16 },
 });
-
