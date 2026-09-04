@@ -388,14 +388,14 @@ export default function RepairItemDetailScreen() {
                   {printing ? <ActivityIndicator color={colors.onSurfaceSecondary} /> : <><Ionicons name="document-text-outline" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>Slip PDF</Text></>}
                 </Pressable>
               </View>
-              <View style={styles.actionsRow}>
+              <View style={[styles.actionsRow, { marginBottom: spacing.md }]}>
                 <Pressable onPress={() => router.push({ pathname: '/repairs/item/issue', params: { itemId: id } } as any)} style={[styles.actionBtn, styles.actionBtnPrimary, { flex: 1 }]} testID="show-issue-form">
                   <Ionicons name="arrow-redo-outline" size={16} color={colors.onBrandPrimary} /><Text style={styles.actionBtnPrimaryText}>Issue to Karigar</Text>
                 </Pressable>
+                <Pressable onPress={sendWhatsAppReceived} disabled={sendingWhatsAppReceived} style={styles.waBtn} testID="send-whatsapp-received-btn">
+                  {sendingWhatsAppReceived ? <ActivityIndicator color={colors.onSurfaceSecondary} /> : <Ionicons name="logo-whatsapp" size={22} color={colors.onSurfaceSecondary} />}
+                </Pressable>
               </View>
-              <Pressable onPress={sendWhatsAppReceived} disabled={sendingWhatsAppReceived} style={[styles.actionBtn, { marginBottom: spacing.md }]} testID="send-whatsapp-received-btn">
-                {sendingWhatsAppReceived ? <ActivityIndicator color={colors.onSurfaceSecondary} /> : <><Ionicons name="logo-whatsapp" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>Send WhatsApp Notice (Received)</Text></>}
-              </Pressable>
               {canDeleteRepair && (
                 <Pressable onPress={doDeleteItem} disabled={busy} style={[styles.actionBtn, styles.deleteWideBtn, { marginBottom: spacing.md }]} testID="delete-item-btn">
                   <Ionicons name="trash-outline" size={16} color={colors.onError} /><Text style={[styles.actionBtnText, { color: colors.onError }]}>Delete This Tag</Text>
@@ -435,19 +435,19 @@ export default function RepairItemDetailScreen() {
                   {printing ? <ActivityIndicator color={colors.onSurfaceSecondary} /> : <><Ionicons name="document-text-outline" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>Bill PDF</Text></>}
                 </Pressable>
               </View>
-              <View style={[styles.actionsRow, { marginBottom: spacing.sm }]}>
+              <View style={[styles.actionsRow, { marginBottom: spacing.lg }]}>
                 <Pressable onPress={() => router.push({ pathname: '/repairs/bill', params: { itemId: id } } as any)} style={[styles.actionBtn, styles.actionBtnPrimary, { flex: 1 }]} testID="close-delivery-btn">
                   <Ionicons name="checkmark-done-outline" size={16} color={colors.onBrandPrimary} /><Text style={styles.actionBtnPrimaryText}>Close Delivery</Text>
                 </Pressable>
                 {hasRight('repairs', 'edit') && (
-                  <Pressable onPress={() => router.push({ pathname: '/repairs/bill', params: { itemId: id, mode: 'edit' } } as any)} style={styles.actionBtn} testID="edit-pending-bill-btn">
+                  <Pressable onPress={() => router.push({ pathname: '/repairs/bill', params: { itemId: id, mode: 'edit' } } as any)} style={[styles.actionBtn, { flex: 1 }]} testID="edit-pending-bill-btn">
                     <Ionicons name="pencil-outline" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>Edit Bill</Text>
                   </Pressable>
                 )}
+                <Pressable onPress={sendWhatsApp} disabled={sendingWhatsApp} style={styles.waBtn} testID="send-whatsapp-pending-btn">
+                  {sendingWhatsApp ? <ActivityIndicator color={colors.onSurfaceSecondary} /> : <Ionicons name="logo-whatsapp" size={22} color={colors.onSurfaceSecondary} />}
+                </Pressable>
               </View>
-              <Pressable onPress={sendWhatsApp} disabled={sendingWhatsApp} style={[styles.actionBtn, { marginBottom: spacing.lg }]} testID="send-whatsapp-pending-btn">
-                {sendingWhatsApp ? <ActivityIndicator color={colors.onSurfaceSecondary} /> : <><Ionicons name="logo-whatsapp" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>Send WhatsApp Notice</Text></>}
-              </Pressable>
             </>
           )}
           {item.status === 'delivered' && (
@@ -465,9 +465,11 @@ export default function RepairItemDetailScreen() {
                 </Pressable>
               )}
             </View>
-            <Pressable onPress={sendWhatsApp} disabled={sendingWhatsApp} style={[styles.actionBtn, { marginBottom: spacing.lg }]} testID="send-whatsapp-btn">
-              {sendingWhatsApp ? <ActivityIndicator color={colors.onSurfaceSecondary} /> : <><Ionicons name="logo-whatsapp" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>Resend WhatsApp Notice</Text></>}
-            </Pressable>
+            <View style={{ flexDirection: 'row', marginBottom: spacing.lg }}>
+              <Pressable onPress={sendWhatsApp} disabled={sendingWhatsApp} style={styles.waBtn} testID="send-whatsapp-btn">
+                {sendingWhatsApp ? <ActivityIndicator color={colors.onSurfaceSecondary} /> : <Ionicons name="logo-whatsapp" size={22} color={colors.onSurfaceSecondary} />}
+              </Pressable>
+            </View>
             </>
           )}
           <Text style={styles.section}>Tag History · {history.length}</Text>
@@ -592,6 +594,14 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   actionBtnPrimary: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
   actionBtnPrimaryText: { color: colors.onBrandPrimary, fontSize: 12, fontWeight: '700' },
   deleteWideBtn: { flex: 0, backgroundColor: colors.error, borderColor: colors.onError },
+  // Compact, icon-only — sits alongside the row's other (flex:1) buttons
+  // instead of taking its own full-width row. WhatsApp's own icon is
+  // recognizable enough on its own; sized up (22 vs the usual 16) since it's
+  // now the button's only content.
+  waBtn: {
+    width: 44, height: 44, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border,
+  },
 
   formCard: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.lg, marginBottom: spacing.lg },
   hint: { color: colors.mutedText, fontSize: 12, marginBottom: spacing.sm, lineHeight: 17 },
