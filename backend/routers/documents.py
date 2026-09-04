@@ -686,7 +686,10 @@ async def upload_worker():
         try:
             if await drive_service.is_connected():
                 cfg = await drive_service.get_config()
-                doc = await db.documents.find_one({'upload_state': 'queued', 'deleted': {'$ne': True}, 'local_data': {'$ne': None}}, {'_id': 0})
+                # 'uploading' here can only be a doc orphaned by a prior process
+                # dying mid-upload — this loop never leaves one in that state while
+                # also polling, so it's safe to treat it as re-queued.
+                doc = await db.documents.find_one({'upload_state': {'$in': ['queued', 'uploading']}, 'deleted': {'$ne': True}, 'local_data': {'$ne': None}}, {'_id': 0})
                 if doc:
                     await db.documents.update_one({'id': doc['id']}, {'$set': {'upload_state': 'uploading'}})
                     try:
