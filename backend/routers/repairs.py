@@ -1040,6 +1040,31 @@ DEFAULT_REPAIR_READY_TEMPLATE = (
     "Hi {customer_name}, your item {item_code} ({description}) is ready for pickup at {shop_name}. {amount_line} Thank you!"
 )
 
+# Same idea, sent at intake instead of pickup — repair_received_template on
+# the 'whatsapp' settings doc.
+DEFAULT_REPAIR_RECEIVED_TEMPLATE = (
+    "Hi {customer_name}, we've received your item {item_code} ({description}) at {shop_name} for repair. "
+    "Expected by {due_date}. We'll notify you once it's ready. Thank you!"
+)
+
+
+async def _repair_received_whatsapp_text(item: dict) -> str:
+    """Same 'item received' message regardless of who triggers the send."""
+    store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
+    shop_name = store.get('name') or 'Ram Murti Jewellers'
+    fields = {
+        'customer_name': item.get('customer_name', ''), 'item_code': item['item_code'],
+        'description': item.get('description', ''), 'shop_name': shop_name, 'due_date': item.get('due_date') or '',
+    }
+    wa = await db.settings.find_one({'id': 'whatsapp'}, {'_id': 0}) or {}
+    template = wa.get('repair_received_template') or DEFAULT_REPAIR_RECEIVED_TEMPLATE
+    try:
+        return template.format(**fields)
+    except Exception:
+        # A bad edit (typo'd placeholder) must not silently block every
+        # future send — fall back to the known-good default.
+        return DEFAULT_REPAIR_RECEIVED_TEMPLATE.format(**fields)
+
 
 async def _repair_ready_whatsapp_text(item: dict) -> str:
     """Same 'ready for pickup' message regardless of who triggers the send."""
@@ -1083,6 +1108,27 @@ async def notify_whatsapp(item_id: str, user=Depends(require_admin_or_module(['r
     if not ok:
         raise HTTPException(status_code=502, detail='Could not send — check the WhatsApp service is connected (Store Settings).')
     await log_audit(user, 'repair_item.notify_whatsapp', 'repair_item', item_id, item['item_code'], {})
+    return {'ok': True}
+
+
+@router.post('/repair-items/{item_id}/notify-whatsapp-received')
+async def notify_whatsapp_received(item_id: str, user=Depends(require_admin_or_module(['repairs']))):
+    """Manually send the 'item received' WhatsApp notice — staff-triggered
+    from the tag detail screen (received status), same manual-with-confirm
+    pattern as the ready-for-pickup notice. No status restriction beyond the
+    item existing: still useful as a reminder even if it's since moved on."""
+    if not await whatsapp_flow_enabled('repair_received_notice'):
+        raise HTTPException(status_code=400, detail='WhatsApp notices are turned off in Store Settings.')
+    item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
+    if not item: raise HTTPException(status_code=404, detail='Item not found')
+    order = await db.repair_orders.find_one({'id': item.get('order_id')}, {'_id': 0, 'customer_mobile': 1})
+    if not order or not order.get('customer_mobile'):
+        raise HTTPException(status_code=400, detail='No mobile number on file for this order')
+    text = await _repair_received_whatsapp_text(item)
+    ok = await send_whatsapp(order['customer_mobile'], text)
+    if not ok:
+        raise HTTPException(status_code=502, detail='Could not send — check the WhatsApp service is connected (Store Settings).')
+    await log_audit(user, 'repair_item.notify_whatsapp_received', 'repair_item', item_id, item['item_code'], {})
     return {'ok': True}
 
 

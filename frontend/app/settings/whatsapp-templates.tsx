@@ -14,6 +14,12 @@ const REPAIR_SAMPLE: Record<string, string> = {
 };
 const DEFAULT_REPAIR_TEMPLATE = 'Hi {customer_name}, your item {item_code} ({description}) is ready for pickup at {shop_name}. {amount_line} Thank you!';
 
+const REPAIR_RECEIVED_SAMPLE: Record<string, string> = {
+  customer_name: 'Ramesh Kumar', item_code: 'RJ-0231', description: 'Gold ring repair',
+  shop_name: 'Ram Murti Jewellers', due_date: '10 Sep 2026',
+};
+const DEFAULT_REPAIR_RECEIVED_TEMPLATE = "Hi {customer_name}, we've received your item {item_code} ({description}) at {shop_name} for repair. Expected by {due_date}. We'll notify you once it's ready. Thank you!";
+
 const CHATBOT_RATE_SAMPLE: Record<string, string> = { gold_rate: '151050', silver_rate: '242200', date: '04 Sep 2026', time: '12:30 PM' };
 const DEFAULT_CHATBOT_RATE_TEMPLATE = "Today's approx rate (as on {date}, {time}):\nGold 24k: Rs.{gold_rate} /tola\nSilver: Rs.{silver_rate} /kg";
 
@@ -40,6 +46,7 @@ export default function WhatsAppTemplatesScreen() {
   const [grConfig, setGrConfig] = useState<any>(null);
 
   const [repairTemplate, setRepairTemplate] = useState('');
+  const [repairReceivedTemplate, setRepairReceivedTemplate] = useState('');
   const [chatbotTemplate, setChatbotTemplate] = useState('');
   const [goldRateTemplate, setGoldRateTemplate] = useState('');
 
@@ -52,6 +59,7 @@ export default function WhatsAppTemplatesScreen() {
       setWaSettings(wa);
       setGrConfig(gr);
       setRepairTemplate(wa.repair_ready_template || '');
+      setRepairReceivedTemplate(wa.repair_received_template || '');
       setChatbotTemplate(wa.chatbot_rate_template || '');
       setGoldRateTemplate(gr.template || '');
     } catch (e: any) { toast.error(e?.detail || 'Could not load'); }
@@ -66,9 +74,11 @@ export default function WhatsAppTemplatesScreen() {
       await Promise.all([
         api.put('/settings/whatsapp', {
           enabled: waSettings.enabled, repair_ready_notice: waSettings.repair_ready_notice,
+          repair_received_notice: waSettings.repair_received_notice,
           chatbot_enabled: waSettings.chatbot_enabled,
           chatbot_rate_enabled: waSettings.chatbot_rate_enabled, chatbot_status_enabled: waSettings.chatbot_status_enabled,
-          repair_ready_template: repairTemplate || undefined, chatbot_rate_template: chatbotTemplate || undefined,
+          repair_ready_template: repairTemplate || undefined, repair_received_template: repairReceivedTemplate || undefined,
+          chatbot_rate_template: chatbotTemplate || undefined,
         }),
         api.put('/settings/gold-rate/config', {
           fetch_time: grConfig.fetch_time, gold_margin: grConfig.gold_margin, silver_margin: grConfig.silver_margin,
@@ -128,6 +138,26 @@ export default function WhatsAppTemplatesScreen() {
           <Ionicons name="eye-outline" size={16} color={colors.brandSecondary} />
           <Text style={styles.infoText} testID="whatsapp-repair-template-preview">
             {renderPreview(repairTemplate, REPAIR_SAMPLE, DEFAULT_REPAIR_TEMPLATE)}
+          </Text>
+        </View>
+
+        <View style={styles.divider} />
+        <Text style={styles.section}>Item Received — Message Template</Text>
+        <Text style={styles.hint}>Placeholders: {'{customer_name}'} {'{item_code}'} {'{description}'} {'{shop_name}'} {'{due_date}'}</Text>
+        <TextInput
+          value={repairReceivedTemplate}
+          onChangeText={setRepairReceivedTemplate}
+          placeholder={DEFAULT_REPAIR_RECEIVED_TEMPLATE}
+          placeholderTextColor={colors.mutedText}
+          multiline
+          style={[styles.input, styles.inputMultiline]}
+          testID="whatsapp-repair-received-template-input"
+        />
+        <Text style={styles.fieldLabel}>Preview</Text>
+        <View style={styles.infoBox}>
+          <Ionicons name="eye-outline" size={16} color={colors.brandSecondary} />
+          <Text style={styles.infoText} testID="whatsapp-repair-received-template-preview">
+            {renderPreview(repairReceivedTemplate, REPAIR_RECEIVED_SAMPLE, DEFAULT_REPAIR_RECEIVED_TEMPLATE)}
           </Text>
         </View>
 

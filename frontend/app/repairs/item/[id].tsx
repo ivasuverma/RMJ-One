@@ -217,6 +217,24 @@ export default function RepairItemDetailScreen() {
       },
     );
   };
+
+  const [sendingWhatsAppReceived, setSendingWhatsAppReceived] = useState(false);
+  const sendWhatsAppReceived = () => {
+    if (!item) return;
+    confirmAction(
+      'Send WhatsApp notice?',
+      `Sends an "item received" message to ${item.customer_name}'s number on file for this order.`,
+      'Send',
+      async () => {
+        setSendingWhatsAppReceived(true);
+        try {
+          await api.post(`/repair-items/${id}/notify-whatsapp-received`, {});
+          notify('Sent', `WhatsApp notice sent to ${item.customer_name}.`);
+        } catch (e: any) { notify('Failed', e?.detail || 'Could not send — please try again.'); }
+        finally { setSendingWhatsAppReceived(false); }
+      },
+    );
+  };
   const printCustomerSlipPdf = async () => {
     setPrinting(true);
     try {
@@ -375,6 +393,9 @@ export default function RepairItemDetailScreen() {
                   <Ionicons name="arrow-redo-outline" size={16} color={colors.onBrandPrimary} /><Text style={styles.actionBtnPrimaryText}>Issue to Karigar</Text>
                 </Pressable>
               </View>
+              <Pressable onPress={sendWhatsAppReceived} disabled={sendingWhatsAppReceived} style={[styles.actionBtn, { marginBottom: spacing.md }]} testID="send-whatsapp-received-btn">
+                {sendingWhatsAppReceived ? <ActivityIndicator color={colors.onSurfaceSecondary} /> : <><Ionicons name="logo-whatsapp" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>Send WhatsApp Notice (Received)</Text></>}
+              </Pressable>
               {canDeleteRepair && (
                 <Pressable onPress={doDeleteItem} disabled={busy} style={[styles.actionBtn, styles.deleteWideBtn, { marginBottom: spacing.md }]} testID="delete-item-btn">
                   <Ionicons name="trash-outline" size={16} color={colors.onError} /><Text style={[styles.actionBtnText, { color: colors.onError }]}>Delete This Tag</Text>

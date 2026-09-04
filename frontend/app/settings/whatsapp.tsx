@@ -11,11 +11,13 @@ import { useToast } from '@/src/components/ui';
 
 type Form = {
   enabled: boolean; repair_ready_notice: boolean; repair_ready_template: string;
+  repair_received_notice: boolean; repair_received_template: string;
   chatbot_enabled: boolean; chatbot_rate_template: string;
   chatbot_rate_enabled: boolean; chatbot_status_enabled: boolean;
 };
 const EMPTY: Form = {
   enabled: true, repair_ready_notice: true, repair_ready_template: '',
+  repair_received_notice: true, repair_received_template: '',
   chatbot_enabled: false, chatbot_rate_template: '',
   chatbot_rate_enabled: true, chatbot_status_enabled: true,
 };
@@ -60,7 +62,9 @@ export default function WhatsAppSettingsScreen() {
       const w = await api.get<any>('/settings/whatsapp');
       setForm({
         enabled: w.enabled !== false, repair_ready_notice: w.repair_ready_notice !== false,
-        repair_ready_template: w.repair_ready_template || '', chatbot_enabled: w.chatbot_enabled === true,
+        repair_ready_template: w.repair_ready_template || '',
+        repair_received_notice: w.repair_received_notice !== false, repair_received_template: w.repair_received_template || '',
+        chatbot_enabled: w.chatbot_enabled === true,
         chatbot_rate_template: w.chatbot_rate_template || '',
         chatbot_rate_enabled: w.chatbot_rate_enabled !== false, chatbot_status_enabled: w.chatbot_status_enabled !== false,
       });
@@ -191,6 +195,20 @@ export default function WhatsAppSettingsScreen() {
             </View>
             <View style={[styles.switch, form.enabled && form.repair_ready_notice && styles.switchOn]}>
               <View style={[styles.switchKnob, form.enabled && form.repair_ready_notice && styles.switchKnobOn]} />
+            </View>
+          </Pressable>
+          <Pressable
+            onPress={() => form.enabled && setForm((f) => ({ ...f, repair_received_notice: !f.repair_received_notice }))}
+            style={styles.toggleRow}
+            disabled={!form.enabled}
+            testID="whatsapp-repair-received-toggle"
+          >
+            <View style={{ flex: 1 }}>
+              <Text style={styles.toggleLabel}>Item received notice</Text>
+              <Text style={styles.toggleSub}>Lets staff send a "we've received your item" WhatsApp message from a freshly-intake tag's detail screen</Text>
+            </View>
+            <View style={[styles.switch, form.enabled && form.repair_received_notice && styles.switchOn]}>
+              <View style={[styles.switchKnob, form.enabled && form.repair_received_notice && styles.switchKnobOn]} />
             </View>
           </Pressable>
         </View>
