@@ -159,7 +159,6 @@ export default function WhatsAppSettingsScreen() {
           <Ionicons name="chevron-forward" size={18} color={colors.mutedText} />
         </Pressable>
 
-        <Text style={styles.section}>Toggles</Text>
         <Pressable
           onPress={() => setForm((f) => ({ ...f, enabled: !f.enabled }))}
           style={styles.toggleRow}
@@ -167,140 +166,160 @@ export default function WhatsAppSettingsScreen() {
         >
           <View style={{ flex: 1 }}>
             <Text style={styles.toggleLabel}>Enable WhatsApp notices</Text>
-            <Text style={styles.toggleSub}>Master switch for every customer-facing WhatsApp message below</Text>
+            <Text style={styles.toggleSub}>Master switch — off disables every group below, whatever their own toggles say</Text>
           </View>
           <View style={[styles.switch, form.enabled && styles.switchOn]}>
             <View style={[styles.switchKnob, form.enabled && styles.switchKnobOn]} />
           </View>
         </Pressable>
 
-        <Pressable
-          onPress={() => form.enabled && setForm((f) => ({ ...f, repair_ready_notice: !f.repair_ready_notice }))}
-          style={[styles.toggleRow, !form.enabled && { opacity: 0.5 }]}
-          disabled={!form.enabled}
-          testID="whatsapp-repair-ready-toggle"
-        >
-          <View style={{ flex: 1 }}>
-            <Text style={styles.toggleLabel}>Repair ready-for-pickup notice</Text>
-            <Text style={styles.toggleSub}>Lets staff send a "your item is ready" WhatsApp message from a billed tag's detail screen</Text>
+        {/* ---------------- Repair ---------------- */}
+        <View style={[styles.groupCard, !form.enabled && { opacity: 0.5 }]}>
+          <View style={styles.groupHeader}>
+            <View style={styles.groupHeaderIcon}><Ionicons name="construct-outline" size={17} color={colors.brandSecondary} /></View>
+            <Text style={styles.groupHeaderTitle}>Repair</Text>
           </View>
-          <View style={[styles.switch, form.enabled && form.repair_ready_notice && styles.switchOn]}>
-            <View style={[styles.switchKnob, form.enabled && form.repair_ready_notice && styles.switchKnobOn]} />
-          </View>
-        </Pressable>
-
-        <Pressable
-          onPress={() => form.enabled && setForm((f) => ({ ...f, chatbot_enabled: !f.chatbot_enabled }))}
-          style={[styles.toggleRow, !form.enabled && { opacity: 0.5 }]}
-          disabled={!form.enabled}
-          testID="whatsapp-chatbot-toggle"
-        >
-          <View style={{ flex: 1 }}>
-            <Text style={styles.toggleLabel}>Auto-reply chatbot</Text>
-            <Text style={styles.toggleSub}>Customers who message the shop's WhatsApp number and reply RATE or STATUS get an automatic reply — no AI, fixed answers only. Off means no auto-reply of any kind.</Text>
-          </View>
-          <View style={[styles.switch, form.enabled && form.chatbot_enabled && styles.switchOn]}>
-            <View style={[styles.switchKnob, form.enabled && form.chatbot_enabled && styles.switchKnobOn]} />
-          </View>
-        </Pressable>
-
-        <View style={styles.row2}>
           <Pressable
-            onPress={() => form.enabled && form.chatbot_enabled && setForm((f) => ({ ...f, chatbot_rate_enabled: !f.chatbot_rate_enabled }))}
-            style={[styles.keywordToggle, (!form.enabled || !form.chatbot_enabled) && { opacity: 0.5 }]}
-            disabled={!form.enabled || !form.chatbot_enabled}
-            testID="whatsapp-chatbot-rate-keyword-toggle"
+            onPress={() => form.enabled && setForm((f) => ({ ...f, repair_ready_notice: !f.repair_ready_notice }))}
+            style={styles.toggleRow}
+            disabled={!form.enabled}
+            testID="whatsapp-repair-ready-toggle"
           >
-            <Text style={styles.toggleLabel}>RATE</Text>
-            <View style={[styles.switch, form.enabled && form.chatbot_enabled && form.chatbot_rate_enabled && styles.switchOn]}>
-              <View style={[styles.switchKnob, form.enabled && form.chatbot_enabled && form.chatbot_rate_enabled && styles.switchKnobOn]} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.toggleLabel}>Ready-for-pickup notice</Text>
+              <Text style={styles.toggleSub}>Lets staff send a "your item is ready" WhatsApp message from a billed tag's detail screen</Text>
+            </View>
+            <View style={[styles.switch, form.enabled && form.repair_ready_notice && styles.switchOn]}>
+              <View style={[styles.switchKnob, form.enabled && form.repair_ready_notice && styles.switchKnobOn]} />
             </View>
           </Pressable>
+        </View>
+
+        {/* ---------------- Chatbot ---------------- */}
+        <View style={[styles.groupCard, !form.enabled && { opacity: 0.5 }]}>
+          <View style={styles.groupHeader}>
+            <View style={styles.groupHeaderIcon}><Ionicons name="chatbubble-ellipses-outline" size={17} color={colors.brandSecondary} /></View>
+            <Text style={styles.groupHeaderTitle}>Chatbot</Text>
+          </View>
           <Pressable
-            onPress={() => form.enabled && form.chatbot_enabled && setForm((f) => ({ ...f, chatbot_status_enabled: !f.chatbot_status_enabled }))}
-            style={[styles.keywordToggle, (!form.enabled || !form.chatbot_enabled) && { opacity: 0.5 }]}
-            disabled={!form.enabled || !form.chatbot_enabled}
-            testID="whatsapp-chatbot-status-keyword-toggle"
+            onPress={() => form.enabled && setForm((f) => ({ ...f, chatbot_enabled: !f.chatbot_enabled }))}
+            style={styles.toggleRow}
+            disabled={!form.enabled}
+            testID="whatsapp-chatbot-toggle"
           >
-            <Text style={styles.toggleLabel}>STATUS</Text>
-            <View style={[styles.switch, form.enabled && form.chatbot_enabled && form.chatbot_status_enabled && styles.switchOn]}>
-              <View style={[styles.switchKnob, form.enabled && form.chatbot_enabled && form.chatbot_status_enabled && styles.switchKnobOn]} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.toggleLabel}>Auto-reply chatbot</Text>
+              <Text style={styles.toggleSub}>Customers who message the shop's number and reply RATE or STATUS get an automatic reply — no AI, fixed answers only</Text>
             </View>
+            <View style={[styles.switch, form.enabled && form.chatbot_enabled && styles.switchOn]}>
+              <View style={[styles.switchKnob, form.enabled && form.chatbot_enabled && styles.switchKnobOn]} />
+            </View>
+          </Pressable>
+          <View style={styles.row2}>
+            <Pressable
+              onPress={() => form.enabled && form.chatbot_enabled && setForm((f) => ({ ...f, chatbot_rate_enabled: !f.chatbot_rate_enabled }))}
+              style={[styles.keywordToggle, (!form.enabled || !form.chatbot_enabled) && { opacity: 0.5 }]}
+              disabled={!form.enabled || !form.chatbot_enabled}
+              testID="whatsapp-chatbot-rate-keyword-toggle"
+            >
+              <Text style={styles.toggleLabel}>RATE</Text>
+              <View style={[styles.switch, form.enabled && form.chatbot_enabled && form.chatbot_rate_enabled && styles.switchOn]}>
+                <View style={[styles.switchKnob, form.enabled && form.chatbot_enabled && form.chatbot_rate_enabled && styles.switchKnobOn]} />
+              </View>
+            </Pressable>
+            <Pressable
+              onPress={() => form.enabled && form.chatbot_enabled && setForm((f) => ({ ...f, chatbot_status_enabled: !f.chatbot_status_enabled }))}
+              style={[styles.keywordToggle, (!form.enabled || !form.chatbot_enabled) && { opacity: 0.5 }]}
+              disabled={!form.enabled || !form.chatbot_enabled}
+              testID="whatsapp-chatbot-status-keyword-toggle"
+            >
+              <Text style={styles.toggleLabel}>STATUS</Text>
+              <View style={[styles.switch, form.enabled && form.chatbot_enabled && form.chatbot_status_enabled && styles.switchOn]}>
+                <View style={[styles.switchKnob, form.enabled && form.chatbot_enabled && form.chatbot_status_enabled && styles.switchKnobOn]} />
+              </View>
+            </Pressable>
+          </View>
+        </View>
+
+        {/* ---------------- Gold Rate ---------------- */}
+        <View style={[styles.groupCard, !form.enabled && { opacity: 0.5 }]}>
+          <View style={styles.groupHeader}>
+            <View style={styles.groupHeaderIcon}><Ionicons name="pricetag-outline" size={17} color={colors.brandSecondary} /></View>
+            <Text style={styles.groupHeaderTitle}>Gold Rate</Text>
+          </View>
+          <Text style={styles.hint}>When the daily rate auto-fetches, and the margin added on top — fetching/sending itself happens on the Work tab.</Text>
+          <View style={styles.row2}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.fieldLabel}>Fetch time (24h, IST)</Text>
+              <TextInput value={fetchTime} onChangeText={setFetchTime} placeholder="12:30" placeholderTextColor={colors.mutedText} style={styles.input} testID="gold-rate-fetch-time" />
+            </View>
+          </View>
+          <View style={styles.row2}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.fieldLabel}>Gold margin (₹, rounds to ₹50)</Text>
+              <TextInput value={goldMargin} onChangeText={setGoldMargin} keyboardType="numeric" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} testID="gold-rate-gold-margin" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.fieldLabel}>Silver margin (₹, rounds to ₹100)</Text>
+              <TextInput value={silverMargin} onChangeText={setSilverMargin} keyboardType="numeric" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} testID="gold-rate-silver-margin" />
+            </View>
+          </View>
+
+          <View style={styles.groupDivider} />
+          <Text style={styles.fieldLabel}>Chatbot rate freshness</Text>
+          <Text style={styles.hint}>Keeps a separate rate cache topped up through the day so RATE replies close to accurate, without disturbing the daily broadcast above.</Text>
+          <Pressable
+            onPress={() => setRefreshEnabled((v) => !v)}
+            style={styles.toggleRow}
+            testID="gold-rate-refresh-enabled-toggle"
+          >
+            <View style={{ flex: 1 }}>
+              <Text style={styles.toggleLabel}>Auto-refresh for chatbot</Text>
+              <Text style={styles.toggleSub}>Off means RATE always answers with whatever the daily broadcast last fetched</Text>
+            </View>
+            <View style={[styles.switch, refreshEnabled && styles.switchOn]}>
+              <View style={[styles.switchKnob, refreshEnabled && styles.switchKnobOn]} />
+            </View>
+          </Pressable>
+          <View style={[styles.row2, !refreshEnabled && { opacity: 0.5 }]}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.fieldLabel}>Every (minutes)</Text>
+              <TextInput value={refreshInterval} onChangeText={setRefreshInterval} keyboardType="numeric" editable={refreshEnabled} placeholder="120" placeholderTextColor={colors.mutedText} style={styles.input} testID="gold-rate-refresh-interval" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.fieldLabel}>From</Text>
+              <TextInput value={refreshStart} onChangeText={setRefreshStart} editable={refreshEnabled} placeholder="12:30" placeholderTextColor={colors.mutedText} style={styles.input} testID="gold-rate-refresh-start" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.fieldLabel}>To</Text>
+              <TextInput value={refreshEnd} onChangeText={setRefreshEnd} editable={refreshEnabled} placeholder="19:00" placeholderTextColor={colors.mutedText} style={styles.input} testID="gold-rate-refresh-end" />
+            </View>
+          </View>
+
+          <View style={styles.groupDivider} />
+          <Pressable
+            onPress={() => setAutoSendEnabled((v) => !v)}
+            style={[styles.toggleRow, autoSendEnabled && styles.toggleRowWarn]}
+            testID="gold-rate-auto-send-toggle"
+          >
+            <View style={{ flex: 1 }}>
+              <Text style={styles.toggleLabel}>Fully automatic — fetch &amp; send daily, no review</Text>
+              <Text style={styles.toggleSub}>Every day's fetch goes straight to the Channel with no confirm step. Off means the Work-tab screen always waits for Confirm &amp; Send.</Text>
+            </View>
+            <View style={[styles.switch, autoSendEnabled && styles.switchOn]}>
+              <View style={[styles.switchKnob, autoSendEnabled && styles.switchKnobOn]} />
+            </View>
+          </Pressable>
+
+          <Pressable onPress={saveGoldRateConfig} disabled={grSaving} style={[styles.altBtn, grSaving && { opacity: 0.6 }]} testID="gold-rate-save-config">
+            {grSaving ? <ActivityIndicator color={colors.brandSecondary} size="small" /> : <Text style={styles.altBtnText}>Save Gold Rate Settings</Text>}
           </Pressable>
         </View>
 
         <View style={styles.infoBox}>
           <Ionicons name="information-circle-outline" size={16} color={colors.brandSecondary} />
-          <Text style={styles.infoText}>More WhatsApp flows (gold loan reminders, etc.) will get their own toggle here as they're added. The daily gold rate broadcast now lives on the Work tab, under "Gold Rate Channel".</Text>
+          <Text style={styles.infoText}>More WhatsApp flows (gold loan reminders, etc.) will get their own group here as they're added.</Text>
         </View>
-
-        <View style={styles.divider} />
-        <Text style={styles.section}>Gold Rate — Fetch Settings</Text>
-        <Text style={styles.hint}>When the daily rate auto-fetches, and the margin added on top of the scraped rate — fetching/sending itself happens on the Work tab.</Text>
-        <View style={styles.row2}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.fieldLabel}>Fetch time (24h, IST)</Text>
-            <TextInput value={fetchTime} onChangeText={setFetchTime} placeholder="12:30" placeholderTextColor={colors.mutedText} style={styles.input} testID="gold-rate-fetch-time" />
-          </View>
-        </View>
-        <View style={styles.row2}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.fieldLabel}>Gold margin (₹, +/-, rounds to ₹50)</Text>
-            <TextInput value={goldMargin} onChangeText={setGoldMargin} keyboardType="numeric" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} testID="gold-rate-gold-margin" />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.fieldLabel}>Silver margin (₹, +/-, rounds to ₹100)</Text>
-            <TextInput value={silverMargin} onChangeText={setSilverMargin} keyboardType="numeric" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} testID="gold-rate-silver-margin" />
-          </View>
-        </View>
-
-        <Text style={styles.fieldLabel}>Chatbot rate freshness</Text>
-        <Text style={styles.hint}>Keeps a separate rate cache topped up through the day so RATE replies close to accurate, without disturbing the daily broadcast above.</Text>
-        <Pressable
-          onPress={() => setRefreshEnabled((v) => !v)}
-          style={styles.toggleRow}
-          testID="gold-rate-refresh-enabled-toggle"
-        >
-          <View style={{ flex: 1 }}>
-            <Text style={styles.toggleLabel}>Auto-refresh for chatbot</Text>
-            <Text style={styles.toggleSub}>Off means RATE always answers with whatever the daily broadcast last fetched.</Text>
-          </View>
-          <View style={[styles.switch, refreshEnabled && styles.switchOn]}>
-            <View style={[styles.switchKnob, refreshEnabled && styles.switchKnobOn]} />
-          </View>
-        </Pressable>
-        <View style={[styles.row2, !refreshEnabled && { opacity: 0.5 }]}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.fieldLabel}>Every (minutes)</Text>
-            <TextInput value={refreshInterval} onChangeText={setRefreshInterval} keyboardType="numeric" editable={refreshEnabled} placeholder="120" placeholderTextColor={colors.mutedText} style={styles.input} testID="gold-rate-refresh-interval" />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.fieldLabel}>From</Text>
-            <TextInput value={refreshStart} onChangeText={setRefreshStart} editable={refreshEnabled} placeholder="12:30" placeholderTextColor={colors.mutedText} style={styles.input} testID="gold-rate-refresh-start" />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.fieldLabel}>To</Text>
-            <TextInput value={refreshEnd} onChangeText={setRefreshEnd} editable={refreshEnabled} placeholder="19:00" placeholderTextColor={colors.mutedText} style={styles.input} testID="gold-rate-refresh-end" />
-          </View>
-        </View>
-
-        <Pressable
-          onPress={() => setAutoSendEnabled((v) => !v)}
-          style={[styles.toggleRow, autoSendEnabled && styles.toggleRowWarn]}
-          testID="gold-rate-auto-send-toggle"
-        >
-          <View style={{ flex: 1 }}>
-            <Text style={styles.toggleLabel}>Fully automatic — fetch &amp; send daily, no review</Text>
-            <Text style={styles.toggleSub}>Every day's fetch (at the time above) goes straight to the Channel with no confirm step. Off means the Work-tab screen always waits for Confirm &amp; Send.</Text>
-          </View>
-          <View style={[styles.switch, autoSendEnabled && styles.switchOn]}>
-            <View style={[styles.switchKnob, autoSendEnabled && styles.switchKnobOn]} />
-          </View>
-        </Pressable>
-
-        <Pressable onPress={saveGoldRateConfig} disabled={grSaving} style={[styles.altBtn, grSaving && { opacity: 0.6 }]} testID="gold-rate-save-config">
-          {grSaving ? <ActivityIndicator color={colors.brandSecondary} size="small" /> : <Text style={styles.altBtnText}>Save Fetch Settings</Text>}
-        </Pressable>
       </ScrollView>
 
       <View style={styles.footer}>
@@ -330,10 +349,14 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     borderColor: colors.border, padding: spacing.md, marginBottom: spacing.lg,
   },
   navIcon: { width: 36, height: 36, borderRadius: 10, backgroundColor: colors.surfaceTertiary, alignItems: 'center', justifyContent: 'center' },
-  section: {
-    color: colors.brandSecondary, fontSize: 11, letterSpacing: 1, textTransform: 'uppercase',
-    marginTop: spacing.lg, marginBottom: spacing.sm,
+  groupCard: {
+    backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border,
+    padding: spacing.md, marginBottom: spacing.lg,
   },
+  groupHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.md },
+  groupHeaderIcon: { width: 32, height: 32, borderRadius: 9, backgroundColor: colors.surfaceTertiary, alignItems: 'center', justifyContent: 'center' },
+  groupHeaderTitle: { color: colors.onSurface, fontSize: 15, fontWeight: '700', fontFamily: fonts.display },
+  groupDivider: { height: 1, backgroundColor: colors.divider, marginVertical: spacing.md },
   toggleRow: {
     flexDirection: 'row', alignItems: 'center', gap: spacing.md,
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1,
@@ -363,7 +386,6 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   infoText: { color: colors.onSurfaceTertiary, fontSize: 12, flex: 1 },
   hint: { color: colors.mutedText, fontSize: 12, marginBottom: spacing.md },
   fieldLabel: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '600', marginBottom: 6 },
-  divider: { height: 1, backgroundColor: colors.divider, marginTop: spacing.lg },
   row2: { flexDirection: 'row', gap: spacing.sm },
   input: {
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
