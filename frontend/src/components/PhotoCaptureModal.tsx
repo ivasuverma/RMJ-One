@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, Pressable, ActivityIndicator, Modal, Linking, Platform, Image } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { View, Text, StyleSheet, Pressable, ActivityIndicator, Platform, Image } from 'react-native';
 import { notify } from '@/src/utils/notify';
 import { Ionicons } from '@expo/vector-icons';
-import { CameraView, useCameraPermissions } from 'expo-camera';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
-import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
+import { spacing, radius, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { Sheet } from '@/src/components/ui';
 import { SimpleCropper } from '@/src/components/SimpleCropper';
 import { pickWebFile } from '@/src/components/DocumentCaptureSheet';
 
@@ -33,26 +33,21 @@ type Props = {
   highRes?: boolean;
 };
 
-// Generic rear-camera capture modal (no location/selfie requirement) — used
-// wherever the app needs a plain reference photo, e.g. repair item intake
-// and final delivery photos.
-//
-// On web this hands the actual capture off to the phone's own native camera
-// app via a file input (capture=environment) — same approach as document
-// capture (DocumentCaptureSheet). A live in-page camera preview (the old
-// expo-camera CameraView route) can't get continuous autofocus in a mobile
-// browser on many phones, producing permanently-blurry captures; the native
-// camera app has full autofocus/flash/zoom. Native (compiled) builds keep
-// the CameraView flow since there's no DOM/file input there.
+// Generic rear-camera capture used wherever the app needs a plain reference
+// photo (repair item intake/delivery, samples, gold loan pledge, task/record
+// photos). Same bottom-sheet shell and same capture mechanism as document
+// capture (DocumentCaptureSheet): a native file input (capture=environment)
+// hands the actual photo-taking off to the phone's own camera app, which
+// gets full autofocus/flash/zoom — a live in-page camera preview can't get
+// continuous autofocus in a mobile browser on many phones and was producing
+// permanently-blurry captures. Web only, same as document capture (there's
+// no native build of this app — no eas.json — so this only ever runs web).
 export function PhotoCaptureModal({ visible, title, onClose, onCapture, highRes }: Props) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
-  const [camPerm, requestCamPerm] = useCameraPermissions();
   const [busy, setBusy] = useState(false);
   const [captured, setCaptured] = useState<string | null>(null);   // dataUri under review
   const [scanFile, setScanFile] = useState<File | null>(null);     // File handed to the cropper
-  const camRef = useRef<CameraView | null>(null);
-  const submittingRef = useRef(false);
 
   useEffect(() => { if (!visible) { setBusy(false); setCaptured(null); setScanFile(null); } }, [visible]);
 
@@ -61,149 +56,69 @@ export function PhotoCaptureModal({ visible, title, onClose, onCapture, highRes 
     try { setScanFile(await dataUriToFile(captured)); } catch { /* ignore */ }
   }, [captured]);
 
-  const openSettings = () => Linking.openSettings().catch(() => {});
-
-  const processUri = useCallback(async (uri: string) => {
-    const shrunk = await manipulateAsync(
-      uri, [{ resize: { width: highRes ? 2000 : 720 } }],
-      { compress: highRes ? 0.85 : 0.6, format: SaveFormat.JPEG, base64: true },
-    );
-    return `data:image/jpeg;base64,${shrunk.base64}`;
-  }, [highRes]);
-
-  const onTakePhoto = useCallback(async () => {
-    if (submittingRef.current) return;
-    submittingRef.current = true;
-    if (!camPerm?.granted) {
-      const p = await requestCamPerm();
-      if (!p.granted) { submittingRef.current = false; return; }
-    }
-    setBusy(true);
-    try {
-      // quality here is the raw sensor capture itself — it was fixed at 0.5
-      // for every caller, so `highRes` only ever changed the downstream
-      // resize/compress step and the actual capture stayed low-fidelity no
-      // matter what. Now the capture quality follows `highRes` too.
-      const photo = await camRef.current?.takePictureAsync({ quality: highRes ? 0.92 : 0.5, base64: false, skipProcessing: true });
-      if (!photo?.uri) throw new Error('Failed to capture');
-      setCaptured(await processUri(photo.uri));
-    } catch (e: any) {
-      notify('Failed', e?.message || 'Please try again');
-    } finally {
-      setBusy(false);
-      submittingRef.current = false;
-    }
-  }, [camPerm, requestCamPerm, highRes, processUri]);
-
-  // Web: hand off to the OS camera (capture=true) or the photo library
-  // (capture=false) via a native file input, same as document capture.
-  const onPickWeb = useCallback(async (capture: boolean) => {
-    if (submittingRef.current) return;
-    submittingRef.current = true;
+  const pick = useCallback(async (capture: boolean) => {
+    if (busy) return;
     setBusy(true);
     try {
       const f = await pickWebFile('image/*', capture);
       if (!f) return;
       const uri = URL.createObjectURL(f);
-      try { setCaptured(await processUri(uri)); }
-      finally { URL.revokeObjectURL(uri); }
+      try {
+        const shrunk = await manipulateAsync(
+          uri, [{ resize: { width: highRes ? 2000 : 720 } }],
+          { compress: highRes ? 0.85 : 0.6, format: SaveFormat.JPEG, base64: true },
+        );
+        setCaptured(`data:image/jpeg;base64,${shrunk.base64}`);
+      } finally { URL.revokeObjectURL(uri); }
     } catch (e: any) {
       notify('Failed', e?.message || 'Please try again');
     } finally {
       setBusy(false);
-      submittingRef.current = false;
     }
-  }, [processUri]);
+  }, [busy, highRes]);
 
   const usePhoto = useCallback(async () => {
-    if (!captured || submittingRef.current) return;
-    submittingRef.current = true;
+    if (!captured || busy) return;
     setBusy(true);
     try { await onCapture(captured); }
-    finally { setBusy(false); submittingRef.current = false; }
-  }, [captured, onCapture]);
-
-  const camDenied = camPerm && !camPerm.granted && !camPerm.canAskAgain;
-  const isWeb = Platform.OS === 'web';
+    finally { setBusy(false); }
+  }, [captured, busy, onCapture]);
 
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose} transparent={false}>
-      <View style={styles.root} testID="photo-capture-modal">
-        <View style={styles.header}>
-          <Pressable onPress={onClose} style={styles.closeBtn} hitSlop={14} testID="photo-close-btn">
-            <Ionicons name="close" size={22} color={colors.onSurface} />
+    <Sheet visible={visible} onClose={onClose} title={title} testID="photo-capture-sheet">
+      {Platform.OS !== 'web' ? (
+        <Text style={styles.hint}>Open the RMJ One web app to capture photos.</Text>
+      ) : !captured ? (
+        <>
+          <Text style={styles.hint}>Take a clear reference photo.</Text>
+          <Pressable onPress={() => pick(true)} disabled={busy} style={[styles.opt, styles.optPrimary, busy && { opacity: 0.6 }]} testID="photo-capture-btn">
+            {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <><Ionicons name="camera" size={20} color={colors.onBrandPrimary} /><Text style={styles.optPrimaryText}>Open Camera</Text></>}
           </Pressable>
-          <Text style={styles.title}>{title}</Text>
-          <View style={{ width: 40 }} />
-        </View>
-
-        <View style={styles.cameraWrap}>
-          {captured ? (
-            <Image source={{ uri: captured }} style={StyleSheet.absoluteFill} resizeMode="contain" />
-          ) : isWeb ? (
-            <View style={styles.permBox}>
-              <Ionicons name="camera-outline" size={44} color={colors.brandSecondary} />
-              <Text style={styles.permTitle}>Ready to capture</Text>
-              <Text style={styles.permSub}>Uses your phone&apos;s own camera app for a sharp, in-focus photo.</Text>
-            </View>
-          ) : camPerm?.granted ? (
-            <CameraView ref={(r) => { camRef.current = r; }} facing="back" style={StyleSheet.absoluteFill} />
-          ) : (
-            <View style={styles.permBox}>
-              <Ionicons name="camera-outline" size={44} color={colors.brandSecondary} />
-              <Text style={styles.permTitle}>Camera access needed</Text>
-              <Text style={styles.permSub}>Take a reference photo of the item.</Text>
-              {camDenied ? (
-                <Pressable onPress={openSettings} style={styles.permCta} testID="open-settings-btn">
-                  <Text style={styles.permCtaText}>Open Settings</Text>
-                </Pressable>
-              ) : (
-                <Pressable onPress={() => requestCamPerm()} style={styles.permCta} testID="grant-camera-btn">
-                  <Text style={styles.permCtaText}>Enable Camera</Text>
-                </Pressable>
-              )}
-            </View>
-          )}
-        </View>
-
-        <View style={styles.footer}>
-          {captured ? (
-            <View style={styles.reviewRow}>
-              <Pressable onPress={() => setCaptured(null)} style={styles.ghostBtn} testID="photo-retake"><Ionicons name="camera-reverse-outline" size={18} color={colors.onSurface} /><Text style={styles.ghostText}>Retake</Text></Pressable>
-              {isWeb && (
-                <Pressable onPress={openCrop} style={styles.ghostBtn} testID="photo-crop"><Ionicons name="scan" size={18} color={colors.brandSecondary} /><Text style={styles.ghostText}>Crop</Text></Pressable>
-              )}
-              <Pressable onPress={usePhoto} disabled={busy} style={[styles.captureBtn, styles.usePhotoBtn, busy && { opacity: 0.6 }]} testID="photo-use">
-                {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <><Ionicons name="checkmark" size={20} color={colors.onBrandPrimary} /><Text style={styles.captureText}>Use photo</Text></>}
-              </Pressable>
-            </View>
-          ) : isWeb ? (
-            <View style={{ gap: spacing.sm }}>
-              <Pressable
-                testID="photo-capture-btn" onPress={() => onPickWeb(true)} disabled={busy}
-                style={({ pressed }) => [styles.captureBtn, busy && { opacity: 0.5 }, pressed && { transform: [{ scale: 0.98 }] }]}
-              >
-                {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : (
-                  <><Ionicons name="camera" size={20} color={colors.onBrandPrimary} /><Text style={styles.captureText}>Open Camera</Text></>
-                )}
-              </Pressable>
-              <Pressable onPress={() => onPickWeb(false)} disabled={busy} style={[styles.ghostBtn, styles.galleryBtn, busy && { opacity: 0.5 }]} testID="photo-gallery-btn">
-                <Ionicons name="images-outline" size={18} color={colors.brandSecondary} />
-                <Text style={styles.ghostText}>Choose from Gallery</Text>
-              </Pressable>
-            </View>
-          ) : (
-            <Pressable
-              testID="photo-capture-btn" onPress={onTakePhoto} disabled={busy || !camPerm?.granted}
-              style={({ pressed }) => [styles.captureBtn, (busy || !camPerm?.granted) && { opacity: 0.5 }, pressed && { transform: [{ scale: 0.98 }] }]}
-            >
-              {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : (
-                <><Ionicons name="camera" size={20} color={colors.onBrandPrimary} /><Text style={styles.captureText}>Capture Photo</Text></>
-              )}
+          <View style={styles.altRow}>
+            <Pressable onPress={() => pick(false)} disabled={busy} style={styles.alt} testID="photo-gallery-btn">
+              <Ionicons name="images-outline" size={18} color={colors.brandSecondary} />
+              <Text style={styles.altText}>Choose from Gallery</Text>
             </Pressable>
-          )}
-        </View>
-      </View>
+          </View>
+        </>
+      ) : (
+        <>
+          <View style={styles.reviewTop}>
+            <Image source={{ uri: captured }} style={styles.preview} resizeMode="cover" />
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={styles.reviewName} numberOfLines={2}>{title}</Text>
+              <Pressable onPress={() => setCaptured(null)} hitSlop={8} testID="photo-retake"><Text style={styles.changeText}>Retake / change</Text></Pressable>
+            </View>
+            <Pressable onPress={openCrop} style={styles.cropBtn} testID="photo-crop">
+              <Ionicons name="scan" size={16} color={colors.brandSecondary} />
+              <Text style={styles.cropBtnText}>Scan / crop</Text>
+            </Pressable>
+          </View>
+          <Pressable onPress={usePhoto} disabled={busy} style={[styles.opt, styles.optPrimary, busy && { opacity: 0.6 }, { marginTop: spacing.lg }]} testID="photo-use">
+            {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <><Ionicons name="checkmark-done" size={20} color={colors.onBrandPrimary} /><Text style={styles.optPrimaryText}>Use photo</Text></>}
+          </Pressable>
+        </>
+      )}
       {scanFile && (
         <SimpleCropper
           file={scanFile}
@@ -211,37 +126,26 @@ export function PhotoCaptureModal({ visible, title, onClose, onCapture, highRes 
           onResult={async (f) => { try { setCaptured(await fileToDataUri(f)); } catch { /* keep original */ } setScanFile(null); }}
         />
       )}
-    </Modal>
+    </Sheet>
   );
 }
 
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.surface },
-  header: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: spacing.lg, paddingTop: Platform.OS === 'ios' ? 50 : 20,
-    paddingBottom: spacing.md, gap: spacing.md,
+  hint: { color: colors.mutedText, fontSize: 13, marginBottom: spacing.md },
+  opt: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingVertical: 15, borderRadius: radius.md },
+  optPrimary: { backgroundColor: colors.brandPrimary },
+  optPrimaryText: { color: colors.onBrandPrimary, fontSize: 16, fontWeight: '700' },
+  altRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
+  alt: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 13,
+    borderRadius: radius.md, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border,
   },
-  closeBtn: {
-    width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surfaceSecondary,
-    alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border,
-  },
-  title: { flex: 1, color: colors.onSurface, fontSize: 20, fontWeight: '700', fontFamily: fonts.display },
-  cameraWrap: { flex: 1, backgroundColor: '#000', overflow: 'hidden', marginHorizontal: spacing.lg, borderRadius: radius.lg, position: 'relative' },
-  permBox: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl, gap: spacing.sm },
-  permTitle: { color: colors.onSurface, fontSize: 18, fontWeight: '700', marginTop: spacing.md },
-  permSub: { color: colors.onSurfaceTertiary, textAlign: 'center', fontSize: 13 },
-  permCta: { marginTop: spacing.md, backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingHorizontal: spacing.xl, paddingVertical: 12 },
-  permCtaText: { color: colors.onBrandPrimary, fontWeight: '700' },
-  footer: { padding: spacing.lg, paddingBottom: Platform.OS === 'ios' ? 36 : spacing.lg },
-  captureBtn: {
-    flexDirection: 'row', gap: spacing.sm, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: 16,
-  },
-  captureText: { color: colors.onBrandPrimary, fontWeight: '800', fontSize: 15, letterSpacing: 0.3 },
-  reviewRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  ghostBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 14, paddingHorizontal: 14, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceSecondary },
-  ghostText: { color: colors.onSurface, fontSize: 14, fontWeight: '700' },
-  usePhotoBtn: { flex: 1, paddingVertical: 14 },
-  galleryBtn: { justifyContent: 'center', paddingVertical: 16 },
+  altText: { color: colors.onSurface, fontSize: 15, fontWeight: '700' },
+
+  reviewTop: { flexDirection: 'row', gap: spacing.md, alignItems: 'center' },
+  preview: { width: 64, height: 64, borderRadius: radius.md, backgroundColor: colors.surfaceTertiary },
+  reviewName: { color: colors.onSurface, fontSize: 15, fontWeight: '700' },
+  changeText: { color: colors.brandSecondary, fontSize: 13, fontWeight: '700', marginTop: 4 },
+  cropBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 8, paddingHorizontal: 12, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceSecondary },
+  cropBtnText: { color: colors.brandSecondary, fontSize: 12.5, fontWeight: '700' },
 });
