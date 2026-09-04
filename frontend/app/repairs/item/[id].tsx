@@ -88,6 +88,18 @@ export default function RepairItemDetailScreen() {
     setForm('edit');
   };
 
+  // Once billed, "Edit Bill" (below, in the actions row) is the correct edit
+  // flow — the header pencil follows it there instead of opening the old
+  // item-details form, which is only relevant pre-billing.
+  const handleHeaderEdit = () => {
+    if (!item) return;
+    if (item.status === 'pending_delivery' || item.status === 'delivered') {
+      router.push({ pathname: '/repairs/bill', params: { itemId: id, mode: 'edit' } } as any);
+      return;
+    }
+    openEditForm();
+  };
+
   const weightLocked = item ? item.status !== 'received' : false;
   const labourLocked = item?.status === 'delivered';
 
@@ -277,7 +289,7 @@ export default function RepairItemDetailScreen() {
           <Text style={[styles.statusText, { color: sc.fg }]}>{REPAIR_STATUS_LABEL[item.status]}</Text>
         </View>
         {canEditRepair && (
-          <Pressable onPress={openEditForm} style={styles.editIconBtn} testID="edit-item-btn" hitSlop={12}>
+          <Pressable onPress={handleHeaderEdit} style={styles.editIconBtn} testID="edit-item-btn" hitSlop={12}>
             <Ionicons name={form === 'edit' ? 'close' : 'pencil-outline'} size={18} color={colors.onSurface} />
           </Pressable>
         )}
@@ -367,11 +379,13 @@ export default function RepairItemDetailScreen() {
           <RecordPhotos refType="repair_item" refId={item.id} label="Photos" />
 
           {/* With the item still at the karigar, the print button pairs up
-              with Receive in one row below instead of sitting on its own —
-              for every other status (ready/pending_delivery/delivered) that
-              still has a karigar on record, it stays a standalone row since
-              there's no receive action to pair it with there. */}
-          {item.karigar_name && item.status !== 'with_karigar' && (
+              with Receive in one row below instead of sitting on its own.
+              For pending_delivery it's folded into that status's own print
+              row (Print Bill/Bill PDF) instead of a standalone row above —
+              for delivered (the remaining case with a karigar on record)
+              it still stays a standalone row since there's nothing to pair
+              it with there. */}
+          {item.karigar_name && item.status !== 'with_karigar' && item.status !== 'pending_delivery' && (
             <Pressable onPress={() => printThermal('issue-slip')} disabled={thermalPrinting} style={[styles.actionBtn, { marginBottom: spacing.md }]} testID="print-issue-slip-btn">
               {thermalPrinting ? <ActivityIndicator color={colors.onSurfaceSecondary} /> : <><Ionicons name="print-outline" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>Print Thermal Slip (Karigar Issue)</Text></>}
             </Pressable>
@@ -428,6 +442,11 @@ export default function RepairItemDetailScreen() {
           {item.status === 'pending_delivery' && (
             <>
               <View style={styles.actionsRow}>
+                {item.karigar_name && (
+                  <Pressable onPress={() => printThermal('issue-slip')} disabled={thermalPrinting} style={[styles.actionBtn, { flex: 1 }]} testID="print-issue-slip-btn">
+                    {thermalPrinting ? <ActivityIndicator color={colors.onSurfaceSecondary} /> : <><Ionicons name="print-outline" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>Karigar Slip</Text></>}
+                  </Pressable>
+                )}
                 <Pressable onPress={() => printThermal('bill')} disabled={thermalPrinting} style={[styles.actionBtn, { flex: 1 }]} testID="print-bill-pending-btn">
                   {thermalPrinting ? <ActivityIndicator color={colors.onSurfaceSecondary} /> : <><Ionicons name="print-outline" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>Print Bill</Text></>}
                 </Pressable>
