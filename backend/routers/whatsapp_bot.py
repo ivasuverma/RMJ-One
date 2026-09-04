@@ -20,10 +20,11 @@ import hashlib
 import hmac
 import json
 import logging
+from datetime import datetime
 
 from fastapi import APIRouter, Request, Response
 
-from server import db, WHATSAPP_WEBHOOK_SECRET, send_whatsapp_raw
+from server import db, now_utc, IST, WHATSAPP_WEBHOOK_SECRET, send_whatsapp_raw
 
 router = APIRouter()
 logger = logging.getLogger('whatsapp_bot')
@@ -37,6 +38,16 @@ STATUS_LABELS = {
     'delivered': 'delivered',
 }
 
+# Owner-editable from Settings > WhatsApp (chatbot_rate_template on the
+# whatsapp settings doc) — {gold_rate}/{silver_rate}/{date}/{time} are the
+# only placeholders. date/time are the rate's fetch time (IST), not "now" —
+# a customer texting hours after the fetch should see when it's actually from.
+DEFAULT_RATE_TEMPLATE = (
+    "Today's approx rate (as on {date}, {time}):\n"
+    "Gold 24k: Rs.{gold_rate} /tola\n"
+    "Silver: Rs.{silver_rate} /kg"
+)
+
 
 def _verify_signature(raw_body: bytes, signature_header: str) -> bool:
     if not WHATSAPP_WEBHOOK_SECRET or not signature_header or not signature_header.startswith('sha256='):
@@ -46,11 +57,28 @@ def _verify_signature(raw_body: bytes, signature_header: str) -> bool:
     return hmac.compare_digest(expected, got)
 
 
+def _format_ist(iso_str: str) -> tuple:
+    try:
+        dt = datetime.fromisoformat(iso_str).astimezone(IST)
+    except Exception:
+        dt = now_utc().astimezone(IST)
+    return dt.strftime('%d %b %Y'), dt.strftime('%I:%M %p').lstrip('0')
+
+
 async def _rate_reply() -> str:
     today = await db.settings.find_one({'id': 'gold_rate_today'}, {'_id': 0})
     if not today or not today.get('gold_rate') or not today.get('silver_rate'):
         return "Today's rate isn't available right now — please call the store or check back later."
-    return f"Today's approx rate:\nGold 24k: Rs.{today['gold_rate']} /tola\nSilver: Rs.{today['silver_rate']} /kg"
+    date_str, time_str = _format_ist(today.get('fetched_at') or now_utc().isoformat())
+    fields = {'gold_rate': today['gold_rate'], 'silver_rate': today['silver_rate'], 'date': date_str, 'time': time_str}
+    wa = await db.settings.find_one({'id': 'whatsapp'}, {'_id': 0}) or {}
+    template = wa.get('chatbot_rate_template') or DEFAULT_RATE_TEMPLATE
+    try:
+        return template.format(**fields)
+    except Exception:
+        # A bad edit (typo'd placeholder) must not silently block every
+        # future reply — fall back to the known-good default.
+        return DEFAULT_RATE_TEMPLATE.format(**fields)
 
 
 async def _status_reply(mobile_digits: str) -> str:

@@ -88,11 +88,13 @@ class WhatsAppSettingsIn(BaseModel):
     # every other flow here: this one replies to customers completely
     # unsupervised, so it needs a deliberate opt-in rather than an opt-out.
     chatbot_enabled: bool = False
+    chatbot_rate_template: Optional[str] = None   # None/blank = use the built-in default
 
 
 @router.get('/settings/whatsapp')
 async def get_whatsapp_settings(_: dict = Depends(get_current)):
     from routers.repairs import DEFAULT_REPAIR_READY_TEMPLATE
+    from routers.whatsapp_bot import DEFAULT_RATE_TEMPLATE
     doc = await db.settings.find_one({'id': 'whatsapp'}, {'_id': 0}) or {}
     status = await get_whatsapp_status()
     return {
@@ -100,6 +102,7 @@ async def get_whatsapp_settings(_: dict = Depends(get_current)):
         'repair_ready_notice': doc.get('repair_ready_notice', True),
         'repair_ready_template': doc.get('repair_ready_template') or DEFAULT_REPAIR_READY_TEMPLATE,
         'chatbot_enabled': doc.get('chatbot_enabled', False),
+        'chatbot_rate_template': doc.get('chatbot_rate_template') or DEFAULT_RATE_TEMPLATE,
         **status,
     }
 
@@ -110,6 +113,11 @@ async def update_whatsapp_settings(body: WhatsAppSettingsIn, user: dict = Depend
         sample = {'customer_name': 'Test', 'item_code': 'RJ-001', 'description': 'Ring', 'shop_name': 'Test', 'amount_line': 'Bill amount: Rs.100.'}
         try:
             body.repair_ready_template.format(**sample)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f'Template has an unknown placeholder: {e}')
+    if body.chatbot_rate_template:
+        try:
+            body.chatbot_rate_template.format(gold_rate=151050, silver_rate=242200, date='04 Sep 2026', time='12:30 PM')
         except Exception as e:
             raise HTTPException(status_code=400, detail=f'Template has an unknown placeholder: {e}')
     payload = body.model_dump()

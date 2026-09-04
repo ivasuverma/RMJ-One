@@ -9,8 +9,14 @@ import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { useToast } from '@/src/components/ui';
 
-type Form = { enabled: boolean; repair_ready_notice: boolean; repair_ready_template: string; chatbot_enabled: boolean };
-const EMPTY: Form = { enabled: true, repair_ready_notice: true, repair_ready_template: '', chatbot_enabled: false };
+type Form = {
+  enabled: boolean; repair_ready_notice: boolean; repair_ready_template: string;
+  chatbot_enabled: boolean; chatbot_rate_template: string;
+};
+const EMPTY: Form = {
+  enabled: true, repair_ready_notice: true, repair_ready_template: '',
+  chatbot_enabled: false, chatbot_rate_template: '',
+};
 type WhatsAppStatus = { configured: boolean; connected: boolean; phone: string | null };
 
 const TEMPLATE_SAMPLE: Record<string, string> = {
@@ -27,6 +33,12 @@ function renderGoldRatePreview(tpl: string): string {
   return (tpl || '').replace(/\{(\w+)\}/g, (m, k) => (k in GOLD_RATE_SAMPLE ? GOLD_RATE_SAMPLE[k] : m));
 }
 const DEFAULT_GOLD_RATE_TEMPLATE = 'Today approx. rate update: \nGold 24k: {gold_rate} /tola\nSilver : {silver_rate} /kg\n\nClick bell icon above for notification \u{1F514}';
+
+const CHATBOT_RATE_SAMPLE: Record<string, string> = { gold_rate: '151050', silver_rate: '242200', date: '04 Sep 2026', time: '12:30 PM' };
+function renderChatbotRatePreview(tpl: string): string {
+  return (tpl || '').replace(/\{(\w+)\}/g, (m, k) => (k in CHATBOT_RATE_SAMPLE ? CHATBOT_RATE_SAMPLE[k] : m));
+}
+const DEFAULT_CHATBOT_RATE_TEMPLATE = "Today's approx rate (as on {date}, {time}):\nGold 24k: Rs.{gold_rate} /tola\nSilver: Rs.{silver_rate} /kg";
 
 export default function WhatsAppSettingsScreen() {
   const router = useRouter();
@@ -55,6 +67,7 @@ export default function WhatsAppSettingsScreen() {
       setForm({
         enabled: w.enabled !== false, repair_ready_notice: w.repair_ready_notice !== false,
         repair_ready_template: w.repair_ready_template || '', chatbot_enabled: w.chatbot_enabled === true,
+        chatbot_rate_template: w.chatbot_rate_template || '',
       });
       setStatus({ configured: !!w.configured, connected: !!w.connected, phone: w.phone || null });
     } catch (_e) { /* ignore — form stays at defaults */ }
@@ -175,6 +188,25 @@ export default function WhatsAppSettingsScreen() {
             <View style={[styles.switchKnob, form.enabled && form.chatbot_enabled && styles.switchKnobOn]} />
           </View>
         </Pressable>
+
+        <Text style={styles.fieldLabel}>RATE reply template</Text>
+        <Text style={styles.hint}>Placeholders: {'{gold_rate}'} {'{silver_rate}'} {'{date}'} {'{time}'} — date/time are when the rate was fetched, not when the customer texts.</Text>
+        <TextInput
+          value={form.chatbot_rate_template}
+          onChangeText={(t) => setForm((f) => ({ ...f, chatbot_rate_template: t }))}
+          placeholder={DEFAULT_CHATBOT_RATE_TEMPLATE}
+          placeholderTextColor={colors.mutedText}
+          multiline
+          style={[styles.input, styles.inputMultiline]}
+          testID="whatsapp-chatbot-rate-template-input"
+        />
+        <Text style={styles.fieldLabel}>Preview</Text>
+        <View style={styles.infoBox}>
+          <Ionicons name="eye-outline" size={16} color={colors.brandSecondary} />
+          <Text style={styles.infoText} testID="whatsapp-chatbot-rate-template-preview">
+            {renderChatbotRatePreview(form.chatbot_rate_template || DEFAULT_CHATBOT_RATE_TEMPLATE)}
+          </Text>
+        </View>
 
         <Text style={styles.section}>Repair Ready — Message Template</Text>
         <Text style={styles.hint}>Placeholders: {'{customer_name}'} {'{item_code}'} {'{description}'} {'{shop_name}'} {'{amount_line}'}</Text>
