@@ -1747,8 +1747,10 @@ async def send_whatsapp(mobile: str, text: str) -> bool:
             payload = {'chatId': chat_id, 'text': text}
             headers = {'Authorization': f'Bearer {OPENWA_API_KEY}'}
             res = await client.post(f'{OPENWA_BASE_URL}/api/sessions/{session_id}/messages/send-text', headers=headers, json=payload)
-            if res.status_code == 404:
-                # Cached id is stale (session was re-paired) — refresh once and retry.
+            if res.status_code in (400, 404):
+                # Cached id is stale (session was re-paired) — OpenWA reports this as
+                # 404 (unknown id) or 400 ("session is not active") depending on
+                # whether the old id still exists at all. Refresh once and retry.
                 global _openwa_session_id_cache
                 _openwa_session_id_cache = None
                 session_id = await _resolve_openwa_session_id(client)
