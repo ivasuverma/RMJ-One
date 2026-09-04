@@ -252,7 +252,7 @@ export default function WhatsAppSettingsScreen() {
           </View>
         </View>
         <Text style={styles.fieldLabel}>Broadcast message template</Text>
-        <Text style={styles.hint}>Placeholders: {'{gold_rate}'} {'{silver_rate}'}</Text>
+        <Text style={styles.hint}>Placeholders: {'{gold_rate}'} {'{silver_rate}'} {'{date}'} {'{time}'} — date/time are when the rate was fetched.</Text>
         <TextInput
           value={goldRateTemplate}
           onChangeText={setGoldRateTemplate}

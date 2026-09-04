@@ -20,7 +20,7 @@ import json
 import logging
 import os
 
-from server import db, now_utc, IST, GOLD_RATE_SOURCE_URL, GOLD_RATE_ROW_LABEL, GOLD_RATE_SILVER_LABEL
+from server import db, now_utc, IST, format_ist_date_time, GOLD_RATE_SOURCE_URL, GOLD_RATE_ROW_LABEL, GOLD_RATE_SILVER_LABEL
 
 logger = logging.getLogger('gold_rate')
 
@@ -91,7 +91,10 @@ async def fetch_rates_raw() -> dict:
 
 
 # Owner-editable from Settings > WhatsApp (`template` field on the
-# gold_rate_config doc) — {gold_rate}/{silver_rate} are the only placeholders.
+# gold_rate_config doc) — {gold_rate}/{silver_rate}/{date}/{time} are the
+# only placeholders. date/time are the rate's fetch time (IST), same as the
+# chatbot's RATE reply template (whatsapp_bot.py) — not left in this default
+# text, but available to add.
 DEFAULT_TEMPLATE = (
     'Today approx. rate update: \n'
     'Gold 24k: {gold_rate} /tola\n'
@@ -111,15 +114,17 @@ async def get_config() -> dict:
     }
 
 
-async def default_message(gold_rate: int, silver_rate: int) -> str:
+async def default_message(gold_rate: int, silver_rate: int, fetched_at: str = None) -> str:
     cfg = await get_config()
     template = cfg['template']
+    date_str, time_str = format_ist_date_time(fetched_at)
+    fields = {'gold_rate': gold_rate, 'silver_rate': silver_rate, 'date': date_str, 'time': time_str}
     try:
-        return template.format(gold_rate=gold_rate, silver_rate=silver_rate)
+        return template.format(**fields)
     except Exception:
         # A bad edit (typo'd placeholder) must not silently block every
         # future send — fall back to the known-good default.
-        return DEFAULT_TEMPLATE.format(gold_rate=gold_rate, silver_rate=silver_rate)
+        return DEFAULT_TEMPLATE.format(**fields)
 
 
 async def run_fetch_and_store() -> dict:
@@ -142,7 +147,7 @@ async def run_fetch_and_store() -> dict:
             'fetched_gold': fetched_gold, 'fetched_silver': fetched_silver,
             'gold_margin_applied': cfg['gold_margin'], 'silver_margin_applied': cfg['silver_margin'],
             'gold_rate': gold_rate, 'silver_rate': silver_rate, 'error': None,
-            'message': await default_message(gold_rate, silver_rate),
+            'message': await default_message(gold_rate, silver_rate, doc['fetched_at']),
         })
         logger.info(f'rates fetched: gold {fetched_gold}+{cfg["gold_margin"]}->{gold_rate}, silver {fetched_silver}+{cfg["silver_margin"]}->{silver_rate}')
     else:

@@ -20,11 +20,10 @@ import hashlib
 import hmac
 import json
 import logging
-from datetime import datetime
 
 from fastapi import APIRouter, Request, Response
 
-from server import db, now_utc, IST, WHATSAPP_WEBHOOK_SECRET, send_whatsapp_raw, resolve_whatsapp_phone
+from server import db, format_ist_date_time, WHATSAPP_WEBHOOK_SECRET, send_whatsapp_raw, resolve_whatsapp_phone
 
 router = APIRouter()
 logger = logging.getLogger('whatsapp_bot')
@@ -55,19 +54,11 @@ def _verify_signature(raw_body: bytes, signature_header: str) -> bool:
     return hmac.compare_digest(expected, got)
 
 
-def _format_ist(iso_str: str) -> tuple:
-    try:
-        dt = datetime.fromisoformat(iso_str).astimezone(IST)
-    except Exception:
-        dt = now_utc().astimezone(IST)
-    return dt.strftime('%d %b %Y'), dt.strftime('%I:%M %p').lstrip('0')
-
-
 async def _rate_reply() -> str:
     today = await db.settings.find_one({'id': 'gold_rate_today'}, {'_id': 0})
     if not today or not today.get('gold_rate') or not today.get('silver_rate'):
         return "Today's rate isn't available right now — please call the store or check back later."
-    date_str, time_str = _format_ist(today.get('fetched_at') or now_utc().isoformat())
+    date_str, time_str = format_ist_date_time(today.get('fetched_at'))
     fields = {'gold_rate': today['gold_rate'], 'silver_rate': today['silver_rate'], 'date': date_str, 'time': time_str}
     wa = await db.settings.find_one({'id': 'whatsapp'}, {'_id': 0}) or {}
     template = wa.get('chatbot_rate_template') or DEFAULT_RATE_TEMPLATE

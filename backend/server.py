@@ -100,6 +100,20 @@ def now_utc() -> datetime:
 IST = timezone(timedelta(hours=5, minutes=30))
 
 
+def format_ist_date_time(iso_str: Optional[str] = None) -> tuple:
+    """(date, time) strings in IST, e.g. ('04 Sep 2026', '3:42 PM') — shared
+    by every customer-facing template that offers {date}/{time} placeholders
+    (gold_rate.py's broadcast template, whatsapp_bot.py's RATE reply) so the
+    two stay formatted identically. `iso_str` is normally a stored
+    `fetched_at` timestamp (when a rate was scraped), not "now" — falls back
+    to the current time if missing/unparseable."""
+    try:
+        dt = datetime.fromisoformat(iso_str).astimezone(IST) if iso_str else now_utc().astimezone(IST)
+    except Exception:
+        dt = now_utc().astimezone(IST)
+    return dt.strftime('%d %b %Y'), dt.strftime('%I:%M %p').lstrip('0')
+
+
 def today_str() -> str:
     # IST, not UTC/system date. A UTC-based "today" would make any record
     # written between 00:00-05:29 UTC (5:30am-11:00am IST) look like it

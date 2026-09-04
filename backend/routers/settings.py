@@ -172,7 +172,7 @@ async def update_gold_rate_config(body: GoldRateConfigIn, user: dict = Depends(r
         raise HTTPException(status_code=400, detail='fetch_time must be HH:MM (24-hour)')
     if body.template:
         try:
-            body.template.format(gold_rate=151050, silver_rate=242200)
+            body.template.format(gold_rate=151050, silver_rate=242200, date='04 Sep 2026', time='12:30 PM')
         except Exception as e:
             raise HTTPException(status_code=400, detail=f'Template has an unknown placeholder: {e}')
     payload = {

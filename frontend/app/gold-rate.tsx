@@ -14,16 +14,28 @@ type Today = {
   date: string; gold_rate: number | null; silver_rate: number | null;
   fetched_gold: number | null; fetched_silver: number | null;
   gold_margin_applied: number | null; silver_margin_applied: number | null;
+  fetched_at: string | null;
   error: string | null; manual: boolean; confirmed: boolean; sent_at: string | null; message: string | null;
 } | null;
 
 const DEFAULT_TEMPLATE = 'Today approx. rate update: \nGold 24k: {gold_rate} /tola\nSilver : {silver_rate} /kg\n\nClick bell icon above for notification \u{1F514}';
 
+// (date, time) in IST for {date}/{time} placeholders — mirrors the backend's
+// format_ist_date_time() closely enough for a live preview; the message
+// actually sent always comes from the backend-rendered `message` field.
+function istDateTimeParts(iso?: string | null): { date: string; time: string } {
+  const d = iso ? new Date(iso) : new Date();
+  const date = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' }).format(d).replace(/ /g, ' ');
+  const time = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Kolkata', hour: 'numeric', minute: '2-digit', hour12: true }).format(d);
+  return { date, time };
+}
+
 // Renders the (possibly owner-edited, see Settings > WhatsApp) template
 // client-side so editing a rate field can regenerate the message instantly,
 // without a round trip.
-function buildMessage(template: string, goldRate: number, silverRate: number): string {
-  const vals: Record<string, string> = { gold_rate: String(goldRate), silver_rate: String(silverRate) };
+function buildMessage(template: string, goldRate: number, silverRate: number, fetchedAt?: string | null): string {
+  const { date, time } = istDateTimeParts(fetchedAt);
+  const vals: Record<string, string> = { gold_rate: String(goldRate), silver_rate: String(silverRate), date, time };
   return (template || DEFAULT_TEMPLATE).replace(/\{(\w+)\}/g, (m, k) => (k in vals ? vals[k] : m));
 }
 
@@ -69,7 +81,7 @@ export default function GoldRateScreen() {
     if (which === 'gold') setGoldRate(v); else setSilverRate(v);
     const g = parseInt(which === 'gold' ? v : goldRate, 10);
     const s = parseInt(which === 'silver' ? v : silverRate, 10);
-    if (g && s) setMessage(buildMessage(template, g, s));
+    if (g && s) setMessage(buildMessage(template, g, s, today?.fetched_at));
   };
 
   const refetch = async () => {
