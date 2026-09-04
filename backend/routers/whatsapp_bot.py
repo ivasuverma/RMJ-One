@@ -24,7 +24,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Request, Response
 
-from server import db, now_utc, IST, WHATSAPP_WEBHOOK_SECRET, send_whatsapp_raw
+from server import db, now_utc, IST, WHATSAPP_WEBHOOK_SECRET, send_whatsapp_raw, resolve_whatsapp_phone
 
 router = APIRouter()
 logger = logging.getLogger('whatsapp_bot')
@@ -133,7 +133,12 @@ async def whatsapp_webhook(request: Request):
     if 'rate' in body_text:
         reply = await _rate_reply()
     elif 'status' in body_text:
-        digits = ''.join(c for c in chat_id if c.isdigit())
+        # `chat_id` is not always a `<digits>@c.us` phone JID — WhatsApp's
+        # privacy-id rollout means an unsaved contact often arrives as an
+        # opaque `<digits>@lid` instead, whose digits are NOT a phone number.
+        # Resolve properly rather than guessing from the id's own digits.
+        phone = await resolve_whatsapp_phone(chat_id)
+        digits = ''.join(c for c in (phone or chat_id) if c.isdigit())
         reply = await _status_reply(digits[-10:] if len(digits) >= 10 else digits)
     else:
         reply = HELP_TEXT

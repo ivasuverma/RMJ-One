@@ -7,6 +7,7 @@ import os
 import logging
 import math
 from pathlib import Path
+from urllib.parse import quote
 from pydantic import BaseModel
 from typing import List, Optional, Literal, Dict
 import uuid
@@ -1812,6 +1813,35 @@ async def send_whatsapp_raw(chat_id: str, text: str) -> bool:
     if not chat_id:
         return False
     return await _openwa_send_text(chat_id, text)
+
+
+async def resolve_whatsapp_phone(chat_id: str) -> Optional[str]:
+    """Best-effort id -> phone (MSISDN digits) resolution. A sender's `from`
+    on an inbound webhook is not always a `<digits>@c.us` JID any more —
+    WhatsApp's privacy-id rollout means it can be an opaque `<digits>@lid`
+    instead, whose digits are NOT a phone number (confirmed empirically:
+    matching against @lid digits silently found nothing for a real customer
+    whose repair record was keyed on their actual mobile). OpenWA's
+    per-contact resolver handles both shapes and needs no restart/env flag,
+    unlike the global RESOLVE_LID_TO_PHONE setting. Returns None on any
+    failure — callers should treat that as 'couldn't resolve', not an error."""
+    if not chat_id or not OPENWA_BASE_URL or not OPENWA_API_KEY:
+        return None
+    try:
+        async with _httpx.AsyncClient(timeout=10) as client:
+            session_id = await _resolve_openwa_session_id(client)
+            if not session_id:
+                return None
+            res = await client.get(
+                f'{OPENWA_BASE_URL}/api/sessions/{session_id}/contacts/{quote(chat_id, safe="")}/phone',
+                headers={'Authorization': f'Bearer {OPENWA_API_KEY}'},
+            )
+            if res.status_code != 200:
+                return None
+            return res.json().get('phone')
+    except Exception as e:
+        logger.warning(f'whatsapp phone resolve failed for {chat_id}: {e}')
+        return None
 
 
 async def get_whatsapp_status() -> dict:
