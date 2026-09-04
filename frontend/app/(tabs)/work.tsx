@@ -53,12 +53,17 @@ export default function WorkScreen() {
   const [ledgerSummary, setLedgerSummary] = useState('');
   const [custSummary, setCustSummary] = useState('');
   const [loanSummary, setLoanSummary] = useState<{ active: number; overdue: number; total_outstanding: number; total_interest_pending: number } | null>(null);
+  const [goldRateSummary, setGoldRateSummary] = useState<{ gold_rate: number | null; silver_rate: number | null; sent: boolean; error: boolean } | null>(null);
   const load = useCallback(async () => {
     try { setError(''); setData(await api.get<DashboardData>('/dashboard')); }
     catch (e: any) { setError(e?.detail || 'Failed to load'); }
     finally { setLoading(false); }
     if (hasModule('documents')) api.get<{ pending_count: number }>('/documents/summary').then(setDocSummary).catch(() => {});
     if (hasModule('gold_loans')) api.get<{ active: number; overdue: number; total_outstanding: number; total_interest_pending: number }>('/gold-loans/dashboard').then(setLoanSummary).catch(() => {});
+    if (hasModule('gold_rate')) api.get<any>('/settings/gold-rate').then((g) => setGoldRateSummary({
+      gold_rate: g.today?.gold_rate ?? null, silver_rate: g.today?.silver_rate ?? null,
+      sent: !!g.today?.sent_at, error: !!g.today?.error,
+    })).catch(() => {});
     // Karigar ledger tile summary — total fine gold + cash owed to karigars.
     api.get<any[]>('/karigars').then((ks) => {
       const fine = ks.reduce((s, k) => s + (k.fine_weight_balance || 0), 0);
@@ -93,6 +98,18 @@ export default function WorkScreen() {
       { text: `${data.repairs_summary.overdue} overdue`, tone: 'bad' }, { text: ' · ' },
       { text: `${data.repairs_summary.ready} to bill` },
     ] : placeholder,
+  });
+  if (hasModule('gold_rate')) rows.push({
+    key: 'gold_rate', title: 'Gold Rate Channel', icon: 'trending-up-outline', route: '/gold-rate',
+    segs: goldRateSummary ? (
+      goldRateSummary.error ? [{ text: "Couldn't fetch today", tone: 'bad' }]
+      : goldRateSummary.gold_rate ? [
+          { text: `Gold ₹${goldRateSummary.gold_rate.toLocaleString('en-IN')}` }, { text: ' · ' },
+          { text: `Silver ₹${goldRateSummary.silver_rate?.toLocaleString('en-IN')}` }, { text: ' · ' },
+          goldRateSummary.sent ? { text: 'Sent', tone: 'good' as const } : { text: 'Not sent yet', tone: 'hot' as const },
+        ]
+      : [{ text: 'Not fetched yet today' }]
+    ) : placeholder,
   });
   if (hasModule('samples')) rows.push({
     key: 'stock', title: 'Stock In / Out', icon: 'diamond-outline', route: '/samples',

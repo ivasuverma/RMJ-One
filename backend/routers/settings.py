@@ -14,13 +14,19 @@ from server import (
     get_current,
     require_owner,
     require_module,
+    require_staff_or_module,
+    require_admin_or_module,
     StoreSettingsIn,
     log_audit,
     get_whatsapp_status,
     send_whatsapp_channel,
     GOLD_RATE_CHANNEL_ID,
 )
-import gold_rate
+# gold_rate is imported lazily inside each endpoint below (not at module
+# top): server.py imports this router while it's still mid-load, and
+# gold_rate.py itself does `from server import ...` — importing gold_rate
+# here at module top races that, resolving to a still-partially-initialized
+# module in some import orders (AttributeError on its own constants).
 
 router = APIRouter()
 
@@ -116,12 +122,14 @@ async def update_whatsapp_settings(body: WhatsAppSettingsIn, user: dict = Depend
 # fetched number needs a human look (margin on top, possible scrape hiccup)
 # before it reaches the WhatsApp Channel's followers.
 class GoldRateConfigIn(BaseModel):
-    fetch_time: str = gold_rate.DEFAULT_FETCH_TIME   # "HH:MM", 24-hour, IST
-    margin: int = 0
+    fetch_time: str = '12:30'   # "HH:MM", 24-hour, IST — mirrors gold_rate.DEFAULT_FETCH_TIME
+    gold_margin: int = 0
+    silver_margin: int = 0
 
 
 class GoldRateManualIn(BaseModel):
-    rate: int
+    gold_rate: int
+    silver_rate: int
     message: Optional[str] = None
 
 
@@ -130,46 +138,54 @@ class GoldRateSendIn(BaseModel):
 
 
 @router.get('/settings/gold-rate')
-async def get_gold_rate(_: dict = Depends(get_current)):
+async def get_gold_rate(_: dict = Depends(require_staff_or_module('gold_rate'))):
+    import gold_rate
     cfg = await gold_rate.get_config()
     today = await db.settings.find_one({'id': 'gold_rate_today'}, {'_id': 0})
     status = await get_whatsapp_status()
-    return {'fetch_time': cfg['fetch_time'], 'margin': cfg['margin'], 'channel_connected': status.get('connected', False), 'today': today}
+    return {**cfg, 'channel_connected': status.get('connected', False), 'today': today}
 
 
 @router.put('/settings/gold-rate/config')
 async def update_gold_rate_config(body: GoldRateConfigIn, user: dict = Depends(require_owner)):
+    import gold_rate
     if not re.match(r'^([01]\d|2[0-3]):[0-5]\d$', body.fetch_time):
         raise HTTPException(status_code=400, detail='fetch_time must be HH:MM (24-hour)')
-    payload = {'id': 'gold_rate_config', 'fetch_time': body.fetch_time, 'margin': body.margin, 'updated_at': now_utc().isoformat()}
+    payload = {
+        'id': 'gold_rate_config', 'fetch_time': body.fetch_time,
+        'gold_margin': body.gold_margin, 'silver_margin': body.silver_margin, 'updated_at': now_utc().isoformat(),
+    }
     await db.settings.update_one({'id': 'gold_rate_config'}, {'$set': payload}, upsert=True)
-    await log_audit(user, 'settings.gold_rate.config_update', 'settings', 'gold_rate_config', f'{body.fetch_time} +{body.margin}')
+    await log_audit(user, 'settings.gold_rate.config_update', 'settings', 'gold_rate_config', f'{body.fetch_time} gold+{body.gold_margin} silver+{body.silver_margin}')
     return await gold_rate.get_config()
 
 
 @router.post('/settings/gold-rate/refetch')
-async def refetch_gold_rate(user: dict = Depends(require_owner)):
+async def refetch_gold_rate(user: dict = Depends(require_admin_or_module('gold_rate'))):
+    import gold_rate
     doc = await gold_rate.run_fetch_and_store()
-    await log_audit(user, 'settings.gold_rate.refetch', 'settings', 'gold_rate_today', str(doc.get('rate')))
+    await log_audit(user, 'settings.gold_rate.refetch', 'settings', 'gold_rate_today', f"gold={doc.get('gold_rate')} silver={doc.get('silver_rate')}")
     return doc
 
 
 @router.put('/settings/gold-rate')
-async def set_gold_rate_manual(body: GoldRateManualIn, user: dict = Depends(require_owner)):
+async def set_gold_rate_manual(body: GoldRateManualIn, user: dict = Depends(require_admin_or_module('gold_rate'))):
+    import gold_rate
     date_str = gold_rate.today_ist()
-    message = (body.message or gold_rate.default_message(body.rate, date_str)).strip()
+    message = (body.message or gold_rate.default_message(body.gold_rate, body.silver_rate)).strip()
     doc = {
         'id': 'gold_rate_today', 'date': date_str, 'fetched_at': now_utc().isoformat(),
-        'fetched_rate': None, 'margin_applied': None, 'rate': body.rate, 'error': None,
+        'fetched_gold': None, 'fetched_silver': None, 'gold_margin_applied': None, 'silver_margin_applied': None,
+        'gold_rate': body.gold_rate, 'silver_rate': body.silver_rate, 'error': None,
         'manual': True, 'confirmed': False, 'message': message,
     }
     await db.settings.update_one({'id': 'gold_rate_today'}, {'$set': doc}, upsert=True)
-    await log_audit(user, 'settings.gold_rate.manual_set', 'settings', 'gold_rate_today', str(body.rate))
+    await log_audit(user, 'settings.gold_rate.manual_set', 'settings', 'gold_rate_today', f'gold={body.gold_rate} silver={body.silver_rate}')
     return await db.settings.find_one({'id': 'gold_rate_today'}, {'_id': 0})
 
 
 @router.post('/settings/gold-rate/send')
-async def send_gold_rate(body: GoldRateSendIn, user: dict = Depends(require_owner)):
+async def send_gold_rate(body: GoldRateSendIn, user: dict = Depends(require_admin_or_module('gold_rate'))):
     today = await db.settings.find_one({'id': 'gold_rate_today'}, {'_id': 0})
     message = (body.message or (today or {}).get('message') or '').strip()
     if not message:

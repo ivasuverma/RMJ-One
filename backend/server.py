@@ -40,6 +40,7 @@ OPENWA_SESSION_NAME = os.environ.get('OPENWA_SESSION_NAME', 'main')
 GOLD_RATE_CHANNEL_ID = os.environ.get('GOLD_RATE_CHANNEL_ID', '120363420612158717@newsletter')
 GOLD_RATE_SOURCE_URL = os.environ.get('GOLD_RATE_SOURCE_URL', 'https://ayodhyabullion.com')
 GOLD_RATE_ROW_LABEL = os.environ.get('GOLD_RATE_ROW_LABEL', 'GOLD RETAIL HAJIR')
+GOLD_RATE_SILVER_LABEL = os.environ.get('GOLD_RATE_SILVER_LABEL', 'SILVER RETAIL HAJIR')
 
 # Comma-separated list of origins allowed to call this API, e.g.
 # "https://app.ramjewellers.in,https://admin.ramjewellers.in". Defaults to
@@ -220,6 +221,12 @@ MODULE_DEFS = [
     # level than issuing a repair/sample tag; owner/admin/accountant only
     # unless an owner deliberately grants it further.
     {'key': 'gold_loans', 'label': 'Gold Loans', 'default_roles': ['owner', 'admin', 'accountant']},
+    # Fetching/sending the daily rate is a "do the job" action like repairs/
+    # samples — assignable to a trusted employee (e.g. whoever runs the
+    # WhatsApp Channel). The margin/fetch-time CONFIG stays owner-only
+    # regardless (enforced directly with require_owner, not this module) —
+    # it's pricing policy, not a task.
+    {'key': 'gold_rate', 'label': 'Gold Rate Channel', 'default_roles': ['owner', 'admin'], 'employee_assignable': True},
 ]
 MODULE_KEYS = {m['key'] for m in MODULE_DEFS}
 MODULE_DEFAULT_ROLES = {m['key']: set(m['default_roles']) for m in MODULE_DEFS}
