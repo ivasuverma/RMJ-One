@@ -55,11 +55,22 @@ export default function GoldRateScreen() {
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState<'refetch' | 'send' | 'auto' | null>(null);
 
-  const applyToday = (doc: Today) => {
+  // `currentTemplate` is passed explicitly rather than read from the
+  // `template` state: this can run in the same tick as setTemplate() (see
+  // load() below), whose update isn't visible yet in this closure.
+  const applyToday = (doc: Today, currentTemplate: string) => {
     setToday(doc);
     setGoldRate(doc?.gold_rate != null ? String(doc.gold_rate) : '');
     setSilverRate(doc?.silver_rate != null ? String(doc.silver_rate) : '');
-    setMessage(doc?.message || '');
+    // Regenerate from the CURRENT template rather than trusting the stored
+    // `doc.message` — that's a snapshot from whenever it was last fetched,
+    // which goes stale the moment the owner edits the template afterwards
+    // (the whole point of "settings' template should show here").
+    setMessage(
+      doc?.gold_rate != null && doc?.silver_rate != null
+        ? buildMessage(currentTemplate, doc.gold_rate, doc.silver_rate, doc.fetched_at)
+        : (doc?.message || ''),
+    );
   };
 
   const load = async () => {
@@ -68,7 +79,7 @@ export default function GoldRateScreen() {
       setFetchTime(g.fetch_time || '12:30');
       setTemplate(g.template || '');
       setChannelConnected(!!g.channel_connected);
-      applyToday(g.today || null);
+      applyToday(g.today || null, g.template || '');
     } catch (e: any) { toast.error(e?.detail || 'Could not load'); }
     finally { setLoading(false); }
   };
@@ -88,7 +99,7 @@ export default function GoldRateScreen() {
     setBusy('refetch');
     try {
       const doc = await api.post<any>('/settings/gold-rate/refetch', {});
-      applyToday(doc);
+      applyToday(doc, template);
       if (doc.error) toast.error(doc.error); else toast.success(`Fetched — Gold ₹${doc.gold_rate?.toLocaleString('en-IN')}, Silver ₹${doc.silver_rate?.toLocaleString('en-IN')}`);
     } catch (e: any) { toast.error(e?.detail || 'Could not fetch'); }
     finally { setBusy(null); }
@@ -122,7 +133,7 @@ export default function GoldRateScreen() {
       setBusy('auto');
       try {
         const doc = await api.post<any>('/settings/gold-rate/refetch', {});
-        applyToday(doc);
+        applyToday(doc, template);
         if (doc.error) { toast.error(doc.error); return; }
         await api.post('/settings/gold-rate/send', { message: doc.message, gold_rate: doc.gold_rate, silver_rate: doc.silver_rate });
         toast.success('Fetched and sent to Channel');
