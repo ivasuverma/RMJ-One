@@ -1034,16 +1034,31 @@ async def bill_item(item_id: str, body: DeliverIn, user=Depends(require_admin_or
     return updated
 
 
+# Owner-editable from Settings > WhatsApp (repair_ready_template field on the
+# 'whatsapp' settings doc) — placeholders below are the only ones filled in.
+DEFAULT_REPAIR_READY_TEMPLATE = (
+    "Hi {customer_name}, your item {item_code} ({description}) is ready for pickup at {shop_name}. {amount_line} Thank you!"
+)
+
+
 async def _repair_ready_whatsapp_text(item: dict) -> str:
     """Same 'ready for pickup' message regardless of who triggers the send."""
     store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
     shop_name = store.get('name') or 'Ram Murti Jewellers'
     billed_amount = item.get('billed_amount') or 0
     amount_line = f"You have a credit of Rs.{abs(billed_amount):.0f} on this item." if billed_amount < 0 else f"Bill amount: Rs.{billed_amount:.0f}."
-    return (
-        f"Hi {item.get('customer_name', '')}, your item {item['item_code']} ({item.get('description', '')}) "
-        f"is ready for pickup at {shop_name}. {amount_line} Thank you!"
-    )
+    fields = {
+        'customer_name': item.get('customer_name', ''), 'item_code': item['item_code'],
+        'description': item.get('description', ''), 'shop_name': shop_name, 'amount_line': amount_line,
+    }
+    wa = await db.settings.find_one({'id': 'whatsapp'}, {'_id': 0}) or {}
+    template = wa.get('repair_ready_template') or DEFAULT_REPAIR_READY_TEMPLATE
+    try:
+        return template.format(**fields)
+    except Exception:
+        # A bad edit (typo'd placeholder) must not silently block every
+        # future send — fall back to the known-good default.
+        return DEFAULT_REPAIR_READY_TEMPLATE.format(**fields)
 
 
 @router.post('/repair-items/{item_id}/notify-whatsapp')

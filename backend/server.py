@@ -33,6 +33,14 @@ OPENWA_BASE_URL = os.environ.get('OPENWA_BASE_URL', '')
 OPENWA_API_KEY = os.environ.get('OPENWA_API_KEY', '')
 OPENWA_SESSION_NAME = os.environ.get('OPENWA_SESSION_NAME', 'main')
 
+# Daily gold-rate broadcast (see gold_rate.py) — the shop's own WhatsApp
+# Channel id ("Ram Murti Jewellers", subscribed via the OPENWA_SESSION_NAME
+# account) and the reference page it scrapes. Rarely changes, so it's env
+# config like the OpenWA settings above rather than an in-app setting.
+GOLD_RATE_CHANNEL_ID = os.environ.get('GOLD_RATE_CHANNEL_ID', '120363420612158717@newsletter')
+GOLD_RATE_SOURCE_URL = os.environ.get('GOLD_RATE_SOURCE_URL', 'https://ayodhyabullion.com')
+GOLD_RATE_ROW_LABEL = os.environ.get('GOLD_RATE_ROW_LABEL', 'GOLD RETAIL HAJIR')
+
 # Comma-separated list of origins allowed to call this API, e.g.
 # "https://app.ramjewellers.in,https://admin.ramjewellers.in". Defaults to
 # "*" (anything) so local/dev setups keep working without extra config —
@@ -1275,6 +1283,8 @@ async def on_startup():
     asyncio.create_task(backup_loop())
     from routers.record_photos import record_photo_worker  # background Drive sync for record photos
     asyncio.create_task(record_photo_worker())
+    from gold_rate import gold_rate_loop  # daily reference gold-rate fetch
+    asyncio.create_task(gold_rate_loop())
 
 
 @app.on_event('shutdown')
@@ -1726,17 +1736,10 @@ async def _resolve_openwa_session_id(client: '_httpx.AsyncClient') -> Optional[s
     return None
 
 
-async def send_whatsapp(mobile: str, text: str) -> bool:
-    """Best-effort WhatsApp send via the self-hosted OpenWA gateway. Never
-    raises — a WhatsApp failure (gateway down, session logged out, bad
-    number) must not block or roll back whatever business action triggered
-    it, same convention as the push-notification helpers above. Returns
-    whether the send actually went out, so a caller that wants to know can
-    check it without needing a try/except of its own."""
+async def _openwa_send_text(chat_id: str, text: str) -> bool:
+    """Shared send + stale-session-id retry, used for both a normal chat and
+    a channel post (chat_id is just `<id>@newsletter` for the latter)."""
     if not OPENWA_BASE_URL or not OPENWA_API_KEY:
-        return False
-    chat_id = _to_whatsapp_chat_id(mobile)
-    if not chat_id:
         return False
     try:
         async with _httpx.AsyncClient(timeout=15) as client:
@@ -1764,6 +1767,28 @@ async def send_whatsapp(mobile: str, text: str) -> bool:
     except Exception as e:
         logger.warning(f'openwa send failed: {e}')
         return False
+
+
+async def send_whatsapp(mobile: str, text: str) -> bool:
+    """Best-effort WhatsApp send via the self-hosted OpenWA gateway. Never
+    raises — a WhatsApp failure (gateway down, session logged out, bad
+    number) must not block or roll back whatever business action triggered
+    it, same convention as the push-notification helpers above. Returns
+    whether the send actually went out, so a caller that wants to know can
+    check it without needing a try/except of its own."""
+    chat_id = _to_whatsapp_chat_id(mobile)
+    if not chat_id:
+        return False
+    return await _openwa_send_text(chat_id, text)
+
+
+async def send_whatsapp_channel(channel_id: str, text: str) -> bool:
+    """Post to a WhatsApp Channel this session owns/admins (e.g. the shop's
+    gold-rate broadcast channel). `channel_id` is the full `<id>@newsletter`
+    id, not a phone number — no normalization needed."""
+    if not channel_id:
+        return False
+    return await _openwa_send_text(channel_id, text)
 
 
 async def get_whatsapp_status() -> dict:
