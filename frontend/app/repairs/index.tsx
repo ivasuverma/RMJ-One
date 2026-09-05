@@ -12,7 +12,7 @@ import { ErrorState } from '@/src/components/ui';
 
 type Item = {
   id: string; item_code: string; customer_name: string; description: string;
-  status: RepairItemStatus; karigar_name: string | null;
+  status: RepairItemStatus; karigar_name: string | null; repair_type?: string;
   gross_weight: number; due_date: string | null; created_at: string; created_by?: string;
   issued_by?: string | null; delivered_by?: string | null; delivered_at?: string | null;
 };
@@ -144,9 +144,10 @@ export default function RepairOrdersScreen() {
             : i.status === 'ready' ? { label: 'Create bill', route: `/repairs/bill?itemId=${i.id}` }
             : i.status === 'pending_delivery' ? { label: 'Deliver', route: `/repairs/bill?itemId=${i.id}` }
             : null;
-          // Extra context per stage — weight/due date always, then whichever
-          // people/dates matter for that particular stage.
-          const detailParts = [`${i.gross_weight.toFixed(3)}g`];
+          // Extra context per stage — due date always (weight moved up next
+          // to the description line), then whichever people/dates matter for
+          // that particular stage.
+          const detailParts: string[] = [];
           if (i.due_date && i.status !== 'delivered') detailParts.push(`Due ${i.due_date}`);
           if (i.status === 'with_karigar' && i.karigar_name) detailParts.push(`With ${i.karigar_name}`);
           if (i.status === 'delivered') {
@@ -165,8 +166,11 @@ export default function RepairOrdersScreen() {
             >
               <View style={styles.itemTop}>
                 <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={styles.code}>{i.item_code}</Text>
-                  <Text style={styles.cust} numberOfLines={2}>{i.customer_name} — {i.description}</Text>
+                  <Text style={styles.code}>{i.customer_name}</Text>
+                  <Text style={styles.cust} numberOfLines={2}>
+                    {i.item_code} · <Text style={styles.cDesc}>{i.description}</Text> · <Text style={styles.cWeight}>{i.gross_weight.toFixed(3)}g</Text>
+                  </Text>
+                  {!!i.repair_type && <Text style={styles.cType}>{i.repair_type}</Text>}
                   <Text style={styles.detail} numberOfLines={2}>{detailParts.join(' · ')}</Text>
                 </View>
                 <View style={[styles.pill, { backgroundColor: toneBg(pill.tone) }]}><Text style={[styles.pillText, { color: toneColor(pill.tone) }]}>{pill.label}</Text></View>
@@ -220,6 +224,9 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   itemTop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
   code: { color: colors.onSurface, fontSize: 15, fontWeight: '600' },
   cust: { color: colors.mutedText, fontSize: 13, marginTop: 1 },
+  cDesc: { color: colors.onSurfaceSecondary, fontWeight: '600' },
+  cWeight: { color: colors.onSurface, fontWeight: '700' },
+  cType: { color: colors.brandSecondary, fontSize: 11, fontWeight: '700', marginTop: 3 },
   detail: { color: colors.onSurfaceTertiary, fontSize: 11.5, marginTop: 3, lineHeight: 15 },
   pill: { paddingHorizontal: 9, paddingVertical: 4, borderRadius: 8 },
   pillText: { fontSize: 11, fontWeight: '700', letterSpacing: 0.2 },
