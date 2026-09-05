@@ -5,7 +5,7 @@
 .DESCRIPTION
   Runs under a real user account (yours, by default) rather than SYSTEM,
   because rclone's Google Drive authorization (from `rclone config`) is
-  stored per-user under that account's profile — a task running as SYSTEM
+  stored per-user under that account's profile  -  a task running as SYSTEM
   wouldn't be able to see it and every upload would fail. You'll be prompted
   once for that account's Windows password so the task can run "whether
   logged on or not" (i.e. even overnight with nobody logged in).
@@ -30,7 +30,7 @@ if (-not (Test-Path $scriptPath)) { throw "backup.ps1 not found at $scriptPath" 
 
 Write-Host "This task will run as $UserName, daily at $Time, so it can use that"
 Write-Host "account's rclone Google Drive authorization. Make sure you already ran"
-Write-Host "'rclone config' as this same account — if not, Ctrl+C and do that first."
+Write-Host "'rclone config' as this same account  -  if not, Ctrl+C and do that first."
 Write-Host ""
 $cred = Get-Credential -UserName $UserName -Message "Windows password for $UserName (needed to run the task even when logged out)"
 

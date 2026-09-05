@@ -5,7 +5,7 @@
 .DESCRIPTION
   Extracts the given zip and runs mongorestore --drop, which replaces each
   collection in the target database with what's in the backup. Everything
-  written to that database since the backup was taken will be lost — the
+  written to that database since the backup was taken will be lost  -  the
   script asks for confirmation unless -Force is passed.
 
 .EXAMPLE
@@ -67,7 +67,7 @@ Write-Host ""
 if (-not $Force) {
     $confirm = Read-Host "Type YES to continue"
     if ($confirm -ne 'YES') {
-        Write-Host "Aborted — nothing was changed."
+        Write-Host "Aborted  -  nothing was changed."
         Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
         exit 1
     }

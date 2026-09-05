@@ -5,14 +5,14 @@
 
 .DESCRIPTION
   Everything RMJ-One persists lives in MongoDB (employee records, attendance,
-  payroll, repairs, karigar ledger, tasks, audit log — even photos/selfies are
+  payroll, repairs, karigar ledger, tasks, audit log  -  even photos/selfies are
   stored as base64 strings inside documents, not on disk), so a mongodump of
   the app's database is a complete backup. This script:
     1. Reads the Mongo connection string + DB name from backend\.env.
     2. Runs mongodump to a temp folder, then zips it into a single archive.
     3. Uploads that archive to a Google Drive folder via rclone.
     4. Deletes older backups beyond -KeepCount, locally and on Drive.
-  Safe to run against a live server — no need to stop RMJOneBackend first.
+  Safe to run against a live server  -  no need to stop RMJOneBackend first.
 
 .PREREQUISITES (one-time, see README.md in this folder)
   - MongoDB Database Tools installed (mongodump/mongorestore on PATH).
@@ -21,7 +21,7 @@
 
 .NOTES
   Backups contain employee PII (Aadhaar, PAN, bank account/IFSC, phone
-  numbers, photos) — keep the destination Drive folder private, don't share
+  numbers, photos)  -  keep the destination Drive folder private, don't share
   it publicly or with more people than need it.
 #>
 param(
@@ -56,7 +56,7 @@ try {
             if ($_ -match '^\s*DB_NAME\s*=\s*(.+?)\s*$') { $dbName = $Matches[1] }
         }
     } else {
-        Log "WARNING: $envFile not found — using defaults ($mongoUrl, db=$dbName)"
+        Log "WARNING: $envFile not found  -  using defaults ($mongoUrl, db=$dbName)"
     }
     Log "Using DB '$dbName' at $mongoUrl"
 
@@ -76,7 +76,7 @@ try {
 
     $dumpedDbDir = Join-Path $dumpDir $dbName
     if (-not (Test-Path $dumpedDbDir)) {
-        throw "mongodump reported success but $dumpedDbDir doesn't exist — nothing to back up. Is '$dbName' the right database name?"
+        throw "mongodump reported success but $dumpedDbDir doesn't exist  -  nothing to back up. Is '$dbName' the right database name?"
     }
 
     # --- Zip ---
@@ -109,7 +109,7 @@ try {
     Log "Rotating Drive backups (keep $KeepCount)"
     $remoteListJson = & rclone lsjson $RcloneRemote 2>&1
     if ($LASTEXITCODE -ne 0) {
-        Log "  WARNING: could not list $RcloneRemote for rotation ($remoteListJson) — skipping remote rotation this run"
+        Log "  WARNING: could not list $RcloneRemote for rotation ($remoteListJson)  -  skipping remote rotation this run"
     } else {
         $remoteFiles = $remoteListJson | ConvertFrom-Json
         $remoteFiles |

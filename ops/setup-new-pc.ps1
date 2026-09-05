@@ -18,7 +18,7 @@
        opens Notepad for it too. The API key in it must match OPENWA_API_KEY
        in backend\.env.
     4. (Optional but strongly recommended) A recent OpenWA backup archive
-       (made by OpenWA's own scripts/backup.sh — see ops\backup\README.md for
+       (made by OpenWA's own scripts/backup.sh  -  see ops\backup\README.md for
        why this is separate from the Mongo backup above). Point -OpenWABackup
        at it to restore the paired WhatsApp session without re-scanning the
        QR code. Without it, WhatsApp needs a fresh QR scan on this PC.

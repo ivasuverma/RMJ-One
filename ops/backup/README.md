@@ -23,6 +23,12 @@ mean to).
   confirmation prompt since it overwrites live data.
 - `register-scheduled-task.ps1` — registers `backup.ps1` to run daily in
   Windows Task Scheduler.
+- `backup-openwa.ps1` / `register-scheduled-task-openwa.ps1` — the same
+  thing for the WhatsApp gateway (OpenWA). Its state (the paired WhatsApp
+  session, API keys, audit log) lives entirely outside MongoDB at
+  `E:\OpenWA\data`, so it needs its own separate backup — see "OpenWA
+  backup" below. Uses the same `gdrive` rclone remote, just a different
+  subfolder, so step 3 below only needs doing once for both.
 
 ## One-time setup (on RMJ Server)
 
@@ -133,13 +139,32 @@ stopping the backend first (`nssm stop RMJOneBackend`) so nothing writes to
 the database mid-restore, then start it again (`nssm start RMJOneBackend`)
 once the restore finishes.
 
+## OpenWA backup (WhatsApp session)
+
+Repeat steps 4-6 above with the OpenWA scripts instead, once rclone is
+configured (step 3 is shared — do it once):
+
+```powershell
+cd E:\Rmj-One
+powershell -ExecutionPolicy Bypass -File ops\backup\backup-openwa.ps1
+powershell -ExecutionPolicy Bypass -File ops\backup\register-scheduled-task-openwa.ps1
+```
+
+This runs OpenWA's own `scripts/backup.sh` (via Git Bash) and uploads the
+resulting archive to `gdrive:RMJ-One-Backups/openwa`. **This is the only
+thing that lets a rebuilt server skip re-scanning the WhatsApp QR code** —
+see `ops\setup-new-pc.ps1`'s `-OpenWABackup` parameter, which restores
+straight from an archive this produces.
+
 ## What's not covered
 
-- `backend\.env` (secrets: JWT_SECRET, API keys) isn't included in the
-  backup and isn't in Drive — that's deliberate, so a secret doesn't sit in
-  plaintext in your Drive alongside business data. Keep your own secure
-  copy of `.env` separately (a password manager note, or an encrypted
-  vault) so a from-scratch server rebuild has it available.
-- This only backs up the database. If you ever add real file storage
-  (uploads to disk, S3, etc.) instead of the current base64-in-Mongo
-  approach, this script will need updating to cover that too.
+- `backend\.env` and `E:\OpenWA\.env` (secrets: JWT_SECRET, Google OAuth
+  client, API keys) aren't included in either backup and aren't in Drive —
+  that's deliberate, so a secret doesn't sit in plaintext in your Drive
+  alongside business data. Keep your own secure copy of both `.env` files
+  separately (a password manager note, or an encrypted vault) so a
+  from-scratch server rebuild has them available.
+- This only backs up the database (+ OpenWA's own state via the second
+  script above). If you ever add real file storage (uploads to disk, S3,
+  etc.) instead of the current base64-in-Mongo approach, `backup.ps1` will
+  need updating to cover that too.
