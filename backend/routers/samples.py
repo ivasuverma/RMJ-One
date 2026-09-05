@@ -9,6 +9,7 @@ balance always reflects samples out with them.
 New module, added alongside the §2.1 router split — see server.py for the
 'samples' entry in MODULE_DEFS."""
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from typing import Optional
 import re
 import uuid
@@ -86,6 +87,29 @@ async def create_samples(body: SampleIn, user=Depends(require_admin_or_module('s
     await _notify_module('samples', f"{len(created)} sample(s) issued",
                           f"Issued to {karigar['name']} by {user['name']}", '/samples', script='sample_issued')
     return created
+
+
+DEFAULT_ISSUE_TYPES = ['Quoting', 'Reference', 'Exhibition', 'Approval', 'Repair Sample']
+
+
+@router.get('/samples/issue-types')
+async def get_issue_types(_: dict = Depends(require_staff_or_module('samples'))):
+    doc = await db.settings.find_one({'id': 'samples'}, {'_id': 0})
+    return {'issue_types': (doc or {}).get('issue_types', DEFAULT_ISSUE_TYPES)}
+
+
+class IssueTypesIn(BaseModel):
+    issue_types: list[str]
+
+
+@router.put('/samples/issue-types')
+async def set_issue_types(body: IssueTypesIn, user=Depends(require_admin_or_module('samples'))):
+    cleaned = [t.strip() for t in body.issue_types if t.strip()]
+    await db.settings.update_one(
+        {'id': 'samples'}, {'$set': {'id': 'samples', 'issue_types': cleaned, 'updated_at': now_utc().isoformat()}}, upsert=True,
+    )
+    await log_audit(user, 'samples.issue_types', 'settings', 'samples', ', '.join(cleaned))
+    return {'issue_types': cleaned}
 
 
 @router.get('/samples')

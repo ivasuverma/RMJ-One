@@ -33,9 +33,13 @@ export default function NewSampleScreen() {
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
   const [karigars, setKarigars] = useState<Karigar[]>([]);
+  const [issueTypes, setIssueTypes] = useState<string[]>([]);
   const load = useCallback(async () => {
     try { setKarigars((await api.get<Karigar[]>('/karigars')).filter((k) => k.active)); }
     catch (_e) { setKarigars([]); }
+    // Owner-configurable at Settings › Masters › Sample Issue Types.
+    try { setIssueTypes((await api.get<{ issue_types: string[] }>('/samples/issue-types')).issue_types); }
+    catch (_e) { setIssueTypes([]); }
   }, []);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
@@ -45,6 +49,8 @@ export default function NewSampleScreen() {
   const pickedKarigar = karigars.find((k) => k.id === karigarId) || null;
 
   const [issueType, setIssueType] = useState('');
+  const [issueTypeOther, setIssueTypeOther] = useState(false);
+  const [issueTypePickerOpen, setIssueTypePickerOpen] = useState(false);
   const [description, setDescription] = useState('');
   const [weight, setWeight] = useState('');
   const [pcCount, setPcCount] = useState('1');
@@ -60,7 +66,11 @@ export default function NewSampleScreen() {
       try {
         const s = await api.get<Sample>(`/samples/${editId}`);
         setKarigarId(s.karigar_id); setKarigarName(s.karigar_name);
-        setIssueType(s.issue_type || ''); setDescription(s.description);
+        setIssueType(s.issue_type || '');
+        // issueTypes (fetched in `load`, above) may not have arrived yet —
+        // the effect below re-checks once it does.
+        setIssueTypeOther(!!s.issue_type && !issueTypes.includes(s.issue_type));
+        setDescription(s.description);
         setWeight(String(s.weight ?? '')); setPcCount(String(s.pc_count ?? '1'));
         setDueDate(s.due_date || ''); setNote(s.note || ''); setPhoto(s.photo || '');
       } catch (e: any) { notify('Failed', e?.detail || 'Could not load this sample'); router.back(); }
@@ -68,6 +78,13 @@ export default function NewSampleScreen() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editId]);
+
+  // Re-checks predefined-vs-Other once issueTypes finishes loading, in case
+  // it arrived after the sample fetch above did.
+  useEffect(() => {
+    if (isEdit && issueType) setIssueTypeOther(!issueTypes.includes(issueType));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [issueTypes]);
 
   const [saving, setSaving] = useState(false);
   const submittingRef = useRef(false);
@@ -166,7 +183,32 @@ export default function NewSampleScreen() {
           )}
 
           <Text style={styles.label}>Type of Issue (optional)</Text>
-          <TextInput testID="sample-issue-type" value={issueType} onChangeText={setIssueType} placeholder="e.g. Quoting, Reference, Exhibition" placeholderTextColor={colors.mutedText} style={styles.input} />
+          <Pressable onPress={() => setIssueTypePickerOpen((v) => !v)} style={styles.picker} testID="sample-issue-type-toggle">
+            <Text style={issueType || issueTypeOther ? styles.pickerValue : styles.pickerPlaceholder}>
+              {issueTypeOther ? 'Other' : issueType || 'Choose a type'}
+            </Text>
+            <Ionicons name={issueTypePickerOpen ? 'chevron-up' : 'chevron-down'} size={16} color={colors.mutedText} />
+          </Pressable>
+          {issueTypePickerOpen && (
+            <View style={styles.pickerList}>
+              {issueTypes.length === 0 && <Text style={[styles.pickerRowMeta, { padding: spacing.md }]}>No types set up yet — Settings › Masters › Sample Issue Types</Text>}
+              {issueTypes.map((t) => (
+                <Pressable key={t} onPress={() => { setIssueType(t); setIssueTypeOther(false); setIssueTypePickerOpen(false); }} style={styles.pickerRow} testID={`sample-issue-type-${t}`}>
+                  <Text style={styles.pickerRowName}>{t}</Text>
+                </Pressable>
+              ))}
+              <Pressable onPress={() => { setIssueType(''); setIssueTypeOther(true); setIssueTypePickerOpen(false); }} style={styles.pickerRow} testID="sample-issue-type-other">
+                <Text style={styles.pickerRowName}>Other</Text>
+              </Pressable>
+            </View>
+          )}
+          {issueTypeOther && (
+            <TextInput
+              testID="sample-issue-type-custom" value={issueType} onChangeText={setIssueType}
+              placeholder="Describe the reason" placeholderTextColor={colors.mutedText}
+              style={[styles.input, { marginTop: spacing.sm }]}
+            />
+          )}
 
           <Text style={styles.label}>Description</Text>
           <TextInput testID="sample-description" value={description} onChangeText={setDescription} placeholder="e.g. 22K sample ring design" placeholderTextColor={colors.mutedText} style={styles.input} />

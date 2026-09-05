@@ -52,6 +52,7 @@ const GROUPS: GroupDef[] = [
       { key: 'doc-categories', label: 'Document Categories', sub: 'Names & folders (permissions live in Users)', icon: 'folder-outline', route: '/settings/document-categories' },
       { key: 'repair-types', label: 'Repair Types', sub: 'Repair catalogue', icon: 'construct-outline', route: '/settings/repair-types' },
       { key: 'item-master', label: 'Items & Purity', sub: 'Item master & purity', icon: 'diamond-outline', route: '/settings/item-master' },
+      { key: 'sample-issue-types', label: 'Sample Issue Types', sub: 'Reasons for Stock In/Out', icon: 'swap-horizontal-outline', route: '/settings/sample-issue-types' },
     ],
   },
   {

@@ -123,10 +123,10 @@ export default function SamplesScreen() {
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <Text style={styles.cName}>{s.karigar_name}</Text>
                   <Text style={styles.cMeta} numberOfLines={2}>
-                    {s.sample_code}{s.tag_number ? ` · Tag ${s.tag_number}` : ''} · {s.description}
+                    {s.sample_code}{s.tag_number ? ` · Tag ${s.tag_number}` : ''} · <Text style={styles.cDesc}>{s.description}</Text>
                   </Text>
                   <Text style={styles.cMeta2}>
-                    {s.weight.toFixed(3)}g
+                    <Text style={styles.cWeight}>{s.weight.toFixed(3)}g</Text>
                     {s.status === 'received' && s.weight_diff ? ` · diff ${s.weight_diff > 0 ? '+' : ''}${s.weight_diff.toFixed(3)}g` : ''}
                     {at ? ` · ${istDateTime(at)}` : ''}
                     {s.issued_by ? ` · by ${s.issued_by}` : ''}
@@ -197,7 +197,9 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   recvBtnText: { color: colors.onBrandPrimary, fontSize: 12, fontWeight: '700' },
   cName: { color: colors.onSurface, fontWeight: '700', fontSize: 14 },
   cMeta: { color: colors.onSurfaceTertiary, fontSize: 12, marginTop: 2 },
+  cDesc: { color: colors.onSurfaceSecondary, fontWeight: '600' },
   cMeta2: { color: colors.mutedText, fontSize: 11, marginTop: 2 },
+  cWeight: { color: colors.onSurface, fontWeight: '700' },
   badge: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: radius.sm },
   badgeOut: { backgroundColor: colors.brandTertiary },
   badgeReceived: { backgroundColor: colors.success },
