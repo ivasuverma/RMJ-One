@@ -56,9 +56,19 @@ DEFAULT_CHATBOT_REFRESH_END = '19:00'
 # a default this app should ever pick for them).
 DEFAULT_AUTO_SEND_ENABLED = False
 
+# The reference source is a commodity-market feed — nothing moves Sat/Sun, so
+# by default the loop doesn't bother fetching (would just re-scrape Friday's
+# frozen value) and never auto-sends on those days even if a fetch happens
+# anyway (e.g. someone hits "Fetch now" manually — see run_fetch_and_store).
+DEFAULT_SKIP_WEEKEND_FETCH = True
+
 
 def today_ist() -> str:
     return now_utc().astimezone(IST).date().isoformat()
+
+
+def is_weekend_ist() -> bool:
+    return now_utc().astimezone(IST).weekday() >= 5  # Mon=0 ... Sat=5, Sun=6
 
 
 def round_to(value: int, nearest: int) -> int:
@@ -138,6 +148,7 @@ async def get_config() -> dict:
         'chatbot_refresh_start': doc.get('chatbot_refresh_start') or DEFAULT_CHATBOT_REFRESH_START,
         'chatbot_refresh_end': doc.get('chatbot_refresh_end') or DEFAULT_CHATBOT_REFRESH_END,
         'auto_send_enabled': doc.get('auto_send_enabled', DEFAULT_AUTO_SEND_ENABLED),
+        'skip_weekend_fetch': doc.get('skip_weekend_fetch', DEFAULT_SKIP_WEEKEND_FETCH),
     }
 
 
@@ -217,7 +228,9 @@ async def run_fetch_and_store() -> dict:
         # Same scrape feeds the chatbot's cache too — no need for the
         # periodic refresh to launch a second Chrome at the same moment.
         await _store_live_rate(fetched_gold, fetched_silver, gold_rate, silver_rate, cfg, doc['fetched_at'])
-        if cfg.get('auto_send_enabled'):
+        if cfg.get('auto_send_enabled') and is_weekend_ist():
+            logger.info('gold rate auto-send skipped — weekend (market closed)')
+        elif cfg.get('auto_send_enabled'):
             sent = await send_whatsapp_channel(GOLD_RATE_CHANNEL_ID, doc['message'])
             if sent:
                 doc['confirmed'] = True
@@ -283,9 +296,11 @@ async def gold_rate_loop():
             existing = await db.settings.find_one({'id': 'gold_rate_today'}, {'_id': 0})
             done_ok = bool(existing and existing.get('date') == today and not existing.get('error'))
             due = now_ist.hour > hh or (now_ist.hour == hh and now_ist.minute >= mm)
-            if due and not done_ok:
+            skip_today = cfg.get('skip_weekend_fetch', DEFAULT_SKIP_WEEKEND_FETCH) and is_weekend_ist()
+            if due and not done_ok and not skip_today:
                 await run_fetch_and_store()
-            await _maybe_refresh_live_rate(cfg)
+            if not skip_today:
+                await _maybe_refresh_live_rate(cfg)
         except Exception as e:
             logger.warning(f'gold rate loop error: {e}')
         await asyncio.sleep(POLL_SECONDS)

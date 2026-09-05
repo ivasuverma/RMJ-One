@@ -51,8 +51,9 @@ BACKLOG_MAX_HOURS = 72
 
 # A device pings on every punch and on its own periodic ADMS handshake (every
 # few minutes when reachable), so going quiet this long means it's actually
-# offline/unplugged, not just between visits.
-DEVICE_OFFLINE_HOURS = 3
+# offline/unplugged, not just between visits. 24h (not a few hours) so an
+# overnight/no-punch stretch (e.g. a closed day) doesn't false-alarm.
+DEVICE_OFFLINE_HOURS = 24
 
 # ---------------- Biometric (eSSL Cloud Push) ----------------
 class DeviceIn(BaseModel):

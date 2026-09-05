@@ -164,6 +164,9 @@ class GoldRateConfigIn(BaseModel):
     # Fully-automatic daily send — off by default, deliberate owner opt-in
     # only (see gold_rate.py's DEFAULT_AUTO_SEND_ENABLED docstring).
     auto_send_enabled: bool = False
+    # Commodity market is closed Sat/Sun — on by default (see gold_rate.py's
+    # DEFAULT_SKIP_WEEKEND_FETCH docstring).
+    skip_weekend_fetch: bool = True
 
 
 class GoldRateManualIn(BaseModel):
@@ -208,10 +211,11 @@ async def update_gold_rate_config(body: GoldRateConfigIn, user: dict = Depends(r
         'chatbot_refresh_interval_min': max(15, body.chatbot_refresh_interval_min),
         'chatbot_refresh_start': body.chatbot_refresh_start, 'chatbot_refresh_end': body.chatbot_refresh_end,
         'auto_send_enabled': body.auto_send_enabled,
+        'skip_weekend_fetch': body.skip_weekend_fetch,
         'updated_at': now_utc().isoformat(),
     }
     await db.settings.update_one({'id': 'gold_rate_config'}, {'$set': payload}, upsert=True)
-    await log_audit(user, 'settings.gold_rate.config_update', 'settings', 'gold_rate_config', f'{body.fetch_time} gold+{body.gold_margin} silver+{body.silver_margin} auto_send={body.auto_send_enabled}')
+    await log_audit(user, 'settings.gold_rate.config_update', 'settings', 'gold_rate_config', f'{body.fetch_time} gold+{body.gold_margin} silver+{body.silver_margin} auto_send={body.auto_send_enabled} skip_weekend={body.skip_weekend_fetch}')
     return await gold_rate.get_config()
 
 

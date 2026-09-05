@@ -56,6 +56,7 @@ export default function WhatsAppSettingsScreen() {
   const [refreshStart, setRefreshStart] = useState('12:30');
   const [refreshEnd, setRefreshEnd] = useState('19:00');
   const [autoSendEnabled, setAutoSendEnabled] = useState(false);
+  const [skipWeekendFetch, setSkipWeekendFetch] = useState(true);
 
   const load = async () => {
     try {
@@ -82,6 +83,7 @@ export default function WhatsAppSettingsScreen() {
       setRefreshStart(g.chatbot_refresh_start || '12:30');
       setRefreshEnd(g.chatbot_refresh_end || '19:00');
       setAutoSendEnabled(g.auto_send_enabled === true);
+      setSkipWeekendFetch(g.skip_weekend_fetch !== false);
     } catch { /* not an owner, or gold-rate not reachable — leave defaults */ }
   };
   useEffect(() => { load(); }, []);
@@ -97,6 +99,7 @@ export default function WhatsAppSettingsScreen() {
         chatbot_refresh_enabled: refreshEnabled, chatbot_refresh_interval_min: ri,
         chatbot_refresh_start: refreshStart, chatbot_refresh_end: refreshEnd,
         auto_send_enabled: autoSendEnabled,
+        skip_weekend_fetch: skipWeekendFetch,
       });
       toast.success('Fetch settings saved');
     } catch (e: any) { toast.error(e?.detail || 'Could not save'); }
@@ -282,6 +285,19 @@ export default function WhatsAppSettingsScreen() {
               <TextInput value={silverMargin} onChangeText={setSilverMargin} keyboardType="numeric" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} testID="gold-rate-silver-margin" />
             </View>
           </View>
+          <Pressable
+            onPress={() => setSkipWeekendFetch((v) => !v)}
+            style={styles.toggleRow}
+            testID="gold-rate-skip-weekend-toggle"
+          >
+            <View style={{ flex: 1 }}>
+              <Text style={styles.toggleLabel}>Skip Saturday &amp; Sunday</Text>
+              <Text style={styles.toggleSub}>Commodity market is closed — don't fetch on weekends, and never auto-send even if a fetch happens anyway.</Text>
+            </View>
+            <View style={[styles.switch, skipWeekendFetch && styles.switchOn]}>
+              <View style={[styles.switchKnob, skipWeekendFetch && styles.switchKnobOn]} />
+            </View>
+          </Pressable>
 
           <View style={styles.groupDivider} />
           <Text style={styles.fieldLabel}>Chatbot rate freshness</Text>
