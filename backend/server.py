@@ -390,6 +390,37 @@ def require_admin_or_module_right(key: str, right: str):
     return _check
 
 
+# customer_ledger / karigar_ledger only: unlike every helper above, admin and
+# accountant do NOT get an automatic role-based bypass here — an owner needs
+# to be able to withhold a specific admin or accountant staff login's ledger
+# access the same way an employee's is withheld (clear the module from that
+# account's module_access), and the generic helpers' unconditional "owner/
+# admin/accountant always pass" short-circuit made that silently impossible.
+# Not applied to any other module — that would be a much larger behavior
+# change across the whole app, not something this pair of ledgers asked for.
+def require_ledger_access(key: str):
+    def _check(user=Depends(get_current)):
+        if user.get('role') == 'owner' or key in resolve_modules(user):
+            return user
+        raise HTTPException(status_code=403, detail=f'No access to "{key}"')
+    return _check
+
+
+def require_ledger_edit_right(key: str, right: str):
+    def _check(user=Depends(get_current)):
+        role = user.get('role')
+        if role == 'owner':
+            return user
+        if key not in resolve_modules(user):
+            raise HTTPException(status_code=403, detail=f'No access to "{key}"')
+        if role == 'employee':
+            rights = (user.get('module_rights') or {}).get(key) or {}
+            if not rights.get(right):
+                raise HTTPException(status_code=403, detail=f'You do not have {right} rights on "{key}"')
+        return user
+    return _check
+
+
 # ---------------- Models ----------------
 class LoginIn(BaseModel):
     username: str

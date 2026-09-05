@@ -20,6 +20,8 @@ from server import (
     require_staff_or_module,
     require_admin_or_module,
     require_admin_or_module_right,
+    require_ledger_access,
+    require_ledger_edit_right,
     CustomerIn,
     KarigarIn,
     RepairTypeIn,
@@ -127,7 +129,7 @@ async def list_customers(
 
 
 @router.get('/customers/{cid}')
-async def get_customer(cid: str, _: dict = Depends(require_staff_or_module('customer_ledger'))):
+async def get_customer(cid: str, _: dict = Depends(require_ledger_access('customer_ledger'))):
     # This is the actual ledger (full order/item history) — not needed by the
     # repair-intake customer picker (GET /customers above, which stays open to
     # 'repairs' too), so it's gated to customer_ledger alone, unlike that one.
@@ -146,7 +148,7 @@ async def get_customer(cid: str, _: dict = Depends(require_staff_or_module('cust
 
 
 @router.post('/customers')
-async def create_customer(body: CustomerIn, user=Depends(require_admin_or_module('customer_ledger'))):
+async def create_customer(body: CustomerIn, user=Depends(require_ledger_access('customer_ledger'))):
     # Repair intake creates a new customer inline via `new_customer` on the
     # repair-order POST body (see repairs/new.tsx), not this endpoint — so
     # this stays customer_ledger-only, no 'repairs' OR needed here.
@@ -161,7 +163,7 @@ async def create_customer(body: CustomerIn, user=Depends(require_admin_or_module
 
 
 @router.put('/customers/{cid}')
-async def update_customer(cid: str, body: CustomerIn, user=Depends(require_admin_or_module_right('customer_ledger', 'edit'))):
+async def update_customer(cid: str, body: CustomerIn, user=Depends(require_ledger_edit_right('customer_ledger', 'edit'))):
     if not await db.customers.find_one({'id': cid}):
         raise HTTPException(status_code=404, detail='Customer not found')
     await db.customers.update_one({'id': cid}, {'$set': body.model_dump()})
@@ -1353,7 +1355,7 @@ async def repair_item_issue_slip_print(item_id: str, user: dict = Depends(requir
 
 # ---------------- Repairs: Loss Ledger ----------------
 @router.get('/karigars/loss-ledger')
-async def loss_ledger(cursor: Optional[str] = None, limit: int = 50, _: dict = Depends(require_staff_or_module('karigar_ledger'))):
+async def loss_ledger(cursor: Optional[str] = None, limit: int = 50, _: dict = Depends(require_ledger_access('karigar_ledger'))):
     """Every declared process-loss entry across all karigars, newest first —
     an audit trail of how much gold is being written off as loss, and by
     whom, that's otherwise buried inside individual receive transactions.
@@ -1406,7 +1408,7 @@ async def get_karigar_balance(kid: str, _: dict = Depends(require_staff_or_modul
 
 
 @router.get('/karigars/{kid}/ledger')
-async def get_karigar_ledger(kid: str, _: dict = Depends(require_staff_or_module('karigar_ledger'))):
+async def get_karigar_ledger(kid: str, _: dict = Depends(require_ledger_access('karigar_ledger'))):
     karigar = await db.karigars.find_one({'id': kid}, {'_id': 0})
     if not karigar: raise HTTPException(status_code=404, detail='Karigar not found')
     entries = await db.karigar_ledger.find({'karigar_id': kid}, {'_id': 0}).sort('created_at', -1).to_list(1000)
@@ -1419,7 +1421,7 @@ async def get_karigar_ledger(kid: str, _: dict = Depends(require_staff_or_module
 
 
 @router.post('/karigars/{kid}/ledger')
-async def add_karigar_ledger_entry(kid: str, body: KarigarLedgerEntryIn, user=Depends(require_admin_or_module('karigar_ledger'))):
+async def add_karigar_ledger_entry(kid: str, body: KarigarLedgerEntryIn, user=Depends(require_ledger_access('karigar_ledger'))):
     karigar = await db.karigars.find_one({'id': kid}, {'_id': 0})
     if not karigar: raise HTTPException(status_code=404, detail='Karigar not found')
     if body.type in ('gold_out', 'gold_in'):
@@ -1449,7 +1451,7 @@ async def add_karigar_ledger_entry(kid: str, body: KarigarLedgerEntryIn, user=De
 
 
 @router.delete('/karigars/{kid}/ledger/{entry_id}')
-async def delete_karigar_ledger_entry(kid: str, entry_id: str, user=Depends(require_admin_or_module_right('karigar_ledger', 'delete'))):
+async def delete_karigar_ledger_entry(kid: str, entry_id: str, user=Depends(require_ledger_edit_right('karigar_ledger', 'delete'))):
     entry = await db.karigar_ledger.find_one({'id': entry_id, 'karigar_id': kid}, {'_id': 0})
     if not entry: raise HTTPException(status_code=404, detail='Ledger entry not found')
     if entry.get('item_id'):
