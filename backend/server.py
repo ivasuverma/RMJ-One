@@ -72,7 +72,12 @@ if ENVIRONMENT == 'production' and ALLOWED_ORIGINS == ['*']:
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
 
-app = FastAPI(title="RMJ One API")
+app = FastAPI(
+    title="RMJ One API",
+    docs_url=None if ENVIRONMENT == 'production' else '/docs',
+    redoc_url=None if ENVIRONMENT == 'production' else '/redoc',
+    openapi_url=None if ENVIRONMENT == 'production' else '/openapi.json',
+)
 api = APIRouter(prefix="/api")
 
 logging.basicConfig(level=logging.INFO)
