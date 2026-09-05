@@ -122,13 +122,13 @@ export default function SamplesScreen() {
               <View style={styles.cardTop}>
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <Text style={styles.cName}>{s.karigar_name}</Text>
+                  {!!s.issue_type && <Text style={styles.cType}>{s.issue_type}</Text>}
                   <Text style={styles.cMeta} numberOfLines={2}>
-                    {s.sample_code}{s.tag_number ? ` · Tag ${s.tag_number}` : ''} · <Text style={styles.cDesc}>{s.description}</Text>
+                    {s.sample_code}{s.tag_number ? ` · Tag ${s.tag_number}` : ''} · <Text style={styles.cDesc}>{s.description}</Text> · <Text style={styles.cWeight}>{s.weight.toFixed(3)}g</Text>
+                    {s.status === 'received' && s.weight_diff ? ` (diff ${s.weight_diff > 0 ? '+' : ''}${s.weight_diff.toFixed(3)}g)` : ''}
                   </Text>
                   <Text style={styles.cMeta2}>
-                    <Text style={styles.cWeight}>{s.weight.toFixed(3)}g</Text>
-                    {s.status === 'received' && s.weight_diff ? ` · diff ${s.weight_diff > 0 ? '+' : ''}${s.weight_diff.toFixed(3)}g` : ''}
-                    {at ? ` · ${istDateTime(at)}` : ''}
+                    {at ? istDateTime(at) : ''}
                     {s.issued_by ? ` · by ${s.issued_by}` : ''}
                   </Text>
                 </View>
@@ -196,6 +196,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   recvBtn: { backgroundColor: colors.brandPrimary, borderRadius: 8, paddingVertical: 6, paddingHorizontal: 12 },
   recvBtnText: { color: colors.onBrandPrimary, fontSize: 12, fontWeight: '700' },
   cName: { color: colors.onSurface, fontWeight: '700', fontSize: 14 },
+  cType: { color: colors.brandSecondary, fontSize: 11, fontWeight: '700', marginTop: 2 },
   cMeta: { color: colors.onSurfaceTertiary, fontSize: 12, marginTop: 2 },
   cDesc: { color: colors.onSurfaceSecondary, fontWeight: '600' },
   cMeta2: { color: colors.mutedText, fontSize: 11, marginTop: 2 },
