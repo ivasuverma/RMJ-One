@@ -121,21 +121,29 @@ async def biometric_logs(limit: int = 100, _: dict = Depends(require_staff), _mo
 
 
 # Every punch attempt is logged, including ones the ADMS re-query re-sends on
-# every poll (see BACKLOG_MAX_HOURS above) — most rows are 'skipped'/'rejected'
-# noise, not real events, so this collection grows fast. Kept for a full year
-# in case an old punch dispute needs the audit trail, then dropped.
+# every poll (see BACKLOG_MAX_HOURS above) — measured live, 99.8% of rows are
+# 'skipped'/'rejected' noise from that re-send, not distinct events (~1M rows
+# in 3 weeks). Real 'accepted' punches are kept a full year for audit/dispute
+# purposes; the noise is worthless past a much shorter troubleshooting window,
+# so it's pruned far sooner to keep the collection (and backups) from
+# ballooning on re-send noise alone.
 LOG_RETENTION_DAYS = 365
+NOISE_LOG_RETENTION_DAYS = 30
 
 
 async def biometric_log_prune_loop() -> None:
-    """Daily sweep dropping biometric_logs rows past LOG_RETENTION_DAYS."""
+    """Daily sweep: drop skipped/rejected rows past NOISE_LOG_RETENTION_DAYS,
+    and everything (including accepted) past LOG_RETENTION_DAYS."""
     await asyncio.sleep(300)
     while True:
         try:
+            noise_cutoff = (now_utc() - timedelta(days=NOISE_LOG_RETENTION_DAYS)).isoformat()
+            res1 = await db.biometric_logs.delete_many({'result': {'$in': ['skipped', 'rejected']}, 'created_at': {'$lt': noise_cutoff}})
             cutoff = (now_utc() - timedelta(days=LOG_RETENTION_DAYS)).isoformat()
-            res = await db.biometric_logs.delete_many({'created_at': {'$lt': cutoff}})
-            if res.deleted_count:
-                logger.info(f'pruned {res.deleted_count} biometric_logs rows older than {LOG_RETENTION_DAYS}d')
+            res2 = await db.biometric_logs.delete_many({'created_at': {'$lt': cutoff}})
+            total = res1.deleted_count + res2.deleted_count
+            if total:
+                logger.info(f'pruned {res1.deleted_count} noise rows (>{NOISE_LOG_RETENTION_DAYS}d) and {res2.deleted_count} rows (>{LOG_RETENTION_DAYS}d) from biometric_logs')
         except Exception as e:
             logger.warning(f'biometric log prune error: {e}')
         await asyncio.sleep(86400)
