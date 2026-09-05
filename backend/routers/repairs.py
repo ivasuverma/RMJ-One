@@ -127,7 +127,10 @@ async def list_customers(
 
 
 @router.get('/customers/{cid}')
-async def get_customer(cid: str, _: dict = Depends(require_staff_or_module(['repairs', 'customer_ledger']))):
+async def get_customer(cid: str, _: dict = Depends(require_staff_or_module('customer_ledger'))):
+    # This is the actual ledger (full order/item history) — not needed by the
+    # repair-intake customer picker (GET /customers above, which stays open to
+    # 'repairs' too), so it's gated to customer_ledger alone, unlike that one.
     c = await db.customers.find_one({'id': cid}, {'_id': 0})
     if not c: raise HTTPException(status_code=404, detail='Customer not found')
     orders = await db.repair_orders.find({'customer_id': cid}, {'_id': 0}).sort('created_at', -1).to_list(200)
@@ -143,7 +146,10 @@ async def get_customer(cid: str, _: dict = Depends(require_staff_or_module(['rep
 
 
 @router.post('/customers')
-async def create_customer(body: CustomerIn, user=Depends(require_admin_or_module(['repairs', 'customer_ledger']))):
+async def create_customer(body: CustomerIn, user=Depends(require_admin_or_module('customer_ledger'))):
+    # Repair intake creates a new customer inline via `new_customer` on the
+    # repair-order POST body (see repairs/new.tsx), not this endpoint — so
+    # this stays customer_ledger-only, no 'repairs' OR needed here.
     if len(re.sub(r'\D', '', body.mobile or '')) < 7:
         raise HTTPException(status_code=400, detail='A mobile number is required')
     doc = {'id': str(uuid.uuid4()), **body.model_dump(), 'created_at': now_utc().isoformat()}
@@ -1347,7 +1353,7 @@ async def repair_item_issue_slip_print(item_id: str, user: dict = Depends(requir
 
 # ---------------- Repairs: Loss Ledger ----------------
 @router.get('/karigars/loss-ledger')
-async def loss_ledger(cursor: Optional[str] = None, limit: int = 50, _: dict = Depends(require_staff_or_module(['repairs', 'karigar_ledger']))):
+async def loss_ledger(cursor: Optional[str] = None, limit: int = 50, _: dict = Depends(require_staff_or_module('karigar_ledger'))):
     """Every declared process-loss entry across all karigars, newest first —
     an audit trail of how much gold is being written off as loss, and by
     whom, that's otherwise buried inside individual receive transactions.
@@ -1383,8 +1389,24 @@ async def loss_ledger(cursor: Optional[str] = None, limit: int = 50, _: dict = D
 
 
 # ---------------- Repairs: Karigar Ledger ----------------
+@router.get('/karigars/{kid}/balance')
+async def get_karigar_balance(kid: str, _: dict = Depends(require_staff_or_module(['repairs', 'karigar_ledger']))):
+    """Lean balance-only read (no ledger entries) for repair-flow callers that
+    just need amount_due — e.g. receive.tsx showing what's owed on receipt —
+    without exposing the full karigar_ledger transaction history to anyone
+    with plain 'repairs' access. See get_karigar_ledger for the full ledger."""
+    karigar = await db.karigars.find_one({'id': kid}, {'_id': 0, 'id': 1})
+    if not karigar: raise HTTPException(status_code=404, detail='Karigar not found')
+    entries = await db.karigar_ledger.find({'karigar_id': kid}, {'_id': 0}).sort('created_at', -1).to_list(1000)
+    bal = _karigar_ledger_balances(entries).get(kid, {})
+    return {
+        'weight_balance': round(bal.get('weight_bal', 0), 3), 'fine_weight_balance': round(bal.get('fine_bal', 0), 3),
+        'amount_due': round(bal.get('amt_due', 0), 2),
+    }
+
+
 @router.get('/karigars/{kid}/ledger')
-async def get_karigar_ledger(kid: str, _: dict = Depends(require_staff_or_module(['repairs', 'karigar_ledger']))):
+async def get_karigar_ledger(kid: str, _: dict = Depends(require_staff_or_module('karigar_ledger'))):
     karigar = await db.karigars.find_one({'id': kid}, {'_id': 0})
     if not karigar: raise HTTPException(status_code=404, detail='Karigar not found')
     entries = await db.karigar_ledger.find({'karigar_id': kid}, {'_id': 0}).sort('created_at', -1).to_list(1000)
@@ -1397,7 +1419,7 @@ async def get_karigar_ledger(kid: str, _: dict = Depends(require_staff_or_module
 
 
 @router.post('/karigars/{kid}/ledger')
-async def add_karigar_ledger_entry(kid: str, body: KarigarLedgerEntryIn, user=Depends(require_admin_or_module(['repairs', 'karigar_ledger']))):
+async def add_karigar_ledger_entry(kid: str, body: KarigarLedgerEntryIn, user=Depends(require_admin_or_module('karigar_ledger'))):
     karigar = await db.karigars.find_one({'id': kid}, {'_id': 0})
     if not karigar: raise HTTPException(status_code=404, detail='Karigar not found')
     if body.type in ('gold_out', 'gold_in'):

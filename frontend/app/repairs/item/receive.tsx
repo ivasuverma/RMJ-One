@@ -63,7 +63,7 @@ export default function ReceiveFromKarigarScreen() {
   const loadBalance = useCallback(async (kid?: string | null) => {
     if (!kid) { setPrevBalance(0); return; }
     try {
-      const res = await api.get<{ amount_due: number }>(`/karigars/${kid}/ledger`);
+      const res = await api.get<{ amount_due: number }>(`/karigars/${kid}/balance`);
       setPrevBalance(res.amount_due || 0);
     } catch (_e) { setPrevBalance(0); }
   }, []);
