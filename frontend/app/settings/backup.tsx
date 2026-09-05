@@ -8,8 +8,9 @@ import { istDisplayDateTime } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { useToast } from '@/src/components/ui';
+import { confirmAction } from '@/src/utils/confirm';
 
-type BackupFile = { name: string; size: number; created: string };
+type BackupFile = { id: string; name: string; size: number; created: string };
 type Status = {
   auto_enabled: boolean; drive_connected: boolean; last_at?: string | null; last_file?: string | null;
   last_size?: number | null; last_total?: number | null; last_error?: string | null; retention: number; recent: BackupFile[];
@@ -28,6 +29,7 @@ export default function BackupScreen() {
   const toast = useToast();
   const [status, setStatus] = useState<Status | null>(null);
   const [busy, setBusy] = useState(false);
+  const [restoringId, setRestoringId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try { setStatus(await api.get<Status>('/backup/status')); } catch { /* owner-only */ }
@@ -48,6 +50,25 @@ export default function BackupScreen() {
   const toggleAuto = async (v: boolean) => {
     setStatus((s) => (s ? { ...s, auto_enabled: v } : s));
     try { await api.put('/backup/settings', { auto_enabled: v }); } catch { load(); }
+  };
+
+  const doRestore = async (f: BackupFile) => {
+    setRestoringId(f.id);
+    try {
+      const res = await api.post<{ ok: boolean; collections?: number; documents?: number }>('/backup/restore', { file_id: f.id, mode: 'merge' });
+      if (res.ok) toast.success(`Restored ${res.documents ?? ''} records from ${f.name}`);
+      else toast.error('Restore failed');
+    } catch (e: any) { toast.error(e?.detail || 'Restore failed'); }
+    finally { setRestoringId(null); }
+  };
+
+  const restore = (f: BackupFile) => {
+    confirmAction(
+      'Restore this backup?',
+      `${f.name}\n\nExisting records are updated or added from this backup — nothing currently in the app is deleted. This can take a minute for a large backup.`,
+      'Restore',
+      () => doRestore(f),
+    );
   };
 
   return (
@@ -101,16 +122,23 @@ export default function BackupScreen() {
               <>
                 <Text style={styles.sectionLabel}>Recent backups in Drive</Text>
                 {status.recent.map((f) => (
-                  <View key={f.name} style={styles.fileRow}>
+                  <View key={f.id || f.name} style={styles.fileRow}>
                     <Ionicons name="document-outline" size={16} color={colors.brandSecondary} />
                     <Text style={styles.fileName} numberOfLines={1}>{f.name}</Text>
                     <Text style={styles.fileMeta}>{fmtSize(f.size)}</Text>
+                    {f.id && (
+                      <Pressable onPress={() => restore(f)} disabled={restoringId === f.id} style={styles.restoreBtn} testID={`backup-restore-${f.id}`}>
+                        {restoringId === f.id
+                          ? <ActivityIndicator size="small" color={colors.brandSecondary} />
+                          : <><Ionicons name="cloud-download-outline" size={14} color={colors.brandSecondary} /><Text style={styles.restoreText}>Restore</Text></>}
+                      </Pressable>
+                    )}
                   </View>
                 ))}
               </>
             )}
 
-            <Text style={styles.note}>To restore, download a backup from the “RMJ One Backups” Drive folder and run scripts/restore_backup.py on the server. This backs up all business data; document images are also kept in Drive separately.</Text>
+            <Text style={styles.note}>Tap Restore on a backup above to bring its records into the app now (existing data is updated/added, nothing is deleted). For a full wipe-and-replace instead — e.g. rebuilding a wiped server from scratch — download the file from the “RMJ One Backups” Drive folder and run scripts/restore_backup.py --drop on the server. Document images are also kept in Drive separately.</Text>
           </>
         )}
       </ScrollView>
@@ -140,5 +168,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   fileRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 9, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.divider },
   fileName: { flex: 1, color: colors.onSurfaceSecondary, fontSize: 13 },
   fileMeta: { color: colors.mutedText, fontSize: 12 },
+  restoreBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: radius.pill, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, minWidth: 32, justifyContent: 'center' },
+  restoreText: { color: colors.brandSecondary, fontSize: 12, fontWeight: '700' },
   note: { color: colors.mutedText, fontSize: 12, marginTop: spacing.xl, lineHeight: 18 },
 });
