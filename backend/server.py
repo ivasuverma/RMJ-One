@@ -1352,8 +1352,9 @@ async def on_startup():
     from gold_rate import gold_rate_loop  # daily reference gold-rate fetch
     asyncio.create_task(gold_rate_loop())
     asyncio.create_task(_whatsapp_health_loop())
-    from routers.biometric import biometric_health_loop
+    from routers.biometric import biometric_health_loop, biometric_log_prune_loop
     asyncio.create_task(biometric_health_loop())
+    asyncio.create_task(biometric_log_prune_loop())
 
 
 @app.on_event('shutdown')

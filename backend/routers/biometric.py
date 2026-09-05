@@ -120,6 +120,27 @@ async def biometric_logs(limit: int = 100, _: dict = Depends(require_staff), _mo
     return await db.biometric_logs.find({}, {'_id': 0}).sort('created_at', -1).limit(limit).to_list(limit)
 
 
+# Every punch attempt is logged, including ones the ADMS re-query re-sends on
+# every poll (see BACKLOG_MAX_HOURS above) — most rows are 'skipped'/'rejected'
+# noise, not real events, so this collection grows fast. Kept for a full year
+# in case an old punch dispute needs the audit trail, then dropped.
+LOG_RETENTION_DAYS = 365
+
+
+async def biometric_log_prune_loop() -> None:
+    """Daily sweep dropping biometric_logs rows past LOG_RETENTION_DAYS."""
+    await asyncio.sleep(300)
+    while True:
+        try:
+            cutoff = (now_utc() - timedelta(days=LOG_RETENTION_DAYS)).isoformat()
+            res = await db.biometric_logs.delete_many({'created_at': {'$lt': cutoff}})
+            if res.deleted_count:
+                logger.info(f'pruned {res.deleted_count} biometric_logs rows older than {LOG_RETENTION_DAYS}d')
+        except Exception as e:
+            logger.warning(f'biometric log prune error: {e}')
+        await asyncio.sleep(86400)
+
+
 async def biometric_health_loop() -> None:
     """There's no explicit disconnect signal from a biometric device, only
     silence — flags a device 'offline' (once) when it hasn't been heard from
