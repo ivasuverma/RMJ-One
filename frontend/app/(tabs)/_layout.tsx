@@ -56,15 +56,16 @@ export default function OwnerTabsLayout() {
         options={{ title: 'Settings', tabBarButtonTestID: 'tab-utility', tabBarIcon: ({ color, size }) => <Ionicons name="settings-outline" color={color} size={size} /> }}
       />
       {/* Still routable (Work tiles + deep links point into these, and old
-          /(tabs)/transactions and /(tabs)/reports links still resolve) but no
-          longer their own bottom tab — the v2 IA groups by action type, not by
-          module. Transactions/Reports content now lives in the Work hub.
-          Each has its own back button, so the root tab bar is hidden while
-          it's active (href: null alone only drops the tappable icon, not
-          the bar itself) — it would otherwise sit redundantly under a
-          screen that already has its own way back. */}
+          /(tabs)/transactions links still resolve) but no longer their own
+          bottom tab — the v2 IA groups by action type, not by module.
+          Transactions content now lives in the Work hub. (Reports was the
+          same kind of hidden tab, but is now removed outright — both its
+          tiles moved out: the ledgers to the Ledger tab, Custom PDF Report
+          to Payroll's header.) Each has its own back button, so the root
+          tab bar is hidden while it's active (href: null alone only drops
+          the tappable icon, not the bar itself) — it would otherwise sit
+          redundantly under a screen that already has its own way back. */}
       <Tabs.Screen name="transactions" options={{ href: null, tabBarStyle: { display: 'none' } }} />
-      <Tabs.Screen name="reports" options={{ href: null, tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="attendance" options={{ href: null, tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="employees" options={{ href: null, tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="payroll" options={{ href: null, tabBarStyle: { display: 'none' } }} />

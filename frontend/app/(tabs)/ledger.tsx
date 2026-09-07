@@ -7,10 +7,10 @@ import { api } from '@/src/api/client';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
-// Ledger tab (owner/admin/accountant) — the four account ledgers, moved here
-// from Settings > Reports so they're one tap away instead of buried two
-// levels deep. Reports itself still exists for the two tiles not named in
-// this move (Custom PDF Report, Employee Ledger).
+// Ledger tab (owner/admin/accountant) — the five account ledgers, moved
+// here from Settings > Reports so they're one tap away instead of buried
+// two levels deep. Settings > Reports is gone entirely now (its remaining
+// tile, Custom PDF Report, moved to the Payroll tab header instead).
 //
 // Rows/reorder/summary style deliberately matches the Work tab's "In
 // progress" board (same prow/pi/pt/pd row shape, same tap-to-move reorder
@@ -30,6 +30,7 @@ export default function LedgerScreen() {
   const [karigarSummary, setKarigarSummary] = useState('');
   const [cashSummary, setCashSummary] = useState('');
   const [lossSummary, setLossSummary] = useState('');
+  const [employeeSummary, setEmployeeSummary] = useState('');
 
   useFocusEffect(useCallback(() => {
     try { const raw = typeof window !== 'undefined' ? window.localStorage.getItem(ORDER_KEY) : null; if (raw) setOrder(JSON.parse(raw)); } catch { /* ignore */ }
@@ -56,6 +57,11 @@ export default function LedgerScreen() {
     api.get<{ total_weight: number; total_fine_weight: number }>('/karigars/loss-ledger').then((r) => {
       setLossSummary(Math.abs(r.total_fine_weight) >= 0.001 ? `${r.total_weight.toFixed(3)}g weight · ${r.total_fine_weight.toFixed(3)}g fine` : 'No loss recorded');
     }).catch(() => {});
+    api.get<{ closing_balance?: number }[]>('/employees').then((es) => {
+      const withBalance = es.filter((e) => !!e.closing_balance);
+      const total = withBalance.reduce((s, e) => s + Math.abs(e.closing_balance || 0), 0);
+      setEmployeeSummary(withBalance.length > 0 ? `${withBalance.length} with balance · ₹${Math.round(total).toLocaleString('en-IN')}` : 'All settled');
+    }).catch(() => {});
   }, []));
 
   const rows: Row[] = [
@@ -63,6 +69,7 @@ export default function LedgerScreen() {
     { key: 'karigar-ledger', label: 'Karigar Ledger', icon: 'hammer-outline', route: '/reports/karigar-ledger', summary: karigarSummary || '…' },
     { key: 'cash-ledger', label: 'Cash Ledger', icon: 'cash-outline', route: '/reports/cash-ledger', summary: cashSummary || '…' },
     { key: 'loss-ledger', label: 'Loss Ledger', icon: 'trending-down-outline', route: '/reports/loss-ledger', summary: lossSummary || '…' },
+    { key: 'employee-ledger', label: 'Employee Ledger', icon: 'people-outline', route: '/reports/employee-ledger', summary: employeeSummary || '…' },
   ];
 
   const idx = (k: string) => { const i = order.indexOf(k); return i === -1 ? 999 : i; };
@@ -79,7 +86,7 @@ export default function LedgerScreen() {
     <SafeAreaView style={styles.root} edges={['top']} testID="ledger-screen">
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         <Text style={styles.h1}>Ledger</Text>
-        <Text style={styles.sub}>Customer, karigar, cash, and loss accounts.</Text>
+        <Text style={styles.sub}>Customer, karigar, cash, loss, and employee accounts.</Text>
 
         <View style={styles.progressHead}>
           <Text style={styles.sectionLabel}>Ledgers</Text>

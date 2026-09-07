@@ -112,6 +112,9 @@ export default function OwnerPayroll() {
         {data?.locked ? (
           <View style={styles.lockedChip}><Ionicons name="lock-closed" size={12} color={colors.onWarning} /><Text style={styles.lockedText}>Locked</Text></View>
         ) : null}
+        <Pressable onPress={() => router.push('/reports/generate' as any)} style={styles.backBtn} testID="payroll-reports-btn" hitSlop={12}>
+          <Ionicons name="document-text-outline" size={20} color={colors.onSurface} />
+        </Pressable>
       </View>
 
       {/* Month picker */}

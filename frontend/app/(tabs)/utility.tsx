@@ -40,12 +40,6 @@ const GROUPS: GroupDef[] = [
     ],
   },
   {
-    title: 'Reports', ownerOnly: true,
-    rows: [
-      { key: 'reports', label: 'Reports', sub: 'Custom PDF & employee ledger', icon: 'bar-chart-outline', route: '/(tabs)/reports' },
-    ],
-  },
-  {
     title: 'Masters', ownerOnly: true,
     rows: [
       { key: 'account-types', label: 'Account Types', sub: 'Ledger categories', icon: 'pricetags-outline', route: '/settings/account-types' },
