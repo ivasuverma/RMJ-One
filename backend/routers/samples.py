@@ -28,7 +28,7 @@ from server import (
     _pdf_response,
     get_print_config,
 )
-from print_templates import filter_lines
+from print_templates import apply_field_config
 # Thermal-printer helpers live in routers/repairs.py (where they were first
 # built) rather than the shared core — reused here as-is instead of
 # duplicating the ESC/POS builder for a second module.
@@ -246,8 +246,8 @@ async def sample_issue_slip_pdf(sample_id: str, _: dict = Depends(require_staff_
     cfg = await get_print_config('sample_issue')
     pdf = _thermal_slip_pdf(
         store.get('name') or 'Ram Murti Jewellers', 'Sample Issue Challan',
-        filter_lines(_sample_issue_slip_lines(sample), cfg['disabled_fields']),
-        show_shop_name=cfg['show_shop_name'], font_size=cfg['font_size'],
+        apply_field_config(_sample_issue_slip_lines(sample), cfg),
+        show_shop_name=cfg['show_shop_name'], font_size=cfg['font_size'], field_sizes=cfg['field_sizes'],
     )
     return _pdf_response(pdf, f'sample-issue-{sample["sample_code"]}.pdf')
 
@@ -263,8 +263,8 @@ async def sample_issue_slip_print(sample_id: str, user=Depends(require_staff_or_
     store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
     cfg = await get_print_config('sample_issue')
     data = _escpos_receipt(store.get('name') or 'Ram Murti Jewellers', 'Sample Issue Challan',
-                            filter_lines(_sample_issue_slip_lines(sample), cfg['disabled_fields']),
-                            show_shop_name=cfg['show_shop_name'], font_size=cfg['font_size'])
+                            apply_field_config(_sample_issue_slip_lines(sample), cfg),
+                            show_shop_name=cfg['show_shop_name'], font_size=cfg['font_size'], field_sizes=cfg['field_sizes'])
     await _print_escpos(data)
     await log_audit(user, 'sample.issue_slip_print', 'sample', sample_id, sample['sample_code'], {})
     return {'ok': True}

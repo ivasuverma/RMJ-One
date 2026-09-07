@@ -44,7 +44,7 @@ from server import (
     whatsapp_flow_enabled,
     get_print_config,
 )
-from print_templates import filter_lines
+from print_templates import filter_lines, reorder_lines, apply_field_config
 
 router = APIRouter()
 
@@ -443,8 +443,8 @@ async def repair_order_slip_pdf(order_id: str, _: dict = Depends(require_staff_o
     # receipt printer.
     pdf = _thermal_slip_pdf(
         store.get('name') or 'Ram Murti Jewellers', f"Repair Intake — {order['order_no']}",
-        filter_lines(_intake_receipt_lines(order, items), cfg['disabled_fields']),
-        show_shop_name=cfg['show_shop_name'], font_size=cfg['font_size'],
+        apply_field_config(_intake_receipt_lines(order, items), cfg),
+        show_shop_name=cfg['show_shop_name'], font_size=cfg['font_size'], field_sizes=cfg['field_sizes'],
     )
     return _pdf_response(pdf, f'repair-slip-{order["order_no"]}.pdf')
 
@@ -482,8 +482,8 @@ async def repair_order_slip_print(order_id: str, user: dict = Depends(require_st
     cfg = await get_print_config('repair_intake')
     data = _escpos_receipt(store.get('name') or 'Ram Murti Jewellers',
                             f"Repair Intake — {order['order_no']}",
-                            filter_lines(_intake_receipt_lines(order, items), cfg['disabled_fields']),
-                            show_shop_name=cfg['show_shop_name'], font_size=cfg['font_size'])
+                            apply_field_config(_intake_receipt_lines(order, items), cfg),
+                            show_shop_name=cfg['show_shop_name'], font_size=cfg['font_size'], field_sizes=cfg['field_sizes'])
     await _print_escpos(data)
     await log_audit(user, 'repair_order.slip_print', 'repair_order', order_id, order['order_no'], {})
     return {'ok': True}
@@ -515,7 +515,8 @@ async def repair_order_tags_pdf(order_id: str, _: dict = Depends(require_staff_o
     store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
     cfg = await get_print_config('repair_tag')
     pdf = _thermal_tags_pdf(store.get('name') or 'Ram Murti Jewellers', order, items,
-                             disabled_fields=cfg['disabled_fields'], show_shop_name=cfg['show_shop_name'], font_size=cfg['font_size'])
+                             disabled_fields=cfg['disabled_fields'], field_order=cfg['field_order'],
+                             show_shop_name=cfg['show_shop_name'], font_size=cfg['font_size'], field_sizes=cfg['field_sizes'])
     return _pdf_response(pdf, f'item-tags-{order["order_no"]}.pdf')
 
 
@@ -532,8 +533,8 @@ async def repair_order_tags_print(order_id: str, user: dict = Depends(require_st
     cfg = await get_print_config('repair_tag')
     for item in items:
         data = _escpos_receipt(shop_name, f"Item Tag — {item['item_code']}",
-                                filter_lines(_item_tag_lines(order, item), cfg['disabled_fields']),
-                                show_shop_name=cfg['show_shop_name'], font_size=cfg['font_size'])
+                                apply_field_config(_item_tag_lines(order, item), cfg),
+                                show_shop_name=cfg['show_shop_name'], font_size=cfg['font_size'], field_sizes=cfg['field_sizes'])
         await _print_escpos(data)
     await log_audit(user, 'repair_order.tags_print', 'repair_order', order_id, order['order_no'], {'items': len(items)})
     return {'ok': True}
@@ -1300,8 +1301,8 @@ async def repair_item_bill_pdf(item_id: str, _: dict = Depends(require_staff_or_
     # Field/Value report table.
     pdf = _thermal_slip_pdf(
         store.get('name') or 'Ram Murti Jewellers', f"Repair Bill — {item['item_code']}",
-        filter_lines(_bill_receipt_lines(item), cfg['disabled_fields']),
-        show_shop_name=cfg['show_shop_name'], font_size=cfg['font_size'],
+        apply_field_config(_bill_receipt_lines(item), cfg),
+        show_shop_name=cfg['show_shop_name'], font_size=cfg['font_size'], field_sizes=cfg['field_sizes'],
     )
     return _pdf_response(pdf, f'repair-bill-{item["item_code"]}.pdf')
 
@@ -1358,8 +1359,8 @@ async def repair_item_issue_slip_pdf(item_id: str, _: dict = Depends(require_sta
     store = await db.settings.find_one({}, {'_id': 0, 'name': 1}) or {}
     cfg = await get_print_config('repair_issue')
     pdf = _thermal_slip_pdf(store.get('name') or 'Ram Murti Jewellers', 'Karigar Issue Challan',
-                             filter_lines(_issue_slip_lines(item, txn), cfg['disabled_fields']),
-                             show_shop_name=cfg['show_shop_name'], font_size=cfg['font_size'])
+                             apply_field_config(_issue_slip_lines(item, txn), cfg),
+                             show_shop_name=cfg['show_shop_name'], font_size=cfg['font_size'], field_sizes=cfg['field_sizes'])
     return _pdf_response(pdf, f'issue-slip-{item["item_code"]}.pdf')
 
 
@@ -1371,8 +1372,8 @@ async def repair_item_issue_slip_print(item_id: str, user: dict = Depends(requir
     store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
     cfg = await get_print_config('repair_issue')
     data = _escpos_receipt(store.get('name') or 'Ram Murti Jewellers', 'Karigar Issue Challan',
-                            filter_lines(_issue_slip_lines(item, txn), cfg['disabled_fields']),
-                            show_shop_name=cfg['show_shop_name'], font_size=cfg['font_size'])
+                            apply_field_config(_issue_slip_lines(item, txn), cfg),
+                            show_shop_name=cfg['show_shop_name'], font_size=cfg['font_size'], field_sizes=cfg['field_sizes'])
     await _print_escpos(data)
     await log_audit(user, 'repair_item.issue_slip_print', 'repair_item', item_id, item['item_code'], {})
     return {'ok': True}
@@ -1524,18 +1525,20 @@ def _dmy(iso_date: Optional[str]) -> str:
     return f'{d}/{m}/{y}'
 
 
-def _thermal_slip_pdf(shop_name: str, heading: str, lines: list, show_shop_name: bool = True, font_size: str = 'normal') -> bytes:
+def _thermal_slip_pdf(shop_name: str, heading: str, lines: list, show_shop_name: bool = True,
+                       font_size: int = 10, field_sizes: dict | None = None) -> bytes:
     """Narrow (80mm) receipt-style PDF meant to be printed on a thermal
     receipt printer via the browser's print dialog. `lines` is a list of
     (key, label, value) tuples, or a plain string for a divider/free line.
-    `font_size` ('normal' or 'large') is the Print Master body-text setting —
-    see print_templates.py."""
+    `font_size` is the Print Master overall body point size; `field_sizes`
+    (key -> point size) overrides it for individual fields. See
+    print_templates.py."""
     from io import BytesIO
     from reportlab.lib import colors as rlcolors
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib.units import mm
     from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable
-    large = font_size == 'large'
+    field_sizes = field_sizes or {}
     buf = BytesIO()
     width = 80 * mm
     doc = SimpleDocTemplate(buf, pagesize=(width, 200 * mm), leftMargin=4*mm, rightMargin=4*mm, topMargin=4*mm, bottomMargin=4*mm)
@@ -1543,22 +1546,23 @@ def _thermal_slip_pdf(shop_name: str, heading: str, lines: list, show_shop_name:
     dark = rlcolors.HexColor('#0D0D0D')
     els = []
     if show_shop_name:
-        els.append(Paragraph(f"<b>{shop_name}</b>", ParagraphStyle('shop', parent=styles['Normal'], alignment=1, fontSize=13 if large else 11, textColor=dark)))
+        els.append(Paragraph(f"<b>{shop_name}</b>", ParagraphStyle('shop', parent=styles['Normal'], alignment=1, fontSize=font_size + 3, textColor=dark)))
     els += [
-        Paragraph(f"Mobile: {STORE_MOBILE}", ParagraphStyle('mob', parent=styles['Normal'], alignment=1, fontSize=10 if large else 9, textColor=rlcolors.HexColor('#555'))),
-        Paragraph(heading, ParagraphStyle('head', parent=styles['Normal'], alignment=1, fontSize=11 if large else 10, textColor=rlcolors.HexColor('#555'))),
+        Paragraph(f"Mobile: {STORE_MOBILE}", ParagraphStyle('mob', parent=styles['Normal'], alignment=1, fontSize=max(7, font_size - 1), textColor=rlcolors.HexColor('#555'))),
+        Paragraph(heading, ParagraphStyle('head', parent=styles['Normal'], alignment=1, fontSize=font_size, textColor=rlcolors.HexColor('#555'))),
         Spacer(1, 3*mm), HRFlowable(width='100%', color=rlcolors.HexColor('#999')), Spacer(1, 2*mm),
     ]
     for item in lines:
         if isinstance(item, tuple):
-            _key, label, value = item
-            els.append(Paragraph(f"<b>{label}:</b> {value}", ParagraphStyle('l', parent=styles['Normal'], fontSize=12 if large else 10, textColor=dark, spaceAfter=3)))
+            key, label, value = item
+            size = field_sizes.get(key, font_size)
+            els.append(Paragraph(f"<b>{label}:</b> {value}", ParagraphStyle('l', parent=styles['Normal'], fontSize=size, textColor=dark, spaceAfter=3)))
         else:
             els.append(Spacer(1, 2*mm))
             els.append(HRFlowable(width='100%', color=rlcolors.HexColor('#ccc')))
             els.append(Spacer(1, 2*mm))
             if item:
-                els.append(Paragraph(item, ParagraphStyle('n', parent=styles['Normal'], fontSize=11 if large else 9, textColor=rlcolors.HexColor('#555'))))
+                els.append(Paragraph(item, ParagraphStyle('n', parent=styles['Normal'], fontSize=max(7, font_size - 1), textColor=rlcolors.HexColor('#555'))))
     els.append(Spacer(1, 6*mm))
     els.append(Paragraph(f"Generated {now_utc().astimezone(IST).strftime('%d %b %Y %H:%M')}", ParagraphStyle('f', parent=styles['Normal'], fontSize=7, alignment=1, textColor=rlcolors.HexColor('#999'))))
     doc.build(els)
@@ -1567,7 +1571,8 @@ def _thermal_slip_pdf(shop_name: str, heading: str, lines: list, show_shop_name:
 
 
 def _thermal_tags_pdf(shop_name: str, order: dict, items: list, disabled_fields: set = frozenset(),
-                       show_shop_name: bool = True, font_size: str = 'normal') -> bytes:
+                       field_order: list = (), show_shop_name: bool = True,
+                       font_size: int = 10, field_sizes: dict | None = None) -> bytes:
     """One small item tag per page — same narrow 80mm format as
     _thermal_slip_pdf, but a page break between items instead of one long
     receipt, since these get cut apart and attached to separate pieces."""
@@ -1576,7 +1581,7 @@ def _thermal_tags_pdf(shop_name: str, order: dict, items: list, disabled_fields:
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib.units import mm
     from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable, PageBreak
-    large = font_size == 'large'
+    field_sizes = field_sizes or {}
     buf = BytesIO()
     width = 80 * mm
     doc = SimpleDocTemplate(buf, pagesize=(width, 100 * mm), leftMargin=4*mm, rightMargin=4*mm, topMargin=4*mm, bottomMargin=4*mm)
@@ -1587,14 +1592,16 @@ def _thermal_tags_pdf(shop_name: str, order: dict, items: list, disabled_fields:
         if i > 0:
             els.append(PageBreak())
         if show_shop_name:
-            els.append(Paragraph(f"<b>{shop_name}</b>", ParagraphStyle('shop', parent=styles['Normal'], alignment=1, fontSize=13 if large else 11, textColor=dark)))
+            els.append(Paragraph(f"<b>{shop_name}</b>", ParagraphStyle('shop', parent=styles['Normal'], alignment=1, fontSize=font_size + 3, textColor=dark)))
         els += [
-            Paragraph(f"Mobile: {STORE_MOBILE}", ParagraphStyle('mob', parent=styles['Normal'], alignment=1, fontSize=10 if large else 9, textColor=rlcolors.HexColor('#555'))),
-            Paragraph(f"Item Tag — {item['item_code']}", ParagraphStyle('head', parent=styles['Normal'], alignment=1, fontSize=11 if large else 10, textColor=rlcolors.HexColor('#555'))),
+            Paragraph(f"Mobile: {STORE_MOBILE}", ParagraphStyle('mob', parent=styles['Normal'], alignment=1, fontSize=max(7, font_size - 1), textColor=rlcolors.HexColor('#555'))),
+            Paragraph(f"Item Tag — {item['item_code']}", ParagraphStyle('head', parent=styles['Normal'], alignment=1, fontSize=font_size, textColor=rlcolors.HexColor('#555'))),
             Spacer(1, 3*mm), HRFlowable(width='100%', color=rlcolors.HexColor('#999')), Spacer(1, 2*mm),
         ]
-        for key, label, value in filter_lines(_item_tag_lines(order, item), disabled_fields):
-            els.append(Paragraph(f"<b>{label}:</b> {value}", ParagraphStyle('l', parent=styles['Normal'], fontSize=12 if large else 10, textColor=dark, spaceAfter=3)))
+        tag_lines = reorder_lines(filter_lines(_item_tag_lines(order, item), disabled_fields), list(field_order))
+        for key, label, value in tag_lines:
+            size = field_sizes.get(key, font_size)
+            els.append(Paragraph(f"<b>{label}:</b> {value}", ParagraphStyle('l', parent=styles['Normal'], fontSize=size, textColor=dark, spaceAfter=3)))
     doc.build(els)
     pdf = buf.getvalue(); buf.close()
     return pdf
@@ -1623,6 +1630,15 @@ _ESCPOS_CUT = _GS + b'V\x01'          # partial cut — leaves a small connectin
 # reliable auto-cut mode on cheap hardware — the tiny remaining tab tears
 # away with a light pull, same as any till receipt.
 _ESCPOS_WIDTH_CHARS = 42              # ~80mm paper at the default 12x24 font
+
+
+def _escpos_size_for_pt(pt: int) -> bytes:
+    """Maps a Print Master point size to an ESC/POS GS ! byte. Scales height
+    only (width multiplier stays 0/1x) so the fixed 42-char-per-line wrap
+    math above stays valid no matter what size is chosen — widening
+    characters too would overflow the 80mm paper instead of wrapping."""
+    mult = max(0, min(7, round((pt - 10) / 3)))
+    return _GS + b'!' + bytes([mult])
 
 # Blank feed before the cut, specified directly in dots via ESC J (print and
 # feed n dots) rather than a pile of '\n's — ESC J feeds an exact physical
@@ -1662,24 +1678,26 @@ def _escpos_wrapped(text: str, width: int):
             return
 
 
-def _escpos_receipt(shop_name: str, heading: str, lines: list, show_shop_name: bool = True, font_size: str = 'normal') -> bytes:
+def _escpos_receipt(shop_name: str, heading: str, lines: list, show_shop_name: bool = True,
+                     font_size: int = 10, field_sizes: dict | None = None) -> bytes:
     """Builds raw ESC/POS bytes for an 80mm receipt. `lines` uses the same
     shape as _thermal_slip_pdf: (key, label, value) tuples, plain strings for
     a divider/free line, or '' for a blank line — so both the on-screen PDF
     and the direct network print render the same content.
 
-    Compact "LABEL: value" layout — the shop name is always oversized; the
-    body ('font_size': 'normal' or 'large', the Print Master setting) uses
-    either the printer's normal or double-height character mode. Values that
+    Compact "LABEL: value" layout — the shop name is always the biggest text;
+    the body uses `font_size` (Print Master's overall point size), with
+    `field_sizes` (key -> point size) overriding it per field. Values that
     don't fit next to their label on one line drop to a wrapped block below
     it, so long notes/addresses don't clip."""
     enc = _escpos_enc
-    body_size = _ESCPOS_SIZE_TALL if font_size == 'large' else _ESCPOS_SIZE_NORMAL
+    field_sizes = field_sizes or {}
+    body_size = _escpos_size_for_pt(font_size)
     out = bytearray()
     out += _ESCPOS_INIT + _ESCPOS_LINE_SPACING
     out += _ESCPOS_ALIGN_CENTER
     if show_shop_name:
-        out += _ESCPOS_BOLD_ON + _ESCPOS_SIZE_TALL
+        out += _ESCPOS_BOLD_ON + _escpos_size_for_pt(font_size + 3)
         out += enc(shop_name) + b'\n'
         out += _ESCPOS_SIZE_NORMAL
     out += body_size + enc(f'Mobile: {STORE_MOBILE}') + b'\n' + _ESCPOS_BOLD_OFF
@@ -1689,7 +1707,8 @@ def _escpos_receipt(shop_name: str, heading: str, lines: list, show_shop_name: b
 
     for item in lines:
         if isinstance(item, tuple):
-            _key, label, value = item
+            key, label, value = item
+            out += _escpos_size_for_pt(field_sizes.get(key, font_size))
             label_str = f"{label.upper()}: "
             value_str = str(value)
             if len(label_str) + len(value_str) <= _ESCPOS_WIDTH_CHARS:
@@ -1700,8 +1719,9 @@ def _escpos_receipt(shop_name: str, heading: str, lines: list, show_shop_name: b
                 for chunk in _escpos_wrapped(value_str, _ESCPOS_WIDTH_CHARS):
                     out += enc(chunk) + b'\n'
         elif item == '':
-            out += b'\n'
+            out += body_size + b'\n'
         else:
+            out += body_size
             out += enc('-' * _ESCPOS_WIDTH_CHARS) + b'\n'
             out += _ESCPOS_BOLD_ON + enc(item) + b'\n' + _ESCPOS_BOLD_OFF
             out += b'\n'
@@ -1734,7 +1754,7 @@ def _escpos_table_row(col1: str, col2: str, bold: bool = False) -> bytes:
     return (_ESCPOS_BOLD_ON + row + _ESCPOS_BOLD_OFF) if bold else row
 
 
-def _escpos_bill_table(shop_name: str, item: dict, show_shop_name: bool = True, font_size: str = 'normal') -> bytes:
+def _escpos_bill_table(shop_name: str, item: dict, show_shop_name: bool = True, font_size: int = 10) -> bytes:
     """Repair bill / quotation, laid out as a bordered table: item details,
     the weight change breakdown (issue/loss/received/new wt/value add/rate),
     then the charges and total — everything staff currently see on-screen
@@ -1760,12 +1780,12 @@ def _escpos_bill_table(shop_name: str, item: dict, show_shop_name: bool = True, 
         body = _inr(abs(n)) if abs(n) >= 1 or n == 0 else f"Rs.{abs(n):.2f}"
         return sign + body
 
-    body_size = _ESCPOS_SIZE_TALL if font_size == 'large' else _ESCPOS_SIZE_NORMAL
+    body_size = _escpos_size_for_pt(font_size)
     out = bytearray()
     out += _ESCPOS_INIT + _ESCPOS_LINE_SPACING
     out += _ESCPOS_ALIGN_CENTER
     if show_shop_name:
-        out += _ESCPOS_BOLD_ON + _ESCPOS_SIZE_TALL
+        out += _ESCPOS_BOLD_ON + _escpos_size_for_pt(font_size + 3)
         out += _escpos_enc(shop_name) + b'\n'
         out += _ESCPOS_SIZE_NORMAL
     out += body_size + _escpos_enc(f'Mobile: {STORE_MOBILE}') + b'\n' + _ESCPOS_BOLD_OFF

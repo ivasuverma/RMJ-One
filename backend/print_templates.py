@@ -1,8 +1,9 @@
-"""Print Master — per-template field visibility, body text size, and
-shop-name toggle for every thermal receipt/challan the app prints (Repairs,
-Stock In/Out samples, Gold Loans). Config lives on a single db.settings
-document ({'id': 'print_templates'}), edited from Settings > Masters >
-Print Master (owner only) via routers/print_settings.py.
+"""Print Master — per-template field visibility, per-field font size (points,
+with a template-wide default), field order, and shop-name toggle for every
+thermal receipt/challan the app prints (Repairs, Stock In/Out samples, Gold
+Loans). Config lives on a single db.settings document ({'id':
+'print_templates'}), edited from Settings > Masters > Print Master (owner
+only) via routers/print_settings.py.
 
 Deliberately import-free of server.py: repairs.py, samples.py, and
 gold_loans.py each import this at module top, and those modules are
@@ -16,9 +17,14 @@ routers/settings.py for the gold_rate import).
 # Master UI and, for most fields, what's printed on the receipt too (the
 # printed label can differ, e.g. repair_bill's "extra_charges" prints
 # whatever custom note the item has, falling back to this label).
+# Groups templates onto their own page in the Print Master UI (Settings >
+# Masters > Print Master > module > template) — display order + label here.
+MODULE_LABELS = {'repairs': 'Repairs', 'samples': 'Stock In/Out', 'gold_loans': 'Gold Loan'}
+
 PRINT_TEMPLATES = {
     'repair_intake': {
-        'label': 'Repairs — Intake Receipt',
+        'label': 'Intake Receipt',
+        'module': 'repairs',
         'fields': [
             {'key': 'order_no', 'label': 'Order No'}, {'key': 'customer', 'label': 'Customer'},
             {'key': 'mobile', 'label': 'Mobile'}, {'key': 'received', 'label': 'Received'},
@@ -28,7 +34,8 @@ PRINT_TEMPLATES = {
         ],
     },
     'repair_tag': {
-        'label': 'Repairs — Item Tag',
+        'label': 'Item Tag',
+        'module': 'repairs',
         'fields': [
             {'key': 'tag', 'label': 'Tag'}, {'key': 'customer', 'label': 'Customer'},
             {'key': 'item', 'label': 'Item'}, {'key': 'repair_type', 'label': 'Repair Type'},
@@ -37,7 +44,8 @@ PRINT_TEMPLATES = {
         ],
     },
     'repair_bill': {
-        'label': 'Repairs — Bill / Quotation',
+        'label': 'Bill / Quotation',
+        'module': 'repairs',
         # Field toggles + font size apply to the PDF only — the WiFi-printer
         # version renders a bordered table (_escpos_bill_table) with fixed
         # columns, not the label/value lines these toggles filter, so only
@@ -52,7 +60,8 @@ PRINT_TEMPLATES = {
         ],
     },
     'repair_issue': {
-        'label': 'Repairs — Karigar Issue Challan',
+        'label': 'Karigar Issue Challan',
+        'module': 'repairs',
         'fields': [
             {'key': 'challan_no', 'label': 'Challan No'}, {'key': 'date', 'label': 'Date'},
             {'key': 'karigar', 'label': 'Karigar'}, {'key': 'tag', 'label': 'Tag'},
@@ -62,7 +71,8 @@ PRINT_TEMPLATES = {
         ],
     },
     'sample_issue': {
-        'label': 'Stock In/Out — Sample Issue Challan',
+        'label': 'Sample Issue Challan',
+        'module': 'samples',
         'fields': [
             {'key': 'sample_no', 'label': 'Sample No'}, {'key': 'date', 'label': 'Date'},
             {'key': 'karigar', 'label': 'Karigar'}, {'key': 'tag', 'label': 'Tag'},
@@ -73,7 +83,8 @@ PRINT_TEMPLATES = {
         ],
     },
     'gold_loan_voucher': {
-        'label': 'Gold Loan — Voucher',
+        'label': 'Loan Voucher',
+        'module': 'gold_loans',
         # Shop name defaulted off from the start for this one (2026-09-07
         # request) — everything else defaults on.
         'default_show_shop_name': False,
@@ -89,19 +100,43 @@ PRINT_TEMPLATES = {
 }
 
 
+DEFAULT_FONT_SIZE = 10
+MIN_FONT_SIZE, MAX_FONT_SIZE = 7, 20
+
+# Legacy values from the first cut of this feature (2026-09-07), before sizes
+# became numeric — kept only so a config saved that day still loads sanely.
+_LEGACY_FONT_SIZE = {'normal': 10, 'large': 13}
+
+
+def _coerce_size(value, fallback: int) -> int:
+    if isinstance(value, str):
+        value = _LEGACY_FONT_SIZE.get(value, fallback)
+    try:
+        return max(MIN_FONT_SIZE, min(MAX_FONT_SIZE, int(value)))
+    except (TypeError, ValueError):
+        return fallback
+
+
 def template_config(doc: dict | None, key: str) -> dict:
     """Merge a template's stored config (from the print_templates settings
     doc) with its defaults. Returns {'disabled_fields': set, 'font_size':
-    str, 'show_shop_name': bool}."""
+    int, 'field_sizes': {field_key: int}, 'field_order': [field_key, ...],
+    'show_shop_name': bool}."""
     meta = PRINT_TEMPLATES[key]
+    valid_keys = {f['key'] for f in meta['fields']}
     stored = (doc or {}).get('templates', {}).get(key, {})
-    cfg = {
-        'disabled_fields': stored.get('disabled_fields', []),
-        'font_size': stored.get('font_size', 'normal'),
+    font_size = _coerce_size(stored.get('font_size'), DEFAULT_FONT_SIZE)
+    field_sizes = {
+        k: _coerce_size(v, font_size) for k, v in (stored.get('field_sizes') or {}).items() if k in valid_keys
+    }
+    field_order = [k for k in (stored.get('field_order') or []) if k in valid_keys]
+    return {
+        'disabled_fields': {k for k in (stored.get('disabled_fields') or []) if k in valid_keys},
+        'font_size': font_size,
+        'field_sizes': field_sizes,
+        'field_order': field_order,
         'show_shop_name': stored.get('show_shop_name', meta.get('default_show_shop_name', True)),
     }
-    cfg['disabled_fields'] = set(cfg['disabled_fields'])
-    return cfg
 
 
 def filter_lines(lines: list, disabled_fields: set) -> list:
@@ -111,3 +146,49 @@ def filter_lines(lines: list, disabled_fields: set) -> list:
     if not disabled_fields:
         return lines
     return [item for item in lines if not (isinstance(item, tuple) and item[0] in disabled_fields)]
+
+
+def reorder_lines(lines: list, field_order: list) -> list:
+    """Reorders (key, label, value) lines per field_order. Plain strings
+    (section headers like 'Item 2', dividers, the signature line) stay in
+    place and act as boundaries — each run of fields between them is
+    reordered independently, so a multi-item receipt (e.g. repair_intake)
+    gets the same field order applied within every item's block rather than
+    one giant reshuffle across the whole receipt. Fields not mentioned in
+    field_order keep their original relative order, after the ones that are."""
+    if not field_order:
+        return lines
+    rank = {k: i for i, k in enumerate(field_order)}
+
+    def sort_key(indexed_item):
+        i, item = indexed_item
+        return (rank.get(item[0], len(field_order)), i)
+
+    out: list = []
+    group: list = []
+
+    def flush():
+        group.sort(key=sort_key)
+        out.extend(item for _, item in group)
+        group.clear()
+
+    for i, item in enumerate(lines):
+        if isinstance(item, tuple):
+            group.append((i, item))
+        else:
+            flush()
+            out.append(item)
+    flush()
+    return out
+
+
+def apply_field_config(lines: list, cfg: dict) -> list:
+    """filter_lines + reorder_lines in one call — the shape every print
+    endpoint actually wants."""
+    return reorder_lines(filter_lines(lines, cfg['disabled_fields']), cfg['field_order'])
+
+
+def field_font_size(cfg: dict, field_key: str) -> int:
+    """The effective point size for one field: its own override if set,
+    otherwise the template's overall font_size."""
+    return cfg['field_sizes'].get(field_key, cfg['font_size'])

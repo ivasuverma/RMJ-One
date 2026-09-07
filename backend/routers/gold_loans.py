@@ -37,7 +37,7 @@ from server import (
     get_print_config,
 )
 from routers.repairs import _mirror_party_account, _escpos_receipt, _print_escpos, _thermal_slip_pdf, _inr, _dmy
-from print_templates import filter_lines
+from print_templates import apply_field_config
 
 router = APIRouter()
 
@@ -396,8 +396,8 @@ async def gold_loan_voucher_pdf(loan_id: str, _: dict = Depends(require_staff_or
     store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
     cfg = await get_print_config('gold_loan_voucher')
     pdf = _thermal_slip_pdf(store.get('name') or 'Ram Murti Jewellers', 'Loan Against Gold',
-                             filter_lines(_loan_voucher_lines(loan), cfg['disabled_fields']),
-                             show_shop_name=cfg['show_shop_name'], font_size=cfg['font_size'])
+                             apply_field_config(_loan_voucher_lines(loan), cfg),
+                             show_shop_name=cfg['show_shop_name'], font_size=cfg['font_size'], field_sizes=cfg['field_sizes'])
     return _pdf_response(pdf, f'gold-loan-{loan["loan_no"]}.pdf')
 
 
@@ -407,8 +407,8 @@ async def gold_loan_voucher_print(loan_id: str, user=Depends(require_staff_or_mo
     store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
     cfg = await get_print_config('gold_loan_voucher')
     data = _escpos_receipt(store.get('name') or 'Ram Murti Jewellers', 'Loan Against Gold',
-                            filter_lines(_loan_voucher_lines(loan), cfg['disabled_fields']),
-                            show_shop_name=cfg['show_shop_name'], font_size=cfg['font_size'])
+                            apply_field_config(_loan_voucher_lines(loan), cfg),
+                            show_shop_name=cfg['show_shop_name'], font_size=cfg['font_size'], field_sizes=cfg['field_sizes'])
     await _print_escpos(data)
     await log_audit(user, 'gold_loan.voucher_print', 'gold_loan', loan_id, loan['loan_no'], {})
     return {'ok': True}
