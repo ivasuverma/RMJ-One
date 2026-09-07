@@ -251,15 +251,15 @@ async def create_cashbook_entry(body: CashBookEntryIn, user=Depends(require_admi
         # the other; a 'paid' entry means it went OUT to the other.
         src, dst = (other_counter, counter) if body.type == 'received' else (counter, other_counter)
         await _notify_module(
-            'cash_book', 'Cash transferred between counters',
+            'cash_book', 'Cash Transfer',
             f"{amt}: {src['name']} → {dst['name']} · by {user['name']}",
             '/cashbook', script='cashbook_transfer', admin_only=True,
         )
     elif user.get('role') == 'employee':
         direction = 'in' if body.type == 'received' else 'out'
         await _notify_module(
-            'cash_book', f"{user['name']} recorded cash {direction}",
-            f"{amt} · {counter['name']} · {body.name.strip()}",
+            'cash_book', f"Cash {direction.title()} Recorded",
+            f"{amt} · {counter['name']} · by {user['name']} · {body.name.strip()}",
             '/cashbook', script='cashbook_entry', admin_only=True,
         )
     return {k: v for k, v in entry.items() if k != '_id'}
@@ -318,8 +318,8 @@ async def update_cashbook_entry(entry_id: str, body: CashBookEntryUpdateIn, user
                 changes.append('note changed')
             if changes:
                 await _notify_module(
-                    'cash_book', f"{user['name']} edited a cash entry",
-                    ('; '.join(changes))[:300], '/cashbook', script='cashbook_edit', admin_only=True,
+                    'cash_book', 'Cash Entry Edited',
+                    f"by {user['name']} · " + ('; '.join(changes))[:280], '/cashbook', script='cashbook_edit', admin_only=True,
                 )
     return await db.cashbook_entries.find_one({'id': entry_id}, {'_id': 0})
 
