@@ -392,7 +392,7 @@ def _loan_voucher_lines(loan: dict) -> list:
 async def gold_loan_voucher_pdf(loan_id: str, _: dict = Depends(require_staff_or_module('gold_loans'))):
     loan = await _get_loan(loan_id)
     store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
-    pdf = _thermal_slip_pdf(store.get('name') or 'Ram Murti Jewellers', 'Loan Against Gold', _loan_voucher_lines(loan))
+    pdf = _thermal_slip_pdf(store.get('name') or 'Ram Murti Jewellers', 'Loan Against Gold', _loan_voucher_lines(loan), show_shop_name=False)
     return _pdf_response(pdf, f'gold-loan-{loan["loan_no"]}.pdf')
 
 
@@ -400,7 +400,7 @@ async def gold_loan_voucher_pdf(loan_id: str, _: dict = Depends(require_staff_or
 async def gold_loan_voucher_print(loan_id: str, user=Depends(require_staff_or_module('gold_loans'))):
     loan = await _get_loan(loan_id)
     store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
-    data = _escpos_receipt(store.get('name') or 'Ram Murti Jewellers', 'Loan Against Gold', _loan_voucher_lines(loan))
+    data = _escpos_receipt(store.get('name') or 'Ram Murti Jewellers', 'Loan Against Gold', _loan_voucher_lines(loan), show_shop_name=False)
     await _print_escpos(data)
     await log_audit(user, 'gold_loan.voucher_print', 'gold_loan', loan_id, loan['loan_no'], {})
     return {'ok': True}

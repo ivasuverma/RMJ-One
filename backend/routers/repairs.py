@@ -1499,7 +1499,7 @@ def _dmy(iso_date: Optional[str]) -> str:
     return f'{d}/{m}/{y}'
 
 
-def _thermal_slip_pdf(shop_name: str, heading: str, lines: list) -> bytes:
+def _thermal_slip_pdf(shop_name: str, heading: str, lines: list, show_shop_name: bool = True) -> bytes:
     """Narrow (80mm) receipt-style PDF meant to be printed on a thermal
     receipt printer via the browser's print dialog. `lines` is a list of
     (label, value) tuples, or a plain string for a divider/free line."""
@@ -1513,8 +1513,10 @@ def _thermal_slip_pdf(shop_name: str, heading: str, lines: list) -> bytes:
     doc = SimpleDocTemplate(buf, pagesize=(width, 200 * mm), leftMargin=4*mm, rightMargin=4*mm, topMargin=4*mm, bottomMargin=4*mm)
     styles = getSampleStyleSheet()
     dark = rlcolors.HexColor('#0D0D0D')
-    els = [
-        Paragraph(f"<b>{shop_name}</b>", ParagraphStyle('shop', parent=styles['Normal'], alignment=1, fontSize=11, textColor=dark)),
+    els = []
+    if show_shop_name:
+        els.append(Paragraph(f"<b>{shop_name}</b>", ParagraphStyle('shop', parent=styles['Normal'], alignment=1, fontSize=11, textColor=dark)))
+    els += [
         Paragraph(f"Mobile: {STORE_MOBILE}", ParagraphStyle('mob', parent=styles['Normal'], alignment=1, fontSize=9, textColor=rlcolors.HexColor('#555'))),
         Paragraph(heading, ParagraphStyle('head', parent=styles['Normal'], alignment=1, fontSize=10, textColor=rlcolors.HexColor('#555'))),
         Spacer(1, 3*mm), HRFlowable(width='100%', color=rlcolors.HexColor('#999')), Spacer(1, 2*mm),
@@ -1629,7 +1631,7 @@ def _escpos_wrapped(text: str, width: int):
             return
 
 
-def _escpos_receipt(shop_name: str, heading: str, lines: list) -> bytes:
+def _escpos_receipt(shop_name: str, heading: str, lines: list, show_shop_name: bool = True) -> bytes:
     """Builds raw ESC/POS bytes for an 80mm receipt. `lines` uses the same
     shape as _thermal_slip_pdf: (label, value) tuples, plain strings for a
     divider/free line, or '' for a blank line — so both the on-screen PDF and
@@ -1642,9 +1644,11 @@ def _escpos_receipt(shop_name: str, heading: str, lines: list) -> bytes:
     enc = _escpos_enc
     out = bytearray()
     out += _ESCPOS_INIT + _ESCPOS_LINE_SPACING
-    out += _ESCPOS_ALIGN_CENTER + _ESCPOS_BOLD_ON + _ESCPOS_SIZE_TALL
-    out += enc(shop_name) + b'\n'
-    out += _ESCPOS_SIZE_NORMAL
+    out += _ESCPOS_ALIGN_CENTER
+    if show_shop_name:
+        out += _ESCPOS_BOLD_ON + _ESCPOS_SIZE_TALL
+        out += enc(shop_name) + b'\n'
+        out += _ESCPOS_SIZE_NORMAL
     out += enc(f'Mobile: {STORE_MOBILE}') + b'\n' + _ESCPOS_BOLD_OFF
     out += enc(heading) + b'\n\n'
     out += enc('=' * _ESCPOS_WIDTH_CHARS) + b'\n\n'
