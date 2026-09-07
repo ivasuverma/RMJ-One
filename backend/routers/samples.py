@@ -11,6 +11,7 @@ New module, added alongside the §2.1 router split — see server.py for the
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from typing import Optional
+from datetime import date, timedelta
 import re
 import uuid
 from server import (
@@ -20,6 +21,7 @@ from server import (
     require_staff_or_module,
     require_admin_or_module,
     require_admin_or_module_right,
+    require_owner,
     SampleIn,
     SampleUpdateIn,
     SampleReceiveIn,
@@ -316,3 +318,67 @@ async def receive_sample(sample_id: str, body: SampleReceiveIn, user=Depends(req
     await _notify_module('samples', 'Sample received back',
                           f"{sample['sample_code']} · {sample['description']} from {sample['karigar_name']}{diff_note}", '/samples', script='sample_received')
     return await db.samples.find_one({'id': sample_id}, {'_id': 0})
+
+
+@router.get('/samples/analytics')
+async def samples_analytics(
+    period: str = Query(..., pattern='^(day|week|month)$'),
+    date_: str = Query(..., alias='date'),
+    _: dict = Depends(require_owner),
+):
+    """Shop-wide Stock In/Out throughput for the selected day/week/month —
+    how much gold went out and came back, by issue type and by karigar —
+    same day/week/month period shape as Cash Book and Attendance analytics.
+    Aggregated in Python rather than a Mongo pipeline, matching this
+    module's existing style (loss-ledger, cash-ledger) at a shop's scale."""
+    d = date.fromisoformat(date_)
+    if period == 'day':
+        start = end = d
+    elif period == 'week':
+        start = d - timedelta(days=d.weekday())
+        end = start + timedelta(days=6)
+    else:
+        start = d.replace(day=1)
+        end = (start.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+    start_s, end_s = start.isoformat(), end.isoformat()
+    end_next_s = (end + timedelta(days=1)).isoformat()
+
+    issued = await db.samples.find(
+        {'created_at': {'$gte': start_s, '$lt': end_next_s}},
+        {'_id': 0, 'created_at': 1, 'issue_type': 1, 'weight': 1, 'karigar_name': 1},
+    ).to_list(20000)
+    received = await db.samples.find(
+        {'received_at': {'$gte': start_s, '$lt': end_next_s}},
+        {'_id': 0, 'received_at': 1, 'received_weight': 1},
+    ).to_list(20000)
+
+    by_type: dict = {}
+    by_karigar: dict = {}
+    by_date: dict = {}
+    weight_issued = 0.0
+    for s in issued:
+        t = (s.get('issue_type') or '').strip() or 'Other'
+        by_type[t] = by_type.get(t, 0) + 1
+        weight_issued += float(s.get('weight') or 0)
+        kn = s.get('karigar_name')
+        if kn:
+            by_karigar[kn] = by_karigar.get(kn, 0) + 1
+        by_date.setdefault(s['created_at'][:10], {'issued': 0, 'received': 0})['issued'] += 1
+
+    weight_received = 0.0
+    for s in received:
+        weight_received += float(s.get('received_weight') or 0)
+        by_date.setdefault(s['received_at'][:10], {'issued': 0, 'received': 0})['received'] += 1
+
+    return {
+        'period': period, 'start_date': start_s, 'end_date': end_s,
+        'total_issued': len(issued), 'total_received': len(received),
+        'weight_issued': round(weight_issued, 3), 'weight_received': round(weight_received, 3),
+        'by_type': sorted(
+            [{'category': k, 'count': v} for k, v in by_type.items()], key=lambda x: -x['count'],
+        ),
+        'trend': [{'date': ds, **v} for ds, v in sorted(by_date.items())],
+        'top_karigars': sorted(
+            [{'name': k, 'count': v} for k, v in by_karigar.items()], key=lambda x: -x['count'],
+        )[:5],
+    }

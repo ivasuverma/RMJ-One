@@ -285,7 +285,11 @@ export default function DashboardScreen() {
               const tiles: Partial<Record<TileKey, TileSpec>> = {
                 attendance: {
                   key: 'attendance', show: hasModule('attendance'), icon: 'people-outline', label: 'Attendance',
-                  value: `${a.present}/${a.total}`, route: '/(tabs)/attendance',
+                  value: `${a.present}/${a.total}`,
+                  // Owner sees the analytics dashboard (day/week/month
+                  // present/late/absent charts); everyone else goes straight
+                  // to the regular Today/Payroll screen, same as before.
+                  route: user?.role === 'owner' ? '/attendance/analytics' : '/(tabs)/attendance',
                   details: [
                     { label: 'Present', value: String(a.present) }, { label: 'Absent', value: String(a.absent) },
                     { label: 'Late', value: String(a.late) }, { label: 'Not checked in', value: String(a.not_checked_in) },
@@ -302,7 +306,10 @@ export default function DashboardScreen() {
                 documents: { key: 'documents', show: hasModule('documents'), icon: 'documents-outline', label: 'Documents', value: String(data.documents_pending || 0), route: '/documents?tab=pending' },
                 stock: {
                   key: 'stock', show: hasModule('samples'), icon: 'diamond-outline', label: 'Stock In/Out',
-                  value: String(sm.with_karigar), route: '/samples?status=with_karigar',
+                  value: String(sm.with_karigar),
+                  // Owner sees the analytics dashboard; everyone else goes
+                  // straight to the with-karigar list, same as before.
+                  route: user?.role === 'owner' ? '/samples/analytics' : '/samples?status=with_karigar',
                   details: [
                     { label: 'With karigar', value: String(sm.with_karigar) }, { label: 'Overdue', value: String(sm.overdue) },
                     { label: 'Received today', value: String(sm.received_today) },
@@ -319,7 +326,10 @@ export default function DashboardScreen() {
                 },
                 repairs: {
                   key: 'repairs', show: showRepairsTile, icon: 'construct-outline', label: 'Repairs',
-                  value: String(r.total_open), route: '/repairs',
+                  value: String(r.total_open),
+                  // Owner sees the analytics dashboard; everyone else goes
+                  // straight to the repairs list, same as before.
+                  route: user?.role === 'owner' ? '/repairs/analytics' : '/repairs',
                   details: [
                     { label: 'Issued', value: String(r.with_karigar) }, { label: 'Ready', value: String(r.ready) },
                     { label: 'Delivered today', value: String(r.delivered_today) }, { label: 'Overdue', value: String(r.overdue) },

@@ -194,6 +194,116 @@ async def attendance_live(limit: int = 120, _: dict = Depends(require_staff), _m
     return events
 
 
+@router.get('/attendance/analytics')
+async def attendance_analytics(
+    period: str = Query(..., pattern='^(day|week|month)$'),
+    date_: str = Query(..., alias='date'),
+    _: dict = Depends(require_owner),
+):
+    """Shop-wide attendance for the selected day/week/month — present/late/
+    absent breakdown, a daily trend, and who's most often late or absent —
+    same day/week/month period shape as Cash Book analytics. Resolves each
+    employee-day with the same _resolve_attendance_state logic as the live
+    Attendance screen and Payroll, so the numbers always agree with those.
+    Looping employees x days in Python (rather than a Mongo pipeline) is
+    fine at a shop's scale — a month is at most a few hundred employee-days.
+    Holidays and the weekly off (Sunday) are excluded entirely, same as the
+    per-employee calendar view, since they're not attendance outcomes."""
+    d = date.fromisoformat(date_)
+    if period == 'day':
+        start = end = d
+    elif period == 'week':
+        start = d - timedelta(days=d.weekday())
+        end = start + timedelta(days=6)
+    else:
+        start = d.replace(day=1)
+        end = (start.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+    start_s, end_s = start.isoformat(), end.isoformat()
+    today_ds = today_str()
+    end_capped = min(end, date.fromisoformat(today_ds))  # days that haven't happened yet don't count
+
+    employees = await db.employees.find(
+        {'status': {'$ne': 'inactive'}}, {'_id': 0, 'password_hash': 0, 'photo': 0},
+    ).to_list(1000)
+    shifts_by_name = {}
+    async for s in db.shifts.find({}, {'_id': 0}):
+        shifts_by_name[s['name']] = s
+    remote_shifts = {n for n, s in shifts_by_name.items() if s.get('remote')}
+    employees = [e for e in employees if e.get('shift') not in remote_shifts]
+    emp_ids = [e['id'] for e in employees]
+    name_by_id = {e['id']: e['name'] for e in employees}
+
+    att_map = {}
+    async for a in db.attendance.find(
+        {'employee_id': {'$in': emp_ids}, 'date': {'$gte': start_s, '$lte': end_s}},
+        {'_id': 0, 'check_in.selfie': 0, 'check_out.selfie': 0},
+    ):
+        att_map[(a['employee_id'], a['date'])] = a
+    holidays = set()
+    async for h in db.holidays.find({'date': {'$gte': start_s, '$lte': end_s}}, {'_id': 0, 'date': 1}):
+        holidays.add(h['date'])
+    leaves_by_emp: dict = {}
+    async for l in db.leaves.find(
+        {'status': 'approved', 'from_date': {'$lte': end_s}, 'to_date': {'$gte': start_s}}, {'_id': 0},
+    ):
+        leaves_by_emp.setdefault(l['employee_id'], []).append(l)
+
+    store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
+    now_ist = now_utc().astimezone(IST)
+    minutes_now = now_ist.hour * 60 + now_ist.minute
+
+    counts = {'present': 0, 'late': 0, 'half_day': 0, 'absent': 0, 'missing_punch': 0, 'leave': 0}
+    trend: dict = {}
+    late_by_emp: dict = {}
+    absent_by_emp: dict = {}
+
+    d_iter = start
+    while d_iter <= end_capped:
+        ds = d_iter.isoformat()
+        if ds in holidays or d_iter.weekday() == 6:
+            d_iter += timedelta(days=1)
+            continue
+        is_today = ds == today_ds
+        day_bucket = trend.setdefault(ds, {'present': 0, 'absent': 0})
+        for e in employees:
+            a = att_map.get((e['id'], ds))
+            if a:
+                shift = shifts_by_name.get(e.get('shift'))
+                state = _resolve_attendance_state(a, e, shift, store, is_today, minutes_now)
+                status, is_late = state['status'], state['is_late']
+            elif any(l['from_date'] <= ds <= l['to_date'] for l in leaves_by_emp.get(e['id'], [])):
+                status, is_late = 'leave', False
+            else:
+                status, is_late = 'absent', False
+            bucket = 'late' if (status == 'present' and is_late) else status
+            if bucket in counts:
+                counts[bucket] += 1
+            if bucket in ('present', 'late', 'half_day'):
+                day_bucket['present'] += 1
+            elif bucket in ('absent', 'missing_punch'):
+                day_bucket['absent'] += 1
+            if bucket == 'late':
+                late_by_emp[e['id']] = late_by_emp.get(e['id'], 0) + 1
+            elif bucket == 'absent':
+                absent_by_emp[e['id']] = absent_by_emp.get(e['id'], 0) + 1
+        d_iter += timedelta(days=1)
+
+    def top(counter):
+        return [{'employee_id': k, 'name': name_by_id.get(k, '?'), 'count': v}
+                for k, v in sorted(counter.items(), key=lambda kv: -kv[1])[:5] if v > 0]
+
+    return {
+        'period': period, 'start_date': start_s, 'end_date': end_s,
+        'counts': counts,
+        'by_status': sorted(
+            [{'status': k, 'count': v} for k, v in counts.items() if v > 0], key=lambda x: -x['count'],
+        ),
+        'trend': [{'date': ds, **v} for ds, v in sorted(trend.items())],
+        'top_late': top(late_by_emp),
+        'top_absent': top(absent_by_emp),
+    }
+
+
 # ---- Calendar view + edit ----
 @router.get('/attendance/calendar/{emp_id}')
 async def attendance_calendar(emp_id: str, year: int, month: int, user=Depends(get_current)):

@@ -6,7 +6,7 @@ server.py and is imported from here — nothing about behavior changed,
 only where the code lives."""
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Optional
-from datetime import datetime, date, timezone
+from datetime import datetime, date, timedelta, timezone
 import uuid
 import re
 import asyncio
@@ -1291,6 +1291,71 @@ async def cash_ledger(cursor: Optional[str] = None, limit: int = 50, _: dict = D
     return {'entries': entries, 'next_cursor': next_cursor, 'by_mode': by_mode,
             'total_received': total_received, 'total_paid_out': total_paid_out,
             'net': round(total_received - total_paid_out, 2)}
+
+
+@router.get('/repairs/analytics')
+async def repairs_analytics(
+    period: str = Query(..., pattern='^(day|week|month)$'),
+    date_: str = Query(..., alias='date'),
+    _: dict = Depends(require_owner),
+):
+    """Shop-wide repairs throughput for the selected day/week/month — how
+    much came in, how much went out, revenue billed, and where it's split
+    by repair type and by karigar — same day/week/month period shape as
+    Cash Book and Attendance analytics. Aggregated in Python rather than a
+    Mongo pipeline, matching this module's existing style (cash-ledger,
+    loss-ledger) at a shop's scale."""
+    d = date.fromisoformat(date_)
+    if period == 'day':
+        start = end = d
+    elif period == 'week':
+        start = d - timedelta(days=d.weekday())
+        end = start + timedelta(days=6)
+    else:
+        start = d.replace(day=1)
+        end = (start.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+    start_s, end_s = start.isoformat(), end.isoformat()
+    end_next_s = (end + timedelta(days=1)).isoformat()
+
+    received_items = await db.repair_items.find(
+        {'created_at': {'$gte': start_s, '$lt': end_next_s}},
+        {'_id': 0, 'created_at': 1, 'repair_type': 1},
+    ).to_list(20000)
+    delivered_items = await db.repair_items.find(
+        {'delivered_at': {'$gte': start_s, '$lt': end_next_s}},
+        {'_id': 0, 'delivered_at': 1, 'billed_amount': 1, 'karigar_name': 1},
+    ).to_list(20000)
+
+    by_type: dict = {}
+    for i in received_items:
+        t = (i.get('repair_type') or '').strip() or 'Other'
+        by_type[t] = by_type.get(t, 0) + 1
+
+    by_date: dict = {}
+    for i in received_items:
+        by_date.setdefault(i['created_at'][:10], {'received': 0, 'delivered': 0})['received'] += 1
+
+    revenue = 0.0
+    by_karigar: dict = {}
+    for i in delivered_items:
+        revenue += float(i.get('billed_amount') or 0)
+        by_date.setdefault(i['delivered_at'][:10], {'received': 0, 'delivered': 0})['delivered'] += 1
+        kn = i.get('karigar_name')
+        if kn:
+            by_karigar[kn] = by_karigar.get(kn, 0) + 1
+
+    return {
+        'period': period, 'start_date': start_s, 'end_date': end_s,
+        'total_received': len(received_items), 'total_delivered': len(delivered_items),
+        'revenue': round(revenue, 2),
+        'by_type': sorted(
+            [{'category': k, 'count': v} for k, v in by_type.items()], key=lambda x: -x['count'],
+        ),
+        'trend': [{'date': ds, **v} for ds, v in sorted(by_date.items())],
+        'top_karigars': sorted(
+            [{'name': k, 'count': v} for k, v in by_karigar.items()], key=lambda x: -x['count'],
+        )[:5],
+    }
 
 
 def _bill_receipt_lines(item: dict) -> list:
