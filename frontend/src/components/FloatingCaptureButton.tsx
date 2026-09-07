@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { Modal, Pressable, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -20,9 +21,26 @@ import { useTheme } from '@/src/theme/ThemeContext';
 // instead of being laid out inside the screen's own view tree.
 // pointerEvents="box-none" on the wrapping layer lets touches pass through
 // to the screen underneath everywhere except the button itself.
+//
+// Mounts only after the first client-side effect fires, rather than being
+// visible from this component's very first render. This app builds as a
+// static web export (app.json web.output: 'static') — every OTHER Modal
+// here (Sheet.tsx and everything built on it) only ever flips visible in
+// response to a later tap, i.e. always as a state change well after
+// hydration; this is the only one meant to be showing from the moment the
+// screen loads. react-native-web's Modal renders its very first pass at
+// opacity 0 (before its own useEffect flips it visible next tick) — for a
+// modal already settled into a later state that's imperceptible, but for
+// one appearing during/right after hydration on a static build it's a
+// plausible way to end up stuck invisible. Deferring the whole Modal one
+// tick past mount makes this button behave like every other one instead
+// of being the only Modal in the app shown from the first render.
 export function FloatingCaptureButton({ onPress, testID }: { onPress: () => void; testID?: string }) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
+  if (!mounted) return null;
   return (
     <Modal visible transparent animationType="none" statusBarTranslucent>
       <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
