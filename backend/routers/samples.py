@@ -27,6 +27,7 @@ from server import (
     _notify_module,
     _pdf_response,
     get_print_config,
+    _make_photo_thumb,
 )
 from print_templates import apply_field_config
 # Thermal-printer helpers live in routers/repairs.py (where they were first
@@ -66,7 +67,8 @@ async def create_samples(body: SampleIn, user=Depends(require_admin_or_module('s
         sample = {
             'id': sample_id, 'sample_code': sample_code, 'description': spec.description,
             'tag_number': spec.tag_number or '', 'weight': spec.weight, 'pc_count': spec.pc_count or 1,
-            'photo': spec.photo or '', 'issue_type': body.issue_type or '', 'due_date': body.due_date,
+            'photo': spec.photo or '', 'photo_thumb': _make_photo_thumb(spec.photo or ''),
+            'issue_type': body.issue_type or '', 'due_date': body.due_date,
             'karigar_id': karigar['id'], 'karigar_name': karigar['name'],
             'status': 'with_karigar',
             'issued_at': iso, 'issued_by': user['name'], 'issued_by_id': user['id'],
@@ -187,7 +189,9 @@ async def update_sample(sample_id: str, body: SampleUpdateIn, user=Depends(requi
     if body.pc_count is not None: upd['pc_count'] = max(1, body.pc_count)
     if body.issue_type is not None: upd['issue_type'] = body.issue_type
     if body.due_date is not None: upd['due_date'] = body.due_date or None
-    if body.photo is not None: upd['photo'] = body.photo
+    if body.photo is not None:
+        upd['photo'] = body.photo
+        upd['photo_thumb'] = _make_photo_thumb(body.photo)
     if body.note is not None: upd['note'] = body.note
     if body.weight is not None and body.weight > 0 and round(body.weight, 3) != round(sample['weight'], 3):
         upd['weight'] = body.weight

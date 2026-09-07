@@ -17,8 +17,22 @@ import { useTheme } from '@/src/theme/ThemeContext';
 import { PunchCaptureModal, PunchResult } from '@/src/components/PunchCaptureModal';
 import { UploadQueueBadge } from '@/src/components/UploadQueueBadge';
 import { AppSetupBanner } from '@/src/components/AppSetupBanner';
+import { QuickDocCapture } from '@/src/components/QuickDocCapture';
+import { FloatingCaptureButton } from '@/src/components/FloatingCaptureButton';
 import { haptics } from '@/src/utils/haptics';
 import { useToast } from '@/src/components/ui';
+
+// Modules a tile can be shown for on this dashboard — icon/label/route match
+// the same module rows on the Work tab ((emp)/work.tsx) so a module looks
+// and navigates identically wherever it appears.
+const MODULE_TILES: { key: string; label: string; icon: keyof typeof Ionicons.glyphMap; route: string }[] = [
+  { key: 'repairs', label: 'Repairs', icon: 'construct-outline', route: '/repairs' },
+  { key: 'samples', label: 'Stock In/Out', icon: 'diamond-outline', route: '/samples' },
+  { key: 'cash_book', label: 'Cash Book', icon: 'wallet-outline', route: '/cashbook' },
+  { key: 'documents', label: 'Documents', icon: 'documents-outline', route: '/documents' },
+  { key: 'customer_ledger', label: 'Customer Ledger', icon: 'person-outline', route: '/reports/customer-ledger' },
+  { key: 'karigar_ledger', label: 'Karigar Ledger', icon: 'hammer-outline', route: '/reports/karigar-ledger' },
+];
 
 type Att = {
   id?: string;
@@ -38,7 +52,7 @@ const fmtTime = (iso?: string) => {
 };
 
 export default function EmployeeHome() {
-  const { user } = useAuth();
+  const { user, hasModule } = useAuth();
   // Work-from-home staff don't record attendance — hide the punch card and
   // the check-in/out reminders for them.
   const isRemote = !!user?.remote;
@@ -56,6 +70,8 @@ export default function EmployeeHome() {
   const [showPunch, setShowPunch] = useState<null | 'check_in' | 'check_out'>(null);
   const [unread, setUnread] = useState(0);
   const [myTasks, setMyTasks] = useState<{ id: string; title: string; due_date?: string }[]>([]);
+  const [captureDoc, setCaptureDoc] = useState(false);
+  const moduleTiles = MODULE_TILES.filter((m) => hasModule(m.key));
 
   const load = useCallback(async () => {
     try {
@@ -174,40 +190,55 @@ export default function EmployeeHome() {
             )}
             {!isRemote && (
             <View style={styles.punchCard} testID="punch-card">
-              <Text style={styles.punchLabel}>TODAY&apos;S PUNCH</Text>
+              <View style={styles.punchTopRow}>
+                <Text style={styles.punchLabel}>TODAY&apos;S PUNCH</Text>
+                {!!att?.is_late && <View style={styles.lateBadge}><Ionicons name="warning-outline" size={11} color={colors.onWarning} /><Text style={styles.lateText}>Late</Text></View>}
+                {!!att?.working_hours && <Text style={styles.hoursText}>{att.working_hours}h worked</Text>}
+              </View>
               <View style={styles.punchRow}>
                 <PunchSlot label="Check In" time={fmtTime(att?.check_in?.timestamp)} icon="log-in-outline" done={hasCheckIn} testID="slot-check-in" />
+                <View style={styles.punchDivider} />
                 <PunchSlot label="Check Out" time={fmtTime(att?.check_out?.timestamp)} icon="log-out-outline" done={hasCheckOut} testID="slot-check-out" />
               </View>
 
-              {!!att?.is_late && <View style={styles.lateBadge}><Ionicons name="warning-outline" size={12} color={colors.onWarning} /><Text style={styles.lateText}>Marked late today</Text></View>}
-              {!!att?.working_hours && <Text style={styles.hoursText}>{att.working_hours} hours worked today</Text>}
-
               {!appCheckinEnabled && (
                 <View style={styles.doneBadge} testID="app-checkin-disabled-notice">
-                  <Ionicons name="finger-print-outline" size={18} color={colors.mutedText} />
-                  <Text style={styles.doneText}>Attendance is tracked via biometric device here. Check-in/out from the app is turned off.</Text>
+                  <Ionicons name="finger-print-outline" size={16} color={colors.mutedText} />
+                  <Text style={styles.doneText}>Tracked via biometric device — app check-in/out is off.</Text>
                 </View>
               )}
               {appCheckinEnabled && !hasCheckIn && (
                 <Pressable onPress={() => setShowPunch('check_in')} style={styles.punchBtn} testID="btn-check-in">
-                  <Ionicons name="log-in" size={20} color={colors.onBrandPrimary} />
+                  <Ionicons name="log-in" size={18} color={colors.onBrandPrimary} />
                   <Text style={styles.punchBtnText}>Check In</Text>
                 </Pressable>
               )}
               {appCheckinEnabled && hasCheckIn && !hasCheckOut && (
                 <Pressable onPress={() => setShowPunch('check_out')} style={[styles.punchBtn, styles.punchBtnOut]} testID="btn-check-out">
-                  <Ionicons name="log-out" size={20} color={colors.onSurface} />
+                  <Ionicons name="log-out" size={18} color={colors.onSurface} />
                   <Text style={[styles.punchBtnText, { color: colors.onSurface }]}>Check Out</Text>
                 </Pressable>
               )}
               {appCheckinEnabled && hasCheckIn && hasCheckOut && (
                 <View style={styles.doneBadge} testID="punch-done-badge">
-                  <Ionicons name="checkmark-circle" size={18} color={colors.brandPrimary} />
+                  <Ionicons name="checkmark-circle" size={16} color={colors.brandPrimary} />
                   <Text style={styles.doneText}>All punches done · See you tomorrow</Text>
                 </View>
               )}
             </View>
+            )}
+
+            {/* Module tiles — one per module this employee has been granted,
+                same icon/label/route as the equivalent Work-tab row. */}
+            {moduleTiles.length > 0 && (
+              <>
+                <Text style={styles.section}>My modules</Text>
+                <View style={styles.tileGrid}>
+                  {moduleTiles.map((m) => (
+                    <ModuleTile key={m.key} icon={m.icon} label={m.label} onPress={() => router.push(m.route as any)} testID={`home-tile-${m.key}`} />
+                  ))}
+                </View>
+              </>
             )}
 
             {/* My tasks due today / overdue */}
@@ -251,6 +282,10 @@ export default function EmployeeHome() {
         )}
       </ScrollView>
 
+      {hasModule('documents') && (
+        <FloatingCaptureButton onPress={() => setCaptureDoc(true)} testID="emp-home-capture-btn" />
+      )}
+
       {showPunch && (
         <PunchCaptureModal
           visible={!!showPunch}
@@ -259,6 +294,7 @@ export default function EmployeeHome() {
           onCapture={doPunch}
         />
       )}
+      <QuickDocCapture visible={captureDoc} onClose={() => setCaptureDoc(false)} />
     </SafeAreaView>
   );
 }
@@ -312,17 +348,32 @@ function ReminderBanner({ icon, color, title, subtitle, actions, testID }: {
   );
 }
 
+// Compact, chrome-free layout — an icon and two lines of text, no boxed
+// background/border per slot (the old design), just typography + a thin
+// divider between the two slots for the "Apple style" ask.
 function PunchSlot({ label, time, icon, done, testID }: { label: string; time: string; icon: any; done: boolean; testID?: string }) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
-    <View style={[styles.slot, done && styles.slotDone]} testID={testID}>
-      <View style={styles.slotIconWrap}>
-        <Ionicons name={icon} size={18} color={done ? colors.brandPrimary : colors.mutedText} />
+    <View style={styles.slot} testID={testID}>
+      <Ionicons name={icon} size={16} color={done ? colors.brandPrimary : colors.mutedText} />
+      <View style={{ marginLeft: spacing.sm }}>
+        <Text style={styles.slotLabel}>{label}</Text>
+        <Text style={[styles.slotTime, done && { color: colors.onSurface }]}>{done ? time : '—:—'}</Text>
       </View>
-      <Text style={styles.slotLabel}>{label}</Text>
-      <Text style={[styles.slotTime, done && { color: colors.onSurface }]}>{done ? time : '—:—'}</Text>
     </View>
+  );
+}
+
+function ModuleTile({ icon, label, onPress, testID }: { icon: any; label: string; onPress: () => void; testID?: string }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+  return (
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.moduleTile, pressed && { opacity: 0.85 }]} testID={testID}>
+      <View style={styles.moduleTileIcon}><Ionicons name={icon} size={20} color={colors.brandSecondary} /></View>
+      <Text style={styles.moduleTileLabel} numberOfLines={1}>{label}</Text>
+      <Ionicons name="chevron-forward" size={16} color={colors.mutedText} />
+    </Pressable>
   );
 }
 
@@ -384,30 +435,27 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
 
   punchCard: {
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg,
-    borderWidth: 1, borderColor: colors.border, padding: spacing.lg,
+    borderWidth: 1, borderColor: colors.border, padding: spacing.md,
   },
-  punchLabel: { color: colors.brandSecondary, fontSize: 11, letterSpacing: 1, marginBottom: spacing.md },
-  punchRow: { flexDirection: 'row', gap: spacing.md, marginBottom: spacing.md },
-  slot: {
-    flex: 1, backgroundColor: colors.surfaceTertiary, borderRadius: radius.md,
-    borderWidth: 1, borderColor: colors.border, padding: spacing.md, alignItems: 'center',
-  },
-  slotDone: { borderColor: colors.brandPrimary, backgroundColor: colors.brandTertiary },
-  slotIconWrap: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', marginBottom: 6 },
+  punchTopRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm },
+  punchLabel: { flex: 1, color: colors.brandSecondary, fontSize: 11, letterSpacing: 1 },
+  punchRow: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.sm },
+  slot: { flex: 1, flexDirection: 'row', alignItems: 'center' },
+  punchDivider: { width: 1, height: 30, backgroundColor: colors.border, marginHorizontal: spacing.md },
   slotLabel: { color: colors.mutedText, fontSize: 11 },
-  slotTime: { color: colors.mutedText, fontSize: 18, fontWeight: '700', marginTop: 2 },
+  slotTime: { color: colors.mutedText, fontSize: 15, fontWeight: '700', marginTop: 1 },
 
   lateBadge: {
-    flexDirection: 'row', gap: 4, alignItems: 'center', alignSelf: 'flex-start',
+    flexDirection: 'row', gap: 4, alignItems: 'center',
     backgroundColor: colors.warning, borderColor: colors.onWarning, borderWidth: 1,
-    paddingHorizontal: 10, paddingVertical: 4, borderRadius: radius.pill, marginBottom: spacing.sm,
+    paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.pill,
   },
-  lateText: { color: colors.onWarning, fontSize: 11, fontWeight: '700' },
-  hoursText: { color: colors.onSurfaceTertiary, fontSize: 12, marginBottom: spacing.md },
+  lateText: { color: colors.onWarning, fontSize: 10.5, fontWeight: '700' },
+  hoursText: { color: colors.onSurfaceTertiary, fontSize: 11.5 },
 
   punchBtn: {
     flexDirection: 'row', gap: spacing.sm, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: 14, marginTop: spacing.sm,
+    backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: 11, marginTop: spacing.sm,
   },
   punchBtnOut: { backgroundColor: colors.surfaceTertiary, borderWidth: 1, borderColor: colors.brand },
   punchBtnText: { color: colors.onBrandPrimary, fontWeight: '800', fontSize: 15, letterSpacing: 0.4 },
@@ -420,6 +468,14 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   doneText: { color: colors.brandSecondary, fontWeight: '700', fontSize: 13 },
 
   section: { color: colors.brandSecondary, fontSize: 11, letterSpacing: 1, textTransform: 'uppercase', marginTop: spacing.xl, marginBottom: spacing.sm },
+  tileGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  moduleTile: {
+    flexBasis: '48%', flexGrow: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    padding: spacing.md,
+  },
+  moduleTileIcon: { width: 38, height: 38, borderRadius: 11, backgroundColor: colors.surfaceTertiary, alignItems: 'center', justifyContent: 'center' },
+  moduleTileLabel: { flex: 1, color: colors.onSurface, fontSize: 13.5, fontWeight: '600' },
   taskHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   taskSeeAll: { color: colors.brandSecondary, fontSize: 12, fontWeight: '700', marginTop: spacing.xl },
   taskCard: {

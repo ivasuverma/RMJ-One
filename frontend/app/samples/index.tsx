@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, RefreshControl } from 'react-native';
+import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
@@ -12,7 +13,7 @@ type Sample = {
   id: string; sample_code: string; description: string; tag_number: string;
   weight: number; pc_count?: number; karigar_id: string; karigar_name: string;
   status: 'with_karigar' | 'received'; weight_diff: number | null;
-  due_date: string | null; issue_type?: string;
+  due_date: string | null; issue_type?: string; photo_thumb?: string;
   issued_at: string; received_at: string | null; issued_by?: string;
 };
 type Pipe = { with_karigar: number; overdue: number; received_today: number };
@@ -120,6 +121,13 @@ export default function SamplesScreen() {
           return (
             <Pressable key={s.id} onPress={() => router.push(`/samples/${s.id}` as any)} style={styles.card} testID={`sample-${s.id}`}>
               <View style={styles.cardTop}>
+                {s.photo_thumb ? (
+                  <Image source={{ uri: s.photo_thumb }} style={styles.cardThumb} testID={`sample-thumb-${s.id}`} />
+                ) : (
+                  <View style={styles.cardThumbFallback} testID={`sample-thumb-fallback-${s.id}`}>
+                    <Ionicons name="diamond-outline" size={20} color={colors.mutedText} />
+                  </View>
+                )}
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <Text style={styles.cName}>{s.karigar_name}</Text>
                   {!!s.issue_type && <Text style={styles.cType}>{s.issue_type}</Text>}
@@ -192,6 +200,11 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.sm,
   },
   cardTop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
+  cardThumb: { width: 44, height: 44, borderRadius: radius.sm, backgroundColor: colors.surfaceTertiary },
+  cardThumbFallback: {
+    width: 44, height: 44, borderRadius: radius.sm, backgroundColor: colors.surfaceTertiary,
+    alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border,
+  },
   actRow: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 6 },
   recvBtn: { backgroundColor: colors.brandPrimary, borderRadius: 8, paddingVertical: 6, paddingHorizontal: 12 },
   recvBtnText: { color: colors.onBrandPrimary, fontSize: 12, fontWeight: '700' },

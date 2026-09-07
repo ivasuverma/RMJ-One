@@ -1,0 +1,35 @@
+import { Pressable, StyleSheet } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTheme } from '@/src/theme/ThemeContext';
+
+// Bottom-right floating quick-capture button — sits above the employee tab
+// bar (46 + safe-area-bottom tall, see (emp)/_layout.tsx) on any screen that
+// renders it. Purely the button; each screen owns its own QuickDocCapture
+// sheet + visibility state, same as the existing top-bar capture icon on
+// the Work tab did.
+export function FloatingCaptureButton({ onPress, testID }: { onPress: () => void; testID?: string }) {
+  const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
+  return (
+    <Pressable
+      onPress={onPress}
+      style={[
+        styles.fab,
+        { bottom: 46 + Math.max(insets.bottom, 20) + 16, backgroundColor: colors.brandPrimary, shadowColor: '#000' },
+      ]}
+      testID={testID}
+      hitSlop={8}
+    >
+      <Ionicons name="camera" size={24} color={colors.onBrandPrimary} />
+    </Pressable>
+  );
+}
+
+const styles = StyleSheet.create({
+  fab: {
+    position: 'absolute', right: 20, width: 56, height: 56, borderRadius: 28,
+    alignItems: 'center', justifyContent: 'center',
+    shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 6,
+  },
+});

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -147,11 +147,13 @@ export default function RepairOrdersScreen() {
           // Extra context per stage — due date always (weight moved up next
           // to the description line), then whichever people/dates matter for
           // that particular stage.
-          const detailParts: string[] = [];
+          const detailParts: (string | ReactNode)[] = [];
           if (i.due_date && i.status !== 'delivered') detailParts.push(`Due ${i.due_date}`);
-          if (i.status === 'with_karigar' && i.karigar_name) detailParts.push(`With ${i.karigar_name}`);
+          if (i.status === 'with_karigar' && i.karigar_name) {
+            detailParts.push(<>With <Text style={styles.cKarigar}>{i.karigar_name}</Text></>);
+          }
           if (i.status === 'delivered') {
-            if (i.karigar_name) detailParts.push(`Issued to ${i.karigar_name}`);
+            if (i.karigar_name) detailParts.push(<>Issued to <Text style={styles.cKarigar}>{i.karigar_name}</Text></>);
             if (i.delivered_by) detailParts.push(`Delivered by ${i.delivered_by}`);
             if (i.delivered_at) detailParts.push(istDateTime(i.delivered_at));
           } else if (i.issued_by) {
@@ -171,7 +173,9 @@ export default function RepairOrdersScreen() {
                     {i.item_code} · <Text style={styles.cDesc}>{i.description}</Text> · <Text style={styles.cWeight}>{i.gross_weight.toFixed(3)}g</Text>
                   </Text>
                   {!!i.repair_type && <Text style={styles.cType}>{i.repair_type}</Text>}
-                  <Text style={styles.detail} numberOfLines={2}>{detailParts.join(' · ')}</Text>
+                  <Text style={styles.detail} numberOfLines={2}>
+                    {detailParts.map((p, idx) => <Text key={idx}>{idx > 0 ? ' · ' : ''}{p}</Text>)}
+                  </Text>
                 </View>
                 <View style={[styles.pill, { backgroundColor: toneBg(pill.tone) }]}><Text style={[styles.pillText, { color: toneColor(pill.tone) }]}>{pill.label}</Text></View>
               </View>
@@ -228,6 +232,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   cWeight: { color: colors.onSurface, fontWeight: '700' },
   cType: { color: colors.brandSecondary, fontSize: 11, fontWeight: '700', marginTop: 3 },
   detail: { color: colors.onSurfaceTertiary, fontSize: 11.5, marginTop: 3, lineHeight: 15 },
+  cKarigar: { color: colors.brandSecondary, fontWeight: '700' },
   pill: { paddingHorizontal: 9, paddingVertical: 4, borderRadius: 8 },
   pillText: { fontSize: 11, fontWeight: '700', letterSpacing: 0.2 },
   actRow: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 6 },

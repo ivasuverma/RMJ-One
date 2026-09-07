@@ -9,6 +9,7 @@ import { todayIST } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { QuickDocCapture } from '@/src/components/QuickDocCapture';
+import { FloatingCaptureButton } from '@/src/components/FloatingCaptureButton';
 import { UploadQueueBadge } from '@/src/components/UploadQueueBadge';
 import { AppSetupBanner } from '@/src/components/AppSetupBanner';
 
@@ -125,11 +126,6 @@ export default function EmployeeWorkScreen() {
             <Text style={styles.sub}>What&apos;s in progress — and what to do next.</Text>
           </View>
           <UploadQueueBadge />
-          {hasDocs && (
-            <Pressable onPress={() => setCaptureDoc(true)} style={styles.captureBtn} testID="emp-work-capture-btn" hitSlop={8}>
-              <Ionicons name="camera" size={22} color={colors.brandSecondary} />
-            </Pressable>
-          )}
         </View>
 
         <AppSetupBanner />
@@ -142,6 +138,7 @@ export default function EmployeeWorkScreen() {
 
         <View style={{ height: spacing.xxl }} />
       </ScrollView>
+      {hasDocs && <FloatingCaptureButton onPress={() => setCaptureDoc(true)} testID="emp-work-capture-btn" />}
       <QuickDocCapture visible={captureDoc} onClose={() => setCaptureDoc(false)} onSaved={load} />
     </SafeAreaView>
   );
@@ -153,7 +150,6 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   h1: { color: colors.onSurface, fontSize: 30, fontWeight: '700', fontFamily: fonts.display, letterSpacing: -0.5 },
   sub: { color: colors.onSurfaceSecondary, fontSize: 15, marginTop: 6 },
   titleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
-  captureBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
   sectionLabel: { color: colors.mutedText, fontSize: 12, fontWeight: '700', letterSpacing: 0.8, textTransform: 'uppercase', marginTop: spacing.xl, marginBottom: spacing.md },
 
   prow: {
