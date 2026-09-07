@@ -26,7 +26,7 @@ from datetime import datetime
 
 from server import (
     db, now_utc, IST, format_ist_date_time, GOLD_RATE_SOURCE_URL, GOLD_RATE_ROW_LABEL, GOLD_RATE_SILVER_LABEL,
-    GOLD_RATE_CHANNEL_ID, send_whatsapp_channel,
+    GOLD_RATE_CHANNEL_ID, send_whatsapp_channel, _notify_module,
 )
 
 logger = logging.getLogger('gold_rate')
@@ -228,6 +228,11 @@ async def run_fetch_and_store() -> dict:
         # Same scrape feeds the chatbot's cache too — no need for the
         # periodic refresh to launch a second Chrome at the same moment.
         await _store_live_rate(fetched_gold, fetched_silver, gold_rate, silver_rate, cfg, doc['fetched_at'])
+        await _notify_module(
+            'gold_rate', 'Gold Rate Updated',
+            f"Gold ₹{gold_rate:,}/g · Silver ₹{silver_rate:,}/g", '/settings/whatsapp',
+            script='gold_rate_fetched',
+        )
         if cfg.get('auto_send_enabled') and is_weekend_ist():
             logger.info('gold rate auto-send skipped — weekend (market closed)')
         elif cfg.get('auto_send_enabled'):

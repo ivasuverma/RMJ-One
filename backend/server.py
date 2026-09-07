@@ -1987,6 +1987,7 @@ NOTIFICATION_MODULES = [
     {'key': 'cash_book', 'label': 'Cash Book', 'default_roles': ['owner', 'admin']},
     {'key': 'documents', 'label': 'Documents', 'default_roles': ['owner', 'admin']},
     {'key': 'gold_loans', 'label': 'Gold Loans', 'default_roles': ['owner', 'admin']},
+    {'key': 'gold_rate', 'label': 'Gold Rate', 'default_roles': ['owner', 'admin']},
     {'key': 'system_health', 'label': 'System Health', 'default_roles': ['owner', 'admin']},
 ]
 NOTIFICATION_MODULE_KEYS = {m['key'] for m in NOTIFICATION_MODULES}
@@ -2017,8 +2018,10 @@ NOTIFICATION_SCRIPTS = [
     {'key': 'payroll_auto_advance', 'module': 'payroll', 'label': 'Auto advance recorded', 'admin_only': True},
     {'key': 'repair_new_order', 'module': 'repairs', 'label': 'New repair order created', 'admin_only': False},
     {'key': 'repair_item_ready', 'module': 'repairs', 'label': 'Repair item ready / back from karigar', 'admin_only': False},
+    {'key': 'repair_followup', 'module': 'repairs', 'label': 'Follow-up: issue to / receive from karigar (daily, noon)', 'admin_only': False},
     {'key': 'sample_issued', 'module': 'samples', 'label': 'Sample(s) issued', 'admin_only': False},
     {'key': 'sample_received', 'module': 'samples', 'label': 'Sample received back', 'admin_only': False},
+    {'key': 'sample_followup', 'module': 'samples', 'label': 'Follow-up: receive sample back (daily, noon)', 'admin_only': False},
     {'key': 'cashbook_transfer', 'module': 'cash_book', 'label': 'Cash transferred between counters', 'admin_only': True},
     {'key': 'cashbook_entry', 'module': 'cash_book', 'label': 'Employee recorded cash in / out', 'admin_only': True},
     {'key': 'cashbook_edit', 'module': 'cash_book', 'label': 'Employee edited a cash entry', 'admin_only': True},
@@ -2032,6 +2035,7 @@ NOTIFICATION_SCRIPTS = [
     {'key': 'whatsapp_disconnected', 'module': 'system_health', 'label': 'WhatsApp gateway disconnected', 'admin_only': True},
     {'key': 'biometric_device_offline', 'module': 'system_health', 'label': 'Biometric device stopped responding', 'admin_only': True},
     {'key': 'printer_failed', 'module': 'system_health', 'label': 'Thermal printer unreachable', 'admin_only': True},
+    {'key': 'gold_rate_fetched', 'module': 'gold_rate', 'label': 'Gold/silver rate auto-fetched', 'admin_only': False},
 ]
 NOTIFICATION_SCRIPTS_BY_MODULE: Dict[str, list] = {}
 for _s in NOTIFICATION_SCRIPTS:
@@ -2316,9 +2320,14 @@ async def _check_repair_sample_followups():
     needs their action — not yet sent out to a karigar, or sent out and not
     yet received back. Fires again every day the item stays pending (the
     guard is per-day, not per-item), same idea as the morning/evening
-    attendance reminders. Personal reminder to the specific person
-    responsible, so — like those — it's not gated by the owner's Notification
-    Settings module toggle."""
+    attendance reminders.
+
+    Routed through _notify_module with subject_employee_id so each person can
+    toggle their own follow-up reminder off (People > their profile >
+    Notifications > Repair/Stock In-Out > Follow-up), same as any other
+    module alert — owners/admins additionally see every one of these (that's
+    subject_employee_id's normal broadcast behavior), which doubles as an
+    overview of who still has pending follow-ups."""
     now_ist = now_utc().astimezone(IST)
     today = now_ist.date().isoformat()
     minutes_now = now_ist.hour * 60 + now_ist.minute
@@ -2352,16 +2361,18 @@ async def _check_repair_sample_followups():
 
     recipients = set(to_issue) | set(to_receive_repair) | set(to_receive_sample)
     for uid in recipients:
-        lines = []
+        repair_lines = []
         if to_issue.get(uid):
-            lines.append(f"Issue to karigar: {_summarize_codes(to_issue[uid])}")
+            repair_lines.append(f"Issue to karigar: {_summarize_codes(to_issue[uid])}")
         if to_receive_repair.get(uid):
-            lines.append(f"Receive from karigar: {_summarize_codes(to_receive_repair[uid])}")
+            repair_lines.append(f"Receive from karigar: {_summarize_codes(to_receive_repair[uid])}")
+        if repair_lines:
+            await _notify_module('repairs', 'Repair Follow-up', ' · '.join(repair_lines), '/repairs',
+                                  script='repair_followup', subject_employee_id=uid)
         if to_receive_sample.get(uid):
-            lines.append(f"Receive sample: {_summarize_codes(to_receive_sample[uid])}")
-        if not lines:
-            continue
-        await notify_user(uid, 'Repair/sample follow-up', ' · '.join(lines), '/repairs')
+            await _notify_module('samples', 'Stock In/Out Follow-up',
+                                  f"Receive sample: {_summarize_codes(to_receive_sample[uid])}", '/samples',
+                                  script='sample_followup', subject_employee_id=uid)
 
     await db.followup_reminders.update_one(
         {'date': today},
