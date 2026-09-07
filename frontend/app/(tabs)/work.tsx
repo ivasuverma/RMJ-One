@@ -9,6 +9,7 @@ import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { ErrorState, Sheet } from '@/src/components/ui';
 import { QuickDocCapture } from '@/src/components/QuickDocCapture';
+import { FloatingCaptureButton } from '@/src/components/FloatingCaptureButton';
 import { UploadQueueBadge } from '@/src/components/UploadQueueBadge';
 
 // Work — the operational hub, laid out to the v2 design comp: a search bar,
@@ -174,11 +175,6 @@ export default function WorkScreen() {
             <Text style={styles.sub}>What&apos;s in progress — and what to do next.</Text>
           </View>
           {hasModule('documents') && <UploadQueueBadge />}
-          {hasModule('documents') && (
-            <Pressable onPress={() => setCaptureDoc(true)} style={styles.captureBtn} testID="work-capture-btn" hitSlop={8}>
-              <Ionicons name="camera" size={22} color={colors.brandSecondary} />
-            </Pressable>
-          )}
           <Pressable onPress={() => setComposeOpen(true)} style={[styles.captureBtn, styles.captureBtnGold]} testID="work-compose-btn" hitSlop={8}>
             <Ionicons name="add" size={24} color={colors.onBrandPrimary} />
           </Pressable>
@@ -271,6 +267,7 @@ export default function WorkScreen() {
           ));
         })()}
       </Sheet>
+      {hasModule('documents') && <FloatingCaptureButton onPress={() => setCaptureDoc(true)} testID="work-capture-btn" />}
       <QuickDocCapture visible={captureDoc} onClose={() => setCaptureDoc(false)} onSaved={load} />
     </SafeAreaView>
   );
