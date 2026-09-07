@@ -78,7 +78,7 @@ export function OwnerTabBar({ state, descriptors, navigation }: BottomTabBarProp
             testID="owner-tab-capture-btn"
             hitSlop={8}
           >
-            <Ionicons name="camera" size={24} color={colors.onBrandPrimary} />
+            <Ionicons name="camera" size={28} color={colors.onBrandPrimary} />
           </Pressable>
         </View>
       )}
@@ -97,8 +97,8 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   tabLabel: { fontSize: 10.5, fontWeight: '600', letterSpacing: 0.3 },
   centerSlot: { flex: 1, alignItems: 'center' },
   centerBtn: {
-    width: 52, height: 52, borderRadius: 26, backgroundColor: colors.brandPrimary,
-    alignItems: 'center', justifyContent: 'center', marginTop: -26,
+    width: 64, height: 64, borderRadius: 32, backgroundColor: colors.brandPrimary,
+    alignItems: 'center', justifyContent: 'center', marginTop: -32,
     shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 6,
     borderWidth: 3, borderColor: colors.surface,
   },
