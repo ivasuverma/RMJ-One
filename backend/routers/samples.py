@@ -105,7 +105,7 @@ class IssueTypesIn(BaseModel):
 
 
 @router.put('/samples/issue-types')
-async def set_issue_types(body: IssueTypesIn, user=Depends(require_admin_or_module('samples'))):
+async def set_issue_types(body: IssueTypesIn, user=Depends(require_admin_or_module_right('samples', 'edit'))):
     cleaned = [t.strip() for t in body.issue_types if t.strip()]
     await db.settings.update_one(
         {'id': 'samples'}, {'$set': {'id': 'samples', 'issue_types': cleaned, 'updated_at': now_utc().isoformat()}}, upsert=True,

@@ -329,7 +329,7 @@ async def update_gold_loan_transaction(
 
 @router.delete('/gold-loans/{loan_id}/transactions/{txn_id}')
 async def delete_gold_loan_transaction(
-    loan_id: str, txn_id: str, user=Depends(require_admin_or_module_right('gold_loans', 'edit')),
+    loan_id: str, txn_id: str, user=Depends(require_admin_or_module_right('gold_loans', 'delete')),
 ):
     loan = await _get_loan(loan_id)
     txn = await db.gold_loan_transactions.find_one({'id': txn_id, 'loan_id': loan_id}, {'_id': 0})

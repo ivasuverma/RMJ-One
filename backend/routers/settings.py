@@ -16,6 +16,7 @@ from server import (
     require_module,
     require_staff_or_module,
     require_admin_or_module,
+    require_admin_or_module_right,
     StoreSettingsIn,
     log_audit,
     get_whatsapp_status,
@@ -228,7 +229,7 @@ async def refetch_gold_rate(user: dict = Depends(require_admin_or_module('gold_r
 
 
 @router.put('/settings/gold-rate')
-async def set_gold_rate_manual(body: GoldRateManualIn, user: dict = Depends(require_admin_or_module('gold_rate'))):
+async def set_gold_rate_manual(body: GoldRateManualIn, user: dict = Depends(require_admin_or_module_right('gold_rate', 'edit'))):
     import gold_rate
     date_str = gold_rate.today_ist()
     message = (body.message or await gold_rate.default_message(body.gold_rate, body.silver_rate)).strip()
@@ -244,7 +245,7 @@ async def set_gold_rate_manual(body: GoldRateManualIn, user: dict = Depends(requ
 
 
 @router.post('/settings/gold-rate/send')
-async def send_gold_rate(body: GoldRateSendIn, user: dict = Depends(require_admin_or_module('gold_rate'))):
+async def send_gold_rate(body: GoldRateSendIn, user: dict = Depends(require_admin_or_module_right('gold_rate', 'edit'))):
     today = await db.settings.find_one({'id': 'gold_rate_today'}, {'_id': 0})
     message = (body.message or (today or {}).get('message') or '').strip()
     if not message:
