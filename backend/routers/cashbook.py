@@ -160,11 +160,18 @@ async def create_quick_name(body: CashBookQuickNameIn, user=Depends(require_admi
     name = body.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail='Name is required')
-    existing = await db.cashbook_quick_names.find_one({'name': {'$regex': f'^{re.escape(name)}$', '$options': 'i'}}, {'_id': 0})
+    # Scoped by entry_type so the same word can be a preset in both lists
+    # (e.g. "Advance" as both a receive and a pay type) without colliding.
+    existing = await db.cashbook_quick_names.find_one(
+        {'name': {'$regex': f'^{re.escape(name)}$', '$options': 'i'}, 'entry_type': body.entry_type}, {'_id': 0},
+    )
     if existing:
         return existing
     quick_id = str(uuid.uuid4())
-    doc = {'id': quick_id, 'name': name, 'created_at': now_utc().isoformat(), 'created_by': user['name']}
+    doc = {
+        'id': quick_id, 'name': name, 'entry_type': body.entry_type,
+        'created_at': now_utc().isoformat(), 'created_by': user['name'],
+    }
     await db.cashbook_quick_names.insert_one(dict(doc))
     await log_audit(user, 'cashbook.quickname.create', 'cashbook_quick_name', quick_id, name)
     return {k: v for k, v in doc.items() if k != '_id'}
@@ -229,7 +236,8 @@ async def create_cashbook_entry(body: CashBookEntryIn, user=Depends(require_admi
     entry_id = str(uuid.uuid4())
     entry = {
         'id': entry_id, 'date': body.date, 'counter_id': counter['id'], 'type': body.type, 'amount': body.amount,
-        'name': body.name.strip(), 'note': body.note or '',
+        'name': body.name.strip(), 'category': (body.category or '').strip() if not body.transfer_counter_id else '',
+        'note': body.note or '',
         'created_at': iso, 'created_by': user['name'], 'created_by_id': user['id'],
         'linked_entry_id': None, 'transfer_counter_id': other_counter['id'] if other_counter else None,
     }
@@ -305,6 +313,7 @@ async def update_cashbook_entry(entry_id: str, body: CashBookEntryUpdateIn, user
         if not body.name.strip():
             raise HTTPException(status_code=400, detail='Name / description is required')
         upd['name'] = body.name.strip()
+    if body.category is not None: upd['category'] = body.category.strip()
     if body.note is not None: upd['note'] = body.note
     if upd:
         upd['updated_at'] = now_utc().isoformat()

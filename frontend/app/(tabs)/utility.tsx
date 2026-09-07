@@ -53,6 +53,7 @@ const GROUPS: GroupDef[] = [
       { key: 'repair-types', label: 'Repair Types', sub: 'Repair catalogue', icon: 'construct-outline', route: '/settings/repair-types' },
       { key: 'item-master', label: 'Items & Purity', sub: 'Item master & purity', icon: 'diamond-outline', route: '/settings/item-master' },
       { key: 'sample-issue-types', label: 'Sample Issue Types', sub: 'Reasons for Stock In/Out', icon: 'swap-horizontal-outline', route: '/settings/sample-issue-types' },
+      { key: 'cashbook-types', label: 'Cash Pay & Receive Types', sub: 'Predefined types for Cash Book entries', icon: 'cash-outline', route: '/settings/cashbook-types' },
       { key: 'print-master', label: 'Print Master', sub: 'Fields, text size & shop name per receipt', icon: 'print-outline', route: '/settings/print-master' },
     ],
   },

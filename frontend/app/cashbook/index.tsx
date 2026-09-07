@@ -18,7 +18,8 @@ import { ErrorState } from '@/src/components/ui';
 
 type EntryType = 'received' | 'paid';
 type Entry = {
-  id: string; date: string; counter_id: string; type: EntryType; amount: number; name: string; note?: string;
+  id: string; date: string; counter_id: string; type: EntryType; amount: number; name: string;
+  category?: string | null; note?: string;
   created_at: string; created_by?: string; updated_at?: string; updated_by?: string;
   linked_entry_id?: string | null; transfer_counter_id?: string | null;
 };
@@ -32,8 +33,7 @@ type Counter = { id: string; name: string; opening_balance: number; active: bool
 // /cashbook/counters/transfer-options: naming a counter as a transfer
 // counterparty is allowed even without view access to its ledger).
 type CounterLite = { id: string; name: string };
-type Emp = { id: string; name: string; employee_code: string; designation?: string };
-type QuickName = { id: string; name: string };
+type QuickName = { id: string; name: string; entry_type: EntryType | null };
 
 type Mode = 'view' | 'form' | 'settings';
 
@@ -76,19 +76,23 @@ export default function CashBookScreen() {
   const [entryType, setEntryType] = useState<EntryType>('received');
   const [amount, setAmount] = useState('');
   const [name, setName] = useState('');
+  const [category, setCategory] = useState('');
   const [note, setNote] = useState('');
   // Transfer between two counters — only settable when creating a new entry
   // (the backend locks the link once created; see the hint shown when
   // editing an already-linked entry instead).
   const [isTransfer, setIsTransfer] = useState(false);
   const [transferCounterId, setTransferCounterId] = useState('');
-  // Employee picker (Paid entries only — e.g. salary/advance paid out) and
-  // reusable Name/Description presets (either entry type).
-  const [employees, setEmployees] = useState<Emp[]>([]);
-  const [empPickerOpen, setEmpPickerOpen] = useState(false);
+  // Reusable Name/Description presets, split into a Received list and a Paid
+  // list (Settings > Masters > Cash Pay & Receive Types) — a preset with no
+  // entry_type is a legacy/shared one and still shows on both.
   const [quickNames, setQuickNames] = useState<QuickName[]>([]);
   const [addingQuickName, setAddingQuickName] = useState(false);
   const [newQuickName, setNewQuickName] = useState('');
+  const visibleQuickNames = useMemo(
+    () => quickNames.filter((q) => q.entry_type == null || q.entry_type === entryType),
+    [quickNames, entryType],
+  );
 
   const loadCounters = useCallback(async (selectId?: string) => {
     try {
@@ -105,7 +109,6 @@ export default function CashBookScreen() {
   useFocusEffect(useCallback(() => { loadCounters(); }, [loadCounters]));
 
   const loadRefs = useCallback(async () => {
-    try { setEmployees(await api.get<Emp[]>('/employees?status=active')); } catch { /* ignore */ }
     try { setQuickNames(await api.get<QuickName[]>('/cashbook/quick-names')); } catch { /* ignore */ }
     try { setTransferOptions(await api.get<CounterLite[]>('/cashbook/counters/transfer-options')); } catch { /* ignore */ }
   }, []);
@@ -132,15 +135,15 @@ export default function CashBookScreen() {
   };
 
   const openAdd = (t: EntryType) => {
-    setEditing(null); setEntryType(t); setAmount(''); setName(''); setNote('');
+    setEditing(null); setEntryType(t); setAmount(''); setName(''); setCategory(''); setNote('');
     setIsTransfer(false); setTransferCounterId('');
-    setEmpPickerOpen(false); setAddingQuickName(false); setNewQuickName('');
+    setAddingQuickName(false); setNewQuickName('');
     setMode('form');
   };
   const openEdit = (e: Entry) => {
-    setEditing(e); setEntryType(e.type); setAmount(String(e.amount)); setName(e.name); setNote(e.note || '');
+    setEditing(e); setEntryType(e.type); setAmount(String(e.amount)); setName(e.name); setCategory(e.category || ''); setNote(e.note || '');
     setIsTransfer(false); setTransferCounterId('');
-    setEmpPickerOpen(false); setAddingQuickName(false); setNewQuickName('');
+    setAddingQuickName(false); setNewQuickName('');
     setMode('form');
   };
 
@@ -148,9 +151,9 @@ export default function CashBookScreen() {
     const n = newQuickName.trim();
     if (!n) return;
     try {
-      const created = await api.post<QuickName>('/cashbook/quick-names', { name: n });
+      const created = await api.post<QuickName>('/cashbook/quick-names', { name: n, entry_type: entryType });
       setQuickNames((prev) => (prev.some((q) => q.id === created.id) ? prev : [...prev, created].sort((a, b) => a.name.localeCompare(b.name))));
-      setName(created.name);
+      setCategory(created.name);
       setNewQuickName(''); setAddingQuickName(false);
     } catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
   };
@@ -171,7 +174,7 @@ export default function CashBookScreen() {
     if (!counterId) { notify('No counter selected', 'Add a Cash Book counter first.'); return; }
     if (isTransfer && !transferCounterId) { notify('Invalid', 'Pick the other counter for this transfer'); return; }
     setBusy(true);
-    const payload: any = { date, amount: amt, name: name.trim(), note };
+    const payload: any = { date, amount: amt, name: name.trim(), category: isTransfer ? '' : category.trim(), note };
     // A linked transfer entry can't change its type/counter (the backend
     // rejects it) — so when editing one, only send the editable fields.
     // Otherwise (new entry, or editing a normal entry) send them as before.
@@ -267,6 +270,7 @@ export default function CashBookScreen() {
           {isTransferEntry && <Ionicons name="swap-horizontal-outline" size={11} color={colors.brandSecondary} />}
           <Text style={styles.entryName} numberOfLines={2}>{displayName}</Text>
         </View>
+        {!!e.category && <Text style={styles.entryCategory} numberOfLines={1}>{e.category}</Text>}
         {!!e.note && <Text style={styles.entryNote} numberOfLines={2}>{e.note}</Text>}
       </View>
       <Text style={[styles.entryAmount, { color: amountColor }]}>{fmtINR(e.amount)}</Text>
@@ -490,37 +494,21 @@ export default function CashBookScreen() {
               </View>
             </View>
 
-            {entryType === 'paid' && !isTransfer && employees.length > 0 && (
+            {!isTransfer && (visibleQuickNames.length > 0 || addingQuickName) && (
               <>
-                <Text style={styles.label}>Employee (optional)</Text>
-                <Pressable onPress={() => setEmpPickerOpen((v) => !v)} style={styles.picker} testID="cashbook-employee-picker-toggle">
-                  <Text style={styles.pickerPlaceholder}>Pick an employee to fill the name</Text>
-                  <Ionicons name={empPickerOpen ? 'chevron-up' : 'chevron-down'} size={16} color={colors.mutedText} />
-                </Pressable>
-                {empPickerOpen && (
-                  <View style={styles.pickerList} testID="cashbook-employee-picker-list">
-                    <ScrollView style={{ maxHeight: 220 }} nestedScrollEnabled>
-                      {employees.map((emp) => (
-                        <Pressable key={emp.id} onPress={() => { setName(emp.name); setEmpPickerOpen(false); }} style={styles.pickerRow} testID={`cashbook-emp-opt-${emp.id}`}>
-                          <Text style={styles.pickerRowName}>{emp.name}</Text>
-                          <Text style={styles.pickerRowMeta}>{emp.designation || emp.employee_code}</Text>
-                        </Pressable>
-                      ))}
-                    </ScrollView>
-                  </View>
-                )}
-              </>
-            )}
-
-            {!isTransfer && (quickNames.length > 0 || addingQuickName) && (
-              <>
-                <Text style={styles.label}>Quick Picks</Text>
+                <Text style={styles.label}>Type (optional)</Text>
                 <View style={styles.chipRow}>
-                  {quickNames.map((q) => (
-                    <Pressable key={q.id} onPress={() => setName(q.name)} style={styles.quickChip} testID={`cashbook-quickname-${q.id}`}>
-                      <Text style={styles.quickChipText}>{q.name}</Text>
-                    </Pressable>
-                  ))}
+                  {visibleQuickNames.map((q) => {
+                    const selected = category === q.name;
+                    return (
+                      <Pressable
+                        key={q.id} onPress={() => setCategory(selected ? '' : q.name)}
+                        style={[styles.quickChip, selected && styles.quickChipSelected]} testID={`cashbook-quickname-${q.id}`}
+                      >
+                        <Text style={[styles.quickChipText, selected && styles.quickChipTextSelected]}>{q.name}</Text>
+                      </Pressable>
+                    );
+                  })}
                   {!addingQuickName && (
                     <Pressable onPress={() => setAddingQuickName(true)} style={[styles.quickChip, styles.quickChipAdd]} testID="cashbook-add-quickname">
                       <Ionicons name="add" size={13} color={colors.brandSecondary} />
@@ -686,6 +674,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     paddingHorizontal: spacing.sm, paddingVertical: 9, marginBottom: 6,
   },
   entryName: { color: colors.onSurface, fontSize: 12.5, fontWeight: '700' },
+  entryCategory: { color: colors.brandSecondary, fontSize: 10.5, fontWeight: '600', marginTop: 1 },
   entryNote: { color: colors.mutedText, fontSize: 10.5, marginTop: 2 },
   entryAmount: { fontSize: 12.5, fontWeight: '800' },
   colTotalRow: {
@@ -742,26 +731,14 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   transferToggleText: { flex: 1, color: colors.onSurfaceSecondary, fontSize: 13, fontWeight: '600' },
   transferToggleTextActive: { color: colors.onBrandPrimary },
 
-  picker: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
-    paddingHorizontal: spacing.md, paddingVertical: 12,
-  },
-  pickerPlaceholder: { color: colors.mutedText, fontSize: 13 },
-  pickerList: {
-    backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
-    marginTop: spacing.sm, padding: spacing.xs,
-  },
-  pickerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: spacing.sm, paddingVertical: 10 },
-  pickerRowName: { color: colors.onSurface, fontSize: 13, fontWeight: '600' },
-  pickerRowMeta: { color: colors.mutedText, fontSize: 11 },
-
   quickChip: {
     flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start',
     paddingHorizontal: spacing.sm, paddingVertical: 7, borderRadius: radius.pill,
     backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border,
   },
   quickChipAdd: { borderColor: colors.brand, borderStyle: 'dashed' },
+  quickChipSelected: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
+  quickChipTextSelected: { color: colors.onBrandPrimary },
   quickChipText: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '600' },
   quickAddRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.sm },
   quickAddSaveBtn: {

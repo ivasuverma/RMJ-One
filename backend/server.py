@@ -1010,6 +1010,12 @@ class CashBookEntryIn(BaseModel):
     type: Literal['received', 'paid']
     amount: float
     name: str  # who/what — matches the paper cash book's NAME column
+    # Optional pick from the Cash Receive/Pay Types master (Settings >
+    # Masters), stored as its label (not an id) — same "store the label"
+    # convention as e.g. samples' issue_type. Shown on the day list under
+    # the name, less prominent. Not meaningful for a transfer entry (its
+    # name is already auto-generated), so left blank there.
+    category: Optional[str] = None
     note: Optional[str] = ''
     # If set, this entry is one side of a transfer between two counters —
     # the backend auto-creates the mirrored opposite-type entry on this
@@ -1024,6 +1030,7 @@ class CashBookEntryUpdateIn(BaseModel):
     type: Optional[Literal['received', 'paid']] = None
     amount: Optional[float] = None
     name: Optional[str] = None
+    category: Optional[str] = None
     note: Optional[str] = None
 
 
@@ -1044,8 +1051,12 @@ class CashBookCounterUpdateIn(BaseModel):
 class CashBookQuickNameIn(BaseModel):
     # A reusable Name/Description preset (e.g. "Milk", "Tea", "Electricity")
     # shop staff can tap to fill an entry instantly instead of retyping it
-    # every time — shared across counters and both Received/Paid.
+    # every time — shared across counters. entry_type splits the preset into
+    # the Cash Receive Types / Cash Pay Types masters (Settings > Masters);
+    # left unset, a preset is legacy/shared and still shows on both Received
+    # and Paid entries, exactly like every quick name did before this split.
     name: str
+    entry_type: Optional[Literal['received', 'paid']] = None
 
 
 # ---------------- Ledger: unified accounts (v2 Phase 5) ----------------
