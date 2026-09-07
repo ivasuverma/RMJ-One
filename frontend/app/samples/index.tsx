@@ -44,6 +44,7 @@ export default function SamplesScreen() {
 
   const [samples, setSamples] = useState<Sample[]>([]);
   const [pipe, setPipe] = useState<Pipe | null>(null);
+  const [photoThumbs, setPhotoThumbs] = useState<Record<string, string>>({});
   const initialStatus = routeStatus && STATUS_TAB_KEYS.has(routeStatus) ? routeStatus : 'with_karigar';
   const [statusTab, setStatusTab] = useState(initialStatus);
   const [query, setQuery] = useState('');
@@ -55,7 +56,19 @@ export default function SamplesScreen() {
       const params = new URLSearchParams();
       if (statusTab !== 'all') params.set('status', statusTab);
       if (query.trim()) params.set('q', query.trim());
-      setSamples(await api.get<Sample[]>(`/samples?${params.toString()}`));
+      const rows = await api.get<Sample[]>(`/samples?${params.toString()}`);
+      setSamples(rows);
+      // Photos captured at issue time live in the record-photos/Drive
+      // system (ref_type 'sample'), not on the sample document itself —
+      // photo_thumb above only covers a photo added later via edit. One
+      // bulk call avoids an N+1 fetch per row.
+      const ids = rows.map((s) => s.id);
+      if (ids.length > 0) {
+        api.get<Record<string, string>>(`/record-photos/thumbnails?ref_type=sample&ref_ids=${ids.join(',')}`)
+          .then(setPhotoThumbs).catch(() => setPhotoThumbs({}));
+      } else {
+        setPhotoThumbs({});
+      }
     } catch (_e) { /* ignore */ }
     finally { setRefreshing(false); }
   }, [statusTab, query]);
@@ -118,11 +131,12 @@ export default function SamplesScreen() {
         ) : samples.map((s) => {
           const isOverdue = s.status === 'with_karigar' && !!s.due_date && s.due_date < todayIST();
           const at = s.status === 'received' ? s.received_at : s.issued_at;
+          const thumb = photoThumbs[s.id] || s.photo_thumb;
           return (
             <Pressable key={s.id} onPress={() => router.push(`/samples/${s.id}` as any)} style={styles.card} testID={`sample-${s.id}`}>
               <View style={styles.cardTop}>
-                {s.photo_thumb ? (
-                  <Image source={{ uri: s.photo_thumb }} style={styles.cardThumb} testID={`sample-thumb-${s.id}`} />
+                {thumb ? (
+                  <Image source={{ uri: thumb }} style={styles.cardThumb} testID={`sample-thumb-${s.id}`} />
                 ) : (
                   <View style={styles.cardThumbFallback} testID={`sample-thumb-fallback-${s.id}`}>
                     <Ionicons name="diamond-outline" size={20} color={colors.mutedText} />

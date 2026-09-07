@@ -133,6 +133,40 @@ async def list_record_photos(ref_type: str = Query(...), ref_id: str = Query(...
     ).sort('created_at', 1).to_list(50)
 
 
+@router.get('/record-photos/thumbnails')
+async def bulk_thumbnails(ref_type: str = Query(...), ref_ids: str = Query(...), user=Depends(get_current)):
+    """One small thumbnail per ref_id, for a list screen to show alongside
+    each row without an N+1 fetch (one per sample/repair item) or shipping
+    full-resolution images. Returns {ref_id: 'data:<mime>;base64,...'} for
+    whichever ref_ids actually have a photo with a thumbnail available —
+    missing keys mean no photo (or no thumb yet), the caller falls back to
+    a placeholder icon.
+
+    A photo's thumb lives in `thumb_data` right after capture, then moves to
+    `local_data` (with local_kind='thumb') once the background Drive sync
+    worker uploads the full image and drops the local copy — check both."""
+    ids = [x for x in ref_ids.split(',') if x.strip()]
+    if not ids:
+        return {}
+    mod = _module_for_ref(ref_type)
+    role = user.get('role')
+    if not (role in ('owner', 'admin', 'accountant') or (role == 'employee' and mod in resolve_modules(user))):
+        raise HTTPException(status_code=403, detail=f'No access to "{mod}"')
+    docs = await db.record_photos.find(
+        {'ref_type': ref_type, 'ref_id': {'$in': ids}, 'deleted': {'$ne': True}},
+        {'_id': 0, 'ref_id': 1, 'thumb_data': 1, 'local_data': 1, 'local_kind': 1, 'file.mime': 1, 'created_at': 1},
+    ).sort('created_at', 1).to_list(1000)
+    out: dict = {}
+    for d in docs:
+        if d['ref_id'] in out:
+            continue  # first (oldest) photo per ref wins
+        raw = d.get('thumb_data') or (d.get('local_data') if d.get('local_kind') == 'thumb' else None)
+        if raw:
+            mime = (d.get('file') or {}).get('mime') or 'image/jpeg'
+            out[d['ref_id']] = f"data:{mime};base64,{raw}"
+    return out
+
+
 @router.get('/record-photos/{photo_id}/file')
 async def record_photo_file(photo_id: str, full: bool = Query(default=False), user=Depends(get_current)):
     d = await db.record_photos.find_one({'id': photo_id, 'deleted': {'$ne': True}}, {'_id': 0})
