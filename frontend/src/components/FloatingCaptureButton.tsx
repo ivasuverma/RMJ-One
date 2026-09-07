@@ -19,8 +19,14 @@ import { useTheme } from '@/src/theme/ThemeContext';
 // invisible. Modal is the pattern every other overlay in this app already
 // uses (see Sheet.tsx) precisely because it portals above all of that
 // instead of being laid out inside the screen's own view tree.
-// pointerEvents="box-none" on the wrapping layer lets touches pass through
-// to the screen underneath everywhere except the button itself.
+// pointerEvents="box-none" has to go on the <Modal> itself, not just the
+// View inside it — RN Web's Modal renders its own full-screen backdrop div
+// (position: fixed, inset: 0) around whatever you pass as children, and
+// that div is what actually intercepts every touch/click on the page; a
+// pointerEvents set only on a child inside it doesn't reach back out to
+// that ancestor. Modal forwards unknown props straight to that div, so
+// passing pointerEvents="box-none" there makes the backdrop transparent to
+// touches everywhere except the Pressable, which stays interactive.
 //
 // Mounts only after the first client-side effect fires, rather than being
 // visible from this component's very first render. This app builds as a
@@ -42,7 +48,7 @@ export function FloatingCaptureButton({ onPress, testID }: { onPress: () => void
   useEffect(() => { setMounted(true); }, []);
   if (!mounted) return null;
   return (
-    <Modal visible transparent animationType="none" statusBarTranslucent>
+    <Modal visible transparent animationType="none" statusBarTranslucent pointerEvents="box-none">
       <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
         <Pressable
           onPress={onPress}
