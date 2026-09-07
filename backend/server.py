@@ -2628,6 +2628,15 @@ def _pdf_response(pdf: bytes, filename: str):
               headers={'Content-Disposition': f'inline; filename="{filename}"'})
 
 
+async def get_print_config(template_key: str) -> dict:
+    """Owner-configurable Print Master settings for one print template — see
+    print_templates.py for the field registry and routers/print_settings.py
+    for the Settings > Masters screen that edits this."""
+    from print_templates import template_config
+    doc = await db.settings.find_one({'id': 'print_templates'}, {'_id': 0})
+    return template_config(doc, template_key)
+
+
 # ---------------- Employee photo thumbnails ----------------
 # Employee photos (captured at ~720px wide, per PhotoCaptureModal) are shown
 # as small avatars in several list screens — Employees, Attendance, Payroll —
@@ -2669,6 +2678,7 @@ from routers import (
     auth, employees, settings as settings_router, attendance, tasks, repairs,
     users, payroll, notifications, biometric, reports, assistant, samples,
     cashbook, ledger, documents, backup, record_photos, gold_loans, whatsapp_bot,
+    print_settings,
 )
 
 # ---------------- Mount ----------------
@@ -2692,6 +2702,7 @@ api.include_router(record_photos.router)
 api.include_router(gold_loans.router)
 api.include_router(backup.router)
 api.include_router(whatsapp_bot.router)
+api.include_router(print_settings.router)
 
 app.include_router(api)
 app.include_router(biometric.iclock_router)  # /iclock/* — real device protocol, no /api prefix

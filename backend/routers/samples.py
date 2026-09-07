@@ -26,7 +26,9 @@ from server import (
     log_audit,
     _notify_module,
     _pdf_response,
+    get_print_config,
 )
+from print_templates import filter_lines
 # Thermal-printer helpers live in routers/repairs.py (where they were first
 # built) rather than the shared core — reused here as-is instead of
 # duplicating the ESC/POS builder for a second module.
@@ -211,24 +213,24 @@ def _sample_issue_slip_lines(sample: dict) -> list:
     """Shared shape with repairs.py's _issue_slip_lines, minus the
     purity/fine-weight fields samples don't track."""
     lines = [
-        ('Sample No', sample['sample_code']),
-        ('Date', _dmy((sample.get('issued_at') or '')[:10])),
-        ('Karigar', sample['karigar_name']),
+        ('sample_no', 'Sample No', sample['sample_code']),
+        ('date', 'Date', _dmy((sample.get('issued_at') or '')[:10])),
+        ('karigar', 'Karigar', sample['karigar_name']),
     ]
     if sample.get('tag_number'):
-        lines.append(('Tag', sample['tag_number']))
+        lines.append(('tag', 'Tag', sample['tag_number']))
     lines += [
-        ('Item', sample['description']),
-        ('Pieces', str(sample.get('pc_count') or 1)),
-        ('Weight Issued', f"{sample['weight']:.3f}g"),
+        ('item', 'Item', sample['description']),
+        ('pieces', 'Pieces', str(sample.get('pc_count') or 1)),
+        ('weight_issued', 'Weight Issued', f"{sample['weight']:.3f}g"),
     ]
     if sample.get('issue_type'):
-        lines.append(('Issue Type', sample['issue_type']))
+        lines.append(('issue_type', 'Issue Type', sample['issue_type']))
     if sample.get('due_date'):
-        lines.append(('Due Back', _dmy(sample['due_date'])))
-    lines.append(('Issued By', sample.get('issued_by') or ''))
+        lines.append(('due_back', 'Due Back', _dmy(sample['due_date'])))
+    lines.append(('issued_by', 'Issued By', sample.get('issued_by') or ''))
     if sample.get('note'):
-        lines.append(('Note', sample['note']))
+        lines.append(('note', 'Note', sample['note']))
     return lines
 
 
@@ -241,8 +243,11 @@ async def sample_issue_slip_pdf(sample_id: str, _: dict = Depends(require_staff_
     if not sample:
         raise HTTPException(status_code=404, detail='Sample not found')
     store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
+    cfg = await get_print_config('sample_issue')
     pdf = _thermal_slip_pdf(
-        store.get('name') or 'Ram Murti Jewellers', 'Sample Issue Challan', _sample_issue_slip_lines(sample),
+        store.get('name') or 'Ram Murti Jewellers', 'Sample Issue Challan',
+        filter_lines(_sample_issue_slip_lines(sample), cfg['disabled_fields']),
+        show_shop_name=cfg['show_shop_name'], font_size=cfg['font_size'],
     )
     return _pdf_response(pdf, f'sample-issue-{sample["sample_code"]}.pdf')
 
@@ -256,7 +261,10 @@ async def sample_issue_slip_print(sample_id: str, user=Depends(require_staff_or_
     if not sample:
         raise HTTPException(status_code=404, detail='Sample not found')
     store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
-    data = _escpos_receipt(store.get('name') or 'Ram Murti Jewellers', 'Sample Issue Challan', _sample_issue_slip_lines(sample))
+    cfg = await get_print_config('sample_issue')
+    data = _escpos_receipt(store.get('name') or 'Ram Murti Jewellers', 'Sample Issue Challan',
+                            filter_lines(_sample_issue_slip_lines(sample), cfg['disabled_fields']),
+                            show_shop_name=cfg['show_shop_name'], font_size=cfg['font_size'])
     await _print_escpos(data)
     await log_audit(user, 'sample.issue_slip_print', 'sample', sample_id, sample['sample_code'], {})
     return {'ok': True}

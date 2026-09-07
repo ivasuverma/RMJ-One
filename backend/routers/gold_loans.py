@@ -34,8 +34,10 @@ from server import (
     log_audit,
     _notify_module,
     _pdf_response,
+    get_print_config,
 )
 from routers.repairs import _mirror_party_account, _escpos_receipt, _print_escpos, _thermal_slip_pdf, _inr, _dmy
+from print_templates import filter_lines
 
 router = APIRouter()
 
@@ -368,21 +370,21 @@ async def delete_gold_loan(loan_id: str, user=Depends(require_owner)):
 
 def _loan_voucher_lines(loan: dict) -> list:
     lines = [
-        ('Loan No', loan['loan_no']),
-        ('Date', _dmy(loan['loan_date'])),
-        ('Customer', loan['customer_name']),
-        ('Mobile', loan.get('customer_mobile') or '—'),
-        ('Item', loan['description']),
-        ('Weight', f"{loan['weight']:.3f}g"),
-        ('Pieces', str(loan.get('pc_count') or 1)),
-        ('Principal', _inr(loan['principal'])),
-        ('Interest Rate', f"{loan['interest_rate_percent']:.2f}% / month"),
+        ('loan_no', 'Loan No', loan['loan_no']),
+        ('date', 'Date', _dmy(loan['loan_date'])),
+        ('customer', 'Customer', loan['customer_name']),
+        ('mobile', 'Mobile', loan.get('customer_mobile') or '—'),
+        ('item', 'Item', loan['description']),
+        ('weight', 'Weight', f"{loan['weight']:.3f}g"),
+        ('pieces', 'Pieces', str(loan.get('pc_count') or 1)),
+        ('principal', 'Principal', _inr(loan['principal'])),
+        ('interest_rate', 'Interest Rate', f"{loan['interest_rate_percent']:.2f}% / month"),
     ]
     if loan.get('estimate_return_date'):
-        lines.append(('Est. Return', _dmy(loan['estimate_return_date'])))
-    lines.append(('Issued By', loan.get('created_by') or ''))
+        lines.append(('est_return', 'Est. Return', _dmy(loan['estimate_return_date'])))
+    lines.append(('issued_by', 'Issued By', loan.get('created_by') or ''))
     if loan.get('note'):
-        lines.append(('Note', loan['note']))
+        lines.append(('note', 'Note', loan['note']))
     lines.append('')
     lines.append('Customer Signature: _____________________')
     return lines
@@ -392,7 +394,10 @@ def _loan_voucher_lines(loan: dict) -> list:
 async def gold_loan_voucher_pdf(loan_id: str, _: dict = Depends(require_staff_or_module('gold_loans'))):
     loan = await _get_loan(loan_id)
     store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
-    pdf = _thermal_slip_pdf(store.get('name') or 'Ram Murti Jewellers', 'Loan Against Gold', _loan_voucher_lines(loan), show_shop_name=False)
+    cfg = await get_print_config('gold_loan_voucher')
+    pdf = _thermal_slip_pdf(store.get('name') or 'Ram Murti Jewellers', 'Loan Against Gold',
+                             filter_lines(_loan_voucher_lines(loan), cfg['disabled_fields']),
+                             show_shop_name=cfg['show_shop_name'], font_size=cfg['font_size'])
     return _pdf_response(pdf, f'gold-loan-{loan["loan_no"]}.pdf')
 
 
@@ -400,7 +405,10 @@ async def gold_loan_voucher_pdf(loan_id: str, _: dict = Depends(require_staff_or
 async def gold_loan_voucher_print(loan_id: str, user=Depends(require_staff_or_module('gold_loans'))):
     loan = await _get_loan(loan_id)
     store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
-    data = _escpos_receipt(store.get('name') or 'Ram Murti Jewellers', 'Loan Against Gold', _loan_voucher_lines(loan), show_shop_name=False)
+    cfg = await get_print_config('gold_loan_voucher')
+    data = _escpos_receipt(store.get('name') or 'Ram Murti Jewellers', 'Loan Against Gold',
+                            filter_lines(_loan_voucher_lines(loan), cfg['disabled_fields']),
+                            show_shop_name=cfg['show_shop_name'], font_size=cfg['font_size'])
     await _print_escpos(data)
     await log_audit(user, 'gold_loan.voucher_print', 'gold_loan', loan_id, loan['loan_no'], {})
     return {'ok': True}
