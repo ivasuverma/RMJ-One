@@ -170,14 +170,14 @@ export default function NewSampleScreen() {
                 <Ionicons name={karigarPickerOpen ? 'chevron-up' : 'chevron-down'} size={16} color={colors.mutedText} />
               </Pressable>
               {karigarPickerOpen && (
-                <View style={styles.pickerList}>
+                <ScrollView style={styles.pickerList} nestedScrollEnabled keyboardShouldPersistTaps="handled">
                   {karigars.map((k) => (
                     <Pressable key={k.id} onPress={() => { setKarigarId(k.id); setKarigarPickerOpen(false); }} style={styles.pickerRow} testID={`sample-karigar-${k.id}`}>
                       <Text style={styles.pickerRowName}>{k.name}</Text>
                     </Pressable>
                   ))}
                   {karigars.length === 0 && <Text style={[styles.pickerRowMeta, { padding: spacing.md }]}>No karigars set up yet</Text>}
-                </View>
+                </ScrollView>
               )}
             </>
           )}
@@ -190,7 +190,7 @@ export default function NewSampleScreen() {
             <Ionicons name={issueTypePickerOpen ? 'chevron-up' : 'chevron-down'} size={16} color={colors.mutedText} />
           </Pressable>
           {issueTypePickerOpen && (
-            <View style={styles.pickerList}>
+            <ScrollView style={styles.pickerList} nestedScrollEnabled keyboardShouldPersistTaps="handled">
               {issueTypes.length === 0 && <Text style={[styles.pickerRowMeta, { padding: spacing.md }]}>No types set up yet — Settings › Masters › Sample Issue Types</Text>}
               {issueTypes.map((t) => (
                 <Pressable key={t} onPress={() => { setIssueType(t); setIssueTypeOther(false); setIssueTypePickerOpen(false); }} style={styles.pickerRow} testID={`sample-issue-type-${t}`}>
@@ -200,7 +200,7 @@ export default function NewSampleScreen() {
               <Pressable onPress={() => { setIssueType(''); setIssueTypeOther(true); setIssueTypePickerOpen(false); }} style={styles.pickerRow} testID="sample-issue-type-other">
                 <Text style={styles.pickerRowName}>Other</Text>
               </Pressable>
-            </View>
+            </ScrollView>
           )}
           {issueTypeOther && (
             <TextInput
