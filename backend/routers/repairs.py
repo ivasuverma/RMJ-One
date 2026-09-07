@@ -408,8 +408,9 @@ async def create_repair_order(body: RepairOrderIn, user=Depends(require_admin_or
 
 
 @router.get('/repair-orders')
-async def list_repair_orders(status_: Optional[str] = Query(default=None, alias='status'), _: dict = Depends(require_staff_or_module('repairs'))):
+async def list_repair_orders(status_: Optional[str] = Query(default=None, alias='status'), user: dict = Depends(require_staff_or_module('repairs'))):
     orders = await db.repair_orders.find({}, {'_id': 0}).sort('created_at', -1).to_list(1000)
+    today = today_str()
     out = []
     for o in orders:
         items = await db.repair_items.find({'order_id': o['id']}, {'_id': 0}).to_list(200)
@@ -418,6 +419,14 @@ async def list_repair_orders(status_: Optional[str] = Query(default=None, alias=
         st = _order_status(items)
         if status_ and st != status_:
             continue
+        # Same "gone from employee view the day after completion" rule as
+        # the item list (list_repair_items) — an order counts as completed
+        # once every item is delivered, so it drops out the day after the
+        # LAST item's delivery. Owner/admin/accountant always see full history.
+        if st == 'completed' and user.get('role') == 'employee':
+            last_delivered = max((i.get('delivered_at') or '' for i in items), default='')
+            if not last_delivered.startswith(today):
+                continue
         out.append({**o, 'item_count': len(items), 'status': st})
     return out
 
@@ -549,7 +558,7 @@ async def list_repair_items(
     status_: Optional[str] = Query(default=None, alias='status'),
     q: Optional[str] = None,
     from_date: Optional[str] = None,
-    _: dict = Depends(require_staff_or_module(['repairs'])),
+    user: dict = Depends(require_staff_or_module(['repairs'])),
 ):
     query: dict = {}
     if from_date and not q:
@@ -583,6 +592,14 @@ async def list_repair_items(
             {'description': {'$regex': q_esc, '$options': 'i'}},
             {'customer_name': {'$regex': q_esc, '$options': 'i'}},
         ]
+    if user.get('role') == 'employee':
+        # A delivered item drops out of an employee's view the day after it
+        # was delivered — visible on delivery day (e.g. via the Repair Bill
+        # "All" filter), gone from every filter/search the next day. Owner/
+        # admin/accountant always see full history regardless.
+        query.setdefault('$and', []).append(
+            {'$or': [{'status': {'$ne': 'delivered'}}, {'delivered_at': {'$regex': f'^{today_str()}'}}]}
+        )
     # intake_photo/final_photo are base64 JPEGs (~50-150KB each) — no list
     # row ever renders them (only the item detail page and the "reopen a
     # delivered bill" edit form do, both of which fetch the single item

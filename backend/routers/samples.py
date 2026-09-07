@@ -118,7 +118,7 @@ async def set_issue_types(body: IssueTypesIn, user=Depends(require_admin_or_modu
 async def list_samples(
     status_: Optional[str] = Query(default=None, alias='status'),
     q: Optional[str] = None,
-    _: dict = Depends(require_staff_or_module('samples')),
+    user: dict = Depends(require_staff_or_module('samples')),
 ):
     query: dict = {}
     if status_ == 'overdue':
@@ -136,6 +136,14 @@ async def list_samples(
             {'description': {'$regex': q_esc, '$options': 'i'}},
             {'karigar_name': {'$regex': q_esc, '$options': 'i'}},
         ]
+    if user.get('role') == 'employee':
+        # A received sample drops out of an employee's view the day after it
+        # was received back — visible on receive day, gone from every
+        # filter/search the next day. Owner/admin/accountant always see full
+        # history regardless.
+        query.setdefault('$and', []).append(
+            {'$or': [{'status': {'$ne': 'received'}}, {'received_at': {'$regex': f'^{today_str()}'}}]}
+        )
     # The list screen never renders the photo thumbnail (only the detail
     # screen does, via GET /samples/{id}) — excluding it here avoids shipping
     # a base64 image blob per row on every list load.
