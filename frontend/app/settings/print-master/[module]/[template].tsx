@@ -23,7 +23,9 @@ export default function PrintMasterTemplateScreen() {
   const [meta, setMeta] = useState<TemplateCfg | null>(null);
   const [rows, setRows] = useState<Row[]>([]);
   const [fontSize, setFontSize] = useState(10);
+  const [titleSize, setTitleSize] = useState<number | null>(null);
   const [showShopName, setShowShopName] = useState(true);
+  const [fieldDividers, setFieldDividers] = useState(false);
   const [saving, setSaving] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -42,7 +44,9 @@ export default function PrintMasterTemplateScreen() {
         key: k, label: labelOf[k] ?? k, enabled: !t.disabled_fields.includes(k), size: t.field_sizes[k] ?? null,
       })));
       setFontSize(t.font_size);
+      setTitleSize(t.title_size ?? null);
       setShowShopName(t.show_shop_name);
+      setFieldDividers(t.field_dividers);
     } catch (_e) { notify('Failed', 'Could not load print settings'); }
     finally { setLoading(false); }
   }, [template, router]);
@@ -50,7 +54,9 @@ export default function PrintMasterTemplateScreen() {
 
   // Debounced auto-save — reorder/resize taps can fire in quick bursts, so
   // this collapses a burst into one PUT instead of one per tap.
-  const scheduleSave = useCallback((next: { rows: Row[]; fontSize: number; showShopName: boolean }) => {
+  const scheduleSave = useCallback((next: {
+    rows: Row[]; fontSize: number; titleSize: number | null; showShopName: boolean; fieldDividers: boolean;
+  }) => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     setSaving(true);
     saveTimer.current = setTimeout(async () => {
@@ -62,7 +68,9 @@ export default function PrintMasterTemplateScreen() {
           font_size: next.fontSize,
           field_sizes,
           field_order: next.rows.map((r) => r.key),
+          title_size: next.titleSize,
           show_shop_name: next.showShopName,
+          field_dividers: next.fieldDividers,
         });
       } catch (e: any) { notify('Failed to save', e?.detail || 'Please try again'); await load(); }
       finally { setSaving(false); }
@@ -72,7 +80,7 @@ export default function PrintMasterTemplateScreen() {
   const updateRows = (mutator: (r: Row[]) => Row[]) => {
     setRows((prev) => {
       const next = mutator(prev);
-      scheduleSave({ rows: next, fontSize, showShopName });
+      scheduleSave({ rows: next, fontSize, titleSize, showShopName, fieldDividers });
       return next;
     });
   };
@@ -97,13 +105,30 @@ export default function PrintMasterTemplateScreen() {
   const changeFontSize = (delta: number) => {
     const next = clampSize(fontSize + delta);
     setFontSize(next);
-    scheduleSave({ rows, fontSize: next, showShopName });
+    scheduleSave({ rows, fontSize: next, titleSize, showShopName, fieldDividers });
+  };
+
+  const changeTitleSize = (delta: number) => {
+    const next = clampSize((titleSize ?? fontSize) + delta);
+    setTitleSize(next);
+    scheduleSave({ rows, fontSize, titleSize: next, showShopName, fieldDividers });
+  };
+
+  const resetTitleSize = () => {
+    setTitleSize(null);
+    scheduleSave({ rows, fontSize, titleSize: null, showShopName, fieldDividers });
   };
 
   const toggleShopName = () => {
     const next = !showShopName;
     setShowShopName(next);
-    scheduleSave({ rows, fontSize, showShopName: next });
+    scheduleSave({ rows, fontSize, titleSize, showShopName: next, fieldDividers });
+  };
+
+  const toggleFieldDividers = () => {
+    const next = !fieldDividers;
+    setFieldDividers(next);
+    scheduleSave({ rows, fontSize, titleSize, showShopName, fieldDividers: next });
   };
 
   if (loading || !meta) {
@@ -127,17 +152,26 @@ export default function PrintMasterTemplateScreen() {
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 60 }} keyboardShouldPersistTaps="handled">
         <Text style={styles.sectionLabel}>Live Preview</Text>
         <View style={styles.previewPaper}>
-          {showShopName && <Text style={[styles.previewShop, { fontSize: fontSize + 3 }]}>Ram Murti Jewellers</Text>}
-          <Text style={[styles.previewMuted, { fontSize: Math.max(7, fontSize - 1) }]}>Mobile: 98765 43210</Text>
-          <Text style={[styles.previewMuted, { fontSize }]}>{PREVIEW_HEADINGS[template as string] || meta.label}</Text>
+          {showShopName && (
+            <>
+              <Text style={[styles.previewShop, { fontSize: fontSize + 3 }]}>Ram Murti Jewellers</Text>
+              <Text style={[styles.previewMuted, { fontSize: Math.max(7, fontSize - 1) }]}>Mobile: 98765 43210</Text>
+            </>
+          )}
+          <Text style={[styles.previewMuted, { fontSize: titleSize ?? fontSize }]}>{PREVIEW_HEADINGS[template as string] || meta.label}</Text>
           <View style={styles.previewDivider} />
-          {rows.filter((r) => r.enabled).map((r) => (
-            <Text key={r.key} style={[styles.previewLine, { fontSize: r.size ?? fontSize }]}>
-              <Text style={styles.previewLabel}>{r.label.toUpperCase()}: </Text>
-              {SAMPLE_VALUES[r.key] || '—'}
-            </Text>
+          {rows.filter((r) => r.enabled).map((r, i) => (
+            <View key={r.key}>
+              {fieldDividers && i > 0 && <View style={styles.previewFieldDivider} />}
+              <Text style={[styles.previewLine, { fontSize: r.size ?? fontSize }]}>
+                <Text style={styles.previewLabel}>{r.label.toUpperCase()}: </Text>
+                {SAMPLE_VALUES[r.key] || '—'}
+              </Text>
+            </View>
           ))}
           {rows.every((r) => !r.enabled) && <Text style={styles.previewMuted}>All fields hidden</Text>}
+          <Text style={[styles.previewMuted, { fontSize: 7, marginTop: spacing.sm }]}>Generated 07 Sep 2026 15:00</Text>
+          <View style={{ height: spacing.lg }} />
         </View>
 
         <View style={[styles.rowBetween, { marginTop: spacing.lg }]}>
@@ -146,6 +180,16 @@ export default function PrintMasterTemplateScreen() {
             value={showShopName} onValueChange={toggleShopName}
             trackColor={{ true: colors.brandPrimary, false: colors.border }} thumbColor={colors.surface}
             testID="print-shopname"
+          />
+        </View>
+        <Text style={styles.fieldsHint}>Includes the mobile number — both show or hide together.</Text>
+
+        <View style={[styles.rowBetween, { marginTop: spacing.md }]}>
+          <Text style={styles.sectionLabel}>Line Between Fields</Text>
+          <Switch
+            value={fieldDividers} onValueChange={toggleFieldDividers}
+            trackColor={{ true: colors.brandPrimary, false: colors.border }} thumbColor={colors.surface}
+            testID="print-field-dividers"
           />
         </View>
 
@@ -159,6 +203,23 @@ export default function PrintMasterTemplateScreen() {
             <Ionicons name="add" size={18} color={colors.onSurface} />
           </Pressable>
         </View>
+
+        <Text style={[styles.sectionLabel, { marginTop: spacing.md }]}>Slip Title Size</Text>
+        <View style={styles.stepper}>
+          <Pressable onPress={() => changeTitleSize(-1)} style={styles.stepBtn} testID="print-titlesize-minus" hitSlop={8}>
+            <Ionicons name="remove" size={18} color={colors.onSurface} />
+          </Pressable>
+          <Text style={styles.stepValue}>{titleSize ?? fontSize}pt</Text>
+          <Pressable onPress={() => changeTitleSize(1)} style={styles.stepBtn} testID="print-titlesize-plus" hitSlop={8}>
+            <Ionicons name="add" size={18} color={colors.onSurface} />
+          </Pressable>
+          {titleSize != null && (
+            <Pressable onPress={resetTitleSize} hitSlop={8} testID="print-titlesize-reset">
+              <Ionicons name="close-circle" size={17} color={colors.mutedText} />
+            </Pressable>
+          )}
+        </View>
+        <Text style={styles.fieldsHint}>The heading naming the slip (e.g. "Loan Against Gold") — follows Overall Text Size until nudged.</Text>
 
         <Text style={[styles.sectionLabel, { marginTop: spacing.lg }]}>Fields — order, visibility & size</Text>
         <Text style={styles.fieldsHint}>
@@ -198,8 +259,8 @@ export default function PrintMasterTemplateScreen() {
 
         {template === 'repair_bill' && (
           <Text style={styles.footnote}>
-            Field toggles/order/size apply to the downloadable PDF. The WiFi-printer version uses a fixed table layout, so
-            only Shop Name and Overall Text Size apply there.
+            Field toggles/order/size and Line Between Fields apply to the downloadable PDF. The WiFi-printer version uses
+            a fixed table layout, so only Shop Name, Overall Text Size, and Slip Title Size apply there.
           </Text>
         )}
       </ScrollView>
@@ -231,6 +292,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   previewShop: { color: '#F5F5F5', fontWeight: '700', textAlign: 'center', fontFamily: MONO },
   previewMuted: { color: '#9A9A9A', textAlign: 'center', fontFamily: MONO },
   previewDivider: { height: 1, backgroundColor: '#3A3A3A', marginVertical: spacing.sm },
+  previewFieldDivider: { height: 1, backgroundColor: '#2A2A2A', marginVertical: 3 },
   previewLine: { color: '#F5F5F5', fontFamily: MONO, marginBottom: 3 },
   previewLabel: { fontWeight: '700' },
 

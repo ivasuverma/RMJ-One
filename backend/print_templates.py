@@ -121,7 +121,10 @@ def template_config(doc: dict | None, key: str) -> dict:
     """Merge a template's stored config (from the print_templates settings
     doc) with its defaults. Returns {'disabled_fields': set, 'font_size':
     int, 'field_sizes': {field_key: int}, 'field_order': [field_key, ...],
-    'show_shop_name': bool}."""
+    'title_size': int | None, 'show_shop_name': bool, 'field_dividers':
+    bool}. `title_size` is the slip's heading line (e.g. "Loan Against
+    Gold") — None means it follows `font_size`. `field_dividers` prints a
+    thin rule between every field row instead of just between sections."""
     meta = PRINT_TEMPLATES[key]
     valid_keys = {f['key'] for f in meta['fields']}
     stored = (doc or {}).get('templates', {}).get(key, {})
@@ -130,12 +133,15 @@ def template_config(doc: dict | None, key: str) -> dict:
         k: _coerce_size(v, font_size) for k, v in (stored.get('field_sizes') or {}).items() if k in valid_keys
     }
     field_order = [k for k in (stored.get('field_order') or []) if k in valid_keys]
+    title_size = _coerce_size(stored['title_size'], font_size) if stored.get('title_size') is not None else None
     return {
         'disabled_fields': {k for k in (stored.get('disabled_fields') or []) if k in valid_keys},
         'font_size': font_size,
+        'title_size': title_size,
         'field_sizes': field_sizes,
         'field_order': field_order,
         'show_shop_name': stored.get('show_shop_name', meta.get('default_show_shop_name', True)),
+        'field_dividers': bool(stored.get('field_dividers', False)),
     }
 
 

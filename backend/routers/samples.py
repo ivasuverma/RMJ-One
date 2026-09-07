@@ -248,6 +248,7 @@ async def sample_issue_slip_pdf(sample_id: str, _: dict = Depends(require_staff_
         store.get('name') or 'Ram Murti Jewellers', 'Sample Issue Challan',
         apply_field_config(_sample_issue_slip_lines(sample), cfg),
         show_shop_name=cfg['show_shop_name'], font_size=cfg['font_size'], field_sizes=cfg['field_sizes'],
+        title_size=cfg['title_size'], field_dividers=cfg['field_dividers'],
     )
     return _pdf_response(pdf, f'sample-issue-{sample["sample_code"]}.pdf')
 
@@ -264,7 +265,8 @@ async def sample_issue_slip_print(sample_id: str, user=Depends(require_staff_or_
     cfg = await get_print_config('sample_issue')
     data = _escpos_receipt(store.get('name') or 'Ram Murti Jewellers', 'Sample Issue Challan',
                             apply_field_config(_sample_issue_slip_lines(sample), cfg),
-                            show_shop_name=cfg['show_shop_name'], font_size=cfg['font_size'], field_sizes=cfg['field_sizes'])
+                            show_shop_name=cfg['show_shop_name'], font_size=cfg['font_size'], field_sizes=cfg['field_sizes'],
+                            title_size=cfg['title_size'], field_dividers=cfg['field_dividers'])
     await _print_escpos(data)
     await log_audit(user, 'sample.issue_slip_print', 'sample', sample_id, sample['sample_code'], {})
     return {'ok': True}

@@ -7,7 +7,7 @@ export type Field = { key: string; label: string };
 export type TemplateCfg = {
   label: string; module: string; module_label: string; fields: Field[];
   disabled_fields: string[]; font_size: number; field_sizes: Record<string, number>;
-  field_order: string[]; show_shop_name: boolean;
+  field_order: string[]; title_size: number | null; show_shop_name: boolean; field_dividers: boolean;
 };
 export type Templates = Record<string, TemplateCfg>;
 
@@ -61,5 +61,6 @@ export function summarize(t: TemplateCfg): string {
   parts.push(`${t.font_size}pt`);
   if (!t.show_shop_name) parts.push('shop name hidden');
   if (t.field_order.length > 0) parts.push('reordered');
+  if (t.field_dividers) parts.push('field dividers');
   return parts.join(' · ');
 }

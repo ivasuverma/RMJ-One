@@ -31,7 +31,8 @@ export default function PrintMasterHomeScreen() {
     const grouped: Record<string, { key: string; label: string; customized: boolean }[]> = {};
     for (const [key, t] of Object.entries(templates)) {
       const customized = t.disabled_fields.length > 0 || Object.keys(t.field_sizes).length > 0
-        || t.field_order.length > 0 || t.font_size !== 10 || !t.show_shop_name;
+        || t.field_order.length > 0 || t.font_size !== 10 || !t.show_shop_name
+        || t.title_size != null || t.field_dividers;
       (grouped[t.module] ||= []).push({ key, label: t.label, customized });
     }
     return grouped;

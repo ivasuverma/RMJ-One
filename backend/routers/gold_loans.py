@@ -397,7 +397,8 @@ async def gold_loan_voucher_pdf(loan_id: str, _: dict = Depends(require_staff_or
     cfg = await get_print_config('gold_loan_voucher')
     pdf = _thermal_slip_pdf(store.get('name') or 'Ram Murti Jewellers', 'Loan Against Gold',
                              apply_field_config(_loan_voucher_lines(loan), cfg),
-                             show_shop_name=cfg['show_shop_name'], font_size=cfg['font_size'], field_sizes=cfg['field_sizes'])
+                             show_shop_name=cfg['show_shop_name'], font_size=cfg['font_size'], field_sizes=cfg['field_sizes'],
+                             title_size=cfg['title_size'], field_dividers=cfg['field_dividers'])
     return _pdf_response(pdf, f'gold-loan-{loan["loan_no"]}.pdf')
 
 
@@ -408,7 +409,8 @@ async def gold_loan_voucher_print(loan_id: str, user=Depends(require_staff_or_mo
     cfg = await get_print_config('gold_loan_voucher')
     data = _escpos_receipt(store.get('name') or 'Ram Murti Jewellers', 'Loan Against Gold',
                             apply_field_config(_loan_voucher_lines(loan), cfg),
-                            show_shop_name=cfg['show_shop_name'], font_size=cfg['font_size'], field_sizes=cfg['field_sizes'])
+                            show_shop_name=cfg['show_shop_name'], font_size=cfg['font_size'], field_sizes=cfg['field_sizes'],
+                            title_size=cfg['title_size'], field_dividers=cfg['field_dividers'])
     await _print_escpos(data)
     await log_audit(user, 'gold_loan.voucher_print', 'gold_loan', loan_id, loan['loan_no'], {})
     return {'ok': True}
