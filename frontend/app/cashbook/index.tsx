@@ -449,11 +449,15 @@ export default function CashBookScreen() {
 
             {!editing && transferOptions.length > 1 && (
               <>
-                <Pressable onPress={() => { setIsTransfer((v) => !v); setTransferCounterId(''); }} style={styles.transferToggleRow} testID="cashbook-transfer-toggle">
-                  <View style={[styles.checkbox, isTransfer && styles.checkboxOn]}>
-                    {isTransfer && <Ionicons name="checkmark" size={13} color={colors.onBrandPrimary} />}
-                  </View>
-                  <Text style={styles.transferToggleText}>This is a transfer to/from another counter</Text>
+                <Pressable
+                  onPress={() => { setIsTransfer((v) => !v); setTransferCounterId(''); }}
+                  style={[styles.transferToggleBtn, isTransfer && styles.transferToggleBtnActive]}
+                  testID="cashbook-transfer-toggle"
+                >
+                  <Ionicons name="swap-horizontal-outline" size={16} color={isTransfer ? colors.onBrandPrimary : colors.brandSecondary} />
+                  <Text style={[styles.transferToggleText, isTransfer && styles.transferToggleTextActive]}>
+                    This is a transfer to/from another counter
+                  </Text>
                 </Pressable>
                 {isTransfer && (
                   <>
@@ -475,8 +479,16 @@ export default function CashBookScreen() {
               </>
             )}
 
-            <Text style={styles.label}>Amount (₹)</Text>
-            <TextInput testID="cashbook-amount" value={amount} onChangeText={(v) => setAmount(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} autoFocus />
+            <View style={styles.amountNameRow}>
+              <View style={{ width: 110 }}>
+                <Text style={styles.label}>Amount (₹)</Text>
+                <TextInput testID="cashbook-amount" value={amount} onChangeText={(v) => setAmount(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} autoFocus />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>Name / Description</Text>
+                <TextInput testID="cashbook-name" value={name} onChangeText={setName} placeholder="e.g. Ajay Sood advance, Milk" placeholderTextColor={colors.mutedText} style={styles.input} />
+              </View>
+            </View>
 
             {entryType === 'paid' && !isTransfer && employees.length > 0 && (
               <>
@@ -537,9 +549,6 @@ export default function CashBookScreen() {
                 )}
               </>
             )}
-
-            <Text style={styles.label}>Name / Description</Text>
-            <TextInput testID="cashbook-name" value={name} onChangeText={setName} placeholder="e.g. Ajay Sood advance, Milk" placeholderTextColor={colors.mutedText} style={styles.input} />
 
             <Text style={styles.label}>Note (optional)</Text>
             <TextInput testID="cashbook-note" value={note} onChangeText={setNote} placeholder="Notes" placeholderTextColor={colors.mutedText} style={styles.input} />
@@ -717,19 +726,21 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     color: colors.onSurface, paddingHorizontal: spacing.md, paddingVertical: 12, fontSize: 14,
   },
   hint: { color: colors.mutedText, fontSize: 12, marginBottom: spacing.md },
+  amountNameRow: { flexDirection: 'row', gap: spacing.sm },
   transferInfoBox: {
     flexDirection: 'row', alignItems: 'flex-start', gap: 6,
     backgroundColor: colors.brandTertiary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.brand,
     padding: spacing.sm, marginBottom: spacing.md,
   },
   transferInfoText: { flex: 1, color: colors.onSurfaceSecondary, fontSize: 11.5, lineHeight: 16 },
-  transferToggleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: 8, marginBottom: spacing.sm },
-  checkbox: {
-    width: 20, height: 20, borderRadius: 5, borderWidth: 1.5, borderColor: colors.border,
-    alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface,
+  transferToggleBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+    paddingVertical: 10, paddingHorizontal: spacing.md, borderRadius: radius.md,
+    borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceSecondary, marginBottom: spacing.sm,
   },
-  checkboxOn: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
-  transferToggleText: { color: colors.onSurfaceSecondary, fontSize: 13, fontWeight: '600' },
+  transferToggleBtnActive: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
+  transferToggleText: { flex: 1, color: colors.onSurfaceSecondary, fontSize: 13, fontWeight: '600' },
+  transferToggleTextActive: { color: colors.onBrandPrimary },
 
   picker: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',

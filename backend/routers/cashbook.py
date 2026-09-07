@@ -23,6 +23,7 @@ management (create/rename/deactivate) is owner-only — entry CRUD follows
 the usual module/right checks and applies across whichever counter the
 caller is working in."""
 from fastapi import APIRouter, Depends, HTTPException, Query
+import asyncio
 import re
 import uuid
 from server import (
@@ -203,18 +204,26 @@ async def create_cashbook_entry(body: CashBookEntryIn, user=Depends(require_admi
     if not body.name.strip():
         raise HTTPException(status_code=400, detail='Name / description is required')
     _assert_counter_allowed(user, body.counter_id)
-    counter = await _get_counter(body.counter_id)
+    if body.transfer_counter_id and body.transfer_counter_id == body.counter_id:
+        raise HTTPException(status_code=400, detail='Transfer counter must be different from this entry\'s counter')
 
     # The transfer counterparty is deliberately NOT access-checked: an
     # employee can complete a transfer to/from a counter they aren't
     # otherwise assigned to (e.g. handing cash to the locker) without that
     # granting them any ability to browse the locker's own day ledger —
     # naming a counter as a transfer partner isn't the same as viewing it.
-    other_counter = None
+    # Both lookups round-trip to Atlas — run them together instead of one
+    # after the other, same reasoning for every other independent pair of
+    # awaits in this endpoint below (each round trip has real latency from
+    # this box to the cluster, and this endpoint used to pay for up to 5 of
+    # them back to back on a transfer entry).
     if body.transfer_counter_id:
-        if body.transfer_counter_id == body.counter_id:
-            raise HTTPException(status_code=400, detail='Transfer counter must be different from this entry\'s counter')
-        other_counter = await _get_counter(body.transfer_counter_id)
+        counter, other_counter = await asyncio.gather(
+            _get_counter(body.counter_id), _get_counter(body.transfer_counter_id),
+        )
+    else:
+        counter = await _get_counter(body.counter_id)
+        other_counter = None
 
     iso = now_utc().isoformat()
     entry_id = str(uuid.uuid4())
@@ -237,12 +246,19 @@ async def create_cashbook_entry(body: CashBookEntryIn, user=Depends(require_admi
         }
         entry['linked_entry_id'] = mirror_id
 
-    await db.cashbook_entries.insert_one(dict(entry))
     if mirror:
-        await db.cashbook_entries.insert_one(dict(mirror))
+        await asyncio.gather(
+            db.cashbook_entries.insert_one(dict(entry)), db.cashbook_entries.insert_one(dict(mirror)),
+        )
+    else:
+        await db.cashbook_entries.insert_one(dict(entry))
 
-    await log_audit(user, 'cashbook.create', 'cashbook_entry', entry_id, f"{body.type} {body.amount} - {body.name}",
-                     {'date': body.date, 'counter': counter['name'], 'transfer_to': other_counter['name'] if other_counter else None})
+    # Audit logging never affects the result (log_audit swallows its own
+    # failures) and doesn't need to hold up the response — fire it and move on.
+    asyncio.create_task(log_audit(
+        user, 'cashbook.create', 'cashbook_entry', entry_id, f"{body.type} {body.amount} - {body.name}",
+        {'date': body.date, 'counter': counter['name'], 'transfer_to': other_counter['name'] if other_counter else None},
+    ))
 
     # Notify owners/admins on cash movement.
     amt = f"₹{body.amount:,.0f}"
