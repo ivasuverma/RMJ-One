@@ -44,7 +44,7 @@ from server import (
     whatsapp_flow_enabled,
     get_print_config,
 )
-from print_templates import filter_lines, reorder_lines, apply_field_config
+from print_templates import filter_lines, reorder_lines, apply_field_config, inject_blank_lines, is_blank_key
 
 router = APIRouter()
 
@@ -1595,6 +1595,10 @@ def _thermal_slip_pdf(shop_name: str, heading: str, lines: list, show_shop_name:
     for item in lines:
         if isinstance(item, tuple):
             key, label, value = item
+            if is_blank_key(key):
+                els.append(Spacer(1, _PDF_LINE_MM * mm))
+                first_field = True
+                continue
             if field_dividers and not first_field:
                 els.append(HRFlowable(width='100%', color=rlcolors.HexColor('#e0e0e0'), spaceAfter=3))
             first_field = False
@@ -1644,9 +1648,15 @@ def _thermal_tags_pdf(shop_name: str, order: dict, items: list, disabled_fields:
             Paragraph(f"Item Tag — {item['item_code']}", ParagraphStyle('head', parent=styles['Normal'], alignment=1, fontSize=title_size or font_size, textColor=rlcolors.HexColor('#555'))),
             Spacer(1, 3*mm), HRFlowable(width='100%', color=rlcolors.HexColor('#999')), Spacer(1, 2*mm),
         ]
-        tag_lines = reorder_lines(filter_lines(_item_tag_lines(order, item), disabled_fields), list(field_order))
+        tag_lines = reorder_lines(
+            filter_lines(inject_blank_lines(_item_tag_lines(order, item), list(field_order)), disabled_fields),
+            list(field_order),
+        )
         for j, (key, label, value) in enumerate(tag_lines):
-            if field_dividers and j > 0:
+            if is_blank_key(key):
+                els.append(Spacer(1, _PDF_LINE_MM * mm))
+                continue
+            if field_dividers and j > 0 and not is_blank_key(tag_lines[j - 1][0]):
                 els.append(HRFlowable(width='100%', color=rlcolors.HexColor('#e0e0e0'), spaceAfter=3))
             size = field_sizes.get(key, font_size)
             els.append(Paragraph(f"<b>{label}:</b> {value}", ParagraphStyle('l', parent=styles['Normal'], fontSize=size, textColor=dark, spaceAfter=3)))
@@ -1765,6 +1775,10 @@ def _escpos_receipt(shop_name: str, heading: str, lines: list, show_shop_name: b
     for item in lines:
         if isinstance(item, tuple):
             key, label, value = item
+            if is_blank_key(key):
+                out += body_size + b'\n'
+                first_field = True
+                continue
             if field_dividers and not first_field:
                 out += body_size + enc('-' * _ESCPOS_WIDTH_CHARS) + b'\n'
             first_field = False

@@ -11,7 +11,12 @@ import { Templates, TemplateCfg, SAMPLE_VALUES, PREVIEW_HEADINGS, clampSize } fr
 
 // One field row in the editor — `size: null` means "use the template's
 // overall Text Size above"; an explicit number is a per-field override.
+// A row whose key starts with "blank_" isn't a real field — it's a spacer
+// the owner inserted via "Add Line", reordered/removed the same way but
+// rendered as empty vertical space, never a label.
 type Row = { key: string; label: string; enabled: boolean; size: number | null };
+const isBlankRow = (r: Row) => r.key.startsWith('blank_');
+const newBlankKey = () => `blank_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
 export default function PrintMasterTemplateScreen() {
   const router = useRouter();
@@ -41,7 +46,8 @@ export default function PrintMasterTemplateScreen() {
       const labelOf: Record<string, string> = {};
       t.fields.forEach((f) => { labelOf[f.key] = f.label; });
       setRows(orderedKeys.map((k) => ({
-        key: k, label: labelOf[k] ?? k, enabled: !t.disabled_fields.includes(k), size: t.field_sizes[k] ?? null,
+        key: k, label: k.startsWith('blank_') ? 'Blank Line' : (labelOf[k] ?? k),
+        enabled: !t.disabled_fields.includes(k), size: t.field_sizes[k] ?? null,
       })));
       setFontSize(t.font_size);
       setTitleSize(t.title_size ?? null);
@@ -86,6 +92,10 @@ export default function PrintMasterTemplateScreen() {
   };
 
   const toggleField = (key: string) => updateRows((prev) => prev.map((r) => (r.key === key ? { ...r, enabled: !r.enabled } : r)));
+
+  const addBlankLine = () => updateRows((prev) => [...prev, { key: newBlankKey(), label: 'Blank Line', enabled: true, size: null }]);
+
+  const removeBlankLine = (key: string) => updateRows((prev) => prev.filter((r) => r.key !== key));
 
   const moveField = (index: number, dir: -1 | 1) => updateRows((prev) => {
     const target = index + dir;
@@ -162,11 +172,17 @@ export default function PrintMasterTemplateScreen() {
           <View style={styles.previewDivider} />
           {rows.filter((r) => r.enabled).map((r, i) => (
             <View key={r.key}>
-              {fieldDividers && i > 0 && <View style={styles.previewFieldDivider} />}
-              <Text style={[styles.previewLine, { fontSize: r.size ?? fontSize }]}>
-                <Text style={styles.previewLabel}>{r.label.toUpperCase()}: </Text>
-                {SAMPLE_VALUES[r.key] || '—'}
-              </Text>
+              {isBlankRow(r) ? (
+                <View style={{ height: (r.size ?? fontSize) * 1.4 }} />
+              ) : (
+                <>
+                  {fieldDividers && i > 0 && <View style={styles.previewFieldDivider} />}
+                  <Text style={[styles.previewLine, { fontSize: r.size ?? fontSize }]}>
+                    <Text style={styles.previewLabel}>{r.label.toUpperCase()}: </Text>
+                    {SAMPLE_VALUES[r.key] || '—'}
+                  </Text>
+                </>
+              )}
             </View>
           ))}
           {rows.every((r) => !r.enabled) && <Text style={styles.previewMuted}>All fields hidden</Text>}
@@ -224,38 +240,57 @@ export default function PrintMasterTemplateScreen() {
         <Text style={[styles.sectionLabel, { marginTop: spacing.lg }]}>Fields — order, visibility & size</Text>
         <Text style={styles.fieldsHint}>
           Tap a field to show/hide it. Use the arrows to reorder. Each field's size follows the overall Text Size above
-          until you nudge it individually.
+          until you nudge it individually. Add a blank line anywhere with "Add Line" below — reorder or remove it the
+          same way as a field.
         </Text>
-        {rows.map((r, i) => (
-          <View key={r.key} style={[styles.fieldRow, !r.enabled && styles.fieldRowDisabled]} testID={`print-field-${r.key}`}>
-            <Pressable onPress={() => toggleField(r.key)} style={styles.fieldCheck} hitSlop={8} testID={`print-field-toggle-${r.key}`}>
-              <Ionicons name={r.enabled ? 'checkbox' : 'square-outline'} size={20} color={r.enabled ? colors.brandPrimary : colors.mutedText} />
-            </Pressable>
-            <Text style={[styles.fieldLabel, !r.enabled && { color: colors.mutedText }]} numberOfLines={1}>{r.label}</Text>
-            <View style={styles.fieldSize}>
-              <Pressable onPress={() => resizeField(r.key, -1)} style={styles.miniBtn} hitSlop={6} testID={`print-field-size-minus-${r.key}`}>
-                <Ionicons name="remove" size={13} color={colors.onSurface} />
-              </Pressable>
-              <Text style={styles.miniValue}>{r.size ?? fontSize}</Text>
-              <Pressable onPress={() => resizeField(r.key, 1)} style={styles.miniBtn} hitSlop={6} testID={`print-field-size-plus-${r.key}`}>
-                <Ionicons name="add" size={13} color={colors.onSurface} />
-              </Pressable>
-              {r.size != null && (
-                <Pressable onPress={() => resetFieldSize(r.key)} hitSlop={8} testID={`print-field-size-reset-${r.key}`}>
-                  <Ionicons name="close-circle" size={15} color={colors.mutedText} style={{ marginLeft: 2 }} />
+        {rows.map((r, i) => {
+          const blank = isBlankRow(r);
+          return (
+            <View key={r.key} style={[styles.fieldRow, !r.enabled && styles.fieldRowDisabled]} testID={`print-field-${r.key}`}>
+              {blank ? (
+                <Pressable onPress={() => removeBlankLine(r.key)} style={styles.fieldCheck} hitSlop={8} testID={`print-field-remove-${r.key}`}>
+                  <Ionicons name="trash-outline" size={18} color={colors.onError} />
+                </Pressable>
+              ) : (
+                <Pressable onPress={() => toggleField(r.key)} style={styles.fieldCheck} hitSlop={8} testID={`print-field-toggle-${r.key}`}>
+                  <Ionicons name={r.enabled ? 'checkbox' : 'square-outline'} size={20} color={r.enabled ? colors.brandPrimary : colors.mutedText} />
                 </Pressable>
               )}
+              <Text style={[styles.fieldLabel, blank && styles.fieldLabelBlank, !r.enabled && { color: colors.mutedText }]} numberOfLines={1}>
+                {blank ? '— Blank Line —' : r.label}
+              </Text>
+              {!blank && (
+                <View style={styles.fieldSize}>
+                  <Pressable onPress={() => resizeField(r.key, -1)} style={styles.miniBtn} hitSlop={6} testID={`print-field-size-minus-${r.key}`}>
+                    <Ionicons name="remove" size={13} color={colors.onSurface} />
+                  </Pressable>
+                  <Text style={styles.miniValue}>{r.size ?? fontSize}</Text>
+                  <Pressable onPress={() => resizeField(r.key, 1)} style={styles.miniBtn} hitSlop={6} testID={`print-field-size-plus-${r.key}`}>
+                    <Ionicons name="add" size={13} color={colors.onSurface} />
+                  </Pressable>
+                  {r.size != null && (
+                    <Pressable onPress={() => resetFieldSize(r.key)} hitSlop={8} testID={`print-field-size-reset-${r.key}`}>
+                      <Ionicons name="close-circle" size={15} color={colors.mutedText} style={{ marginLeft: 2 }} />
+                    </Pressable>
+                  )}
+                </View>
+              )}
+              <View style={styles.reorderBtns}>
+                <Pressable onPress={() => moveField(i, -1)} disabled={i === 0} style={[styles.miniBtn, i === 0 && styles.miniBtnDisabled]} hitSlop={6} testID={`print-field-up-${r.key}`}>
+                  <Ionicons name="chevron-up" size={14} color={colors.onSurface} />
+                </Pressable>
+                <Pressable onPress={() => moveField(i, 1)} disabled={i === rows.length - 1} style={[styles.miniBtn, i === rows.length - 1 && styles.miniBtnDisabled]} hitSlop={6} testID={`print-field-down-${r.key}`}>
+                  <Ionicons name="chevron-down" size={14} color={colors.onSurface} />
+                </Pressable>
+              </View>
             </View>
-            <View style={styles.reorderBtns}>
-              <Pressable onPress={() => moveField(i, -1)} disabled={i === 0} style={[styles.miniBtn, i === 0 && styles.miniBtnDisabled]} hitSlop={6} testID={`print-field-up-${r.key}`}>
-                <Ionicons name="chevron-up" size={14} color={colors.onSurface} />
-              </Pressable>
-              <Pressable onPress={() => moveField(i, 1)} disabled={i === rows.length - 1} style={[styles.miniBtn, i === rows.length - 1 && styles.miniBtnDisabled]} hitSlop={6} testID={`print-field-down-${r.key}`}>
-                <Ionicons name="chevron-down" size={14} color={colors.onSurface} />
-              </Pressable>
-            </View>
-          </View>
-        ))}
+          );
+        })}
+
+        <Pressable onPress={addBlankLine} style={styles.addLineBtn} testID="print-add-blank-line">
+          <Ionicons name="add" size={16} color={colors.brandSecondary} />
+          <Text style={styles.addLineBtnText}>Add Line</Text>
+        </Pressable>
 
         {template === 'repair_bill' && (
           <Text style={styles.footnote}>
@@ -312,6 +347,13 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   fieldRowDisabled: { opacity: 0.6 },
   fieldCheck: { padding: 2 },
   fieldLabel: { flex: 1, color: colors.onSurface, fontSize: 13 },
+  fieldLabelBlank: { fontStyle: 'italic', color: colors.mutedText },
+  addLineBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    borderRadius: radius.md, borderWidth: 1, borderColor: colors.brand, borderStyle: 'dashed',
+    paddingVertical: 10, marginTop: 4,
+  },
+  addLineBtnText: { color: colors.brandSecondary, fontSize: 13, fontWeight: '700' },
   fieldSize: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   miniBtn: {
     width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center',

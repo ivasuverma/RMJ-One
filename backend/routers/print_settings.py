@@ -8,7 +8,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from server import db, now_utc, require_owner, log_audit
-from print_templates import PRINT_TEMPLATES, MODULE_LABELS, template_config, MIN_FONT_SIZE, MAX_FONT_SIZE
+from print_templates import PRINT_TEMPLATES, MODULE_LABELS, template_config, MIN_FONT_SIZE, MAX_FONT_SIZE, is_blank_key
 
 router = APIRouter()
 
@@ -53,7 +53,10 @@ async def set_print_template(template_key: str, body: PrintTemplateIn, user: dic
         'disabled_fields': [k for k in body.disabled_fields if k in valid_keys],
         'font_size': body.font_size,
         'field_sizes': {k: v for k, v in body.field_sizes.items() if k in valid_keys},
-        'field_order': [k for k in body.field_order if k in valid_keys],
+        # Blank-line spacer keys (Print Master's "Add Line") aren't real
+        # registry fields, so they'd otherwise get silently stripped here —
+        # let them through alongside actual fields.
+        'field_order': [k for k in body.field_order if k in valid_keys or is_blank_key(k)],
         'title_size': body.title_size,
         'show_shop_name': body.show_shop_name,
         'field_dividers': body.field_dividers,

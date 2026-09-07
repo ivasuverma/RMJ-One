@@ -103,6 +103,16 @@ PRINT_TEMPLATES = {
 DEFAULT_FONT_SIZE = 10
 MIN_FONT_SIZE, MAX_FONT_SIZE = 7, 20
 
+# A field_order entry starting with this prefix isn't a real registry field —
+# it's a blank-line spacer the owner inserted via Print Master's "Add Line"
+# button, positioned and removed exactly like a field (same up/down arrows,
+# same list) but rendered as empty vertical space with no label or rule.
+BLANK_KEY_PREFIX = 'blank_'
+
+
+def is_blank_key(key: str) -> bool:
+    return key.startswith(BLANK_KEY_PREFIX)
+
 # Legacy values from the first cut of this feature (2026-09-07), before sizes
 # became numeric — kept only so a config saved that day still loads sanely.
 _LEGACY_FONT_SIZE = {'normal': 10, 'large': 13}
@@ -132,7 +142,7 @@ def template_config(doc: dict | None, key: str) -> dict:
     field_sizes = {
         k: _coerce_size(v, font_size) for k, v in (stored.get('field_sizes') or {}).items() if k in valid_keys
     }
-    field_order = [k for k in (stored.get('field_order') or []) if k in valid_keys]
+    field_order = [k for k in (stored.get('field_order') or []) if k in valid_keys or is_blank_key(k)]
     title_size = _coerce_size(stored['title_size'], font_size) if stored.get('title_size') is not None else None
     return {
         'disabled_fields': {k for k in (stored.get('disabled_fields') or []) if k in valid_keys},
@@ -188,10 +198,44 @@ def reorder_lines(lines: list, field_order: list) -> list:
     return out
 
 
+def inject_blank_lines(lines: list, field_order: list) -> list:
+    """Adds one blank-line marker — (blank_key, '', '') — per blank_* entry
+    in field_order, once per structural block (each run of fields between
+    the plain-string separators reorder_lines also groups by), so a blank
+    line inserted between two fields lands in that same relative spot in
+    every item's block on a multi-item receipt (e.g. repair_intake), not
+    just the first. Markers are appended at the end of each block here —
+    reorder_lines (run right after, via apply_field_config) is what actually
+    moves each one to its configured position, using its rank in
+    field_order same as any real field."""
+    blank_keys = [k for k in field_order if is_blank_key(k)]
+    if not blank_keys:
+        return lines
+    out: list = []
+    group: list = []
+
+    def flush():
+        out.extend(group)
+        for bk in blank_keys:
+            out.append((bk, '', ''))
+        group.clear()
+
+    for item in lines:
+        if isinstance(item, tuple):
+            group.append(item)
+        else:
+            flush()
+            out.append(item)
+    flush()
+    return out
+
+
 def apply_field_config(lines: list, cfg: dict) -> list:
-    """filter_lines + reorder_lines in one call — the shape every print
-    endpoint actually wants."""
-    return reorder_lines(filter_lines(lines, cfg['disabled_fields']), cfg['field_order'])
+    """inject_blank_lines + filter_lines + reorder_lines in one call — the
+    shape every print endpoint actually wants."""
+    lines = inject_blank_lines(lines, cfg['field_order'])
+    lines = filter_lines(lines, cfg['disabled_fields'])
+    return reorder_lines(lines, cfg['field_order'])
 
 
 def field_font_size(cfg: dict, field_key: str) -> int:
