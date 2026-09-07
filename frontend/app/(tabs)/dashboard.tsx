@@ -341,7 +341,12 @@ export default function DashboardScreen() {
                   // Masked by default — tap the fold chevron to reveal the
                   // closing balance and today's figures (see cashRevealed).
                   key: 'cashbook', show: hasModule('cash_book'), icon: 'wallet-outline', label: 'Cash Book',
-                  value: cashRevealed ? fmtINR(cb.closing_balance) : '•••••', route: '/cashbook',
+                  // Owner sees the analytics dashboard (day/week/month
+                  // charts by Type); it self-redirects anyone else straight
+                  // to the regular day ledger, same place this tile used to
+                  // go for them.
+                  value: cashRevealed ? fmtINR(cb.closing_balance) : '•••••',
+                  route: user?.role === 'owner' ? '/cashbook/analytics' : '/cashbook',
                   details: (cb.counters && cb.counters.length > 0)
                     ? cb.counters.map((c) => ({ label: c.name, value: fmtINR(c.closing) }))
                     : [{ label: 'Received today', value: fmtINR(cb.received_today) }, { label: 'Paid today', value: fmtINR(cb.paid_today) }],

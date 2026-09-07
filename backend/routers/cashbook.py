@@ -26,6 +26,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 import asyncio
 import re
 import uuid
+from datetime import date as _date, timedelta
 from server import (
     db,
     now_utc,
@@ -366,3 +367,61 @@ async def delete_cashbook_entry(entry_id: str, user=Depends(require_admin_or_mod
         await db.cashbook_entries.delete_one({'id': linked_id})
     await log_audit(user, 'cashbook.delete', 'cashbook_entry', entry_id, entry.get('name', ''), {'date': entry.get('date'), 'linked_entry_id': linked_id})
     return {'ok': True}
+
+
+# ---------------- Analytics (owner-only) ----------------
+@router.get('/cashbook/analytics')
+async def cashbook_analytics(
+    period: str = Query(..., pattern='^(day|week|month)$'),
+    date_: str = Query(..., alias='date'),
+    _: dict = Depends(require_owner),
+):
+    """Shop-wide (every counter combined) totals by Type for the selected
+    day/week/month, plus a per-day trend for the bar chart. Aggregated in
+    Python rather than a Mongo pipeline — a shop's cash book is at most a
+    few hundred entries a month, nowhere near where that would matter, and
+    it keeps this readable next to the rest of the module's style."""
+    d = _date.fromisoformat(date_)
+    if period == 'day':
+        start = end = d
+    elif period == 'week':
+        start = d - timedelta(days=d.weekday())  # Monday
+        end = start + timedelta(days=6)
+    else:
+        start = d.replace(day=1)
+        end = (start.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+    start_s, end_s = start.isoformat(), end.isoformat()
+
+    entries = await db.cashbook_entries.find(
+        {'date': {'$gte': start_s, '$lte': end_s}}, {'_id': 0, 'date': 1, 'type': 1, 'amount': 1, 'category': 1},
+    ).to_list(20000)
+
+    by_type = {'received': {}, 'paid': {}}
+    totals = {'received': 0.0, 'paid': 0.0}
+    by_date: dict = {}
+    for e in entries:
+        t = e['type']
+        cat = (e.get('category') or '').strip() or 'Uncategorized'
+        amt = float(e['amount'])
+        by_type[t][cat] = by_type[t].get(cat, 0) + amt
+        totals[t] += amt
+        day_bucket = by_date.setdefault(e['date'], {'received': 0.0, 'paid': 0.0})
+        day_bucket[t] += amt
+
+    trend = [
+        {'date': ds, 'received': round(v['received'], 2), 'paid': round(v['paid'], 2)}
+        for ds, v in sorted(by_date.items())
+    ]
+    return {
+        'period': period, 'start_date': start_s, 'end_date': end_s,
+        'total_received': round(totals['received'], 2), 'total_paid': round(totals['paid'], 2),
+        'by_type_received': sorted(
+            [{'category': k, 'amount': round(v, 2)} for k, v in by_type['received'].items()],
+            key=lambda x: -x['amount'],
+        ),
+        'by_type_paid': sorted(
+            [{'category': k, 'amount': round(v, 2)} for k, v in by_type['paid'].items()],
+            key=lambda x: -x['amount'],
+        ),
+        'trend': trend,
+    }
