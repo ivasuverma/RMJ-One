@@ -312,17 +312,25 @@ def require_module(key: str):
 # a screen is reachable via more than one grant — e.g. browsing repair items is
 # needed both to work a repair AND to bill one, so it accepts either module).
 #
-# - require_staff_or_module: read access. Owner/admin/accountant always pass (same
-#   as require_staff always did); an employee passes only if the module is resolved
-#   for them.
+# - require_staff_or_module: read access. Owner always passes unconditionally;
+#   admin/accountant/employee all pass only if the module actually resolves for
+#   their account (resolve_modules — role defaults unless the owner has
+#   explicitly edited that account's module_access, e.g. unchecked a module for
+#   a Store Manager in People). Admin used to bypass this check entirely, which
+#   meant unchecking a module for an admin-role account (Store Manager) had no
+#   effect — fixed 2026-09-07 after that was reported for Ledger specifically.
 # - require_admin_or_module: the "do the job" actions — creating/advancing records
-#   (issue to karigar, receive from karigar, create a task, etc). Owner/admin always
-#   pass; an employee passes with module access alone, no extra right needed.
+#   (issue to karigar, receive from karigar, create a task, etc). Owner always
+#   passes; admin/employee pass with module access alone, no extra right needed
+#   (same admin fix as above).
 # - require_admin_or_module_right: editing or deleting records that already exist.
-#   Owner/admin always pass; an employee additionally needs module_rights[key][right]
-#   explicitly set True by an owner in User Roles. This is the "if edit or delete
-#   rights are disabled the employee cannot make changes" behavior. Always a single
-#   key — a right is granted per-module, never shared across an any-of group.
+#   Owner always passes; admin passes with module access alone (there's no UI to
+#   set module_rights on an admin account — Edit/Delete chips only render for
+#   employee accounts — so presence is the only thing to check); an employee
+#   additionally needs module_rights[key][right] explicitly set True by an owner
+#   in User Roles. This is the "if edit or delete rights are disabled the
+#   employee cannot make changes" behavior. Always a single key — a right is
+#   granted per-module, never shared across an any-of group.
 def _keys_label(key) -> str:
     return key if isinstance(key, str) else '/'.join(key)
 
@@ -336,9 +344,9 @@ def _has_any_module(user: dict, key) -> bool:
 def require_staff_or_module(key):
     def _check(user=Depends(get_current)):
         role = user.get('role')
-        if role in ('owner', 'admin', 'accountant'):
+        if role == 'owner':
             return user
-        if role == 'employee' and _has_any_module(user, key):
+        if role in ('admin', 'accountant', 'employee') and _has_any_module(user, key):
             return user
         raise HTTPException(status_code=403, detail=f'No access to "{_keys_label(key)}"')
     return _check
@@ -352,7 +360,9 @@ def _accountant_has_any_module(key) -> bool:
 def require_admin_or_module(key):
     def _check(user=Depends(get_current)):
         role = user.get('role')
-        if role in ('owner', 'admin'):
+        if role == 'owner':
+            return user
+        if role == 'admin' and _has_any_module(user, key):
             return user
         # An accountant gets the same "do the job" pass as admin for modules
         # that list accountant as a default role (e.g. customer_ledger,
@@ -376,7 +386,9 @@ def require_admin_or_module(key):
 def require_admin_or_module_right(key: str, right: str):
     def _check(user=Depends(get_current)):
         role = user.get('role')
-        if role in ('owner', 'admin'):
+        if role == 'owner':
+            return user
+        if role == 'admin' and key in resolve_modules(user):
             return user
         # See require_admin_or_module above — accountant is trusted like admin
         # (no separate module_rights concept for accountant accounts), for
