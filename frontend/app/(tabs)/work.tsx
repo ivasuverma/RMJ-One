@@ -8,8 +8,6 @@ import { useAuth } from '@/src/auth/AuthContext';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { ErrorState, Sheet } from '@/src/components/ui';
-import { QuickDocCapture } from '@/src/components/QuickDocCapture';
-import { FloatingCaptureButton } from '@/src/components/FloatingCaptureButton';
 import { UploadQueueBadge } from '@/src/components/UploadQueueBadge';
 
 // Work — the operational hub, laid out to the v2 design comp: a search bar,
@@ -37,7 +35,6 @@ export default function WorkScreen() {
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [data, setData] = useState<DashboardData | null>(null);
   const [docSummary, setDocSummary] = useState<{ pending_count: number } | null>(null);
-  const [captureDoc, setCaptureDoc] = useState(false);
   const [composeOpen, setComposeOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -51,8 +48,6 @@ export default function WorkScreen() {
   }, []));
   const persistOrder = (keys: string[]) => { setOrder(keys); try { if (typeof window !== 'undefined') window.localStorage.setItem(ORDER_KEY, JSON.stringify(keys)); } catch { /* ignore */ } };
 
-  const [ledgerSummary, setLedgerSummary] = useState('');
-  const [custSummary, setCustSummary] = useState('');
   const [loanSummary, setLoanSummary] = useState<{ active: number; overdue: number; total_outstanding: number; total_interest_pending: number } | null>(null);
   const [goldRateSummary, setGoldRateSummary] = useState<{ gold_rate: number | null; silver_rate: number | null; sent: boolean; error: boolean } | null>(null);
   const load = useCallback(async () => {
@@ -65,21 +60,6 @@ export default function WorkScreen() {
       gold_rate: g.today?.gold_rate ?? null, silver_rate: g.today?.silver_rate ?? null,
       sent: !!g.today?.sent_at, error: !!g.today?.error,
     })).catch(() => {});
-    // Karigar ledger tile summary — total fine gold + cash owed to karigars.
-    api.get<any[]>('/karigars').then((ks) => {
-      const fine = ks.reduce((s, k) => s + (k.fine_weight_balance || 0), 0);
-      const amt = ks.reduce((s, k) => s + (k.amount_due || 0), 0);
-      const parts: string[] = [];
-      if (Math.abs(fine) >= 0.001) parts.push(`${fine.toFixed(3)}g gold`);
-      if (Math.abs(amt) >= 1) parts.push(`₹${Math.abs(Math.round(amt)).toLocaleString('en-IN')}`);
-      setLedgerSummary(parts.length ? `Owed: ${parts.join(' · ')}` : '');
-    }).catch(() => {});
-    // Customer ledger tile summary — items & gold held with the shop.
-    api.get<any[]>('/customers').then((cs) => {
-      const items = cs.reduce((s, c) => s + (c.open_items || 0), 0);
-      const gold = cs.reduce((s, c) => s + (c.open_weight || 0), 0);
-      setCustSummary(items > 0 ? `${items} item${items === 1 ? '' : 's'} in · ${gold.toFixed(3)}g held` : '');
-    }).catch(() => {});
   }, [hasModule]);
   useFocusEffect(useCallback(() => { setLoading(true); load(); }, [load]));
 
@@ -223,26 +203,6 @@ export default function WorkScreen() {
           </Pressable>
         ))}
 
-        {/* Ledgers — the per-party ledgers (job-wise). Employee wage ledgers
-            live under Attendance › Ledgers. */}
-        <Text style={styles.sectionLabel}>Ledgers</Text>
-        <Pressable onPress={() => go('/reports/customer-ledger')} style={({ pressed }) => [styles.prow, pressed && { opacity: 0.85 }]} testID="work-customer-ledger">
-          <View style={styles.pi}><Ionicons name="person-outline" size={22} color={colors.brandSecondary} /></View>
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <Text style={styles.pt}>Customer Ledger</Text>
-            <Text style={styles.pd} numberOfLines={1}>{custSummary || 'Repair jobs & balances by customer'}</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color={colors.mutedText} />
-        </Pressable>
-        <Pressable onPress={() => go('/reports/karigar-ledger')} style={({ pressed }) => [styles.prow, pressed && { opacity: 0.85 }]} testID="work-karigar-ledger">
-          <View style={styles.pi}><Ionicons name="hammer-outline" size={22} color={colors.brandSecondary} /></View>
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <Text style={styles.pt}>Karigar Ledger</Text>
-            <Text style={styles.pd} numberOfLines={1}>{ledgerSummary || 'Gold & cash owed to karigars'}</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color={colors.mutedText} />
-        </Pressable>
-
         <View style={{ height: spacing.xxl }} />
       </ScrollView>
       <Sheet visible={composeOpen} onClose={() => setComposeOpen(false)} title="Create" testID="work-compose-sheet">
@@ -267,8 +227,6 @@ export default function WorkScreen() {
           ));
         })()}
       </Sheet>
-      {hasModule('documents') && <FloatingCaptureButton onPress={() => setCaptureDoc(true)} testID="work-capture-btn" />}
-      <QuickDocCapture visible={captureDoc} onClose={() => setCaptureDoc(false)} onSaved={load} />
     </SafeAreaView>
   );
 }

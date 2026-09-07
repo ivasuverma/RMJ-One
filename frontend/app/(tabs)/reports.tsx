@@ -11,21 +11,14 @@ type TileDef = {
   route?: string; comingSoon?: boolean;
 };
 
+// Customer/Karigar/Cash/Loss ledgers moved to their own Ledger tab — this
+// screen keeps only the two tiles that didn't move.
 const SECTIONS: { title: string; tiles: TileDef[] }[] = [
   {
     title: 'Employee Management',
     tiles: [
       { key: 'reports', label: 'Custom PDF Report', icon: 'document-text-outline', route: '/reports/generate' },
       { key: 'employee-ledger', label: 'Employee Ledger', icon: 'people-outline', route: '/reports/employee-ledger' },
-    ],
-  },
-  {
-    title: 'Repairs',
-    tiles: [
-      { key: 'customer-ledger', label: 'Customer Ledger', icon: 'person-outline', route: '/reports/customer-ledger' },
-      { key: 'karigar-ledger', label: 'Karigar Ledger', icon: 'hammer-outline', route: '/reports/karigar-ledger' },
-      { key: 'loss-ledger', label: 'Loss Ledger', icon: 'trending-down-outline', route: '/reports/loss-ledger' },
-      { key: 'cash-ledger', label: 'Cash Ledger', icon: 'cash-outline', route: '/reports/cash-ledger' },
     ],
   },
 ];

@@ -9,8 +9,6 @@ import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme, ThemePreference } from '@/src/theme/ThemeContext';
 import { isPushSupported, isSubscribed, subscribeToPush, unsubscribeFromPush } from '@/src/utils/push';
 import { NotificationSetupHint } from '@/src/components/NotificationSetupHint';
-import { QuickDocCapture } from '@/src/components/QuickDocCapture';
-import { FloatingCaptureButton } from '@/src/components/FloatingCaptureButton';
 
 // Settings, rethought (v2 Phase 6): grouped iOS-style inset list — a profile
 // card at the top, then quiet section headers over full-width rows (icon +
@@ -44,7 +42,7 @@ const GROUPS: GroupDef[] = [
   {
     title: 'Reports', ownerOnly: true,
     rows: [
-      { key: 'reports', label: 'Reports', sub: 'Custom PDF, employee/loss/cash ledgers', icon: 'bar-chart-outline', route: '/(tabs)/reports' },
+      { key: 'reports', label: 'Reports', sub: 'Custom PDF & employee ledger', icon: 'bar-chart-outline', route: '/(tabs)/reports' },
     ],
   },
   {
@@ -80,7 +78,6 @@ export default function UtilityScreen() {
   const [pushOn, setPushOn] = useState(false);
   const [pushBusy, setPushBusy] = useState(false);
   const [themePickerOpen, setThemePickerOpen] = useState(false);
-  const [captureDoc, setCaptureDoc] = useState(false);
 
   useFocusEffect(useCallback(() => {
     if (isPushSupported()) isSubscribed().then(setPushOn);
@@ -176,8 +173,6 @@ export default function UtilityScreen() {
 
         <Text style={styles.footer}>RMJ One · One system for the entire business</Text>
       </ScrollView>
-      {hasModule('documents') && <FloatingCaptureButton onPress={() => setCaptureDoc(true)} testID="utility-capture-btn" />}
-      <QuickDocCapture visible={captureDoc} onClose={() => setCaptureDoc(false)} />
     </SafeAreaView>
   );
 }

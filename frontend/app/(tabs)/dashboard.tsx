@@ -13,8 +13,6 @@ import { useDashboardStream } from '@/src/hooks/use-dashboard-stream';
 import { spacing, radius, images, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { Screen, Section, StatTile, Skeleton, ErrorState, DualBalance, Tone, Sheet } from '@/src/components/ui';
-import { QuickDocCapture } from '@/src/components/QuickDocCapture';
-import { FloatingCaptureButton } from '@/src/components/FloatingCaptureButton';
 import { UploadQueueBadge } from '@/src/components/UploadQueueBadge';
 
 type DashboardData = {
@@ -114,7 +112,6 @@ export default function DashboardScreen() {
   const [, forceTick] = useState(0);
   const [composeOpen, setComposeOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
-  const [captureDoc, setCaptureDoc] = useState(false);
   const [tileOrder, setTileOrder] = useState<TileKey[]>(DEFAULT_TILE_ORDER);
   const [hiddenTiles, setHiddenTiles] = useState<Set<TileKey>>(new Set());
   const [foldedTiles, setFoldedTiles] = useState<Set<TileKey>>(new Set());
@@ -412,9 +409,7 @@ export default function DashboardScreen() {
         </>
       ) : null}
 
-      {hasModule('documents') && <FloatingCaptureButton onPress={() => setCaptureDoc(true)} testID="dashboard-capture-btn" />}
       <ComposeSheet visible={composeOpen} onClose={() => setComposeOpen(false)} />
-      <QuickDocCapture visible={captureDoc} onClose={() => setCaptureDoc(false)} onSaved={refresh} />
       <SearchOverlay visible={searchOpen} onClose={() => setSearchOpen(false)} />
       <ReorderSheet
         visible={reorderOpen}

@@ -1,15 +1,14 @@
 import { Tabs, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { View, ActivityIndicator } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useEffect } from 'react';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { useAuth } from '@/src/auth/AuthContext';
+import { OwnerTabBar } from '@/src/components/OwnerTabBar';
 
 export default function OwnerTabsLayout() {
   const { user, loading } = useAuth();
   const { colors } = useTheme();
-  const insets = useSafeAreaInsets();
   const router = useRouter();
 
   useEffect(() => {
@@ -28,25 +27,18 @@ export default function OwnerTabsLayout() {
 
   return (
     <Tabs
-      screenOptions={{
-        headerShown: false,
-        // Seamless bar that matches the app background — no translucent band or
-        // divider line above it.
-        // Compact bar. The installed PWA often reports a 0 bottom inset, which
-        // let the labels get clipped by the home indicator — so clamp the
-        // bottom padding to at least 20px to always clear it, while keeping the
-        // content band itself short.
-        tabBarStyle: {
-          backgroundColor: colors.surface, borderTopWidth: 0, elevation: 0,
-          height: 46 + Math.max(insets.bottom, 20),
-          paddingBottom: Math.max(insets.bottom, 20), paddingTop: 6,
-        },
-        tabBarActiveTintColor: colors.brandPrimary,
-        tabBarInactiveTintColor: colors.mutedText,
-        tabBarLabelStyle: { fontSize: 10.5, fontWeight: '600', letterSpacing: 0.3 },
-      }}
+      // Custom tabBar (OwnerTabBar) replaces the default bar entirely — it
+      // renders Dashboard/Work/Ledger/Settings plus a 5th, unrouted center
+      // capture button, which the default BottomTabBar has no slot for.
+      // screenOptions here still matter: OwnerTabBar reads title/tabBarIcon/
+      // tabBarButtonTestID/tabBarStyle off each route's own options.
+      tabBar={(props) => <OwnerTabBar {...props} />}
+      screenOptions={{ headerShown: false }}
     >
-      {/* Three tabs (v2 IA): Dashboard, Work, Settings. */}
+      {/* Four tabs (v3 IA): Dashboard, Work, Ledger, Settings — plus the
+          center capture button OwnerTabBar renders between Work and Ledger.
+          Ledger consolidates the four account ledgers that used to live only
+          under Settings > Reports. */}
       <Tabs.Screen
         name="dashboard"
         options={{ title: 'Home', tabBarButtonTestID: 'tab-dashboard', tabBarIcon: ({ color, size }) => <Ionicons name="home-outline" color={color} size={size} /> }}
@@ -54,6 +46,10 @@ export default function OwnerTabsLayout() {
       <Tabs.Screen
         name="work"
         options={{ title: 'Work', tabBarButtonTestID: 'tab-work', tabBarIcon: ({ color, size }) => <Ionicons name="briefcase-outline" color={color} size={size} /> }}
+      />
+      <Tabs.Screen
+        name="ledger"
+        options={{ title: 'Ledger', tabBarButtonTestID: 'tab-ledger', tabBarIcon: ({ color, size }) => <Ionicons name="book-outline" color={color} size={size} /> }}
       />
       <Tabs.Screen
         name="utility"
