@@ -194,11 +194,9 @@ export default function SampleDetailScreen() {
             </Pressable>
           </View>
 
-          {isWithKarigar && (
-            <Pressable style={styles.primaryBtn} onPress={() => router.push(`/samples/receive?id=${id}` as any)} testID="open-receive-sample-btn">
-              <Text style={styles.primaryBtnText}>Receive Back</Text>
-            </Pressable>
-          )}
+          <Pressable style={styles.primaryBtn} onPress={() => router.push(`/samples/receive?id=${id}` as any)} testID="open-receive-sample-btn">
+            <Text style={styles.primaryBtnText}>{isWithKarigar ? 'Receive Back' : 'Edit Receive'}</Text>
+          </Pressable>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>

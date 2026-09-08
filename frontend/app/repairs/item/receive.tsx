@@ -48,6 +48,7 @@ export default function ReceiveFromKarigarScreen() {
   const [wastageWeight, setWastageWeight] = useState('');
   const [processLoss, setProcessLoss] = useState('');
   const [recvPurity, setRecvPurity] = useState('');
+  const [rate, setRate] = useState('');
   const [note, setNote] = useState('');
   const [slipPhoto, setSlipPhoto] = useState('');
   const [cameraOpen, setCameraOpen] = useState(false);
@@ -223,6 +224,11 @@ export default function ReceiveFromKarigarScreen() {
   const newWt = round3(weightNum + lossNum - issuedWeight);
   const diffWt = weight ? round3(newWt + wastageNum) : 0;
   const balanceFine = weight ? round3(diffWt * recvPurityNum / 100) : null;
+  // Rate is purely a convenience conversion (fine g -> ₹) for staff who want
+  // to see or settle the balance in cash instead of metal — optional, no
+  // effect on balanceFine itself.
+  const rateNum = parseFloat(rate) || 0;
+  const cashEquiv = balanceFine != null && rateNum > 0 ? Math.round(Math.abs(balanceFine) * rateNum) : null;
   const payMetalNum = parseFloat(payMetalWeight) || 0;
   const recvMetalNum = parseFloat(recvMetalWeight) || 0;
   // Pay/Receive Metal are entered directly in fine grams — jobs vary widely
@@ -376,6 +382,10 @@ export default function ReceiveFromKarigarScreen() {
                   </Text>
                 </View>
               </View>
+              <View style={styles.fieldCol}>
+                <Text style={styles.label}>Rate (₹/g)</Text>
+                <TextInput testID="gold-rate" value={rate} onChangeText={(v) => setRate(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="Optional" placeholderTextColor={colors.mutedText} style={styles.input} />
+              </View>
               <View style={{ alignItems: 'center' }}>
                 {slipPhoto ? (
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
@@ -401,10 +411,18 @@ export default function ReceiveFromKarigarScreen() {
                 numberOfLines={1}
               >
                 {balanceFine == null ? '—' : balanceFine > 0 ? `Payable ${balanceFine.toFixed(3)}g fine` : balanceFine < 0 ? `Receivable ${Math.abs(balanceFine).toFixed(3)}g fine` : 'Fully accounted for'}
+                {cashEquiv != null && balanceFine !== 0 ? ` · ≈ ${fmtINR(cashEquiv)}` : ''}
               </Text>
               {balanceFine != null && balanceFine !== 0 && (
                 <Pressable
                   onPress={() => {
+                    if (rateNum > 0 && cashEquiv != null) {
+                      // A rate is entered — settle in cash instead of metal.
+                      const cashAmount = String(cashEquiv);
+                      if (balanceFine > 0) setPayCash(cashAmount);
+                      else setRecvCash(cashAmount);
+                      return;
+                    }
                     // Pay/Receive Metal are entered directly in fine grams, same
                     // units as balanceFine — no touch conversion, fill as-is.
                     const settleAmount = round3(Math.abs(balanceFine)).toFixed(3);

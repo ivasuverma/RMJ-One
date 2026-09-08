@@ -7,14 +7,24 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
 import { notify } from '@/src/utils/notify';
+import { confirmAction } from '@/src/utils/confirm';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
 type Sample = {
   id: string; sample_code: string; description: string; tag_number: string;
   weight: number; karigar_name: string; status: 'with_karigar' | 'received';
+  received_weight: number | null; note: string;
+  pay_weight?: number | null; recv_weight?: number | null;
 };
 
+function round3(n: number) { return Math.round(n * 1000) / 1000; }
+
+// Same form for both creating and correcting a receive — reused rather than
+// a separate edit screen (mirrors repairs/item/receive.tsx's isEdit pattern).
+// A sample can only ever have one receive on it, so "editing" just means
+// this sample is already 'received': the backend's PUT (not POST) redoes
+// the whole ledger footprint from scratch against the corrected numbers.
 export default function ReceiveSampleScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -24,8 +34,11 @@ export default function ReceiveSampleScreen() {
   const [sample, setSample] = useState<Sample | null>(null);
   const [loading, setLoading] = useState(true);
   const [receivedWeight, setReceivedWeight] = useState('');
+  const [payWeight, setPayWeight] = useState('');
+  const [recvWeight, setRecvWeight] = useState('');
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const submittingRef = useRef(false);
 
   const load = useCallback(async () => {
@@ -34,18 +47,22 @@ export default function ReceiveSampleScreen() {
     try {
       const s = await api.get<Sample>(`/samples/${id}`);
       setSample(s);
-      // Prefilled with the issued weight rather than left blank behind a
-      // placeholder — a matching return is the common case, and a greyed-out
-      // placeholder that happens to equal the issued weight above it reads,
-      // at a glance, exactly like an already-entered value. Staff would tap
-      // Confirm on an actually-empty field, and since Alert.alert is a
-      // total no-op on web (see src/utils/notify.ts), the validation error
-      // never appeared either — the button just looked dead.
-      setReceivedWeight(String(s.weight));
+      const isEdit = s.status === 'received';
+      // Prefilled with the issued (or, when editing, the already-recorded
+      // received) weight rather than left blank behind a placeholder — a
+      // matching return is the common case, and a greyed-out placeholder
+      // that happens to equal the weight above it reads, at a glance,
+      // exactly like an already-entered value.
+      setReceivedWeight(String(isEdit ? s.received_weight ?? s.weight : s.weight));
+      setPayWeight(isEdit && s.pay_weight ? String(s.pay_weight) : '');
+      setRecvWeight(isEdit && s.recv_weight ? String(s.recv_weight) : '');
+      setNote(isEdit ? (s.note || '') : '');
     } catch (_e) { /* ignore */ }
     finally { setLoading(false); }
   }, [id]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  const isEdit = sample?.status === 'received';
 
   const submit = async () => {
     if (submittingRef.current || !sample) return;
@@ -54,7 +71,12 @@ export default function ReceiveSampleScreen() {
     submittingRef.current = true;
     setBusy(true);
     try {
-      await api.post(`/samples/${sample.id}/receive`, { received_weight: w, note: note.trim() });
+      const payload = {
+        received_weight: w, note: note.trim(),
+        pay_weight: parseFloat(payWeight) || 0, recv_weight: parseFloat(recvWeight) || 0,
+      };
+      if (isEdit) await api.put(`/samples/${sample.id}/receive`, payload);
+      else await api.post(`/samples/${sample.id}/receive`, payload);
       router.back();
     } catch (e: any) {
       notify('Failed', e?.detail || 'Please try again');
@@ -62,6 +84,21 @@ export default function ReceiveSampleScreen() {
       setBusy(false);
       submittingRef.current = false;
     }
+  };
+
+  const removeReceive = () => {
+    if (!sample) return;
+    confirmAction(
+      'Undo this receive?',
+      `${sample.sample_code} goes back to "With Karigar", and everything this receive posted to ${sample.karigar_name}'s gold balance is removed. This cannot be undone.`,
+      'Undo Receive',
+      async () => {
+        setDeleting(true);
+        try { await api.del(`/samples/${sample.id}/receive`); router.back(); }
+        catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
+        finally { setDeleting(false); }
+      },
+    );
   };
 
   if (loading || !sample) {
@@ -79,7 +116,7 @@ export default function ReceiveSampleScreen() {
   }
 
   const w = parseFloat(receivedWeight) || 0;
-  const diff = receivedWeight ? Math.round((w - sample.weight) * 1000) / 1000 : 0;
+  const diff = receivedWeight ? round3(w - sample.weight) : 0;
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="receive-sample-screen">
@@ -87,8 +124,14 @@ export default function ReceiveSampleScreen() {
         <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
-        <Text style={styles.title}>Receive Sample</Text>
-        <View style={{ width: 40 }} />
+        <Text style={styles.title}>{isEdit ? 'Edit Receive' : 'Receive Sample'}</Text>
+        {isEdit ? (
+          <Pressable onPress={removeReceive} disabled={deleting} style={styles.iconBtn} testID="delete-receive-btn" hitSlop={12}>
+            {deleting ? <ActivityIndicator size="small" color={colors.onError} /> : <Ionicons name="trash-outline" size={18} color={colors.onError} />}
+          </Pressable>
+        ) : (
+          <View style={{ width: 40 }} />
+        )}
       </View>
 
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
@@ -98,45 +141,66 @@ export default function ReceiveSampleScreen() {
             <Text style={styles.cMeta}>with {sample.karigar_name}</Text>
           </View>
 
-          {sample.status !== 'with_karigar' ? (
-            <View style={styles.empty}>
-              <Ionicons name="checkmark-circle-outline" size={36} color={colors.mutedText} />
-              <Text style={styles.emptyText}>This sample has already been received back.</Text>
-            </View>
-          ) : (
-            <>
-              <Text style={styles.label}>Issued weight (g)</Text>
-              <View style={styles.readonlyBox}><Text style={styles.readonlyBoxText}>{sample.weight.toFixed(3)}</Text></View>
+          <Text style={styles.label}>Issued weight (g)</Text>
+          <View style={styles.readonlyBox}><Text style={styles.readonlyBoxText}>{sample.weight.toFixed(3)}</Text></View>
 
-              <Text style={styles.label}>Received weight (g)</Text>
-              <TextInput
-                testID="received-weight" value={receivedWeight}
-                onChangeText={(v) => setReceivedWeight(v.replace(/[^0-9.]/g, ''))}
-                keyboardType="decimal-pad" placeholder="0.000"
-                placeholderTextColor={colors.mutedText} style={styles.input}
-              />
+          <Text style={styles.label}>Received weight (g)</Text>
+          <TextInput
+            testID="received-weight" value={receivedWeight}
+            onChangeText={(v) => setReceivedWeight(v.replace(/[^0-9.]/g, ''))}
+            keyboardType="decimal-pad" placeholder="0.000"
+            placeholderTextColor={colors.mutedText} style={styles.input}
+          />
 
-              {!!receivedWeight && (
-                <Text style={[styles.diffHint, diff !== 0 && { color: diff > 0 ? colors.onWarning : colors.onSuccess }]}>
-                  {diff === 0 ? 'Matches the issued weight exactly.' : `${diff > 0 ? '+' : ''}${diff.toFixed(3)}g vs issued — expected the same weight back.`}
-                </Text>
-              )}
-
-              <Text style={styles.label}>Note (optional)</Text>
-              <TextInput
-                testID="receive-note" value={note} onChangeText={setNote}
-                placeholder="Anything worth noting about the return" placeholderTextColor={colors.mutedText}
-                style={styles.input} multiline
-              />
-
-              <Pressable
-                style={[styles.saveBtn, busy && { opacity: 0.6 }]} disabled={busy}
-                onPress={submit} testID="confirm-receive-sample-btn"
-              >
-                {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.saveBtnText}>Confirm Receipt</Text>}
-              </Pressable>
-            </>
+          {!!receivedWeight && (
+            <Text style={[styles.diffHint, diff !== 0 && { color: diff > 0 ? colors.onWarning : colors.onSuccess }]}>
+              {diff === 0 ? 'Matches the issued weight exactly.' : `${diff > 0 ? '+' : ''}${diff.toFixed(3)}g vs issued — expected the same weight back.`}
+            </Text>
           )}
+
+          {/* Only when there's a gap — an exact match just posts the plain
+              receive entry above, nothing to settle. */}
+          {diff !== 0 && (
+            <View style={styles.settleRow}>
+              <View style={styles.fieldColFlex}>
+                <Text style={styles.label}>Pay (g)</Text>
+                <TextInput
+                  testID="pay-weight" value={payWeight}
+                  onChangeText={(v) => setPayWeight(v.replace(/[^0-9.]/g, ''))}
+                  keyboardType="decimal-pad" placeholder="0.000"
+                  placeholderTextColor={colors.mutedText} style={styles.input}
+                />
+                <Text style={styles.settleHint}>Extra gold you hand the karigar</Text>
+              </View>
+              <View style={styles.fieldColFlex}>
+                <Text style={styles.label}>Receive (g)</Text>
+                <TextInput
+                  testID="recv-weight" value={recvWeight}
+                  onChangeText={(v) => setRecvWeight(v.replace(/[^0-9.]/g, ''))}
+                  keyboardType="decimal-pad" placeholder="0.000"
+                  placeholderTextColor={colors.mutedText} style={styles.input}
+                />
+                <Text style={styles.settleHint}>Extra gold the karigar hands you</Text>
+              </View>
+            </View>
+          )}
+          {diff !== 0 && (
+            <Text style={styles.diffHint}>Leave both at 0 to just carry the gap on {sample.karigar_name}&apos;s running balance instead of settling it now.</Text>
+          )}
+
+          <Text style={styles.label}>Note (optional)</Text>
+          <TextInput
+            testID="receive-note" value={note} onChangeText={setNote}
+            placeholder="Anything worth noting about the return" placeholderTextColor={colors.mutedText}
+            style={styles.input} multiline
+          />
+
+          <Pressable
+            style={[styles.saveBtn, busy && { opacity: 0.6 }]} disabled={busy}
+            onPress={submit} testID="confirm-receive-sample-btn"
+          >
+            {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.saveBtnText}>{isEdit ? 'Save Changes' : 'Confirm Receipt'}</Text>}
+          </Pressable>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -160,9 +224,6 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   cName: { color: colors.onSurface, fontWeight: '700', fontSize: 13 },
   cMeta: { color: colors.onSurfaceTertiary, fontSize: 11, marginTop: 2 },
 
-  empty: { alignItems: 'center', paddingVertical: 40, gap: spacing.sm },
-  emptyText: { color: colors.onSurfaceTertiary, textAlign: 'center', paddingHorizontal: spacing.xl },
-
   label: { color: colors.onSurfaceSecondary, fontSize: 12, marginBottom: 6, marginTop: spacing.md },
   input: {
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
@@ -174,6 +235,10 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   readonlyBoxText: { color: colors.onSurface, fontSize: 14, fontWeight: '600' },
   diffHint: { color: colors.mutedText, fontSize: 12, marginTop: spacing.sm },
+
+  settleRow: { flexDirection: 'row', gap: spacing.md, marginTop: 4 },
+  fieldColFlex: { flex: 1 },
+  settleHint: { color: colors.mutedText, fontSize: 10.5, marginTop: 4 },
 
   saveBtn: { backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: 14, alignItems: 'center', marginTop: spacing.xl },
   saveBtnText: { color: colors.onBrandPrimary, fontWeight: '800', fontSize: 14 },

@@ -286,6 +286,45 @@ async def sample_issue_slip_print(sample_id: str, user=Depends(require_staff_or_
     return {'ok': True}
 
 
+async def _post_sample_receive_ledger(sample: dict, body: SampleReceiveIn, txn_id: str, iso: str, user: dict) -> float:
+    """Every karigar_ledger entry for one receive event: the main 'received
+    back' credit (whatever weight physically came back, as-is — samples
+    don't forgive loss or charge wastage like repairs does) plus whatever
+    on-the-spot settlement of the shortfall/surplus staff entered. Tagged
+    with txn_id so an edit/delete can find and replace exactly these
+    entries without touching the original issue's gold_out. Shared by
+    create and edit, same delete-then-repost pattern as repairs.py."""
+    weight_diff = round(body.received_weight - sample['weight'], 3)
+    note = f"Sample received back: {sample['description']}"
+    if weight_diff:
+        note += f" (diff {weight_diff:+.3f}g vs issued — expected the same weight back)"
+    await db.karigar_ledger.insert_one({
+        'id': str(uuid.uuid4()), 'karigar_id': sample['karigar_id'], 'type': 'gold_in',
+        'weight': body.received_weight, 'fine_weight': None, 'amount': None,
+        'item_id': sample['id'], 'item_code': sample['sample_code'], 'txn_id': txn_id,
+        'note': note, 'created_at': iso, 'created_by': user['name'],
+    })
+    pay_weight = body.pay_weight or 0
+    if pay_weight:
+        await db.karigar_ledger.insert_one({
+            'id': str(uuid.uuid4()), 'karigar_id': sample['karigar_id'], 'type': 'gold_out',
+            'weight': pay_weight, 'fine_weight': None, 'amount': None,
+            'item_id': sample['id'], 'item_code': sample['sample_code'], 'txn_id': txn_id,
+            'note': f"Extra gold paid on the spot to settle {sample['sample_code']}",
+            'created_at': iso, 'created_by': user['name'],
+        })
+    recv_weight = body.recv_weight or 0
+    if recv_weight:
+        await db.karigar_ledger.insert_one({
+            'id': str(uuid.uuid4()), 'karigar_id': sample['karigar_id'], 'type': 'gold_in',
+            'weight': recv_weight, 'fine_weight': None, 'amount': None,
+            'item_id': sample['id'], 'item_code': sample['sample_code'], 'txn_id': txn_id,
+            'note': f"Extra gold received on the spot to settle {sample['sample_code']}",
+            'created_at': iso, 'created_by': user['name'],
+        })
+    return weight_diff
+
+
 @router.post('/samples/{sample_id}/receive')
 async def receive_sample(sample_id: str, body: SampleReceiveIn, user=Depends(require_admin_or_module('samples'))):
     sample = await db.samples.find_one({'id': sample_id}, {'_id': 0})
@@ -296,27 +335,69 @@ async def receive_sample(sample_id: str, body: SampleReceiveIn, user=Depends(req
     if body.received_weight <= 0:
         raise HTTPException(status_code=400, detail='Received weight must be greater than 0')
 
-    weight_diff = round(body.received_weight - sample['weight'], 3)
+    txn_id = str(uuid.uuid4())
     iso = now_utc().isoformat()
-    note = f"Sample received back: {sample['description']}"
-    if weight_diff:
-        note += f" (diff {weight_diff:+.3f}g vs issued — expected the same weight back)"
-
-    await db.karigar_ledger.insert_one({
-        'id': str(uuid.uuid4()), 'karigar_id': sample['karigar_id'], 'type': 'gold_in',
-        'weight': body.received_weight, 'fine_weight': None, 'amount': None,
-        'item_id': sample_id, 'item_code': sample['sample_code'],
-        'note': note, 'created_at': iso, 'created_by': user['name'],
-    })
+    weight_diff = await _post_sample_receive_ledger(sample, body, txn_id, iso, user)
     await db.samples.update_one({'id': sample_id}, {'$set': {
         'status': 'received', 'received_weight': body.received_weight, 'weight_diff': weight_diff,
-        'received_at': iso, 'received_by': user['name'],
+        'received_at': iso, 'received_by': user['name'], 'receive_txn_id': txn_id,
+        'pay_weight': body.pay_weight or 0, 'recv_weight': body.recv_weight or 0,
         'note': (sample.get('note') or '') + (f"\n{body.note}" if body.note else ''),
     }})
     await log_audit(user, 'sample.receive', 'sample', sample_id, sample['sample_code'], {'weight_diff': weight_diff})
     diff_note = f" (diff {weight_diff:+.3f}g)" if weight_diff else ''
     await _notify_module('samples', 'Sample received back',
                           f"{sample['sample_code']} · {sample['description']} from {sample['karigar_name']}{diff_note}", '/samples', script='sample_received')
+    return await db.samples.find_one({'id': sample_id}, {'_id': 0})
+
+
+@router.put('/samples/{sample_id}/receive')
+async def edit_sample_receive(sample_id: str, body: SampleReceiveIn, user=Depends(require_admin_or_module_right('samples', 'edit'))):
+    """Corrects the most recent (and only) receive on this sample — same
+    form as creating one, reused. Redoes this receive's whole ledger
+    footprint from scratch against the corrected numbers, same as repairs.py's
+    transaction edit, so it can't drift out of sync with a fresh receive."""
+    sample = await db.samples.find_one({'id': sample_id}, {'_id': 0})
+    if not sample:
+        raise HTTPException(status_code=404, detail='Sample not found')
+    if sample['status'] != 'received':
+        raise HTTPException(status_code=400, detail='This sample has not been received back yet')
+    if body.received_weight <= 0:
+        raise HTTPException(status_code=400, detail='Received weight must be greater than 0')
+
+    txn_id = sample.get('receive_txn_id') or str(uuid.uuid4())
+    await db.karigar_ledger.delete_many({'txn_id': txn_id})
+    iso = now_utc().isoformat()
+    weight_diff = await _post_sample_receive_ledger(sample, body, txn_id, iso, user)
+    await db.samples.update_one({'id': sample_id}, {'$set': {
+        'received_weight': body.received_weight, 'weight_diff': weight_diff,
+        'received_at': iso, 'received_by': user['name'], 'receive_txn_id': txn_id,
+        'pay_weight': body.pay_weight or 0, 'recv_weight': body.recv_weight or 0,
+        'note': body.note if body.note is not None else sample.get('note', ''),
+    }})
+    await log_audit(user, 'sample.receive_edit', 'sample', sample_id, sample['sample_code'], {'weight_diff': weight_diff})
+    return await db.samples.find_one({'id': sample_id}, {'_id': 0})
+
+
+@router.delete('/samples/{sample_id}/receive')
+async def delete_sample_receive(sample_id: str, user=Depends(require_admin_or_module_right('samples', 'delete'))):
+    """Undoes a receive — back to 'with karigar', with every ledger entry
+    this receive posted (main credit + any on-the-spot settlement) removed."""
+    sample = await db.samples.find_one({'id': sample_id}, {'_id': 0})
+    if not sample:
+        raise HTTPException(status_code=404, detail='Sample not found')
+    if sample['status'] != 'received':
+        raise HTTPException(status_code=400, detail='This sample has not been received back yet')
+
+    txn_id = sample.get('receive_txn_id')
+    if txn_id:
+        await db.karigar_ledger.delete_many({'txn_id': txn_id})
+    await db.samples.update_one({'id': sample_id}, {'$set': {
+        'status': 'with_karigar', 'received_weight': None, 'weight_diff': None,
+        'received_at': None, 'received_by': None, 'receive_txn_id': None,
+        'pay_weight': 0, 'recv_weight': 0,
+    }})
+    await log_audit(user, 'sample.receive_delete', 'sample', sample_id, sample['sample_code'])
     return await db.samples.find_one({'id': sample_id}, {'_id': 0})
 
 

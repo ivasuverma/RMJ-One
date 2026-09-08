@@ -958,6 +958,13 @@ class SampleUpdateIn(BaseModel):
 class SampleReceiveIn(BaseModel):
     received_weight: float
     note: Optional[str] = ''
+    # Optional on-the-spot settlement of a shortfall/surplus vs the issued
+    # weight — plain grams (samples don't track purity/fine weight). Shown
+    # only when the received weight differs from what was issued; when it
+    # matches exactly, neither applies and the receive is just a plain
+    # ledger entry.
+    pay_weight: Optional[float] = None  # extra gold the shop hands the karigar (surplus owed to them)
+    recv_weight: Optional[float] = None  # extra gold the karigar hands the shop (shortfall they owe)
 
 
 # ---------------- Loan Against Gold — see routers/gold_loans.py ----------------
