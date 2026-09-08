@@ -287,23 +287,40 @@ async def sample_issue_slip_print(sample_id: str, user=Depends(require_staff_or_
 
 
 async def _post_sample_receive_ledger(sample: dict, body: SampleReceiveIn, txn_id: str, iso: str, user: dict) -> float:
-    """Every karigar_ledger entry for one receive event: the main 'received
-    back' credit (whatever weight physically came back, as-is — samples
-    don't forgive loss or charge wastage like repairs does) plus whatever
-    on-the-spot settlement of the shortfall/surplus staff entered. Tagged
-    with txn_id so an edit/delete can find and replace exactly these
+    """Every karigar_ledger entry for one receive event. The main 'received
+    back' credit is normally whatever weight physically came back, as-is —
+    samples don't charge wastage like repairs does — except when a shortfall
+    is written off as loss (write_off_loss), in which case the credit is
+    bumped up to the full issued weight (forgiving the gap, same idea as
+    repairs.py's process_loss) and a separate 'loss' entry records it for
+    the Loss Ledger. write_off_loss and pay/recv_weight are mutually
+    exclusive in the UI (carry the gap on the balance, settle it now, or
+    forgive it) — the backend gives write-off priority if both arrive.
+    Tagged with txn_id so an edit/delete can find and replace exactly these
     entries without touching the original issue's gold_out. Shared by
     create and edit, same delete-then-repost pattern as repairs.py."""
     weight_diff = round(body.received_weight - sample['weight'], 3)
+    write_off = bool(body.write_off_loss) and weight_diff < 0
     note = f"Sample received back: {sample['description']}"
     if weight_diff:
         note += f" (diff {weight_diff:+.3f}g vs issued — expected the same weight back)"
+    if write_off:
+        note += ' · shortfall written off as loss'
     await db.karigar_ledger.insert_one({
         'id': str(uuid.uuid4()), 'karigar_id': sample['karigar_id'], 'type': 'gold_in',
-        'weight': body.received_weight, 'fine_weight': None, 'amount': None,
+        'weight': sample['weight'] if write_off else body.received_weight, 'fine_weight': None, 'amount': None,
         'item_id': sample['id'], 'item_code': sample['sample_code'], 'txn_id': txn_id,
         'note': note, 'created_at': iso, 'created_by': user['name'],
     })
+    if write_off:
+        await db.karigar_ledger.insert_one({
+            'id': str(uuid.uuid4()), 'karigar_id': sample['karigar_id'], 'type': 'loss',
+            'weight': abs(weight_diff), 'fine_weight': None, 'amount': None,
+            'item_id': sample['id'], 'item_code': sample['sample_code'], 'txn_id': txn_id,
+            'note': f"Process loss declared: {sample['description']}",
+            'created_at': iso, 'created_by': user['name'],
+        })
+        return weight_diff
     pay_weight = body.pay_weight or 0
     if pay_weight:
         await db.karigar_ledger.insert_one({
@@ -342,6 +359,7 @@ async def receive_sample(sample_id: str, body: SampleReceiveIn, user=Depends(req
         'status': 'received', 'received_weight': body.received_weight, 'weight_diff': weight_diff,
         'received_at': iso, 'received_by': user['name'], 'receive_txn_id': txn_id,
         'pay_weight': body.pay_weight or 0, 'recv_weight': body.recv_weight or 0,
+        'write_off_loss': bool(body.write_off_loss) and weight_diff < 0,
         'note': (sample.get('note') or '') + (f"\n{body.note}" if body.note else ''),
     }})
     await log_audit(user, 'sample.receive', 'sample', sample_id, sample['sample_code'], {'weight_diff': weight_diff})
@@ -373,6 +391,7 @@ async def edit_sample_receive(sample_id: str, body: SampleReceiveIn, user=Depend
         'received_weight': body.received_weight, 'weight_diff': weight_diff,
         'received_at': iso, 'received_by': user['name'], 'receive_txn_id': txn_id,
         'pay_weight': body.pay_weight or 0, 'recv_weight': body.recv_weight or 0,
+        'write_off_loss': bool(body.write_off_loss) and weight_diff < 0,
         'note': body.note if body.note is not None else sample.get('note', ''),
     }})
     await log_audit(user, 'sample.receive_edit', 'sample', sample_id, sample['sample_code'], {'weight_diff': weight_diff})
@@ -395,7 +414,7 @@ async def delete_sample_receive(sample_id: str, user=Depends(require_admin_or_mo
     await db.samples.update_one({'id': sample_id}, {'$set': {
         'status': 'with_karigar', 'received_weight': None, 'weight_diff': None,
         'received_at': None, 'received_by': None, 'receive_txn_id': None,
-        'pay_weight': 0, 'recv_weight': 0,
+        'pay_weight': 0, 'recv_weight': 0, 'write_off_loss': False,
     }})
     await log_audit(user, 'sample.receive_delete', 'sample', sample_id, sample['sample_code'])
     return await db.samples.find_one({'id': sample_id}, {'_id': 0})

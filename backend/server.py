@@ -965,6 +965,11 @@ class SampleReceiveIn(BaseModel):
     # ledger entry.
     pay_weight: Optional[float] = None  # extra gold the shop hands the karigar (surplus owed to them)
     recv_weight: Optional[float] = None  # extra gold the karigar hands the shop (shortfall they owe)
+    # A shortfall only — writes it off as a forgiven process loss (same idea
+    # as repairs' Loss (g) field) instead of carrying it as an owed balance
+    # or settling it via pay/recv_weight above. Mutually exclusive with those
+    # in the UI; the backend gives write-off priority if both somehow arrive.
+    write_off_loss: Optional[bool] = False
 
 
 # ---------------- Loan Against Gold — see routers/gold_loans.py ----------------

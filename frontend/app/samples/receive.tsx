@@ -15,8 +15,12 @@ type Sample = {
   id: string; sample_code: string; description: string; tag_number: string;
   weight: number; karigar_name: string; status: 'with_karigar' | 'received';
   received_weight: number | null; note: string;
-  pay_weight?: number | null; recv_weight?: number | null;
+  pay_weight?: number | null; recv_weight?: number | null; write_off_loss?: boolean;
 };
+
+// How a shortfall/surplus vs. the issued weight gets handled — mutually
+// exclusive, matching the three things the backend actually does with it.
+type GapChoice = 'carry' | 'settle' | 'loss';
 
 function round3(n: number) { return Math.round(n * 1000) / 1000; }
 
@@ -34,6 +38,7 @@ export default function ReceiveSampleScreen() {
   const [sample, setSample] = useState<Sample | null>(null);
   const [loading, setLoading] = useState(true);
   const [receivedWeight, setReceivedWeight] = useState('');
+  const [gapChoice, setGapChoice] = useState<GapChoice>('carry');
   const [payWeight, setPayWeight] = useState('');
   const [recvWeight, setRecvWeight] = useState('');
   const [note, setNote] = useState('');
@@ -56,6 +61,7 @@ export default function ReceiveSampleScreen() {
       setReceivedWeight(String(isEdit ? s.received_weight ?? s.weight : s.weight));
       setPayWeight(isEdit && s.pay_weight ? String(s.pay_weight) : '');
       setRecvWeight(isEdit && s.recv_weight ? String(s.recv_weight) : '');
+      setGapChoice(isEdit && s.write_off_loss ? 'loss' : isEdit && (s.pay_weight || s.recv_weight) ? 'settle' : 'carry');
       setNote(isEdit ? (s.note || '') : '');
     } catch (_e) { /* ignore */ }
     finally { setLoading(false); }
@@ -73,7 +79,9 @@ export default function ReceiveSampleScreen() {
     try {
       const payload = {
         received_weight: w, note: note.trim(),
-        pay_weight: parseFloat(payWeight) || 0, recv_weight: parseFloat(recvWeight) || 0,
+        pay_weight: gapChoice === 'settle' ? parseFloat(payWeight) || 0 : 0,
+        recv_weight: gapChoice === 'settle' ? parseFloat(recvWeight) || 0 : 0,
+        write_off_loss: gapChoice === 'loss',
       };
       if (isEdit) await api.put(`/samples/${sample.id}/receive`, payload);
       else await api.post(`/samples/${sample.id}/receive`, payload);
@@ -159,33 +167,59 @@ export default function ReceiveSampleScreen() {
           )}
 
           {/* Only when there's a gap — an exact match just posts the plain
-              receive entry above, nothing to settle. */}
+              receive entry above, nothing to choose. */}
           {diff !== 0 && (
-            <View style={styles.settleRow}>
-              <View style={styles.fieldColFlex}>
-                <Text style={styles.label}>Pay (g)</Text>
-                <TextInput
-                  testID="pay-weight" value={payWeight}
-                  onChangeText={(v) => setPayWeight(v.replace(/[^0-9.]/g, ''))}
-                  keyboardType="decimal-pad" placeholder="0.000"
-                  placeholderTextColor={colors.mutedText} style={styles.input}
-                />
-                <Text style={styles.settleHint}>Extra gold you hand the karigar</Text>
+            <>
+              <Text style={styles.label}>How to handle the gap</Text>
+              <View style={styles.gapChoiceRow}>
+                <Pressable onPress={() => setGapChoice('carry')} style={[styles.gapChip, gapChoice === 'carry' && styles.gapChipActive]} testID="gap-choice-carry">
+                  <Text style={[styles.gapChipText, gapChoice === 'carry' && styles.gapChipTextActive]}>Carry Balance</Text>
+                </Pressable>
+                <Pressable onPress={() => setGapChoice('settle')} style={[styles.gapChip, gapChoice === 'settle' && styles.gapChipActive]} testID="gap-choice-settle">
+                  <Text style={[styles.gapChipText, gapChoice === 'settle' && styles.gapChipTextActive]}>Settle Now</Text>
+                </Pressable>
+                {diff < 0 && (
+                  <Pressable onPress={() => setGapChoice('loss')} style={[styles.gapChip, gapChoice === 'loss' && styles.gapChipActive]} testID="gap-choice-loss">
+                    <Text style={[styles.gapChipText, gapChoice === 'loss' && styles.gapChipTextActive]}>Write Off as Loss</Text>
+                  </Pressable>
+                )}
               </View>
-              <View style={styles.fieldColFlex}>
-                <Text style={styles.label}>Receive (g)</Text>
-                <TextInput
-                  testID="recv-weight" value={recvWeight}
-                  onChangeText={(v) => setRecvWeight(v.replace(/[^0-9.]/g, ''))}
-                  keyboardType="decimal-pad" placeholder="0.000"
-                  placeholderTextColor={colors.mutedText} style={styles.input}
-                />
-                <Text style={styles.settleHint}>Extra gold the karigar hands you</Text>
-              </View>
-            </View>
-          )}
-          {diff !== 0 && (
-            <Text style={styles.diffHint}>Leave both at 0 to just carry the gap on {sample.karigar_name}&apos;s running balance instead of settling it now.</Text>
+
+              {gapChoice === 'carry' && (
+                <Text style={styles.diffHint}>The gap sits on {sample.karigar_name}&apos;s running balance until settled later.</Text>
+              )}
+
+              {gapChoice === 'settle' && (
+                <View style={styles.settleRow}>
+                  <View style={styles.fieldColFlex}>
+                    <Text style={styles.label}>Pay (g)</Text>
+                    <TextInput
+                      testID="pay-weight" value={payWeight}
+                      onChangeText={(v) => setPayWeight(v.replace(/[^0-9.]/g, ''))}
+                      keyboardType="decimal-pad" placeholder="0.000"
+                      placeholderTextColor={colors.mutedText} style={styles.input}
+                    />
+                    <Text style={styles.settleHint}>Extra gold you hand the karigar</Text>
+                  </View>
+                  <View style={styles.fieldColFlex}>
+                    <Text style={styles.label}>Receive (g)</Text>
+                    <TextInput
+                      testID="recv-weight" value={recvWeight}
+                      onChangeText={(v) => setRecvWeight(v.replace(/[^0-9.]/g, ''))}
+                      keyboardType="decimal-pad" placeholder="0.000"
+                      placeholderTextColor={colors.mutedText} style={styles.input}
+                    />
+                    <Text style={styles.settleHint}>Extra gold the karigar hands you</Text>
+                  </View>
+                </View>
+              )}
+
+              {gapChoice === 'loss' && (
+                <Text style={styles.diffHint}>
+                  {Math.abs(diff).toFixed(3)}g is written off as a forgiven process loss — it shows up on the Loss Ledger and doesn&apos;t count against {sample.karigar_name}&apos;s balance.
+                </Text>
+              )}
+            </>
           )}
 
           <Text style={styles.label}>Note (optional)</Text>
@@ -236,7 +270,16 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   readonlyBoxText: { color: colors.onSurface, fontSize: 14, fontWeight: '600' },
   diffHint: { color: colors.mutedText, fontSize: 12, marginTop: spacing.sm },
 
-  settleRow: { flexDirection: 'row', gap: spacing.md, marginTop: 4 },
+  gapChoiceRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  gapChip: {
+    paddingHorizontal: spacing.md, paddingVertical: 8, borderRadius: radius.pill,
+    backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border,
+  },
+  gapChipActive: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
+  gapChipText: { color: colors.onSurfaceSecondary, fontSize: 12.5, fontWeight: '700' },
+  gapChipTextActive: { color: colors.onBrandPrimary },
+
+  settleRow: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.md },
   fieldColFlex: { flex: 1 },
   settleHint: { color: colors.mutedText, fontSize: 10.5, marginTop: 4 },
 
