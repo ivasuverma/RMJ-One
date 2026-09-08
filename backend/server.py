@@ -923,6 +923,15 @@ class KarigarLedgerEntryIn(BaseModel):
     amount: Optional[float] = 0   # ₹ types (labour_payable/payment/adjustment)
     weight: Optional[float] = 0   # gold types (gold_out/gold_in) — entered directly in fine-gold grams
     note: Optional[str] = ''
+    # Optional job attribution — the Karigar Ledger's "Settle Balance" flow
+    # posts one of these per job the owner selects, so the settlement shows
+    # up grouped under that job instead of "Other Entries". The frontend
+    # already has both values in memory (built from the job's own ledger
+    # entries), so it sends them straight through rather than the backend
+    # re-deriving item_code from whichever collection (repairs or samples)
+    # item_id happens to belong to.
+    item_id: Optional[str] = None
+    item_code: Optional[str] = None
 
 
 # ---------------- Samples (gold sample pieces issued to a karigar, expected back at the same weight) ----------------

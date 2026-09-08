@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Image, Modal,
+  View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Image, Modal, TextInput,
 } from 'react-native';
 import { notify } from '@/src/utils/notify';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -12,13 +12,13 @@ import { istDate } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { useAuth } from '@/src/auth/AuthContext';
-import { ErrorState } from '@/src/components/ui';
+import { ErrorState, Sheet } from '@/src/components/ui';
 
 type Karigar = { id: string; name: string; mobile: string; is_employee: boolean };
 type Entry = {
   id: string; type: 'gold_out' | 'gold_in' | 'wastage' | 'adjustment' | 'labour_payable' | 'payment' | 'receipt' | 'loss';
   weight: number | null; fine_weight?: number | null; amount: number | null; item_id?: string | null; item_code: string | null;
-  note: string; created_at: string; created_by: string; slip_photo?: string | null;
+  note: string; created_at: string; created_by: string; slip_photo?: string | null; txn_id?: string | null;
 };
 type Job = {
   itemId: string; itemCode: string; entries: Entry[];
@@ -49,6 +49,16 @@ export default function KarigarLedgerScreen() {
   const [deletingId, setDeletingId] = useState('');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [previewPhoto, setPreviewPhoto] = useState<string | null>(null);
+
+  // Settle Balance — records a metal or cash transaction against one or
+  // more selected jobs at once, clearing each job's own outstanding balance
+  // in that dimension rather than a single freeform adjustment.
+  const [settleOpen, setSettleOpen] = useState(false);
+  const [settleKind, setSettleKind] = useState<'metal' | 'cash'>('metal');
+  const [settleDir, setSettleDir] = useState<'pay' | 'receive'>('receive');
+  const [selectedJobs, setSelectedJobs] = useState<Set<string>>(new Set());
+  const [settleNote, setSettleNote] = useState('');
+  const [settleBusy, setSettleBusy] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -98,6 +108,55 @@ export default function KarigarLedgerScreen() {
     if (jobs.length && expanded.size === 0) setExpanded(new Set([jobs[0].itemId]));
   }, [jobs]);
 
+  // Which jobs a given Settle Balance direction can actually apply to — a
+  // job's own balance has to be outstanding in the matching direction:
+  // fineBal > 0 (gold still with the karigar) is what Receive Metal clears;
+  // fineBal < 0 (excess returned) is what Pay Metal clears; same idea for
+  // amtDue and cash. Mixed-direction jobs just don't show up for the wrong
+  // action rather than needing a per-job override.
+  const settleEligibleJobs = useMemo(() => {
+    if (settleKind === 'metal') {
+      return jobs.filter((j) => (settleDir === 'receive' ? j.fineBal > 0.001 : j.fineBal < -0.001));
+    }
+    return jobs.filter((j) => (settleDir === 'pay' ? j.amtDue > 0.5 : j.amtDue < -0.5));
+  }, [jobs, settleKind, settleDir]);
+  const settleTotal = useMemo(
+    () => settleEligibleJobs.filter((j) => selectedJobs.has(j.itemId))
+      .reduce((s, j) => s + Math.abs(settleKind === 'metal' ? j.fineBal : j.amtDue), 0),
+    [settleEligibleJobs, selectedJobs, settleKind],
+  );
+
+  const openSettle = () => { setSelectedJobs(new Set()); setSettleNote(''); setSettleOpen(true); };
+  const toggleSettleJob = (itemId: string) => {
+    setSelectedJobs((prev) => {
+      const next = new Set(prev);
+      if (next.has(itemId)) next.delete(itemId); else next.add(itemId);
+      return next;
+    });
+  };
+  const submitSettle = async () => {
+    if (selectedJobs.size === 0) { notify('Nothing selected', 'Pick at least one job to settle.'); return; }
+    setSettleBusy(true);
+    try {
+      const type = settleKind === 'metal'
+        ? (settleDir === 'pay' ? 'gold_out' : 'gold_in')
+        : (settleDir === 'pay' ? 'payment' : 'receipt');
+      for (const job of settleEligibleJobs) {
+        if (!selectedJobs.has(job.itemId)) continue;
+        const magnitude = Math.abs(settleKind === 'metal' ? job.fineBal : job.amtDue);
+        const payload: any = { type, note: settleNote.trim(), item_id: job.itemId, item_code: job.itemCode };
+        if (settleKind === 'metal') payload.weight = magnitude; else payload.amount = magnitude;
+        await api.post(`/karigars/${id}/ledger`, payload);
+      }
+      setSettleOpen(false);
+      await load();
+    } catch (err: any) {
+      notify('Failed', err?.detail || 'Could not record this settlement.');
+    } finally {
+      setSettleBusy(false);
+    }
+  };
+
   const toggleJob = (itemId: string) => {
     setExpanded((prev) => {
       const next = new Set(prev);
@@ -135,7 +194,7 @@ export default function KarigarLedgerScreen() {
           <Image source={{ uri: e.slip_photo }} style={styles.entryThumb} />
         </Pressable>
       ) : null}
-      {!e.item_id && canDeleteEntry && (
+      {!e.txn_id && canDeleteEntry && (
         <Pressable onPress={() => removeEntry(e)} disabled={deletingId === e.id} style={styles.entryDelBtn} hitSlop={8} testID={`del-entry-${e.id}`}>
           {deletingId === e.id ? <ActivityIndicator size="small" color={colors.onError} /> : <Ionicons name="trash-outline" size={14} color={colors.onError} />}
         </Pressable>
@@ -169,7 +228,9 @@ export default function KarigarLedgerScreen() {
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
         <Text style={styles.title} numberOfLines={1}>{karigar.name}</Text>
-        <View style={{ width: 40 }} />
+        <Pressable onPress={openSettle} style={styles.iconBtn} testID="open-settle-btn" hitSlop={12}>
+          <Ionicons name="swap-horizontal-outline" size={20} color={colors.onSurface} />
+        </Pressable>
       </View>
 
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 60 }}>
@@ -237,6 +298,89 @@ export default function KarigarLedgerScreen() {
           {previewPhoto ? <Image source={{ uri: previewPhoto }} style={styles.previewImage} resizeMode="contain" /> : null}
         </Pressable>
       </Modal>
+
+      <Sheet visible={settleOpen} onClose={() => setSettleOpen(false)} title="Settle Balance" testID="settle-sheet">
+        <Text style={styles.settleLabel}>Kind</Text>
+        <View style={styles.settleChoiceRow}>
+          <Pressable
+            onPress={() => { setSettleKind('metal'); setSelectedJobs(new Set()); }}
+            style={[styles.settleChip, settleKind === 'metal' && styles.settleChipActive]} testID="settle-kind-metal"
+          >
+            <Text style={[styles.settleChipText, settleKind === 'metal' && styles.settleChipTextActive]}>Metal</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => { setSettleKind('cash'); setSelectedJobs(new Set()); }}
+            style={[styles.settleChip, settleKind === 'cash' && styles.settleChipActive]} testID="settle-kind-cash"
+          >
+            <Text style={[styles.settleChipText, settleKind === 'cash' && styles.settleChipTextActive]}>Cash</Text>
+          </Pressable>
+        </View>
+
+        <Text style={styles.settleLabel}>Direction</Text>
+        <View style={styles.settleChoiceRow}>
+          <Pressable
+            onPress={() => { setSettleDir('receive'); setSelectedJobs(new Set()); }}
+            style={[styles.settleChip, settleDir === 'receive' && styles.settleChipActive]} testID="settle-dir-receive"
+          >
+            <Text style={[styles.settleChipText, settleDir === 'receive' && styles.settleChipTextActive]}>
+              {settleKind === 'metal' ? 'Receive Metal' : 'Receive Cash'}
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={() => { setSettleDir('pay'); setSelectedJobs(new Set()); }}
+            style={[styles.settleChip, settleDir === 'pay' && styles.settleChipActive]} testID="settle-dir-pay"
+          >
+            <Text style={[styles.settleChipText, settleDir === 'pay' && styles.settleChipTextActive]}>
+              {settleKind === 'metal' ? 'Pay Metal' : 'Pay Cash'}
+            </Text>
+          </Pressable>
+        </View>
+
+        <Text style={styles.settleLabel}>Jobs — pick one or more to settle</Text>
+        {settleEligibleJobs.length === 0 ? (
+          <Text style={styles.settleEmpty}>No jobs have an outstanding balance for this direction.</Text>
+        ) : (
+          <ScrollView style={styles.settleJobList} contentContainerStyle={{ gap: spacing.xs }} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+            {settleEligibleJobs.map((j) => {
+              const checked = selectedJobs.has(j.itemId);
+              const magnitude = Math.abs(settleKind === 'metal' ? j.fineBal : j.amtDue);
+              return (
+                <Pressable
+                  key={j.itemId} onPress={() => toggleSettleJob(j.itemId)}
+                  style={[styles.settleJobRow, checked && styles.settleJobRowActive]}
+                  testID={`settle-job-${j.itemId}`}
+                >
+                  <Ionicons name={checked ? 'checkbox' : 'square-outline'} size={19} color={checked ? colors.brandPrimary : colors.mutedText} />
+                  <Text style={styles.settleJobCode}>{j.itemCode}</Text>
+                  <Text style={styles.settleJobAmt}>{settleKind === 'metal' ? `${magnitude.toFixed(3)}g` : `₹${magnitude.toFixed(0)}`}</Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        )}
+
+        {selectedJobs.size > 0 && (
+          <View style={styles.settleTotalRow}>
+            <Text style={styles.settleTotalLabel}>Total ({selectedJobs.size} job{selectedJobs.size === 1 ? '' : 's'})</Text>
+            <Text style={styles.settleTotalValue}>{settleKind === 'metal' ? `${settleTotal.toFixed(3)}g` : `₹${settleTotal.toFixed(0)}`}</Text>
+          </View>
+        )}
+
+        <Text style={styles.settleLabel}>Note (optional)</Text>
+        <TextInput
+          testID="settle-note" value={settleNote} onChangeText={setSettleNote}
+          placeholder="Anything worth noting" placeholderTextColor={colors.mutedText}
+          style={styles.settleInput}
+        />
+
+        <Pressable
+          onPress={submitSettle} disabled={settleBusy || selectedJobs.size === 0}
+          style={[styles.settleSaveBtn, (settleBusy || selectedJobs.size === 0) && { opacity: 0.5 }]}
+          testID="settle-submit-btn"
+        >
+          {settleBusy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.settleSaveBtnText}>Record Settlement</Text>}
+        </Pressable>
+      </Sheet>
     </SafeAreaView>
   );
 }
@@ -290,4 +434,39 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
 
   previewOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.9)', alignItems: 'center', justifyContent: 'center' },
   previewImage: { width: '92%', height: '80%' },
+
+  settleLabel: { color: colors.onSurfaceSecondary, fontSize: 12, marginBottom: 6, marginTop: spacing.md },
+  settleChoiceRow: { flexDirection: 'row', gap: spacing.sm },
+  settleChip: {
+    flex: 1, paddingVertical: 10, borderRadius: radius.md, alignItems: 'center',
+    backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border,
+  },
+  settleChipActive: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
+  settleChipText: { color: colors.onSurfaceSecondary, fontSize: 13, fontWeight: '700' },
+  settleChipTextActive: { color: colors.onBrandPrimary },
+
+  settleEmpty: { color: colors.mutedText, fontSize: 13, paddingVertical: spacing.md },
+  settleJobList: { maxHeight: 220 },
+  settleJobRow: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    paddingVertical: 10, paddingHorizontal: spacing.md,
+  },
+  settleJobRowActive: { borderColor: colors.brandPrimary },
+  settleJobCode: { flex: 1, color: colors.onSurface, fontSize: 13, fontWeight: '700' },
+  settleJobAmt: { color: colors.onSurface, fontSize: 13, fontWeight: '700' },
+
+  settleTotalRow: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    marginTop: spacing.md, paddingTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.divider,
+  },
+  settleTotalLabel: { color: colors.mutedText, fontSize: 12, fontWeight: '600' },
+  settleTotalValue: { color: colors.onSurface, fontSize: 16, fontWeight: '800' },
+
+  settleInput: {
+    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    color: colors.onSurface, paddingHorizontal: spacing.md, paddingVertical: 12, fontSize: 14,
+  },
+  settleSaveBtn: { backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: 14, alignItems: 'center', marginTop: spacing.lg },
+  settleSaveBtnText: { color: colors.onBrandPrimary, fontWeight: '800', fontSize: 14 },
 });
