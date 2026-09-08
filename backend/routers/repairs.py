@@ -1053,12 +1053,16 @@ async def bill_item(item_id: str, body: DeliverIn, user=Depends(require_admin_or
     the same step, but billing and the customer actually walking out with
     the item are now two separate moments: this moves the tag to
     'pending_delivery' (billed, waiting to be picked up); close_delivery()
-    below is the second, separate step that actually closes it out."""
+    below is the second, separate step that actually closes it out.
+
+    billed_amount is deliberately NOT posted to the cash ledger here — the
+    customer hasn't paid yet at this point, only been billed, so it stays an
+    outstanding amount (visible via the item's own billed_amount / the
+    Outstanding Repairs list) until close_delivery() actually collects it."""
     item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
     if not item: raise HTTPException(status_code=404, detail='Item not found')
     if item['status'] != 'ready':
         raise HTTPException(status_code=400, detail='Item must be ready before billing')
-    iso = now_utc().isoformat()
     labour = body.labour_charge if body.labour_charge is not None else item.get('labour_charge', 0)
     material_adj = body.material_adjustment if body.material_adjustment is not None else item.get('customer_adjustment', 0) or 0
     extra = body.extra_charges or 0
@@ -1075,7 +1079,6 @@ async def bill_item(item_id: str, body: DeliverIn, user=Depends(require_admin_or
         'final_photo': body.final_photo or item.get('final_photo', ''),
     }})
     updated = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
-    await _sync_cash_ledger_entry(updated, billed_amount, body.payment_mode, user, iso)
     await log_audit(user, 'repair_item.bill', 'repair_item', item_id, item['item_code'], {'billed_amount': billed_amount})
     # WhatsApp notice to the customer is a separate, manual step from here —
     # POST /repair-items/{item_id}/notify-whatsapp below — not automatic on
@@ -1184,8 +1187,11 @@ async def notify_whatsapp_received(item_id: str, user=Depends(require_admin_or_m
 @router.post('/repair-items/{item_id}/close-delivery')
 async def close_delivery(item_id: str, body: CloseDeliveryIn, user=Depends(require_admin_or_module(['repairs']))):
     """Second, separate step from billing: the customer has actually picked
-    the item up. Records who handed it over and on what date, then marks it
-    delivered."""
+    the item up. Records who handed it over and on what date, marks it
+    delivered — and this is the moment the outstanding billed_amount from
+    bill_item() actually clears: only now does it post to the cash ledger,
+    using whatever payment_mode was set at billing time (unchanged since —
+    there's no way to override it at pickup)."""
     item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
     if not item: raise HTTPException(status_code=404, detail='Item not found')
     if item['status'] != 'pending_delivery':
@@ -1202,8 +1208,10 @@ async def close_delivery(item_id: str, body: CloseDeliveryIn, user=Depends(requi
         'status': 'delivered', 'delivered_at': delivered_iso,
         'delivered_by': delivered_by, 'delivered_by_id': user['id'], 'updated_by': user['name'],
     }})
+    updated = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
+    await _sync_cash_ledger_entry(updated, updated.get('billed_amount') or 0, updated.get('payment_mode'), user, delivered_iso)
     await log_audit(user, 'repair_item.close_delivery', 'repair_item', item_id, item['item_code'], {'delivered_by': delivered_by})
-    return await db.repair_items.find_one({'id': item_id}, {'_id': 0})
+    return updated
 
 
 @router.put('/repair-items/{item_id}/bill')
@@ -1211,7 +1219,11 @@ async def edit_bill(item_id: str, body: DeliverIn, user=Depends(require_admin_or
     """Corrects a bill in place (whether it's still pending delivery or
     already fully delivered) — same full form as creating one, rather than
     the old delete-then-recreate dance. Doesn't touch status, delivered_at,
-    or the karigar side of the job; only the bill numbers."""
+    or the karigar side of the job; only the bill numbers.
+
+    Only re-syncs the cash ledger if the item is already delivered — while
+    still pending_delivery, nothing has been posted yet (see bill_item /
+    close_delivery), so there's nothing here to keep in sync until then."""
     item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
     if not item: raise HTTPException(status_code=404, detail='Item not found')
     if item['status'] not in ('pending_delivery', 'delivered'):
@@ -1234,7 +1246,8 @@ async def edit_bill(item_id: str, body: DeliverIn, user=Depends(require_admin_or
         'final_photo': body.final_photo or item.get('final_photo', ''), 'updated_by': user['name'],
     }})
     updated = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
-    await _sync_cash_ledger_entry(updated, billed_amount, body.payment_mode, user, iso)
+    if item['status'] == 'delivered':
+        await _sync_cash_ledger_entry(updated, billed_amount, body.payment_mode, user, iso)
     await log_audit(user, 'repair_item.bill_edit', 'repair_item', item_id, item['item_code'], {'billed_amount': billed_amount})
     return updated
 
