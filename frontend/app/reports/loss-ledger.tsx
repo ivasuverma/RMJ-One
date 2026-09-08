@@ -9,7 +9,7 @@ import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
 type LossEntry = {
-  id: string; karigar_id: string; karigar_name: string; weight: number; fine_weight: number;
+  id: string; karigar_id: string; karigar_name: string; weight: number; fine_weight: number | null;
   item_id?: string | null; item_code: string | null; note: string; created_at: string; created_by: string;
 };
 type ByKarigar = { karigar_id: string; name: string; weight: number; fine: number; count: number };
@@ -118,7 +118,9 @@ export default function LossLedgerScreen() {
               </View>
               <View style={{ alignItems: 'flex-end' }}>
                 <Text style={styles.entryValue}>{e.weight.toFixed(3)}g</Text>
-                <Text style={styles.entryFine}>fine {e.fine_weight.toFixed(3)}g</Text>
+                {/* Stock In/Out doesn't track purity, so its loss entries carry
+                    no fine_weight — plain weight above is the whole story there. */}
+                {e.fine_weight != null && <Text style={styles.entryFine}>fine {e.fine_weight.toFixed(3)}g</Text>}
               </View>
             </Pressable>
           ))}
