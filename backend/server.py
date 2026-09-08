@@ -919,9 +919,9 @@ class CloseDeliveryIn(BaseModel):
 
 
 class KarigarLedgerEntryIn(BaseModel):
-    type: Literal['labour_payable', 'payment', 'receipt', 'adjustment', 'gold_out', 'gold_in']
+    type: Literal['labour_payable', 'payment', 'receipt', 'adjustment', 'gold_out', 'gold_in', 'loss']
     amount: Optional[float] = 0   # ₹ types (labour_payable/payment/adjustment)
-    weight: Optional[float] = 0   # gold types (gold_out/gold_in) — entered directly in fine-gold grams
+    weight: Optional[float] = 0   # gold types (gold_out/gold_in/loss) — entered directly in fine-gold grams
     note: Optional[str] = ''
     # Optional job attribution — the Karigar Ledger's "Settle Balance" flow
     # posts one of these per job the owner selects, so the settlement shows

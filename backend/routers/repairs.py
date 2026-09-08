@@ -1550,9 +1550,12 @@ async def add_karigar_ledger_entry(kid: str, body: KarigarLedgerEntryIn, user=De
     # endpoint below this one is safe to remove directly.
     item_id = body.item_id or None
     item_code = body.item_code or None
-    if body.type in ('gold_out', 'gold_in'):
+    if body.type in ('gold_out', 'gold_in', 'loss'):
         # A manual/general gold adjustment — e.g. settling a leftover balance,
         # optionally attributed to one job. Entered directly in fine-gold grams.
+        # 'loss' is audit-only (see _karigar_ledger_balances — it never touches
+        # weight_bal/fine_bal), so writing off a job's balance this way still
+        # needs a paired gold_in from the Settle Balance UI to actually clear it.
         w = abs(body.weight or 0)
         if not w:
             raise HTTPException(status_code=400, detail='Enter a gold weight greater than 0')

@@ -54,7 +54,7 @@ export default function KarigarLedgerScreen() {
   // more selected jobs at once, clearing each job's own outstanding balance
   // in that dimension rather than a single freeform adjustment.
   const [settleOpen, setSettleOpen] = useState(false);
-  const [settleKind, setSettleKind] = useState<'metal' | 'cash'>('metal');
+  const [settleKind, setSettleKind] = useState<'metal' | 'cash' | 'loss'>('metal');
   const [settleDir, setSettleDir] = useState<'pay' | 'receive'>('receive');
   const [selectedJobs, setSelectedJobs] = useState<Set<string>>(new Set());
   const [settleNote, setSettleNote] = useState('');
@@ -113,8 +113,11 @@ export default function KarigarLedgerScreen() {
   // fineBal > 0 (gold still with the karigar) is what Receive Metal clears;
   // fineBal < 0 (excess returned) is what Pay Metal clears; same idea for
   // amtDue and cash. Mixed-direction jobs just don't show up for the wrong
-  // action rather than needing a per-job override.
+  // action rather than needing a per-job override. Loss only ever writes off
+  // gold still owed BY the karigar (fineBal > 0) — there's no direction to
+  // pick, so it reuses the Receive Metal eligibility.
   const settleEligibleJobs = useMemo(() => {
+    if (settleKind === 'loss') return jobs.filter((j) => j.fineBal > 0.001);
     if (settleKind === 'metal') {
       return jobs.filter((j) => (settleDir === 'receive' ? j.fineBal > 0.001 : j.fineBal < -0.001));
     }
@@ -122,7 +125,7 @@ export default function KarigarLedgerScreen() {
   }, [jobs, settleKind, settleDir]);
   const settleTotal = useMemo(
     () => settleEligibleJobs.filter((j) => selectedJobs.has(j.itemId))
-      .reduce((s, j) => s + Math.abs(settleKind === 'metal' ? j.fineBal : j.amtDue), 0),
+      .reduce((s, j) => s + Math.abs(settleKind === 'cash' ? j.amtDue : j.fineBal), 0),
     [settleEligibleJobs, selectedJobs, settleKind],
   );
 
@@ -138,11 +141,21 @@ export default function KarigarLedgerScreen() {
     if (selectedJobs.size === 0) { notify('Nothing selected', 'Pick at least one job to settle.'); return; }
     setSettleBusy(true);
     try {
-      const type = settleKind === 'metal'
-        ? (settleDir === 'pay' ? 'gold_out' : 'gold_in')
-        : (settleDir === 'pay' ? 'payment' : 'receipt');
       for (const job of settleEligibleJobs) {
         if (!selectedJobs.has(job.itemId)) continue;
+        if (settleKind === 'loss') {
+          // Loss is audit-only (see _karigar_ledger_balances) — a gold_in for
+          // the same weight is what actually clears the job's fineBal, same
+          // pairing repairs.py and samples.py post for a forgiven shortfall.
+          const magnitude = Math.abs(job.fineBal);
+          const common = { note: settleNote.trim(), item_id: job.itemId, item_code: job.itemCode, weight: magnitude };
+          await api.post(`/karigars/${id}/ledger`, { ...common, type: 'gold_in' });
+          await api.post(`/karigars/${id}/ledger`, { ...common, type: 'loss' });
+          continue;
+        }
+        const type = settleKind === 'metal'
+          ? (settleDir === 'pay' ? 'gold_out' : 'gold_in')
+          : (settleDir === 'pay' ? 'payment' : 'receipt');
         const magnitude = Math.abs(settleKind === 'metal' ? job.fineBal : job.amtDue);
         const payload: any = { type, note: settleNote.trim(), item_id: job.itemId, item_code: job.itemCode };
         if (settleKind === 'metal') payload.weight = magnitude; else payload.amount = magnitude;
@@ -314,36 +327,48 @@ export default function KarigarLedgerScreen() {
           >
             <Text style={[styles.settleChipText, settleKind === 'cash' && styles.settleChipTextActive]}>Cash</Text>
           </Pressable>
+          <Pressable
+            onPress={() => { setSettleKind('loss'); setSelectedJobs(new Set()); }}
+            style={[styles.settleChip, settleKind === 'loss' && styles.settleChipActive]} testID="settle-kind-loss"
+          >
+            <Text style={[styles.settleChipText, settleKind === 'loss' && styles.settleChipTextActive]}>Loss</Text>
+          </Pressable>
         </View>
 
-        <Text style={styles.settleLabel}>Direction</Text>
-        <View style={styles.settleChoiceRow}>
-          <Pressable
-            onPress={() => { setSettleDir('receive'); setSelectedJobs(new Set()); }}
-            style={[styles.settleChip, settleDir === 'receive' && styles.settleChipActive]} testID="settle-dir-receive"
-          >
-            <Text style={[styles.settleChipText, settleDir === 'receive' && styles.settleChipTextActive]}>
-              {settleKind === 'metal' ? 'Receive Metal' : 'Receive Cash'}
-            </Text>
-          </Pressable>
-          <Pressable
-            onPress={() => { setSettleDir('pay'); setSelectedJobs(new Set()); }}
-            style={[styles.settleChip, settleDir === 'pay' && styles.settleChipActive]} testID="settle-dir-pay"
-          >
-            <Text style={[styles.settleChipText, settleDir === 'pay' && styles.settleChipTextActive]}>
-              {settleKind === 'metal' ? 'Pay Metal' : 'Pay Cash'}
-            </Text>
-          </Pressable>
-        </View>
+        {settleKind === 'loss' ? (
+          <Text style={styles.settleHintText}>Writes off gold a job still owes as a forgiven process loss — it shows up on the Loss Ledger and no longer counts against the balance.</Text>
+        ) : (
+          <>
+            <Text style={styles.settleLabel}>Direction</Text>
+            <View style={styles.settleChoiceRow}>
+              <Pressable
+                onPress={() => { setSettleDir('receive'); setSelectedJobs(new Set()); }}
+                style={[styles.settleChip, settleDir === 'receive' && styles.settleChipActive]} testID="settle-dir-receive"
+              >
+                <Text style={[styles.settleChipText, settleDir === 'receive' && styles.settleChipTextActive]}>
+                  {settleKind === 'metal' ? 'Receive Metal' : 'Receive Cash'}
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => { setSettleDir('pay'); setSelectedJobs(new Set()); }}
+                style={[styles.settleChip, settleDir === 'pay' && styles.settleChipActive]} testID="settle-dir-pay"
+              >
+                <Text style={[styles.settleChipText, settleDir === 'pay' && styles.settleChipTextActive]}>
+                  {settleKind === 'metal' ? 'Pay Metal' : 'Pay Cash'}
+                </Text>
+              </Pressable>
+            </View>
+          </>
+        )}
 
         <Text style={styles.settleLabel}>Jobs — pick one or more to settle</Text>
         {settleEligibleJobs.length === 0 ? (
-          <Text style={styles.settleEmpty}>No jobs have an outstanding balance for this direction.</Text>
+          <Text style={styles.settleEmpty}>No jobs have an outstanding balance for this.</Text>
         ) : (
           <ScrollView style={styles.settleJobList} contentContainerStyle={{ gap: spacing.xs }} nestedScrollEnabled keyboardShouldPersistTaps="handled">
             {settleEligibleJobs.map((j) => {
               const checked = selectedJobs.has(j.itemId);
-              const magnitude = Math.abs(settleKind === 'metal' ? j.fineBal : j.amtDue);
+              const magnitude = Math.abs(settleKind === 'cash' ? j.amtDue : j.fineBal);
               return (
                 <Pressable
                   key={j.itemId} onPress={() => toggleSettleJob(j.itemId)}
@@ -352,7 +377,7 @@ export default function KarigarLedgerScreen() {
                 >
                   <Ionicons name={checked ? 'checkbox' : 'square-outline'} size={19} color={checked ? colors.brandPrimary : colors.mutedText} />
                   <Text style={styles.settleJobCode}>{j.itemCode}</Text>
-                  <Text style={styles.settleJobAmt}>{settleKind === 'metal' ? `${magnitude.toFixed(3)}g` : `₹${magnitude.toFixed(0)}`}</Text>
+                  <Text style={styles.settleJobAmt}>{settleKind === 'cash' ? `₹${magnitude.toFixed(0)}` : `${magnitude.toFixed(3)}g`}</Text>
                 </Pressable>
               );
             })}
@@ -362,7 +387,7 @@ export default function KarigarLedgerScreen() {
         {selectedJobs.size > 0 && (
           <View style={styles.settleTotalRow}>
             <Text style={styles.settleTotalLabel}>Total ({selectedJobs.size} job{selectedJobs.size === 1 ? '' : 's'})</Text>
-            <Text style={styles.settleTotalValue}>{settleKind === 'metal' ? `${settleTotal.toFixed(3)}g` : `₹${settleTotal.toFixed(0)}`}</Text>
+            <Text style={styles.settleTotalValue}>{settleKind === 'cash' ? `₹${settleTotal.toFixed(0)}` : `${settleTotal.toFixed(3)}g`}</Text>
           </View>
         )}
 
@@ -436,6 +461,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   previewImage: { width: '92%', height: '80%' },
 
   settleLabel: { color: colors.onSurfaceSecondary, fontSize: 12, marginBottom: 6, marginTop: spacing.md },
+  settleHintText: { color: colors.mutedText, fontSize: 12, marginTop: spacing.sm },
   settleChoiceRow: { flexDirection: 'row', gap: spacing.sm },
   settleChip: {
     flex: 1, paddingVertical: 10, borderRadius: radius.md, alignItems: 'center',
