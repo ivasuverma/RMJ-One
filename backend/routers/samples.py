@@ -25,6 +25,8 @@ from server import (
     SampleIn,
     SampleUpdateIn,
     SampleReceiveIn,
+    post_gold_ledger_entry,
+    delete_gold_ledger_entries,
     log_audit,
     _notify_module,
     _pdf_response,
@@ -80,8 +82,8 @@ async def create_samples(body: SampleIn, user=Depends(require_admin_or_module('s
         }
         await db.samples.insert_one(dict(sample))
         tag_note = f" (tag {spec.tag_number})" if spec.tag_number else ''
-        await db.karigar_ledger.insert_one({
-            'id': str(uuid.uuid4()), 'karigar_id': karigar['id'], 'type': 'gold_out',
+        await post_gold_ledger_entry({
+            'id': str(uuid.uuid4()), 'karigar_id': karigar['id'], 'karigar_name': karigar['name'], 'type': 'gold_out',
             'weight': spec.weight, 'fine_weight': None, 'amount': None,
             'item_id': sample_id, 'item_code': sample_code,
             'note': f"Sample issued: {spec.description}{tag_note}", 'created_at': iso, 'created_by': user['name'],
@@ -203,6 +205,9 @@ async def update_sample(sample_id: str, body: SampleUpdateIn, user=Depends(requi
         await db.karigar_ledger.update_many(
             {'item_id': sample_id, 'type': 'gold_out'}, {'$set': {'weight': body.weight}},
         )
+        await db.metal_ledger.update_many(
+            {'item_id': sample_id, 'type': 'out'}, {'$set': {'weight': body.weight}},
+        )
     if upd:
         await db.samples.update_one({'id': sample_id}, {'$set': upd})
         await log_audit(user, 'sample.update', 'sample', sample_id, sample['sample_code'])
@@ -217,7 +222,7 @@ async def delete_sample(sample_id: str, user=Depends(require_admin_or_module_rig
     # Full reversal — deleting a sample undoes its effect on the karigar's
     # gold balance too, not just the record, so nothing is left dangling
     # whether it's still with the karigar or already received back.
-    await db.karigar_ledger.delete_many({'item_id': sample_id})
+    await delete_gold_ledger_entries({'item_id': sample_id})
     await db.samples.delete_one({'id': sample_id})
     await log_audit(user, 'sample.delete', 'sample', sample_id, sample['sample_code'])
     return {'ok': True}
@@ -306,15 +311,15 @@ async def _post_sample_receive_ledger(sample: dict, body: SampleReceiveIn, txn_i
         note += f" (diff {weight_diff:+.3f}g vs issued — expected the same weight back)"
     if write_off:
         note += ' · shortfall written off as loss'
-    await db.karigar_ledger.insert_one({
-        'id': str(uuid.uuid4()), 'karigar_id': sample['karigar_id'], 'type': 'gold_in',
+    await post_gold_ledger_entry({
+        'id': str(uuid.uuid4()), 'karigar_id': sample['karigar_id'], 'karigar_name': sample.get('karigar_name'), 'type': 'gold_in',
         'weight': sample['weight'] if write_off else body.received_weight, 'fine_weight': None, 'amount': None,
         'item_id': sample['id'], 'item_code': sample['sample_code'], 'txn_id': txn_id,
         'note': note, 'created_at': iso, 'created_by': user['name'],
     })
     if write_off:
-        await db.karigar_ledger.insert_one({
-            'id': str(uuid.uuid4()), 'karigar_id': sample['karigar_id'], 'type': 'loss',
+        await post_gold_ledger_entry({
+            'id': str(uuid.uuid4()), 'karigar_id': sample['karigar_id'], 'karigar_name': sample.get('karigar_name'), 'type': 'loss',
             'weight': abs(weight_diff), 'fine_weight': None, 'amount': None,
             'item_id': sample['id'], 'item_code': sample['sample_code'], 'txn_id': txn_id,
             'note': f"Process loss declared: {sample['description']}",
@@ -323,8 +328,8 @@ async def _post_sample_receive_ledger(sample: dict, body: SampleReceiveIn, txn_i
         return weight_diff
     pay_weight = body.pay_weight or 0
     if pay_weight:
-        await db.karigar_ledger.insert_one({
-            'id': str(uuid.uuid4()), 'karigar_id': sample['karigar_id'], 'type': 'gold_out',
+        await post_gold_ledger_entry({
+            'id': str(uuid.uuid4()), 'karigar_id': sample['karigar_id'], 'karigar_name': sample.get('karigar_name'), 'type': 'gold_out',
             'weight': pay_weight, 'fine_weight': None, 'amount': None,
             'item_id': sample['id'], 'item_code': sample['sample_code'], 'txn_id': txn_id,
             'note': f"Extra gold paid on the spot to settle {sample['sample_code']}",
@@ -332,8 +337,8 @@ async def _post_sample_receive_ledger(sample: dict, body: SampleReceiveIn, txn_i
         })
     recv_weight = body.recv_weight or 0
     if recv_weight:
-        await db.karigar_ledger.insert_one({
-            'id': str(uuid.uuid4()), 'karigar_id': sample['karigar_id'], 'type': 'gold_in',
+        await post_gold_ledger_entry({
+            'id': str(uuid.uuid4()), 'karigar_id': sample['karigar_id'], 'karigar_name': sample.get('karigar_name'), 'type': 'gold_in',
             'weight': recv_weight, 'fine_weight': None, 'amount': None,
             'item_id': sample['id'], 'item_code': sample['sample_code'], 'txn_id': txn_id,
             'note': f"Extra gold received on the spot to settle {sample['sample_code']}",
@@ -384,7 +389,7 @@ async def edit_sample_receive(sample_id: str, body: SampleReceiveIn, user=Depend
         raise HTTPException(status_code=400, detail='Received weight must be greater than 0')
 
     txn_id = sample.get('receive_txn_id') or str(uuid.uuid4())
-    await db.karigar_ledger.delete_many({'txn_id': txn_id})
+    await delete_gold_ledger_entries({'txn_id': txn_id})
     iso = now_utc().isoformat()
     weight_diff = await _post_sample_receive_ledger(sample, body, txn_id, iso, user)
     await db.samples.update_one({'id': sample_id}, {'$set': {
@@ -410,7 +415,7 @@ async def delete_sample_receive(sample_id: str, user=Depends(require_admin_or_mo
 
     txn_id = sample.get('receive_txn_id')
     if txn_id:
-        await db.karigar_ledger.delete_many({'txn_id': txn_id})
+        await delete_gold_ledger_entries({'txn_id': txn_id})
     await db.samples.update_one({'id': sample_id}, {'$set': {
         'status': 'with_karigar', 'received_weight': None, 'weight_diff': None,
         'received_at': None, 'received_by': None, 'receive_txn_id': None,

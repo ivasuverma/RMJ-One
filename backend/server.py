@@ -1625,6 +1625,56 @@ def _karigar_ledger_balances(entries: list) -> dict:
     return bal
 
 
+_METAL_LEDGER_MIRROR = {'gold_out': 'out', 'gold_in': 'in', 'loss': 'loss'}
+
+
+async def post_gold_ledger_entry(doc: dict) -> dict:
+    """Inserts one karigar_ledger entry AND, if it's a gold movement
+    (gold_out/gold_in/loss), its counter-entry on metal_ledger — the shop's
+    own gold stock, kept as a genuine double-entry pair rather than only
+    ever recording the karigar's side (2026-09-08: "whenever we clear metal
+    like pay or receive, in accounting it is always double effect").
+
+    gold_out (shop hands gold to a karigar) reduces the shop's own stock;
+    gold_in (shop takes gold back from a karigar) increases it — opposite of
+    the karigar-side effect in _karigar_ledger_balances, by construction.
+    loss (a forgiven shortfall, already accounted for by the gold_out at
+    issue time) doesn't move the stock balance again — it's carried into
+    metal_ledger purely so Metal Ledger can show the complete gold picture
+    (in/out/loss together) in one place, same as the owner asked for.
+
+    Every insert_one(...) of a gold_out/gold_in/loss karigar_ledger doc
+    should go through this instead, so the two ledgers can't drift apart.
+    Call sites that only ever write non-metal types (cash, labour, etc.)
+    keep using db.karigar_ledger.insert_one directly."""
+    await db.karigar_ledger.insert_one(dict(doc))
+    if doc.get('type') in _METAL_LEDGER_MIRROR:
+        await db.metal_ledger.insert_one({
+            'id': str(uuid.uuid4()), 'type': _METAL_LEDGER_MIRROR[doc['type']],
+            'weight': doc.get('weight') or 0, 'karigar_id': doc.get('karigar_id'),
+            'karigar_name': doc.get('karigar_name'), 'item_id': doc.get('item_id'),
+            'item_code': doc.get('item_code'), 'txn_id': doc.get('txn_id'),
+            'source_entry_id': doc['id'], 'note': doc.get('note') or '',
+            'created_at': doc.get('created_at') or now_utc().isoformat(), 'created_by': doc.get('created_by'),
+        })
+    return doc
+
+
+async def delete_gold_ledger_entries(query: dict) -> None:
+    """Deletes karigar_ledger entries matching `query` and their metal_ledger
+    counter-entries — same query works on both collections since every
+    metal_ledger entry is tagged with whichever of txn_id/item_id/id the
+    karigar_ledger side was queried by. Use this instead of a bare
+    db.karigar_ledger.delete_many/delete_one wherever the deleted entries
+    might include a gold_out/gold_in/loss (harmless no-op on metal_ledger
+    otherwise, since nothing there would match)."""
+    metal_query = dict(query)
+    if 'id' in metal_query:
+        metal_query['source_entry_id'] = metal_query.pop('id')
+    await db.karigar_ledger.delete_many(query)
+    await db.metal_ledger.delete_many(metal_query)
+
+
 # ---------------- Ledger / Payroll helpers (shared — used by employees.py's
 # closing-balance column, payroll.py's compute, reports.py's ledger PDF, and
 # assistant.py's context builder) ----------------

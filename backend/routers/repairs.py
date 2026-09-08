@@ -35,6 +35,8 @@ from server import (
     CloseDeliveryIn,
     KarigarLedgerEntryIn,
     _karigar_ledger_balances,
+    post_gold_ledger_entry,
+    delete_gold_ledger_entries,
     log_audit,
     notify_user,
     _notify_module,
@@ -713,7 +715,7 @@ async def issue_to_karigar(item_id: str, body: IssueToKarigarIn, user=Depends(re
         'note': body.note or '', 'challan_no': challan_no, 'created_at': iso, 'created_by': user['name'],
     }
     await db.karigar_transactions.insert_one(dict(txn))
-    await db.karigar_ledger.insert_one({
+    await post_gold_ledger_entry({
         'id': str(uuid.uuid4()), 'karigar_id': karigar['id'], 'type': 'gold_out', 'weight': weight,
         'fine_weight': fine_weight, 'amount': None, 'item_id': item_id, 'item_code': item['item_code'],
         'txn_id': txn_id, 'note': f"Issued: {item['description']}",
@@ -786,7 +788,7 @@ async def _post_receive_ledger(karigar_id: str, item: dict, calc: dict, body, tx
     """
     loss_note = f", loss {calc['process_loss']:.3f}g" if calc['process_loss'] else ''
     wastage_note = f", wastage {calc['wastage_weight']:.3f}g" if calc['wastage_weight'] else ''
-    await db.karigar_ledger.insert_one({
+    await post_gold_ledger_entry({
         'id': str(uuid.uuid4()), 'karigar_id': karigar_id, 'type': 'gold_in', 'weight': calc['weight_net'],
         'fine_weight': calc['entry_fine_weight'], 'amount': None, 'item_id': item['id'], 'item_code': item['item_code'],
         'txn_id': txn_id, 'slip_photo': body.slip_photo or '',
@@ -798,10 +800,11 @@ async def _post_receive_ledger(karigar_id: str, item: dict, calc: dict, body, tx
     # weight_bal/fine_bal (the aggregator only recognizes gold_out/gold_in/
     # labour_payable/payment/receipt/wastage/adjustment). This is purely so
     # loss can be audited on its own — which karigars are declaring how much,
-    # on which jobs, over time — via the Loss Ledger report.
+    # on which jobs, over time — via the Loss Ledger report (and, alongside
+    # every in/out movement, the Metal Ledger).
     if calc['process_loss']:
         fine_loss = round(calc['process_loss'] * calc['recv_purity'] / 100, 3)
-        await db.karigar_ledger.insert_one({
+        await post_gold_ledger_entry({
             'id': str(uuid.uuid4()), 'karigar_id': karigar_id, 'type': 'loss', 'weight': calc['process_loss'],
             'fine_weight': fine_loss, 'amount': None, 'item_id': item['id'], 'item_code': item['item_code'],
             'txn_id': txn_id, 'note': f"Process loss declared: {item['description']}",
@@ -826,7 +829,7 @@ async def _post_receive_ledger(karigar_id: str, item: dict, calc: dict, body, tx
         # squared off in fine weight regardless of the item's own touch, since
         # jobs vary widely in size and staff always settle balances in fine terms.
         pay_metal_fine = round(pay_metal_weight, 3)
-        await db.karigar_ledger.insert_one({
+        await post_gold_ledger_entry({
             'id': str(uuid.uuid4()), 'karigar_id': karigar_id, 'type': 'gold_out', 'weight': pay_metal_weight,
             'fine_weight': pay_metal_fine, 'amount': None, 'item_id': item['id'], 'item_code': item['item_code'],
             'txn_id': txn_id, 'note': f"Metal paid on the spot for {item['item_code']}",
@@ -855,7 +858,7 @@ async def _post_receive_ledger(karigar_id: str, item: dict, calc: dict, body, tx
     if recv_metal_weight:
         # Same as pay_metal above — entered directly in fine grams.
         recv_metal_fine = round(recv_metal_weight, 3)
-        await db.karigar_ledger.insert_one({
+        await post_gold_ledger_entry({
             'id': str(uuid.uuid4()), 'karigar_id': karigar_id, 'type': 'gold_in', 'weight': recv_metal_weight,
             'fine_weight': recv_metal_fine, 'amount': None, 'item_id': item['id'], 'item_code': item['item_code'],
             'txn_id': txn_id, 'note': f"Extra metal received from karigar to settle shortfall on {item['item_code']}",
@@ -923,7 +926,7 @@ async def undo_ready(item_id: str, user=Depends(require_admin_or_module_right('r
         if not txn:
             raise HTTPException(status_code=400, detail='No receive transaction found to undo')
         await db.karigar_transactions.delete_one({'id': txn['id']})
-        await db.karigar_ledger.delete_many({'txn_id': txn['id']})
+        await delete_gold_ledger_entries({'txn_id': txn['id']})
         await db.repair_items.update_one({'id': item_id}, {'$set': {
             'status': 'with_karigar', 'weight_diff': None, 'fine_weight_diff': None,
             'process_loss': None, 'wastage_weight': None, 'recv_purity': None, 'balance_fine_weight': None,
@@ -966,6 +969,7 @@ async def edit_karigar_transaction(item_id: str, txn_id: str, body: KarigarTrans
             'note': body.note or '', 'edited_at': iso, 'edited_by': user['name'],
         }})
         await db.karigar_ledger.update_many({'txn_id': txn_id}, {'$set': {'karigar_id': new_karigar_id}})
+        await db.metal_ledger.update_many({'txn_id': txn_id}, {'$set': {'karigar_id': new_karigar_id}})
         await db.repair_items.update_one({'id': item_id}, {'$set': {
             'karigar_id': new_karigar_id, 'karigar_name': new_karigar_name, 'updated_by': user['name'],
         }})
@@ -975,7 +979,7 @@ async def edit_karigar_transaction(item_id: str, txn_id: str, body: KarigarTrans
         # Redo this receive's whole ledger footprint from scratch against the
         # corrected numbers — the simplest way to guarantee an edit can't drift
         # out of sync with what a fresh receive_from_karigar call would post.
-        await db.karigar_ledger.delete_many({'txn_id': txn_id})
+        await delete_gold_ledger_entries({'txn_id': txn_id})
         calc = _compute_receive(item, body)
         await db.karigar_transactions.update_one({'id': txn_id}, {'$set': {
             'weight': body.weight, 'weight_net': calc['weight_net'], 'recv_purity': calc['recv_purity'],
@@ -1011,7 +1015,7 @@ async def delete_karigar_transaction(item_id: str, txn_id: str, user=Depends(req
         raise HTTPException(status_code=400, detail='Only the most recent receive can be deleted')
 
     await db.karigar_transactions.delete_one({'id': txn_id})
-    await db.karigar_ledger.delete_many({'txn_id': txn_id})
+    await delete_gold_ledger_entries({'txn_id': txn_id})
     if txn['direction'] == 'issue':
         await db.repair_items.update_one({'id': item_id}, {'$set': {
             'status': 'received', 'karigar_id': None, 'karigar_name': None,
@@ -1524,6 +1528,57 @@ async def loss_ledger(cursor: Optional[str] = None, limit: int = 50, _: dict = D
     return {'entries': entries, 'next_cursor': next_cursor, 'by_karigar': by_karigar, 'total_weight': total_weight, 'total_fine_weight': total_fine}
 
 
+@router.get('/metal-ledger')
+async def metal_ledger(cursor: Optional[str] = None, limit: int = 50, _: dict = Depends(require_ledger_access('karigar_ledger'))):
+    """The shop's own gold stock — every in/out movement (the double-entry
+    counter-side of karigar_ledger's gold_out/gold_in, posted by
+    post_gold_ledger_entry in server.py) plus every declared loss, all in
+    one place, newest first. balance = total_in - total_out; loss doesn't
+    move it (same as it doesn't move a karigar's own fine_bal — the gold it
+    represents already left via the original gold_out at issue time).
+
+    Keyset-paginated on created_at, same shape as GET /cash-ledger and
+    GET /karigars/loss-ledger — totals come from a full-collection
+    aggregation, independent of the page size."""
+    limit = max(1, min(limit, 200))
+    query: dict = {'created_at': {'$lt': cursor}} if cursor else {}
+    entries = await db.metal_ledger.find(query, {'_id': 0}).sort('created_at', -1).to_list(limit + 1)
+    next_cursor = entries[limit]['created_at'] if len(entries) > limit else None
+    entries = entries[:limit]
+    karigars = await db.karigars.find({}, {'_id': 0, 'id': 1, 'name': 1}).to_list(500)
+    names = {k['id']: k['name'] for k in karigars}
+    for e in entries:
+        if not e.get('karigar_name'):
+            e['karigar_name'] = names.get(e.get('karigar_id'), '')
+    totals_agg = [t async for t in db.metal_ledger.aggregate([
+        {'$group': {'_id': '$type', 'weight': {'$sum': '$weight'}}},
+    ])]
+    totals = {t['_id']: round((t['weight'] or 0), 3) for t in totals_agg}
+    total_in = totals.get('in', 0)
+    total_out = totals.get('out', 0)
+    total_loss = totals.get('loss', 0)
+    by_karigar_agg = [k async for k in db.metal_ledger.aggregate([
+        {'$group': {
+            '_id': '$karigar_id',
+            'in': {'$sum': {'$cond': [{'$eq': ['$type', 'in']}, '$weight', 0]}},
+            'out': {'$sum': {'$cond': [{'$eq': ['$type', 'out']}, '$weight', 0]}},
+            'loss': {'$sum': {'$cond': [{'$eq': ['$type', 'loss']}, '$weight', 0]}},
+            'count': {'$sum': 1},
+        }},
+        {'$sort': {'out': -1}},
+    ])]
+    by_karigar = [
+        {'karigar_id': k['_id'], 'name': names.get(k['_id'], 'Unknown'),
+         'in': round((k['in'] or 0), 3), 'out': round((k['out'] or 0), 3), 'loss': round((k['loss'] or 0), 3), 'count': k['count']}
+        for k in by_karigar_agg
+    ]
+    return {
+        'entries': entries, 'next_cursor': next_cursor, 'by_karigar': by_karigar,
+        'total_in': total_in, 'total_out': total_out, 'total_loss': total_loss,
+        'balance': round(total_in - total_out, 3),
+    }
+
+
 # ---------------- Repairs: Karigar Ledger ----------------
 @router.get('/karigars/{kid}/balance')
 async def get_karigar_balance(kid: str, _: dict = Depends(require_staff_or_module(['repairs', 'karigar_ledger']))):
@@ -1573,10 +1628,11 @@ async def add_karigar_ledger_entry(kid: str, body: KarigarLedgerEntryIn, user=De
         if not w:
             raise HTTPException(status_code=400, detail='Enter a gold weight greater than 0')
         doc = {
-            'id': str(uuid.uuid4()), 'karigar_id': kid, 'type': body.type, 'weight': w, 'fine_weight': w,
-            'amount': None, 'item_id': item_id, 'item_code': item_code, 'note': body.note or '',
-            'created_at': now_utc().isoformat(), 'created_by': user['name'],
+            'id': str(uuid.uuid4()), 'karigar_id': kid, 'karigar_name': karigar['name'], 'type': body.type,
+            'weight': w, 'fine_weight': w, 'amount': None, 'item_id': item_id, 'item_code': item_code,
+            'note': body.note or '', 'created_at': now_utc().isoformat(), 'created_by': user['name'],
         }
+        await post_gold_ledger_entry(doc)
     else:
         # Amount is always stored positive — direction is decided by `type` at
         # aggregation time (see _karigar_ledger_balances), matching how the
@@ -1587,7 +1643,7 @@ async def add_karigar_ledger_entry(kid: str, body: KarigarLedgerEntryIn, user=De
             'amount': signed, 'item_id': item_id, 'item_code': item_code, 'note': body.note or '',
             'created_at': now_utc().isoformat(), 'created_by': user['name'],
         }
-    await db.karigar_ledger.insert_one(dict(doc))
+        await db.karigar_ledger.insert_one(dict(doc))
     await log_audit(user, f'karigar_ledger.{body.type}', 'karigar', kid, karigar['name'], {'amount': body.amount, 'weight': body.weight, 'item_code': item_code})
     return {k: v for k, v in doc.items() if k != '_id'}
 
@@ -1601,7 +1657,7 @@ async def delete_karigar_ledger_entry(kid: str, entry_id: str, user=Depends(requ
     # (job attribution) without one, and is fine to delete directly here.
     if entry.get('txn_id'):
         raise HTTPException(status_code=400, detail='This entry is tied to a repair tag — delete the issue/receive from that tag\'s history instead')
-    await db.karigar_ledger.delete_one({'id': entry_id})
+    await delete_gold_ledger_entries({'id': entry_id})
     await log_audit(user, 'karigar_ledger.delete', 'karigar', kid, '', {'entry_id': entry_id, 'type': entry.get('type')})
     return {'ok': True}
 
