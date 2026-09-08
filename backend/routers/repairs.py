@@ -734,15 +734,21 @@ def _compute_receive(item: dict, body) -> dict:
     """Pure math shared by creating a receive and editing one, so the two paths
     can't drift apart the way they did before.
 
-    new_wt = issued - loss - received   (positive = weight decreased, i.e. shortfall)
+    new_wt = received + loss - issued   (positive = weight increased, i.e.
+             surplus, payable to the karigar; negative = shortfall, karigar owes)
     karigar_gap = new_wt + wastage
     balance (fine g) = karigar_gap x touch%
 
     Loss is forgiven back in (inherent to the work, not the karigar's fault).
-    Wastage is NOT forgiven — it's the karigar's own charge for doing the
-    repair, on top of the gap, so it adds to what they still owe rather than
-    reducing it. The single ledger entry posted for this receive is sized so
-    the ledger-derived balance lands on balance_fine_weight exactly, whatever
+    Wastage always favors the karigar on top of that gap, whichever way it
+    runs — it reduces a shortfall they'd otherwise owe, or adds to a surplus
+    that's payable to them. (Corrected 2026-09-08 — the owner's spec: "net
+    wt = receive - loss - issue [with loss forgiven, i.e. added back:
+    receive + loss - issue]; net + wastage = diff; positive net wt = payable
+    to karigar" — verified against worked shortfall/surplus examples before
+    landing on this single formula, since it collapses both cases into one.)
+    The single ledger entry posted for this receive is sized so the
+    ledger-derived balance lands on balance_fine_weight exactly, whatever
     purity was used at issue vs. now.
     """
     purity = item.get('purity') or 100.0
@@ -754,14 +760,14 @@ def _compute_receive(item: dict, body) -> dict:
     # issued at (mixed lots, karigar's own stated assay), so it's editable.
     recv_purity = body.purity_override if body.purity_override else purity
     diff = round(body.weight - weight_issued, 3)  # receive vs issue, gross — the "weight diff" shown around the app
-    new_wt = round(weight_issued - process_loss - body.weight, 3)
+    new_wt = round(body.weight + process_loss - weight_issued, 3)
     karigar_gap = round(new_wt + wastage_weight, 3)
     balance_fine_weight = round(karigar_gap * recv_purity / 100, 3)
-    entry_fine_weight = round(fine_issued - balance_fine_weight, 3)
+    entry_fine_weight = round(fine_issued + balance_fine_weight, 3)
     # Gross-weight equivalent of that same credit, for the running gross-weight
-    # ("gold with karigar") balance — loss is added back in (forgiven),
-    # wastage is not (it's on top of what's still owed).
-    weight_net = round(body.weight + process_loss - wastage_weight, 3)
+    # ("gold with karigar") balance — loss is added back in (forgiven), and
+    # wastage now adds to the credit too, matching balance_fine_weight's polarity.
+    weight_net = round(body.weight + process_loss + wastage_weight, 3)
     fine_diff = round(entry_fine_weight - fine_issued, 3)
     return {
         'purity': purity, 'weight_issued': weight_issued, 'fine_issued': fine_issued,

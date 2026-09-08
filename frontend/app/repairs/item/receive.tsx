@@ -213,22 +213,25 @@ export default function ReceiveFromKarigarScreen() {
   const wastageNum = parseFloat(wastageWeight) || 0;
   const lossNum = parseFloat(processLoss) || 0;
   const weightNum = parseFloat(weight) || 0;
-  // new_wt = issued - loss - received — positive means less came back than
-  // expected once loss is forgiven, i.e. weight decreased, i.e. karigar owes.
-  // diff_wt = new_wt + wastage — wastage is the karigar's own charge for the
-  // work, on top of the gap, so it adds to what they owe rather than
-  // reducing it. balance (fine g) = diff_wt x touch%.
-  const newWt = round3(issuedWeight - lossNum - weightNum);
+  // new_wt = received + loss - issued — positive means more came back than
+  // issued once loss is forgiven, i.e. weight increased, i.e. payable to the
+  // karigar; negative means karigar owes. diff_wt = new_wt + wastage —
+  // wastage always favors the karigar on top of the gap, whichever way it
+  // runs (reduces what they owe, or adds to what's payable). balance (fine
+  // g) = diff_wt x touch%. (Corrected 2026-09-08 — see _compute_receive in
+  // repairs.py for the matching backend fix.)
+  const newWt = round3(weightNum + lossNum - issuedWeight);
   const diffWt = weight ? round3(newWt + wastageNum) : 0;
   const balanceFine = weight ? round3(diffWt * recvPurityNum / 100) : null;
   const payMetalNum = parseFloat(payMetalWeight) || 0;
   const recvMetalNum = parseFloat(recvMetalWeight) || 0;
   // Pay/Receive Metal are entered directly in fine grams — jobs vary widely
   // in size, so staff always settle balances in fine terms rather than
-  // converting through this item's specific touch. Net them straight against
-  // balanceFine, no purity conversion.
+  // converting through this item's specific touch. balanceFine is positive
+  // when it's payable to the karigar, so paying them down settles it
+  // (subtracts) and receiving metal from them moves it the other way (adds).
   const remainingBalance = balanceFine != null
-    ? round3(balanceFine - recvMetalNum + payMetalNum)
+    ? round3(balanceFine - payMetalNum + recvMetalNum)
     : null;
 
   const labourNum = parseFloat(labourAmount) || 0;
@@ -358,7 +361,7 @@ export default function ReceiveFromKarigarScreen() {
                 </View>
               </View>
             </View>
-            <Text style={styles.hint}>Positive Diff = weight decreased, karigar owes. Loss is forgiven; wastage is not — it adds to what's owed.</Text>
+            <Text style={styles.hint}>Positive Diff = payable to karigar, negative = karigar owes. Loss is forgiven; wastage always favors the karigar on top of that.</Text>
 
             <View style={[styles.fieldGrid, { marginTop: 10, alignItems: 'flex-end' }]}>
               <View style={styles.fieldCol}>
@@ -397,7 +400,7 @@ export default function ReceiveFromKarigarScreen() {
                 style={[styles.readonlyBoxText, { textAlign: 'left', flex: 1 }, balanceFine != null && balanceFine !== 0 ? { color: balanceFine > 0 ? colors.onWarning : colors.onSuccess } : null]}
                 numberOfLines={1}
               >
-                {balanceFine == null ? '—' : balanceFine > 0 ? `Receivable ${balanceFine.toFixed(3)}g fine` : balanceFine < 0 ? `Payable ${Math.abs(balanceFine).toFixed(3)}g fine` : 'Fully accounted for'}
+                {balanceFine == null ? '—' : balanceFine > 0 ? `Payable ${balanceFine.toFixed(3)}g fine` : balanceFine < 0 ? `Receivable ${Math.abs(balanceFine).toFixed(3)}g fine` : 'Fully accounted for'}
               </Text>
               {balanceFine != null && balanceFine !== 0 && (
                 <Pressable
@@ -405,8 +408,8 @@ export default function ReceiveFromKarigarScreen() {
                     // Pay/Receive Metal are entered directly in fine grams, same
                     // units as balanceFine — no touch conversion, fill as-is.
                     const settleAmount = round3(Math.abs(balanceFine)).toFixed(3);
-                    if (balanceFine > 0) setRecvMetalWeight(settleAmount);
-                    else setPayMetalWeight(settleAmount);
+                    if (balanceFine > 0) setPayMetalWeight(settleAmount);
+                    else setRecvMetalWeight(settleAmount);
                   }}
                   style={styles.autopayBtnInline}
                   testID="autopay-btn"
