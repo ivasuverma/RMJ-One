@@ -147,6 +147,36 @@ async def update_whatsapp_settings(body: WhatsAppSettingsIn, user: dict = Depend
     return {**doc, **status}
 
 
+# ---------------- Official WhatsApp (Meta Cloud API) — test line ----------------
+# A second, independent WhatsApp send path (whatsapp_meta.py) being set up
+# on a spare number ahead of an eventual migration off OpenWA — see that
+# module's docstring for the .env credentials it needs and why a business-
+# initiated send needs an approved template, not the freeform test-send
+# below. Owner-only: this exists to verify the pipeline works, not for
+# day-to-day use by staff.
+class WhatsAppMetaTestSendIn(BaseModel):
+    mobile: str
+    text: str
+
+
+@router.get('/settings/whatsapp-meta')
+async def get_whatsapp_meta_status(_: dict = Depends(require_owner)):
+    import whatsapp_meta
+    return await whatsapp_meta.get_status()
+
+
+@router.post('/settings/whatsapp-meta/test-send')
+async def send_whatsapp_meta_test(body: WhatsAppMetaTestSendIn, user: dict = Depends(require_owner)):
+    import whatsapp_meta
+    if not whatsapp_meta.is_configured():
+        raise HTTPException(status_code=400, detail='Add META_WA_PHONE_NUMBER_ID and META_WA_ACCESS_TOKEN to backend/.env first.')
+    ok = await whatsapp_meta.send_text(body.mobile, body.text)
+    if not ok:
+        raise HTTPException(status_code=502, detail="Send failed — check this number has messaged the test line in the last 24 hours (freeform text only works inside that window), and see the backend log for the exact Graph API error.")
+    await log_audit(user, 'settings.whatsapp_meta.test_send', 'settings', 'whatsapp_meta', body.mobile)
+    return {'ok': True}
+
+
 # ---------------- Gold Rate (daily reference + Channel broadcast) ----------------
 # See gold_rate.py for the fetch/schedule logic. Owner-only end to end: the
 # fetched number needs a human look (margin on top, possible scrape hiccup)

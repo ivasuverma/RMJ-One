@@ -22,6 +22,7 @@ const EMPTY: Form = {
   chatbot_rate_enabled: true, chatbot_status_enabled: true,
 };
 type WhatsAppStatus = { configured: boolean; connected: boolean; phone: string | null };
+type MetaStatus = { configured: boolean; connected: boolean; phone: string | null; display_name: string | null };
 
 export default function WhatsAppSettingsScreen() {
   const router = useRouter();
@@ -58,6 +59,30 @@ export default function WhatsAppSettingsScreen() {
   const [autoSendEnabled, setAutoSendEnabled] = useState(false);
   const [skipWeekendFetch, setSkipWeekendFetch] = useState(true);
 
+  // Official WhatsApp (Meta Cloud API) — a second, independent send path
+  // being set up on a spare number ahead of an eventual migration off
+  // OpenWA (see backend/whatsapp_meta.py). Test-only: it exists to verify
+  // the pipeline works, not for day-to-day use.
+  const [metaStatus, setMetaStatus] = useState<MetaStatus | null>(null);
+  const [metaTestMobile, setMetaTestMobile] = useState('');
+  const [metaTestText, setMetaTestText] = useState('RMJ-One test message via the official WhatsApp API');
+  const [metaTestSending, setMetaTestSending] = useState(false);
+
+  const loadMetaStatus = async () => {
+    try { setMetaStatus(await api.get<MetaStatus>('/settings/whatsapp-meta')); }
+    catch { setMetaStatus(null); }
+  };
+
+  const sendMetaTest = async () => {
+    if (!metaTestMobile.trim() || !metaTestText.trim()) { notify('Missing', 'Enter a mobile number and message'); return; }
+    setMetaTestSending(true);
+    try {
+      await api.post('/settings/whatsapp-meta/test-send', { mobile: metaTestMobile.trim(), text: metaTestText.trim() });
+      toast.success('Test message sent');
+    } catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
+    finally { setMetaTestSending(false); }
+  };
+
   const load = async () => {
     try {
       const w = await api.get<any>('/settings/whatsapp');
@@ -86,7 +111,7 @@ export default function WhatsAppSettingsScreen() {
       setSkipWeekendFetch(g.skip_weekend_fetch !== false);
     } catch { /* not an owner, or gold-rate not reachable — leave defaults */ }
   };
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); loadMetaStatus(); }, []);
 
   const saveGoldRateConfig = async () => {
     setGrSaving(true);
@@ -347,6 +372,37 @@ export default function WhatsAppSettingsScreen() {
 
           <Pressable onPress={saveGoldRateConfig} disabled={grSaving} style={[styles.altBtn, grSaving && { opacity: 0.6 }]} testID="gold-rate-save-config">
             {grSaving ? <ActivityIndicator color={colors.brandSecondary} size="small" /> : <Text style={styles.altBtnText}>Save Gold Rate Settings</Text>}
+          </Pressable>
+        </View>
+
+        {/* ---------------- Official WhatsApp (Meta) — test line ---------------- */}
+        <View style={styles.groupCard}>
+          <View style={styles.groupHeader}>
+            <View style={styles.groupHeaderIcon}><Ionicons name="shield-checkmark-outline" size={17} color={colors.brandSecondary} /></View>
+            <Text style={styles.groupHeaderTitle}>Official WhatsApp (Meta) — Test Line</Text>
+          </View>
+          <Text style={styles.hint}>A separate number being set up on the official WhatsApp Business Platform, side by side with the gateway above, ahead of an eventual switch. Test only — nothing here is customer-facing yet.</Text>
+          <View style={[styles.infoBox, metaStatus?.connected ? styles.infoBoxOk : styles.infoBoxWarn, { marginBottom: spacing.sm }]} testID="whatsapp-meta-status">
+            <Ionicons name={metaStatus?.connected ? 'checkmark-circle-outline' : 'alert-circle-outline'} size={18} color={metaStatus?.connected ? colors.onSuccess : colors.onWarning} />
+            <Text style={[styles.infoText, { color: metaStatus?.connected ? colors.onSuccess : colors.onWarning }]}>
+              {metaStatus === null ? 'Checking…'
+                : !metaStatus.configured ? 'Not configured — add META_WA_PHONE_NUMBER_ID and META_WA_ACCESS_TOKEN to backend/.env'
+                : metaStatus.connected ? `Connected — ${metaStatus.display_name || metaStatus.phone}`
+                : 'Configured but the Graph API call failed — check the token and phone number id'}
+            </Text>
+          </View>
+          <Pressable onPress={loadMetaStatus} style={styles.altBtn} testID="whatsapp-meta-refresh-btn">
+            <Ionicons name="refresh" size={14} color={colors.brandSecondary} />
+            <Text style={styles.altBtnText}>Refresh Status</Text>
+          </Pressable>
+
+          <View style={styles.groupDivider} />
+          <Text style={styles.fieldLabel}>Send a test message</Text>
+          <Text style={styles.hint}>Freeform text only works within 24 hours of that number messaging the test line first — message it from that phone, then send here.</Text>
+          <TextInput value={metaTestMobile} onChangeText={setMetaTestMobile} keyboardType="phone-pad" placeholder="10-digit mobile" placeholderTextColor={colors.mutedText} style={styles.input} testID="whatsapp-meta-test-mobile" />
+          <TextInput value={metaTestText} onChangeText={setMetaTestText} multiline placeholder="Message" placeholderTextColor={colors.mutedText} style={[styles.input, { minHeight: 60 }]} testID="whatsapp-meta-test-text" />
+          <Pressable onPress={sendMetaTest} disabled={metaTestSending} style={[styles.altBtn, metaTestSending && { opacity: 0.6 }]} testID="whatsapp-meta-test-send-btn">
+            {metaTestSending ? <ActivityIndicator color={colors.brandSecondary} size="small" /> : <Text style={styles.altBtnText}>Send Test Message</Text>}
           </Pressable>
         </View>
 

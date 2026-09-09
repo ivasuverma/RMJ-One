@@ -2783,7 +2783,7 @@ from routers import (
     auth, employees, settings as settings_router, attendance, tasks, repairs,
     users, payroll, notifications, biometric, reports, assistant, samples,
     cashbook, ledger, documents, backup, record_photos, gold_loans, whatsapp_bot,
-    print_settings,
+    whatsapp_meta_bot, print_settings,
 )
 
 # ---------------- Mount ----------------
@@ -2807,6 +2807,7 @@ api.include_router(record_photos.router)
 api.include_router(gold_loans.router)
 api.include_router(backup.router)
 api.include_router(whatsapp_bot.router)
+api.include_router(whatsapp_meta_bot.router)
 api.include_router(print_settings.router)
 
 app.include_router(api)
