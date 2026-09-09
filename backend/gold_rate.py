@@ -236,7 +236,7 @@ async def run_fetch_and_store() -> dict:
         if cfg.get('auto_send_enabled') and is_weekend_ist():
             logger.info('gold rate auto-send skipped — weekend (market closed)')
         elif cfg.get('auto_send_enabled'):
-            sent = await send_whatsapp_channel(GOLD_RATE_CHANNEL_ID, doc['message'])
+            sent = await send_whatsapp_channel(GOLD_RATE_CHANNEL_ID, doc['message'], flow='gold_rate_auto_send')
             if sent:
                 doc['confirmed'] = True
                 doc['sent_at'] = now_utc().isoformat()

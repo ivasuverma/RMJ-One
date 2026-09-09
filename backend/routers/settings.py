@@ -170,11 +170,35 @@ async def send_whatsapp_meta_test(body: WhatsAppMetaTestSendIn, user: dict = Dep
     import whatsapp_meta
     if not whatsapp_meta.is_configured():
         raise HTTPException(status_code=400, detail='Add META_WA_PHONE_NUMBER_ID and META_WA_ACCESS_TOKEN to backend/.env first.')
-    ok = await whatsapp_meta.send_text(body.mobile, body.text)
+    ok = await whatsapp_meta.send_text(body.mobile, body.text, flow='meta_test_send')
     if not ok:
         raise HTTPException(status_code=502, detail="Send failed — check this number has messaged the test line in the last 24 hours (freeform text only works inside that window), and see the backend log for the exact Graph API error.")
     await log_audit(user, 'settings.whatsapp_meta.test_send', 'settings', 'whatsapp_meta', body.mobile)
     return {'ok': True}
+
+
+# ---------------- WhatsApp Sent Messages log ----------------
+# Every send from either provider (OpenWA via server.py's send_whatsapp/
+# send_whatsapp_channel/send_whatsapp_raw, or Meta via whatsapp_meta.py's
+# send_text/send_template) is logged to db.whatsapp_messages through the
+# shared log_whatsapp_message() choke point — see server.py. This is
+# deliberately separate from the generic Audit Log (GET /audit/logs): that
+# one records who changed what in the app, this one records what actually
+# went out over WhatsApp and whether it was delivered. Owner-only, same as
+# the rest of this file's WhatsApp settings.
+@router.get('/settings/whatsapp-messages')
+async def list_whatsapp_messages(
+    provider: Optional[str] = None, flow: Optional[str] = None,
+    cursor: Optional[str] = None, limit: int = 200, _: dict = Depends(require_owner),
+):
+    limit = max(1, min(limit, 500))
+    q: dict = {}
+    if provider: q['provider'] = provider
+    if flow: q['flow'] = flow
+    if cursor: q['created_at'] = {'$lt': cursor}
+    items = await db.whatsapp_messages.find(q, {'_id': 0}).sort('created_at', -1).to_list(limit + 1)
+    next_cursor = items[limit]['created_at'] if len(items) > limit else None
+    return {'items': items[:limit], 'next_cursor': next_cursor}
 
 
 # ---------------- Gold Rate (daily reference + Channel broadcast) ----------------
@@ -280,7 +304,7 @@ async def send_gold_rate(body: GoldRateSendIn, user: dict = Depends(require_admi
     message = (body.message or (today or {}).get('message') or '').strip()
     if not message:
         raise HTTPException(status_code=400, detail='No rate message to send yet — fetch or enter a rate first')
-    ok = await send_whatsapp_channel(GOLD_RATE_CHANNEL_ID, message)
+    ok = await send_whatsapp_channel(GOLD_RATE_CHANNEL_ID, message, flow='gold_rate_manual_send')
     if not ok:
         raise HTTPException(status_code=502, detail='Could not send — check the WhatsApp service is connected (Settings > WhatsApp)')
     update = {'confirmed': True, 'sent_at': now_utc().isoformat(), 'message': message}

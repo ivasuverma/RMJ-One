@@ -191,6 +191,15 @@ export default function WhatsAppSettingsScreen() {
           <Ionicons name="chevron-forward" size={18} color={colors.mutedText} />
         </Pressable>
 
+        <Pressable onPress={() => router.push('/settings/whatsapp-messages' as any)} style={styles.navRow} testID="whatsapp-messages-link">
+          <View style={styles.navIcon}><Ionicons name="list-outline" size={20} color={colors.brandSecondary} /></View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.toggleLabel}>Sent Messages Log</Text>
+            <Text style={styles.toggleSub}>Every WhatsApp send from either provider, with real delivery status</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.mutedText} />
+        </Pressable>
+
         <Pressable
           onPress={() => setForm((f) => ({ ...f, enabled: !f.enabled }))}
           style={styles.toggleRow}

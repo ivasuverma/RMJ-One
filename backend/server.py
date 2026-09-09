@@ -1938,7 +1938,38 @@ async def _openwa_send_text(chat_id: str, text: str) -> bool:
         return False
 
 
-async def send_whatsapp(mobile: str, text: str) -> bool:
+async def log_whatsapp_message(
+    provider: str, to: str, message_type: str, body: str, success: bool,
+    flow: str = '', error: str = '', wa_message_id: Optional[str] = None,
+) -> None:
+    """Records every outbound WhatsApp send — OpenWA or the official Meta
+    Cloud API test line — for Settings > WhatsApp Messages (2026-09-09: "i
+    want whatsapp sent messages log seperately", after a Meta send failure
+    took several rounds of manually grepping raw server logs to diagnose).
+    `flow` is a short label for what triggered the send (e.g.
+    'repair_ready_notice', 'gold_rate_broadcast', 'chatbot_reply',
+    'meta_test_send') so the log reads as more than just a phone number and
+    a timestamp. `wa_message_id` (Meta sends only) lets a later delivery-
+    status webhook (routers/whatsapp_meta_bot.py) find and update this same
+    doc's `status` field once Meta reports sent/delivered/read/failed —
+    OpenWA sends have no equivalent callback, so `status` stays null for
+    those; `success` (whether the send API call itself worked) is all
+    that's available.
+
+    Best-effort and silent on failure — logging must never be the thing
+    that breaks an otherwise-successful send."""
+    try:
+        await db.whatsapp_messages.insert_one({
+            'id': str(uuid.uuid4()), 'provider': provider, 'to': to, 'message_type': message_type,
+            'body': (body or '')[:1000], 'flow': flow, 'success': success, 'error': error or None,
+            'wa_message_id': wa_message_id, 'status': None,
+            'created_at': now_utc().isoformat(),
+        })
+    except Exception as e:
+        logger.warning(f'whatsapp message log failed: {e}')
+
+
+async def send_whatsapp(mobile: str, text: str, flow: str = '') -> bool:
     """Best-effort WhatsApp send via the self-hosted OpenWA gateway. Never
     raises — a WhatsApp failure (gateway down, session logged out, bad
     number) must not block or roll back whatever business action triggered
@@ -1947,27 +1978,34 @@ async def send_whatsapp(mobile: str, text: str) -> bool:
     check it without needing a try/except of its own."""
     chat_id = _to_whatsapp_chat_id(mobile)
     if not chat_id:
+        await log_whatsapp_message('openwa', mobile, 'text', text, False, flow, error='invalid or missing mobile number')
         return False
-    return await _openwa_send_text(chat_id, text)
+    ok = await _openwa_send_text(chat_id, text)
+    await log_whatsapp_message('openwa', mobile, 'text', text, ok, flow)
+    return ok
 
 
-async def send_whatsapp_channel(channel_id: str, text: str) -> bool:
+async def send_whatsapp_channel(channel_id: str, text: str, flow: str = '') -> bool:
     """Post to a WhatsApp Channel this session owns/admins (e.g. the shop's
     gold-rate broadcast channel). `channel_id` is the full `<id>@newsletter`
     id, not a phone number — no normalization needed."""
     if not channel_id:
         return False
-    return await _openwa_send_text(channel_id, text)
+    ok = await _openwa_send_text(channel_id, text)
+    await log_whatsapp_message('openwa', channel_id, 'channel', text, ok, flow)
+    return ok
 
 
-async def send_whatsapp_raw(chat_id: str, text: str) -> bool:
+async def send_whatsapp_raw(chat_id: str, text: str, flow: str = '') -> bool:
     """Reply to an already-known OpenWA chat id verbatim (e.g. a `@c.us` id
     lifted straight from an inbound webhook's `data.from`) — no phone-number
     normalization, unlike send_whatsapp(). Used by the inbound bot
     (routers/whatsapp_bot.py) to reply to whoever just messaged in."""
     if not chat_id:
         return False
-    return await _openwa_send_text(chat_id, text)
+    ok = await _openwa_send_text(chat_id, text)
+    await log_whatsapp_message('openwa', chat_id, 'text', text, ok, flow)
+    return ok
 
 
 async def resolve_whatsapp_phone(chat_id: str) -> Optional[str]:

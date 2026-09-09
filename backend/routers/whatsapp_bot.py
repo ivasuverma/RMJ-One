@@ -129,6 +129,7 @@ async def whatsapp_webhook(request: Request):
 
     if 'rate' in body_text and wa.get('chatbot_rate_enabled', True):
         reply = await _rate_reply()
+        matched = 'chatbot_reply_rate'
     elif 'status' in body_text and wa.get('chatbot_status_enabled', True):
         # `chat_id` is not always a `<digits>@c.us` phone JID — WhatsApp's
         # privacy-id rollout means an unsaved contact often arrives as an
@@ -137,12 +138,13 @@ async def whatsapp_webhook(request: Request):
         phone = await resolve_whatsapp_phone(chat_id)
         digits = ''.join(c for c in (phone or chat_id) if c.isdigit())
         reply = await _status_reply(digits[-10:] if len(digits) >= 10 else digits)
+        matched = 'chatbot_reply_status'
     else:
         # No recognized (and enabled) keyword — stay silent rather than
         # send a help prompt. Also covers a keyword whose own toggle is off.
         return {'ok': True, 'skipped': 'no keyword matched'}
 
-    ok = await send_whatsapp_raw(chat_id, reply)
+    ok = await send_whatsapp_raw(chat_id, reply, flow=matched)
     if not ok:
         logger.warning(f'whatsapp bot: reply send failed to {chat_id}')
     return {'ok': True}

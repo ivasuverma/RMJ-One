@@ -1160,7 +1160,7 @@ async def notify_whatsapp(item_id: str, user=Depends(require_admin_or_module(['r
     if not order or not order.get('customer_mobile'):
         raise HTTPException(status_code=400, detail='No mobile number on file for this order')
     text = await _repair_ready_whatsapp_text(item)
-    ok = await send_whatsapp(order['customer_mobile'], text)
+    ok = await send_whatsapp(order['customer_mobile'], text, flow='repair_ready_notice')
     if not ok:
         raise HTTPException(status_code=502, detail='Could not send — check the WhatsApp service is connected (Store Settings).')
     await log_audit(user, 'repair_item.notify_whatsapp', 'repair_item', item_id, item['item_code'], {})
@@ -1181,7 +1181,7 @@ async def notify_whatsapp_received(item_id: str, user=Depends(require_admin_or_m
     if not order or not order.get('customer_mobile'):
         raise HTTPException(status_code=400, detail='No mobile number on file for this order')
     text = await _repair_received_whatsapp_text(item)
-    ok = await send_whatsapp(order['customer_mobile'], text)
+    ok = await send_whatsapp(order['customer_mobile'], text, flow='repair_received_notice')
     if not ok:
         raise HTTPException(status_code=502, detail='Could not send — check the WhatsApp service is connected (Store Settings).')
     await log_audit(user, 'repair_item.notify_whatsapp_received', 'repair_item', item_id, item['item_code'], {})

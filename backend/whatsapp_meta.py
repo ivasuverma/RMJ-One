@@ -108,10 +108,15 @@ async def get_status() -> dict:
         return {'configured': True, 'connected': False, 'phone': None, 'display_name': None}
 
 
-async def _send(payload: dict) -> bool:
+async def _send(payload: dict) -> tuple[bool, Optional[str], str]:
+    """Returns (ok, wa_message_id, error) — the message id (once Meta
+    accepts the API call) is what a later delivery-status webhook uses to
+    find and update this same send's logged entry, and the error string is
+    what actually explains a failure (e.g. the 131047 24-hour-window
+    rejection) instead of just a bare False."""
     if not is_configured():
         logger.warning('meta whatsapp send skipped: not configured')
-        return False
+        return False, None, 'not configured'
     try:
         async with httpx.AsyncClient(timeout=15) as client:
             res = await client.post(
@@ -120,31 +125,39 @@ async def _send(payload: dict) -> bool:
                 json=payload,
             )
             if res.status_code == 200:
-                return True
+                data = res.json()
+                msg_id = ((data.get('messages') or [{}])[0]).get('id')
+                return True, msg_id, ''
             logger.warning(f'meta whatsapp send failed: {res.status_code} {res.text[:300]}')
-            return False
+            return False, None, res.text[:300]
     except Exception as e:
         logger.warning(f'meta whatsapp send failed: {e}')
-        return False
+        return False, None, str(e)
 
 
-async def send_text(mobile: str, text: str) -> bool:
+async def send_text(mobile: str, text: str, flow: str = '') -> bool:
     """Freeform text — only actually deliverable inside the 24-hour
     customer-service window (see module docstring). Fine for manual testing
     (message the test number first, then send back), not for anything
     business-initiated — use send_template for that."""
+    from server import log_whatsapp_message
     to = _to_e164_digits(mobile)
     if not to:
+        await log_whatsapp_message('meta', mobile, 'text', text, False, flow, error='invalid or missing mobile number')
         return False
-    return await _send({'messaging_product': 'whatsapp', 'to': to, 'type': 'text', 'text': {'body': text}})
+    ok, msg_id, error = await _send({'messaging_product': 'whatsapp', 'to': to, 'type': 'text', 'text': {'body': text}})
+    await log_whatsapp_message('meta', to, 'text', text, ok, flow, error=error, wa_message_id=msg_id)
+    return ok
 
 
-async def send_template(mobile: str, template_name: str, language_code: str = 'en', body_params: Optional[list] = None) -> bool:
+async def send_template(mobile: str, template_name: str, language_code: str = 'en', body_params: Optional[list] = None, flow: str = '') -> bool:
     """Sends an already-approved message template — the only way to reach a
     customer outside the 24-hour window. body_params, if given, fill the
     template's {{1}}, {{2}}... placeholders in order, as plain text."""
+    from server import log_whatsapp_message
     to = _to_e164_digits(mobile)
     if not to:
+        await log_whatsapp_message('meta', mobile, 'template', template_name, False, flow, error='invalid or missing mobile number')
         return False
     template: dict = {'name': template_name, 'language': {'code': language_code}}
     if body_params:
@@ -152,7 +165,9 @@ async def send_template(mobile: str, template_name: str, language_code: str = 'e
             'type': 'body',
             'parameters': [{'type': 'text', 'text': str(p)} for p in body_params],
         }]
-    return await _send({'messaging_product': 'whatsapp', 'to': to, 'type': 'template', 'template': template})
+    ok, msg_id, error = await _send({'messaging_product': 'whatsapp', 'to': to, 'type': 'template', 'template': template})
+    await log_whatsapp_message('meta', to, 'template', template_name, ok, flow, error=error, wa_message_id=msg_id)
+    return ok
 
 
 def verify_webhook_signature(raw_body: bytes, signature_header: str) -> bool:
