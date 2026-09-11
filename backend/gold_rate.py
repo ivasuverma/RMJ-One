@@ -32,8 +32,8 @@ from server import (
 logger = logging.getLogger('gold_rate')
 
 SCRIPT_PATH = os.path.join(os.path.dirname(__file__), 'scripts', 'fetch_gold_rate.js')
-OPENWA_ENV_PATH = r'E:\OpenWA\.env'
-OPENWA_NODE_MODULES = r'E:\OpenWA\node_modules'
+OPENWA_ENV_PATH = r'D:\RMJ-One\OpenWA\.env'
+OPENWA_NODE_MODULES = r'D:\RMJ-One\OpenWA\node_modules'
 DEFAULT_FETCH_TIME = '12:30'
 DEFAULT_GOLD_MARGIN = 0
 DEFAULT_SILVER_MARGIN = 0
