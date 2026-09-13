@@ -54,10 +54,11 @@ const GROUPS: GroupDef[] = [
   {
     title: 'Business', ownerOnly: true,
     rows: [
-      { key: 'store', label: 'Store Settings', sub: 'Shop profile & hours', icon: 'storefront-outline', route: '/store-settings' },
+      { key: 'printer', label: 'Printer Settings', sub: 'WiFi thermal receipt printer', icon: 'print-outline', route: '/settings/printer' },
       { key: 'whatsapp', label: 'WhatsApp', sub: 'Connection status & notice toggles', icon: 'logo-whatsapp', route: '/settings/whatsapp' },
       { key: 'security', label: 'Security', sub: 'Auto sign-out after inactivity', icon: 'lock-closed-outline', route: '/settings/security' },
       { key: 'google-drive', label: 'Google Drive & Backup', sub: 'Document storage + daily database backup', icon: 'cloud-outline', route: '/settings/google-drive' },
+      { key: 'system-health', label: 'System Health', sub: 'Live status of every connected system', icon: 'pulse-outline', route: '/settings/system-health' },
       { key: 'audit', label: 'Audit Log', sub: 'Every change, logged', icon: 'document-lock-outline', route: '/settings/audit' },
     ],
   },

@@ -91,7 +91,7 @@ export default function IssueToKarigarScreen() {
 
   const printIssueSlip = async (itemId: string) => {
     try { await api.post(`/repair-items/${itemId}/issue-slip/print`, {}); }
-    catch (e: any) { notify('Print failed', e?.detail || 'Could not reach the printer. Check Store Settings.'); }
+    catch (e: any) { notify('Print failed', e?.detail || 'Could not reach the printer. Check Printer Settings.'); }
   };
 
   const submit = async () => {

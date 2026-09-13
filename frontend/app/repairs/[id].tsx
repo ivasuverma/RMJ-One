@@ -66,7 +66,7 @@ export default function RepairOrderDetailScreen() {
     setThermalPrinting(true);
     try {
       await api.post(`/repair-orders/${id}/slip/print`, {});
-    } catch (e: any) { notify('Print failed', e?.detail || 'Could not reach the printer. Check Store Settings.'); }
+    } catch (e: any) { notify('Print failed', e?.detail || 'Could not reach the printer. Check Printer Settings.'); }
     finally { setThermalPrinting(false); }
   };
 
@@ -77,7 +77,7 @@ export default function RepairOrderDetailScreen() {
     setTagPrinting(true);
     try {
       await api.post(`/repair-orders/${id}/tags/print`, {});
-    } catch (e: any) { notify('Print failed', e?.detail || 'Could not reach the printer. Check Store Settings.'); }
+    } catch (e: any) { notify('Print failed', e?.detail || 'Could not reach the printer. Check Printer Settings.'); }
     finally { setTagPrinting(false); }
   };
 

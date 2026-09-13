@@ -199,7 +199,7 @@ export default function RepairItemDetailScreen() {
     try {
       const path = kind === 'bill' ? `/repair-items/${id}/bill/print` : `/repair-items/${id}/issue-slip/print`;
       await api.post(path, {});
-    } catch (e: any) { notify('Print failed', e?.detail || 'Could not reach the printer. Check Store Settings.'); }
+    } catch (e: any) { notify('Print failed', e?.detail || 'Could not reach the printer. Check Printer Settings.'); }
     finally { setThermalPrinting(false); }
   };
 
@@ -208,7 +208,7 @@ export default function RepairItemDetailScreen() {
   const printCustomerSlip = async () => {
     setThermalPrinting(true);
     try { await api.post(`/repair-orders/${item!.order_id}/slip/print`, {}); }
-    catch (e: any) { notify('Print failed', e?.detail || 'Could not reach the printer. Check Store Settings.'); }
+    catch (e: any) { notify('Print failed', e?.detail || 'Could not reach the printer. Check Printer Settings.'); }
     finally { setThermalPrinting(false); }
   };
 

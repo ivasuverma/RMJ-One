@@ -14,6 +14,12 @@ type GroupDef = { title: string; rows: RowDef[] };
 
 const GROUPS: GroupDef[] = [
   {
+    title: 'General',
+    rows: [
+      { key: 'attendance-settings', label: 'Attendance Settings', sub: 'Fence, shift hours, payroll rules', icon: 'options-outline', route: '/settings/attendance-settings' },
+    ],
+  },
+  {
     title: 'Masters',
     rows: [
       { key: 'departments', label: 'Departments', sub: 'Who works where', icon: 'business-outline', route: '/settings/departments' },

@@ -95,7 +95,7 @@ export default function GoldLoanDetailScreen() {
 
   const printThermal = async () => {
     try { await api.post(`/gold-loans/${id}/voucher/print`, {}); }
-    catch (e: any) { notify('Print failed', e?.detail || 'Could not reach the printer. Check Store Settings.'); }
+    catch (e: any) { notify('Print failed', e?.detail || 'Could not reach the printer. Check Printer Settings.'); }
   };
   const [printingPdf, setPrintingPdf] = useState(false);
   const printPdf = async () => {

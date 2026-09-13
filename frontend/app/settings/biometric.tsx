@@ -31,6 +31,9 @@ export default function BiometricScreen() {
   const [pulling, setPulling] = useState<string | null>(null);
   const [tab, setTab] = useState<'devices' | 'logs'>('devices');
   const [webhookUrl, setWebhookUrl] = useState('');
+  const [store, setStore] = useState<any>(null);
+  const [webhookSecret, setWebhookSecret] = useState('');
+  const [savingSecret, setSavingSecret] = useState(false);
 
   // Group the sync log by the punch's IST date, newest day first, so it reads
   // day-by-day like the attendance Live feed instead of one flat stream.
@@ -53,6 +56,8 @@ export default function BiometricScreen() {
         api.get<any>('/settings/store').catch(() => null),
       ]);
       setDevices(d); setLogs(l);
+      setStore(s || {});
+      setWebhookSecret(s?.biometric_webhook_secret || '');
       const base = process.env.EXPO_PUBLIC_BACKEND_URL || '';
       const path = `${base}/api/biometric/ebioserver-webhook`;
       const key = s?.biometric_webhook_secret;
@@ -93,6 +98,20 @@ export default function BiometricScreen() {
     finally { setPulling(null); }
   };
 
+  // PUT /settings/store is a full-document replace (see StoreSettingsIn in
+  // server.py), so this round-trips the rest of the store settings doc
+  // unchanged rather than sending just the secret.
+  const saveSecret = async () => {
+    if (!store) return;
+    setSavingSecret(true);
+    try {
+      await api.put('/settings/store', { ...store, biometric_webhook_secret: webhookSecret.trim() || null });
+      notify('Saved', 'Webhook secret updated.');
+      await load();
+    } catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
+    finally { setSavingSecret(false); }
+  };
+
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="biometric-screen">
@@ -129,16 +148,39 @@ export default function BiometricScreen() {
                 </View>
               </View>
 
-              <Pressable style={styles.pushCard} onPress={() => router.push('/store-settings' as any)} testID="ebioserver-webhook-card">
+              <View style={styles.pushCard}>
                 <Ionicons name="finger-print-outline" size={18} color={colors.brandSecondary} />
                 <View style={{ flex: 1 }}>
                   <Text style={styles.pushLabel}>Or, if using eSSL's eBioServer app: in its Master Settings, set Web URL to this (leave Symmetric Key blank), and set each employee's Biometric ID on their profile:</Text>
                   <Text style={styles.pushUrl} selectable>{webhookUrl}</Text>
-                  <Text style={[styles.pushLabel, { marginTop: 6 }]}>Tap to change the secret in Store Settings →</Text>
                 </View>
-              </Pressable>
+              </View>
 
-              <Text style={styles.section}>Register Device</Text>
+              <Text style={styles.section}>eBioServer Webhook Secret</Text>
+              <TextInput
+                testID="biometric-webhook-secret"
+                value={webhookSecret}
+                onChangeText={setWebhookSecret}
+                placeholder="Optional"
+                placeholderTextColor={colors.mutedText}
+                style={styles.input}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              <Pressable
+                style={[styles.addBtn, savingSecret && { opacity: 0.6 }]}
+                disabled={savingSecret}
+                onPress={saveSecret}
+                testID="save-webhook-secret-btn"
+              >
+                {savingSecret ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.addBtnText}>Save Secret</Text>}
+              </Pressable>
+              <View style={styles.infoBox}>
+                <Ionicons name="information-circle-outline" size={16} color={colors.brandSecondary} />
+                <Text style={styles.infoText}>Optional — if set, only pushes with this key in the webhook URL above are accepted.</Text>
+              </View>
+
+              <Text style={[styles.section, { marginTop: spacing.xl }]}>Register Device</Text>
               <TextInput testID="dev-serial" value={serial} onChangeText={setSerial} placeholder="Device serial" placeholderTextColor={colors.mutedText} style={styles.input} autoCapitalize="characters" />
               <TextInput testID="dev-label" value={label} onChangeText={setLabel} placeholder="Label (e.g. Front Gate)" placeholderTextColor={colors.mutedText} style={styles.input} />
               <TextInput testID="dev-secret" value={secret} onChangeText={setSecret} placeholder="Shared secret" placeholderTextColor={colors.mutedText} style={styles.input} secureTextEntry />
@@ -233,6 +275,11 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: 14, marginTop: spacing.sm,
   },
   addBtnText: { color: colors.onBrandPrimary, fontWeight: '700' },
+  infoBox: {
+    flexDirection: 'row', gap: spacing.sm, alignItems: 'center', backgroundColor: colors.surfaceTertiary,
+    borderRadius: radius.md, padding: spacing.md, borderWidth: 1, borderColor: colors.border, marginTop: spacing.sm,
+  },
+  infoText: { color: colors.onSurfaceTertiary, fontSize: 12, flex: 1 },
   card: {
     flexDirection: 'row', alignItems: 'center', gap: spacing.md,
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md,

@@ -52,7 +52,7 @@ export default function SampleDetailScreen() {
   const printThermal = async () => {
     setPrinting(true);
     try { await api.post(`/samples/${id}/issue-slip/print`, {}); }
-    catch (e: any) { notify('Print failed', e?.detail || 'Could not reach the printer. Check Store Settings.'); }
+    catch (e: any) { notify('Print failed', e?.detail || 'Could not reach the printer. Check Printer Settings.'); }
     finally { setPrinting(false); }
   };
 

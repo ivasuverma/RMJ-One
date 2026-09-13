@@ -367,7 +367,7 @@ export default function RepairBillScreen() {
     setThermalPrintingId(item.id);
     try {
       await api.post(`/repair-items/${item.id}/bill/print`, {});
-    } catch (e: any) { notify('Print failed', e?.detail || 'Could not reach the printer. Check Store Settings.'); }
+    } catch (e: any) { notify('Print failed', e?.detail || 'Could not reach the printer. Check Printer Settings.'); }
     finally { setThermalPrintingId(''); }
   };
 

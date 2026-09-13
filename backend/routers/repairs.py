@@ -2066,7 +2066,7 @@ async def _print_escpos(data: bytes):
     store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
     ip = store.get('printer_ip')
     if not ip:
-        raise HTTPException(status_code=400, detail='No printer configured. Set the printer IP in Store Settings.')
+        raise HTTPException(status_code=400, detail='No printer configured. Set the printer IP in Printer Settings.')
     port = store.get('printer_port') or 9100
 
     def _send():
@@ -2078,5 +2078,5 @@ async def _print_escpos(data: bytes):
         await asyncio.to_thread(_send)
     except Exception as e:
         await _notify_system_health('printer_failed', 'Printer unreachable',
-                                     f'Could not reach the thermal printer at {ip}:{port} — {e}', '/settings/store')
+                                     f'Could not reach the thermal printer at {ip}:{port} — {e}', '/settings/printer')
         raise HTTPException(status_code=502, detail=f'Could not reach the printer at {ip}:{port} — {e}')

@@ -91,7 +91,7 @@ export default function NewSampleScreen() {
 
   const printIssueSlip = async (sampleId: string) => {
     try { await api.post(`/samples/${sampleId}/issue-slip/print`, {}); }
-    catch (e: any) { notify('Print failed', e?.detail || 'Could not reach the printer. Check Store Settings.'); }
+    catch (e: any) { notify('Print failed', e?.detail || 'Could not reach the printer. Check Printer Settings.'); }
   };
 
   const submit = async () => {

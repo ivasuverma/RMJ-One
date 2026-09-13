@@ -12,6 +12,13 @@ import { confirmAction } from '@/src/utils/confirm';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
+// Was "Store Settings" — renamed since almost everything on this page (fence,
+// shift hours, app check-in toggle, payroll rules) is attendance/payroll
+// config, not store profile. Only the store name remains from the original
+// "store" framing. Printer and biometric-webhook config moved out to their
+// own pages (see settings/printer.tsx and settings/biometric.tsx) — this
+// still round-trips their values unchanged since PUT /settings/store is a
+// full-document replace (see StoreSettingsIn in server.py).
 type Form = {
   name: string; latitude: string; longitude: string; radius_m: string;
   work_start: string; work_end: string; grace_min: string; round_net_salary: boolean;
@@ -30,7 +37,7 @@ const EMPTY: Form = {
   app_checkin_enabled: true,
 };
 
-export default function StoreSettings() {
+export default function AttendanceSettings() {
   const router = useRouter();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
@@ -121,50 +128,50 @@ export default function StoreSettings() {
   }
 
   return (
-    <SafeAreaView style={styles.root} edges={['top']} testID="store-settings-screen">
+    <SafeAreaView style={styles.root} edges={['top']} testID="attendance-settings-screen">
       <View style={styles.header}>
         <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
-        <Text style={styles.title}>Store Settings</Text>
+        <Text style={styles.title}>Attendance Settings</Text>
         <View style={{ width: 40 }} />
       </View>
 
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 120 }} keyboardShouldPersistTaps="handled">
           <SectionTitle text="Store" />
-          <F label="Store Name" v={form.name} onC={(v) => setForm({ ...form, name: v })} testID="ss-name" />
+          <F label="Store Name" v={form.name} onC={(v) => setForm({ ...form, name: v })} testID="as-name" />
 
           <SectionTitle text="Location & Fence" />
           <View style={styles.row2}>
             <View style={{ flex: 1 }}>
-              <F label="Latitude" v={form.latitude} onC={(v) => setForm({ ...form, latitude: v.replace(/[^0-9.\-]/g, '') })} kt="numeric" testID="ss-lat" />
+              <F label="Latitude" v={form.latitude} onC={(v) => setForm({ ...form, latitude: v.replace(/[^0-9.\-]/g, '') })} kt="numeric" testID="as-lat" />
             </View>
             <View style={{ flex: 1 }}>
-              <F label="Longitude" v={form.longitude} onC={(v) => setForm({ ...form, longitude: v.replace(/[^0-9.\-]/g, '') })} kt="numeric" testID="ss-lng" />
+              <F label="Longitude" v={form.longitude} onC={(v) => setForm({ ...form, longitude: v.replace(/[^0-9.\-]/g, '') })} kt="numeric" testID="as-lng" />
             </View>
           </View>
-          <Pressable onPress={useCurrent} style={styles.locBtn} disabled={pickingLoc} testID="ss-use-current-btn">
+          <Pressable onPress={useCurrent} style={styles.locBtn} disabled={pickingLoc} testID="as-use-current-btn">
             <Ionicons name="locate" size={16} color={colors.brandPrimary} />
             <Text style={styles.locBtnText}>{pickingLoc ? 'Fetching…' : 'Use my current location'}</Text>
           </Pressable>
-          <F label="Fence Radius (metres)" v={form.radius_m} onC={(v) => setForm({ ...form, radius_m: v.replace(/[^0-9]/g, '') })} kt="numeric" testID="ss-radius" />
+          <F label="Fence Radius (metres)" v={form.radius_m} onC={(v) => setForm({ ...form, radius_m: v.replace(/[^0-9]/g, '') })} kt="numeric" testID="as-radius" />
 
           <SectionTitle text="Shift Hours" />
           <View style={styles.row2}>
             <View style={{ flex: 1 }}>
-              <F label="Start (HH:MM)" v={form.work_start} onC={(v) => setForm({ ...form, work_start: v })} testID="ss-start" />
+              <F label="Start (HH:MM)" v={form.work_start} onC={(v) => setForm({ ...form, work_start: v })} testID="as-start" />
             </View>
             <View style={{ flex: 1 }}>
-              <F label="End (HH:MM)" v={form.work_end} onC={(v) => setForm({ ...form, work_end: v })} testID="ss-end" />
+              <F label="End (HH:MM)" v={form.work_end} onC={(v) => setForm({ ...form, work_end: v })} testID="as-end" />
             </View>
           </View>
-          <F label="Late Grace (minutes)" v={form.grace_min} onC={(v) => setForm({ ...form, grace_min: v.replace(/[^0-9]/g, '') })} kt="numeric" testID="ss-grace" />
+          <F label="Late Grace (minutes)" v={form.grace_min} onC={(v) => setForm({ ...form, grace_min: v.replace(/[^0-9]/g, '') })} kt="numeric" testID="as-grace" />
 
           <Pressable
             onPress={() => setForm({ ...form, app_checkin_enabled: !form.app_checkin_enabled })}
             style={styles.toggleRow}
-            testID="ss-app-checkin-toggle"
+            testID="as-app-checkin-toggle"
           >
             <View style={{ flex: 1 }}>
               <Text style={styles.toggleLabel}>Allow check-in/check-out from the app</Text>
@@ -179,7 +186,7 @@ export default function StoreSettings() {
           <Pressable
             onPress={() => setForm({ ...form, round_net_salary: !form.round_net_salary })}
             style={styles.toggleRow}
-            testID="ss-round-salary-toggle"
+            testID="as-round-salary-toggle"
           >
             <View style={{ flex: 1 }}>
               <Text style={styles.toggleLabel}>Round final pay to nearest ₹10</Text>
@@ -193,7 +200,7 @@ export default function StoreSettings() {
           <Pressable
             onPress={() => setForm({ ...form, unpaid_sunday_after_absent_week: !form.unpaid_sunday_after_absent_week })}
             style={styles.toggleRow}
-            testID="ss-unpaid-sunday-toggle"
+            testID="as-unpaid-sunday-toggle"
           >
             <View style={{ flex: 1 }}>
               <Text style={styles.toggleLabel}>Unpaid Sunday after an absent week</Text>
@@ -209,38 +216,11 @@ export default function StoreSettings() {
             <Text style={styles.infoText}>Employees can only check in when within the fence radius of these coordinates.</Text>
           </View>
 
-          <SectionTitle text="Thermal Printer" />
-          <View style={styles.row2}>
-            <View style={{ flex: 2 }}>
-              <F label="Printer IP" v={form.printer_ip} onC={(v) => setForm({ ...form, printer_ip: v.replace(/[^0-9.]/g, '') })} kt="numeric" testID="ss-printer-ip" />
-            </View>
-            <View style={{ flex: 1 }}>
-              <F label="Port" v={form.printer_port} onC={(v) => setForm({ ...form, printer_port: v.replace(/[^0-9]/g, '') })} kt="numeric" testID="ss-printer-port" />
-            </View>
-          </View>
-          <View style={styles.infoBox}>
-            <Ionicons name="print-outline" size={16} color={colors.brandSecondary} />
-            <Text style={styles.infoText}>WiFi ESC/POS receipt printer (e.g. Retsol RTP82). Port 9100 is the standard raw/JetDirect port. Leave blank to disable direct printing.</Text>
-          </View>
-
-          <SectionTitle text="Biometric Attendance (eBioServer)" />
-          <F
-            label="Webhook Secret (optional)"
-            v={form.biometric_webhook_secret}
-            onC={(v) => setForm({ ...form, biometric_webhook_secret: v })}
-            testID="ss-biometric-secret"
-          />
-          <View style={styles.infoBox}>
-            <Ionicons name="finger-print-outline" size={16} color={colors.brandSecondary} />
-            <Text style={styles.infoText}>
-              Optional — if set, only pushes with this key in the webhook URL are accepted. Set it here, then find the full webhook URL to paste into eBioServer under Settings → Biometric Devices.
-            </Text>
-          </View>
         </ScrollView>
       </KeyboardAvoidingView>
 
       <View style={styles.footer}>
-        <Pressable onPress={save} disabled={saving} style={[styles.saveBtn, saving && { opacity: 0.6 }]} testID="ss-save-btn">
+        <Pressable onPress={save} disabled={saving} style={[styles.saveBtn, saving && { opacity: 0.6 }]} testID="as-save-btn">
           {saving ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.saveText}>Save Settings</Text>}
         </Pressable>
       </View>
