@@ -97,6 +97,11 @@ def now_utc() -> datetime:
     return datetime.now(timezone.utc)
 
 
+# Process start time, for System Health's uptime figure — set once at import,
+# not per-request.
+APP_START_TIME = now_utc()
+
+
 # Every shift/grace-period/attendance calculation in this file assumes IST,
 # so "today" has to mean IST-today everywhere too. A single shared constant
 # instead of each call site spelling out timezone(timedelta(hours=5,
@@ -221,6 +226,7 @@ MODULE_DEFS = [
     {'key': 'departments', 'label': 'Departments', 'default_roles': ['owner']},
     {'key': 'locations', 'label': 'Locations', 'default_roles': ['owner']},
     {'key': 'store_settings', 'label': 'Store Settings', 'default_roles': ['owner']},
+    {'key': 'system_health', 'label': 'System Health', 'default_roles': ['owner']},
     {'key': 'users', 'label': 'Staff Accounts', 'default_roles': ['owner']},
     {'key': 'tasks', 'label': 'Tasks', 'default_roles': ['owner', 'admin']},
     # The modules an employee can be granted, matching the tiles they're ever
@@ -1404,6 +1410,7 @@ async def on_startup():
     from routers.biometric import biometric_health_loop, biometric_log_prune_loop
     asyncio.create_task(biometric_health_loop())
     asyncio.create_task(biometric_log_prune_loop())
+    asyncio.create_task(audit_log_prune_loop())
 
 
 @app.on_event('shutdown')
@@ -1738,6 +1745,28 @@ async def log_audit(user, action: str, entity_type: str, entity_id: str = '',
         })
     except Exception as e:
         logger.warning(f'audit log failed: {e}')
+
+
+# Unlike biometric_logs (mostly device re-poll noise, pruned in days), every
+# audit_logs row is a real accountability event — who deleted/changed what —
+# so this window is a year, not days. No noise sub-category here: everything
+# in this collection is equally "real" and gets the same cutoff.
+AUDIT_LOG_RETENTION_DAYS = 365
+
+
+async def audit_log_prune_loop() -> None:
+    """Daily sweep, mirroring biometric_log_prune_loop — drops audit rows
+    older than AUDIT_LOG_RETENTION_DAYS."""
+    await asyncio.sleep(300)
+    while True:
+        try:
+            cutoff = (now_utc() - timedelta(days=AUDIT_LOG_RETENTION_DAYS)).isoformat()
+            res = await db.audit_logs.delete_many({'created_at': {'$lt': cutoff}})
+            if res.deleted_count:
+                logger.info(f'pruned {res.deleted_count} audit_logs rows (>{AUDIT_LOG_RETENTION_DAYS}d)')
+        except Exception as e:
+            logger.warning(f'audit log prune error: {e}')
+        await asyncio.sleep(86400)
 
 
 # ---------------- Notifications (Web Push) ----------------
@@ -2821,7 +2850,7 @@ from routers import (
     auth, employees, settings as settings_router, attendance, tasks, repairs,
     users, payroll, notifications, biometric, reports, assistant, samples,
     cashbook, ledger, documents, backup, record_photos, gold_loans, whatsapp_bot,
-    whatsapp_meta_bot, print_settings,
+    whatsapp_meta_bot, print_settings, system_health,
 )
 
 # ---------------- Mount ----------------
@@ -2847,6 +2876,7 @@ api.include_router(backup.router)
 api.include_router(whatsapp_bot.router)
 api.include_router(whatsapp_meta_bot.router)
 api.include_router(print_settings.router)
+api.include_router(system_health.router)
 
 app.include_router(api)
 app.include_router(biometric.iclock_router)  # /iclock/* — real device protocol, no /api prefix
