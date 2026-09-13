@@ -11,6 +11,7 @@ from collections import defaultdict
 import time as _time
 from server import (
     db,
+    now_utc,
     hash_secret,
     verify_secret,
     create_token,
@@ -176,7 +177,12 @@ async def employee_set_password(body: SetEmployeePasswordIn, user=Depends(requir
         raise HTTPException(status_code=400, detail='Password must be at least 4 characters')
     await db.employees.update_one(
         {'id': user['id']},
-        {'$set': {'password_hash': hash_secret(body.new_password), 'must_change_password': False}},
+        {'$set': {
+            'password_hash': hash_secret(body.new_password), 'must_change_password': False,
+            # Cuts off every token issued before now (see get_current) — changing
+            # a password signs out any other device still holding an old one.
+            'tokens_valid_from': now_utc().isoformat(),
+        }},
     )
     tok = create_token({'sub': user['id'], 'role': 'employee', 'employee_code': user.get('employee_code')})
     return {'ok': True, 'access_token': tok}

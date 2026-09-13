@@ -40,12 +40,29 @@ async def get_store(_: dict = Depends(get_current)):
 
 @router.put('/settings/store')
 async def update_store(body: StoreSettingsIn, user: dict = Depends(require_owner), _mod=Depends(require_module('store_settings'))):
-    payload = body.model_dump()
+    """Partial update — only the fields actually present in the request body
+    are written.
+
+    This document is edited from three separate screens (Attendance Settings,
+    Printer Settings, and the webhook secret on Biometric Devices). A whole
+    document $set meant each screen wrote back every field as it looked when
+    THAT screen loaded, so saving one screen silently reverted whatever another
+    had changed in between — last writer wins, on settings that control the
+    attendance fence and payroll rules."""
+    payload = body.model_dump(exclude_unset=True)
+    if not payload:
+        raise HTTPException(status_code=400, detail='No settings provided')
+    # The fence is only meaningful with both coordinates; refuse to blank out
+    # one or both of them via an explicit null.
+    for geo in ('latitude', 'longitude'):
+        if geo in payload and payload[geo] is None:
+            raise HTTPException(status_code=400, detail=f'{geo} cannot be empty')
     payload['id'] = 'store'
     payload['updated_at'] = now_utc().isoformat()
     await db.settings.update_one({'id': 'store'}, {'$set': payload}, upsert=True)
-    await log_audit(user, 'settings.store.update', 'settings', 'store', body.name)
-    return await db.settings.find_one({'id': 'store'}, {'_id': 0})
+    doc = await db.settings.find_one({'id': 'store'}, {'_id': 0})
+    await log_audit(user, 'settings.store.update', 'settings', 'store', doc.get('name', ''))
+    return doc
 
 
 # ---------------- Security Settings ----------------

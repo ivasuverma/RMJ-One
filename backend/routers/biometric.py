@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from typing import Optional, Literal
 from datetime import datetime, timezone, timedelta
 import asyncio
+import ipaddress
 import logging
 import secrets
 import uuid
@@ -29,7 +30,41 @@ from server import (
 logger = logging.getLogger('biometric')
 
 router = APIRouter()
-iclock_router = APIRouter()  # mounted directly on app, no /api prefix — real ADMS device protocol
+
+
+# The ADMS/iClock protocol has no auth field of any kind — its only trust
+# model is "this request came from the device on our LAN". That held while
+# the backend was LAN-only, but the Cloudflare tunnel forwards every path,
+# which silently published these write-capable endpoints to the internet
+# (confirmed: api.rmj.co.in/iclock/cdata answered a request from outside the
+# network). A punch accepted here becomes a real attendance row, and
+# attendance drives payroll — so anyone who guessed a device serial could
+# write to payroll.
+#
+# uvicorn resolves X-Forwarded-For from cloudflared (which connects over
+# loopback), so request.client.host is the REAL public IP for tunnelled
+# traffic and a 192.168.x.x address for the device itself — meaning a
+# private-range check cleanly separates the two. The Cloudflare header check
+# is belt-and-braces in case that forwarding behaviour ever changes.
+#
+# Restricting the tunnel's public hostname to /api/* is the better fix and
+# makes this redundant; this exists so the hole is closed either way.
+def _require_lan_client(request: Request) -> None:
+    if request.headers.get('cf-connecting-ip') or request.headers.get('cf-ray'):
+        logger.warning('iclock request rejected: arrived via Cloudflare tunnel')
+        raise HTTPException(status_code=403, detail='Forbidden')
+    host = request.client.host if request.client else ''
+    try:
+        if not ipaddress.ip_address(host).is_private:
+            logger.warning(f'iclock request rejected from non-LAN address {host}')
+            raise HTTPException(status_code=403, detail='Forbidden')
+    except ValueError:
+        logger.warning(f'iclock request rejected: unparseable client address {host!r}')
+        raise HTTPException(status_code=403, detail='Forbidden')
+
+
+# mounted directly on app, no /api prefix — real ADMS device protocol
+iclock_router = APIRouter(dependencies=[Depends(_require_lan_client)])
 
 # Minimum minutes required between two accepted biometric punches for the
 # same employee before a new scan is treated as a real check-in/check-out
@@ -325,6 +360,22 @@ async def biometric_push(body: BiometricPushIn):
 # "the device is on your LAN and its serial is registered" — same as any other
 # local network appliance.
 
+async def _touch_device(serial: str) -> None:
+    """Mark a device as heard-from, right now.
+
+    "Last seen" has to mean "last contact", not "last accepted punch". It used
+    to be refreshed only by the boot handshake and by punches that turned into
+    a real check-in/out — but the device polls getrequest every ~10s and
+    re-uploads ATTLOG rows that are almost all discarded as duplicates (~99.8%
+    of them). So a device that was online and polling perfectly still went
+    'offline' 24h after the last accepted punch, which fired a false
+    'device offline' alert and showed a false status on System Health. Any
+    contact from the device counts."""
+    await db.biometric_devices.update_one(
+        {'serial': serial}, {'$set': {'last_seen': now_utc().isoformat(), 'status': 'online'}}
+    )
+
+
 @iclock_router.get('/iclock/cdata')
 @iclock_router.get('/iclock/cdata.aspx')
 async def iclock_handshake(SN: str = Query(...)):
@@ -353,6 +404,7 @@ async def iclock_handshake(SN: str = Query(...)):
 async def iclock_upload(request: Request, SN: str = Query(...), table: str = Query('ATTLOG')):
     """Device pushes punch data here. Body is plain text, one record per line,
     tab-separated: PIN<TAB>Time<TAB>Status<TAB>Verify<TAB>WorkCode..."""
+    await _touch_device(SN)
     device = await db.biometric_devices.find_one({'serial': SN}, {'_id': 0})
     raw = (await request.body()).decode('utf-8', errors='ignore')
     if not device:
@@ -437,6 +489,7 @@ async def iclock_getrequest(SN: str = Query(...)):
     full drain already happened, so a 48h window is enough going forward
     (covers this poll plus any missed polls from a brief outage) without
     risking a full historical re-backfill on every request."""
+    await _touch_device(SN)
     device = await db.biometric_devices.find_one({'serial': SN}, {'_id': 0})
     if not device:
         return PlainTextResponse('OK')

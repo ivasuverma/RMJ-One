@@ -166,6 +166,28 @@ async def get_current(authorization: str = Header(default='')) -> dict:
         u = await db.employees.find_one({'id': payload.get('sub')}, {'_id': 0, 'password_hash': 0})
     if not u:
         raise HTTPException(status_code=401, detail='User not found')
+    # Revocation. Tokens last a week, so without this a password change left
+    # every token issued before it valid until it expired on its own — a token
+    # lifted from a lost phone couldn't be cut off. Any token minted before the
+    # account's `tokens_valid_from` is refused, which is what makes changing a
+    # password actually sign other devices out.
+    #
+    # Compares against the token's own `iat` rather than a version counter, so
+    # no token-issuing call site had to change. Accounts that have never had a
+    # password change have no `tokens_valid_from` and skip this entirely, so
+    # sessions already in flight when this shipped keep working.
+    valid_from = u.get('tokens_valid_from')
+    if valid_from:
+        try:
+            # Floor to whole seconds: `iat` is an integer second, while the
+            # stamp carries microseconds. Comparing the two directly would
+            # reject the replacement token handed back by the very request
+            # that changed the password, whenever both land in the same second.
+            cutoff = int(datetime.fromisoformat(valid_from).timestamp())
+            if payload.get('iat', 0) < cutoff:
+                raise HTTPException(status_code=401, detail='Session ended. Please sign in again.')
+        except (ValueError, TypeError):
+            pass  # unparseable stamp shouldn't lock anyone out
     u['role'] = role
     return u
 
@@ -497,9 +519,14 @@ class EmployeeIn(BaseModel):
 
 
 class StoreSettingsIn(BaseModel):
+    # Every field is optional because PUT /settings/store is a PARTIAL update
+    # (see routers/settings.py): three separate screens each edit their own
+    # slice of this document, so a request carries only the fields that screen
+    # owns. Defaults here describe a fresh install, not what a caller must send
+    # — anything left unset is simply not written.
     name: str = 'Ram Murti Jewellers'
-    latitude: float
-    longitude: float
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
     radius_m: int = 150
     work_start: str = '10:00'  # HH:MM
     work_end: str = '19:30'
@@ -1272,30 +1299,45 @@ async def seed():
         if thumb:
             await db.employees.update_one({'id': emp['id']}, {'$set': {'photo_thumb': thumb}})
 
-    if not await db.users.find_one({'username': 'owner'}):
-        uid = str(uuid.uuid4())
-        await db.users.insert_one({
-            'id': uid, 'username': 'owner', 'name': 'Ram Murti (Owner)',
-            'role': 'owner', 'password_hash': hash_secret('Owner@123'),
-            'created_at': now_utc().isoformat(),
-        })
-        logger.info('Seeded owner user: owner / Owner@123')
-
-    # Seed demo admin + accountant
-    if not await db.users.find_one({'username': 'admin'}):
-        await db.users.insert_one({
-            'id': str(uuid.uuid4()), 'username': 'admin', 'name': 'Store Admin',
-            'role': 'admin', 'password_hash': hash_secret('Admin@123'),
-            'created_at': now_utc().isoformat(),
-        })
-        logger.info('Seeded admin user: admin / Admin@123')
-    if not await db.users.find_one({'username': 'accountant'}):
-        await db.users.insert_one({
-            'id': str(uuid.uuid4()), 'username': 'accountant', 'name': 'Store Accountant',
-            'role': 'accountant', 'password_hash': hash_secret('Accountant@123'),
-            'created_at': now_utc().isoformat(),
-        })
-        logger.info('Seeded accountant user: accountant / Accountant@123')
+    # Bootstrap logins for a brand-new install, with the default passwords
+    # written in this file.
+    #
+    # These used to be recreated whenever the USERNAME was missing, which meant
+    # deleting one never stuck: the next restart silently restored it, default
+    # password and all, on an internet-facing app. (Observed live — the
+    # 'accountant' account was deleted and reappeared 26 days after the install
+    # was first seeded.) Gate on a one-time marker instead, so the account list
+    # stays exactly as the owner leaves it, and treat any database that already
+    # has users as bootstrapped so an existing install never re-seeds.
+    bootstrap = await db.settings.find_one({'id': 'bootstrap'}, {'_id': 0}) or {}
+    if not bootstrap.get('users_seeded'):
+        if await db.users.count_documents({}) == 0:
+            await db.users.insert_many([
+                {
+                    'id': str(uuid.uuid4()), 'username': 'owner', 'name': 'Ram Murti (Owner)',
+                    'role': 'owner', 'password_hash': hash_secret('Owner@123'),
+                    'created_at': now_utc().isoformat(),
+                },
+                {
+                    'id': str(uuid.uuid4()), 'username': 'admin', 'name': 'Store Admin',
+                    'role': 'admin', 'password_hash': hash_secret('Admin@123'),
+                    'created_at': now_utc().isoformat(),
+                },
+                {
+                    'id': str(uuid.uuid4()), 'username': 'accountant', 'name': 'Store Accountant',
+                    'role': 'accountant', 'password_hash': hash_secret('Accountant@123'),
+                    'created_at': now_utc().isoformat(),
+                },
+            ])
+            logger.warning(
+                'Fresh install: seeded owner/admin/accountant with default passwords. '
+                'Change them now — they are published in this repo.'
+            )
+        await db.settings.update_one(
+            {'id': 'bootstrap'},
+            {'$set': {'id': 'bootstrap', 'users_seeded': True, 'users_seeded_at': now_utc().isoformat()}},
+            upsert=True,
+        )
 
     if await db.shifts.count_documents({}) == 0:
         await db.shifts.insert_many([
@@ -1410,7 +1452,7 @@ async def on_startup():
     from routers.biometric import biometric_health_loop, biometric_log_prune_loop
     asyncio.create_task(biometric_health_loop())
     asyncio.create_task(biometric_log_prune_loop())
-    asyncio.create_task(audit_log_prune_loop())
+    asyncio.create_task(log_retention_loop())
 
 
 @app.on_event('shutdown')
@@ -1747,25 +1789,40 @@ async def log_audit(user, action: str, entity_type: str, entity_id: str = '',
         logger.warning(f'audit log failed: {e}')
 
 
-# Unlike biometric_logs (mostly device re-poll noise, pruned in days), every
-# audit_logs row is a real accountability event — who deleted/changed what —
-# so this window is a year, not days. No noise sub-category here: everything
-# in this collection is equally "real" and gets the same cutoff.
-AUDIT_LOG_RETENTION_DAYS = 365
+# Retention for the append-only collections — everything that only ever grows.
+# Windows differ by what the rows are FOR, not by size:
+#   audit_logs    every row is an accountability event (who changed/deleted
+#                 what), so a year, not days.
+#   notifications read once and then dead weight; 90 days is generous.
+#   whatsapp_messages  a sent-message log, useful for "did that notice go
+#                 out?" for about a season.
+# biometric_logs isn't here — it needs a second, much shorter window for the
+# device re-poll noise that makes up ~99.8% of it, so it keeps its own loop
+# in routers/biometric.py.
+LOG_RETENTION = {
+    'audit_logs': 365,
+    'notifications': 90,
+    'whatsapp_messages': 180,
+}
 
 
-async def audit_log_prune_loop() -> None:
-    """Daily sweep, mirroring biometric_log_prune_loop — drops audit rows
-    older than AUDIT_LOG_RETENTION_DAYS."""
+async def log_retention_loop() -> None:
+    """Daily sweep over every collection in LOG_RETENTION.
+
+    One loop rather than one per collection: these all share the same shape
+    (ISO-8601 `created_at`, delete anything older than N days), and adding the
+    next append-only collection should be a line in the dict above, not another
+    copy of this function."""
     await asyncio.sleep(300)
     while True:
-        try:
-            cutoff = (now_utc() - timedelta(days=AUDIT_LOG_RETENTION_DAYS)).isoformat()
-            res = await db.audit_logs.delete_many({'created_at': {'$lt': cutoff}})
-            if res.deleted_count:
-                logger.info(f'pruned {res.deleted_count} audit_logs rows (>{AUDIT_LOG_RETENTION_DAYS}d)')
-        except Exception as e:
-            logger.warning(f'audit log prune error: {e}')
+        for name, days in LOG_RETENTION.items():
+            try:
+                cutoff = (now_utc() - timedelta(days=days)).isoformat()
+                res = await db[name].delete_many({'created_at': {'$lt': cutoff}})
+                if res.deleted_count:
+                    logger.info(f'pruned {res.deleted_count} {name} rows (>{days}d)')
+            except Exception as e:
+                logger.warning(f'{name} prune error: {e}')
         await asyncio.sleep(86400)
 
 

@@ -72,6 +72,9 @@ async def update_user(uid: str, body: UserUpdateIn, user: dict = Depends(require
     if body.password:
         if len(body.password) < 4: raise HTTPException(status_code=400, detail='Password must be 4+ characters')
         upd['password_hash'] = hash_secret(body.password)
+        # Revoke this account's existing tokens (see get_current) — an owner
+        # resetting someone's password should end their live sessions too.
+        upd['tokens_valid_from'] = now_utc().isoformat()
     if body.role: upd['role'] = body.role
     if upd:
         await db.users.update_one({'id': uid}, {'$set': upd})
@@ -103,6 +106,9 @@ async def update_my_account(body: SelfAccountUpdateIn, user=Depends(get_current)
     if body.new_password:
         if len(body.new_password) < 4: raise HTTPException(status_code=400, detail='Password must be 4+ characters')
         upd['password_hash'] = hash_secret(body.new_password)
+        # See get_current: ends sessions on other devices. The fresh token
+        # issued below is minted after this stamp, so the caller stays signed in.
+        upd['tokens_valid_from'] = now_utc().isoformat()
     if not upd:
         raise HTTPException(status_code=400, detail='Nothing to update')
     upd['updated_at'] = now_utc().isoformat()
