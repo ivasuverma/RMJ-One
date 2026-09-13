@@ -122,13 +122,14 @@ async def biometric_logs(limit: int = 100, _: dict = Depends(require_staff), _mo
 
 # Every punch attempt is logged, including ones the ADMS re-query re-sends on
 # every poll (see BACKLOG_MAX_HOURS above) — measured live, 99.8% of rows are
-# 'skipped'/'rejected' noise from that re-send, not distinct events (~1M rows
-# in 3 weeks). Real 'accepted' punches are kept a full year for audit/dispute
-# purposes; the noise is worthless past a much shorter troubleshooting window,
-# so it's pruned far sooner to keep the collection (and backups) from
-# ballooning on re-send noise alone.
+# 'skipped'/'rejected' noise from that re-send, not distinct events (~1.4M
+# rows in under 30 days, which filled the Atlas free-tier 512MB cluster on
+# its own before any of it aged out). Real 'accepted' punches are kept a full
+# year for audit/dispute purposes; the noise is worthless past a much
+# shorter troubleshooting window, so it's pruned far sooner to keep the
+# collection (and backups) from ballooning on re-send noise alone.
 LOG_RETENTION_DAYS = 365
-NOISE_LOG_RETENTION_DAYS = 30
+NOISE_LOG_RETENTION_DAYS = 3
 
 
 async def biometric_log_prune_loop() -> None:
