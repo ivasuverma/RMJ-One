@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -20,10 +20,12 @@ export default function KarigarLedgerPickerScreen() {
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [karigars, setKarigars] = useState<Karigar[]>([]);
   const [onlyBalance, setOnlyBalance] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
     try { setKarigars(await api.get<Karigar[]>('/karigars')); }
     catch (_e) { setKarigars([]); }
+    finally { setRefreshing(false); }
   }, []);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
@@ -54,7 +56,10 @@ export default function KarigarLedgerPickerScreen() {
         </Pressable>
       </View>
 
-      <ScrollView contentContainerStyle={{ padding: spacing.lg }}>
+      <ScrollView
+        contentContainerStyle={{ padding: spacing.lg }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}
+      >
         {visible.length === 0 ? (
           <View style={styles.empty}><Ionicons name="hammer-outline" size={36} color={colors.mutedText} /><Text style={styles.emptyText}>{onlyBalance ? 'No one has an open balance right now' : 'No karigars yet'}</Text></View>
         ) : visible.map((k) => {

@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TextInput, Pressable } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -18,10 +18,12 @@ export default function CustomerLedgerScreen() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [query, setQuery] = useState('');
   const [onlyBalance, setOnlyBalance] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async (q?: string) => {
     try { setCustomers(await api.get<Customer[]>(`/customers${q ? `?q=${encodeURIComponent(q)}` : ''}`)); }
     catch (_e) { setCustomers([]); }
+    finally { setRefreshing(false); }
   }, []);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
@@ -61,7 +63,10 @@ export default function CustomerLedgerScreen() {
         </Pressable>
       </View>
 
-      <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingTop: spacing.sm }}>
+      <ScrollView
+        contentContainerStyle={{ padding: spacing.lg, paddingTop: spacing.sm }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(query); }} tintColor={colors.brandPrimary} />}
+      >
         {visible.length === 0 ? (
           <View style={styles.empty}><Ionicons name="people-outline" size={36} color={colors.mutedText} /><Text style={styles.emptyText}>{onlyBalance ? 'No one has an open balance right now' : 'No customers found'}</Text></View>
         ) : visible.map((c) => (

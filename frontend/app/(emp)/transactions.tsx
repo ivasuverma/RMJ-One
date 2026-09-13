@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -132,6 +132,7 @@ export default function EmployeeTransactionsScreen() {
 
   const [repairDash, setRepairDash] = useState<RepairDashboard | null>(null);
   const [sampleDash, setSampleDash] = useState<SamplesDashboard | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
   // Repair covers the whole lifecycle (create → track → bill), so the single
   // "repairs" grant shows the card and its pending-to-bill/deliver rows.
   const showRepairDash = hasModule('repairs');
@@ -146,6 +147,7 @@ export default function EmployeeTransactionsScreen() {
       try { setSampleDash(await api.get<SamplesDashboard>('/samples/dashboard')); }
       catch (_e) { setSampleDash(null); }
     } else setSampleDash(null);
+    setRefreshing(false);
   }, [showRepairDash, showSampleDash]);
 
   useFocusEffect(useCallback(() => { loadDash(); }, [loadDash]));
@@ -158,7 +160,11 @@ export default function EmployeeTransactionsScreen() {
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="emp-transactions-screen">
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadDash(); }} tintColor={colors.brandPrimary} />}
+      >
         <Text style={styles.title}>Transactions</Text>
         <Text style={styles.subtitle}>Where you record something happening.</Text>
 

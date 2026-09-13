@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -37,6 +37,7 @@ export default function WorkScreen() {
   const [docSummary, setDocSummary] = useState<{ pending_count: number } | null>(null);
   const [composeOpen, setComposeOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   // Custom order for the In-progress rows — persisted per device so each user
   // arranges the board to match how they actually work.
@@ -53,7 +54,7 @@ export default function WorkScreen() {
   const load = useCallback(async () => {
     try { setError(''); setData(await api.get<DashboardData>('/dashboard')); }
     catch (e: any) { setError(e?.detail || 'Failed to load'); }
-    finally { setLoading(false); }
+    finally { setLoading(false); setRefreshing(false); }
     if (hasModule('documents')) api.get<{ pending_count: number }>('/documents/summary').then(setDocSummary).catch(() => {});
     if (hasModule('gold_loans')) api.get<{ active: number; overdue: number; total_outstanding: number; total_interest_pending: number }>('/gold-loans/dashboard').then(setLoanSummary).catch(() => {});
     if (hasModule('gold_rate')) api.get<any>('/settings/gold-rate').then((g) => setGoldRateSummary({
@@ -148,7 +149,11 @@ export default function WorkScreen() {
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="work-screen">
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}
+      >
         <View style={styles.titleRow}>
           <View style={{ flex: 1 }}>
             <Text style={styles.h1}>Work</Text>

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, TextInput } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, TextInput, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -46,6 +46,7 @@ export default function GoldRateScreen() {
   const toast = useToast();
 
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [fetchTime, setFetchTime] = useState('12:30');
   const [template, setTemplate] = useState('');
   const [channelConnected, setChannelConnected] = useState(false);
@@ -81,7 +82,7 @@ export default function GoldRateScreen() {
       setChannelConnected(!!g.channel_connected);
       applyToday(g.today || null, g.template || '');
     } catch (e: any) { toast.error(e?.detail || 'Could not load'); }
-    finally { setLoading(false); }
+    finally { setLoading(false); setRefreshing(false); }
   };
   useEffect(() => { load(); }, []);
 
@@ -172,7 +173,11 @@ export default function GoldRateScreen() {
         </Pressable>
       </View>
 
-      <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 60 }} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        contentContainerStyle={{ padding: spacing.lg, paddingBottom: 60 }}
+        keyboardShouldPersistTaps="handled"
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}
+      >
         <View style={styles.infoBox}>
           <Ionicons name="pricetag-outline" size={16} color={colors.brandSecondary} />
           <Text style={styles.infoText}>Fetches a reference rate from your supplier once a day. Confirm — and adjust the rates or message if needed — before it's sent to the "Ram Murti Jewellers" WhatsApp Channel.</Text>

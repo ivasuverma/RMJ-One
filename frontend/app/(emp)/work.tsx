@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -36,15 +36,19 @@ export default function EmployeeWorkScreen() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [docPending, setDocPending] = useState<number | null>(null);
   const [captureDoc, setCaptureDoc] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const hasRepairs = hasModule('repairs');
   const hasSamples = hasModule('samples');
   const hasDocs = hasModule('documents');
 
   const load = useCallback(async () => {
-    if (hasRepairs) api.get<RepairDash>('/repairs/dashboard').then(setRepairDash).catch(() => setRepairDash(null));
-    if (hasSamples) api.get<SampleDash>('/samples/dashboard').then(setSampleDash).catch(() => setSampleDash(null));
-    if (hasDocs) api.get<{ pending_count: number }>('/documents/summary').then((s) => setDocPending(s.pending_count)).catch(() => {});
-    api.get<Task[]>('/tasks?status=open').then(setTasks).catch(() => setTasks([]));
+    await Promise.allSettled([
+      hasRepairs ? api.get<RepairDash>('/repairs/dashboard').then(setRepairDash).catch(() => setRepairDash(null)) : Promise.resolve(),
+      hasSamples ? api.get<SampleDash>('/samples/dashboard').then(setSampleDash).catch(() => setSampleDash(null)) : Promise.resolve(),
+      hasDocs ? api.get<{ pending_count: number }>('/documents/summary').then((s) => setDocPending(s.pending_count)).catch(() => {}) : Promise.resolve(),
+      api.get<Task[]>('/tasks?status=open').then(setTasks).catch(() => setTasks([])),
+    ]);
+    setRefreshing(false);
   }, [hasRepairs, hasSamples, hasDocs]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
@@ -119,7 +123,11 @@ export default function EmployeeWorkScreen() {
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="emp-work-screen">
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}
+      >
         <View style={styles.titleRow}>
           <View style={{ flex: 1 }}>
             <Text style={styles.h1}>Work</Text>
