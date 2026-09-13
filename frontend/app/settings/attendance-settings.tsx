@@ -16,15 +16,13 @@ import { useTheme } from '@/src/theme/ThemeContext';
 // shift hours, app check-in toggle, payroll rules) is attendance/payroll
 // config, not store profile. Only the store name remains from the original
 // "store" framing. Printer and biometric-webhook config moved out to their
-// own pages (see settings/printer.tsx and settings/biometric.tsx) — this
-// still round-trips their values unchanged since PUT /settings/store is a
-// full-document replace (see StoreSettingsIn in server.py).
+// own pages (see settings/printer.tsx and settings/biometric.tsx); since PUT
+// /settings/store is a partial update, this page sends only what it owns and
+// never writes back a stale copy of theirs.
 type Form = {
   name: string; latitude: string; longitude: string; radius_m: string;
   work_start: string; work_end: string; grace_min: string; round_net_salary: boolean;
   unpaid_sunday_after_absent_week: boolean;
-  printer_ip: string; printer_port: string;
-  biometric_webhook_secret: string;
   app_checkin_enabled: boolean;
 };
 
@@ -32,8 +30,6 @@ const EMPTY: Form = {
   name: '', latitude: '', longitude: '', radius_m: '150',
   work_start: '10:00', work_end: '19:30', grace_min: '15', round_net_salary: false,
   unpaid_sunday_after_absent_week: true,
-  printer_ip: '', printer_port: '9100',
-  biometric_webhook_secret: '',
   app_checkin_enabled: true,
 };
 
@@ -58,8 +54,6 @@ export default function AttendanceSettings() {
             work_end: s.work_end || '19:30', grace_min: String(s.grace_min ?? 15),
             round_net_salary: !!s.round_net_salary,
             unpaid_sunday_after_absent_week: s.unpaid_sunday_after_absent_week !== false,
-            printer_ip: s.printer_ip || '', printer_port: String(s.printer_port ?? 9100),
-            biometric_webhook_secret: s.biometric_webhook_secret || '',
             app_checkin_enabled: s.app_checkin_enabled !== false,
           }));
         }
@@ -101,9 +95,6 @@ export default function AttendanceSettings() {
         grace_min: parseInt(form.grace_min || '15', 10),
         round_net_salary: form.round_net_salary,
         unpaid_sunday_after_absent_week: form.unpaid_sunday_after_absent_week,
-        printer_ip: form.printer_ip.trim() || null,
-        printer_port: parseInt(form.printer_port || '9100', 10),
-        biometric_webhook_secret: form.biometric_webhook_secret.trim() || null,
         app_checkin_enabled: form.app_checkin_enabled,
       });
       router.back();

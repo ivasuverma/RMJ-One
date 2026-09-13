@@ -31,7 +31,6 @@ export default function BiometricScreen() {
   const [pulling, setPulling] = useState<string | null>(null);
   const [tab, setTab] = useState<'devices' | 'logs'>('devices');
   const [webhookUrl, setWebhookUrl] = useState('');
-  const [store, setStore] = useState<any>(null);
   const [webhookSecret, setWebhookSecret] = useState('');
   const [savingSecret, setSavingSecret] = useState(false);
 
@@ -56,7 +55,6 @@ export default function BiometricScreen() {
         api.get<any>('/settings/store').catch(() => null),
       ]);
       setDevices(d); setLogs(l);
-      setStore(s || {});
       setWebhookSecret(s?.biometric_webhook_secret || '');
       const base = process.env.EXPO_PUBLIC_BACKEND_URL || '';
       const path = `${base}/api/biometric/ebioserver-webhook`;
@@ -98,14 +96,12 @@ export default function BiometricScreen() {
     finally { setPulling(null); }
   };
 
-  // PUT /settings/store is a full-document replace (see StoreSettingsIn in
-  // server.py), so this round-trips the rest of the store settings doc
-  // unchanged rather than sending just the secret.
+  // PUT /settings/store is a partial update, so this sends only the secret —
+  // no risk of writing back a stale copy of settings another screen owns.
   const saveSecret = async () => {
-    if (!store) return;
     setSavingSecret(true);
     try {
-      await api.put('/settings/store', { ...store, biometric_webhook_secret: webhookSecret.trim() || null });
+      await api.put('/settings/store', { biometric_webhook_secret: webhookSecret.trim() || null });
       notify('Saved', 'Webhook secret updated.');
       await load();
     } catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }

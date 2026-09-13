@@ -6,6 +6,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { ErrorState } from '@/src/components/ui';
 
 // Ledger tab (owner/admin/accountant) — the account ledgers, moved here
 // from Settings > Reports so they're one tap away instead of buried two
@@ -35,6 +36,7 @@ export default function LedgerScreen() {
   const [metalSummary, setMetalSummary] = useState('');
   const [employeeSummary, setEmployeeSummary] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+  const [failed, setFailed] = useState(false);
 
   useFocusEffect(useCallback(() => {
     try { const raw = typeof window !== 'undefined' ? window.localStorage.getItem(ORDER_KEY) : null; if (raw) setOrder(JSON.parse(raw)); } catch { /* ignore */ }
@@ -42,12 +44,17 @@ export default function LedgerScreen() {
   const persistOrder = (keys: string[]) => { setOrder(keys); try { if (typeof window !== 'undefined') window.localStorage.setItem(ORDER_KEY, JSON.stringify(keys)); } catch { /* ignore */ } };
 
   const load = useCallback(async () => {
-    await Promise.allSettled([
+    // Each row's summary falls back to '…' on failure rather than a figure, so
+    // a dropped connection never renders as "Nothing owed" — but '…' forever
+    // is its own kind of unhelpful, so surface one banner when a load failed
+    // and offer the retry.
+    setFailed(false);
+    const results = await Promise.allSettled([
       api.get<any[]>('/customers').then((cs) => {
         const items = cs.reduce((s, c) => s + (c.open_items || 0), 0);
         const gold = cs.reduce((s, c) => s + (c.open_weight || 0), 0);
         setCustSummary(items > 0 ? `${items} item${items === 1 ? '' : 's'} in · ${gold.toFixed(3)}g held` : 'Nothing open');
-      }).catch(() => {}),
+      }),
       api.get<any[]>('/karigars').then((ks) => {
         const fine = ks.reduce((s, k) => s + (k.fine_weight_balance || 0), 0);
         const amt = ks.reduce((s, k) => s + (k.amount_due || 0), 0);
@@ -55,24 +62,25 @@ export default function LedgerScreen() {
         if (Math.abs(fine) >= 0.001) parts.push(`${fine.toFixed(3)}g gold`);
         if (Math.abs(amt) >= 1) parts.push(`₹${Math.abs(Math.round(amt)).toLocaleString('en-IN')}`);
         setKarigarSummary(parts.length ? `Owed: ${parts.join(' · ')}` : 'Nothing owed');
-      }).catch(() => {}),
+      }),
       api.get<{ total_received: number; total_paid_out: number; net: number }>('/cash-ledger').then((r) => {
         setCashSummary(`Net ₹${Math.round(r.net).toLocaleString('en-IN')} · ${r.total_received > 0 || r.total_paid_out > 0 ? `₹${Math.round(r.total_received).toLocaleString('en-IN')} in, ₹${Math.round(r.total_paid_out).toLocaleString('en-IN')} out` : 'No activity'}`);
-      }).catch(() => {}),
+      }),
       api.get<{ total_weight: number; total_fine_weight: number }>('/karigars/loss-ledger').then((r) => {
         setLossSummary(Math.abs(r.total_fine_weight) >= 0.001 ? `${r.total_weight.toFixed(3)}g weight · ${r.total_fine_weight.toFixed(3)}g fine` : 'No loss recorded');
-      }).catch(() => {}),
+      }),
       api.get<{ balance: number; total_loss: number }>('/metal-ledger').then((r) => {
         const parts = [`${r.balance.toFixed(3)}g net stock`];
         if (Math.abs(r.total_loss) >= 0.001) parts.push(`${r.total_loss.toFixed(3)}g loss`);
         setMetalSummary(parts.join(' · '));
-      }).catch(() => {}),
+      }),
       api.get<{ closing_balance?: number }[]>('/employees').then((es) => {
         const withBalance = es.filter((e) => !!e.closing_balance);
         const total = withBalance.reduce((s, e) => s + Math.abs(e.closing_balance || 0), 0);
         setEmployeeSummary(withBalance.length > 0 ? `${withBalance.length} with balance · ₹${Math.round(total).toLocaleString('en-IN')}` : 'All settled');
-      }).catch(() => {}),
+      }),
     ]);
+    if (results.some((r) => r.status === 'rejected')) setFailed(true);
     setRefreshing(false);
   }, []);
   useFocusEffect(useCallback(() => { load(); }, [load]));
@@ -105,6 +113,16 @@ export default function LedgerScreen() {
       >
         <Text style={styles.h1}>Ledger</Text>
         <Text style={styles.sub}>Customer, karigar, cash, loss, metal, and employee accounts.</Text>
+
+        {failed && (
+          <View style={{ marginTop: spacing.lg }}>
+            <ErrorState
+              message="Some balances couldn't be loaded, so the figures below may be incomplete."
+              onRetry={load}
+              testID="ledger-error"
+            />
+          </View>
+        )}
 
         <View style={styles.progressHead}>
           <Text style={styles.sectionLabel}>Ledgers</Text>

@@ -6,6 +6,7 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import { api } from '@/src/api/client';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { ErrorState } from '@/src/components/ui';
 
 type Customer = { id: string; name: string; mobile: string; open_items?: number; open_weight?: number };
 
@@ -19,11 +20,18 @@ export default function CustomerLedgerScreen() {
   const [query, setQuery] = useState('');
   const [onlyBalance, setOnlyBalance] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  // A failed load must not render as "nobody has a balance" — that's a
+  // statement about the shop's books that happens to be false.
+  const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async (q?: string) => {
-    try { setCustomers(await api.get<Customer[]>(`/customers${q ? `?q=${encodeURIComponent(q)}` : ''}`)); }
-    catch (_e) { setCustomers([]); }
-    finally { setRefreshing(false); }
+    try {
+      setCustomers(await api.get<Customer[]>(`/customers${q ? `?q=${encodeURIComponent(q)}` : ''}`));
+      setError(null);
+    } catch (e: any) {
+      setCustomers([]);
+      setError(e?.detail || 'Could not load customers. Check your connection and try again.');
+    } finally { setRefreshing(false); }
   }, []);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
@@ -67,7 +75,9 @@ export default function CustomerLedgerScreen() {
         contentContainerStyle={{ padding: spacing.lg, paddingTop: spacing.sm }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(query); }} tintColor={colors.brandPrimary} />}
       >
-        {visible.length === 0 ? (
+        {error ? (
+          <ErrorState message={error} onRetry={() => load(query)} testID="customer-ledger-error" />
+        ) : visible.length === 0 ? (
           <View style={styles.empty}><Ionicons name="people-outline" size={36} color={colors.mutedText} /><Text style={styles.emptyText}>{onlyBalance ? 'No one has an open balance right now' : 'No customers found'}</Text></View>
         ) : visible.map((c) => (
           <Pressable key={c.id} onPress={() => router.push(`/customers/${c.id}` as any)} style={styles.card} testID={`customer-ledger-${c.id}`}>

@@ -6,6 +6,7 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import { api } from '@/src/api/client';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { ErrorState } from '@/src/components/ui';
 
 type Karigar = {
   id: string; name: string; mobile: string; is_employee: boolean; active: boolean;
@@ -21,11 +22,18 @@ export default function KarigarLedgerPickerScreen() {
   const [karigars, setKarigars] = useState<Karigar[]>([]);
   const [onlyBalance, setOnlyBalance] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  // A failed load must not render as "nothing is owed" — gold and cash
+  // balances are exactly what someone opens this screen to check.
+  const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    try { setKarigars(await api.get<Karigar[]>('/karigars')); }
-    catch (_e) { setKarigars([]); }
-    finally { setRefreshing(false); }
+    try {
+      setKarigars(await api.get<Karigar[]>('/karigars'));
+      setError(null);
+    } catch (e: any) {
+      setKarigars([]);
+      setError(e?.detail || 'Could not load karigars. Check your connection and try again.');
+    } finally { setRefreshing(false); }
   }, []);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
@@ -60,7 +68,9 @@ export default function KarigarLedgerPickerScreen() {
         contentContainerStyle={{ padding: spacing.lg }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}
       >
-        {visible.length === 0 ? (
+        {error ? (
+          <ErrorState message={error} onRetry={load} testID="karigar-ledger-error" />
+        ) : visible.length === 0 ? (
           <View style={styles.empty}><Ionicons name="hammer-outline" size={36} color={colors.mutedText} /><Text style={styles.emptyText}>{onlyBalance ? 'No one has an open balance right now' : 'No karigars yet'}</Text></View>
         ) : visible.map((k) => {
           const fineBal = k.fine_weight_balance || 0;

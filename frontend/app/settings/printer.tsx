@@ -12,15 +12,13 @@ import { useTheme } from '@/src/theme/ThemeContext';
 
 // Split out of Store Settings — the thermal printer's IP/port is hardware
 // config a shop sets once and rarely touches, unlike the store profile
-// fields it used to sit alongside. PUT /settings/store is a full-document
-// replace (see StoreSettingsIn in server.py), so this page still round-trips
-// the rest of the store settings doc unchanged rather than sending a
-// partial body.
+// fields it used to sit alongside. PUT /settings/store is a partial update,
+// so this page sends only the two printer fields and can't disturb settings
+// owned by the other screens that write this document.
 export default function PrinterSettings() {
   const router = useRouter();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
-  const [store, setStore] = useState<any>(null);
   const [ip, setIp] = useState('');
   const [port, setPort] = useState('9100');
   const [loading, setLoading] = useState(true);
@@ -30,7 +28,6 @@ export default function PrinterSettings() {
     (async () => {
       try {
         const s = await api.get<any>('/settings/store');
-        setStore(s || {});
         setIp(s?.printer_ip || '');
         setPort(String(s?.printer_port ?? 9100));
       } finally { setLoading(false); }
@@ -39,12 +36,11 @@ export default function PrinterSettings() {
 
   const submittingRef = useRef(false);
   const save = async () => {
-    if (submittingRef.current || !store) return;
+    if (submittingRef.current) return;
     submittingRef.current = true;
     setSaving(true);
     try {
       await api.put('/settings/store', {
-        ...store,
         printer_ip: ip.trim() || null,
         printer_port: parseInt(port || '9100', 10),
       });

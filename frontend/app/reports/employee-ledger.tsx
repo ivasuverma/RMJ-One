@@ -6,6 +6,7 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import { api } from '@/src/api/client';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { ErrorState } from '@/src/components/ui';
 
 type Employee = {
   id: string; name: string; employee_code: string; designation?: string;
@@ -24,11 +25,18 @@ export default function EmployeeLedgerPickerScreen() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [onlyBalance, setOnlyBalance] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  // A failed load must not render as "everyone is settled" — outstanding
+  // wages and advances are the whole point of this screen.
+  const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    try { setEmployees(await api.get<Employee[]>('/employees')); }
-    catch (_e) { setEmployees([]); }
-    finally { setRefreshing(false); }
+    try {
+      setEmployees(await api.get<Employee[]>('/employees'));
+      setError(null);
+    } catch (e: any) {
+      setEmployees([]);
+      setError(e?.detail || 'Could not load employees. Check your connection and try again.');
+    } finally { setRefreshing(false); }
   }, []);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
@@ -61,7 +69,9 @@ export default function EmployeeLedgerPickerScreen() {
         contentContainerStyle={{ padding: spacing.lg }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}
       >
-        {visible.length === 0 ? (
+        {error ? (
+          <ErrorState message={error} onRetry={load} testID="employee-ledger-error" />
+        ) : visible.length === 0 ? (
           <View style={styles.empty}><Ionicons name="people-outline" size={36} color={colors.mutedText} /><Text style={styles.emptyText}>{onlyBalance ? 'No one has an open balance right now' : 'No employees yet'}</Text></View>
         ) : visible.map((e) => {
           const bal = e.closing_balance || 0;
