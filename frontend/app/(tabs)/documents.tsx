@@ -13,7 +13,7 @@ import { haptics } from '@/src/utils/haptics';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { Sheet, useToast } from '@/src/components/ui';
-import { DocumentCaptureSheet } from '@/src/components/DocumentCaptureSheet';
+import { QuickDocCapture } from '@/src/components/QuickDocCapture';
 import { UploadQueueBadge } from '@/src/components/UploadQueueBadge';
 
 type Doc = {
@@ -366,7 +366,7 @@ export default function DocumentsScreen() {
         <Pressable onPress={() => setCaptureOpen(true)} style={styles.fab} testID="documents-add-btn"><Ionicons name="add" size={26} color={colors.onBrandPrimary} /></Pressable>
       )}
 
-      <DocumentCaptureSheet visible={captureOpen} onClose={() => setCaptureOpen(false)} onSaved={load} />
+      <QuickDocCapture visible={captureOpen} onClose={() => setCaptureOpen(false)} onSaved={load} />
       <RecordSheet doc={recordDoc} categoryLabel={recordDoc ? (catMap[recordDoc.category_key]?.label || recordDoc.category_key) : ''}
         onClose={() => setRecordDoc(null)} onDone={() => { setRecordDoc(null); setViewer(null); haptics.success(); toast.success('Recorded'); load(); }} />
       <QuickView doc={viewer} categoryLabel={viewer ? (catMap[viewer.category_key]?.label || viewer.category_key) : ''} token={token} fileUri={fileUri}
