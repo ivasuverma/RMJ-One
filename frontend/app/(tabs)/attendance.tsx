@@ -178,18 +178,19 @@ export default function OwnerAttendance() {
         </Pressable>
         <View style={styles.titleRow}>
           <View style={{ flex: 1, minWidth: 0 }}>
-            <Text style={styles.h1}>Attendance</Text>
+            <View style={styles.titleInline}>
+              <Text style={styles.h1}>Attendance</Text>
+              <Pressable
+                onPress={() => { setRefreshing(true); load(); if (seg === 'pay') loadPay(); if (seg === 'live') loadLive(); }}
+                disabled={refreshing}
+                testID="attendance-refresh-btn"
+                hitSlop={10}
+              >
+                {refreshing ? <ActivityIndicator size="small" color={colors.onSurface} /> : <Ionicons name="refresh" size={16} color={colors.onSurface} />}
+              </Pressable>
+            </View>
             <Text style={styles.sub}>{subtitle}</Text>
           </View>
-          <Pressable
-            onPress={() => { setRefreshing(true); load(); if (seg === 'pay') loadPay(); if (seg === 'live') loadLive(); }}
-            disabled={refreshing}
-            style={styles.refreshBtn}
-            testID="attendance-refresh-btn"
-            hitSlop={8}
-          >
-            {refreshing ? <ActivityIndicator size="small" color={colors.onSurface} /> : <Ionicons name="refresh" size={18} color={colors.onSurface} />}
-          </Pressable>
           <Pressable onPress={() => { if (seg !== 'live') haptics.selection(); setSeg('live'); loadLive(); }} style={[styles.apprBtn, seg === 'live' && styles.apprBtnOn]} testID="attendance-live-btn" hitSlop={8}>
             <Ionicons name="pulse-outline" size={22} color={seg === 'live' ? colors.onBrandPrimary : colors.onSurface} />
           </Pressable>
@@ -390,10 +391,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   titleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
   h1: { color: colors.onSurface, fontSize: 26, fontWeight: '800', fontFamily: fonts.display, letterSpacing: -0.5 },
   apprBtn: { width: 46, height: 46, borderRadius: 23, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
-  refreshBtn: {
-    width: 36, height: 36, borderRadius: 18, backgroundColor: colors.surfaceSecondary,
-    borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center', marginTop: 5,
-  },
+  titleInline: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   apprBtnOn: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
   apprBadge: { position: 'absolute', top: -3, right: -3, minWidth: 20, height: 20, borderRadius: 10, paddingHorizontal: 5, backgroundColor: colors.brandPrimary, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: colors.surface },
   apprBadgeText: { color: colors.onBrandPrimary, fontSize: 11, fontWeight: '800' },

@@ -61,16 +61,12 @@ export default function GoldLoansScreen() {
         <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
-        <Text style={styles.title}>Gold Loans</Text>
-        <Pressable
-          onPress={() => { setRefreshing(true); load(); }}
-          disabled={refreshing}
-          style={styles.iconBtn}
-          testID="loans-refresh-btn"
-          hitSlop={12}
-        >
-          {refreshing ? <ActivityIndicator size="small" color={colors.onSurface} /> : <Ionicons name="refresh" size={18} color={colors.onSurface} />}
-        </Pressable>
+        <View style={styles.titleInline}>
+          <Text style={styles.title}>Gold Loans</Text>
+          <Pressable onPress={() => { setRefreshing(true); load(); }} disabled={refreshing} testID="loans-refresh-btn" hitSlop={10}>
+            {refreshing ? <ActivityIndicator size="small" color={colors.onSurface} /> : <Ionicons name="refresh" size={15} color={colors.onSurface} />}
+          </Pressable>
+        </View>
         <Pressable onPress={() => router.push('/loans/new' as any)} style={[styles.iconBtn, styles.addBtn]} testID="new-loan-btn" hitSlop={12}>
           <Ionicons name="add" size={22} color={colors.onBrandPrimary} />
         </Pressable>
@@ -181,7 +177,8 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border,
   },
   addBtn: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
-  title: { flex: 1, color: colors.onSurface, fontSize: 18, fontWeight: '600', fontFamily: fonts.display },
+  title: { color: colors.onSurface, fontSize: 18, fontWeight: '600', fontFamily: fonts.display },
+  titleInline: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 },
 
   pipe: {
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border,

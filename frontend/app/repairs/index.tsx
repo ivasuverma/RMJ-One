@@ -90,18 +90,14 @@ export default function RepairOrdersScreen() {
         </Pressable>
         <View style={styles.titleRow}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.h1}>Repairs</Text>
+            <View style={styles.titleInline}>
+              <Text style={styles.h1}>Repairs</Text>
+              <Pressable onPress={() => { setRefreshing(true); load(filter); }} disabled={refreshing} testID="repairs-refresh-btn" hitSlop={10}>
+                {refreshing ? <ActivityIndicator size="small" color={colors.brandSecondary} /> : <Ionicons name="refresh" size={16} color={colors.brandSecondary} />}
+              </Pressable>
+            </View>
             <Text style={styles.sub}>Create, track and bill — all in one place.</Text>
           </View>
-          <Pressable
-            onPress={() => { setRefreshing(true); load(filter); }}
-            disabled={refreshing}
-            style={styles.refreshBtn}
-            testID="repairs-refresh-btn"
-            hitSlop={10}
-          >
-            {refreshing ? <ActivityIndicator size="small" color={colors.brandSecondary} /> : <Ionicons name="refresh" size={18} color={colors.brandSecondary} />}
-          </Pressable>
           <Pressable onPress={() => router.push('/repairs/new' as any)} style={styles.addBtn} testID="new-repair-btn" hitSlop={10}>
             <Ionicons name="add" size={22} color={colors.onBrandPrimary} />
           </Pressable>
@@ -214,10 +210,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   h1: { color: colors.onSurface, fontSize: 32, fontWeight: '700', fontFamily: fonts.display, letterSpacing: -0.5 },
   sub: { color: colors.onSurfaceSecondary, fontSize: 15, marginTop: 6 },
   addBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.brandPrimary, alignItems: 'center', justifyContent: 'center' },
-  refreshBtn: {
-    width: 36, height: 36, borderRadius: 18, backgroundColor: colors.surfaceSecondary,
-    borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center', marginTop: 4,
-  },
+  titleInline: { flexDirection: 'row', alignItems: 'center', gap: 8 },
 
   pipe: {
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border,

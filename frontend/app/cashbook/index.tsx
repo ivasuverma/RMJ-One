@@ -291,18 +291,14 @@ export default function CashBookScreen() {
         <Pressable onPress={onBack} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
-        <Text style={styles.title}>{headerTitle}</Text>
-        {mode === 'view' && (
-          <Pressable
-            onPress={() => { setRefreshing(true); load(date, counterId); }}
-            disabled={refreshing}
-            style={styles.iconBtn}
-            testID="cashbook-refresh-btn"
-            hitSlop={12}
-          >
-            {refreshing ? <ActivityIndicator size="small" color={colors.onSurface} /> : <Ionicons name="refresh" size={18} color={colors.onSurface} />}
-          </Pressable>
-        )}
+        <View style={styles.titleInline}>
+          <Text style={styles.title}>{headerTitle}</Text>
+          {mode === 'view' && (
+            <Pressable onPress={() => { setRefreshing(true); load(date, counterId); }} disabled={refreshing} testID="cashbook-refresh-btn" hitSlop={10}>
+              {refreshing ? <ActivityIndicator size="small" color={colors.onSurface} /> : <Ionicons name="refresh" size={15} color={colors.onSurface} />}
+            </Pressable>
+          )}
+        </View>
         {mode === 'view' && isOwner ? (
           <Pressable onPress={openManageCounters} style={styles.iconBtn} testID="cashbook-settings-btn" hitSlop={12}>
             <Ionicons name="settings-outline" size={19} color={colors.onSurface} />
@@ -641,7 +637,8 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surfaceSecondary,
     alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border,
   },
-  title: { flex: 1, color: colors.onSurface, fontSize: 18, fontWeight: '600', fontFamily: fonts.display },
+  title: { color: colors.onSurface, fontSize: 18, fontWeight: '600', fontFamily: fonts.display },
+  titleInline: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 },
 
   counterScroll: { flexGrow: 0, flexShrink: 0 },
   counterChipsRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: 2 },

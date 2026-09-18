@@ -82,16 +82,12 @@ export default function SamplesScreen() {
         <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
-        <Text style={styles.title}>Stock In/Out</Text>
-        <Pressable
-          onPress={() => { setRefreshing(true); load(); }}
-          disabled={refreshing}
-          style={styles.iconBtn}
-          testID="samples-refresh-btn"
-          hitSlop={12}
-        >
-          {refreshing ? <ActivityIndicator size="small" color={colors.onSurface} /> : <Ionicons name="refresh" size={18} color={colors.onSurface} />}
-        </Pressable>
+        <View style={styles.titleInline}>
+          <Text style={styles.title}>Stock In/Out</Text>
+          <Pressable onPress={() => { setRefreshing(true); load(); }} disabled={refreshing} testID="samples-refresh-btn" hitSlop={10}>
+            {refreshing ? <ActivityIndicator size="small" color={colors.onSurface} /> : <Ionicons name="refresh" size={15} color={colors.onSurface} />}
+          </Pressable>
+        </View>
         {/* Issuing a new sample only ever needed module access on the
             backend (require_admin_or_module, no right check) — matching
             Repair's unconditional add button instead of gating this behind
@@ -195,7 +191,8 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border,
   },
   addBtn: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
-  title: { flex: 1, color: colors.onSurface, fontSize: 18, fontWeight: '600', fontFamily: fonts.display },
+  title: { color: colors.onSurface, fontSize: 18, fontWeight: '600', fontFamily: fonts.display },
+  titleInline: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 },
 
   input: {
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1,
