@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, RefreshControl, ActivityIndicator } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -83,6 +83,15 @@ export default function SamplesScreen() {
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
         <Text style={styles.title}>Stock In/Out</Text>
+        <Pressable
+          onPress={() => { setRefreshing(true); load(); }}
+          disabled={refreshing}
+          style={styles.iconBtn}
+          testID="samples-refresh-btn"
+          hitSlop={12}
+        >
+          {refreshing ? <ActivityIndicator size="small" color={colors.onSurface} /> : <Ionicons name="refresh" size={18} color={colors.onSurface} />}
+        </Pressable>
         {/* Issuing a new sample only ever needed module access on the
             backend (require_admin_or_module, no right check) — matching
             Repair's unconditional add button instead of gating this behind

@@ -62,6 +62,15 @@ export default function GoldLoansScreen() {
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
         <Text style={styles.title}>Gold Loans</Text>
+        <Pressable
+          onPress={() => { setRefreshing(true); load(); }}
+          disabled={refreshing}
+          style={styles.iconBtn}
+          testID="loans-refresh-btn"
+          hitSlop={12}
+        >
+          {refreshing ? <ActivityIndicator size="small" color={colors.onSurface} /> : <Ionicons name="refresh" size={18} color={colors.onSurface} />}
+        </Pressable>
         <Pressable onPress={() => router.push('/loans/new' as any)} style={[styles.iconBtn, styles.addBtn]} testID="new-loan-btn" hitSlop={12}>
           <Ionicons name="add" size={22} color={colors.onBrandPrimary} />
         </Pressable>

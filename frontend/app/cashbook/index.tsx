@@ -292,11 +292,22 @@ export default function CashBookScreen() {
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
         <Text style={styles.title}>{headerTitle}</Text>
+        {mode === 'view' && (
+          <Pressable
+            onPress={() => { setRefreshing(true); load(date, counterId); }}
+            disabled={refreshing}
+            style={styles.iconBtn}
+            testID="cashbook-refresh-btn"
+            hitSlop={12}
+          >
+            {refreshing ? <ActivityIndicator size="small" color={colors.onSurface} /> : <Ionicons name="refresh" size={18} color={colors.onSurface} />}
+          </Pressable>
+        )}
         {mode === 'view' && isOwner ? (
           <Pressable onPress={openManageCounters} style={styles.iconBtn} testID="cashbook-settings-btn" hitSlop={12}>
             <Ionicons name="settings-outline" size={19} color={colors.onSurface} />
           </Pressable>
-        ) : <View style={{ width: 40 }} />}
+        ) : mode !== 'view' ? <View style={{ width: 40 }} /> : null}
       </View>
 
       {mode === 'view' && (

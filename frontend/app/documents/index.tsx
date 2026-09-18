@@ -305,6 +305,15 @@ export default function DocumentsScreen() {
             {!doneCat && <Text style={styles.sub}>Snap · record · filed &amp; searchable.</Text>}
           </View>
           <UploadQueueBadge />
+          <Pressable
+            onPress={() => { setRefreshing(true); load(); }}
+            disabled={refreshing}
+            style={styles.refreshBtn}
+            testID="documents-refresh-btn"
+            hitSlop={10}
+          >
+            {refreshing ? <ActivityIndicator size="small" color={colors.brandSecondary} /> : <Ionicons name="refresh" size={16} color={colors.brandSecondary} />}
+          </Pressable>
           <View style={styles.drivePill}>
             {summary && summary.uploading_count > 0
               ? <><Ionicons name="cloud-upload-outline" size={13} color={colors.onWarning} /><Text style={[styles.drivePillText, { color: colors.onWarning }]}>{summary.uploading_count} uploading</Text></>
@@ -539,6 +548,10 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   h1: { color: colors.onSurface, fontSize: 32, fontWeight: '800', fontFamily: fonts.display, letterSpacing: -0.6 },
   sub: { color: colors.onSurfaceSecondary, fontSize: 15, marginTop: 6 },
   drivePill: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 6, borderRadius: radius.pill, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border },
+  refreshBtn: {
+    width: 32, height: 32, borderRadius: 16, backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center',
+  },
   drivePillText: { fontSize: 12, fontWeight: '700' },
 
   seg: { flexDirection: 'row', backgroundColor: colors.surfaceTertiary, borderRadius: 12, padding: 4, gap: 3, marginTop: spacing.lg },
