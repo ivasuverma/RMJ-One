@@ -66,20 +66,26 @@ export default function OwnerTabsLayout() {
           the tappable icon, not the bar itself) — it would otherwise sit
           redundantly under a screen that already has its own way back. */}
       <Tabs.Screen name="transactions" options={{ href: null, tabBarStyle: { display: 'none' } }} />
-      <Tabs.Screen name="attendance" options={{ href: null, tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="employees" options={{ href: null, tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="payroll" options={{ href: null, tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="settings" options={{ href: null, tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="masters" options={{ href: null }} />
-      {/* Cash Book: moved into the tabs group (was app/cashbook/index.tsx, a
-          plain stack route) specifically so it keeps the bottom bar and stays
-          mounted in the background when you switch to another tab and back —
-          this is the one screen used constantly alongside everything else.
-          No tabBarStyle override, so (like masters above) the bar stays
-          visible — the opposite of the hidden-screens above it. Its own
-          sub-page, cashbook/analytics.tsx, is intentionally left as a normal
-          stack route outside this group, so the bar still hides there. */}
+      {/* Each module's landing/list screen lives here (no tabBarStyle
+          override, so — like masters above — the bar stays visible) so it
+          keeps the bottom bar and stays mounted in the background when you
+          switch tabs and back, instead of unmounting like a plain stack push.
+          Every sub-page (a single record, an edit form, a new-record screen)
+          is intentionally left OUTSIDE this group as a normal stack route —
+          the bar still hides there, same as before. Route paths are
+          unchanged (a group folder adds no URL segment), so nothing that
+          links to /cashbook, /documents, /samples, /loans, or /repairs
+          needed updating. */}
       <Tabs.Screen name="cashbook" options={{ href: null }} />
+      <Tabs.Screen name="attendance" options={{ href: null }} />
+      <Tabs.Screen name="documents" options={{ href: null }} />
+      <Tabs.Screen name="samples" options={{ href: null }} />
+      <Tabs.Screen name="loans" options={{ href: null }} />
+      <Tabs.Screen name="repairs" options={{ href: null }} />
     </Tabs>
   );
 }
