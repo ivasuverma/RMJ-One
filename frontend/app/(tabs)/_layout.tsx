@@ -71,6 +71,15 @@ export default function OwnerTabsLayout() {
       <Tabs.Screen name="payroll" options={{ href: null, tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="settings" options={{ href: null, tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="masters" options={{ href: null }} />
+      {/* Cash Book: moved into the tabs group (was app/cashbook/index.tsx, a
+          plain stack route) specifically so it keeps the bottom bar and stays
+          mounted in the background when you switch to another tab and back —
+          this is the one screen used constantly alongside everything else.
+          No tabBarStyle override, so (like masters above) the bar stays
+          visible — the opposite of the hidden-screens above it. Its own
+          sub-page, cashbook/analytics.tsx, is intentionally left as a normal
+          stack route outside this group, so the bar still hides there. */}
+      <Tabs.Screen name="cashbook" options={{ href: null }} />
     </Tabs>
   );
 }
