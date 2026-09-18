@@ -22,12 +22,14 @@ import { ErrorState } from '@/src/components/ui';
 type Row = { key: string; label: string; icon: keyof typeof Ionicons.glyphMap; route: string; summary: string };
 
 const ORDER_KEY = 'rmj.ledger_order';
+const HIDDEN_KEY = 'rmj.ledger_hidden';
 
 export default function LedgerScreen() {
   const router = useRouter();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [order, setOrder] = useState<string[]>([]);
+  const [hidden, setHidden] = useState<string[]>([]);
   const [editOrder, setEditOrder] = useState(false);
   const [custSummary, setCustSummary] = useState('');
   const [karigarSummary, setKarigarSummary] = useState('');
@@ -40,8 +42,11 @@ export default function LedgerScreen() {
 
   useFocusEffect(useCallback(() => {
     try { const raw = typeof window !== 'undefined' ? window.localStorage.getItem(ORDER_KEY) : null; if (raw) setOrder(JSON.parse(raw)); } catch { /* ignore */ }
+    try { const raw = typeof window !== 'undefined' ? window.localStorage.getItem(HIDDEN_KEY) : null; if (raw) setHidden(JSON.parse(raw)); } catch { /* ignore */ }
   }, []));
   const persistOrder = (keys: string[]) => { setOrder(keys); try { if (typeof window !== 'undefined') window.localStorage.setItem(ORDER_KEY, JSON.stringify(keys)); } catch { /* ignore */ } };
+  const persistHidden = (keys: string[]) => { setHidden(keys); try { if (typeof window !== 'undefined') window.localStorage.setItem(HIDDEN_KEY, JSON.stringify(keys)); } catch { /* ignore */ } };
+  const toggleHidden = (key: string) => persistHidden(hidden.includes(key) ? hidden.filter((k) => k !== key) : [...hidden, key]);
 
   const load = useCallback(async () => {
     // Each row's summary falls back to '…' on failure rather than a figure, so
@@ -107,6 +112,9 @@ export default function LedgerScreen() {
     [keys[i], keys[j]] = [keys[j], keys[i]];
     persistOrder(keys);
   };
+  // Outside edit mode, hidden rows are simply not shown. In edit mode every
+  // row shows (dimmed if hidden) so there's somewhere to tap it back on.
+  const visibleRows = editOrder ? sortedRows : sortedRows.filter((r) => !hidden.includes(r.key));
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="ledger-screen">
@@ -131,15 +139,20 @@ export default function LedgerScreen() {
         <View style={styles.progressHead}>
           <Text style={styles.sectionLabel}>Ledgers</Text>
           <Pressable onPress={() => setEditOrder((v) => !v)} hitSlop={8} testID="ledger-edit-order">
-            <Text style={styles.editOrderText}>{editOrder ? 'Done' : 'Reorder'}</Text>
+            <Text style={styles.editOrderText}>{editOrder ? 'Done' : 'Edit'}</Text>
           </Pressable>
         </View>
 
-        {sortedRows.map((r, ri) => (
+        {editOrder && visibleRows.length === 0 && (
+          <Text style={styles.pd}>Nothing left to show — every ledger below is hidden.</Text>
+        )}
+        {visibleRows.map((r, ri) => {
+          const isHidden = hidden.includes(r.key);
+          return (
           <Pressable
             key={r.key}
             onPress={() => !editOrder && router.push(r.route as any)}
-            style={({ pressed }) => [styles.prow, pressed && !editOrder && { opacity: 0.85 }]}
+            style={({ pressed }) => [styles.prow, isHidden && editOrder && styles.prowHidden, pressed && !editOrder && { opacity: 0.85 }]}
             testID={`ledger-row-${r.key}`}
           >
             <View style={styles.pi}><Ionicons name={r.icon} size={22} color={colors.brandSecondary} /></View>
@@ -149,14 +162,18 @@ export default function LedgerScreen() {
             </View>
             {editOrder ? (
               <View style={styles.reorderCtrls}>
+                <Pressable onPress={() => toggleHidden(r.key)} style={styles.arrowBtn} hitSlop={6} testID={`ledger-hide-${r.key}`}>
+                  <Ionicons name={isHidden ? 'eye-off-outline' : 'eye-outline'} size={16} color={isHidden ? colors.mutedText : colors.onSurface} />
+                </Pressable>
                 <Pressable onPress={() => move(r.key, -1)} disabled={ri === 0} style={[styles.arrowBtn, ri === 0 && { opacity: 0.3 }]} hitSlop={6} testID={`ledger-up-${r.key}`}><Ionicons name="chevron-up" size={18} color={colors.onSurface} /></Pressable>
-                <Pressable onPress={() => move(r.key, 1)} disabled={ri === sortedRows.length - 1} style={[styles.arrowBtn, ri === sortedRows.length - 1 && { opacity: 0.3 }]} hitSlop={6} testID={`ledger-down-${r.key}`}><Ionicons name="chevron-down" size={18} color={colors.onSurface} /></Pressable>
+                <Pressable onPress={() => move(r.key, 1)} disabled={ri === visibleRows.length - 1} style={[styles.arrowBtn, ri === visibleRows.length - 1 && { opacity: 0.3 }]} hitSlop={6} testID={`ledger-down-${r.key}`}><Ionicons name="chevron-down" size={18} color={colors.onSurface} /></Pressable>
               </View>
             ) : (
               <Ionicons name="chevron-forward" size={18} color={colors.mutedText} />
             )}
           </Pressable>
-        ))}
+          );
+        })}
       </ScrollView>
     </SafeAreaView>
   );
@@ -178,6 +195,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
     padding: spacing.md, marginBottom: spacing.sm,
   },
+  prowHidden: { opacity: 0.45 },
   pi: { width: 46, height: 46, borderRadius: 13, backgroundColor: colors.surfaceTertiary, alignItems: 'center', justifyContent: 'center' },
   pt: { color: colors.onSurface, fontSize: 17, fontWeight: '600' },
   pd: { color: colors.mutedText, fontSize: 13.5, marginTop: 3 },

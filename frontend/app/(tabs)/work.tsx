@@ -39,15 +39,24 @@ export default function WorkScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
-  // Custom order for the In-progress rows — persisted per device so each user
-  // arranges the board to match how they actually work.
+  // Custom order (and now hidden set) for the In-progress rows — both
+  // persisted per device so each user arranges the board, and hides what
+  // they don't use, to match how they actually work. Hiding is per-device
+  // display only — it doesn't touch module access (Settings > Users still
+  // controls that); it's for a shop that has e.g. Gold Loans access but
+  // never uses it and doesn't want it cluttering the board.
   const ORDER_KEY = 'rmj.work_order';
+  const HIDDEN_KEY = 'rmj.work_hidden';
   const [order, setOrder] = useState<string[]>([]);
+  const [hidden, setHidden] = useState<string[]>([]);
   const [editOrder, setEditOrder] = useState(false);
   useFocusEffect(useCallback(() => {
     try { const raw = typeof window !== 'undefined' ? window.localStorage.getItem(ORDER_KEY) : null; if (raw) setOrder(JSON.parse(raw)); } catch { /* ignore */ }
+    try { const raw = typeof window !== 'undefined' ? window.localStorage.getItem(HIDDEN_KEY) : null; if (raw) setHidden(JSON.parse(raw)); } catch { /* ignore */ }
   }, []));
   const persistOrder = (keys: string[]) => { setOrder(keys); try { if (typeof window !== 'undefined') window.localStorage.setItem(ORDER_KEY, JSON.stringify(keys)); } catch { /* ignore */ } };
+  const persistHidden = (keys: string[]) => { setHidden(keys); try { if (typeof window !== 'undefined') window.localStorage.setItem(HIDDEN_KEY, JSON.stringify(keys)); } catch { /* ignore */ } };
+  const toggleHidden = (key: string) => persistHidden(hidden.includes(key) ? hidden.filter((k) => k !== key) : [...hidden, key]);
 
   const [loanSummary, setLoanSummary] = useState<{ active: number; overdue: number; total_outstanding: number; total_interest_pending: number } | null>(null);
   const [goldRateSummary, setGoldRateSummary] = useState<{ gold_rate: number | null; silver_rate: number | null; sent: boolean; error: boolean } | null>(null);
@@ -146,6 +155,10 @@ export default function WorkScreen() {
     [keys[i], keys[j]] = [keys[j], keys[i]];
     persistOrder(keys);
   };
+  // Outside edit mode, hidden rows are simply not shown. In edit mode every
+  // row shows (dimmed if hidden) so there's somewhere to tap it back on —
+  // hide a row and it can't otherwise be found again to unhide it.
+  const visibleRows = editOrder ? sortedRows : sortedRows.filter((r) => !hidden.includes(r.key));
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="work-screen">
@@ -178,12 +191,22 @@ export default function WorkScreen() {
           <View style={styles.progressHead}>
             <Text style={styles.sectionLabel}>In progress</Text>
             <Pressable onPress={() => setEditOrder((v) => !v)} hitSlop={8} testID="work-edit-order">
-              <Text style={styles.editOrderText}>{editOrder ? 'Done' : 'Reorder'}</Text>
+              <Text style={styles.editOrderText}>{editOrder ? 'Done' : 'Edit'}</Text>
             </Pressable>
           </View>
         )}
-        {sortedRows.map((r, ri) => (
-          <Pressable key={r.key} onPress={() => !editOrder && go(r.route)} style={({ pressed }) => [styles.prow, pressed && !editOrder && { opacity: 0.85 }]} testID={`work-row-${r.key}`}>
+        {editOrder && visibleRows.length === 0 && (
+          <Text style={styles.pd}>Nothing left to show — every module below is hidden.</Text>
+        )}
+        {visibleRows.map((r, ri) => {
+          const isHidden = hidden.includes(r.key);
+          return (
+          <Pressable
+            key={r.key}
+            onPress={() => !editOrder && go(r.route)}
+            style={({ pressed }) => [styles.prow, isHidden && editOrder && styles.prowHidden, pressed && !editOrder && { opacity: 0.85 }]}
+            testID={`work-row-${r.key}`}
+          >
             <View style={styles.pi}><Ionicons name={r.icon} size={22} color={colors.brandSecondary} /></View>
             <View style={{ flex: 1, minWidth: 0 }}>
               <Text style={styles.pt}>{r.title}</Text>
@@ -197,8 +220,11 @@ export default function WorkScreen() {
             </View>
             {editOrder ? (
               <View style={styles.reorderCtrls}>
+                <Pressable onPress={() => toggleHidden(r.key)} style={styles.arrowBtn} hitSlop={6} testID={`work-hide-${r.key}`}>
+                  <Ionicons name={isHidden ? 'eye-off-outline' : 'eye-outline'} size={16} color={isHidden ? colors.mutedText : colors.onSurface} />
+                </Pressable>
                 <Pressable onPress={() => move(r.key, -1)} disabled={ri === 0} style={[styles.arrowBtn, ri === 0 && { opacity: 0.3 }]} hitSlop={6} testID={`work-up-${r.key}`}><Ionicons name="chevron-up" size={18} color={colors.onSurface} /></Pressable>
-                <Pressable onPress={() => move(r.key, 1)} disabled={ri === sortedRows.length - 1} style={[styles.arrowBtn, ri === sortedRows.length - 1 && { opacity: 0.3 }]} hitSlop={6} testID={`work-down-${r.key}`}><Ionicons name="chevron-down" size={18} color={colors.onSurface} /></Pressable>
+                <Pressable onPress={() => move(r.key, 1)} disabled={ri === visibleRows.length - 1} style={[styles.arrowBtn, ri === visibleRows.length - 1 && { opacity: 0.3 }]} hitSlop={6} testID={`work-down-${r.key}`}><Ionicons name="chevron-down" size={18} color={colors.onSurface} /></Pressable>
               </View>
             ) : r.badge ? (
               <View style={styles.badge}><Text style={styles.badgeText}>{r.badge}</Text></View>
@@ -206,7 +232,8 @@ export default function WorkScreen() {
               <Ionicons name="chevron-forward" size={18} color={colors.mutedText} />
             )}
           </Pressable>
-        ))}
+          );
+        })}
 
         <View style={{ height: spacing.xxl }} />
       </ScrollView>
@@ -270,6 +297,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
     padding: spacing.md, marginBottom: spacing.sm,
   },
+  prowHidden: { opacity: 0.45 },
   pi: { width: 46, height: 46, borderRadius: 13, backgroundColor: colors.surfaceTertiary, alignItems: 'center', justifyContent: 'center' },
   pt: { color: colors.onSurface, fontSize: 17, fontWeight: '600' },
   pd: { color: colors.mutedText, fontSize: 13.5, marginTop: 3 },
