@@ -47,6 +47,12 @@ export function QuickDocCapture({ visible, onClose, onSaved }: {
   const [catKey, setCatKey] = useState<string | null>(null);
   const [phase, setPhase] = useState<Phase>('category');
   const [compress, setCompress] = useState(true);
+  // Quick Capture's whole point is "tap a category, camera opens immediately"
+  // — this toggle is the one exception: switch to gallery mode first, then
+  // tapping a category opens the file picker (images + PDFs) instead of the
+  // camera, so an existing photo or a PDF someone already has doesn't need
+  // the full Documents module just to get in.
+  const [galleryMode, setGalleryMode] = useState(false);
   const [lastId, setLastId] = useState('');
   const [remark, setRemark] = useState('');
   const [remarkSaved, setRemarkSaved] = useState(false);
@@ -75,16 +81,24 @@ export function QuickDocCapture({ visible, onClose, onSaved }: {
     kickUpload();   // flush any previously-held photo before starting a new one
     shooting.current = true;
     try {
-      const f = await pickWebFile('image/*', true);
+      // capture:true forces the camera on mobile (see pickWebFile); gallery
+      // mode omits it, which opens the normal file/photo picker instead, and
+      // widens the accept type to PDFs since that's the other thing people
+      // reach for a file browser to grab rather than the camera.
+      const f = await pickWebFile(galleryMode ? 'image/*,application/pdf' : 'image/*', !galleryMode);
       if (!f) { shooting.current = false; return; }   // cancelled — stay where we are
       setPhase('saving');
       const blob = await compressImage(f, compress);
       const thumb = await makeThumb(f);
       const stamp = new Date().toISOString().slice(0, 10);
       const id = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+      // Matches DocumentCaptureSheet's naming: an image always gets a
+      // generated .jpg name; a non-image (a PDF picked from gallery mode)
+      // keeps its real filename and extension instead.
+      const filename = f.type.startsWith('image/') ? `${key}-${stamp}.jpg` : (f.name || `${key}-${stamp}.pdf`);
       // Hold the upload until the user leaves the Saved screen, so an optional
       // remark can set the filename before the photo goes up.
-      await enqueueUpload({ id, blob, filename: `${key}-${stamp}.jpg`, category_key: key, note: '', thumb }, { drainNow: false });
+      await enqueueUpload({ id, blob, filename, category_key: key, note: '', thumb }, { drainNow: false });
       haptics.success();
       onSaved?.();
       setLastId(id); setRemark(''); setRemarkSaved(false);
@@ -142,14 +156,17 @@ export function QuickDocCapture({ visible, onClose, onSaved }: {
         </View>
       ) : (
         <>
-          <Text style={styles.hint}>Pick a category — the camera opens right away.</Text>
-          <Pressable onPress={() => setCompress((v) => !v)} style={styles.compressRow} testID="quick-compress-toggle">
-            <Ionicons name={compress ? 'checkbox' : 'square-outline'} size={20} color={compress ? colors.brandPrimary : colors.mutedText} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.compressLabel}>Compress photo</Text>
-              <Text style={styles.compressSub}>Smaller & faster to upload — stays readable for receipts.</Text>
-            </View>
-          </Pressable>
+          <Text style={styles.hint}>{galleryMode ? 'Pick a category — the file picker opens right away.' : 'Pick a category — the camera opens right away.'}</Text>
+          <View style={styles.pillRow}>
+            <Pressable onPress={() => setCompress((v) => !v)} style={[styles.pill, compress && styles.pillOn]} testID="quick-compress-toggle" hitSlop={6}>
+              <Ionicons name={compress ? 'checkbox' : 'square-outline'} size={14} color={compress ? colors.brandPrimary : colors.mutedText} />
+              <Text style={[styles.pillText, compress && styles.pillTextOn]}>Compress</Text>
+            </Pressable>
+            <Pressable onPress={() => setGalleryMode((v) => !v)} style={[styles.pill, galleryMode && styles.pillOn]} testID="quick-gallery-toggle" hitSlop={6}>
+              <Ionicons name="images-outline" size={14} color={galleryMode ? colors.brandPrimary : colors.mutedText} />
+              <Text style={[styles.pillText, galleryMode && styles.pillTextOn]}>From gallery</Text>
+            </Pressable>
+          </View>
           <View style={styles.catGrid}>
             {cats.map((c) => (
               <Pressable key={c.id} onPress={() => pickCategory(c.key)} style={styles.cat} testID={`quick-cat-${c.key}`}>
@@ -168,12 +185,14 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   hint: { color: colors.mutedText, fontSize: 13, marginBottom: spacing.md },
   center: { alignItems: 'center', gap: 10, paddingVertical: spacing.xxl },
   savingText: { color: colors.onSurface, fontSize: 16, fontWeight: '700', marginTop: spacing.sm },
-  compressRow: {
-    flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.md,
-    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: spacing.md,
+  pillRow: { flexDirection: 'row', gap: spacing.xs, marginBottom: spacing.md },
+  pill: {
+    flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 6,
+    borderRadius: radius.pill, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border,
   },
-  compressLabel: { color: colors.onSurface, fontSize: 14, fontWeight: '700' },
-  compressSub: { color: colors.mutedText, fontSize: 11.5, marginTop: 2 },
+  pillOn: { backgroundColor: colors.brandTertiary, borderColor: colors.brandPrimary },
+  pillText: { color: colors.mutedText, fontSize: 11.5, fontWeight: '600' },
+  pillTextOn: { color: colors.brandPrimary },
   catGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   cat: {
     flexBasis: '31%', flexGrow: 1, minWidth: 96, alignItems: 'center', gap: 8, paddingVertical: spacing.md,
