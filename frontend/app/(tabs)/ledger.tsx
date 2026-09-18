@@ -86,6 +86,10 @@ export default function LedgerScreen() {
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const rows: Row[] = [
+    // The daily entry screen (record cash in/out), not to be confused with
+    // Cash Ledger below (the read-only report of what's already been
+    // recorded) — listed first since it's the one used constantly.
+    { key: 'cash-book', label: 'Cash Book', icon: 'wallet-outline', route: '/cashbook', summary: 'Record cash in / out' },
     { key: 'customer-ledger', label: 'Customer Ledger', icon: 'person-outline', route: '/reports/customer-ledger', summary: custSummary || '…' },
     { key: 'karigar-ledger', label: 'Karigar Ledger', icon: 'hammer-outline', route: '/reports/karigar-ledger', summary: karigarSummary || '…' },
     { key: 'cash-ledger', label: 'Cash Ledger', icon: 'cash-outline', route: '/reports/cash-ledger', summary: cashSummary || '…' },
