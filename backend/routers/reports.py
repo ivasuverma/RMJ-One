@@ -46,24 +46,32 @@ NOT_CHECKED_IN_GRACE_MIN = 30
 # shared TTL cache collapses that to one computation per window for everyone,
 # which is well within the dashboard's own staleness tolerance (30-min grace
 # rules etc.). A lock prevents a thundering-herd recompute when it expires.
-_DASH_TTL_SEC = 20.0
+_DASH_TTL_SEC = 8.0
 _dash_cache: dict = {'at': 0.0, 'data': None}
 _dash_lock = asyncio.Lock()
 
 
-async def _compute_dashboard_cached() -> dict:
-    now = time.monotonic()
-    data = _dash_cache['data']
-    if data is not None and (now - _dash_cache['at']) < _DASH_TTL_SEC:
-        return data
+async def _refresh_dashboard() -> dict:
     async with _dash_lock:
-        now = time.monotonic()
-        if _dash_cache['data'] is not None and (now - _dash_cache['at']) < _DASH_TTL_SEC:
+        # Someone else may have refreshed while we waited for the lock.
+        if _dash_cache['data'] is not None and (time.monotonic() - _dash_cache['at']) < 2.0:
             return _dash_cache['data']
         fresh = await _compute_dashboard()
         _dash_cache['data'] = fresh
         _dash_cache['at'] = time.monotonic()
         return fresh
+
+
+async def _compute_dashboard_cached() -> dict:
+    """Stale-while-revalidate: once there is a snapshot it is returned instantly, and
+    an out-of-date one is refreshed in the background — so nobody ever waits the ~1 s
+    the recompute takes except the very first request after a restart."""
+    data = _dash_cache['data']
+    if data is None:
+        return await _refresh_dashboard()
+    if (time.monotonic() - _dash_cache['at']) >= _DASH_TTL_SEC and not _dash_lock.locked():
+        asyncio.ensure_future(_refresh_dashboard())
+    return data
 
 
 @router.get('/dashboard')
@@ -131,6 +139,30 @@ async def _recent_activity(d: str, limit: int = 12) -> list:
 
 async def _compute_dashboard() -> dict:
     d = today_str()
+    # Every read below is independent, and each Mongo round trip costs ~40 ms — done
+    # one after another they were most of the ~1.5 s this took. Start them all now and
+    # await each where its result is used.
+    F = asyncio.ensure_future
+    t_corr = F(db.corrections.count_documents({'status': 'pending'}))
+    t_leaves = F(db.leaves.count_documents({'status': 'pending'}))
+    t_rep = F(db.repair_items.find({'status': {'$ne': 'delivered'}}, {'_id': 0, 'status': 1, 'due_date': 1}).to_list(5000))
+    t_deliv = F(db.repair_items.count_documents({'status': 'delivered', 'delivered_at': {'$regex': f'^{d}'}}))
+    t_tasks = F(db.tasks.find({'status': 'open'}, {'_id': 0, 'due_date': 1}).to_list(5000))
+    t_tdone = F(db.tasks.count_documents({'status': 'done', 'completed_at': {'$regex': f'^{d}'}}))
+    t_billed = F(db.repair_items.find(
+        {'status': 'delivered', 'delivered_at': {'$regex': f'^{d[:7]}'}},
+        {'_id': 0, 'delivered_at': 1, 'billed_amount': 1}).to_list(5000))
+    t_intake = F(db.repair_items.count_documents({'created_at': {'$regex': f'^{d}'}}))
+    t_active = F(db.employees.count_documents({'status': {'$ne': 'inactive'}}))
+    t_orders = F(db.repair_orders.find({}, {'_id': 0, 'id': 1, 'customer_id': 1}).to_list(10000))
+    t_open = F(db.repair_items.find({'status': {'$ne': 'delivered'}}, {'_id': 0, 'order_id': 1}).to_list(10000))
+    t_kar = F(db.karigar_ledger.find({}, {'_id': 0, 'karigar_id': 1, 'type': 1, 'weight': 1, 'fine_weight': 1, 'amount': 1}).to_list(20000))
+    t_samples = F(db.samples.find({'status': 'with_karigar'}, {'_id': 0, 'due_date': 1}).to_list(5000))
+    t_srecv = F(db.samples.count_documents({'status': 'received', 'received_at': {'$regex': f'^{d}'}}))
+    t_cbc = F(db.cashbook_counters.find({'active': True}, {'_id': 0, 'id': 1, 'name': 1}).to_list(200))
+    t_cbe = F(db.cashbook_entries.find({'date': d}, {'_id': 0, 'type': 1, 'amount': 1, 'counter_id': 1}).to_list(5000))
+    t_recent = F(_recent_activity(d))
+    t_docs = F(db.documents.count_documents({'status': 'pending', 'deleted': {'$ne': True}}))
     # Exclude inactive (ex-)employees — they shouldn't inflate the absent count
     # or the "N of M in" total on the dashboard.
     now_ist = now_utc().astimezone(IST)
@@ -196,40 +228,33 @@ async def _compute_dashboard() -> dict:
                 if minutes_now >= _minutes(start) + NOT_CHECKED_IN_GRACE_MIN:
                     not_checked_in += 1
 
-    pending_corrections = await db.corrections.count_documents({'status': 'pending'})
-    pending_leaves = await db.leaves.count_documents({'status': 'pending'})
+    pending_corrections = await t_corr
+    pending_leaves = await t_leaves
 
     # Repairs at-a-glance — counts by status plus how many are past their due date.
-    repair_items = await db.repair_items.find({'status': {'$ne': 'delivered'}}, {'_id': 0, 'status': 1, 'due_date': 1}).to_list(5000)
+    repair_items = await t_rep
     repairs_received = sum(1 for i in repair_items if i['status'] == 'received')
     repairs_with_karigar = sum(1 for i in repair_items if i['status'] == 'with_karigar')
     repairs_ready = sum(1 for i in repair_items if i['status'] == 'ready')
     repairs_overdue = sum(1 for i in repair_items if i.get('due_date') and i['due_date'] < d)
-    delivered_today = await db.repair_items.count_documents({'status': 'delivered', 'delivered_at': {'$regex': f'^{d}'}})
+    delivered_today = await t_deliv
 
     # Tasks at-a-glance — across the whole team (owner/admin view).
-    open_tasks = await db.tasks.find({'status': 'open'}, {'_id': 0, 'due_date': 1}).to_list(5000)
+    open_tasks = await t_tasks
     tasks_due_today = sum(1 for t in open_tasks if t.get('due_date') == d)
     tasks_overdue = sum(1 for t in open_tasks if t.get('due_date') and t['due_date'] < d)
-    tasks_done_today = await db.tasks.count_documents({'status': 'done', 'completed_at': {'$regex': f'^{d}'}})
+    tasks_done_today = await t_tdone
 
     # Business snapshot — revenue, intake, and who's carrying an open balance.
     month_prefix = d[:7]
-    delivered_billed = await db.repair_items.find(
-        {'status': 'delivered', 'delivered_at': {'$regex': f'^{month_prefix}'}},
-        {'_id': 0, 'delivered_at': 1, 'billed_amount': 1},
-    ).to_list(5000)
+    delivered_billed = await t_billed
     revenue_today = sum(i.get('billed_amount') or 0 for i in delivered_billed if (i.get('delivered_at') or '').startswith(d))
     revenue_month = sum(i.get('billed_amount') or 0 for i in delivered_billed)
-    intake_today = await db.repair_items.count_documents({'created_at': {'$regex': f'^{d}'}})
-    active_employees = await db.employees.count_documents({'status': {'$ne': 'inactive'}})
+    intake_today = await t_intake
+    active_employees = await t_active
 
     # These three are the biggest reads — run them concurrently.
-    orders, open_items_all, karigar_entries = await asyncio.gather(
-        db.repair_orders.find({}, {'_id': 0, 'id': 1, 'customer_id': 1}).to_list(10000),
-        db.repair_items.find({'status': {'$ne': 'delivered'}}, {'_id': 0, 'order_id': 1}).to_list(10000),
-        db.karigar_ledger.find({}, {'_id': 0, 'karigar_id': 1, 'type': 1, 'weight': 1, 'fine_weight': 1, 'amount': 1}).to_list(20000),
-    )
+    orders, open_items_all, karigar_entries = await asyncio.gather(t_orders, t_open, t_kar)
     order_to_customer = {o['id']: o['customer_id'] for o in orders}
     customers_open = len({order_to_customer[i['order_id']] for i in open_items_all if order_to_customer.get(i.get('order_id'))})
     karigar_bal = _karigar_ledger_balances(karigar_entries)
@@ -245,16 +270,16 @@ async def _compute_dashboard() -> dict:
     # Stock In/Out (samples) at-a-glance — same two buckets as the employee
     # Transactions screen's own samples dashboard tile (GET /samples/dashboard),
     # so the two never disagree.
-    samples_out = await db.samples.find({'status': 'with_karigar'}, {'_id': 0, 'due_date': 1}).to_list(5000)
+    samples_out = await t_samples
     samples_overdue = sum(1 for s in samples_out if s.get('due_date') and s['due_date'] < d)
-    samples_received_today = await db.samples.count_documents({'status': 'received', 'received_at': {'$regex': f'^{d}'}})
+    samples_received_today = await t_srecv
 
     # Cash Book at-a-glance — today's manual cash in/out, summed across every
     # active counter (kept separate from cash_ledger / repair-bill cash
     # payments throughout, including here). Counter Bal here is the shop's
     # total cash position across all counters combined.
-    cb_counters = await db.cashbook_counters.find({'active': True}, {'_id': 0, 'id': 1, 'name': 1}).to_list(200)
-    cb_entries_today = await db.cashbook_entries.find({'date': d}, {'_id': 0, 'type': 1, 'amount': 1, 'counter_id': 1}).to_list(5000)
+    cb_counters = await t_cbc
+    cb_entries_today = await t_cbe
     cb_received_today = sum(e['amount'] for e in cb_entries_today if e['type'] == 'received')
     cb_paid_today = sum(e['amount'] for e in cb_entries_today if e['type'] == 'paid')
     cb_openings = await asyncio.gather(*[_opening_balance_for(c['id'], d) for c in cb_counters]) if cb_counters else []
@@ -299,12 +324,12 @@ async def _compute_dashboard() -> dict:
             'customers_open': customers_open, 'karigars_open': karigars_open,
             'fine_with_karigars': fine_with_karigars, 'karigar_amt_payable': karigar_amt_payable,
         },
-        'recent_activity': await _recent_activity(d),
+        'recent_activity': await t_recent,
         # Documents captured but not yet recorded in the books — feeds the Home
         # needs-attention item + the Work row. Staff-dashboard consumers (owner/
         # admin/accountant) see the shop-wide pending total; fine-grained
         # per-category role filtering lives on GET /documents/summary.
-        'documents_pending': await db.documents.count_documents({'status': 'pending', 'deleted': {'$ne': True}}),
+        'documents_pending': await t_docs,
     }
 
 # ---------------- Audit ----------------
