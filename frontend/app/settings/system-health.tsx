@@ -14,13 +14,22 @@ type Health = {
   generated_at: string;
   system: { uptime_seconds: number; platform: string };
   services: { name: string; label: string; status: string }[];
-  mongodb: { ok: boolean; latency_ms: number | null; data_size_bytes: number | null; storage_size_bytes: number | null; error: string | null };
+  mongodb: { ok: boolean; latency_ms: number | null; data_size_bytes: number | null; storage_size_bytes: number | null; error: string | null; version?: string | null };
   whatsapp: { configured: boolean; connected: boolean; phone: string | null; last_disconnected_alert_at: string | null };
   printer: { configured: boolean; ip: string | null; port: number | null; reachable: boolean | null; last_failure_at: string | null };
   google_drive: { connected: boolean; email: string | null; env_ready: boolean; connected_at: string | null; auth_error?: string | null; last_disconnected_alert_at: string | null; last_upload_failure_at: string | null };
   sync_queue: { photos: Record<string, number>; documents: Record<string, number> };
   biometric: { devices: { id: string; serial: string; label: string; status: string; last_seen: string | null }[]; offline_count: number; offline_threshold_hours: number; last_offline_alert_at: string | null };
   push_notifications: { enabled: boolean };
+  disk?: { label: string; path: string; total: number; free: number }[];
+  doc_cache?: { files: number; bytes: number };
+  backups?: {
+    dump: { name: string; bytes: number; at: string; count: number } | null;
+    config: { name: string; bytes: number; at: string; count: number } | null;
+    log_last: string | null;
+    drive_last_sent_at: string | null; drive_last_sent: string[] | null; drive_last_check_at: string | null; drive_error: string | null;
+  };
+  led_board?: { enabled: boolean; driver: string; host: string | null; last_push_at: string | null; last_ok: boolean | null; last_error: string | null };
 };
 
 const fmtWhen = (iso?: string | null) => (iso ? istDisplayDateTime(iso) : '—');
@@ -29,6 +38,8 @@ const fmtBytes = (n?: number | null) => {
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 };
+const fmtGB = (n: number) => `${(n / (1024 ** 3)).toFixed(n >= 100 * 1024 ** 3 ? 0 : 1)} GB`;
+const ageHours = (iso?: string | null) => (iso ? (Date.now() - new Date(iso).getTime()) / 3600000 : Infinity);
 const fmtUptime = (sec: number) => {
   const d = Math.floor(sec / 86400), h = Math.floor((sec % 86400) / 3600), m = Math.floor((sec % 3600) / 60);
   if (d > 0) return `${d}d ${h}h`;
@@ -122,9 +133,48 @@ export default function SystemHealthScreen() {
           <SectionTitle text="MongoDB" />
           <Card>
             <Row label="Connection" value={data.mongodb.ok ? `OK · ${data.mongodb.latency_ms}ms` : (data.mongodb.error || 'Unreachable')} dot={data.mongodb.ok ? 'ok' : 'bad'} />
+            <Row label="Runs on" value={`This server${data.mongodb.version ? ` · MongoDB ${data.mongodb.version}` : ''}`} dot="off" />
             <Row label="Data size" value={fmtBytes(data.mongodb.data_size_bytes)} dot="off" />
             <Row label="Storage size" value={fmtBytes(data.mongodb.storage_size_bytes)} dot="off" last />
           </Card>
+
+          {(data.disk?.length || data.doc_cache) ? (
+            <>
+              <SectionTitle text="Disk space" />
+              <Card>
+                {(data.disk || []).map((d, i) => {
+                  const pct = d.total ? d.free / d.total : 1;
+                  return <Row key={d.path} label={`${d.label} (${d.path.replace(/\\$/, '')})`} value={`${fmtGB(d.free)} free of ${fmtGB(d.total)}`} dot={pct < 0.05 ? 'bad' : pct < 0.15 ? 'warn' : 'ok'} last={i === (data.disk || []).length - 1 && !data.doc_cache} />;
+                })}
+                {data.doc_cache ? <Row label="Photo & document cache (temporary)" value={`${data.doc_cache.files} files · ${fmtBytes(data.doc_cache.bytes)}`} dot="off" last /> : null}
+              </Card>
+            </>
+          ) : null}
+
+          {data.backups ? (
+            <>
+              <SectionTitle text="Backups" />
+              <Card>
+                <Row
+                  label="Database dump (nightly)"
+                  value={data.backups.dump ? `${fmtWhen(data.backups.dump.at)} · ${fmtBytes(data.backups.dump.bytes)}` : 'None found'}
+                  dot={!data.backups.dump ? 'bad' : ageHours(data.backups.dump.at) > 26 ? 'bad' : 'ok'}
+                />
+                <Row
+                  label="Config bundle"
+                  value={data.backups.config ? fmtWhen(data.backups.config.at) : 'None found'}
+                  dot={!data.backups.config ? 'bad' : ageHours(data.backups.config.at) > 26 ? 'warn' : 'ok'}
+                />
+                <Row
+                  label="Sent to Google Drive"
+                  value={data.backups.drive_error ? `Failed: ${data.backups.drive_error}` : data.backups.drive_last_sent_at ? fmtWhen(data.backups.drive_last_sent_at) : 'Not yet'}
+                  dot={data.backups.drive_error ? 'bad' : ageHours(data.backups.drive_last_sent_at) > 30 ? 'warn' : 'ok'}
+                  onPress={() => router.push('/settings/google-drive' as any)}
+                />
+                {data.backups.log_last ? <Row label="Nightly task" value={data.backups.log_last.replace(/^\S+\s+/, '')} dot={/FAILED/i.test(data.backups.log_last) ? 'bad' : 'off'} last /> : null}
+              </Card>
+            </>
+          ) : null}
 
           <SectionTitle text="WhatsApp" />
           <Card>
@@ -179,6 +229,24 @@ export default function SystemHealthScreen() {
               ))
             )}
           </Card>
+
+          {data.led_board ? (
+            <>
+              <SectionTitle text="LED Rate Board" />
+              <Card>
+                <Row
+                  label="Board"
+                  value={!data.led_board.enabled ? 'Switched off' : data.led_board.driver === 'simulator' ? 'Simulator (no board attached)' : `${data.led_board.host || 'no address'}`}
+                  dot={!data.led_board.enabled ? 'off' : data.led_board.driver === 'simulator' ? 'warn' : 'ok'}
+                  onPress={() => router.push('/settings/led-board' as any)}
+                  last={!data.led_board.enabled || !data.led_board.last_push_at}
+                />
+                {data.led_board.enabled && data.led_board.last_push_at ? (
+                  <Row label="Last update" value={data.led_board.last_ok ? fmtWhen(data.led_board.last_push_at) : `Failed: ${data.led_board.last_error}`} dot={data.led_board.last_ok ? 'ok' : 'bad'} last />
+                ) : null}
+              </Card>
+            </>
+          ) : null}
 
           <SectionTitle text="Push Notifications" />
           <Card>
