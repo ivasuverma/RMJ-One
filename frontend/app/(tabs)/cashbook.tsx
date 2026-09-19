@@ -278,10 +278,11 @@ export default function CashBookScreen() {
               </Text>
             </Card>
 
-            <FilterChips
+            <SegmentedControl
               testID="cashbook-filter"
               options={[{ key: 'all', label: 'All' }, { key: 'received', label: 'Received' }, { key: 'paid', label: 'Paid' }, { key: 'transfer', label: 'Transfers' }]}
               value={filter} onChange={(k) => setFilter(k as Filter)}
+              tones={{ received: { bg: colors.success, fg: colors.onSuccess }, paid: { bg: colors.error, fg: colors.onError }, transfer: { bg: colors.info, fg: colors.onInfo } }}
             />
 
             <View style={styles.opening} testID="cashbook-opening">
