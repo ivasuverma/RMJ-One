@@ -363,10 +363,6 @@ export default function DocumentsScreen() {
         <View style={{ height: spacing.xxxl }} />
       </ScrollView>
 
-      {!doneCat && (
-        <Pressable onPress={() => setCaptureOpen(true)} style={styles.fab} testID="documents-add-btn"><Ionicons name="add" size={26} color={colors.onBrandPrimary} /></Pressable>
-      )}
-
       <QuickDocCapture visible={captureOpen} onClose={() => setCaptureOpen(false)} onSaved={load} />
       <RecordSheet doc={recordDoc} categoryLabel={recordDoc ? (catMap[recordDoc.category_key]?.label || recordDoc.category_key) : ''}
         onClose={() => setRecordDoc(null)} onDone={() => { setRecordDoc(null); setViewer(null); haptics.success(); toast.success('Recorded'); load(); }} />
