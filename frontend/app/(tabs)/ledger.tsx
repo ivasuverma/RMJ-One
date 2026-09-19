@@ -33,7 +33,6 @@ export default function LedgerScreen() {
   const [editOrder, setEditOrder] = useState(false);
   const [custSummary, setCustSummary] = useState('');
   const [karigarSummary, setKarigarSummary] = useState('');
-  const [cashSummary, setCashSummary] = useState('');
   const [lossSummary, setLossSummary] = useState('');
   const [metalSummary, setMetalSummary] = useState('');
   const [employeeSummary, setEmployeeSummary] = useState('');
@@ -68,9 +67,6 @@ export default function LedgerScreen() {
         if (Math.abs(amt) >= 1) parts.push(`₹${Math.abs(Math.round(amt)).toLocaleString('en-IN')}`);
         setKarigarSummary(parts.length ? `Owed: ${parts.join(' · ')}` : 'Nothing owed');
       }),
-      api.get<{ total_received: number; total_paid_out: number; net: number }>('/cash-ledger').then((r) => {
-        setCashSummary(`Net ₹${Math.round(r.net).toLocaleString('en-IN')} · ${r.total_received > 0 || r.total_paid_out > 0 ? `₹${Math.round(r.total_received).toLocaleString('en-IN')} in, ₹${Math.round(r.total_paid_out).toLocaleString('en-IN')} out` : 'No activity'}`);
-      }),
       api.get<{ total_weight: number; total_fine_weight: number }>('/karigars/loss-ledger').then((r) => {
         setLossSummary(Math.abs(r.total_fine_weight) >= 0.001 ? `${r.total_weight.toFixed(3)}g weight · ${r.total_fine_weight.toFixed(3)}g fine` : 'No loss recorded');
       }),
@@ -94,7 +90,6 @@ export default function LedgerScreen() {
     // (Cash Book, the daily cash in/out entry screen, lives on the Work tab — this tab is for the ledgers.)
     { key: 'customer-ledger', label: 'Customer Ledger', icon: 'person-outline', route: '/reports/customer-ledger', summary: custSummary || '…' },
     { key: 'karigar-ledger', label: 'Karigar Ledger', icon: 'hammer-outline', route: '/reports/karigar-ledger', summary: karigarSummary || '…' },
-    { key: 'cash-ledger', label: 'Cash Ledger', icon: 'cash-outline', route: '/reports/cash-ledger', summary: cashSummary || '…' },
     { key: 'loss-ledger', label: 'Loss Ledger', icon: 'trending-down-outline', route: '/reports/loss-ledger', summary: lossSummary || '…' },
     { key: 'metal-ledger', label: 'Metal Ledger', icon: 'diamond-outline', route: '/reports/metal-ledger', summary: metalSummary || '…' },
     { key: 'employee-ledger', label: 'Employee Ledger', icon: 'people-outline', route: '/reports/employee-ledger', summary: employeeSummary || '…' },
@@ -121,7 +116,7 @@ export default function LedgerScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}
       >
         <Text style={styles.h1}>Ledger</Text>
-        <Text style={styles.sub}>Customer, karigar, cash, loss, metal, and employee accounts.</Text>
+        <Text style={styles.sub}>Customer, karigar, loss, metal, and employee accounts. Cash is in the Cash Book (Work tab).</Text>
 
         {failed && (
           <View style={{ marginTop: spacing.lg }}>

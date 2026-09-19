@@ -1685,6 +1685,13 @@ def _karigar_ledger_balances(entries: list) -> dict:
         elif t in ('wastage', 'adjustment'):
             # Free-form ± adjustment — sign is baked into the stored amount.
             b['amt_due'] += e.get('amount') or 0
+        elif t == 'loss' and e.get('absorbs'):
+            # A loss the shop absorbs (Settle Balance > Loss): clears what the karigar still
+            # holds in ONE entry — the gold never comes back, so no fake "received" credit
+            # and no rise in the shop's stock. Older 'loss' entries (no `absorbs`) are
+            # audit-only records paired with a gold_in and are deliberately not counted here.
+            b['weight_bal'] -= e.get('weight') or 0
+            b['fine_bal'] -= e.get('fine_weight') if e.get('fine_weight') is not None else (e.get('weight') or 0)
     return bal
 
 

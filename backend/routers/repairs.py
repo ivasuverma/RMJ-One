@@ -1039,16 +1039,46 @@ async def _sync_cash_ledger_entry(item: dict, billed_amount: float, payment_mode
     edits). A positive billed_amount is cash the shop received; a negative
     one (weight decreased more than any added material — see New Wt on the
     bill) is a refund owed back to the customer."""
-    await db.cash_ledger.delete_many({'item_id': item['id']})
-    if not billed_amount:
+    await db.cash_ledger.delete_many({'item_id': item['id']})   # legacy collection: no longer written
+    await _post_repair_cash_entry(item, billed_amount, payment_mode, user, iso)
+
+
+async def _repair_cash_counter_id() -> Optional[str]:
+    """The Cash Book counter that repair payments land in. Remembered in settings the first time it is
+    needed (defaults to the first active counter, "Cash Counter"), so it stays put if counters are reordered."""
+    cfg = await db.settings.find_one({'id': 'cashbook_settings'}, {'_id': 0}) or {}
+    cid = cfg.get('repair_counter_id')
+    if cid and await db.cashbook_counters.find_one({'id': cid, 'active': True}, {'_id': 0, 'id': 1}):
+        return cid
+    first = await db.cashbook_counters.find_one({'active': True}, {'_id': 0, 'id': 1}, sort=[('created_at', 1)])
+    if not first:
+        return None
+    await db.settings.update_one({'id': 'cashbook_settings'}, {'$set': {'id': 'cashbook_settings', 'repair_counter_id': first['id']}}, upsert=True)
+    return first['id']
+
+
+async def _post_repair_cash_entry(item: dict, billed_amount: float, payment_mode: str, user: dict, iso: str, migrated_from: Optional[str] = None):
+    """A repair payment is a Cash Book entry (the single cash record): cash received on a bill, or a cash
+    refund when the bill is negative. Cash payments only — the shop takes cash. Replaces any earlier entry for
+    this item first, so an edited bill never leaves a stale one behind."""
+    await db.cashbook_entries.delete_many({'source': 'repair', 'ref_id': item['id']})
+    if not billed_amount or (payment_mode or 'cash') != 'cash':
         return
-    entry_type = 'receipt' if billed_amount > 0 else 'refund'
-    await db.cash_ledger.insert_one({
-        'id': str(uuid.uuid4()), 'type': entry_type, 'amount': round(abs(billed_amount), 2),
-        'item_id': item['id'], 'item_code': item['item_code'], 'customer_name': item.get('customer_name', ''),
-        'payment_mode': payment_mode or 'cash',
-        'note': f"{'Repair bill' if entry_type == 'receipt' else 'Refund'} — {item.get('description', '')}",
-        'created_at': iso, 'created_by': user['name'],
+    counter_id = await _repair_cash_counter_id()
+    if not counter_id:
+        return
+    when = datetime.fromisoformat(iso).astimezone(IST).date().isoformat()
+    refund = billed_amount < 0
+    await db.cashbook_entries.insert_one({
+        'id': str(uuid.uuid4()), 'date': when, 'counter_id': counter_id, 'type': 'paid' if refund else 'received',
+        'amount': round(abs(billed_amount), 2),
+        'name': (item.get('customer_name') or item.get('item_code') or 'Repair').strip(),
+        'category': 'Repair refund' if refund else 'Repair payment',
+        'note': f"{item.get('item_code', '')} — {item.get('description', '')}".strip(' —'),
+        'created_at': iso, 'created_by': user['name'], 'created_by_id': user.get('id'),
+        'linked_entry_id': None, 'transfer_counter_id': None,
+        'source': 'repair', 'ref_id': item['id'], 'item_code': item.get('item_code'),
+        **({'migrated_from_cash_ledger': migrated_from} if migrated_from else {}),
     })
 
 
@@ -1274,6 +1304,7 @@ async def delete_bill(item_id: str, user=Depends(require_admin_or_module_right('
         'updated_by': user['name'],
     }})
     await db.cash_ledger.delete_many({'item_id': item_id})
+    await db.cashbook_entries.delete_many({'source': 'repair', 'ref_id': item_id})
     await log_audit(user, 'repair_item.bill_delete', 'repair_item', item_id, item['item_code'], {'billed_amount': item.get('billed_amount')})
     return {'ok': True}
 
@@ -1596,9 +1627,10 @@ async def _metal_reconciliation(total_in: float, total_out: float) -> dict:
     have = {m.get('source_entry_id') async for m in db.metal_ledger.find({'source_entry_id': {'$ne': None}}, {'_id': 0, 'source_entry_id': 1})}
     missing = sum(1 for e in gold if e['id'] not in have)
     no_purity = sum(1 for e in gold if e.get('type') in ('gold_out', 'gold_in') and e.get('fine_weight') is None)
-    net_out = round(total_out - total_in, 3)
+    absorbed = round(sum((e.get('weight') or 0) for e in gold if e.get('type') == 'loss' and e.get('absorbs')), 3)
+    net_out = round(total_out - total_in - absorbed, 3)   # karigars' holding also drops by absorbed losses
     return {
-        'karigars_hold_weight': hold_w, 'karigars_hold_fine': hold_f, 'ledger_net_out': net_out,
+        'karigars_hold_weight': hold_w, 'karigars_hold_fine': hold_f, 'ledger_net_out': net_out, 'absorbed_loss': absorbed,
         'difference': round(hold_w - net_out, 3), 'missing_counter_entries': missing, 'entries_without_purity': no_purity,
         'ok': abs(hold_w - net_out) < 0.01 and missing == 0,
     }
@@ -1695,6 +1727,48 @@ async def add_karigar_ledger_entry(kid: str, body: KarigarLedgerEntryIn, user=De
         await db.karigar_ledger.insert_one(dict(doc))
     await log_audit(user, f'karigar_ledger.{body.type}', 'karigar', kid, karigar['name'], {'amount': body.amount, 'weight': body.weight, 'item_code': item_code})
     return {k: v for k, v in doc.items() if k != '_id'}
+
+
+class AbsorbLossJobIn(BaseModel):
+    item_id: Optional[str] = None
+    item_code: Optional[str] = None
+    weight: float          # fine grams the karigar still holds on this job, to be absorbed by the shop
+
+
+class AbsorbLossIn(BaseModel):
+    jobs: list[AbsorbLossJobIn]
+    note: Optional[str] = ''
+
+
+@router.post('/karigars/{kid}/absorb-loss')
+async def absorb_karigar_loss(kid: str, body: AbsorbLossIn, user=Depends(require_ledger_access('karigar_ledger'))):
+    """The shop absorbs gold a karigar still holds. One entry per job, ALL or none, sharing one txn id: the
+    karigar's holding drops, the loss is recorded as the shop's own (Loss Ledger / Metal Ledger), and — unlike
+    the old gold-in-plus-loss pair — the shop's stock does not rise for gold that never came back."""
+    karigar = await db.karigars.find_one({'id': kid}, {'_id': 0})
+    if not karigar:
+        raise HTTPException(status_code=404, detail='Karigar not found')
+    jobs = [j for j in body.jobs if abs(j.weight or 0) > 0]
+    if not jobs:
+        raise HTTPException(status_code=400, detail='Pick at least one job with gold to absorb')
+    for j in jobs:
+        if j.weight <= 0 or j.weight > 100000:
+            raise HTTPException(status_code=400, detail='Each loss weight must be greater than 0')
+    txn_id = str(uuid.uuid4())
+    iso = now_utc().isoformat()
+    docs = []
+    for j in jobs:
+        docs.append({
+            'id': str(uuid.uuid4()), 'karigar_id': kid, 'karigar_name': karigar['name'], 'type': 'loss',
+            'weight': round(j.weight, 3), 'fine_weight': round(j.weight, 3), 'amount': None, 'absorbs': True,
+            'item_id': j.item_id or None, 'item_code': j.item_code or None, 'txn_id': txn_id,
+            'note': (body.note or '').strip() or 'Loss absorbed by the shop', 'created_at': iso, 'created_by': user['name'],
+        })
+    for d in docs:
+        await post_gold_ledger_entry(d)
+    total = round(sum(d['weight'] for d in docs), 3)
+    await log_audit(user, 'karigar_ledger.absorb_loss', 'karigar', kid, karigar['name'], {'weight': total, 'jobs': len(docs), 'txn_id': txn_id})
+    return {'ok': True, 'txn_id': txn_id, 'weight': total, 'entries': len(docs)}
 
 
 @router.delete('/karigars/{kid}/ledger/{entry_id}')

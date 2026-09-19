@@ -18,7 +18,7 @@ type Karigar = { id: string; name: string; mobile: string; is_employee: boolean 
 type Entry = {
   id: string; type: 'gold_out' | 'gold_in' | 'wastage' | 'adjustment' | 'labour_payable' | 'payment' | 'receipt' | 'loss';
   weight: number | null; fine_weight?: number | null; amount: number | null; item_id?: string | null; item_code: string | null;
-  note: string; created_at: string; created_by: string; slip_photo?: string | null; txn_id?: string | null;
+  note: string; created_at: string; created_by: string; slip_photo?: string | null; txn_id?: string | null; absorbs?: boolean;
 };
 type Job = {
   itemId: string; itemCode: string; entries: Entry[];
@@ -26,7 +26,7 @@ type Job = {
 };
 
 const ENTRY_LABEL: Record<Entry['type'], string> = {
-  gold_out: 'Gold issued', gold_in: 'Gold received', wastage: 'Wastage adjustment', adjustment: 'Adjustment', labour_payable: 'Labour payable', payment: 'Payment made', receipt: 'Cash received', loss: 'Process loss (declared)',
+  gold_out: 'Gold issued', gold_in: 'Gold received', wastage: 'Wastage adjustment', adjustment: 'Adjustment', labour_payable: 'Labour payable', payment: 'Payment made', receipt: 'Cash received', loss: 'Loss (declared)',
 };
 const ENTRY_ICON: Record<Entry['type'], any> = {
   gold_out: 'arrow-redo-outline', gold_in: 'arrow-undo-outline', wastage: 'trending-down-outline', adjustment: 'swap-vertical-outline', labour_payable: 'cash-outline', payment: 'checkmark-circle-outline', receipt: 'download-outline', loss: 'flame-outline',
@@ -89,6 +89,7 @@ export default function KarigarLedgerScreen() {
       j.entries.push(e);
       if (e.type === 'gold_out') j.fineBal += (e.fine_weight ?? e.weight) || 0;
       else if (e.type === 'gold_in') j.fineBal -= (e.fine_weight ?? e.weight) || 0;
+      else if (e.type === 'loss' && e.absorbs) j.fineBal -= (e.fine_weight ?? e.weight) || 0;   // a loss the shop absorbs clears the holding
       else if (e.type === 'labour_payable' || e.type === 'receipt') j.amtDue += e.amount || 0;
       else if (e.type === 'payment') j.amtDue -= e.amount || 0;
       else if (e.type === 'wastage' || e.type === 'adjustment') j.amtDue += e.amount || 0;
@@ -141,18 +142,19 @@ export default function KarigarLedgerScreen() {
     if (selectedJobs.size === 0) { notify('Nothing selected', 'Pick at least one job to settle.'); return; }
     setSettleBusy(true);
     try {
+      if (settleKind === 'loss') {
+        // The shop absorbs what the karigar still holds — ONE call, all jobs or none. The gold never comes
+        // back, so this is a loss entry that clears the holding (no "received" credit, no rise in stock).
+        await api.post(`/karigars/${id}/absorb-loss`, {
+          note: settleNote.trim(),
+          jobs: settleEligibleJobs.filter((j) => selectedJobs.has(j.itemId)).map((j) => ({ item_id: j.itemId, item_code: j.itemCode, weight: Math.abs(j.fineBal) })),
+        });
+        setSettleOpen(false);
+        await load();
+        return;
+      }
       for (const job of settleEligibleJobs) {
         if (!selectedJobs.has(job.itemId)) continue;
-        if (settleKind === 'loss') {
-          // Loss is audit-only (see _karigar_ledger_balances) — a gold_in for
-          // the same weight is what actually clears the job's fineBal, same
-          // pairing repairs.py and samples.py post for a forgiven shortfall.
-          const magnitude = Math.abs(job.fineBal);
-          const common = { note: settleNote.trim(), item_id: job.itemId, item_code: job.itemCode, weight: magnitude };
-          await api.post(`/karigars/${id}/ledger`, { ...common, type: 'gold_in' });
-          await api.post(`/karigars/${id}/ledger`, { ...common, type: 'loss' });
-          continue;
-        }
         const type = settleKind === 'metal'
           ? (settleDir === 'pay' ? 'gold_out' : 'gold_in')
           : (settleDir === 'pay' ? 'payment' : 'receipt');

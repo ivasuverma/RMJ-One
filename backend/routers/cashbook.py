@@ -296,6 +296,8 @@ async def update_cashbook_entry(entry_id: str, body: CashBookEntryUpdateIn, user
     if not entry:
         raise HTTPException(status_code=404, detail='Entry not found')
     _assert_counter_allowed(user, entry['counter_id'])
+    if entry.get('source') == 'repair':
+        raise HTTPException(status_code=400, detail=f"This entry is the payment for repair {entry.get('item_code', '')} — change it from that repair's bill, not here")
     linked_id = entry.get('linked_entry_id')
     if linked_id and (body.type is not None or body.counter_id is not None):
         raise HTTPException(status_code=400, detail='This entry is linked to a transfer — delete and re-add it to change its type or counter')
@@ -356,6 +358,8 @@ async def delete_cashbook_entry(entry_id: str, user=Depends(require_admin_or_mod
     if not entry:
         raise HTTPException(status_code=404, detail='Entry not found')
     _assert_counter_allowed(user, entry['counter_id'])
+    if entry.get('source') == 'repair':
+        raise HTTPException(status_code=400, detail=f"This entry is the payment for repair {entry.get('item_code', '')} — remove it from that repair's bill, not here")
     # No access check on the linked entry's counter here either, for the
     # same reason as on create — undoing a transfer to/from a counter this
     # employee can't browse must still be possible from this side.
