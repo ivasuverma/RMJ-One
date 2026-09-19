@@ -1201,6 +1201,12 @@ async def seed():
     await db.documents.create_index([('status', 1), ('created_at', -1)])
     await db.documents.create_index('category_key')
     await db.documents.create_index('upload_state')
+    # Covers everything documents_summary groups on, so that count is answered
+    # from the index alone instead of reading every document (and its inline
+    # image bytes). Named explicitly so re-running seed() is a no-op.
+    await db.documents.create_index(
+        [('deleted', 1), ('category_key', 1), ('status', 1), ('upload_state', 1)], name='summary_covering',
+    )
     await db.documents.create_index('client_id', sparse=True)
     await db.record_photos.create_index([('ref_type', 1), ('ref_id', 1)])
     await db.record_photos.create_index('upload_state')
@@ -1453,6 +1459,8 @@ async def on_startup():
     asyncio.create_task(biometric_health_loop())
     asyncio.create_task(biometric_log_prune_loop())
     asyncio.create_task(log_retention_loop())
+    from routers.documents import doc_cache_warm_loop  # backfills the on-disk thumbnail cache
+    asyncio.create_task(doc_cache_warm_loop())
 
 
 @app.on_event('shutdown')

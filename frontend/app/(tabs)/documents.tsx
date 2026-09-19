@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, TextInput, ActivityIndicator, Modal, Platform, PanResponder } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
@@ -60,7 +60,13 @@ export default function DocumentsScreen() {
   const [tab, setTab] = useState<'pending' | 'done'>(tabParam === 'done' ? 'done' : 'pending');
   const [doneCat, setDoneCat] = useState<string | null>(null);   // null in Done = folder view
   const [catFilter, setCatFilter] = useState('all');
+  // What's typed in the search box vs the search actually being run. `load`
+  // depends on the applied one, so typing doesn't fire a reload per keystroke —
+  // each of which re-fetched categories, the summary and the (slow) list and
+  // blanked the grid. Search runs on submit, which is what the inputs' own
+  // onSubmitEditing handlers were already written to do.
   const [q, setQ] = useState('');
+  const [appliedQ, setAppliedQ] = useState('');
   const [docs, setDocs] = useState<Doc[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -121,17 +127,17 @@ export default function DocumentsScreen() {
     // Folder view (Done, no category picked, no search) needs no doc list —
     // folders come from the summary. But a search at the folder level runs a
     // UNIVERSAL search across every category (no category param below).
-    if (tab === 'done' && !doneCat && !q.trim()) { setDocs([]); setNextCursor(null); setLoading(false); setRefreshing(false); return; }
+    if (tab === 'done' && !doneCat && !appliedQ.trim()) { setDocs([]); setNextCursor(null); setLoading(false); setRefreshing(false); return; }
     const params = new URLSearchParams({ status: tab });
     const cat = tab === 'done' ? doneCat! : (catFilter !== 'all' ? catFilter : '');
     if (cat) params.set('category', cat);
-    if (q.trim()) params.set('q', q.trim());
+    if (appliedQ.trim()) params.set('q', appliedQ.trim());
     try {
       const res = await api.get<{ items: Doc[]; next_cursor: string | null }>(`/documents?${params.toString()}`);
       setDocs(res.items); setNextCursor(res.next_cursor);
     } catch { setDocs([]); setNextCursor(null); }
     finally { setLoading(false); setRefreshing(false); }
-  }, [tab, catFilter, q, doneCat]);
+  }, [tab, catFilter, appliedQ, doneCat]);
   useFocusEffect(useCallback(() => { setLoading(true); load(); }, [load]));
 
   const loadMoreDocs = async () => {
@@ -141,7 +147,7 @@ export default function DocumentsScreen() {
       const params = new URLSearchParams({ status: tab, cursor: nextCursor });
       const cat = tab === 'done' ? doneCat! : (catFilter !== 'all' ? catFilter : '');
       if (cat) params.set('category', cat);
-      if (q.trim()) params.set('q', q.trim());
+      if (appliedQ.trim()) params.set('q', appliedQ.trim());
       const res = await api.get<{ items: Doc[]; next_cursor: string | null }>(`/documents?${params.toString()}`);
       setDocs((prev) => [...prev, ...res.items]);
       setNextCursor(res.next_cursor);
@@ -155,23 +161,6 @@ export default function DocumentsScreen() {
   useEffect(() => {
     if (summary && summary.can_see_done === false && tab === 'done') { setTab('pending'); setDoneCat(null); }
   }, [summary, tab]);
-
-  const Thumb = ({ d, size }: { d: Doc; size: number }) => {
-    const [loaded, setLoaded] = useState(false);
-    const isImg = (d.file.mime || '').startsWith('image/') && !!token;
-    return (
-      <View style={[styles.thumb, { width: size, height: size, borderRadius: size > 60 ? 12 : 10 }]}>
-        {isImg ? (
-          <>
-            <Image source={{ uri: fileUri(d.id), headers: { Authorization: `Bearer ${token}` } }} style={{ width: size, height: size }} contentFit="cover" cachePolicy="memory-disk" recyclingKey={d.id} transition={120} onLoadEnd={() => setLoaded(true)} />
-            {!loaded && <View style={styles.thumbLoading}><ActivityIndicator size="small" color={colors.brandSecondary} /></View>}
-          </>
-        ) : (
-          <Ionicons name="document-text-outline" size={size > 60 ? 30 : 22} color={colors.brandSecondary} />
-        )}
-      </View>
-    );
-  };
 
   const foldersView = () => {
     const withDone = cats.filter((c) => (summary?.by_category?.[c.key]?.done || 0) > 0);
@@ -199,10 +188,10 @@ export default function DocumentsScreen() {
     <>
       <View style={styles.searchWrap}>
         <Ionicons name="search" size={16} color={colors.mutedText} />
-        <TextInput value={q} onChangeText={setQ} onSubmitEditing={load} placeholder="Search by name, remark or date" placeholderTextColor={colors.mutedText} style={styles.searchInput} returnKeyType="search" testID="doc-done-search" />
-        {q.length > 0 && <Pressable onPress={() => { setQ(''); setTimeout(load, 0); }} hitSlop={8}><Ionicons name="close-circle" size={16} color={colors.mutedText} /></Pressable>}
+        <TextInput value={q} onChangeText={setQ} onSubmitEditing={() => setAppliedQ(q)} placeholder="Search by name, remark or date" placeholderTextColor={colors.mutedText} style={styles.searchInput} returnKeyType="search" testID="doc-done-search" />
+        {q.length > 0 && <Pressable onPress={() => { setQ(''); setAppliedQ(''); }} hitSlop={8}><Ionicons name="close-circle" size={16} color={colors.mutedText} /></Pressable>}
       </View>
-      {docs.length === 0 ? <View style={styles.empty}><Text style={styles.emptyText}>{q ? 'No matches.' : 'Empty folder.'}</Text></View> : (
+      {docs.length === 0 ? <View style={styles.empty}><Text style={styles.emptyText}>{appliedQ ? 'No matches.' : 'Empty folder.'}</Text></View> : (
         groupByDay(docs).map((g, gi) => {
           const open = openDays[g.day] ?? (gi === 0);   // newest day open by default
           return (
@@ -219,7 +208,7 @@ export default function DocumentsScreen() {
                   return (
                     <Pressable key={d.id} onPress={() => setViewer(d)} style={[styles.gridItem, { width: GRID }]} testID={`doc-grid-${d.id}`}>
                       <View>
-                        <Thumb d={d} size={GRID} />
+                        <DocThumb d={d} size={GRID} base={base} token={token} />
                         {d.upload_state === 'synced' && <View style={styles.syncBadge}><Ionicons name="cloud-done" size={11} color={colors.onSuccess} /></View>}
                       </View>
                       {!!cap && <Text style={styles.gridCaption} numberOfLines={2}>{cap}</Text>}
@@ -242,10 +231,10 @@ export default function DocumentsScreen() {
     <>
       <View style={styles.searchWrap}>
         <Ionicons name="search" size={16} color={colors.mutedText} />
-        <TextInput value={q} onChangeText={setQ} onSubmitEditing={load} placeholder="Search all recorded documents" placeholderTextColor={colors.mutedText} style={styles.searchInput} returnKeyType="search" testID="doc-done-search-all" />
-        {q.length > 0 && <Pressable onPress={() => { setQ(''); setTimeout(load, 0); }} hitSlop={8}><Ionicons name="close-circle" size={16} color={colors.mutedText} /></Pressable>}
+        <TextInput value={q} onChangeText={setQ} onSubmitEditing={() => setAppliedQ(q)} placeholder="Search all recorded documents" placeholderTextColor={colors.mutedText} style={styles.searchInput} returnKeyType="search" testID="doc-done-search-all" />
+        {q.length > 0 && <Pressable onPress={() => { setQ(''); setAppliedQ(''); }} hitSlop={8}><Ionicons name="close-circle" size={16} color={colors.mutedText} /></Pressable>}
       </View>
-      {!q.trim() ? foldersView() : (
+      {!appliedQ.trim() ? foldersView() : (
         docs.length === 0 ? <View style={styles.empty}><Text style={styles.emptyText}>No matches across any category.</Text></View> : (
           groupByDay(docs).map((g) => (
             <View key={g.day}>
@@ -253,7 +242,7 @@ export default function DocumentsScreen() {
               {g.items.map((d) => (
                 <View key={d.id} style={styles.row} testID={`doc-result-${d.id}`}>
                   <Pressable onPress={() => setViewer(d)} style={styles.rowMain}>
-                    <Thumb d={d} size={46} />
+                    <DocThumb d={d} size={46} base={base} token={token} />
                     <View style={{ flex: 1, minWidth: 0 }}>
                       <Text style={styles.docName} numberOfLines={1}>{docTitle(d, catMap[d.category_key]?.label)}</Text>
                       <Text style={styles.docMeta} numberOfLines={1}>{catMap[d.category_key]?.label || d.category_key} · {istTime(d.created_at)}{d.recorded_by_name ? ` · Recorded by ${d.recorded_by_name}` : d.uploaded_by_name ? ` · ${d.uploaded_by_name}` : ''}</Text>
@@ -277,7 +266,7 @@ export default function DocumentsScreen() {
           return (
             <View key={d.id} style={styles.row} testID={`doc-${d.id}`}>
               <Pressable onPress={() => setViewer(d)} style={styles.rowMain}>
-                <Thumb d={d} size={46} />
+                <DocThumb d={d} size={46} base={base} token={token} />
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <Text style={styles.docName} numberOfLines={1}>{docTitle(d, catMap[d.category_key]?.label)}</Text>
                   <Text style={styles.docMeta} numberOfLines={1}>{catMap[d.category_key]?.label || d.category_key} · {istTime(d.created_at)}{d.uploaded_by_name ? ` · ${d.uploaded_by_name}` : ''}{uploading ? ' · uploading' : ''}</Text>
@@ -344,8 +333,8 @@ export default function DocumentsScreen() {
             )}
             <View style={styles.searchWrap}>
               <Ionicons name="search" size={16} color={colors.mutedText} />
-              <TextInput value={q} onChangeText={setQ} onSubmitEditing={load} placeholder="Search by name or note" placeholderTextColor={colors.mutedText} style={styles.searchInput} returnKeyType="search" testID="doc-search" />
-              {q.length > 0 && <Pressable onPress={() => { setQ(''); setTimeout(load, 0); }} hitSlop={8}><Ionicons name="close-circle" size={16} color={colors.mutedText} /></Pressable>}
+              <TextInput value={q} onChangeText={setQ} onSubmitEditing={() => setAppliedQ(q)} placeholder="Search by name or note" placeholderTextColor={colors.mutedText} style={styles.searchInput} returnKeyType="search" testID="doc-search" />
+              {q.length > 0 && <Pressable onPress={() => { setQ(''); setAppliedQ(''); }} hitSlop={8}><Ionicons name="close-circle" size={16} color={colors.mutedText} /></Pressable>}
             </View>
             {pendingView()}
           </>
@@ -532,6 +521,31 @@ function RecatSheet({ doc, cats, onClose, onDone }: { doc: Doc | null; cats: Cat
     </Sheet>
   );
 }
+
+// The grid thumbnail. Deliberately a top-level, memoised component rather than
+// one declared inside the screen: declared inline it is a NEW component type on
+// every render of the screen, so React unmounted and remounted every thumbnail
+// (and re-requested every image) each time anything changed — typing in the
+// search box, switching tab, the refresh spinner. Asks for ?thumb=1, the small
+// (~70 KB) picture, not whatever full-size copy happens to still be stored.
+const DocThumb = memo(function DocThumb({ d, size, base, token }: { d: Doc; size: number; base: string; token: string }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+  const [loaded, setLoaded] = useState(false);
+  const isImg = (d.file.mime || '').startsWith('image/') && !!token;
+  return (
+    <View style={[styles.thumb, { width: size, height: size, borderRadius: size > 60 ? 12 : 10 }]}>
+      {isImg ? (
+        <>
+          <Image source={{ uri: `${base}/api/documents/${d.id}/file?thumb=1`, headers: { Authorization: `Bearer ${token}` } }} style={{ width: size, height: size }} contentFit="cover" cachePolicy="memory-disk" recyclingKey={d.id} transition={120} onLoadEnd={() => setLoaded(true)} />
+          {!loaded && <View style={styles.thumbLoading}><ActivityIndicator size="small" color={colors.brandSecondary} /></View>}
+        </>
+      ) : (
+        <Ionicons name="document-text-outline" size={size > 60 ? 30 : 22} color={colors.brandSecondary} />
+      )}
+    </View>
+  );
+});
 
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },

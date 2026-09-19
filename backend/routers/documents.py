@@ -17,18 +17,103 @@ connects its Google account — see drive_connected()) later uploads and flips t
 list, record, view. OCR fields are reserved (Phase 5) and left null.
 """
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query, Response
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
 from typing import Optional
 from pydantic import BaseModel
 import asyncio
 import base64
+import logging
+import os
+import pathlib
 import re
+import time
 import uuid
 from datetime import timedelta
 
 from server import db, now_utc, get_current, require_owner, log_audit, _notify_system_health
 
 router = APIRouter()
+logger = logging.getLogger('documents')
+
+# ---------------- Image cache ----------------
+# Document images live as base64 INSIDE the Mongo documents, and the database is
+# an Atlas shared-tier cluster that hands blob-carrying documents back at
+# roughly 75 KB/s — measured: ~1 s to read one 73 KB thumbnail, against ~50 ms
+# for the same document with the image projected out, and the same ~1 s on
+# repeat reads, so it isn't a warm-up effect. A grid of 50 thumbnails was
+# ~50 s of transfer, and because every one of those requests competes for the
+# same connection, it starved every other API call too.
+#
+# So an image only ever leaves the database (or Google Drive) ONCE: the first
+# request writes it to a file on this server's own disk and every request after
+# that is served straight from there. The bytes for a given id and variant never
+# change, so the file can also be cached by the browser for a day.
+#   thumb — the small (~520px) JPEG the grid shows
+#   full  — the original, for the viewer
+# Mongo stays the source of truth; this is only a cache, safe to delete.
+DOC_CACHE_DIR = pathlib.Path(__file__).resolve().parent.parent / 'data' / 'doc_cache'
+# A page of thumbnails asks for ~50 images at once. Reading them all
+# simultaneously just queues them behind each other AND starves the rest of the
+# app of database time, so only a few are pulled from Mongo/Drive at any moment.
+_BLOB_SLOTS = asyncio.Semaphore(3)
+_CACHE_TTL_SECONDS = 86400
+
+
+# Short-lived in-memory memo for the three small lookups every image request
+# makes (the document's metadata, the category list, the caller's rights). On
+# the shared-tier database each one is a ~50 ms round trip AND counts against
+# its operations-per-second ceiling, so a grid of 50 thumbnails was ~200 tiny
+# queries on top of the images. Kept to seconds, so a permission change is still
+# picked up almost immediately — and only the image endpoint uses it, every
+# other endpoint reads live.
+_LOOKUPS: dict = {}
+
+
+async def _memo(key, ttl: float, loader):
+    now = time.monotonic()
+    hit = _LOOKUPS.get(key)
+    if hit and hit[0] > now:
+        return hit[1]
+    val = await loader()
+    if val is not None:          # never memoise "not found" — a new document must be visible at once
+        if len(_LOOKUPS) > 4000:
+            _LOOKUPS.clear()
+        _LOOKUPS[key] = (now + ttl, val)
+    return val
+
+
+def _forget(doc_id: str) -> None:
+    _LOOKUPS.pop(('meta', doc_id), None)
+
+
+def _cache_file(doc_id: str, variant: str) -> pathlib.Path:
+    # doc ids are server-generated UUIDs; refuse anything else so a crafted id
+    # can never walk out of the cache directory.
+    if not re.fullmatch(r'[0-9a-fA-F-]{8,64}', doc_id or ''):
+        raise HTTPException(status_code=404, detail='Document not found')
+    return DOC_CACHE_DIR / f'{doc_id}.{variant}'
+
+
+def _cache_write_sync(path: pathlib.Path, raw: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f'{path.name}.{uuid.uuid4().hex}.tmp')
+    tmp.write_bytes(raw)
+    os.replace(tmp, path)   # atomic: a reader never sees a half-written file
+
+
+async def _cache_write(doc_id: str, variant: str, raw: bytes) -> None:
+    try:
+        await asyncio.to_thread(_cache_write_sync, _cache_file(doc_id, variant), raw)
+    except Exception as e:
+        logger.warning(f'doc cache write failed for {doc_id}.{variant}: {e}')
+
+
+def _cache_drop(doc_id: str) -> None:
+    for variant in ('thumb', 'full'):
+        try:
+            _cache_file(doc_id, variant).unlink(missing_ok=True)
+        except Exception:
+            pass
 
 # Seeded once (see seed_document_categories, called from server startup). Tuple
 # shape: key, label, Ionicons name, visible_to_roles, can_record_roles.
@@ -307,6 +392,13 @@ async def create_document(
             'upload_state': 'queued' if connected else 'local',
         }
     await db.documents.insert_one(dict(doc))
+    # The thumbnail is already in memory — cache it now, so the first time this
+    # photo shows up in the grid it doesn't have to be read back out of Mongo.
+    if thumb_clean:
+        try:
+            await _cache_write(doc['id'], 'thumb', base64.b64decode(thumb_clean))
+        except Exception:
+            pass
     await log_audit(user, 'documents.create', 'document', doc['id'], f'{cat["label"]} · {doc["file"]["orig_name"]}')
     await _notify_record_holders(cat, doc, user)
     return {k: v for k, v in doc.items() if k not in ('_id', 'local_data', 'ocr')}
@@ -446,18 +538,24 @@ async def documents_summary(user=Depends(get_current)):
     done = 0
     uploading = 0
     by_category: dict = {}
-    async for d in db.documents.find(
-        {'deleted': {'$ne': True}, 'category_key': {'$in': list(visible)}},
-        {'_id': 0, 'category_key': 1, 'status': 1, 'upload_state': 1},
-    ):
-        b = by_category.setdefault(d['category_key'], {'pending': 0, 'done': 0})
-        if d['status'] == 'pending':
-            pending += 1; b['pending'] += 1
+    # One grouped count over an index that holds every field it touches (see
+    # the summary_covering index in seed()) — so MongoDB answers from the index
+    # alone. This used to stream every document to the server just to count
+    # three small fields, and since documents carry their image bytes inline,
+    # that meant reading the whole collection on every Work/Home/Documents load.
+    async for g in db.documents.aggregate([
+        {'$match': {'deleted': {'$ne': True}, 'category_key': {'$in': list(visible)}}},
+        {'$group': {'_id': {'c': '$category_key', 's': '$status', 'u': '$upload_state'}, 'n': {'$sum': 1}}},
+    ]):
+        key, n = g['_id'], g['n']
+        b = by_category.setdefault(key['c'], {'pending': 0, 'done': 0})
+        if key['s'] == 'pending':
+            pending += n; b['pending'] += n
         else:
-            done += 1; b['done'] += 1
+            done += n; b['done'] += n
         # Only count as "uploading" when Drive is actually connected and working.
-        if connected and d.get('upload_state') in ('queued', 'uploading'):
-            uploading += 1
+        if connected and key['u'] in ('queued', 'uploading'):
+            uploading += n
     if not can_see_done:
         done = 0
         for b in by_category.values():
@@ -545,6 +643,7 @@ async def recategorize_document(doc_id: str, body: RecategorizeIn, user=Depends(
     if not _can_record(new, _role(user), rights):
         raise HTTPException(status_code=403, detail='You do not have permission to file into that category')
     await db.documents.update_one({'id': doc_id}, {'$set': {'category_key': body.category_key}})
+    _forget(doc_id)
     await log_audit(user, 'documents.recategorize', 'document', doc_id, f"{d['category_key']} → {body.category_key}")
     return await db.documents.find_one({'id': doc_id}, _LIST_PROJECTION)
 
@@ -567,42 +666,112 @@ async def delete_document(doc_id: str, user=Depends(get_current)):
         except Exception:
             pass   # Drive delete failed — still remove from the app below
     await db.documents.delete_one({'id': doc_id})
+    _cache_drop(doc_id)
+    _forget(doc_id)
     await log_audit(user, 'documents.delete', 'document', doc_id, (d.get('file') or {}).get('orig_name', ''))
     return {'ok': True}
 
 
+async def _load_variant(meta: dict, doc_id: str, variant: str):
+    """Fetch one variant's bytes from Mongo / Google Drive. Returns
+    (bytes, cacheable) — bytes is None when this document has no such image.
+    `cacheable` is False for a stand-in (e.g. the thumbnail served because the
+    full-size original couldn't be fetched): caching that under "full" would pin
+    a low-resolution copy there for good."""
+    async with _BLOB_SLOTS:
+        if variant == 'thumb':
+            row = await db.documents.find_one({'id': doc_id}, {'_id': 0, 'thumb_data': 1, 'local_data': 1, 'local_kind': 1}) or {}
+            data = row.get('thumb_data') or (row.get('local_data') if row.get('local_kind') == 'thumb' else None)
+            return (base64.b64decode(data) if data else None), True
+        local_kind = meta.get('local_kind', 'full')
+        drive_id = (meta.get('file') or {}).get('drive_file_id')
+        if local_kind == 'full':
+            row = await db.documents.find_one({'id': doc_id}, {'_id': 0, 'local_data': 1}) or {}
+            if row.get('local_data'):
+                return base64.b64decode(row['local_data']), True
+        if drive_id:
+            try:
+                import drive_service
+                cfg = await drive_service.get_config()
+                return await drive_service.download(cfg, drive_id), True
+            except Exception:
+                pass   # fall through to whatever local copy still exists
+        row = await db.documents.find_one({'id': doc_id}, {'_id': 0, 'local_data': 1, 'thumb_data': 1}) or {}
+        data = row.get('local_data') or row.get('thumb_data')
+        return (base64.b64decode(data) if data else None), False
+
+
 @router.get('/documents/{doc_id}/file')
-async def document_file(doc_id: str, full: bool = Query(default=False), user=Depends(get_current)):
-    """Serve the document bytes. By default this is the fast local copy (the
-    small thumbnail once synced); `?full=1` returns the full-size original,
-    fetched from Drive on demand when the heavy local copy has been dropped.
-    Permission-checked against the caller's category visibility."""
-    d = await db.documents.find_one({'id': doc_id, 'deleted': {'$ne': True}}, {'_id': 0})
+async def document_file(
+    doc_id: str, full: bool = Query(default=False), thumb: bool = Query(default=False), user=Depends(get_current),
+):
+    """Serve a document's image. `?thumb=1` is the small grid thumbnail;
+    `?full=1` is the full-size original (fetched from Drive when only a
+    thumbnail is still held locally); with neither, the best local copy.
+    Permission-checked against the caller's category visibility exactly as
+    before — but the permission check reads only the document's metadata, and
+    the image itself is served from the on-disk cache once it has been fetched
+    a single time (see DOC_CACHE_DIR above)."""
+    d = await _memo(('meta', doc_id), 60, lambda: db.documents.find_one(
+        {'id': doc_id, 'deleted': {'$ne': True}}, {'_id': 0, 'local_data': 0, 'thumb_data': 0, 'ocr': 0}))
     if not d:
         raise HTTPException(status_code=404, detail='Document not found')
-    cats = await _categories_map()
+    cats = await _memo(('cats',), 30, _categories_map)
     cat = cats.get(d['category_key'])
-    rights = await _account_rights(user)
+    rights = await _memo(('rights', user.get('id')), 30, lambda: _account_rights(user))
     if not cat or not _can_see(cat, _role(user), rights):
         raise HTTPException(status_code=403, detail='No access to this document')
     mime = (d.get('file') or {}).get('mime', 'image/jpeg')
     local_kind = d.get('local_kind', 'full')
-    drive_id = (d.get('file') or {}).get('drive_file_id')
-    # Go to Drive when the caller wants full size and the local copy is only a
-    # thumbnail (or gone) — or when there's no local copy at all.
-    need_drive = drive_id and ((full and local_kind != 'full') or not d.get('local_data'))
-    if need_drive:
-        try:
-            import drive_service
-            cfg = await drive_service.get_config()
-            raw = await drive_service.download(cfg, drive_id)
-            return Response(content=raw, media_type=mime)
-        except Exception:
-            pass   # fall back to whatever local copy we still have
-    data = d.get('local_data')
-    if not data:
+    if thumb:
+        variant = 'thumb'
+    elif full:
+        variant = 'full'
+    else:
+        variant = 'full' if local_kind == 'full' else 'thumb'
+    media_type = 'image/jpeg' if variant == 'thumb' else mime
+    cache_headers = {'Cache-Control': f'private, max-age={_CACHE_TTL_SECONDS}'}
+
+    path = _cache_file(doc_id, variant)
+    if path.is_file():
+        return FileResponse(path, media_type=media_type, headers=cache_headers)
+
+    raw, cacheable = await _load_variant(d, doc_id, variant)
+    if not raw:
         raise HTTPException(status_code=404, detail='No local copy (see Drive link)')
-    return Response(content=base64.b64decode(data), media_type=mime)
+    if not cacheable:
+        return Response(content=raw, media_type=media_type)
+    await _cache_write(doc_id, variant, raw)
+    return Response(content=raw, media_type=media_type, headers=cache_headers)
+
+
+async def doc_cache_warm_loop() -> None:
+    """Fills the thumbnail cache for documents that predate it, in the
+    background, so nobody's first look at the grid is the slow one. New uploads
+    are written to the cache as they arrive, so after the first pass there is
+    normally nothing left to do. Gentle by design: one image at a time, through
+    the same limiter the request path uses."""
+    await asyncio.sleep(45)
+    while True:
+        try:
+            have = set()
+            if DOC_CACHE_DIR.is_dir():
+                have = {n[:-len('.thumb')] for n in os.listdir(DOC_CACHE_DIR) if n.endswith('.thumb')}
+            rows = await db.documents.find(
+                {'deleted': {'$ne': True}, 'file.mime': {'$regex': '^image/'}},
+                {'_id': 0, 'id': 1, 'local_kind': 1, 'file': 1},
+            ).to_list(None)
+            missing = [r for r in rows if r['id'] not in have]
+            if missing:
+                logger.info(f'doc cache: warming {len(missing)} thumbnail(s)')
+            for r in missing:
+                raw, cacheable = await _load_variant(r, r['id'], 'thumb')
+                if raw and cacheable:
+                    await _cache_write(r['id'], 'thumb', raw)
+                await asyncio.sleep(0.2)
+        except Exception as e:
+            logger.warning(f'doc cache warm error: {e}')
+        await asyncio.sleep(3600)
 
 
 # ---------------- Google Drive (owner) ----------------
@@ -626,6 +795,7 @@ async def drive_status(user=Depends(require_owner)):
         'email': cfg.get('email'),
         'env_ready': drive_service.env_ready(),
         'connected_at': cfg.get('connected_at'),
+        'auth_error': cfg.get('auth_error'),
     }
 
 
@@ -664,6 +834,7 @@ async def drive_callback(code: Optional[str] = None, state: Optional[str] = None
         return page('Google did not return a refresh token — remove RMJ One from your Google account permissions and try again.', False)
     await db.settings.update_one({'id': 'google_drive'}, {'$set': {
         'refresh_token': refresh_token, 'email': email, 'connected_at': now_utc().isoformat(), 'oauth_state': None,
+        'auth_error': None, 'auth_error_at': None,
     }}, upsert=True)
     # Any docs/photos captured while offline/unconnected can now sync.
     await db.documents.update_many({'upload_state': {'$in': ['local', 'failed']}, 'deleted': {'$ne': True}}, {'$set': {'upload_state': 'queued'}})

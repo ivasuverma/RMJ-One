@@ -131,6 +131,7 @@ async def system_health(user=Depends(require_owner), _mod=Depends(require_module
         'email': drive_cfg.get('email'),
         'env_ready': env_ready,
         'connected_at': drive_cfg.get('connected_at'),
+        'auth_error': drive_cfg.get('auth_error'),
     }
 
     # ---- Photo / document sync backlog — the actual signal that Drive sync

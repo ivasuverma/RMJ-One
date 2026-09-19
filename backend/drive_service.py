@@ -15,6 +15,7 @@ Scope is drive.file (only files this app creates — least privilege).
 """
 import base64
 import os
+import time
 from typing import Optional
 
 import httpx
@@ -73,12 +74,61 @@ async def exchange_code(code: str):
     return tok.get('refresh_token'), email
 
 
+class DriveAuthError(RuntimeError):
+    """Google refused the saved sign-in (expired or revoked refresh token, or a
+    bad client). Carries 'invalid_grant'/'invalid_client' in its text because
+    the callers that raise the "Google Drive disconnected" alert look for
+    exactly that — a bare HTTP 400 never contained it, so this used to be
+    reported as an ordinary "upload failed" instead of "reconnect Drive"."""
+
+
+# Access tokens are good for an hour. This used to fetch a new one for EVERY
+# Drive call — a full extra round trip to Google in front of each download and
+# upload — so keep one per refresh token until shortly before it expires.
+_token_cache = {'rt': None, 'token': None, 'exp': 0.0}
+
+
+async def _record_auth(error: Optional[str]) -> None:
+    """Remember whether Google is currently accepting our sign-in, so Settings
+    and System Health can say "reconnect Drive" instead of showing a green
+    "connected" for a token that stopped working."""
+    if error:
+        await db.settings.update_one({'id': 'google_drive'}, {'$set': {'auth_error': error, 'auth_error_at': _now()}})
+    else:
+        await db.settings.update_one({'id': 'google_drive', 'auth_error': {'$nin': [None, '']}},
+                                     {'$set': {'auth_error': None, 'auth_error_at': None}})
+
+
+def _now() -> str:
+    from server import now_utc
+    return now_utc().isoformat()
+
+
 async def _access_token(config: dict) -> str:
+    rt = config['refresh_token']
+    now = time.monotonic()
+    if _token_cache['rt'] == rt and _token_cache['exp'] > now:
+        return _token_cache['token']
     cid, csec, _ = client_creds()
     async with httpx.AsyncClient(timeout=30) as h:
-        r = await h.post(TOKEN_URL, data={'client_id': cid, 'client_secret': csec, 'refresh_token': config['refresh_token'], 'grant_type': 'refresh_token'})
-        r.raise_for_status()
-        return r.json()['access_token']
+        r = await h.post(TOKEN_URL, data={'client_id': cid, 'client_secret': csec, 'refresh_token': rt, 'grant_type': 'refresh_token'})
+    if r.status_code in (400, 401):
+        try:
+            body = r.json()
+        except Exception:
+            body = {}
+        code = body.get('error')
+        if code not in ('invalid_grant', 'invalid_client'):
+            code = 'invalid_grant'
+        msg = f"{code}: Google rejected the saved sign-in ({body.get('error_description') or 'token expired or revoked'}). Reconnect Google Drive in Settings."
+        _token_cache.update(rt=None, token=None, exp=0.0)
+        await _record_auth(msg)
+        raise DriveAuthError(msg)
+    r.raise_for_status()
+    tok = r.json()
+    _token_cache.update(rt=rt, token=tok['access_token'], exp=now + max(60, int(tok.get('expires_in', 3600)) - 300))
+    await _record_auth(None)
+    return tok['access_token']
 
 
 async def _ensure_folder(h: httpx.AsyncClient, access: str, name: str, parent: Optional[str]) -> str:

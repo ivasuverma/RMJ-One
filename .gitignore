@@ -91,3 +91,6 @@ memory/test_credentials.md
 android-sdk
 
 backend/_smoke_*.py
+
+# On-disk cache of document images (rebuilt on demand; safe to delete)
+backend/data/doc_cache/

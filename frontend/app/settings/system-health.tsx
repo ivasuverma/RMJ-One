@@ -17,7 +17,7 @@ type Health = {
   mongodb: { ok: boolean; latency_ms: number | null; data_size_bytes: number | null; storage_size_bytes: number | null; error: string | null };
   whatsapp: { configured: boolean; connected: boolean; phone: string | null; last_disconnected_alert_at: string | null };
   printer: { configured: boolean; ip: string | null; port: number | null; reachable: boolean | null; last_failure_at: string | null };
-  google_drive: { connected: boolean; email: string | null; env_ready: boolean; connected_at: string | null; last_disconnected_alert_at: string | null; last_upload_failure_at: string | null };
+  google_drive: { connected: boolean; email: string | null; env_ready: boolean; connected_at: string | null; auth_error?: string | null; last_disconnected_alert_at: string | null; last_upload_failure_at: string | null };
   sync_queue: { photos: Record<string, number>; documents: Record<string, number> };
   biometric: { devices: { id: string; serial: string; label: string; status: string; last_seen: string | null }[]; offline_count: number; offline_threshold_hours: number; last_offline_alert_at: string | null };
   push_notifications: { enabled: boolean };
@@ -154,8 +154,8 @@ export default function SystemHealthScreen() {
           <Card>
             <Row
               label="Connection"
-              value={!data.google_drive.env_ready ? 'Not configured on server' : data.google_drive.connected ? `Connected${data.google_drive.email ? ` · ${data.google_drive.email}` : ''}` : 'Not connected'}
-              dot={!data.google_drive.env_ready ? 'off' : data.google_drive.connected ? 'ok' : 'bad'}
+              value={!data.google_drive.env_ready ? 'Not configured on server' : data.google_drive.auth_error ? 'Sign-in expired — reconnect' : data.google_drive.connected ? `Connected${data.google_drive.email ? ` · ${data.google_drive.email}` : ''}` : 'Not connected'}
+              dot={!data.google_drive.env_ready ? 'off' : data.google_drive.auth_error ? 'bad' : data.google_drive.connected ? 'ok' : 'bad'}
               onPress={() => router.push('/settings/google-drive' as any)}
             />
             <Row label="Photos queued/failed" value={`${data.sync_queue.photos.queued + data.sync_queue.photos.uploading} queued · ${data.sync_queue.photos.failed} failed`} dot={data.sync_queue.photos.failed > 0 ? 'warn' : 'ok'} />
