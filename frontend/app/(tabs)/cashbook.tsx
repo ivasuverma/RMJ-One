@@ -1,13 +1,14 @@
 import { useCallback, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, RefreshControl, Image, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
 import { confirmAction } from '@/src/utils/confirm';
 import { DateField } from '@/src/components/DateField';
-import { PhotoCaptureModal } from '@/src/components/PhotoCaptureModal';
-import { RecordPhotos, makeThumb } from '@/src/components/RecordPhotos';
+import { RecordPhotos } from '@/src/components/RecordPhotos';
+import { pickWebFile, makeThumb } from '@/src/components/DocumentCaptureSheet';
+import { compressImage } from '@/src/components/QuickDocCapture';
 import { enqueueRecordPhoto } from '@/src/utils/uploadQueue';
 import { displayDateOnlyWithWeekday, localDateStr, todayIST } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
@@ -29,6 +30,7 @@ type DayData = {
 type Counter = { id: string; name: string; active: boolean };
 type CounterLite = { id: string; name: string };
 type QuickName = { id: string; name: string; entry_type: EntryType | null };
+type Shot = { id: string; blob: Blob; thumb: string };
 type Filter = 'all' | 'received' | 'paid' | 'transfer';
 
 const fmt = (n: number) => Math.round(Math.abs(n || 0)).toLocaleString('en-IN');
@@ -70,8 +72,8 @@ export default function CashBookScreen() {
   const [tag, setTag] = useState('');
   const [note, setNote] = useState('');
   const [dest, setDest] = useState('');
-  const [photo, setPhoto] = useState<string | null>(null);   // captured receipt (data URI), uploaded once the entry is saved
-  const [captureOpen, setCaptureOpen] = useState(false);
+  const [shots, setShots] = useState<Shot[]>([]);   // receipt photos taken in this sheet, uploaded once the entry is saved
+  const [capturing, setCapturing] = useState(false);
   const [addingTag, setAddingTag] = useState(false);
   const [newTag, setNewTag] = useState('');
   const [busy, setBusy] = useState(false);
@@ -124,12 +126,12 @@ export default function CashBookScreen() {
   const counterName = (id?: string | null) => transferOptions.find((c) => c.id === id)?.name || counters.find((c) => c.id === id)?.name || '';
 
   const openAdd = () => {
-    setEditing(null); setKind('received'); setAmount(''); setName(''); setTag(''); setNote(''); setDest(''); setPhoto(null);
+    setEditing(null); setKind('received'); setAmount(''); setName(''); setTag(''); setNote(''); setDest(''); setShots([]);
     setAddingTag(false); setNewTag(''); setSheet(true);
   };
   const openEdit = (e: Entry) => {
     setEditing(e); setKind(e.linked_entry_id ? 'transfer' : e.type); setAmount(String(e.amount)); setName(e.name);
-    setTag(e.category || ''); setNote(e.note || ''); setDest(e.transfer_counter_id || ''); setPhoto(null);
+    setTag(e.category || ''); setNote(e.note || ''); setDest(e.transfer_counter_id || ''); setShots([]);
     setAddingTag(false); setNewTag(''); setSheet(true);
   };
 
@@ -158,7 +160,7 @@ export default function CashBookScreen() {
       let savedId = editing?.id || '';
       if (editing) await api.put(`/cashbook/entries/${editing.id}`, payload);
       else savedId = (await api.post<{ id: string }>('/cashbook/entries', payload)).id;
-      if (photo && savedId) await uploadReceipt(savedId, photo);
+      if (shots.length && savedId) await uploadReceipts(savedId, shots);
       setSheet(false); toast.success(editing ? 'Entry updated' : 'Entry saved');
       await load(date, counterId);
     } catch (e: any) { toast.error(e?.detail || 'Please try again'); }
@@ -166,12 +168,26 @@ export default function CashBookScreen() {
   };
 
   // Same background upload the other record photos use: Drive keeps the full photo, the app keeps a thumbnail.
-  const uploadReceipt = async (entryId: string, dataUri: string) => {
+  const uploadReceipts = async (entryId: string, list: Shot[]) => {
     try {
+      for (const s of list) await enqueueRecordPhoto({ id: s.id, blob: s.blob, filename: `cashbook-${Date.now()}.jpg`, thumb: s.thumb, ref_type: 'cashbook_entry', ref_id: entryId });
+    } catch { toast.error('Entry saved, but a receipt photo could not be queued'); }
+  };
+
+  // Quick-capture style: the camera opens straight away, and "Add another" keeps going — all photos belong to this entry.
+  const shoot = async (gallery = false) => {
+    if (capturing || Platform.OS !== 'web') return;
+    setCapturing(true);
+    try {
+      const f = await pickWebFile('image/*', !gallery);
+      if (!f) return;
+      const blob = await compressImage(f, true);
       const id = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
-      const blob = await (await fetch(dataUri)).blob();
-      await enqueueRecordPhoto({ id, blob, filename: `cashbook_entry-${Date.now()}.jpg`, thumb: await makeThumb(dataUri), ref_type: 'cashbook_entry', ref_id: entryId });
-    } catch { toast.error('Entry saved, but the receipt photo could not be queued'); }
+      setShots((p) => [...p, { id, blob, thumb: '' }]);
+      const thumb = await makeThumb(f);
+      setShots((p) => p.map((s) => (s.id === id ? { ...s, thumb } : s)));
+    } catch { toast.error('Could not read that photo'); }
+    finally { setCapturing(false); }
   };
 
   const confirmDelete = (e: Entry) => {
@@ -388,10 +404,29 @@ export default function CashBookScreen() {
           {editing ? (
             <RecordPhotos refType="cashbook_entry" refId={editing.id} label="Receipt photos" />
           ) : (
-            <Pressable onPress={() => setCaptureOpen(true)} style={styles.attach} testID="cashbook-attach">
-              <Ionicons name={photo ? 'checkmark-circle' : 'camera-outline'} size={20} color={photo ? colors.onSuccess : colors.brandSecondary} />
-              <Text style={styles.attachText}>{photo ? 'Receipt photo attached — tap to retake' : 'Attach receipt photo'}</Text>
-            </Pressable>
+            <View style={{ gap: spacing.sm }}>
+              {shots.length > 0 ? (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.sm, paddingVertical: 4 }}>
+                  {shots.map((s) => (
+                    <View key={s.id} style={styles.shot}>
+                      {s.thumb ? <Image source={{ uri: `data:image/jpeg;base64,${s.thumb}` }} style={styles.shotImg} /> : <View style={styles.shotImg}><ActivityIndicator size="small" color={colors.brandSecondary} /></View>}
+                      <Pressable onPress={() => setShots((p) => p.filter((x) => x.id !== s.id))} style={styles.shotX} hitSlop={6}>
+                        <Ionicons name="close" size={12} color={colors.onBrandPrimary} />
+                      </Pressable>
+                    </View>
+                  ))}
+                </ScrollView>
+              ) : null}
+              <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+                <Pressable onPress={() => shoot(false)} disabled={capturing} style={[styles.attach, { flex: 1 }]} testID="cashbook-attach">
+                  <Ionicons name="camera-outline" size={20} color={colors.brandSecondary} />
+                  <Text style={styles.attachText}>{shots.length ? 'Add another photo' : 'Attach receipt photo'}</Text>
+                </Pressable>
+                <Pressable onPress={() => shoot(true)} disabled={capturing} style={styles.attach} testID="cashbook-attach-gallery" accessibilityLabel="Pick from gallery">
+                  <Ionicons name="images-outline" size={20} color={colors.brandSecondary} />
+                </Pressable>
+              </View>
+            </View>
           )}
 
           <Pressable onPress={submit} disabled={busy} style={[styles.saveBtn, busy && { opacity: 0.6 }]} testID="cashbook-save-entry">
@@ -405,8 +440,6 @@ export default function CashBookScreen() {
         </View>
       </Sheet>
 
-      <PhotoCaptureModal visible={captureOpen} title="Receipt photo" highRes onClose={() => setCaptureOpen(false)}
-        onCapture={(uri) => { setPhoto(uri); setCaptureOpen(false); }} />
     </SafeAreaView>
   );
 }
@@ -461,6 +494,9 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   smallBtnText: { color: colors.onBrandPrimary, fontWeight: '700' },
   attach: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, padding: spacing.md, borderRadius: radius.md, borderWidth: 1, borderStyle: 'dashed', borderColor: colors.borderStrong },
   attachText: { color: colors.onSurface, fontSize: 14, fontWeight: '600' },
+  shot: { width: 60, height: 60 },
+  shotImg: { width: 60, height: 60, borderRadius: radius.sm, backgroundColor: colors.surfaceTertiary, alignItems: 'center', justifyContent: 'center' },
+  shotX: { position: 'absolute', top: -5, right: -5, width: 20, height: 20, borderRadius: 10, backgroundColor: colors.brandPrimary, alignItems: 'center', justifyContent: 'center' },
   saveBtn: { backgroundColor: colors.brandPrimary, borderRadius: radius.pill, paddingVertical: 15, alignItems: 'center' },
   saveText: { color: colors.onBrandPrimary, fontSize: 16, fontWeight: '700' },
   deleteBtn: { alignItems: 'center', paddingVertical: 10 },
