@@ -1,5 +1,10 @@
 import asyncio
-"""Unified dual-balance ledger (v2 Phase 5) — the heart of the app.
+"""RETIRED (ledger phase 5): the unified accounts ledger is no longer used by the app — its screens, links and the
+Account Types master are gone, and its data is archived in D:\RMJ-One\mongodb\backups\unified-accounts-archive-*.json
+(and still in the database). The endpoints below are left in place only so nothing that might still call them breaks; the
+ledgers people use are the per-party ones (karigar / customer / employee), the Day Book and the Metal ledger.
+
+Unified dual-balance ledger (v2 Phase 5).
 
 An *account* is one entity carrying a *type* (from the account_types master),
 not a row in a separate customer/karigar/employee directory. Every account and

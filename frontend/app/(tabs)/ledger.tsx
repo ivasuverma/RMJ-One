@@ -8,21 +8,19 @@ import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { ErrorState } from '@/src/components/ui';
 
-// Ledger tab (owner/admin/accountant) — the account ledgers, moved here
-// from Settings > Reports so they're one tap away instead of buried two
-// levels deep. Settings > Reports is gone entirely now (its remaining
-// tile, Custom PDF Report, moved to the Payroll tab header instead).
-// Metal Ledger is the shop's own gold stock — the double-entry counter
-// side of every gold_out/gold_in posted to a karigar's ledger.
-//
-// Rows/reorder/summary style deliberately matches the Work tab's "In
-// progress" board (same prow/pi/pt/pd row shape, same tap-to-move reorder
-// UI, same per-row live summary instead of a bare label) rather than the
-// plain icon-grid Reports uses, per direct request.
-type Row = { key: string; label: string; icon: keyof typeof Ionicons.glyphMap; route: string; summary: string };
+// Ledger tab (owner/admin/accountant). The books, grouped by what they are about:
+//   People — the customer, karigar and employee ledgers (each party's own account)
+//   Books  — the Day Book: every entry from every book in one list
+//   Gold   — the shop's own gold stock, and losses
+// (Cash is in the Cash Book on the Work tab.) Each row carries a live summary. Rows can be reordered within
+// their group and hidden; that choice is saved per person on the server, so it follows them to any device.
+type Row = { key: string; group: string; label: string; icon: keyof typeof Ionicons.glyphMap; route: string; summary: string };
 
-const ORDER_KEY = 'rmj.ledger_order';
+const GROUPS = ['People', 'Books', 'Gold'];
+const ORDER_KEY = 'rmj.ledger_order';    // the old per-device choice — read once and moved to the server
 const HIDDEN_KEY = 'rmj.ledger_hidden';
+
+const inr = (n: number) => `₹${Math.abs(Math.round(n)).toLocaleString('en-IN')}`;
 
 export default function LedgerScreen() {
   const router = useRouter();
@@ -31,82 +29,76 @@ export default function LedgerScreen() {
   const [order, setOrder] = useState<string[]>([]);
   const [hidden, setHidden] = useState<string[]>([]);
   const [editOrder, setEditOrder] = useState(false);
-  const [custSummary, setCustSummary] = useState('');
-  const [karigarSummary, setKarigarSummary] = useState('');
-  const [lossSummary, setLossSummary] = useState('');
-  const [metalSummary, setMetalSummary] = useState('');
-  const [employeeSummary, setEmployeeSummary] = useState('');
+  const [sum, setSum] = useState<Record<string, string>>({});
   const [refreshing, setRefreshing] = useState(false);
   const [failed, setFailed] = useState(false);
 
-  useFocusEffect(useCallback(() => {
-    try { const raw = typeof window !== 'undefined' ? window.localStorage.getItem(ORDER_KEY) : null; if (raw) setOrder(JSON.parse(raw)); } catch { /* ignore */ }
-    try { const raw = typeof window !== 'undefined' ? window.localStorage.getItem(HIDDEN_KEY) : null; if (raw) setHidden(JSON.parse(raw)); } catch { /* ignore */ }
-  }, []));
-  const persistOrder = (keys: string[]) => { setOrder(keys); try { if (typeof window !== 'undefined') window.localStorage.setItem(ORDER_KEY, JSON.stringify(keys)); } catch { /* ignore */ } };
-  const persistHidden = (keys: string[]) => { setHidden(keys); try { if (typeof window !== 'undefined') window.localStorage.setItem(HIDDEN_KEY, JSON.stringify(keys)); } catch { /* ignore */ } };
-  const toggleHidden = (key: string) => persistHidden(hidden.includes(key) ? hidden.filter((k) => k !== key) : [...hidden, key]);
+  const savePrefs = (o: string[], h: string[]) => { api.put('/me/ui-prefs', { ledger_order: o, ledger_hidden: h }).catch(() => {}); };
+  const persistOrder = (keys: string[]) => { setOrder(keys); savePrefs(keys, hidden); };
+  const toggleHidden = (key: string) => {
+    const next = hidden.includes(key) ? hidden.filter((k) => k !== key) : [...hidden, key];
+    setHidden(next); savePrefs(order, next);
+  };
+
+  // This person's saved layout — falling back to (and migrating) whatever this browser remembered before.
+  const loadPrefs = useCallback(async () => {
+    try {
+      const p = await api.get<{ ledger_order: string[]; ledger_hidden: string[] }>('/me/ui-prefs');
+      if (p.ledger_order.length || p.ledger_hidden.length) { setOrder(p.ledger_order); setHidden(p.ledger_hidden); return; }
+      const lo = typeof window !== 'undefined' ? JSON.parse(window.localStorage.getItem(ORDER_KEY) || '[]') : [];
+      const lh = typeof window !== 'undefined' ? JSON.parse(window.localStorage.getItem(HIDDEN_KEY) || '[]') : [];
+      if (lo.length || lh.length) { setOrder(lo); setHidden(lh); savePrefs(lo, lh); }
+    } catch { /* keep the default layout */ }
+  }, []);
 
   const load = useCallback(async () => {
-    // Each row's summary falls back to '…' on failure rather than a figure, so
-    // a dropped connection never renders as "Nothing owed" — but '…' forever
-    // is its own kind of unhelpful, so surface one banner when a load failed
-    // and offer the retry.
+    // Two small calls instead of pulling whole customer/karigar/employee lists just to add them up. A row that
+    // couldn't load shows '…', never a figure, and one banner offers a retry.
     setFailed(false);
-    const results = await Promise.allSettled([
-      api.get<any[]>('/customers').then((cs) => {
-        const items = cs.reduce((s, c) => s + (c.open_items || 0), 0);
-        const gold = cs.reduce((s, c) => s + (c.open_weight || 0), 0);
-        setCustSummary(items > 0 ? `${items} item${items === 1 ? '' : 's'} in · ${gold.toFixed(3)}g held` : 'Nothing open');
-      }),
-      api.get<any[]>('/karigars').then((ks) => {
-        const fine = ks.reduce((s, k) => s + (k.fine_weight_balance || 0), 0);
-        const amt = ks.reduce((s, k) => s + (k.amount_due || 0), 0);
-        const parts: string[] = [];
-        if (Math.abs(fine) >= 0.001) parts.push(`${fine.toFixed(3)}g gold`);
-        if (Math.abs(amt) >= 1) parts.push(`₹${Math.abs(Math.round(amt)).toLocaleString('en-IN')}`);
-        setKarigarSummary(parts.length ? `Owed: ${parts.join(' · ')}` : 'Nothing owed');
-      }),
-      api.get<{ total_weight: number; total_fine_weight: number }>('/karigars/loss-ledger').then((r) => {
-        setLossSummary(Math.abs(r.total_fine_weight) >= 0.001 ? `${r.total_weight.toFixed(3)}g weight · ${r.total_fine_weight.toFixed(3)}g fine` : 'No loss recorded');
-      }),
-      api.get<{ balance: number; total_loss: number }>('/metal-ledger').then((r) => {
-        const parts = [`${r.balance.toFixed(3)}g net stock`];
-        if (Math.abs(r.total_loss) >= 0.001) parts.push(`${r.total_loss.toFixed(3)}g loss`);
-        setMetalSummary(parts.join(' · '));
-      }),
-      api.get<{ closing_balance?: number }[]>('/employees').then((es) => {
-        const withBalance = es.filter((e) => !!e.closing_balance);
-        const total = withBalance.reduce((s, e) => s + Math.abs(e.closing_balance || 0), 0);
-        setEmployeeSummary(withBalance.length > 0 ? `${withBalance.length} with balance · ₹${Math.round(total).toLocaleString('en-IN')}` : 'All settled');
-      }),
+    const [s, e] = await Promise.allSettled([
+      api.get<any>('/ledger-summary'),
+      api.get<{ closing_balance?: number }[]>('/employees'),
     ]);
-    if (results.some((r) => r.status === 'rejected')) setFailed(true);
+    const next: Record<string, string> = {};
+    if (s.status === 'fulfilled') {
+      const r = s.value;
+      next['customer-ledger'] = r.customer.open_items > 0 ? `${r.customer.open_items} item${r.customer.open_items === 1 ? '' : 's'} in · ${r.customer.open_weight.toFixed(3)}g held` : 'Nothing open';
+      const parts: string[] = [];
+      if (Math.abs(r.karigar.fine) >= 0.001) parts.push(`${r.karigar.fine.toFixed(3)}g gold`);
+      if (Math.abs(r.karigar.amount) >= 1) parts.push(inr(r.karigar.amount));
+      next['karigar-ledger'] = parts.length ? `Owed: ${parts.join(' · ')}` : 'Nothing owed';
+      next['loss-ledger'] = Math.abs(r.loss.fine) >= 0.001 ? `${r.loss.weight.toFixed(3)}g weight · ${r.loss.fine.toFixed(3)}g fine` : 'No loss recorded';
+      next['metal-ledger'] = `${r.metal.balance.toFixed(3)}g ${r.metal.has_opening ? 'stock' : 'net movement'}${Math.abs(r.metal.loss) >= 0.001 ? ` · ${r.metal.loss.toFixed(3)}g loss` : ''}`;
+    } else setFailed(true);
+    if (e.status === 'fulfilled') {
+      const withBalance = e.value.filter((x) => !!x.closing_balance);
+      const total = withBalance.reduce((t, x) => t + Math.abs(x.closing_balance || 0), 0);
+      next['employee-ledger'] = withBalance.length > 0 ? `${withBalance.length} with balance · ${inr(total)}` : 'All settled';
+    } else setFailed(true);
+    setSum(next);
     setRefreshing(false);
   }, []);
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useFocusEffect(useCallback(() => { load(); loadPrefs(); }, [load, loadPrefs]));
 
   const rows: Row[] = [
-    // (Cash Book, the daily cash in/out entry screen, lives on the Work tab — this tab is for the ledgers.)
-    { key: 'customer-ledger', label: 'Customer Ledger', icon: 'person-outline', route: '/reports/customer-ledger', summary: custSummary || '…' },
-    { key: 'karigar-ledger', label: 'Karigar Ledger', icon: 'hammer-outline', route: '/reports/karigar-ledger', summary: karigarSummary || '…' },
-    { key: 'loss-ledger', label: 'Loss Ledger', icon: 'trending-down-outline', route: '/reports/loss-ledger', summary: lossSummary || '…' },
-    { key: 'metal-ledger', label: 'Metal Ledger', icon: 'diamond-outline', route: '/reports/metal-ledger', summary: metalSummary || '…' },
-    { key: 'employee-ledger', label: 'Employee Ledger', icon: 'people-outline', route: '/reports/employee-ledger', summary: employeeSummary || '…' },
+    { key: 'customer-ledger', group: 'People', label: 'Customer Ledger', icon: 'person-outline', route: '/reports/customer-ledger', summary: sum['customer-ledger'] || '…' },
+    { key: 'karigar-ledger', group: 'People', label: 'Karigar Ledger', icon: 'hammer-outline', route: '/reports/karigar-ledger', summary: sum['karigar-ledger'] || '…' },
+    { key: 'employee-ledger', group: 'People', label: 'Employee Ledger', icon: 'people-outline', route: '/reports/employee-ledger', summary: sum['employee-ledger'] || '…' },
+    { key: 'day-book', group: 'Books', label: 'Day Book', icon: 'journal-outline', route: '/reports/day-book', summary: 'Every entry from every book, newest first' },
+    { key: 'metal-ledger', group: 'Gold', label: 'Metal Ledger', icon: 'diamond-outline', route: '/reports/metal-ledger', summary: sum['metal-ledger'] || '…' },
+    { key: 'loss-ledger', group: 'Gold', label: 'Loss Ledger', icon: 'trending-down-outline', route: '/reports/loss-ledger', summary: sum['loss-ledger'] || '…' },
   ];
 
   const idx = (k: string) => { const i = order.indexOf(k); return i === -1 ? 999 : i; };
-  const sortedRows = [...rows].sort((a, b) => idx(a.key) - idx(b.key));
-  const move = (key: string, dir: -1 | 1) => {
-    const keys = sortedRows.map((r) => r.key);
+  const inGroup = (g: string) => rows.filter((r) => r.group === g).sort((a, b) => idx(a.key) - idx(b.key));
+  // Move within the group only (the group order is fixed).
+  const move = (group: string, key: string, dir: -1 | 1) => {
+    const keys = inGroup(group).map((r) => r.key);
     const i = keys.indexOf(key); const j = i + dir;
     if (j < 0 || j >= keys.length) return;
     [keys[i], keys[j]] = [keys[j], keys[i]];
-    persistOrder(keys);
+    persistOrder([...order.filter((k) => !keys.includes(k)), ...keys]);
   };
-  // Outside edit mode, hidden rows are simply not shown. In edit mode every
-  // row shows (dimmed if hidden) so there's somewhere to tap it back on.
-  const visibleRows = editOrder ? sortedRows : sortedRows.filter((r) => !hidden.includes(r.key));
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="ledger-screen">
@@ -115,55 +107,56 @@ export default function LedgerScreen() {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}
       >
-        <Text style={styles.h1}>Ledger</Text>
-        <Text style={styles.sub}>Customer, karigar, loss, metal, and employee accounts. Payments are recorded in the Cash Book (Work tab).</Text>
-
-        {failed && (
-          <View style={{ marginTop: spacing.lg }}>
-            <ErrorState
-              message="Some balances couldn't be loaded, so the figures below may be incomplete."
-              onRetry={load}
-              testID="ledger-error"
-            />
-          </View>
-        )}
-
-        <View style={styles.progressHead}>
-          <Text style={styles.sectionLabel}>Ledgers</Text>
+        <View style={styles.titleRow}>
+          <Text style={styles.h1}>Ledger</Text>
           <Pressable onPress={() => setEditOrder((v) => !v)} hitSlop={8} testID="ledger-edit-order">
             <Text style={styles.editOrderText}>{editOrder ? 'Done' : 'Edit'}</Text>
           </Pressable>
         </View>
+        <Text style={styles.sub}>Customer, karigar and employee accounts, the Day Book, and the shop's gold. Cash is in the Cash Book (Work tab).</Text>
 
-        {editOrder && visibleRows.length === 0 && (
-          <Text style={styles.pd}>Nothing left to show — every ledger below is hidden.</Text>
+        {failed && (
+          <View style={{ marginTop: spacing.lg }}>
+            <ErrorState message="Some balances couldn't be loaded, so the figures below may be incomplete." onRetry={load} testID="ledger-error" />
+          </View>
         )}
-        {visibleRows.map((r, ri) => {
-          const isHidden = hidden.includes(r.key);
+
+        {GROUPS.map((g) => {
+          const list = inGroup(g);
+          const shown = editOrder ? list : list.filter((r) => !hidden.includes(r.key));
+          if (shown.length === 0) return null;
           return (
-          <Pressable
-            key={r.key}
-            onPress={() => !editOrder && router.push(r.route as any)}
-            style={({ pressed }) => [styles.prow, isHidden && editOrder && styles.prowHidden, pressed && !editOrder && { opacity: 0.85 }]}
-            testID={`ledger-row-${r.key}`}
-          >
-            <View style={styles.pi}><Ionicons name={r.icon} size={22} color={colors.brandSecondary} /></View>
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <Text style={styles.pt}>{r.label}</Text>
-              <Text style={styles.pd} numberOfLines={1}>{r.summary}</Text>
+            <View key={g}>
+              <Text style={styles.sectionLabel}>{g}</Text>
+              {shown.map((r, ri) => {
+                const isHidden = hidden.includes(r.key);
+                return (
+                  <Pressable
+                    key={r.key}
+                    onPress={() => !editOrder && router.push(r.route as any)}
+                    style={({ pressed }) => [styles.prow, isHidden && editOrder && styles.prowHidden, pressed && !editOrder && { opacity: 0.85 }]}
+                    testID={`ledger-row-${r.key}`}
+                  >
+                    <View style={styles.pi}><Ionicons name={r.icon} size={22} color={colors.brandSecondary} /></View>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={styles.pt}>{r.label}</Text>
+                      <Text style={styles.pd} numberOfLines={1}>{r.summary}</Text>
+                    </View>
+                    {editOrder ? (
+                      <View style={styles.reorderCtrls}>
+                        <Pressable onPress={() => toggleHidden(r.key)} style={styles.arrowBtn} hitSlop={6} testID={`ledger-hide-${r.key}`}>
+                          <Ionicons name={isHidden ? 'eye-off-outline' : 'eye-outline'} size={16} color={isHidden ? colors.mutedText : colors.onSurface} />
+                        </Pressable>
+                        <Pressable onPress={() => move(g, r.key, -1)} disabled={ri === 0} style={[styles.arrowBtn, ri === 0 && { opacity: 0.3 }]} hitSlop={6} testID={`ledger-up-${r.key}`}><Ionicons name="chevron-up" size={18} color={colors.onSurface} /></Pressable>
+                        <Pressable onPress={() => move(g, r.key, 1)} disabled={ri === shown.length - 1} style={[styles.arrowBtn, ri === shown.length - 1 && { opacity: 0.3 }]} hitSlop={6} testID={`ledger-down-${r.key}`}><Ionicons name="chevron-down" size={18} color={colors.onSurface} /></Pressable>
+                      </View>
+                    ) : (
+                      <Ionicons name="chevron-forward" size={18} color={colors.mutedText} />
+                    )}
+                  </Pressable>
+                );
+              })}
             </View>
-            {editOrder ? (
-              <View style={styles.reorderCtrls}>
-                <Pressable onPress={() => toggleHidden(r.key)} style={styles.arrowBtn} hitSlop={6} testID={`ledger-hide-${r.key}`}>
-                  <Ionicons name={isHidden ? 'eye-off-outline' : 'eye-outline'} size={16} color={isHidden ? colors.mutedText : colors.onSurface} />
-                </Pressable>
-                <Pressable onPress={() => move(r.key, -1)} disabled={ri === 0} style={[styles.arrowBtn, ri === 0 && { opacity: 0.3 }]} hitSlop={6} testID={`ledger-up-${r.key}`}><Ionicons name="chevron-up" size={18} color={colors.onSurface} /></Pressable>
-                <Pressable onPress={() => move(r.key, 1)} disabled={ri === visibleRows.length - 1} style={[styles.arrowBtn, ri === visibleRows.length - 1 && { opacity: 0.3 }]} hitSlop={6} testID={`ledger-down-${r.key}`}><Ionicons name="chevron-down" size={18} color={colors.onSurface} /></Pressable>
-              </View>
-            ) : (
-              <Ionicons name="chevron-forward" size={18} color={colors.mutedText} />
-            )}
-          </Pressable>
           );
         })}
       </ScrollView>
@@ -174,14 +167,11 @@ export default function LedgerScreen() {
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   scroll: { padding: spacing.lg, paddingBottom: spacing.xxxl },
+  titleRow: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' },
   h1: { color: colors.onSurface, fontSize: 30, fontWeight: '700', fontFamily: fonts.display, letterSpacing: -0.5 },
   sub: { color: colors.onSurfaceSecondary, fontSize: 15, marginTop: 6 },
-  progressHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  sectionLabel: {
-    color: colors.mutedText, fontSize: 12, fontWeight: '700', letterSpacing: 0.8, textTransform: 'uppercase',
-    marginTop: spacing.xl, marginBottom: spacing.md,
-  },
-  editOrderText: { color: colors.brandSecondary, fontSize: 13, fontWeight: '700', marginTop: spacing.xl, marginBottom: spacing.md },
+  sectionLabel: { color: colors.mutedText, fontSize: 12, fontWeight: '700', letterSpacing: 0.8, textTransform: 'uppercase', marginTop: spacing.xl, marginBottom: spacing.md },
+  editOrderText: { color: colors.brandSecondary, fontSize: 13, fontWeight: '700', paddingBottom: 6 },
   prow: {
     flexDirection: 'row', alignItems: 'center', gap: 14,
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,

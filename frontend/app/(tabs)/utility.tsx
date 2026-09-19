@@ -46,7 +46,6 @@ const GROUPS: GroupDef[] = [
   {
     title: 'Accounts & Cash', ownerOnly: true,
     rows: [
-      { key: 'account-types', label: 'Account Types', sub: 'Ledger categories', icon: 'pricetags-outline', route: '/settings/account-types' },
       { key: 'cashbook-types', label: 'Cash Pay & Receive Types', sub: 'Predefined types for Cash Book entries', icon: 'cash-outline', route: '/settings/cashbook-types' },
     ],
   },

@@ -708,7 +708,6 @@ function ComposeSheet({ visible, onClose }: { visible: boolean; onClose: () => v
     { key: 'stock', label: 'Stock In/Out', icon: 'diamond-outline', route: '/samples/new', show: hasModule('samples') },
     { key: 'adv-ded', label: 'Advance / Deduction', icon: 'swap-vertical-outline', route: '/(tabs)/employees?from=work', show: hasModule('team') || hasModule('payroll') },
     { key: 'cash', label: 'Cash in/out', icon: 'wallet-outline', route: '/cashbook', show: hasModule('cash_book') },
-    { key: 'account', label: 'New ledger account', icon: 'book-outline', route: '/accounts/new', show: hasModule('ledger') },
     { key: 'document', label: 'Add document', icon: 'document-attach-outline', route: '/documents?capture=1', show: hasModule('documents') },
   ];
   const visibleActions = actions.filter((a) => a.show);
@@ -759,9 +758,6 @@ function SearchOverlay({ visible, onClose }: { visible: boolean; onClose: () => 
       }
       if (hasModule('team') || hasModule('payroll')) {
         reqs.push(api.get<any[]>(`/employees?q=${encodeURIComponent(query)}`).then((es) => es.slice(0, 8).map((e) => ({ kind: 'employee' as const, id: e.id, name: e.name, sub: e.employee_code, route: `/ledger/${e.id}` }))).catch(() => []));
-      }
-      if (hasModule('ledger')) {
-        reqs.push(api.get<any[]>(`/accounts/entries/search?q=${encodeURIComponent(query)}`).then((es) => es.slice(0, 8).map((e) => ({ kind: 'transaction' as const, id: e.id, name: e.particulars, sub: e.account_name, route: `/accounts/${e.account_id}` }))).catch(() => []));
       }
       const results = (await Promise.all(reqs)).flat();
       setHits(results);
