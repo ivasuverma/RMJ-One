@@ -183,16 +183,20 @@ async def _account_rights(user: dict) -> dict:
     uid = user.get('id')
     if not uid:
         return {}
-    return (await db.users.find_one({'id': uid}, {'_id': 0, 'doc_category_rights': 1, 'doc_see_done': 1})
-            or await db.employees.find_one({'id': uid}, {'_id': 0, 'doc_category_rights': 1, 'doc_see_done': 1})
-            or {})
+    async def load():
+        return (await db.users.find_one({'id': uid}, {'_id': 0, 'doc_category_rights': 1, 'doc_see_done': 1})
+                or await db.employees.find_one({'id': uid}, {'_id': 0, 'doc_category_rights': 1, 'doc_see_done': 1})
+                or {})
+    return await _memo(('rights_all', uid), 15, load)   # a permission change shows up within seconds
 
 
 async def _categories_map() -> dict:
-    out = {}
-    async for c in db.document_categories.find({'active': {'$ne': False}}, {'_id': 0}):
-        out[c['key']] = c
-    return out
+    async def load():
+        out = {}
+        async for c in db.document_categories.find({'active': {'$ne': False}}, {'_id': 0}):
+            out[c['key']] = c
+        return out
+    return await _memo('cats_all', 15, load)
 
 
 async def _visible_keys(role: str, rights: dict = None) -> set:
@@ -252,6 +256,7 @@ async def create_category(body: CategoryIn, user=Depends(require_owner)):
         'sort_order': count, 'active': body.active is not False, 'created_at': now_utc().isoformat(), 'created_by': user['name'],
     }
     await db.document_categories.insert_one(dict(doc))
+    _LOOKUPS.pop('cats_all', None)
     await log_audit(user, 'documents.category.create', 'document_category', doc['id'], label)
     return {k: v for k, v in doc.items() if k != '_id'}
 
@@ -267,6 +272,7 @@ async def update_category(cat_id: str, body: CategoryIn, user=Depends(require_ow
         'active': body.active is not False, 'updated_at': now_utc().isoformat(),
     }
     await db.document_categories.update_one({'id': cat_id}, {'$set': upd})
+    _LOOKUPS.pop('cats_all', None)
     await log_audit(user, 'documents.category.update', 'document_category', cat_id, upd['label'])
     return await db.document_categories.find_one({'id': cat_id}, {'_id': 0})
 
@@ -280,11 +286,38 @@ async def delete_category(cat_id: str, user=Depends(require_owner)):
     if n > 0:
         raise HTTPException(status_code=400, detail=f'This category has {n} document{"s" if n != 1 else ""} — move or delete them first, or turn the category off instead.')
     await db.document_categories.delete_one({'id': cat_id})
+    _LOOKUPS.pop('cats_all', None)
     await log_audit(user, 'documents.category.delete', 'document_category', cat_id, cat.get('label', ''))
     return {'ok': True}
 
 
 # ---------------- Documents ----------------
+# Image bytes live in their own collection, `document_blobs` ({id, local_data,
+# thumb_data}), NOT on the document. MongoDB reads whole documents, so with ~125 KB
+# of base64 thumbnail inline every metadata query (list, summary, permission
+# checks) dragged megabytes off the Atlas free tier — listing 50 documents took
+# 1.2 s and the first grid load far longer. Metadata documents are now tiny.
+# Reads fall back to the document itself for anything not yet moved.
+# The Atlas free tier moves data at roughly 80 KB/s, so even a slim page of 50
+# document records (~40 KB) cost ~0.5 s every time it was listed. Results are kept
+# in memory and dropped the moment anything here writes (`_bump`), with a TTL as the
+# backstop for writers that don't go through this file.
+_LIST_CACHE: dict = {}
+_LIST_VER = [0]
+
+
+def _bump() -> None:
+    _LIST_VER[0] += 1
+    _LIST_CACHE.clear()
+
+
+async def _blob_get(doc_id: str, fields: dict) -> dict:
+    row = await db.document_blobs.find_one({'id': doc_id}, {'_id': 0, **fields})
+    if row:
+        return row
+    return await db.documents.find_one({'id': doc_id}, {'_id': 0, **fields}) or {}
+
+
 _LIST_PROJECTION = {'_id': 0, 'local_data': 0, 'thumb_data': 0, 'ocr': 0}  # never ship raw bytes in a list
 
 
@@ -373,29 +406,32 @@ async def create_document(
             # Transient Drive/network failure → 502 so the upload queue RETRIES
             # (not a permanent 4xx), instead of losing the file.
             raise HTTPException(status_code=502, detail='Could not reach Google Drive — will retry.')
+        blob = {'local_data': thumb_clean or None, 'thumb_data': None}
         doc = {
             **base_doc,
-            'local_data': thumb_clean or None,
             'local_kind': 'thumb' if thumb_clean else 'none',   # full-size lives only in Drive
-            'thumb_data': None,
             'file': {'drive_file_id': res['drive_file_id'], 'drive_view_link': res['drive_view_link'],
                      'drive_thumbnail_link': res['drive_thumbnail_link'],
                      'mime': mime, 'size': len(raw), 'orig_name': orig_name},
             'upload_state': 'synced',
         }
     else:
+        blob = {'local_data': base64.b64encode(raw).decode('ascii'), 'thumb_data': thumb_clean or None}
         doc = {
             **base_doc,
-            'local_data': base64.b64encode(raw).decode('ascii'),
             'local_kind': 'full',                # 'full' | 'thumb' | 'none' (Drive-only)
-            'thumb_data': thumb_clean or None,
             'file': {'drive_file_id': None, 'drive_view_link': None, 'drive_thumbnail_link': None,
                      'mime': mime, 'size': len(raw), 'orig_name': orig_name},
             # 'queued' → the worker uploads it; 'local' → no Drive yet, lives
             # locally until the owner connects Google (then re-queued).
             'upload_state': 'queued' if connected else 'local',
         }
+    # Bytes first: if this is interrupted the worst case is an orphan blob, never a
+    # queued document with nothing to upload.
+    if blob['local_data'] or blob['thumb_data']:
+        await db.document_blobs.replace_one({'id': doc['id']}, {'id': doc['id'], **blob}, upsert=True)
     await db.documents.insert_one(dict(doc))
+    _bump()
     # The thumbnail is already in memory — cache it now, so the first time this
     # photo shows up in the grid it doesn't have to be read back out of Mongo.
     if thumb_clean:
@@ -529,16 +565,26 @@ async def list_documents(
         ]
     if cursor:
         query['created_at'] = {'$lt': cursor}
+    ckey = (repr(sorted(query.items(), key=lambda kv: kv[0])), limit)
+    hit = _LIST_CACHE.get(ckey)
+    if hit and time.monotonic() - hit[0] < 120:
+        return hit[1]
+    ver = _LIST_VER[0]
     items = await db.documents.find(query, _LIST_PROJECTION).sort('created_at', -1).to_list(limit + 1)
     next_cursor = items[limit]['created_at'] if len(items) > limit else None
-    return {'items': items[:limit], 'next_cursor': next_cursor}
+    result = {'items': items[:limit], 'next_cursor': next_cursor}
+    if ver == _LIST_VER[0]:   # nothing was written while we were reading
+        _LIST_CACHE[ckey] = (time.monotonic(), result)
+    return result
 
 
 @router.get('/documents/summary')
 async def documents_summary(user=Depends(get_current)):
     """Role-filtered counts — feeds the Work row and Home needs-attention item."""
     import drive_service
-    connected = await drive_service.is_connected()
+    async def _conn():
+        return bool(await drive_service.is_connected())
+    connected = await _memo('drive_connected', 15, _conn)
     role = _role(user)
     rights = await _account_rights(user)
     visible = await _visible_keys(role, rights)
@@ -552,10 +598,19 @@ async def documents_summary(user=Depends(get_current)):
     # alone. This used to stream every document to the server just to count
     # three small fields, and since documents carry their image bytes inline,
     # that meant reading the whole collection on every Work/Home/Documents load.
-    async for g in db.documents.aggregate([
-        {'$match': {'deleted': {'$ne': True}, 'category_key': {'$in': list(visible)}}},
-        {'$group': {'_id': {'c': '$category_key', 's': '$status', 'u': '$upload_state'}, 'n': {'$sum': 1}}},
-    ]):
+    skey = ('summary', tuple(sorted(visible)))
+    hit = _LIST_CACHE.get(skey)
+    if hit and time.monotonic() - hit[0] < 120:
+        groups = hit[1]
+    else:
+        ver = _LIST_VER[0]
+        groups = await db.documents.aggregate([
+            {'$match': {'deleted': {'$ne': True}, 'category_key': {'$in': list(visible)}}},
+            {'$group': {'_id': {'c': '$category_key', 's': '$status', 'u': '$upload_state'}, 'n': {'$sum': 1}}},
+        ]).to_list(None)
+        if ver == _LIST_VER[0]:
+            _LIST_CACHE[skey] = (time.monotonic(), groups)
+    for g in groups:
         key, n = g['_id'], g['n']
         b = by_category.setdefault(key['c'], {'pending': 0, 'done': 0})
         if key['s'] == 'pending':
@@ -602,6 +657,7 @@ async def record_document(doc_id: str, body: RecordIn, user=Depends(get_current)
     if body.note is not None:
         upd['note'] = body.note.strip()
     await db.documents.update_one({'id': doc_id}, {'$set': upd})
+    _bump()
     await log_audit(user, 'documents.record', 'document', doc_id, body.linked_ref_label or cat['label'])
     await _notify_document_done(cat, {**d, **upd}, user)
     return await db.documents.find_one({'id': doc_id}, _LIST_PROJECTION)
@@ -626,6 +682,7 @@ async def unrecord_document(doc_id: str, user=Depends(get_current)):
     await db.documents.update_one({'id': doc_id}, {'$set': {
         'status': 'pending', 'recorded_at': None, 'recorded_by': None, 'recorded_by_name': None, 'linked_ref': None,
     }})
+    _bump()
     await log_audit(user, 'documents.unrecord', 'document', doc_id, cat['label'])
     return await db.documents.find_one({'id': doc_id}, _LIST_PROJECTION)
 
@@ -652,6 +709,7 @@ async def recategorize_document(doc_id: str, body: RecategorizeIn, user=Depends(
     if not _can_record(new, _role(user), rights):
         raise HTTPException(status_code=403, detail='You do not have permission to file into that category')
     await db.documents.update_one({'id': doc_id}, {'$set': {'category_key': body.category_key}})
+    _bump()
     _forget(doc_id)
     await log_audit(user, 'documents.recategorize', 'document', doc_id, f"{d['category_key']} → {body.category_key}")
     return await db.documents.find_one({'id': doc_id}, _LIST_PROJECTION)
@@ -675,6 +733,8 @@ async def delete_document(doc_id: str, user=Depends(get_current)):
         except Exception:
             pass   # Drive delete failed — still remove from the app below
     await db.documents.delete_one({'id': doc_id})
+    await db.document_blobs.delete_one({'id': doc_id})
+    _bump()
     _cache_drop(doc_id)
     _forget(doc_id)
     await log_audit(user, 'documents.delete', 'document', doc_id, (d.get('file') or {}).get('orig_name', ''))
@@ -689,13 +749,13 @@ async def _load_variant(meta: dict, doc_id: str, variant: str):
     a low-resolution copy there for good."""
     async with _BLOB_SLOTS:
         if variant == 'thumb':
-            row = await db.documents.find_one({'id': doc_id}, {'_id': 0, 'thumb_data': 1, 'local_data': 1, 'local_kind': 1}) or {}
-            data = row.get('thumb_data') or (row.get('local_data') if row.get('local_kind') == 'thumb' else None)
+            row = await _blob_get(doc_id, {'thumb_data': 1, 'local_data': 1})
+            data = row.get('thumb_data') or (row.get('local_data') if meta.get('local_kind') == 'thumb' else None)
             return (base64.b64decode(data) if data else None), True
         local_kind = meta.get('local_kind', 'full')
         drive_id = (meta.get('file') or {}).get('drive_file_id')
         if local_kind == 'full':
-            row = await db.documents.find_one({'id': doc_id}, {'_id': 0, 'local_data': 1}) or {}
+            row = await _blob_get(doc_id, {'local_data': 1})
             if row.get('local_data'):
                 return base64.b64decode(row['local_data']), True
         if drive_id:
@@ -710,7 +770,7 @@ async def _load_variant(meta: dict, doc_id: str, variant: str):
         tp = _cache_file(doc_id, 'thumb')
         if tp.is_file():
             return await asyncio.to_thread(tp.read_bytes), False
-        row = await db.documents.find_one({'id': doc_id}, {'_id': 0, 'local_data': 1, 'thumb_data': 1}) or {}
+        row = await _blob_get(doc_id, {'local_data': 1, 'thumb_data': 1})
         data = row.get('local_data') or row.get('thumb_data')
         return (base64.b64decode(data) if data else None), False
 
@@ -873,6 +933,7 @@ async def drive_callback(code: Optional[str] = None, state: Optional[str] = None
     }}, upsert=True)
     # Any docs/photos captured while offline/unconnected can now sync.
     await db.documents.update_many({'upload_state': {'$in': ['local', 'failed']}, 'deleted': {'$ne': True}}, {'$set': {'upload_state': 'queued'}})
+    _bump()
     await db.record_photos.update_many({'upload_state': {'$in': ['local', 'failed']}, 'deleted': {'$ne': True}}, {'$set': {'upload_state': 'queued'}})
     return page('Google Drive connected.', True)
 
@@ -895,31 +956,39 @@ async def upload_worker():
                 # 'uploading' here can only be a doc orphaned by a prior process
                 # dying mid-upload — this loop never leaves one in that state while
                 # also polling, so it's safe to treat it as re-queued.
-                doc = await db.documents.find_one({'upload_state': {'$in': ['queued', 'uploading']}, 'deleted': {'$ne': True}, 'local_data': {'$ne': None}}, {'_id': 0})
+                doc = await db.documents.find_one({'upload_state': {'$in': ['queued', 'uploading']}, 'deleted': {'$ne': True}}, {'_id': 0, 'local_data': 0, 'thumb_data': 0})
                 if doc:
                     await db.documents.update_one({'id': doc['id']}, {'$set': {'upload_state': 'uploading'}})
+                    _bump()
                     try:
+                        blob = await _blob_get(doc['id'], {'local_data': 1, 'thumb_data': 1})
+                        if not blob.get('local_data'):
+                            raise RuntimeError('No local copy left to upload')
                         cat = (await _categories_map()).get(doc['category_key'], {})
-                        res = await drive_service.upload(cfg, cat.get('label', doc['category_key']), _drive_filename(doc, cat), doc['local_data'], (doc.get('file') or {}).get('mime', 'image/jpeg'))
+                        res = await drive_service.upload(cfg, cat.get('label', doc['category_key']), _drive_filename(doc, cat), blob['local_data'], (doc.get('file') or {}).get('mime', 'image/jpeg'))
                         # Now that the original is safely in Drive, free the heavy
                         # local copy: keep the small thumbnail for a fast grid if
                         # we have one, otherwise go Drive-only (full-size is then
                         # fetched from Drive on demand). This is what stops the
                         # database from ballooning with full-size base64.
-                        thumb = doc.get('thumb_data')
+                        thumb = blob.get('thumb_data')
                         set_fields = {
                             'upload_state': 'synced',
                             'file.drive_file_id': res['drive_file_id'],
                             'file.drive_view_link': res['drive_view_link'],
                             'file.drive_thumbnail_link': res['drive_thumbnail_link'],
-                            'local_data': thumb or None,
                             'local_kind': 'thumb' if thumb else 'none',
-                            'thumb_data': None,
                         }
-                        await db.documents.update_one({'id': doc['id']}, {'$set': set_fields})
+                        if thumb:
+                            await db.document_blobs.replace_one({'id': doc['id']}, {'id': doc['id'], 'local_data': thumb, 'thumb_data': None}, upsert=True)
+                        else:
+                            await db.document_blobs.delete_one({'id': doc['id']})
+                        await db.documents.update_one({'id': doc['id']}, {'$set': set_fields, '$unset': {'local_data': '', 'thumb_data': ''}})
+                        _bump()
                     except Exception as e:
                         err = str(e)[:200]
                         await db.documents.update_one({'id': doc['id']}, {'$set': {'upload_state': 'failed', 'upload_error': err}})
+                        _bump()
                         if 'invalid_grant' in err or 'invalid_client' in err:
                             await _notify_system_health('drive_disconnected', 'Google Drive disconnected',
                                                          'Google Drive needs to be reconnected — document uploads and backups are paused (Settings > Google Drive).', '/settings/google-drive')

@@ -1210,6 +1210,7 @@ async def seed():
         [('deleted', 1), ('category_key', 1), ('status', 1), ('upload_state', 1)], name='summary_covering',
     )
     await db.documents.create_index('client_id', sparse=True)
+    await db.document_blobs.create_index('id', unique=True)
     await db.record_photos.create_index([('ref_type', 1), ('ref_id', 1)])
     await db.record_photos.create_index('upload_state')
     await db.record_photos.create_index('client_id', sparse=True)
