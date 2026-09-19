@@ -1,6 +1,6 @@
 import asyncio
 """RETIRED (ledger phase 5): the unified accounts ledger is no longer used by the app — its screens, links and the
-Account Types master are gone, and its data is archived in D:\RMJ-One\mongodb\backups\unified-accounts-archive-*.json
+Account Types master are gone, and its data is archived in a JSON file in the backups folder (unified-accounts-archive-*.json)
 (and still in the database). The endpoints below are left in place only so nothing that might still call them breaks; the
 ledgers people use are the per-party ones (karigar / customer / employee), the Day Book and the Metal ledger.
 
