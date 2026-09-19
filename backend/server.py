@@ -2919,7 +2919,7 @@ from routers import (
     auth, employees, settings as settings_router, attendance, tasks, repairs,
     users, payroll, notifications, biometric, reports, assistant, samples,
     cashbook, ledger, documents, backup, record_photos, gold_loans, whatsapp_bot,
-    whatsapp_meta_bot, print_settings, system_health,
+    whatsapp_meta_bot, print_settings, system_health, led_board, rate_master,
 )
 
 # ---------------- Mount ----------------
@@ -2946,6 +2946,8 @@ api.include_router(whatsapp_bot.router)
 api.include_router(whatsapp_meta_bot.router)
 api.include_router(print_settings.router)
 api.include_router(system_health.router)
+api.include_router(led_board.router)
+api.include_router(rate_master.router)
 
 app.include_router(api)
 app.include_router(biometric.iclock_router)  # /iclock/* — real device protocol, no /api prefix

@@ -183,6 +183,24 @@ export default function GoldRateScreen() {
           <Text style={styles.infoText}>Fetches a reference rate from your supplier once a day. Confirm — and adjust the rates or message if needed — before it's sent to the "Ram Murti Jewellers" WhatsApp Channel.</Text>
         </View>
 
+        <Pressable onPress={() => router.push('/rate-master' as any)} style={styles.boardLink} testID="gold-rate-rate-master">
+          <Ionicons name="calculator-outline" size={18} color={colors.brandSecondary} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.boardLinkTitle}>Rate master</Text>
+            <Text style={styles.boardLinkSub}>Formulas for 24K, 22K, 18K, 14K and silver 99.99</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.mutedText} />
+        </Pressable>
+
+        <Pressable onPress={() => router.push('/led-board' as any)} style={styles.boardLink} testID="gold-rate-led-board">
+          <Ionicons name="tv-outline" size={18} color={colors.brandSecondary} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.boardLinkTitle}>LED rate board</Text>
+            <Text style={styles.boardLinkSub}>Show today's rate on the shop's LED display</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.mutedText} />
+        </Pressable>
+
         {today?.error ? (
           <View style={[styles.infoBox, styles.infoBoxWarn]}>
             <Ionicons name="alert-circle-outline" size={16} color={colors.onWarning} />
@@ -251,6 +269,9 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   infoBoxWarn: { backgroundColor: colors.warning, borderColor: colors.warning },
   infoText: { color: colors.onSurfaceTertiary, fontSize: 12, flex: 1 },
   hint: { color: colors.mutedText, fontSize: 12, marginBottom: spacing.md },
+  boardLink: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.md },
+  boardLinkTitle: { color: colors.onSurface, fontSize: 14, fontWeight: '700' },
+  boardLinkSub: { color: colors.mutedText, fontSize: 12, marginTop: 2 },
   fieldLabel: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '600', marginBottom: 6 },
   colLabel: { color: colors.mutedText, fontSize: 11, fontWeight: '600', marginBottom: 4 },
   row2: { flexDirection: 'row', gap: spacing.sm },

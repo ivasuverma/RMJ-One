@@ -241,6 +241,8 @@ async def run_fetch_and_store() -> dict:
                 doc['confirmed'] = True
                 doc['sent_at'] = now_utc().isoformat()
                 logger.info('gold rate auto-sent to channel')
+                from routers.led_board import push_after_confirm
+                await push_after_confirm(gold_rate, silver_rate, 'auto_send')
             else:
                 logger.warning('gold rate auto-send failed — left unsent for manual review')
     else:

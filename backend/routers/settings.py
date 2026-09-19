@@ -331,4 +331,7 @@ async def send_gold_rate(body: GoldRateSendIn, user: dict = Depends(require_admi
         update['silver_rate'] = body.silver_rate
     await db.settings.update_one({'id': 'gold_rate_today'}, {'$set': update}, upsert=True)
     await log_audit(user, 'settings.gold_rate.send', 'settings', 'gold_rate_today', message[:60])
+    # The same confirmation also updates the LED board (if switched on); a board problem never fails the send.
+    from routers.led_board import push_after_confirm
+    await push_after_confirm(body.gold_rate, body.silver_rate)
     return {'ok': True}
