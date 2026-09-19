@@ -92,8 +92,8 @@ export default function GoogleDriveScreen() {
         <Pressable onPress={() => router.push('/settings/backup' as any)} style={styles.backupRow} testID="drive-backup-link">
           <Ionicons name="save-outline" size={20} color={colors.brandSecondary} />
           <View style={{ flex: 1 }}>
-            <Text style={styles.backupTitle}>Daily database backup</Text>
-            <Text style={styles.backupSub}>Automatic backup of all data to Drive</Text>
+            <Text style={styles.backupTitle}>Database backups in Drive</Text>
+            <Text style={styles.backupSub}>Older copies only — the daily backup now runs on the server</Text>
           </View>
           <Ionicons name="chevron-forward" size={18} color={colors.mutedText} />
         </Pressable>

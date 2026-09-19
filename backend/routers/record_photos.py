@@ -289,7 +289,7 @@ async def record_photo_worker():
                         await db.record_photos.update_one({'id': doc['id']}, {'$set': {'upload_state': 'failed', 'upload_error': err}})
                         if 'invalid_grant' in err or 'invalid_client' in err:
                             await _notify_system_health('drive_disconnected', 'Google Drive disconnected',
-                                                         'Google Drive needs to be reconnected — photo uploads and backups are paused (Settings > Google Drive).', '/settings/google-drive')
+                                                         'Google Drive needs to be reconnected — photo uploads are paused (Settings > Google Drive).', '/settings/google-drive')
                         else:
                             await _notify_system_health('drive_upload_failed', 'Photo upload failed',
                                                          f'A record photo failed to upload to Google Drive: {err}', '/settings/google-drive')

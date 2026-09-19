@@ -24,7 +24,7 @@ async def backup_status(_: dict = Depends(require_owner)):
         except Exception:
             recent = []
     return {
-        'auto_enabled': cfg.get('auto_enabled', True) is not False,
+        'auto_enabled': cfg.get('auto_enabled', False) is True,
         'drive_connected': drive_connected,
         'last_at': cfg.get('last_at'),
         'last_file': cfg.get('last_file'),

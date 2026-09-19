@@ -90,7 +90,9 @@ async def backup_loop() -> None:
     while True:
         try:
             cfg = await db.settings.find_one({'id': 'backup'}, {'_id': 0}) or {}
-            if cfg.get('auto_enabled', True) is not False:
+            # Off by default: the nightly database backup is now made on the server itself
+            # (local dump + OneDrive, see ops/backup); Google Drive is for documents and photos.
+            if cfg.get('auto_enabled', False) is True:
                 import drive_service
                 dcfg = await drive_service.get_config()
                 if dcfg and dcfg.get('refresh_token'):

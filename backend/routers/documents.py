@@ -981,7 +981,7 @@ async def upload_worker():
                         _bump()
                         if 'invalid_grant' in err or 'invalid_client' in err:
                             await _notify_system_health('drive_disconnected', 'Google Drive disconnected',
-                                                         'Google Drive needs to be reconnected — document uploads and backups are paused (Settings > Google Drive).', '/settings/google-drive')
+                                                         'Google Drive needs to be reconnected — document and photo uploads are paused (Settings > Google Drive).', '/settings/google-drive')
                         else:
                             await _notify_system_health('drive_upload_failed', 'Document upload failed',
                                                          f'A document failed to upload to Google Drive: {err}', '/settings/google-drive')

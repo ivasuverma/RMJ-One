@@ -84,7 +84,7 @@ export default function BackupScreen() {
           <ActivityIndicator color={colors.brandPrimary} style={{ marginTop: 40 }} />
         ) : (
           <>
-            <Text style={styles.intro}>A full copy of the whole database is uploaded to Google Drive (folder “RMJ One Backups”). Runs automatically each day and keeps the last {status.retention}.</Text>
+            <Text style={styles.intro}>The server makes the daily database backup itself (a local copy plus OneDrive), not Google Drive — Google Drive is used for documents and photos only. Copies already in Drive can still be restored here, and “Back up now” makes a one-off copy in Drive.</Text>
 
             {!status.drive_connected && (
               <View style={styles.warn}>
