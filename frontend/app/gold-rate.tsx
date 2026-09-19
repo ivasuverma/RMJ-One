@@ -59,7 +59,8 @@ export default function GoldRateScreen() {
   const [customText, setCustomText] = useState('');
   const [customPreview, setCustomPreview] = useState<{ text: string | null; error: string | null } | null>(null);
   const previewSeq = useRef(0);
-  const [led, setLed] = useState<{ config: { enabled: boolean; auto_push: boolean }; status: { last_push_at: string | null; last_ok: boolean | null; last_error: string | null } } | null>(null);
+  const [led, setLed] = useState<{ config: { enabled: boolean; auto_push: boolean }; templates?: { id: string; name: string; text: string }[] } | null>(null);
+  const [saveName, setSaveName] = useState<string | null>(null);   // non-null while the "save as template" name box is open
 
   // `currentTemplate` is passed explicitly rather than read from the
   // `template` state: this can run in the same tick as setTemplate() (see
@@ -122,6 +123,20 @@ export default function GoldRateScreen() {
     } catch (e: any) { toast.error(e?.detail || 'Could not update the board'); }
     finally { setBusy(null); api.get<any>('/led-board').then(setLed).catch(() => {}); }
   };
+  const saveTemplate = async () => {
+    try {
+      const r = await api.post<{ items: { id: string; name: string; text: string }[] }>('/led-board/templates', { name: saveName || '', text: customText });
+      setLed((cur) => (cur ? { ...cur, templates: r.items } : cur));
+      toast.success(`Saved template “${(saveName || '').trim()}”`);
+      setSaveName(null);
+    } catch (e: any) { toast.error(e?.detail || 'Could not save the template'); }
+  };
+  const deleteTemplate = (t: { id: string; name: string }) => confirmAction('Delete template?', `“${t.name}” will be removed.`, 'Delete', async () => {
+    try {
+      const r = await api.del<{ items: { id: string; name: string; text: string }[] }>(`/led-board/templates/${t.id}`);
+      setLed((cur) => (cur ? { ...cur, templates: r?.items ?? [] } : cur));
+    } catch (e: any) { toast.error(e?.detail || 'Could not delete'); }
+  });
   const addChip = (c: string) => setCustomText((t) => (t && !t.endsWith(' ') ? `${t} ${c}` : `${t}${c}`));
 
   const refetch = async () => {
@@ -215,6 +230,19 @@ export default function GoldRateScreen() {
           <View style={styles.customCard} testID="gold-rate-led-custom">
             <Text style={styles.boardLinkTitle}>Custom message for the LED board</Text>
             <Text style={styles.boardLinkSub}>Type any text. Tap a placeholder to add today's value. It replaces what the board shows until the next rate update.</Text>
+            {(led.templates || []).length ? (
+              <View>
+                <Text style={styles.boardLinkSub}>Saved templates — tap to use, ✕ to delete</Text>
+                <View style={[styles.chipRow, { marginTop: 4 }]}>
+                  {(led.templates || []).map((t) => (
+                    <View key={t.id} style={styles.tplChip} testID={`led-template-${t.id}`}>
+                      <Pressable onPress={() => setCustomText(t.text)} hitSlop={4}><Text style={styles.chipText}>{t.name}</Text></Pressable>
+                      <Pressable onPress={() => deleteTemplate(t)} hitSlop={8}><Ionicons name="close" size={13} color={colors.mutedText} /></Pressable>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            ) : null}
             <TextInput value={customText} onChangeText={setCustomText} placeholder="e.g. 22K {gold_22k}  18K {gold_18k}" placeholderTextColor={colors.mutedText}
               autoCapitalize="characters" style={[styles.input, { marginTop: spacing.sm, marginBottom: 6 }]} testID="gold-rate-led-custom-text" />
             <View style={styles.chipRow}>
@@ -227,6 +255,17 @@ export default function GoldRateScreen() {
                 ? <Text style={styles.customErr}>{customPreview.error}</Text>
                 : <Text style={styles.customPreview}>Board will show: <Text style={{ fontWeight: '800' }}>{customPreview.text}</Text></Text>
             ) : null}
+            {saveName === null ? (
+              <Pressable onPress={() => setSaveName('')} disabled={!customText.trim()} style={{ opacity: customText.trim() ? 1 : 0.4 }} testID="led-template-save-open">
+                <Text style={styles.link}>Save this text as a template</Text>
+              </Pressable>
+            ) : (
+              <View style={styles.row2}>
+                <TextInput value={saveName} onChangeText={setSaveName} placeholder="Template name" placeholderTextColor={colors.mutedText} style={[styles.input, { flex: 1, marginBottom: 0 }]} testID="led-template-name" />
+                <Pressable onPress={saveTemplate} disabled={!saveName.trim()} style={[styles.boardSave, !saveName.trim() && { opacity: 0.5 }]} testID="led-template-save"><Text style={styles.chipText}>Save</Text></Pressable>
+                <Pressable onPress={() => setSaveName(null)} hitSlop={8} style={{ justifyContent: 'center' }}><Ionicons name="close" size={18} color={colors.mutedText} /></Pressable>
+              </View>
+            )}
             <Pressable onPress={pushCustom} disabled={busy === 'led' || !led.config.enabled || !customPreview?.text}
               style={[styles.altBtn, styles.autoBtn, (busy === 'led' || !led.config.enabled || !customPreview?.text) && { opacity: 0.5 }]} testID="gold-rate-led-custom-push">
               {busy === 'led' ? <ActivityIndicator color={colors.onBrandPrimary} size="small" /> : <><Ionicons name="cloud-upload-outline" size={15} color={colors.onBrandPrimary} /><Text style={[styles.altBtnText, styles.autoBtnText]}>Push to board</Text></>}
@@ -306,6 +345,9 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   customCard: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.md, gap: 6 },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 4 },
   chip: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: radius.pill, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
+  tplChip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 6, borderRadius: radius.pill, backgroundColor: colors.brandTertiary, borderWidth: 1, borderColor: colors.brandPrimary },
+  boardSave: { paddingHorizontal: 14, justifyContent: 'center', borderRadius: radius.md, borderWidth: 1, borderColor: colors.brandSecondary },
+  link: { color: colors.brandPrimary, fontSize: 12.5, fontWeight: '600' },
   chipText: { color: colors.brandSecondary, fontSize: 12, fontWeight: '700' },
   customPreview: { color: colors.onSurface, fontSize: 13, marginTop: 2 },
   customErr: { color: colors.onError, fontSize: 12, marginTop: 2 },

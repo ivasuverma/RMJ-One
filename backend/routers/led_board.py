@@ -18,6 +18,7 @@ import asyncio
 import logging
 import re
 import time
+import uuid
 from datetime import datetime
 from typing import Optional
 
@@ -232,6 +233,51 @@ async def _extra(r: Optional[dict]) -> dict:
     return await fields_for(r['gold'], r['silver']) if r else {}
 
 
+class LedTemplateIn(BaseModel):
+    name: str
+    text: str
+
+
+MAX_TEMPLATES = 30
+
+
+async def _templates() -> list:
+    d = await db.settings.find_one({'id': 'led_board_templates'}, {'_id': 0}) or {}
+    return d.get('items') or []
+
+
+@router.post('/led-board/templates')
+async def led_template_save(body: LedTemplateIn, user: dict = Depends(require_admin_or_module_right('gold_rate', 'edit'))):
+    """Save a custom message as a reusable template (same name = update it)."""
+    name = body.name.strip()[:40]
+    if not name:
+        raise HTTPException(status_code=400, detail='Give the template a name')
+    text = _check_template(body.text)
+    items = await _templates()
+    existing = next((i for i in items if i['name'].lower() == name.lower()), None)
+    if existing:
+        existing['name'], existing['text'] = name, text
+    else:
+        if len(items) >= MAX_TEMPLATES:
+            raise HTTPException(status_code=400, detail=f'You can keep up to {MAX_TEMPLATES} templates — delete one first')
+        items.append({'id': uuid.uuid4().hex[:12], 'name': name, 'text': text})
+    await db.settings.update_one({'id': 'led_board_templates'}, {'$set': {'id': 'led_board_templates', 'items': items}}, upsert=True)
+    await log_audit(user, 'led_board.template_save', 'settings', 'led_board_templates', f'{name}: {text}'[:120])
+    return {'items': items}
+
+
+@router.delete('/led-board/templates/{tid}')
+async def led_template_delete(tid: str, user: dict = Depends(require_admin_or_module_right('gold_rate', 'edit'))):
+    items = await _templates()
+    gone = next((i for i in items if i['id'] == tid), None)
+    if not gone:
+        raise HTTPException(status_code=404, detail='Template not found')
+    items = [i for i in items if i['id'] != tid]
+    await db.settings.update_one({'id': 'led_board_templates'}, {'$set': {'id': 'led_board_templates', 'items': items}}, upsert=True)
+    await log_audit(user, 'led_board.template_delete', 'settings', 'led_board_templates', gone['name'])
+    return {'items': items}
+
+
 @router.get('/led-board')
 async def led_board_state(_: dict = Depends(require_staff_or_module('gold_rate'))):
     cfg = await get_config()
@@ -239,7 +285,7 @@ async def led_board_state(_: dict = Depends(require_staff_or_module('gold_rate')
     return {
         'config': cfg, 'status': await get_status(), 'drivers': list(DRIVER_CHOICES),
         'today': r, 'preview': render_text(cfg['template'], r['gold'], r['silver'], extra=await _extra(r)) if r else None,
-        'default_template': DEFAULT_TEMPLATE,
+        'default_template': DEFAULT_TEMPLATE, 'templates': await _templates(),
     }
 
 
