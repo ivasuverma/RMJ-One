@@ -14,6 +14,7 @@ import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { Sheet, useToast } from '@/src/components/ui';
 import { QuickDocCapture } from '@/src/components/QuickDocCapture';
+import { extractPdfJpegs } from '@/src/utils/imagesToPdf';
 import { UploadQueueBadge } from '@/src/components/UploadQueueBadge';
 
 type Doc = {
@@ -396,6 +397,23 @@ function QuickView({ doc, categoryLabel, token, fileUri, onClose, onRecord, canR
   const insets = useSafeAreaInsets();
   const [imgLoaded, setImgLoaded] = useState(false);
   useEffect(() => { setImgLoaded(false); }, [doc?.id]);
+  // A merged multi-photo document: pull its photos out of the PDF and show them as a scrolling list.
+  const [pagePics, setPagePics] = useState<string[] | null>(null);
+  const multi = !!doc && (doc.pages || 0) > 1 && !!token;
+  useEffect(() => {
+    setPagePics(null);
+    if (!multi || !doc) return;
+    let dead = false; let urls: string[] = [];
+    (async () => {
+      try {
+        const r = await fetch(`${fileUri(doc.id)}?full=1`, { headers: { Authorization: `Bearer ${token}` } });
+        const blobs = extractPdfJpegs(new Uint8Array(await r.arrayBuffer()));
+        urls = blobs.map((b) => URL.createObjectURL(b));
+        if (!dead) setPagePics(urls); else urls.forEach((u) => URL.revokeObjectURL(u));
+      } catch { if (!dead) setPagePics([]); }
+    })();
+    return () => { dead = true; urls.forEach((u) => URL.revokeObjectURL(u)); };
+  }, [doc?.id, multi]);
   const idx = doc ? list.findIndex((x) => x.id === doc.id) : -1;
   const go = (dir: number) => {
     const n = idx + dir;
@@ -422,8 +440,14 @@ function QuickView({ doc, categoryLabel, token, fileUri, onClose, onRecord, canR
             : <View style={styles.qvIconBtn} />}
         </View>
         <View style={styles.qvImgWrap} {...pan.panHandlers}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => !isImage && onOpenFile(doc)} />
-          {isImage && token
+          {!multi && <Pressable style={StyleSheet.absoluteFill} onPress={() => !isImage && onOpenFile(doc)} />}
+          {multi && pagePics && pagePics.length > 0
+            ? <ScrollView style={StyleSheet.absoluteFill} contentContainerStyle={{ padding: 8, gap: 8 }} testID="qv-pages">
+                {pagePics.map((u, i) => <Image key={u} source={{ uri: u }} style={{ width: '100%', aspectRatio: 0.75 }} contentFit="contain" />)}
+              </ScrollView>
+            : multi && !pagePics
+            ? <ActivityIndicator color="#fff" size="large" />
+            : isImage && token
             ? <Image key={doc.id} source={{ uri: `${fileUri(doc.id)}?full=1`, headers: { Authorization: `Bearer ${token}` } }} placeholder={{ uri: `${fileUri(doc.id)}?thumb=1`, headers: { Authorization: `Bearer ${token}` } }} placeholderContentFit="contain" transition={150} style={styles.qvImg} contentFit="contain" onLoadEnd={() => setImgLoaded(true)} />
             : <View style={{ alignItems: 'center', gap: 10 }}>
                 {!opening && !!doc.pages && token && (

@@ -92,3 +92,23 @@ export async function blobsToPdf(blobs: Blob[], maxSide = 1600, quality = 0.82):
   const pdf = buildPdf(pages);
   return new Blob([pdf as BlobPart], { type: 'application/pdf' });
 }
+
+/**
+ * Inverse of buildPdf for PDFs made by it: pulls the embedded JPEG of every page
+ * back out, so a merged multi-photo document can be shown as a scrolling list of
+ * photos instead of needing a PDF viewer. Returns [] for any other PDF.
+ */
+export function extractPdfJpegs(pdf: Uint8Array): Blob[] {
+  // latin1 view keeps byte offsets == string offsets
+  let text = '';
+  for (let i = 0; i < pdf.length; i += 0x8000) text += String.fromCharCode.apply(null, pdf.subarray(i, i + 0x8000) as any);
+  const out: Blob[] = [];
+  const re = /\/Subtype \/Image[^>]*?\/Filter \/DCTDecode \/Length (\d+) >>\nstream\n/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    const start = m.index + m[0].length;
+    const len = parseInt(m[1], 10);
+    if (start + len <= pdf.length) out.push(new Blob([pdf.slice(start, start + len) as BlobPart], { type: 'image/jpeg' }));
+  }
+  return out;
+}
