@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, RefreshControl, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,6 +9,7 @@ import { useToast } from '@/src/components/ui';
 import { istDate } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { LedgerFilter, filterQuery, type LedgerFilterValue } from '@/src/components/LedgerFilter';
 
 type MetalType = 'in' | 'out' | 'loss' | 'opening';
 type MetalEntry = {
@@ -59,17 +60,21 @@ export default function MetalLedgerScreen() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [filter, setFilter] = useState<LedgerFilterValue>({ q: '', from: '', to: '' });
+  const qs = filterQuery(filter);
 
   const load = useCallback(async () => {
     try {
-      const res = await api.get<MetalLedgerRes>('/metal-ledger');
+      const res = await api.get<MetalLedgerRes>(`/metal-ledger${qs ? `?${qs}` : ''}`);
       setEntries(res.entries); setNextCursor(res.next_cursor); setByKarigar(res.by_karigar);
       setTotalIn(res.total_in); setTotalOut(res.total_out); setTotalLoss(res.total_loss); setBalance(res.balance);
       setOpening(res.opening); setRecon(res.reconciliation);
     } catch (_e) { setEntries([]); }
     finally { setLoading(false); setRefreshing(false); }
-  }, []);
+  }, [qs]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
+  const first = useRef(true);
+  useEffect(() => { if (first.current) { first.current = false; return; } const t = setTimeout(load, 350); return () => clearTimeout(t); }, [qs]);
 
   const saveOpening = async () => {
     const w = parseFloat(openingText);
@@ -84,7 +89,7 @@ export default function MetalLedgerScreen() {
     if (!nextCursor || loadingMore) return;
     setLoadingMore(true);
     try {
-      const res = await api.get<MetalLedgerRes>(`/metal-ledger?cursor=${encodeURIComponent(nextCursor)}`);
+      const res = await api.get<MetalLedgerRes>(`/metal-ledger?cursor=${encodeURIComponent(nextCursor)}${qs ? `&${qs}` : ''}`);
       setEntries((prev) => [...prev, ...res.entries]);
       setNextCursor(res.next_cursor);
     } catch (_e) { /* keep what's already loaded */ }
@@ -100,6 +105,8 @@ export default function MetalLedgerScreen() {
         <Text style={styles.title}>Metal Ledger</Text>
         <View style={{ width: 40 }} />
       </View>
+
+      <LedgerFilter value={filter} onChange={setFilter} placeholder="Search note, tag or karigar" />
 
       {loading ? (
         <View style={styles.loader}><ActivityIndicator color={colors.brandPrimary} /></View>

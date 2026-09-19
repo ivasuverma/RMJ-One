@@ -13,6 +13,7 @@ import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { useAuth } from '@/src/auth/AuthContext';
 import { ErrorState, Sheet } from '@/src/components/ui';
+import { StatementSheet } from '@/src/components/StatementSheet';
 
 type Karigar = { id: string; name: string; mobile: string; is_employee: boolean };
 type Entry = {
@@ -44,6 +45,7 @@ export default function KarigarLedgerScreen() {
   const [karigar, setKarigar] = useState<Karigar | null>(null);
   const [entries, setEntries] = useState<Entry[]>([]);
   const [cancelled, setCancelled] = useState<Entry[]>([]);
+  const [stmtOpen, setStmtOpen] = useState(false);
   // Cancel / edit sheet for one entry — both need a reason, nothing is ever erased.
   const [act, setAct] = useState<{ entry: Entry; mode: 'cancel' | 'edit' } | null>(null);
   const [actReason, setActReason] = useState('');
@@ -265,6 +267,9 @@ export default function KarigarLedgerScreen() {
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
         <Text style={styles.title} numberOfLines={1}>{karigar.name}</Text>
+        <Pressable onPress={() => setStmtOpen(true)} style={styles.iconBtn} testID="open-statement-btn" hitSlop={12}>
+          <Ionicons name="document-text-outline" size={20} color={colors.onSurface} />
+        </Pressable>
         <Pressable onPress={openSettle} style={styles.iconBtn} testID="open-settle-btn" hitSlop={12}>
           <Ionicons name="swap-horizontal-outline" size={20} color={colors.onSurface} />
         </Pressable>
@@ -306,6 +311,11 @@ export default function KarigarLedgerScreen() {
                     <Text style={styles.jobCode}>{job.itemCode}</Text>
                     <Text style={styles.jobMeta}>{fineLabel}{amtLabel}</Text>
                   </View>
+                  {job.entries.some((e) => e.item_id) ? (
+                    <Pressable onPress={() => router.push(`/jobs/${job.entries.find((e) => e.item_id)!.item_id}` as any)} hitSlop={8} testID={`job-statement-${job.itemId}`}>
+                      <Ionicons name="stats-chart-outline" size={18} color={colors.brandSecondary} />
+                    </Pressable>
+                  ) : null}
                   {job.slipPhoto ? (
                     <Pressable onPress={() => setPreviewPhoto(job.slipPhoto!)} hitSlop={8} testID={`job-photo-${job.itemId}`}>
                       <Image source={{ uri: job.slipPhoto }} style={styles.jobThumb} />
@@ -349,6 +359,8 @@ export default function KarigarLedgerScreen() {
           {previewPhoto ? <Image source={{ uri: previewPhoto }} style={styles.previewImage} resizeMode="contain" /> : null}
         </Pressable>
       </Modal>
+
+      <StatementSheet visible={stmtOpen} onClose={() => setStmtOpen(false)} path={`/karigars/${id}/statement/pdf`} title={`Statement — ${karigar.name}`} filename={`karigar-${karigar.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`} />
 
       <Sheet visible={!!act} onClose={() => setAct(null)} title={act?.mode === 'edit' ? 'Correct this entry' : 'Cancel this entry'} testID="entry-act-sheet">
         {act ? (

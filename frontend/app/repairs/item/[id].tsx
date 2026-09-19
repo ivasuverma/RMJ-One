@@ -306,13 +306,18 @@ export default function RepairItemDetailScreen() {
             <MetaCell icon="cash-outline" label="Labour" value={`₹${(item.status === 'delivered' ? (item.bill_labour_charge ?? item.labour_charge) : item.labour_charge).toFixed(0)}`} colors={colors} />
             <MetaCell icon="calendar-outline" label="Due" value={item.due_date || '—'} colors={colors} />
             {item.karigar_name && <MetaCell icon="hammer-outline" label="Karigar" value={item.karigar_name} colors={colors} />}
-            {item.billed_amount != null && <MetaCell icon="receipt-outline" label="Billed" value={`₹${item.billed_amount.toFixed(0)} · ${item.payment_mode}`} colors={colors} />}
+            {item.billed_amount != null && <MetaCell icon="receipt-outline" label="Billed" value={`₹${item.billed_amount.toFixed(0)}`} colors={colors} />}
             {item.delivered_at && <MetaCell icon="checkmark-done-outline" label="Delivered" value={`${istDate(item.delivered_at)}${item.delivered_by ? ` · by ${item.delivered_by}` : ''}`} colors={colors} />}
             {item.updated_by && <MetaCell icon="pencil-outline" label="Last by" value={item.updated_by} colors={colors} />}
             <MetaCell icon="person-outline" label="Customer" value={`${item.customer_name} · ${item.order_no}`} colors={colors} wide />
             {item.weight_diff != null && <MetaCell icon="swap-vertical-outline" label="Weight diff" value={`${item.weight_diff >= 0 ? '+' : ''}${item.weight_diff.toFixed(3)}g${item.fine_weight_diff != null ? ` (fine ${item.fine_weight_diff >= 0 ? '+' : ''}${item.fine_weight_diff.toFixed(3)}g)` : ''}`} colors={colors} wide />}
             {item.created_by && <MetaCell icon="person-add-outline" label="Intake by" value={`${item.created_by}${item.created_at ? ` · ${istDateTime(item.created_at)}` : ''}`} colors={colors} wide />}
           </View>
+
+          <Pressable onPress={() => router.push(`/jobs/${item.id}` as any)} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 10 }} testID="job-statement-link">
+            <Ionicons name="stats-chart-outline" size={18} color={colors.brandSecondary} />
+            <Text style={{ color: colors.brandSecondary, fontWeight: '700', fontSize: 14 }}>Job statement — gold, labour, bill and result</Text>
+          </Pressable>
 
           <Modal visible={form === 'edit'} animationType="slide" onRequestClose={() => setForm(null)}>
             <SafeAreaView style={styles.root} edges={['top']} testID="edit-form">

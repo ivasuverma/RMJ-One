@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -7,6 +7,7 @@ import { api } from '@/src/api/client';
 import { istDate } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { LedgerFilter, filterQuery, type LedgerFilterValue } from '@/src/components/LedgerFilter';
 
 type LossEntry = {
   id: string; karigar_id: string; karigar_name: string; weight: number; fine_weight: number | null;
@@ -36,22 +37,27 @@ export default function LossLedgerScreen() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [filter, setFilter] = useState<LedgerFilterValue>({ q: '', from: '', to: '' });
+  const qs = filterQuery(filter);
 
   const load = useCallback(async () => {
     try {
-      const res = await api.get<LossLedgerRes>('/karigars/loss-ledger');
+      const res = await api.get<LossLedgerRes>(`/karigars/loss-ledger${qs ? `?${qs}` : ''}`);
       setEntries(res.entries); setNextCursor(res.next_cursor); setByKarigar(res.by_karigar);
       setTotalWeight(res.total_weight); setTotalFine(res.total_fine_weight);
     } catch (_e) { setEntries([]); }
     finally { setLoading(false); setRefreshing(false); }
-  }, []);
+  }, [qs]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
+  // Re-run the search shortly after the last keystroke (skipping the very first render, which the focus effect handles).
+  const first = useRef(true);
+  useEffect(() => { if (first.current) { first.current = false; return; } const t = setTimeout(load, 350); return () => clearTimeout(t); }, [qs]);
 
   const loadMore = async () => {
     if (!nextCursor || loadingMore) return;
     setLoadingMore(true);
     try {
-      const res = await api.get<LossLedgerRes>(`/karigars/loss-ledger?cursor=${encodeURIComponent(nextCursor)}`);
+      const res = await api.get<LossLedgerRes>(`/karigars/loss-ledger?cursor=${encodeURIComponent(nextCursor)}${qs ? `&${qs}` : ''}`);
       setEntries((prev) => [...prev, ...res.entries]);
       setNextCursor(res.next_cursor);
     } catch (_e) { /* keep what's already loaded */ }
@@ -67,6 +73,8 @@ export default function LossLedgerScreen() {
         <Text style={styles.title}>Loss Ledger</Text>
         <View style={{ width: 40 }} />
       </View>
+
+      <LedgerFilter value={filter} onChange={setFilter} placeholder="Search note, tag or karigar" />
 
       {loading ? (
         <View style={styles.loader}><ActivityIndicator color={colors.brandPrimary} /></View>

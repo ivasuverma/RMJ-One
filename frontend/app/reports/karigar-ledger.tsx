@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -21,6 +21,7 @@ export default function KarigarLedgerPickerScreen() {
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [karigars, setKarigars] = useState<Karigar[]>([]);
   const [onlyBalance, setOnlyBalance] = useState(true);
+  const [search, setSearch] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   // A failed load must not render as "nothing is owed" — gold and cash
   // balances are exactly what someone opens this screen to check.
@@ -39,7 +40,9 @@ export default function KarigarLedgerPickerScreen() {
 
   const hasBalance = (k: Karigar) => !!k.fine_weight_balance || !!k.amount_due;
   const withBalanceCount = karigars.filter(hasBalance).length;
+  const needle = search.trim().toLowerCase();
   const visible = (onlyBalance ? karigars.filter(hasBalance) : karigars)
+    .filter((k) => !needle || `${k.name} ${(k as any).mobile || ''}`.toLowerCase().includes(needle))
     .slice()
     .sort((a, b) => Math.abs(b.fine_weight_balance || 0) - Math.abs(a.fine_weight_balance || 0));
 
@@ -53,6 +56,13 @@ export default function KarigarLedgerPickerScreen() {
         <Pressable onPress={() => router.push('/karigars' as any)} style={[styles.iconBtn, styles.addBtn]} testID="karigar-manage-btn" hitSlop={12}>
           <Ionicons name="add" size={22} color={colors.onBrandPrimary} />
         </Pressable>
+      </View>
+
+      <View style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.md }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, paddingHorizontal: spacing.md }}>
+          <Ionicons name="search-outline" size={16} color={colors.mutedText} />
+          <TextInput testID="karigar-ledger-search" value={search} onChangeText={setSearch} placeholder="Search by name or mobile" placeholderTextColor={colors.mutedText} style={{ flex: 1, color: colors.onSurface, fontSize: 14, paddingVertical: 10 }} />
+        </View>
       </View>
 
       <View style={styles.filterRow}>

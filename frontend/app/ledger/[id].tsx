@@ -14,6 +14,7 @@ import { istDisplayDate } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { ErrorState } from '@/src/components/ui';
+import { StatementSheet } from '@/src/components/StatementSheet';
 
 const fmtINR = (n: number) => `₹${(Math.abs(n) || 0).toLocaleString('en-IN')}`;
 const fmtDate = (s?: string) => istDisplayDate(s);
@@ -58,6 +59,7 @@ export default function EmployeeLedger() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [editing, setEditing] = useState<any | null>(null);
+  const [stmtOpen, setStmtOpen] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -86,6 +88,11 @@ export default function EmployeeLedger() {
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
         <Text style={styles.title} numberOfLines={1}>{headerTitle}</Text>
+        {!isScoped ? (
+          <Pressable onPress={() => setStmtOpen(true)} style={styles.iconBtn} testID="employee-statement-btn" hitSlop={12}>
+            <Ionicons name="document-text-outline" size={20} color={colors.onSurface} />
+          </Pressable>
+        ) : null}
         {canAdd ? (
           <Pressable
             onPress={() => router.push({
@@ -175,6 +182,7 @@ export default function EmployeeLedger() {
           onSaved={() => { setEditing(null); load(); }}
         />
       )}
+      <StatementSheet visible={stmtOpen} onClose={() => setStmtOpen(false)} path={`/employees/${id}/statement/pdf`} title="Ledger statement" filename="employee-ledger" />
     </SafeAreaView>
   );
 }

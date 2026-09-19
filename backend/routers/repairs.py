@@ -142,6 +142,7 @@ async def get_customer(cid: str, _: dict = Depends(require_ledger_access('custom
     if not c: raise HTTPException(status_code=404, detail='Customer not found')
     orders = await db.repair_orders.find({'customer_id': cid}, {'_id': 0}).sort('created_at', -1).to_list(200)
     out = []
+    bills = []
     for o in orders:
         items = await db.repair_items.find({'order_id': o['id']}, {'_id': 0}).to_list(200)
         # Skip orders whose only item(s) were since deleted (e.g. an unissued tag
@@ -149,7 +150,15 @@ async def get_customer(cid: str, _: dict = Depends(require_ledger_access('custom
         if not items:
             continue
         out.append({**o, 'item_count': len(items), 'status': _order_status(items)})
-    return {'customer': c, 'orders': out}
+        for it in items:
+            bills.append({
+                'id': it['id'], 'item_code': it.get('item_code'), 'description': it.get('description') or '', 'status': it.get('status'),
+                'billed_amount': it.get('billed_amount'), 'gross_weight': it.get('gross_weight'),
+                'created_at': it.get('created_at'), 'delivered_at': it.get('delivered_at'),
+            })
+    bills.sort(key=lambda b: b.get('created_at') or '', reverse=True)
+    # Payments are entered in the Cash Book, not in the repair module, so this is what the customer has been BILLED.
+    return {'customer': c, 'orders': out, 'bills': bills, 'billed_total': round(sum(float(b['billed_amount'] or 0) for b in bills), 2)}
 
 
 @router.post('/customers')
@@ -1464,8 +1473,31 @@ async def repair_item_issue_slip_print(item_id: str, user: dict = Depends(requir
 
 
 # ---------------- Repairs: Loss Ledger ----------------
+async def _ledger_filter(q: Optional[str], date_from: Optional[str], date_to: Optional[str]) -> dict:
+    """Mongo filter for the Loss / Metal ledger screens: a date range on created_at and free text over the
+    note, tag code and karigar name."""
+    f: dict = {}
+    rng: dict = {}
+    if date_from:
+        if not re.fullmatch(r'\d{4}-\d{2}-\d{2}', date_from):
+            raise HTTPException(status_code=400, detail='from must be a date like 2026-09-30')
+        rng['$gte'] = date_from
+    if date_to:
+        if not re.fullmatch(r'\d{4}-\d{2}-\d{2}', date_to):
+            raise HTTPException(status_code=400, detail='to must be a date like 2026-09-30')
+        rng['$lte'] = f'{date_to}T23:59:59.999999+00:00'
+    if rng:
+        f['created_at'] = rng
+    if q and q.strip():
+        rx = {'$regex': re.escape(q.strip()), '$options': 'i'}
+        ids = [k['id'] async for k in db.karigars.find({'name': rx}, {'_id': 0, 'id': 1})]
+        f['$or'] = [{'note': rx}, {'item_code': rx}, {'karigar_name': rx}] + ([{'karigar_id': {'$in': ids}}] if ids else [])
+    return f
+
+
 @router.get('/karigars/loss-ledger')
-async def loss_ledger(cursor: Optional[str] = None, limit: int = 50, _: dict = Depends(require_ledger_access('karigar_ledger'))):
+async def loss_ledger(cursor: Optional[str] = None, limit: int = 50, q: Optional[str] = None, date_from: Optional[str] = None, date_to: Optional[str] = None,
+                      _: dict = Depends(require_ledger_access('karigar_ledger'))):
     """Every declared process-loss entry across all karigars, newest first —
     an audit trail of how much gold is being written off as loss, and by
     whom, that's otherwise buried inside individual receive transactions.
@@ -1473,9 +1505,10 @@ async def loss_ledger(cursor: Optional[str] = None, limit: int = 50, _: dict = D
     Keyset-paginated on created_at, same shape as GET /cash-ledger — totals
     come from a full-collection aggregation, independent of the page size."""
     limit = max(1, min(limit, 200))
-    query: dict = {'type': 'loss'}
+    filt = await _ledger_filter(q, date_from, date_to)
+    query: dict = {'type': 'loss', **filt}
     if cursor:
-        query['created_at'] = {'$lt': cursor}
+        query['created_at'] = {**filt.get('created_at', {}), '$lt': cursor}
     entries = await db.karigar_ledger.find(query, {'_id': 0}).sort('created_at', -1).to_list(limit + 1)
     next_cursor = entries[limit]['created_at'] if len(entries) > limit else None
     entries = entries[:limit]
@@ -1484,7 +1517,7 @@ async def loss_ledger(cursor: Optional[str] = None, limit: int = 50, _: dict = D
     for e in entries:
         e['karigar_name'] = names.get(e.get('karigar_id'), '')
     totals = [t async for t in db.karigar_ledger.aggregate([
-        {'$match': {'type': 'loss'}},
+        {'$match': {'type': 'loss', **filt}},
         {'$group': {'_id': None, 'weight': {'$sum': '$weight'}, 'fine_weight': {'$sum': '$fine_weight'}}},
     ])]
     total_weight = round((totals[0]['weight'] if totals else 0) or 0, 3)
@@ -1492,7 +1525,7 @@ async def loss_ledger(cursor: Optional[str] = None, limit: int = 50, _: dict = D
     # By-karigar rollup, same full-dataset treatment — used to be computed
     # client-side from `entries`, which broke once entries became paginated.
     by_karigar_agg = [k async for k in db.karigar_ledger.aggregate([
-        {'$match': {'type': 'loss'}},
+        {'$match': {'type': 'loss', **filt}},
         {'$group': {'_id': '$karigar_id', 'weight': {'$sum': '$weight'}, 'fine': {'$sum': '$fine_weight'}, 'count': {'$sum': 1}}},
         {'$sort': {'fine': -1}},
     ])]
@@ -1501,7 +1534,8 @@ async def loss_ledger(cursor: Optional[str] = None, limit: int = 50, _: dict = D
 
 
 @router.get('/metal-ledger')
-async def metal_ledger(cursor: Optional[str] = None, limit: int = 50, _: dict = Depends(require_ledger_access('karigar_ledger'))):
+async def metal_ledger(cursor: Optional[str] = None, limit: int = 50, q: Optional[str] = None, date_from: Optional[str] = None, date_to: Optional[str] = None,
+                       _: dict = Depends(require_ledger_access('karigar_ledger'))):
     """The shop's own gold stock — every in/out movement (the double-entry
     counter-side of karigar_ledger's gold_out/gold_in, posted by
     post_gold_ledger_entry in server.py) plus every declared loss, all in
@@ -1513,7 +1547,10 @@ async def metal_ledger(cursor: Optional[str] = None, limit: int = 50, _: dict = 
     GET /karigars/loss-ledger — totals come from a full-collection
     aggregation, independent of the page size."""
     limit = max(1, min(limit, 200))
-    query: dict = {'created_at': {'$lt': cursor}} if cursor else {}
+    filt = await _ledger_filter(q, date_from, date_to)
+    query: dict = dict(filt)
+    if cursor:
+        query['created_at'] = {**filt.get('created_at', {}), '$lt': cursor}
     entries = await db.metal_ledger.find(query, {'_id': 0}).sort('created_at', -1).to_list(limit + 1)
     next_cursor = entries[limit]['created_at'] if len(entries) > limit else None
     entries = entries[:limit]
@@ -1522,16 +1559,17 @@ async def metal_ledger(cursor: Optional[str] = None, limit: int = 50, _: dict = 
     for e in entries:
         if not e.get('karigar_name'):
             e['karigar_name'] = names.get(e.get('karigar_id'), '')
-    totals_agg = [t async for t in db.metal_ledger.aggregate([
-        {'$group': {'_id': '$type', 'weight': {'$sum': '$weight'}}},
-    ])]
-    totals = {t['_id']: round((t['weight'] or 0), 3) for t in totals_agg}
-    total_in = totals.get('in', 0)
-    total_out = totals.get('out', 0)
-    total_loss = totals.get('loss', 0)
+    async def _sum_by_type(match: dict) -> dict:
+        agg = [t async for t in db.metal_ledger.aggregate([{'$match': match}, {'$group': {'_id': '$type', 'weight': {'$sum': '$weight'}}}])]
+        return {t['_id']: round((t['weight'] or 0), 3) for t in agg}
+    full = await _sum_by_type({})                       # stock and the reconciliation always use the whole ledger
+    shown = await _sum_by_type(filt) if filt else full  # the tiles follow the search / date filter
+    total_in, total_out, total_loss = shown.get('in', 0), shown.get('out', 0), shown.get('loss', 0)
+    full_in, full_out = full.get('in', 0), full.get('out', 0)
     opening = await db.metal_ledger.find_one({'type': 'opening'}, {'_id': 0})
     opening_w = round((opening or {}).get('weight') or 0, 3)
     by_karigar_agg = [k async for k in db.metal_ledger.aggregate([
+        {'$match': filt},
         {'$group': {
             '_id': '$karigar_id',
             'in': {'$sum': {'$cond': [{'$eq': ['$type', 'in']}, '$weight', 0]}},
@@ -1551,8 +1589,9 @@ async def metal_ledger(cursor: Optional[str] = None, limit: int = 50, _: dict = 
         'total_in': total_in, 'total_out': total_out, 'total_loss': total_loss,
         # Stock = the physical count on the opening date + everything received - everything issued.
         'opening': {'weight': opening_w, 'date': (opening or {}).get('date'), 'note': (opening or {}).get('note', '')} if opening else None,
-        'balance': round(opening_w + total_in - total_out, 3),
-        'reconciliation': await _metal_reconciliation(total_in, total_out),
+        'balance': round(opening_w + full_in - full_out, 3),
+        'filtered': bool(filt),
+        'reconciliation': await _metal_reconciliation(full_in, full_out),
     }
 
 
