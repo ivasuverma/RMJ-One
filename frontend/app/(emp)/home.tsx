@@ -17,8 +17,7 @@ import { useTheme } from '@/src/theme/ThemeContext';
 import { PunchCaptureModal, PunchResult } from '@/src/components/PunchCaptureModal';
 import { UploadQueueBadge } from '@/src/components/UploadQueueBadge';
 import { AppSetupBanner } from '@/src/components/AppSetupBanner';
-import { QuickDocCapture } from '@/src/components/QuickDocCapture';
-import { FloatingCaptureButton } from '@/src/components/FloatingCaptureButton';
+import { employeeTabAccess } from '@/src/components/EmployeeTabBar';
 import { haptics } from '@/src/utils/haptics';
 import { useToast } from '@/src/components/ui';
 
@@ -70,7 +69,6 @@ export default function EmployeeHome() {
   const [showPunch, setShowPunch] = useState<null | 'check_in' | 'check_out'>(null);
   const [unread, setUnread] = useState(0);
   const [myTasks, setMyTasks] = useState<{ id: string; title: string; due_date?: string }[]>([]);
-  const [captureDoc, setCaptureDoc] = useState(false);
   const moduleTiles = MODULE_TILES.filter((m) => hasModule(m.key));
 
   const load = useCallback(async () => {
@@ -277,14 +275,13 @@ export default function EmployeeHome() {
               {!isRemote && <ActionCard icon="calendar-outline" label="Calendar" onPress={() => router.push('/(emp)/calendar' as any)} testID="action-calendar" />}
               {!isRemote && <ActionCard icon="airplane-outline" label="Leave request" onPress={() => router.push('/leaves')} testID="action-leave" />}
               <ActionCard icon="book-outline" label="My Ledger" onPress={() => router.push(`/ledger/${user?.id}`)} testID="action-ledger" />
+              {/* My Tasks otherwise lives in the Work hub; with no Work tab
+                  (nothing enabled behind it) this is the way to it. */}
+              {!employeeTabAccess(hasModule).work && <ActionCard icon="checkbox-outline" label="My Tasks" onPress={() => router.push('/(emp)/tasks' as any)} testID="action-tasks" />}
             </View>
           </View>
         )}
       </ScrollView>
-
-      {hasModule('documents') && (
-        <FloatingCaptureButton onPress={() => setCaptureDoc(true)} testID="emp-home-capture-btn" />
-      )}
 
       {showPunch && (
         <PunchCaptureModal
@@ -294,7 +291,6 @@ export default function EmployeeHome() {
           onCapture={doPunch}
         />
       )}
-      <QuickDocCapture visible={captureDoc} onClose={() => setCaptureDoc(false)} />
     </SafeAreaView>
   );
 }

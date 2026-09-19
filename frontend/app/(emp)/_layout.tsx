@@ -1,16 +1,13 @@
 import { Tabs, useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BlurView } from 'expo-blur';
+import { View, ActivityIndicator } from 'react-native';
 import { useEffect } from 'react';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { useAuth } from '@/src/auth/AuthContext';
+import { EmployeeTabBar } from '@/src/components/EmployeeTabBar';
 
 export default function EmployeeTabsLayout() {
   const { user, loading } = useAuth();
-  const { colors, scheme } = useTheme();
-  const insets = useSafeAreaInsets();
+  const { colors } = useTheme();
   const router = useRouter();
 
   useEffect(() => {
@@ -29,42 +26,23 @@ export default function EmployeeTabsLayout() {
   }
 
   return (
+    // Custom bar, same layout as the owner/admin one: Home, Work, a centre
+    // camera button, Ledger, Settings — with Work, Ledger and the camera each
+    // shown only when the owner has enabled something behind them (see
+    // EmployeeTabBar). It navigates by href rather than off this navigator's
+    // state, so the identical bar can also sit under the shared module
+    // screens that live in the (tabs) group.
     <Tabs
-      screenOptions={{
-        headerShown: false,
-        tabBarBackground: () => (
-          <BlurView tint={scheme === 'light' ? 'light' : 'dark'} intensity={40} style={StyleSheet.absoluteFill}>
-            <View style={{ flex: 1, backgroundColor: scheme === 'light' ? 'rgba(247,245,240,0.72)' : 'rgba(11,11,12,0.72)', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.borderStrong }} />
-          </BlurView>
-        ),
-        tabBarStyle: {
-          backgroundColor: 'transparent', borderTopWidth: 0, elevation: 0,
-          height: 46 + Math.max(insets.bottom, 20),
-          paddingBottom: Math.max(insets.bottom, 20), paddingTop: 6,
-        },
-        tabBarActiveTintColor: colors.brandPrimary,
-        tabBarInactiveTintColor: colors.mutedText,
-        tabBarLabelStyle: { fontSize: 10.5, fontWeight: '600', letterSpacing: 0.3 },
-      }}
+      tabBar={() => <EmployeeTabBar />}
+      screenOptions={{ headerShown: false }}
     >
-      {/* Three tabs (v2 IA): Dashboard (the check-in home), Work, Settings
-          (profile). Work is always shown now — even an employee with no
-          granted operations modules still has My Tasks and My Ledger there. */}
-      <Tabs.Screen
-        name="home"
-        options={{ title: 'Home', tabBarButtonTestID: 'tab-home', tabBarIcon: ({ color, size }) => <Ionicons name="scan-outline" color={color} size={size} /> }}
-      />
-      <Tabs.Screen
-        name="work"
-        options={{ title: 'Work', tabBarButtonTestID: 'tab-work', tabBarIcon: ({ color, size }) => <Ionicons name="briefcase-outline" color={color} size={size} /> }}
-      />
-      <Tabs.Screen
-        name="profile"
-        options={{ title: 'Settings', tabBarButtonTestID: 'tab-profile', tabBarIcon: ({ color, size }) => <Ionicons name="settings-outline" color={color} size={size} /> }}
-      />
-      {/* Still routable via deep links / tiles, but no longer their own tab.
+      <Tabs.Screen name="home" options={{ title: 'Home' }} />
+      <Tabs.Screen name="work" options={{ title: 'Work' }} />
+      <Tabs.Screen name="ledger" options={{ title: 'Ledger' }} />
+      <Tabs.Screen name="profile" options={{ title: 'Settings' }} />
+      {/* Still routable via deep links / tiles, but not tabs of their own.
           Calendar & Leaves are reached from the Home quick actions; Tasks &
-          Transactions content now lives in the Work hub. */}
+          Transactions content lives in the Work hub. */}
       <Tabs.Screen name="edit-profile" options={{ href: null }} />
       <Tabs.Screen name="calendar" options={{ href: null }} />
       <Tabs.Screen name="leaves" options={{ href: null }} />

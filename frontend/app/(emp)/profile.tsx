@@ -11,8 +11,6 @@ import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme, ThemePreference } from '@/src/theme/ThemeContext';
 import { isPushSupported, isSubscribed, subscribeToPush, unsubscribeFromPush } from '@/src/utils/push';
 import { QuickUnlockCard } from '@/src/components/QuickUnlockCard';
-import { QuickDocCapture } from '@/src/components/QuickDocCapture';
-import { FloatingCaptureButton } from '@/src/components/FloatingCaptureButton';
 
 // Employee settings — same language as the admin Settings screen: an
 // Apple-ID-style profile card at the top (all personal/contact/bank details
@@ -21,7 +19,7 @@ import { FloatingCaptureButton } from '@/src/components/FloatingCaptureButton';
 const THEME_LABEL: Record<ThemePreference, string> = { system: 'System', light: 'Light', dark: 'Dark' };
 
 export default function EmployeeProfile() {
-  const { user, logout, hasModule } = useAuth();
+  const { user, logout } = useAuth();
   const { colors, preference, setPreference } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const router = useRouter();
@@ -29,7 +27,6 @@ export default function EmployeeProfile() {
   const [pushOn, setPushOn] = useState(false);
   const [pushBusy, setPushBusy] = useState(false);
   const [themePickerOpen, setThemePickerOpen] = useState(false);
-  const [captureDoc, setCaptureDoc] = useState(false);
 
   const load = useCallback(async () => {
     if (!user?.id) return;
@@ -121,8 +118,6 @@ export default function EmployeeProfile() {
 
         <Text style={styles.footer}>RMJ One · One system for the entire business</Text>
       </ScrollView>
-      {hasModule('documents') && <FloatingCaptureButton onPress={() => setCaptureDoc(true)} testID="profile-capture-btn" />}
-      <QuickDocCapture visible={captureDoc} onClose={() => setCaptureDoc(false)} />
     </SafeAreaView>
   );
 }

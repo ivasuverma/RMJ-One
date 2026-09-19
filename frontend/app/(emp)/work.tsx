@@ -8,8 +8,6 @@ import { useAuth } from '@/src/auth/AuthContext';
 import { todayIST } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
-import { QuickDocCapture } from '@/src/components/QuickDocCapture';
-import { FloatingCaptureButton } from '@/src/components/FloatingCaptureButton';
 import { UploadQueueBadge } from '@/src/components/UploadQueueBadge';
 import { AppSetupBanner } from '@/src/components/AppSetupBanner';
 
@@ -35,7 +33,6 @@ export default function EmployeeWorkScreen() {
   const [sampleDash, setSampleDash] = useState<SampleDash | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [docPending, setDocPending] = useState<number | null>(null);
-  const [captureDoc, setCaptureDoc] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const hasRepairs = hasModule('repairs');
   const hasSamples = hasModule('samples');
@@ -101,10 +98,6 @@ export default function EmployeeWorkScreen() {
     });
   }
 
-  // Reports / ledgers the employee can open, same row style.
-  const reports: Row[] = [];
-  if (hasModule('customer_ledger')) reports.push({ key: 'cust', title: 'Customer Ledger', icon: 'person-outline', route: '/reports/customer-ledger', segs: [{ text: 'Balances by customer' }] });
-  if (hasModule('karigar_ledger')) reports.push({ key: 'kar', title: 'Karigar Ledger', icon: 'hammer-outline', route: '/reports/karigar-ledger', segs: [{ text: 'Gold & cash owed to karigars' }] });
 
   const renderRow = (r: Row) => (
     <Pressable key={r.key} onPress={() => go(r.route)} style={({ pressed }) => [styles.prow, pressed && { opacity: 0.85 }]} testID={`emp-work-row-${r.key}`}>
@@ -141,13 +134,8 @@ export default function EmployeeWorkScreen() {
         <Text style={styles.sectionLabel}>In progress</Text>
         {rows.map(renderRow)}
 
-        <Text style={styles.sectionLabel}>Reports</Text>
-        {reports.map(renderRow)}
-
         <View style={{ height: spacing.xxl }} />
       </ScrollView>
-      {hasDocs && <FloatingCaptureButton onPress={() => setCaptureDoc(true)} testID="emp-work-capture-btn" />}
-      <QuickDocCapture visible={captureDoc} onClose={() => setCaptureDoc(false)} onSaved={load} />
     </SafeAreaView>
   );
 }

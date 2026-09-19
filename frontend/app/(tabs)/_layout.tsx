@@ -5,6 +5,7 @@ import { useEffect } from 'react';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { useAuth } from '@/src/auth/AuthContext';
 import { OwnerTabBar } from '@/src/components/OwnerTabBar';
+import { EmployeeTabBar } from '@/src/components/EmployeeTabBar';
 
 // Module landing pages that employees can be granted (see
 // EMPLOYEE_ASSIGNABLE_MODULES in the backend) and that live in this group so
@@ -43,10 +44,11 @@ export default function OwnerTabsLayout() {
       // capture button, which the default BottomTabBar has no slot for.
       // screenOptions here still matter: OwnerTabBar reads title/tabBarIcon/
       // tabBarButtonTestID/tabBarStyle off each route's own options.
-      // Employees who reach a shared module screen get no bar at all — the
-      // owner bar's tabs lead to owner-only screens. Same as before these
-      // screens moved into this group.
-      tabBar={(props) => (isEmployee ? null : <OwnerTabBar {...props} />)}
+      // Employees on a shared module screen get their OWN bar (same layout,
+      // conditional tabs) — never the owner bar, whose tabs lead to
+      // owner-only screens. EmployeeTabBar navigates by href, so it works
+      // here even though this navigator's routes are the owner's.
+      tabBar={(props) => (isEmployee ? <EmployeeTabBar /> : <OwnerTabBar {...props} />)}
       screenOptions={{ headerShown: false }}
     >
       {/* Four tabs (v3 IA): Dashboard, Work, Ledger, Settings — plus the
