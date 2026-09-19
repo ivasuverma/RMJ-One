@@ -399,6 +399,11 @@ async def create_document(
             await _cache_write(doc['id'], 'thumb', base64.b64decode(thumb_clean))
         except Exception:
             pass
+    # Likewise the original: once it syncs to Drive the database keeps only the
+    # thumbnail, so without this the FIRST time anyone opens the photo would be a
+    # multi-second Google download. (Capped — nothing above 30 MB is worth a copy.)
+    if len(raw) <= 30 * 1024 * 1024:
+        await _cache_write(doc['id'], 'full', raw)
     await log_audit(user, 'documents.create', 'document', doc['id'], f'{cat["label"]} · {doc["file"]["orig_name"]}')
     await _notify_record_holders(cat, doc, user)
     return {k: v for k, v in doc.items() if k not in ('_id', 'local_data', 'ocr')}
@@ -696,6 +701,11 @@ async def _load_variant(meta: dict, doc_id: str, variant: str):
                 return await drive_service.download(cfg, drive_id), True
             except Exception:
                 pass   # fall through to whatever local copy still exists
+        # Stand-in when the original can't be fetched: use the thumbnail already
+        # saved on disk rather than reading it out of Mongo a second time (~1 s).
+        tp = _cache_file(doc_id, 'thumb')
+        if tp.is_file():
+            return await asyncio.to_thread(tp.read_bytes), False
         row = await db.documents.find_one({'id': doc_id}, {'_id': 0, 'local_data': 1, 'thumb_data': 1}) or {}
         data = row.get('local_data') or row.get('thumb_data')
         return (base64.b64decode(data) if data else None), False
@@ -745,30 +755,51 @@ async def document_file(
     return Response(content=raw, media_type=media_type, headers=cache_headers)
 
 
+# Don't let the cache of originals grow without bound on the shop server's disk.
+_FULL_CACHE_BUDGET_BYTES = 2 * 1024 ** 3
+
+
+def _cache_dir_bytes() -> int:
+    try:
+        return sum(f.stat().st_size for f in DOC_CACHE_DIR.iterdir() if f.is_file())
+    except Exception:
+        return 0
+
+
 async def doc_cache_warm_loop() -> None:
-    """Fills the thumbnail cache for documents that predate it, in the
-    background, so nobody's first look at the grid is the slow one. New uploads
-    are written to the cache as they arrive, so after the first pass there is
-    normally nothing left to do. Gentle by design: one image at a time, through
-    the same limiter the request path uses."""
+    """Fills the image cache for documents that predate it, in the background,
+    so nobody's first look at a photo is the slow one. New uploads are written
+    to the cache as they arrive, so after the first pass there is normally
+    nothing left to do. Thumbnails first (they're what the grid needs), then the
+    full-size originals — which otherwise cost a 2-5 s Google Drive download the
+    first time each one is opened. Gentle by design: one image at a time,
+    through the same limiter the request path uses."""
     await asyncio.sleep(45)
     while True:
         try:
-            have = set()
-            if DOC_CACHE_DIR.is_dir():
-                have = {n[:-len('.thumb')] for n in os.listdir(DOC_CACHE_DIR) if n.endswith('.thumb')}
+            names = os.listdir(DOC_CACHE_DIR) if DOC_CACHE_DIR.is_dir() else []
+            have_thumb = {n[:-len('.thumb')] for n in names if n.endswith('.thumb')}
+            have_full = {n[:-len('.full')] for n in names if n.endswith('.full')}
             rows = await db.documents.find(
-                {'deleted': {'$ne': True}, 'file.mime': {'$regex': '^image/'}},
-                {'_id': 0, 'id': 1, 'local_kind': 1, 'file': 1},
+                {'deleted': {'$ne': True}}, {'_id': 0, 'id': 1, 'local_kind': 1, 'file': 1},
             ).to_list(None)
-            missing = [r for r in rows if r['id'] not in have]
-            if missing:
-                logger.info(f'doc cache: warming {len(missing)} thumbnail(s)')
-            for r in missing:
+            thumbs = [r for r in rows if (r.get('file') or {}).get('mime', '').startswith('image/') and r['id'] not in have_thumb]
+            fulls = [r for r in rows if r['id'] not in have_full and (r.get('local_kind') == 'full' or (r.get('file') or {}).get('drive_file_id'))]
+            if thumbs or fulls:
+                logger.info(f'doc cache: warming {len(thumbs)} thumbnail(s), {len(fulls)} original(s)')
+            for r in thumbs:
                 raw, cacheable = await _load_variant(r, r['id'], 'thumb')
                 if raw and cacheable:
                     await _cache_write(r['id'], 'thumb', raw)
                 await asyncio.sleep(0.2)
+            for r in fulls:
+                if await asyncio.to_thread(_cache_dir_bytes) > _FULL_CACHE_BUDGET_BYTES:
+                    logger.warning('doc cache: size budget reached, not fetching more originals')
+                    break
+                raw, cacheable = await _load_variant(r, r['id'], 'full')
+                if raw and cacheable:
+                    await _cache_write(r['id'], 'full', raw)
+                await asyncio.sleep(0.5)
         except Exception as e:
             logger.warning(f'doc cache warm error: {e}')
         await asyncio.sleep(3600)

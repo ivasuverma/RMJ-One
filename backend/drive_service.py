@@ -86,6 +86,12 @@ class DriveAuthError(RuntimeError):
 # Drive call — a full extra round trip to Google in front of each download and
 # upload — so keep one per refresh token until shortly before it expires.
 _token_cache = {'rt': None, 'token': None, 'exp': 0.0}
+# When Google rejects the saved sign-in, remember that for a minute per refresh
+# token. Otherwise EVERY Drive call (each photo opened, each upload attempt)
+# spends ~1.5 s round-tripping to Google just to be refused again. Keyed by the
+# refresh token, so reconnecting Drive (a new token) is never blocked by it.
+_auth_block = {'rt': None, 'until': 0.0, 'msg': ''}
+_AUTH_BLOCK_SECONDS = 60
 
 
 async def _record_auth(error: Optional[str]) -> None:
@@ -109,6 +115,8 @@ async def _access_token(config: dict) -> str:
     now = time.monotonic()
     if _token_cache['rt'] == rt and _token_cache['exp'] > now:
         return _token_cache['token']
+    if _auth_block['rt'] == rt and _auth_block['until'] > now:
+        raise DriveAuthError(_auth_block['msg'])
     cid, csec, _ = client_creds()
     async with httpx.AsyncClient(timeout=30) as h:
         r = await h.post(TOKEN_URL, data={'client_id': cid, 'client_secret': csec, 'refresh_token': rt, 'grant_type': 'refresh_token'})
@@ -122,6 +130,7 @@ async def _access_token(config: dict) -> str:
             code = 'invalid_grant'
         msg = f"{code}: Google rejected the saved sign-in ({body.get('error_description') or 'token expired or revoked'}). Reconnect Google Drive in Settings."
         _token_cache.update(rt=None, token=None, exp=0.0)
+        _auth_block.update(rt=rt, until=now + _AUTH_BLOCK_SECONDS, msg=msg)
         await _record_auth(msg)
         raise DriveAuthError(msg)
     r.raise_for_status()

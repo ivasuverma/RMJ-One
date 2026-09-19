@@ -184,15 +184,25 @@ export default function DocumentsScreen() {
     );
   };
 
-  const gridView = () => (
+  const gridView = () => {
+    const days = groupByDay(docs);
+    const allOpen = days.length > 0 && days.every((g, gi) => openDays[g.day] ?? (gi === 0));
+    const toggleAll = () => setOpenDays(Object.fromEntries(days.map((g) => [g.day, !allOpen])));
+    return (
     <>
       <View style={styles.searchWrap}>
         <Ionicons name="search" size={16} color={colors.mutedText} />
         <TextInput value={q} onChangeText={setQ} onSubmitEditing={() => setAppliedQ(q)} placeholder="Search by name, remark or date" placeholderTextColor={colors.mutedText} style={styles.searchInput} returnKeyType="search" testID="doc-done-search" />
         {q.length > 0 && <Pressable onPress={() => { setQ(''); setAppliedQ(''); }} hitSlop={8}><Ionicons name="close-circle" size={16} color={colors.mutedText} /></Pressable>}
       </View>
+      {docs.length > 0 && (
+        <Pressable onPress={toggleAll} style={styles.expandAllBtn} hitSlop={8} testID="doc-expand-all">
+          <Ionicons name={allOpen ? 'chevron-collapse' : 'chevron-expand'} size={14} color={colors.brandSecondary} />
+          <Text style={styles.expandAllText}>{allOpen ? 'Collapse all' : 'Expand all'}</Text>
+        </Pressable>
+      )}
       {docs.length === 0 ? <View style={styles.empty}><Text style={styles.emptyText}>{appliedQ ? 'No matches.' : 'Empty folder.'}</Text></View> : (
-        groupByDay(docs).map((g, gi) => {
+        days.map((g, gi) => {
           const open = openDays[g.day] ?? (gi === 0);   // newest day open by default
           return (
           <View key={g.day}>
@@ -222,7 +232,8 @@ export default function DocumentsScreen() {
         })
       )}
     </>
-  );
+    );
+  };
 
   // Done landing: one search box that searches EVERY category at once. With a
   // query it shows cross-category results (each row tagged with its category);
@@ -387,6 +398,7 @@ function QuickView({ doc, categoryLabel, token, fileUri, onClose, onRecord, canR
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const insets = useSafeAreaInsets();
   const [imgLoaded, setImgLoaded] = useState(false);
+  useEffect(() => { setImgLoaded(false); }, [doc?.id]);
   const idx = doc ? list.findIndex((x) => x.id === doc.id) : -1;
   const go = (dir: number) => {
     const n = idx + dir;
@@ -415,13 +427,13 @@ function QuickView({ doc, categoryLabel, token, fileUri, onClose, onRecord, canR
         <View style={styles.qvImgWrap} {...pan.panHandlers}>
           <Pressable style={StyleSheet.absoluteFill} onPress={() => !isImage && onOpenFile(doc)} />
           {isImage && token
-            ? <Image key={doc.id} source={{ uri: `${fileUri(doc.id)}?full=1`, headers: { Authorization: `Bearer ${token}` } }} style={styles.qvImg} contentFit="contain" onLoadEnd={() => setImgLoaded(true)} />
+            ? <Image key={doc.id} source={{ uri: `${fileUri(doc.id)}?full=1`, headers: { Authorization: `Bearer ${token}` } }} placeholder={{ uri: `${fileUri(doc.id)}?thumb=1`, headers: { Authorization: `Bearer ${token}` } }} placeholderContentFit="contain" transition={150} style={styles.qvImg} contentFit="contain" onLoadEnd={() => setImgLoaded(true)} />
             : <View style={{ alignItems: 'center', gap: 10 }}>
                 {opening
                   ? <><ActivityIndicator color="#fff" size="large" /><Text style={{ color: '#fff', fontWeight: '700' }}>Opening…</Text></>
                   : <><Ionicons name="document-text-outline" size={64} color={colors.mutedText} /><Text style={{ color: '#fff', fontWeight: '700' }}>Tap to open PDF</Text></>}
               </View>}
-          {isImage && !imgLoaded && <View style={styles.qvImgLoading} pointerEvents="none"><ActivityIndicator color="#fff" size="large" /></View>}
+          {isImage && !imgLoaded && <View style={styles.qvImgLoading} pointerEvents="none"><ActivityIndicator color="#fff" size="small" /></View>}
           {idx > 0 && <Pressable onPress={() => go(-1)} style={[styles.qvNav, { left: 6 }]} testID="qv-prev"><Ionicons name="chevron-back" size={26} color="#fff" /></Pressable>}
           {idx >= 0 && idx < list.length - 1 && <Pressable onPress={() => go(1)} style={[styles.qvNav, { right: 6 }]} testID="qv-next"><Ionicons name="chevron-forward" size={26} color="#fff" /></Pressable>}
           <View style={styles.qvStamp}><Ionicons name={doc.upload_state === 'synced' ? 'cloud-done' : 'phone-portrait-outline'} size={12} color={colors.onSurface} /><Text style={styles.qvStampText}>{doc.upload_state === 'synced' ? 'In Drive' : 'Local'}{list.length > 1 && idx >= 0 ? ` · ${idx + 1}/${list.length}` : ''}</Text></View>
@@ -583,6 +595,8 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   thumbLoading: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceTertiary },
   dayHeader: { color: colors.mutedText, fontSize: 12, fontWeight: '800', letterSpacing: 0.4, textTransform: 'uppercase', marginTop: spacing.md, marginBottom: 2 },
   dayHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  expandAllBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, alignSelf: 'flex-end', marginTop: spacing.md },
+  expandAllText: { color: colors.brandSecondary, fontSize: 12.5, fontWeight: '700' },
   dayCount: { color: colors.mutedText, fontSize: 12, fontWeight: '700' },
   docName: { color: colors.onSurface, fontSize: 15, fontWeight: '600' },
   docMeta: { color: colors.mutedText, fontSize: 12.5, marginTop: 2 },
