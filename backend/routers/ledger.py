@@ -1,3 +1,4 @@
+import asyncio
 """Unified dual-balance ledger (v2 Phase 5) — the heart of the app.
 
 An *account* is one entity carrying a *type* (from the account_types master),
@@ -302,8 +303,14 @@ async def list_accounts(
     accounts = await db.accounts.find(query, {'_id': 0}).sort('name', 1).to_list(2000)
     type_names = {t['id']: t['name'] async for t in db.account_types.find({}, {'_id': 0, 'id': 1, 'name': 1})}
 
-    for a in accounts:
-        bal = await _balance_for(a)
+    # Balances are independent per account — compute them concurrently (a few at a
+    # time) instead of paying each account's round trips back to back.
+    _sem = asyncio.Semaphore(8)
+    async def _bal(acc):
+        async with _sem:
+            return await _balance_for(acc)
+    bals = await asyncio.gather(*(_bal(a) for a in accounts))
+    for a, bal in zip(accounts, bals):
         a['fine_balance'] = bal['fine_balance']
         a['amount_balance'] = bal['amount_balance']
         a['type_name'] = type_names.get(a['type_id'], '—')

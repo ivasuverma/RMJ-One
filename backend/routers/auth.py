@@ -154,7 +154,7 @@ async def me(user=Depends(get_current)):
     return {
         'id': user['id'], 'username': user.get('username') or user.get('employee_code'), 'name': user['name'], 'role': 'employee',
         'employee_code': user['employee_code'], 'designation': user.get('designation'),
-        'department': user.get('department'), 'photo': user.get('photo', ''),
+        'department': user.get('department'), 'photo': user.get('photo_thumb') or '',
         'shift': user.get('shift'), 'remote': bool(shift_doc and shift_doc.get('remote')),
         'modules': resolve_modules(user), 'module_rights': user.get('module_rights') or {},
         'must_change_password': bool(user.get('must_change_password')),

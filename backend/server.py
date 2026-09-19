@@ -163,7 +163,9 @@ async def get_current(authorization: str = Header(default='')) -> dict:
     if role in ('owner', 'admin', 'accountant'):
         u = await db.users.find_one({'id': payload.get('sub')}, {'_id': 0, 'password_hash': 0})
     else:
-        u = await db.employees.find_one({'id': payload.get('sub')}, {'_id': 0, 'password_hash': 0})
+        # `photo` is a ~150 KB inline image; reading it on EVERY authenticated request
+        # cost ~2 s each on the Atlas free tier. `photo_thumb` is kept.
+        u = await db.employees.find_one({'id': payload.get('sub')}, {'_id': 0, 'password_hash': 0, 'photo': 0})
     if not u:
         raise HTTPException(status_code=401, detail='User not found')
     # Revocation. Tokens last a week, so without this a password change left

@@ -229,7 +229,7 @@ async def list_gold_loans(
 async def gold_loans_dashboard(_: dict = Depends(require_staff_or_module('gold_loans'))):
     today = today_str()
     closed_today = await db.gold_loans.count_documents({'status': 'closed', 'closed_at': {'$regex': f'^{today}'}})
-    loans = await db.gold_loans.find({'status': 'active'}, {'_id': 0}).to_list(5000)
+    loans = await db.gold_loans.find({'status': 'active'}, {'_id': 0, 'photo': 0}).to_list(5000)
     active = len(loans)
     txns_by_loan = await _bulk_loan_txns([l['id'] for l in loans])
     states = [_compute_loan_state(l, txns_by_loan.get(l['id'], [])) for l in loans]
@@ -529,7 +529,7 @@ async def _backfill_loan_interest(loan: dict) -> None:
 async def check_interest_due() -> None:
     """Runs from the server's existing 15-minute reminder loop, catching up
     every active loan. See _backfill_loan_interest for the per-loan logic."""
-    async for loan in db.gold_loans.find({'status': 'active'}, {'_id': 0}):
+    async for loan in db.gold_loans.find({'status': 'active'}, {'_id': 0, 'photo': 0}):
         await _backfill_loan_interest(loan)
 
 
@@ -546,7 +546,7 @@ async def check_monthly_interest_collection_reminder() -> None:
     if await db.gold_loan_collection_reminders.find_one({'period': period}, {'_id': 0}) is not None:
         return
 
-    loans = await db.gold_loans.find({'status': 'active'}, {'_id': 0}).to_list(5000)
+    loans = await db.gold_loans.find({'status': 'active'}, {'_id': 0, 'photo': 0}).to_list(5000)
     txns_by_loan = await _bulk_loan_txns([l['id'] for l in loans])
     states = [_compute_loan_state(l, txns_by_loan.get(l['id'], [])) for l in loans]
     pending = [s for s in states if s['interest_balance'] > 0.01]
