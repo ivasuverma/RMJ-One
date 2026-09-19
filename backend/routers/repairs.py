@@ -1039,46 +1039,16 @@ async def _sync_cash_ledger_entry(item: dict, billed_amount: float, payment_mode
     edits). A positive billed_amount is cash the shop received; a negative
     one (weight decreased more than any added material — see New Wt on the
     bill) is a refund owed back to the customer."""
-    await db.cash_ledger.delete_many({'item_id': item['id']})   # legacy collection: no longer written
-    await _post_repair_cash_entry(item, billed_amount, payment_mode, user, iso)
-
-
-async def _repair_cash_counter_id() -> Optional[str]:
-    """The Cash Book counter that repair payments land in. Remembered in settings the first time it is
-    needed (defaults to the first active counter, "Cash Counter"), so it stays put if counters are reordered."""
-    cfg = await db.settings.find_one({'id': 'cashbook_settings'}, {'_id': 0}) or {}
-    cid = cfg.get('repair_counter_id')
-    if cid and await db.cashbook_counters.find_one({'id': cid, 'active': True}, {'_id': 0, 'id': 1}):
-        return cid
-    first = await db.cashbook_counters.find_one({'active': True}, {'_id': 0, 'id': 1}, sort=[('created_at', 1)])
-    if not first:
-        return None
-    await db.settings.update_one({'id': 'cashbook_settings'}, {'$set': {'id': 'cashbook_settings', 'repair_counter_id': first['id']}}, upsert=True)
-    return first['id']
-
-
-async def _post_repair_cash_entry(item: dict, billed_amount: float, payment_mode: str, user: dict, iso: str, migrated_from: Optional[str] = None):
-    """A repair payment is a Cash Book entry (the single cash record): cash received on a bill, or a cash
-    refund when the bill is negative. Cash payments only — the shop takes cash. Replaces any earlier entry for
-    this item first, so an edited bill never leaves a stale one behind."""
-    await db.cashbook_entries.delete_many({'source': 'repair', 'ref_id': item['id']})
-    if not billed_amount or (payment_mode or 'cash') != 'cash':
+    await db.cash_ledger.delete_many({'item_id': item['id']})
+    if not billed_amount:
         return
-    counter_id = await _repair_cash_counter_id()
-    if not counter_id:
-        return
-    when = datetime.fromisoformat(iso).astimezone(IST).date().isoformat()
-    refund = billed_amount < 0
-    await db.cashbook_entries.insert_one({
-        'id': str(uuid.uuid4()), 'date': when, 'counter_id': counter_id, 'type': 'paid' if refund else 'received',
-        'amount': round(abs(billed_amount), 2),
-        'name': (item.get('customer_name') or item.get('item_code') or 'Repair').strip(),
-        'category': 'Repair refund' if refund else 'Repair payment',
-        'note': f"{item.get('item_code', '')} — {item.get('description', '')}".strip(' —'),
-        'created_at': iso, 'created_by': user['name'], 'created_by_id': user.get('id'),
-        'linked_entry_id': None, 'transfer_counter_id': None,
-        'source': 'repair', 'ref_id': item['id'], 'item_code': item.get('item_code'),
-        **({'migrated_from_cash_ledger': migrated_from} if migrated_from else {}),
+    entry_type = 'receipt' if billed_amount > 0 else 'refund'
+    await db.cash_ledger.insert_one({
+        'id': str(uuid.uuid4()), 'type': entry_type, 'amount': round(abs(billed_amount), 2),
+        'item_id': item['id'], 'item_code': item['item_code'], 'customer_name': item.get('customer_name', ''),
+        'payment_mode': payment_mode or 'cash',
+        'note': f"{'Repair bill' if entry_type == 'receipt' else 'Refund'} — {item.get('description', '')}",
+        'created_at': iso, 'created_by': user['name'],
     })
 
 
@@ -1304,7 +1274,6 @@ async def delete_bill(item_id: str, user=Depends(require_admin_or_module_right('
         'updated_by': user['name'],
     }})
     await db.cash_ledger.delete_many({'item_id': item_id})
-    await db.cashbook_entries.delete_many({'source': 'repair', 'ref_id': item_id})
     await log_audit(user, 'repair_item.bill_delete', 'repair_item', item_id, item['item_code'], {'billed_amount': item.get('billed_amount')})
     return {'ok': True}
 
