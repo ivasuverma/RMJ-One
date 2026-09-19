@@ -8,6 +8,7 @@ import { api } from '@/src/api/client';
 import { storage } from '@/src/utils/storage';
 import { useAuth } from '@/src/auth/AuthContext';
 import { nowISTLongLabel } from '@/src/utils/datetime';
+import { fmtCompactINR } from '@/src/utils/money';
 import { useCountUp } from '@/src/hooks/use-count-up';
 import { useDashboardStream } from '@/src/hooks/use-dashboard-stream';
 import { spacing, radius, images, fonts, ThemeColors } from '@/src/theme';
@@ -46,21 +47,6 @@ const RECENT_ICON: Record<RecentItem['kind'], keyof typeof Ionicons.glyphMap> = 
 // and value changes tick over on their own while the screen is open.
 const AUTO_REFRESH_MS = 15000;
 const fmtINR = (n: number) => `₹${Math.round(n || 0).toLocaleString('en-IN')}`;
-// Compact Indian format for the Cash Book tile: 15,45,500 -> ₹15.45L, 1,25,00,000
-// -> ₹1.25Cr. Truncated (not rounded) to two decimals, so the tile never shows
-// more cash than there is; trailing zeros are dropped (₹15L, ₹15.5L). Below a
-// lakh the exact figure is short enough to show in full.
-const fmtCompactINR = (n: number) => {
-  const v = Math.round(n || 0);
-  const abs = Math.abs(v);
-  const sign = v < 0 ? '-' : '';
-  // Integer hundredths of the unit, THEN divide: floor(1.15 * 100) is 114 in
-  // floating point, which would show ₹1,15,000 as ₹1.14L.
-  const short = (hundredths: number, unit: string) => `${sign}₹${(hundredths / 100).toString()}${unit}`;
-  if (abs >= 10000000) return short(Math.floor(abs / 100000), 'Cr');
-  if (abs >= 100000) return short(Math.floor(abs / 1000), 'L');
-  return `${sign}₹${abs.toLocaleString('en-IN')}`;
-};
 
 function timeAgo(d: Date | null) {
   if (!d) return '';
@@ -131,11 +117,6 @@ export default function DashboardScreen() {
   const [hiddenTiles, setHiddenTiles] = useState<Set<TileKey>>(new Set());
   const [foldedTiles, setFoldedTiles] = useState<Set<TileKey>>(new Set());
   const [reorderOpen, setReorderOpen] = useState(false);
-  // Cash Book's total is sensitive enough to stay masked by default even
-  // though every other tile's fold state defaults to expanded and persists
-  // per device — this one resets to hidden every time the screen mounts,
-  // and reuses the same fold chevron to reveal it instead of a separate control.
-  const [cashRevealed, setCashRevealed] = useState(false);
   const [loanSummary, setLoanSummary] = useState<{ active: number; overdue: number; total_outstanding: number; total_interest_pending: number } | null>(null);
 
   const isWide = width >= 900;
@@ -360,14 +341,12 @@ export default function DashboardScreen() {
                   ] : [],
                 },
                 cashbook: {
-                  // Masked by default — tap the fold chevron to reveal the
-                  // closing balance and today's figures (see cashRevealed).
                   key: 'cashbook', show: hasModule('cash_book'), icon: 'wallet-outline', label: 'Cash Book',
                   // Owner sees the analytics dashboard (day/week/month
                   // charts by Type); it self-redirects anyone else straight
                   // to the regular day ledger, same place this tile used to
                   // go for them.
-                  value: cashRevealed ? fmtCompactINR(cb.closing_balance) : '•••••',
+                  value: fmtCompactINR(cb.closing_balance),
                   route: user?.role === 'owner' ? '/cashbook/analytics' : '/cashbook',
                   details: (cb.counters && cb.counters.length > 0)
                     ? cb.counters.map((c) => ({ label: c.name, value: fmtCompactINR(c.closing) }))
@@ -392,8 +371,8 @@ export default function DashboardScreen() {
                       <Tile
                         key={key}
                         t={t}
-                        folded={key === 'cashbook' ? !cashRevealed : foldedTiles.has(key)}
-                        onToggleFold={key === 'cashbook' ? () => setCashRevealed((v) => !v) : () => toggleFolded(key)}
+                        folded={foldedTiles.has(key)}
+                        onToggleFold={() => toggleFolded(key)}
                         onPress={() => router.push(t.route as any)}
                       />
                     );
