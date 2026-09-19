@@ -104,7 +104,6 @@ export default function RepairBillScreen() {
   const [billLabour, setBillLabour] = useState('');
   const [billExtra, setBillExtra] = useState('');
   const [billExtraNote, setBillExtraNote] = useState('');
-  const [paymentMode, setPaymentMode] = useState('cash');
   const [weightRate, setWeightRate] = useState('');
   const [prevBalance, setPrevBalance] = useState('');
   const [valueAdd, setValueAdd] = useState('');
@@ -175,7 +174,6 @@ export default function RepairBillScreen() {
       setBillLabour(String(item.bill_labour_charge ?? item.labour_charge ?? 0));
       setBillExtra(item.bill_extra_charges ? String(item.bill_extra_charges) : '');
       setBillExtraNote(item.bill_extra_charges_note || '');
-      setPaymentMode(item.payment_mode || 'cash');
       setWeightRate(item.bill_weight_rate ? String(item.bill_weight_rate) : '');
       setPrevBalance(item.bill_previous_balance ? String(item.bill_previous_balance) : '');
       setValueAdd(item.bill_value_add ? String(item.bill_value_add) : '');
@@ -190,7 +188,7 @@ export default function RepairBillScreen() {
       } catch { /* ignore — form still works without the photo prefilled */ }
     } else {
       setBillLabour(String(item.labour_charge || 0));
-      setBillExtra(''); setBillExtraNote(''); setPaymentMode('cash'); setWeightRate(''); setPrevBalance(''); setValueAdd(''); setFinalPhoto('');
+      setBillExtra(''); setBillExtraNote(''); setWeightRate(''); setPrevBalance(''); setValueAdd(''); setFinalPhoto('');
       setMaterialAdjManual('');
       setLossWeightStr(String(item.process_loss ?? 0));
       setReceivedWeightStr(String((item.current_issue_weight || 0) + (item.weight_diff || 0)));
@@ -302,7 +300,7 @@ export default function RepairBillScreen() {
       labour_charge: parseFloat(billLabour) || 0, material_adjustment: weightCharge,
       extra_charges: parseFloat(billExtra) || 0, extra_charges_note: billExtraNote,
       previous_balance: prevBalanceNum,
-      payment_mode: paymentMode, note: '', final_photo: finalPhoto,
+      note: '', final_photo: finalPhoto,
       weight_rate: rateNum, value_add: valueAddNum,
     };
     try {
@@ -437,7 +435,6 @@ export default function RepairBillScreen() {
             ].filter(Boolean);
             const billMetaBits = [
               b.billed_amount != null ? `₹${b.billed_amount.toFixed(0)}` : null,
-              b.payment_mode || null,
               b.delivered_at ? `delivered ${istDate(b.delivered_at)}` : null,
             ].filter(Boolean);
             return (
@@ -644,14 +641,7 @@ export default function RepairBillScreen() {
               <Text style={styles.hint}>This bill nets to a credit — the customer is owed ₹{Math.abs(billTotal).toFixed(0)} back.</Text>
             )}
 
-            <Text style={styles.label}>Payment mode</Text>
-            <View style={styles.chipRow}>
-              {(['cash', 'upi', 'card'] as const).map((m) => (
-                <Pressable key={m} onPress={() => setPaymentMode(m)} style={[styles.chip, paymentMode === m && styles.chipActive]} testID={`payment-${m}`}>
-                  <Text style={[styles.chipText, paymentMode === m && styles.chipTextActive]}>{m.toUpperCase()}</Text>
-                </Pressable>
-              ))}
-            </View>
+            <Text style={styles.hint}>This creates the bill only — enter what the customer pays in the Cash Book.</Text>
 
             <View style={styles.photoLineRow}>
               <Text style={[styles.label, { marginTop: 0, flex: 1 }]}>Final Photo (optional)</Text>

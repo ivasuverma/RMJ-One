@@ -1032,26 +1032,6 @@ async def delete_karigar_transaction(item_id: str, txn_id: str, user=Depends(req
     return await db.repair_items.find_one({'id': item_id}, {'_id': 0})
 
 
-async def _sync_cash_ledger_entry(item: dict, billed_amount: float, payment_mode: str, user: dict, iso: str):
-    """Keeps the shop's cash ledger in sync with one billed item — a bill can
-    be edited in place, so this deletes any prior entry for this item first,
-    then reposts fresh (same delete-then-repost pattern as karigar receive
-    edits). A positive billed_amount is cash the shop received; a negative
-    one (weight decreased more than any added material — see New Wt on the
-    bill) is a refund owed back to the customer."""
-    await db.cash_ledger.delete_many({'item_id': item['id']})
-    if not billed_amount:
-        return
-    entry_type = 'receipt' if billed_amount > 0 else 'refund'
-    await db.cash_ledger.insert_one({
-        'id': str(uuid.uuid4()), 'type': entry_type, 'amount': round(abs(billed_amount), 2),
-        'item_id': item['id'], 'item_code': item['item_code'], 'customer_name': item.get('customer_name', ''),
-        'payment_mode': payment_mode or 'cash',
-        'note': f"{'Repair bill' if entry_type == 'receipt' else 'Refund'} — {item.get('description', '')}",
-        'created_at': iso, 'created_by': user['name'],
-    })
-
-
 @router.post('/repair-items/{item_id}/deliver')
 async def bill_item(item_id: str, body: DeliverIn, user=Depends(require_admin_or_module(['repairs']))):
     """Bills a Pending-to-Bill tag — this used to also mark it delivered in
@@ -1080,7 +1060,7 @@ async def bill_item(item_id: str, body: DeliverIn, user=Depends(require_admin_or
         'bill_previous_balance': prev_balance,
         'bill_weight_rate': body.weight_rate or 0, 'bill_value_add': body.value_add or 0,
         'billed_amount': billed_amount,
-        'payment_mode': body.payment_mode, 'delivery_note': body.note or '', 'updated_by': user['name'],
+        'delivery_note': body.note or '', 'updated_by': user['name'],
         'final_photo': body.final_photo or item.get('final_photo', ''),
     }})
     updated = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
@@ -1193,10 +1173,8 @@ async def notify_whatsapp_received(item_id: str, user=Depends(require_admin_or_m
 async def close_delivery(item_id: str, body: CloseDeliveryIn, user=Depends(require_admin_or_module(['repairs']))):
     """Second, separate step from billing: the customer has actually picked
     the item up. Records who handed it over and on what date, marks it
-    delivered — and this is the moment the outstanding billed_amount from
-    bill_item() actually clears: only now does it post to the cash ledger,
-    using whatever payment_mode was set at billing time (unchanged since —
-    there's no way to override it at pickup)."""
+    delivered. The repair module only creates the bill: it does NOT record payments —
+    whatever the customer pays is entered in the Cash Book."""
     item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
     if not item: raise HTTPException(status_code=404, detail='Item not found')
     if item['status'] != 'pending_delivery':
@@ -1214,7 +1192,6 @@ async def close_delivery(item_id: str, body: CloseDeliveryIn, user=Depends(requi
         'delivered_by': delivered_by, 'delivered_by_id': user['id'], 'updated_by': user['name'],
     }})
     updated = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
-    await _sync_cash_ledger_entry(updated, updated.get('billed_amount') or 0, updated.get('payment_mode'), user, delivered_iso)
     await log_audit(user, 'repair_item.close_delivery', 'repair_item', item_id, item['item_code'], {'delivered_by': delivered_by})
     return updated
 
@@ -1226,9 +1203,7 @@ async def edit_bill(item_id: str, body: DeliverIn, user=Depends(require_admin_or
     the old delete-then-recreate dance. Doesn't touch status, delivered_at,
     or the karigar side of the job; only the bill numbers.
 
-    Only re-syncs the cash ledger if the item is already delivered — while
-    still pending_delivery, nothing has been posted yet (see bill_item /
-    close_delivery), so there's nothing here to keep in sync until then."""
+    The bill is the only thing recorded here; payments are entered in the Cash Book."""
     item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
     if not item: raise HTTPException(status_code=404, detail='Item not found')
     if item['status'] not in ('pending_delivery', 'delivered'):
@@ -1247,12 +1222,10 @@ async def edit_bill(item_id: str, body: DeliverIn, user=Depends(require_admin_or
         'bill_previous_balance': prev_balance,
         'bill_weight_rate': weight_rate, 'bill_value_add': value_add,
         'billed_amount': billed_amount,
-        'payment_mode': body.payment_mode, 'delivery_note': body.note or item.get('delivery_note', ''),
+        'delivery_note': body.note or item.get('delivery_note', ''),
         'final_photo': body.final_photo or item.get('final_photo', ''), 'updated_by': user['name'],
     }})
     updated = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
-    if item['status'] == 'delivered':
-        await _sync_cash_ledger_entry(updated, billed_amount, body.payment_mode, user, iso)
     await log_audit(user, 'repair_item.bill_edit', 'repair_item', item_id, item['item_code'], {'billed_amount': billed_amount})
     return updated
 
@@ -1273,7 +1246,6 @@ async def delete_bill(item_id: str, user=Depends(require_admin_or_module_right('
         'billed_amount': None, 'payment_mode': None, 'delivery_note': '',
         'updated_by': user['name'],
     }})
-    await db.cash_ledger.delete_many({'item_id': item_id})
     await log_audit(user, 'repair_item.bill_delete', 'repair_item', item_id, item['item_code'], {'billed_amount': item.get('billed_amount')})
     return {'ok': True}
 
@@ -1396,7 +1368,6 @@ def _bill_receipt_lines(item: dict) -> list:
     if item.get('bill_extra_charges'):
         lines.append(('extra_charges', item.get('bill_extra_charges_note') or 'Extra Charges', _inr(item['bill_extra_charges'])))
     lines.append(('total_billed', 'Total Billed', _inr(item.get('billed_amount') or 0)))
-    lines.append(('payment_mode', 'Payment Mode', (item.get('payment_mode') or '—').title()))
     return lines
 
 
@@ -2139,7 +2110,6 @@ def _escpos_bill_table(shop_name: str, item: dict, show_shop_name: bool = True, 
         out += _escpos_table_row('Previous Balance', rs(prev_balance))
     out += _escpos_table_hline('╞', '╪', '╡', fill='═')
     out += _escpos_table_row('CREDIT DUE' if total < 0 else 'TOTAL', rs(abs(total)) if total < 0 else rs(total), bold=True)
-    out += _escpos_table_row('Payment Mode', (item.get('payment_mode') or 'cash').upper())
     out += _escpos_table_hline('└', '┴', '┘')
 
     out += b'\n'
