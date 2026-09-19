@@ -72,6 +72,7 @@ export default function CashBookScreen() {
   const [tag, setTag] = useState('');
   const [note, setNote] = useState('');
   const [dest, setDest] = useState('');
+  const [dir, setDir] = useState<'out' | 'in'>('out');   // transfer: cash leaving this location, or arriving into it
   const [shots, setShots] = useState<Shot[]>([]);   // receipt photos taken in this sheet, uploaded once the entry is saved
   const [capturing, setCapturing] = useState(false);
   const [addingTag, setAddingTag] = useState(false);
@@ -126,7 +127,7 @@ export default function CashBookScreen() {
   const counterName = (id?: string | null) => transferOptions.find((c) => c.id === id)?.name || counters.find((c) => c.id === id)?.name || '';
 
   const openAdd = () => {
-    setEditing(null); setKind('received'); setAmount(''); setName(''); setTag(''); setNote(''); setDest(''); setShots([]);
+    setEditing(null); setKind('received'); setAmount(''); setName(''); setTag(''); setNote(''); setDest(''); setDir('out'); setShots([]);
     setAddingTag(false); setNewTag(''); setSheet(true);
   };
   const openEdit = (e: Entry) => {
@@ -150,11 +151,11 @@ export default function CashBookScreen() {
     if (!amt || amt <= 0) { toast.error('Enter an amount greater than 0'); return; }
     if (!counterId) { toast.error('Add a Cash Book counter first'); return; }
     if (kind === 'transfer' && !editing && !dest) { toast.error('Pick where the cash is going'); return; }
-    const label = kind === 'transfer' ? `Transfer to ${counterName(dest)}` : (name.trim() || tag.trim());
+    const label = kind === 'transfer' ? `Transfer ${dir === 'out' ? 'to' : 'from'} ${counterName(dest)}` : (name.trim() || tag.trim());
     if (!label) { toast.error('Enter a name or pick a tag'); return; }
     setBusy(true);
     const payload: any = { date, amount: amt, name: kind === 'transfer' && editing ? name.trim() || label : label, category: kind === 'transfer' ? '' : tag.trim(), note };
-    if (!editing || !editing.linked_entry_id) { payload.counter_id = counterId; payload.type = kind === 'transfer' ? 'paid' : kind; }
+    if (!editing || !editing.linked_entry_id) { payload.counter_id = counterId; payload.type = kind === 'transfer' ? (dir === 'out' ? 'paid' : 'received') : kind; }
     if (kind === 'transfer' && !editing) payload.transfer_counter_id = dest;
     try {
       let savedId = editing?.id || '';
@@ -351,7 +352,10 @@ export default function CashBookScreen() {
           {kind === 'transfer' ? (
             !editing ? (
               <View>
-                <Text style={styles.label}>Move cash from {counters.find((c) => c.id === counterId)?.name || 'here'} to</Text>
+                <SegmentedControl testID="cashbook-dir" options={[{ key: 'out', label: 'Send out' }, { key: 'in', label: 'Receive in' }]} value={dir} onChange={(k) => setDir(k as 'out' | 'in')} />
+                <Text style={[styles.label, { marginTop: spacing.md }]}>
+                  {dir === 'out' ? `Move cash from ${counters.find((c) => c.id === counterId)?.name || 'here'} to` : `Bring cash into ${counters.find((c) => c.id === counterId)?.name || 'here'} from`}
+                </Text>
                 <View style={styles.chips}>
                   {otherCounters.map((c) => (
                     <Pressable key={c.id} onPress={() => setDest(c.id)} style={[styles.chip, dest === c.id && styles.chipOn]} testID={`cashbook-dest-${c.id}`}>
