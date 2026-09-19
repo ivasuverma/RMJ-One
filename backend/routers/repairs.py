@@ -6,6 +6,7 @@ server.py and is imported from here — nothing about behavior changed,
 only where the code lives."""
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Optional
+from pydantic import BaseModel
 from datetime import datetime, date, timedelta, timezone
 import uuid
 import re
@@ -1557,6 +1558,8 @@ async def metal_ledger(cursor: Optional[str] = None, limit: int = 50, _: dict = 
     total_in = totals.get('in', 0)
     total_out = totals.get('out', 0)
     total_loss = totals.get('loss', 0)
+    opening = await db.metal_ledger.find_one({'type': 'opening'}, {'_id': 0})
+    opening_w = round((opening or {}).get('weight') or 0, 3)
     by_karigar_agg = [k async for k in db.metal_ledger.aggregate([
         {'$group': {
             '_id': '$karigar_id',
@@ -1575,8 +1578,54 @@ async def metal_ledger(cursor: Optional[str] = None, limit: int = 50, _: dict = 
     return {
         'entries': entries, 'next_cursor': next_cursor, 'by_karigar': by_karigar,
         'total_in': total_in, 'total_out': total_out, 'total_loss': total_loss,
-        'balance': round(total_in - total_out, 3),
+        # Stock = the physical count on the opening date + everything received - everything issued.
+        'opening': {'weight': opening_w, 'date': (opening or {}).get('date'), 'note': (opening or {}).get('note', '')} if opening else None,
+        'balance': round(opening_w + total_in - total_out, 3),
+        'reconciliation': await _metal_reconciliation(total_in, total_out),
     }
+
+
+async def _metal_reconciliation(total_in: float, total_out: float) -> dict:
+    """Do the two sides of every gold movement agree? What the karigars' own ledgers say they hold
+    must equal what the shop's gold ledger says went out and did not come back."""
+    entries = await db.karigar_ledger.find({}, {'_id': 0}).to_list(None)
+    bal = _karigar_ledger_balances(entries)
+    hold_w = round(sum(b['weight_bal'] for b in bal.values()), 3)
+    hold_f = round(sum(b['fine_bal'] for b in bal.values()), 3)
+    gold = [e for e in entries if e.get('type') in ('gold_out', 'gold_in', 'loss')]
+    have = {m.get('source_entry_id') async for m in db.metal_ledger.find({'source_entry_id': {'$ne': None}}, {'_id': 0, 'source_entry_id': 1})}
+    missing = sum(1 for e in gold if e['id'] not in have)
+    no_purity = sum(1 for e in gold if e.get('type') in ('gold_out', 'gold_in') and e.get('fine_weight') is None)
+    net_out = round(total_out - total_in, 3)
+    return {
+        'karigars_hold_weight': hold_w, 'karigars_hold_fine': hold_f, 'ledger_net_out': net_out,
+        'difference': round(hold_w - net_out, 3), 'missing_counter_entries': missing, 'entries_without_purity': no_purity,
+        'ok': abs(hold_w - net_out) < 0.01 and missing == 0,
+    }
+
+
+class MetalOpeningIn(BaseModel):
+    weight: float
+    date: Optional[str] = None
+    note: Optional[str] = ''
+
+
+@router.put('/metal-ledger/opening')
+async def set_metal_opening(body: MetalOpeningIn, user=Depends(require_owner)):
+    """The shop's own gold stock at the start (a physical count, in grams). One record — setting it
+    again replaces the previous count, and the change is audited."""
+    if body.weight < 0 or body.weight > 1_000_000:
+        raise HTTPException(status_code=400, detail='Enter the stock weight in grams (0 or more)')
+    date = (body.date or now_utc().astimezone(IST).date().isoformat())[:10]
+    old = await db.metal_ledger.find_one({'type': 'opening'}, {'_id': 0})
+    doc = {'id': (old or {}).get('id') or str(uuid.uuid4()), 'type': 'opening', 'weight': round(body.weight, 3), 'date': date,
+           'karigar_id': None, 'karigar_name': '', 'item_id': None, 'item_code': None, 'note': (body.note or 'Opening stock (physical count)').strip(),
+           'created_at': (old or {}).get('created_at') or now_utc().isoformat(), 'created_by': (old or {}).get('created_by') or user['name'],
+           'updated_at': now_utc().isoformat(), 'updated_by': user['name']}
+    await db.metal_ledger.replace_one({'type': 'opening'}, doc, upsert=True)
+    await log_audit(user, 'metal_ledger.opening', 'metal_ledger', doc['id'], f"{doc['weight']} g on {date}",
+                    {'previous': (old or {}).get('weight')})
+    return {'ok': True, 'opening': {'weight': doc['weight'], 'date': date, 'note': doc['note']}}
 
 
 # ---------------- Repairs: Karigar Ledger ----------------
