@@ -1,4 +1,4 @@
-import { Tabs, useRouter } from 'expo-router';
+import { Tabs, useRouter, useSegments } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { View, ActivityIndicator } from 'react-native';
 import { useEffect } from 'react';
@@ -6,18 +6,29 @@ import { useTheme } from '@/src/theme/ThemeContext';
 import { useAuth } from '@/src/auth/AuthContext';
 import { OwnerTabBar } from '@/src/components/OwnerTabBar';
 
+// Module landing pages that employees can be granted (see
+// EMPLOYEE_ASSIGNABLE_MODULES in the backend) and that live in this group so
+// owners get the bottom bar on them. Employees have their own tab shell
+// ((emp)), so everything else in here bounces them home — but these four are
+// linked to from the employee Home/Work/Transactions screens, so they must
+// stay reachable, just without the owner tab bar.
+const EMPLOYEE_SHARED_SCREENS = ['cashbook', 'documents', 'samples', 'repairs'];
+
 export default function OwnerTabsLayout() {
   const { user, loading } = useAuth();
   const { colors } = useTheme();
   const router = useRouter();
+  const segments = useSegments();
+  const isEmployee = user?.role === 'employee';
+  const employeeAllowed = isEmployee && EMPLOYEE_SHARED_SCREENS.includes(String(segments[segments.length - 1] ?? ''));
 
   useEffect(() => {
     if (loading) return;
     if (!user) router.replace('/login');
-    else if (user.role === 'employee') router.replace('/(emp)/home');
-  }, [user, loading, router]);
+    else if (isEmployee && !employeeAllowed) router.replace('/(emp)/home');
+  }, [user, loading, router, isEmployee, employeeAllowed]);
 
-  if (loading || !user || user.role === 'employee') {
+  if (loading || !user || (isEmployee && !employeeAllowed)) {
     return (
       <View style={{ flex: 1, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' }}>
         <ActivityIndicator color={colors.brandPrimary} size="large" />
@@ -32,7 +43,10 @@ export default function OwnerTabsLayout() {
       // capture button, which the default BottomTabBar has no slot for.
       // screenOptions here still matter: OwnerTabBar reads title/tabBarIcon/
       // tabBarButtonTestID/tabBarStyle off each route's own options.
-      tabBar={(props) => <OwnerTabBar {...props} />}
+      // Employees who reach a shared module screen get no bar at all — the
+      // owner bar's tabs lead to owner-only screens. Same as before these
+      // screens moved into this group.
+      tabBar={(props) => (isEmployee ? null : <OwnerTabBar {...props} />)}
       screenOptions={{ headerShown: false }}
     >
       {/* Four tabs (v3 IA): Dashboard, Work, Ledger, Settings — plus the
