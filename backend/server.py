@@ -1211,6 +1211,7 @@ async def seed():
     )
     await db.documents.create_index('client_id', sparse=True)
     await db.document_blobs.create_index('id', unique=True)
+    await db.biometric_logs.create_index([('serial', 1), ('user_id', 1), ('timestamp', 1)], name='punch_seen')
     await db.record_photos.create_index([('ref_type', 1), ('ref_id', 1)])
     await db.record_photos.create_index('upload_state')
     await db.record_photos.create_index('client_id', sparse=True)

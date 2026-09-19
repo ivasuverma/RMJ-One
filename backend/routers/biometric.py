@@ -224,6 +224,15 @@ async def _ingest_biometric_punch(serial: str, user_id: str, ts: datetime, event
     biometric punch and an app punch can never disagree on shift/late/
     half-day handling. This wrapper's own job is just employee matching and
     the biometric_logs audit trail."""
+    # The device re-sends its whole unsent backlog on every poll. A punch we have already
+    # handled (accepted or skipped) is dropped here, before any lookups, so a re-send neither
+    # repeats the work nor adds another row to biometric_logs — on a fast local database that
+    # was ~45 rows/second of pure duplicates. Rejected punches are NOT dropped: they may
+    # become valid once the employee's biometric ID is set up.
+    if await db.biometric_logs.find_one(
+        {'serial': serial, 'user_id': user_id, 'timestamp': ts.isoformat(), 'result': {'$in': ['accepted', 'skipped']}}, {'_id': 1},
+    ):
+        return {'ok': True, 'skipped': True, 'reason': 'already_seen'}
     log_doc = {
         'id': str(uuid.uuid4()), 'serial': serial, 'user_id': user_id,
         'timestamp': ts.isoformat(), 'event_type': event_type or 'auto',
