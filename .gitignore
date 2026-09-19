@@ -94,3 +94,7 @@ backend/_smoke_*.py
 
 # On-disk cache of document images (rebuilt on demand; safe to delete)
 backend/data/doc_cache/
+
+# service logs (NSSM)
+*.err.log
+RMJOne*.log
