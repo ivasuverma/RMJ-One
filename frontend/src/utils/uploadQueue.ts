@@ -34,7 +34,20 @@ export type OutboxItem = {
   // Record photos (repair/sample/employee):
   ref_type?: string;
   ref_id?: string;
+  // Page count of a multi-photo PDF (Quick Capture merges a stretch of photos
+  // into one document); lets the Documents grid badge it and show its cover.
+  pages?: number;
+  // Held back from uploading while Quick Capture is still collecting a stretch
+  // of photos into one document. It's stored durably like everything else (so
+  // a crash never loses a photo) but the worker skips it — see isHeld().
+  held?: boolean;
 };
+
+// A hold only lasts this long. If the app dies mid-stretch, the leftover held
+// photos would otherwise sit in the outbox forever; after this they simply
+// upload as ordinary single photos.
+const HOLD_MS = 15 * 60 * 1000;
+const isHeld = (i: OutboxItem) => !!i.held && Date.now() - i.created_at < HOLD_MS;
 
 const DB_NAME = 'rmj-doc-outbox';
 const STORE = 'items';
@@ -219,6 +232,7 @@ function buildForm(item: OutboxItem): FormData {
   if (item.note !== undefined) form.append('note', item.note || '');
   if (item.ref_type) form.append('ref_type', item.ref_type);
   if (item.ref_id) form.append('ref_id', item.ref_id);
+  if (item.pages) form.append('pages', String(item.pages));
   // Idempotency: a retry after a timeout (where the server actually saved it)
   // must not create a duplicate — the server dedupes on this key.
   form.append('client_id', item.id);
@@ -237,7 +251,7 @@ async function drain(): Promise<void> {
       // Skip items already marked as a permanent failure — they stay in the
       // outbox (shown as "failed" in the badge) until the user cancels them,
       // but must not block the rest of the queue or be retried.
-      const item = items.find((i) => !i.permanent);
+      const item = items.find((i) => !i.permanent && !isHeld(i));
       if (!item) break;
       try {
         await api.upload(item.endpoint || '/documents', buildForm(item));
@@ -279,13 +293,13 @@ async function drain(): Promise<void> {
 // safe IndexedDB storage (see the note on OutboxItem.data).
 export type EnqueueInput = {
   id: string; blob: Blob; filename: string; thumb: string;
-  endpoint?: string; category_key?: string; note?: string; ref_type?: string; ref_id?: string;
+  endpoint?: string; category_key?: string; note?: string; ref_type?: string; ref_id?: string; pages?: number;
 };
 
-export async function enqueueUpload(input: EnqueueInput, opts?: { drainNow?: boolean }): Promise<void> {
+export async function enqueueUpload(input: EnqueueInput, opts?: { drainNow?: boolean; hold?: boolean }): Promise<void> {
   const { blob, ...rest } = input;
   const data = await blob.arrayBuffer();
-  const rec: OutboxItem = { ...rest, data, mime: blob.type || 'application/octet-stream', created_at: Date.now(), tries: 0 };
+  const rec: OutboxItem = { ...rest, data, mime: blob.type || 'application/octet-stream', created_at: Date.now(), tries: 0, held: opts?.hold || undefined };
   if (!hasIDB()) {
     // No IndexedDB (shouldn't happen on web) — fall back to a direct upload.
     await api.upload(rec.endpoint || '/documents', buildForm(rec));
@@ -296,6 +310,17 @@ export async function enqueueUpload(input: EnqueueInput, opts?: { drainNow?: boo
   // Quick capture holds the drain (drainNow:false) until the user has had a
   // chance to add a remark, so the remark/filename is applied before upload.
   if (opts?.drainNow !== false) drain();
+}
+
+// Let held items go: they become ordinary queued items and upload.
+export async function releaseHeld(ids: string[]): Promise<void> {
+  if (!hasIDB()) return;
+  for (const id of ids) {
+    const item = await idbGet(id).catch(() => undefined);
+    if (!item || !item.held) continue;
+    item.held = undefined;
+    try { await idbPut(item); } catch { /* ignore */ }
+  }
 }
 
 // Start uploading queued items now (used after a held enqueue, e.g. quick

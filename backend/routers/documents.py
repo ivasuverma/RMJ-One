@@ -295,6 +295,7 @@ async def create_document(
     note: str = Form(default=''),
     thumb: str = Form(default=''),   # small base64 JPEG (images only) for fast grid
     client_id: str = Form(default=''),   # idempotency key from the upload queue
+    pages: int = Form(default=0),        # >1 for a multi-photo PDF made by Quick Capture
     user=Depends(get_current),
 ):
     """Capture: create a PENDING doc immediately and return fast. The bytes are
@@ -343,6 +344,9 @@ async def create_document(
         'last_pending_reminder_at': None,
         'ocr': {'text': None, 'fields': {}, 'status': 'none'},
         'deleted': False,
+        # Photos captured in one stretch arrive merged as ONE multi-page PDF; the
+        # count lets the grid badge it and show the first page as its cover.
+        'pages': pages if 1 < pages <= 200 else None,
     }
 
     # The bytes are normally stored inline as base64 in the Mongo document, and

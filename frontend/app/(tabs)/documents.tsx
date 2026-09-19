@@ -19,6 +19,7 @@ import { UploadQueueBadge } from '@/src/components/UploadQueueBadge';
 type Doc = {
   id: string; category_key: string; status: 'pending' | 'done'; upload_state: string;
   file: { mime: string; orig_name: string; drive_view_link?: string | null };
+  pages?: number | null;
   note?: string; created_at: string; recorded_at?: string | null; uploaded_by_name?: string; recorded_by_name?: string | null;
   linked_ref?: { type: string; id: string; label?: string } | null;
 };
@@ -429,9 +430,12 @@ function QuickView({ doc, categoryLabel, token, fileUri, onClose, onRecord, canR
           {isImage && token
             ? <Image key={doc.id} source={{ uri: `${fileUri(doc.id)}?full=1`, headers: { Authorization: `Bearer ${token}` } }} placeholder={{ uri: `${fileUri(doc.id)}?thumb=1`, headers: { Authorization: `Bearer ${token}` } }} placeholderContentFit="contain" transition={150} style={styles.qvImg} contentFit="contain" onLoadEnd={() => setImgLoaded(true)} />
             : <View style={{ alignItems: 'center', gap: 10 }}>
+                {!opening && !!doc.pages && token && (
+                  <Image key={doc.id} source={{ uri: `${fileUri(doc.id)}?thumb=1`, headers: { Authorization: `Bearer ${token}` } }} style={{ width: 220, height: 220 }} contentFit="contain" />
+                )}
                 {opening
                   ? <><ActivityIndicator color="#fff" size="large" /><Text style={{ color: '#fff', fontWeight: '700' }}>Opening…</Text></>
-                  : <><Ionicons name="document-text-outline" size={64} color={colors.mutedText} /><Text style={{ color: '#fff', fontWeight: '700' }}>Tap to open PDF</Text></>}
+                  : <><Ionicons name="document-text-outline" size={doc.pages ? 28 : 64} color={colors.mutedText} /><Text style={{ color: '#fff', fontWeight: '700' }}>{doc.pages ? `Tap to open · ${doc.pages} pages` : 'Tap to open PDF'}</Text></>}
               </View>}
           {isImage && !imgLoaded && <View style={styles.qvImgLoading} pointerEvents="none"><ActivityIndicator color="#fff" size="small" /></View>}
           {idx > 0 && <Pressable onPress={() => go(-1)} style={[styles.qvNav, { left: 6 }]} testID="qv-prev"><Ionicons name="chevron-back" size={26} color="#fff" /></Pressable>}
@@ -544,9 +548,16 @@ const DocThumb = memo(function DocThumb({ d, size, base, token }: { d: Doc; size
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [loaded, setLoaded] = useState(false);
-  const isImg = (d.file.mime || '').startsWith('image/') && !!token;
+  // A merged multi-photo document is a PDF but carries the first photo's thumbnail.
+  const isImg = ((d.file.mime || '').startsWith('image/') || !!d.pages) && !!token;
   return (
     <View style={[styles.thumb, { width: size, height: size, borderRadius: size > 60 ? 12 : 10 }]}>
+      {!!d.pages && d.pages > 1 && (
+        <View style={{ position: 'absolute', right: 3, bottom: 3, zIndex: 2, flexDirection: 'row', alignItems: 'center', gap: 2, backgroundColor: 'rgba(0,0,0,0.65)', borderRadius: 8, paddingHorizontal: 5, paddingVertical: 1 }}>
+          <Ionicons name="copy-outline" size={9} color="#fff" />
+          <Text style={{ color: '#fff', fontSize: 10, fontWeight: '800' }}>{d.pages}</Text>
+        </View>
+      )}
       {isImg ? (
         <>
           <Image source={{ uri: `${base}/api/documents/${d.id}/file?thumb=1`, headers: { Authorization: `Bearer ${token}` } }} style={{ width: size, height: size }} contentFit="cover" cachePolicy="memory-disk" recyclingKey={d.id} transition={120} onLoadEnd={() => setLoaded(true)} />
