@@ -98,3 +98,6 @@ backend/data/doc_cache/
 # service logs (NSSM)
 *.err.log
 RMJOne*.log
+
+# runtime data: cached customer documents/photos (never commit)
+backend/data/
