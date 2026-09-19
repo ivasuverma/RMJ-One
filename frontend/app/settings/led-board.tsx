@@ -11,10 +11,14 @@ import { useTheme } from '@/src/theme/ThemeContext';
 import { useToast } from '@/src/components/ui';
 import { confirmAction } from '@/src/utils/confirm';
 
-type Cfg = { enabled: boolean; driver: string; host: string; port: number; template: string; auto_push: boolean };
+type Cfg = {
+  enabled: boolean; driver: string; host: string; port: number; template: string; auto_push: boolean;
+  auto_mode: 'off' | 'time' | 'interval'; auto_time: string; interval_min: number; window_start: string; window_end: string; skip_weekend: boolean;
+};
 type Status = {
   last_push_at: string | null; last_ok: boolean | null; last_error: string | null; last_text: string | null; last_reason: string | null;
   last_test_at: string | null; last_test_ok: boolean | null; last_test_detail: string | null;
+  auto_last_run_at?: string | null; auto_last_ok?: boolean | null; auto_last_error?: string | null; auto_last_result?: string | null;
 };
 type Tpl = { id: string; name: string; text: string };
 type State = { templates?: Tpl[]; config: Cfg; status: Status; drivers: string[]; today: { gold: number; silver: number; date: string; confirmed: boolean } | null; preview: string | null; default_template: string };
@@ -40,6 +44,13 @@ export default function LedBoardScreen() {
   const [template, setTemplate] = useState('');
   const [autoPush, setAutoPush] = useState(true);
   const [dirty, setDirty] = useState(false);
+  // Automatic mode
+  const [autoMode, setAutoMode] = useState<'off' | 'time' | 'interval'>('off');
+  const [autoTime, setAutoTime] = useState('12:30');
+  const [intervalMin, setIntervalMin] = useState('60');
+  const [winStart, setWinStart] = useState('10:00');
+  const [winEnd, setWinEnd] = useState('19:00');
+  const [skipWeekend, setSkipWeekend] = useState(true);
   // One-off / saved custom messages
   const [customText, setCustomText] = useState('');
   const [customPreview, setCustomPreview] = useState<{ text: string | null; error: string | null } | null>(null);
@@ -51,6 +62,8 @@ export default function LedBoardScreen() {
     setState(s); setTpls(s.templates || []);
     setEnabled(s.config.enabled); setDriver(s.config.driver); setHost(s.config.host);
     setPort(s.config.port ? String(s.config.port) : ''); setTemplate(s.config.template); setAutoPush(s.config.auto_push);
+    setAutoMode(s.config.auto_mode || 'off'); setAutoTime(s.config.auto_time || '12:30'); setIntervalMin(String(s.config.interval_min || 60));
+    setWinStart(s.config.window_start || '10:00'); setWinEnd(s.config.window_end || '19:00'); setSkipWeekend(s.config.skip_weekend !== false);
     setDirty(false);
   };
   const load = useCallback(async () => {
@@ -65,7 +78,8 @@ export default function LedBoardScreen() {
   const save = async () => {
     setBusy('save');
     try {
-      await api.put('/led-board/config', { enabled, driver, host: host.trim(), port: parseInt(port || '0', 10) || 0, template: template.trim() || null, auto_push: autoPush });
+      await api.put('/led-board/config', { enabled, driver, host: host.trim(), port: parseInt(port || '0', 10) || 0, template: template.trim() || null, auto_push: autoPush,
+        auto_mode: autoMode, auto_time: autoTime, interval_min: parseInt(intervalMin || '60', 10) || 60, window_start: winStart, window_end: winEnd, skip_weekend: skipWeekend });
       toast.success('Board settings saved');
       await load();
     } catch (e: any) { toast.error(e?.detail || 'Could not save'); }
@@ -158,6 +172,11 @@ export default function LedBoardScreen() {
               </Text>
             </View>
           ) : null}
+          {st?.auto_last_run_at ? (
+            <Text style={styles.hint}>
+              Automatic: {st.auto_last_ok ? `updated ${istDisplayDateTime(st.auto_last_run_at)}${st.auto_last_result ? ` — ${st.auto_last_result}` : ''}` : `last try ${istDisplayDateTime(st.auto_last_run_at)} failed — ${st.auto_last_error}`}
+            </Text>
+          ) : null}
         </View>
 
         <View style={styles.card}>
@@ -171,6 +190,50 @@ export default function LedBoardScreen() {
             <Switch value={autoPush} onValueChange={edit(setAutoPush)} disabled={!isOwner} trackColor={{ true: colors.brandPrimary, false: colors.border }} thumbColor={colors.surface} testID="led-auto" />
           </View>
 
+          <Text style={[styles.cardTitle, { marginTop: spacing.md }]}>Automatic mode</Text>
+          <Text style={styles.hint}>The board fetches the rate and updates itself — no one needs to open the app. It uses the same fetch, margin and rounding as the Rate Updater.</Text>
+          <View style={styles.seg}>
+            {([['off', 'Off'], ['time', 'Daily at a time'], ['interval', 'Every few minutes']] as const).map(([k, l]) => (
+              <Pressable key={k} disabled={!isOwner} onPress={() => edit(setAutoMode)(k)} style={[styles.segItem, autoMode === k && styles.segOn]} testID={`led-auto-${k}`}>
+                <Text style={[styles.segText, autoMode === k && styles.segTextOn]}>{l}</Text>
+              </Pressable>
+            ))}
+          </View>
+          {autoMode === 'time' ? (
+            <View style={styles.row2}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>Fetch & update at (24h, IST)</Text>
+                <TextInput value={autoTime} onChangeText={edit(setAutoTime)} editable={isOwner} placeholder="12:30" placeholderTextColor={colors.mutedText} style={styles.input} testID="led-auto-time" />
+              </View>
+            </View>
+          ) : null}
+          {autoMode === 'interval' ? (
+            <View style={styles.row2}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>Every (minutes)</Text>
+                <TextInput value={intervalMin} onChangeText={(v) => edit(setIntervalMin)(v.replace(/\D/g, ''))} editable={isOwner} keyboardType="numeric" placeholder="60" placeholderTextColor={colors.mutedText} style={styles.input} testID="led-auto-interval" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>From</Text>
+                <TextInput value={winStart} onChangeText={edit(setWinStart)} editable={isOwner} placeholder="10:00" placeholderTextColor={colors.mutedText} style={styles.input} testID="led-auto-from" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>To</Text>
+                <TextInput value={winEnd} onChangeText={edit(setWinEnd)} editable={isOwner} placeholder="19:00" placeholderTextColor={colors.mutedText} style={styles.input} testID="led-auto-to" />
+              </View>
+            </View>
+          ) : null}
+          {autoMode !== 'off' ? (
+            <View style={styles.switchRow}>
+              <View style={{ flex: 1 }}><Text style={styles.label}>Skip Saturday &amp; Sunday</Text><Text style={styles.hint}>The market is closed — leave the board as it is.</Text></View>
+              <Switch value={skipWeekend} onValueChange={edit(setSkipWeekend)} disabled={!isOwner} trackColor={{ true: colors.brandPrimary, false: colors.border }} thumbColor={colors.surface} testID="led-auto-skipweekend" />
+            </View>
+          ) : null}
+          {autoMode !== 'off' && !enabled ? <Text style={styles.err}>Switch the board on (top of this card) for automatic mode to run.</Text> : null}
+          {autoMode === 'time' ? <Text style={styles.hint}>If the fetch fails it tries again every 5 minutes until it works.</Text> : null}
+          {autoMode === 'interval' ? <Text style={styles.hint}>Updates only between the two times, at least this many minutes apart.</Text> : null}
+
+          <Text style={[styles.cardTitle, { marginTop: spacing.md }]}>Connection</Text>
           <Text style={styles.label}>Board type</Text>
           <View style={styles.seg}>
             {(state?.drivers || []).map((d) => (
@@ -195,7 +258,7 @@ export default function LedBoardScreen() {
           ) : null}
 
           <Text style={styles.label}>Text on the board</Text>
-          <TextInput value={template} onChangeText={edit(setTemplate)} editable={isOwner} autoCapitalize="characters" placeholder={state?.default_template} placeholderTextColor={colors.mutedText} style={styles.input} testID="led-template" />
+          <TextInput value={template} onChangeText={edit(setTemplate)} editable={isOwner} autoCapitalize="characters" multiline placeholder={state?.default_template} placeholderTextColor={colors.mutedText} style={[styles.input, styles.inputBig]} testID="led-template" />
           <Text style={styles.hint}>Numbers: {'{gold_24k}'} {'{gold_22k}'} {'{gold_18k}'} {'{gold_14k}'} {'{silver_9999}'} — worked out by the Rate Master percentages. Add _comma for 1,51,050 style (e.g. {'{gold_22k_comma}'}). {'{gold_rate}'} and {'{silver_rate}'} are the raw confirmed rates; {'{date}'} and {'{time}'} also work.</Text>
           <Pressable onPress={() => router.push('/settings/rate-master' as any)}><Text style={styles.link}>Edit the percentages in Rate Master</Text></Pressable>
 
@@ -229,7 +292,7 @@ export default function LedBoardScreen() {
             </View>
           ) : null}
           <TextInput value={customText} onChangeText={setCustomText} autoCapitalize="characters" placeholder="e.g. 22K {gold_22k}  18K {gold_18k}" placeholderTextColor={colors.mutedText}
-            style={[styles.input, { marginTop: spacing.sm }]} testID="led-custom-text" />
+            multiline style={[styles.input, styles.inputBig, { marginTop: spacing.sm }]} testID="led-custom-text" />
           <View style={styles.chipRow}>
             {['{gold_24k}', '{gold_22k}', '{gold_18k}', '{gold_14k}', '{silver_9999}', '{date}', '{time}'].map((c) => (
               <Pressable key={c} onPress={() => addChip(c)} style={styles.chip}><Text style={styles.chipText}>{c}</Text></Pressable>
@@ -269,6 +332,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   cardTitle: { color: colors.onSurface, fontSize: 15, fontWeight: '800', marginBottom: 4 },
   big: { color: colors.onSurface, fontSize: 22, fontWeight: '800', letterSpacing: 0.5, paddingVertical: spacing.sm },
   hint: { color: colors.mutedText, fontSize: 12 },
+  inputBig: { minHeight: 110, textAlignVertical: 'top', paddingTop: 12, fontSize: 15, lineHeight: 22 },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 },
   chip: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: radius.pill, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
   tplChip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 6, borderRadius: radius.pill, backgroundColor: colors.brandTertiary, borderWidth: 1, borderColor: colors.brandPrimary },

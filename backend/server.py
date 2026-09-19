@@ -1458,6 +1458,8 @@ async def on_startup():
     asyncio.create_task(record_photo_worker())
     from gold_rate import gold_rate_loop  # daily reference gold-rate fetch
     asyncio.create_task(gold_rate_loop())
+    from routers.led_board import led_board_auto_loop  # LED board: fetch + push at a time / at intervals
+    asyncio.create_task(led_board_auto_loop())
     asyncio.create_task(_whatsapp_health_loop())
     from routers.biometric import biometric_health_loop, biometric_log_prune_loop
     asyncio.create_task(biometric_health_loop())

@@ -12,6 +12,11 @@ Drivers
               actual board (its network protocol isn't publicly documented), and until then
               it fails with a clear message instead of pretending to work.
 
+Automatic mode (`led_board_auto_loop`, started at server start-up) keeps the board fresh by itself,
+independent of the WhatsApp send: either once a day at a set time, or every N minutes inside a time
+window. Each run fetches the rate (the same fetch the whole app uses, with the margin and rounding from
+Settings › Rate Master applied), stores it as the live rate, and pushes it to the board.
+
 Nothing here can affect the WhatsApp/daily-rate flow: automatic pushes swallow their own errors.
 """
 import asyncio
@@ -33,6 +38,9 @@ router = APIRouter()
 DEFAULT_TEMPLATE = 'GOLD {gold_rate}  SILVER {silver_rate}'
 DEFAULT_PORT = 0            # unknown until the HD-W2 protocol is confirmed against the real board
 DRIVER_CHOICES = ('simulator', 'huidu_w2')
+AUTO_MODES = ('off', 'time', 'interval')
+MIN_INTERVAL_MIN = 5
+_HHMM = re.compile(r'^([01]\d|2[0-3]):[0-5]\d$')
 _MASTER_KEYS = ('gold_24k', 'gold_22k', 'gold_18k', 'gold_14k', 'silver_9999')
 
 
@@ -50,6 +58,13 @@ async def get_config() -> dict:
         'port': int(d.get('port') or DEFAULT_PORT),
         'template': d.get('template') or DEFAULT_TEMPLATE,
         'auto_push': bool(d.get('auto_push', True)),
+        # Automatic mode: 'off' | 'time' (once a day at auto_time) | 'interval' (every interval_min inside the window)
+        'auto_mode': d.get('auto_mode') if d.get('auto_mode') in AUTO_MODES else 'off',
+        'auto_time': d.get('auto_time') or '12:30',
+        'interval_min': max(MIN_INTERVAL_MIN, int(d.get('interval_min') or 60)),
+        'window_start': d.get('window_start') or '10:00',
+        'window_end': d.get('window_end') or '19:00',
+        'skip_weekend': bool(d.get('skip_weekend', True)),
     }
 
 
@@ -59,6 +74,8 @@ async def get_status() -> dict:
         'last_push_at': d.get('last_push_at'), 'last_ok': d.get('last_ok'), 'last_error': d.get('last_error'),
         'last_text': d.get('last_text'), 'last_reason': d.get('last_reason'),
         'last_test_at': d.get('last_test_at'), 'last_test_ok': d.get('last_test_ok'), 'last_test_detail': d.get('last_test_detail'),
+        'auto_last_run_at': d.get('auto_last_run_at'), 'auto_last_ok': d.get('auto_last_ok'), 'auto_last_error': d.get('auto_last_error'),
+        'auto_last_result': d.get('auto_last_result'),
     }
 
 
@@ -189,6 +206,12 @@ class LedBoardConfigIn(BaseModel):
     port: int = 0
     template: Optional[str] = None
     auto_push: bool = True
+    auto_mode: str = 'off'
+    auto_time: str = '12:30'
+    interval_min: int = 60
+    window_start: str = '10:00'
+    window_end: str = '19:00'
+    skip_weekend: bool = True
 
 
 class LedBoardPushIn(BaseModel):
@@ -310,11 +333,23 @@ async def led_board_config(body: LedBoardConfigIn, user: dict = Depends(require_
             raise HTTPException(status_code=400, detail=f'Template has an unknown placeholder: {e}')
         if len(body.template) > 200:
             raise HTTPException(status_code=400, detail='Template is too long for a board (max 200 characters)')
+    if body.auto_mode not in AUTO_MODES:
+        raise HTTPException(status_code=400, detail='Automatic mode must be off, daily at a time, or every N minutes')
+    for label, val in (('Time', body.auto_time), ('Window start', body.window_start), ('Window end', body.window_end)):
+        if not _HHMM.match(val):
+            raise HTTPException(status_code=400, detail=f'{label} must be HH:MM (24-hour)')
+    if body.interval_min < MIN_INTERVAL_MIN or body.interval_min > 24 * 60:
+        raise HTTPException(status_code=400, detail=f'Interval must be between {MIN_INTERVAL_MIN} minutes and 24 hours')
+    if body.auto_mode == 'interval' and body.window_end <= body.window_start:
+        raise HTTPException(status_code=400, detail='The window must end after it starts')
     await db.settings.update_one({'id': 'led_board'}, {'$set': {
         'id': 'led_board', 'enabled': body.enabled, 'driver': body.driver, 'host': host, 'port': body.port,
-        'template': body.template or None, 'auto_push': body.auto_push, 'updated_at': now_utc().isoformat(),
+        'template': body.template or None, 'auto_push': body.auto_push, 'auto_mode': body.auto_mode, 'auto_time': body.auto_time,
+        'interval_min': body.interval_min, 'window_start': body.window_start, 'window_end': body.window_end,
+        'skip_weekend': body.skip_weekend, 'updated_at': now_utc().isoformat(),
     }}, upsert=True)
-    await log_audit(user, 'settings.led_board.config_update', 'settings', 'led_board', f'{body.driver} {host}:{body.port} enabled={body.enabled} auto={body.auto_push}')
+    await log_audit(user, 'settings.led_board.config_update', 'settings', 'led_board',
+                    f'{body.driver} {host}:{body.port} enabled={body.enabled} confirm_push={body.auto_push} auto={body.auto_mode}')
     return await get_config()
 
 
@@ -364,3 +399,85 @@ async def led_board_push(body: LedBoardPushIn, user: dict = Depends(require_admi
     if not res['ok']:
         raise HTTPException(status_code=502, detail=res['error'] or 'Could not update the board')
     return res
+
+
+# ---------------- automatic mode ----------------
+async def _auto_state() -> dict:
+    return await db.settings.find_one({'id': 'led_board_status'}, {'_id': 0}) or {}
+
+
+def _hhmm_minutes(v: str) -> int:
+    h, m = v.split(':')
+    return int(h) * 60 + int(m)
+
+
+def auto_due(cfg: dict, st: dict, now: Optional[datetime] = None) -> Optional[str]:
+    """Is an automatic run due right now? Returns a short reason ('time'/'interval') or None.
+    Pure function of config + last-run state, so it can be tested without waiting for the clock."""
+    if not cfg['enabled'] or cfg['auto_mode'] == 'off':
+        return None
+    now_ist = (now or now_utc()).astimezone(IST)
+    if cfg['skip_weekend'] and now_ist.weekday() >= 5:
+        return None
+    now_min = now_ist.hour * 60 + now_ist.minute
+    last_attempt = st.get('auto_last_run_at')
+    since_attempt = None
+    if last_attempt:
+        try:
+            since_attempt = ((now or now_utc()) - datetime.fromisoformat(last_attempt)).total_seconds() / 60
+        except Exception:
+            since_attempt = None
+    if cfg['auto_mode'] == 'time':
+        if now_min < _hhmm_minutes(cfg['auto_time']):
+            return None
+        done_today = st.get('auto_last_ok_date') == now_ist.strftime('%Y-%m-%d')
+        if done_today:
+            return None
+        # a failed fetch is retried every 5 minutes until it works (the site can hiccup)
+        return 'time' if since_attempt is None or since_attempt >= 5 else None
+    # interval
+    if not (_hhmm_minutes(cfg['window_start']) <= now_min <= _hhmm_minutes(cfg['window_end'])):
+        return None
+    last_ok = st.get('auto_last_ok_at')
+    if last_ok:
+        try:
+            if ((now or now_utc()) - datetime.fromisoformat(last_ok)).total_seconds() / 60 < cfg['interval_min']:
+                return None
+        except Exception:
+            pass
+    return 'interval' if since_attempt is None or since_attempt >= 5 else None
+
+
+async def run_auto_once(reason: str) -> dict:
+    """Fetch the rate and put it on the board. Records the outcome in led_board_status."""
+    import gold_rate
+    now = now_utc()
+    res = await gold_rate.refresh_live_rate()
+    upd = {'id': 'led_board_status', 'auto_last_run_at': now.isoformat()}
+    out = {'ok': False}
+    if res.get('ok'):
+        pushed = await push_rates(int(res['gold_rate']), int(res['silver_rate']), f'auto_{reason}')
+        upd.update({'auto_last_ok': pushed['ok'], 'auto_last_error': pushed['error'], 'auto_last_result': pushed['text']})
+        if pushed['ok']:
+            upd.update({'auto_last_ok_at': now.isoformat(), 'auto_last_ok_date': now.astimezone(IST).strftime('%Y-%m-%d')})
+        out = pushed
+    else:
+        upd.update({'auto_last_ok': False, 'auto_last_error': f"Could not fetch the rate: {res.get('error')}"})
+        out = {'ok': False, 'error': upd['auto_last_error']}
+    await db.settings.update_one({'id': 'led_board_status'}, {'$set': upd}, upsert=True)
+    return out
+
+
+async def led_board_auto_loop():
+    """Once a minute: if automatic mode is on and a run is due, fetch the rate and push it."""
+    await asyncio.sleep(75)   # let start-up settle
+    while True:
+        try:
+            cfg = await get_config()
+            reason = auto_due(cfg, await _auto_state())
+            if reason:
+                logger.info(f'LED board automatic update ({reason})')
+                await run_auto_once(reason)
+        except Exception as e:
+            logger.warning(f'LED board auto loop error: {e}')
+        await asyncio.sleep(60)
