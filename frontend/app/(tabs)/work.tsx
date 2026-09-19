@@ -92,7 +92,7 @@ export default function WorkScreen() {
     ] : placeholder,
   });
   if (hasModule('gold_rate')) rows.push({
-    key: 'gold_rate', title: 'Gold Rate Channel', icon: 'trending-up-outline', route: '/gold-rate',
+    key: 'gold_rate', title: 'Rate Updater', icon: 'trending-up-outline', route: '/gold-rate',
     segs: goldRateSummary ? (
       goldRateSummary.error ? [{ text: "Couldn't fetch today", tone: 'bad' }]
       : goldRateSummary.gold_rate ? [

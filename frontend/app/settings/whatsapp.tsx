@@ -300,7 +300,7 @@ export default function WhatsAppSettingsScreen() {
         <View style={[styles.groupCard, !form.enabled && { opacity: 0.5 }]}>
           <View style={styles.groupHeader}>
             <View style={styles.groupHeaderIcon}><Ionicons name="pricetag-outline" size={17} color={colors.brandSecondary} /></View>
-            <Text style={styles.groupHeaderTitle}>Gold Rate</Text>
+            <Text style={styles.groupHeaderTitle}>Rate Updater</Text>
           </View>
           <Text style={styles.hint}>When the daily rate auto-fetches, and the margin added on top — fetching/sending itself happens on the Work tab.</Text>
           <View style={styles.row2}>
@@ -380,7 +380,7 @@ export default function WhatsAppSettingsScreen() {
           </Pressable>
 
           <Pressable onPress={saveGoldRateConfig} disabled={grSaving} style={[styles.altBtn, grSaving && { opacity: 0.6 }]} testID="gold-rate-save-config">
-            {grSaving ? <ActivityIndicator color={colors.brandSecondary} size="small" /> : <Text style={styles.altBtnText}>Save Gold Rate Settings</Text>}
+            {grSaving ? <ActivityIndicator color={colors.brandSecondary} size="small" /> : <Text style={styles.altBtnText}>Save Rate Updater Settings</Text>}
           </Pressable>
         </View>
 

@@ -98,14 +98,14 @@ export default function LedBoardScreen() {
 
         <View style={styles.infoBox}>
           <Ionicons name="tv-outline" size={16} color={colors.brandSecondary} />
-          <Text style={styles.infoText}>Shows today's gold and silver rate on the shop's LED board. It updates when you confirm the rate on the Gold Rate screen, or when you tap "Update board now".</Text>
+          <Text style={styles.infoText}>Shows today's gold and silver rate on the shop's LED board. It updates when you confirm the rate on the Rate Updater screen, or when you tap "Update board now".</Text>
         </View>
 
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Board now</Text>
           <Text style={styles.big}>{state?.preview || 'No rate for today yet'}</Text>
           <Text style={styles.hint}>
-            {state?.today ? `Rate for ${state.today.date}${state.today.confirmed ? ' · sent' : ' · not sent yet'}` : 'Fetch or enter today\'s rate on the Gold Rate screen.'}
+            {state?.today ? `Rate for ${state.today.date}${state.today.confirmed ? ' · sent' : ' · not sent yet'}` : 'Fetch or enter today\'s rate on the Rate Updater screen.'}
           </Text>
           <Pressable onPress={push} disabled={!canPush || busy === 'push'} style={[styles.primaryBtn, (!canPush || busy === 'push') && { opacity: 0.5 }]} testID="led-push">
             {busy === 'push' ? <ActivityIndicator color={colors.onBrandPrimary} size="small" /> : <><Ionicons name="cloud-upload-outline" size={17} color={colors.onBrandPrimary} /><Text style={styles.primaryBtnText}>Update board now</Text></>}
@@ -157,8 +157,8 @@ export default function LedBoardScreen() {
 
           <Text style={styles.label}>Text on the board</Text>
           <TextInput value={template} onChangeText={edit(setTemplate)} editable={isOwner} autoCapitalize="characters" placeholder={state?.default_template} placeholderTextColor={colors.mutedText} style={styles.input} testID="led-template" />
-          <Text style={styles.hint}>Numbers: {'{gold_24k}'} {'{gold_22k}'} {'{gold_18k}'} {'{gold_14k}'} {'{silver_9999}'} — worked out by the Rate master formulas. Add _comma for 1,51,050 style (e.g. {'{gold_22k_comma}'}). {'{gold_rate}'} and {'{silver_rate}'} are the raw confirmed rates; {'{date}'} and {'{time}'} also work.</Text>
-          <Pressable onPress={() => router.push('/settings/rate-master' as any)}><Text style={styles.link}>Edit the formulas in Rate master</Text></Pressable>
+          <Text style={styles.hint}>Numbers: {'{gold_24k}'} {'{gold_22k}'} {'{gold_18k}'} {'{gold_14k}'} {'{silver_9999}'} — worked out by the Rate Master percentages. Add _comma for 1,51,050 style (e.g. {'{gold_22k_comma}'}). {'{gold_rate}'} and {'{silver_rate}'} are the raw confirmed rates; {'{date}'} and {'{time}'} also work.</Text>
+          <Pressable onPress={() => router.push('/settings/rate-master' as any)}><Text style={styles.link}>Edit the percentages in Rate Master</Text></Pressable>
 
           {isOwner ? (
             <View style={styles.row2}>

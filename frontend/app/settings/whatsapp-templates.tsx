@@ -182,7 +182,7 @@ export default function WhatsAppTemplatesScreen() {
         </View>
 
         <View style={styles.divider} />
-        <Text style={styles.section}>Gold Rate Channel — Broadcast Template</Text>
+        <Text style={styles.section}>Rate Updater — WhatsApp Broadcast Template</Text>
         <Text style={styles.hint}>Placeholders: {'{gold_rate}'} {'{silver_rate}'} {'{date}'} {'{time}'} — date/time are when the rate was fetched.</Text>
         <TextInput
           value={goldRateTemplate}

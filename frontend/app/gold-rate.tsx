@@ -124,15 +124,6 @@ export default function GoldRateScreen() {
   };
   const addChip = (c: string) => setCustomText((t) => (t && !t.endsWith(' ') ? `${t} ${c}` : `${t}${c}`));
 
-  const pushBoard = async () => {
-    setBusy('led');
-    try {
-      const r = await api.post<{ text: string }>('/led-board/push', {});
-      toast.success(`Board updated: ${r.text}`);
-    } catch (e: any) { toast.error(e?.detail || 'Could not update the board'); }
-    finally { setBusy(null); api.get<any>('/led-board').then(setLed).catch(() => {}); }
-  };
-
   const refetch = async () => {
     setBusy('refetch');
     try {
@@ -204,7 +195,7 @@ export default function GoldRateScreen() {
         <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
-        <Text style={styles.title}>Gold Rate Channel</Text>
+        <Text style={styles.title}>Rate Updater</Text>
         <Pressable onPress={load} style={styles.iconBtn} testID="gold-rate-refresh-btn" hitSlop={12}>
           <Ionicons name="refresh" size={18} color={colors.onSurface} />
         </Pressable>
@@ -219,25 +210,6 @@ export default function GoldRateScreen() {
           <Ionicons name="pricetag-outline" size={16} color={colors.brandSecondary} />
           <Text style={styles.infoText}>Fetches a reference rate from your supplier once a day. Confirm — and adjust the rates or message if needed — before it's sent to the "Ram Murti Jewellers" WhatsApp Channel.</Text>
         </View>
-
-        {led ? (
-          <View style={styles.boardCard} testID="gold-rate-led-card">
-            <Ionicons name="tv-outline" size={18} color={colors.brandSecondary} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.boardLinkTitle}>LED rate board</Text>
-              <Text style={styles.boardLinkSub}>
-                {!led.config.enabled ? 'Switched off' : led.status.last_push_at ? (led.status.last_ok ? `Updated ${istTime(led.status.last_push_at)}` : `Last update failed: ${led.status.last_error}`) : 'Not updated yet'}
-                {led.config.enabled && led.config.auto_push ? ' · updates when you send the rate' : ''}
-              </Text>
-            </View>
-            {led.config.enabled ? (
-              <Pressable onPress={pushBoard} disabled={busy === 'led'} style={[styles.boardBtn, busy === 'led' && { opacity: 0.6 }]} testID="gold-rate-led-push">
-                {busy === 'led' ? <ActivityIndicator size="small" color={colors.brandSecondary} /> : <Text style={styles.boardBtnText}>Update</Text>}
-              </Pressable>
-            ) : null}
-            <Pressable onPress={() => router.push('/settings/led-board' as any)} hitSlop={8} testID="gold-rate-led-settings"><Ionicons name="settings-outline" size={18} color={colors.mutedText} /></Pressable>
-          </View>
-        ) : null}
 
         {led ? (
           <View style={styles.customCard} testID="gold-rate-led-custom">
@@ -331,15 +303,12 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   infoBoxWarn: { backgroundColor: colors.warning, borderColor: colors.warning },
   infoText: { color: colors.onSurfaceTertiary, fontSize: 12, flex: 1 },
   hint: { color: colors.mutedText, fontSize: 12, marginBottom: spacing.md },
-  boardCard: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.md },
   customCard: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.md, gap: 6 },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 4 },
   chip: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: radius.pill, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
   chipText: { color: colors.brandSecondary, fontSize: 12, fontWeight: '700' },
   customPreview: { color: colors.onSurface, fontSize: 13, marginTop: 2 },
   customErr: { color: colors.onError, fontSize: 12, marginTop: 2 },
-  boardBtn: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.brandSecondary },
-  boardBtnText: { color: colors.brandSecondary, fontWeight: '700', fontSize: 12.5 },
   boardLink: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.md },
   boardLinkTitle: { color: colors.onSurface, fontSize: 14, fontWeight: '700' },
   boardLinkSub: { color: colors.mutedText, fontSize: 12, marginTop: 2 },

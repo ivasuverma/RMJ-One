@@ -282,7 +282,7 @@ MODULE_DEFS = [
     # WhatsApp Channel). The margin/fetch-time CONFIG stays owner-only
     # regardless (enforced directly with require_owner, not this module) —
     # it's pricing policy, not a task.
-    {'key': 'gold_rate', 'label': 'Gold Rate Channel', 'default_roles': ['owner', 'admin'], 'employee_assignable': True},
+    {'key': 'gold_rate', 'label': 'Rate Updater', 'default_roles': ['owner', 'admin'], 'employee_assignable': True},
 ]
 MODULE_KEYS = {m['key'] for m in MODULE_DEFS}
 MODULE_DEFAULT_ROLES = {m['key']: set(m['default_roles']) for m in MODULE_DEFS}
