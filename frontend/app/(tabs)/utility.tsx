@@ -23,41 +23,57 @@ type RowDef = {
 };
 type GroupDef = { title: string; ownerOnly?: boolean; rows: RowDef[] };
 
-// Masters (Account Types drives the Ledger filters — Phase 5), Business, and
-// People/Access. Directories intentionally excluded except the team roster.
+// Grouped by what you are setting up, in the order an owner reaches for them: the people first, then
+// the masters for each part of the business (stock, money, rates, documents), then messaging, then
+// the system itself. Directories (customers/karigars) are NOT here — they live in Work > Ledger.
 const GROUPS: GroupDef[] = [
   {
-    title: 'People & Access', ownerOnly: true,
+    title: 'Team & Access', ownerOnly: true,
     rows: [
       { key: 'employees', label: 'Employees', sub: 'Your team roster', icon: 'people-outline', route: '/(tabs)/employees' },
       { key: 'user-roles', label: 'Users', sub: 'Access, notifications, documents & logins', icon: 'shield-checkmark-outline', route: '/settings/user-roles' },
-    ],
-  },
-  {
-    title: 'Attendance & Payroll', ownerOnly: true,
-    rows: [
       { key: 'attendance-payroll', label: 'Attendance & Payroll', sub: 'Shifts, holidays, departments, locations, biometric', icon: 'time-outline', route: '/settings/attendance-payroll' },
     ],
   },
   {
-    title: 'Masters', ownerOnly: true,
+    title: 'Jewellery & Stock', ownerOnly: true,
     rows: [
-      { key: 'account-types', label: 'Account Types', sub: 'Ledger categories', icon: 'pricetags-outline', route: '/settings/account-types' },
-      { key: 'doc-categories', label: 'Document Categories', sub: 'Names & folders (permissions live in Users)', icon: 'folder-outline', route: '/settings/document-categories' },
-      { key: 'repair-types', label: 'Repair Types', sub: 'Repair catalogue', icon: 'construct-outline', route: '/settings/repair-types' },
       { key: 'item-master', label: 'Items & Purity', sub: 'Item master & purity', icon: 'diamond-outline', route: '/settings/item-master' },
+      { key: 'repair-types', label: 'Repair Types', sub: 'Repair catalogue', icon: 'construct-outline', route: '/settings/repair-types' },
       { key: 'sample-issue-types', label: 'Sample Issue Types', sub: 'Reasons for Stock In/Out', icon: 'swap-horizontal-outline', route: '/settings/sample-issue-types' },
-      { key: 'cashbook-types', label: 'Cash Pay & Receive Types', sub: 'Predefined types for Cash Book entries', icon: 'cash-outline', route: '/settings/cashbook-types' },
-      { key: 'rate-master', label: 'Rate Master', sub: '% of the base rate for 24K, 22K, 18K, 14K & silver 99.99', icon: 'calculator-outline', route: '/settings/rate-master' },
-      { key: 'print-master', label: 'Print Master', sub: 'Fields, text size & shop name per receipt', icon: 'print-outline', route: '/settings/print-master' },
     ],
   },
   {
-    title: 'Business', ownerOnly: true,
+    title: 'Accounts & Cash', ownerOnly: true,
     rows: [
+      { key: 'account-types', label: 'Account Types', sub: 'Ledger categories', icon: 'pricetags-outline', route: '/settings/account-types' },
+      { key: 'cashbook-types', label: 'Cash Pay & Receive Types', sub: 'Predefined types for Cash Book entries', icon: 'cash-outline', route: '/settings/cashbook-types' },
+    ],
+  },
+  {
+    title: 'Rates & Display', ownerOnly: true,
+    rows: [
+      { key: 'rate-master', label: 'Rate Master', sub: 'Daily fetch, margin & purity percentages', icon: 'calculator-outline', route: '/settings/rate-master' },
+      { key: 'led-board', label: 'LED Rate Board', sub: 'Shop display: connection, automatic updates, templates', icon: 'tv-outline', route: '/settings/led-board' },
+    ],
+  },
+  {
+    title: 'Documents & Printing', ownerOnly: true,
+    rows: [
+      { key: 'doc-categories', label: 'Document Categories', sub: 'Names & folders (permissions live in Users)', icon: 'folder-outline', route: '/settings/document-categories' },
+      { key: 'print-master', label: 'Print Master', sub: 'Fields, text size & shop name per receipt', icon: 'print-outline', route: '/settings/print-master' },
       { key: 'printer', label: 'Printer Settings', sub: 'WiFi thermal receipt printer', icon: 'print-outline', route: '/settings/printer' },
-      { key: 'led-board', label: 'LED Rate Board', sub: 'Shop display: connection, text & auto-update', icon: 'tv-outline', route: '/settings/led-board' },
-      { key: 'whatsapp', label: 'WhatsApp', sub: 'Connection status & notice toggles', icon: 'logo-whatsapp', route: '/settings/whatsapp' },
+    ],
+  },
+  {
+    title: 'Messaging', ownerOnly: true,
+    rows: [
+      { key: 'whatsapp', label: 'WhatsApp', sub: 'Connection status, notice toggles & message text', icon: 'logo-whatsapp', route: '/settings/whatsapp' },
+    ],
+  },
+  {
+    title: 'System & Security', ownerOnly: true,
+    rows: [
       { key: 'security', label: 'Security', sub: 'Auto sign-out after inactivity', icon: 'lock-closed-outline', route: '/settings/security' },
       { key: 'google-drive', label: 'Google Drive & Backup', sub: 'Document and photo storage', icon: 'cloud-outline', route: '/settings/google-drive' },
       { key: 'system-health', label: 'System Health', sub: 'Live status of every connected system', icon: 'pulse-outline', route: '/settings/system-health' },
