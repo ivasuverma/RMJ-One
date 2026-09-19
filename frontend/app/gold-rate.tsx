@@ -300,9 +300,9 @@ export default function RateUpdaterScreen() {
         {/* ---- 3. Where each place is set up ---- */}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Settings</Text>
-          <Pressable onPress={() => router.push('/settings/rate-master' as any)} hitSlop={6}><Text style={styles.link}>Rate Master — % for 22K, 18K, 14K & silver</Text></Pressable>
+          <Pressable onPress={() => router.push('/settings/rate-master' as any)} hitSlop={6}><Text style={styles.link}>Rate Master — fetch time, margin, automatic send, purity percentages</Text></Pressable>
           <Pressable onPress={() => router.push('/settings/led-board' as any)} hitSlop={6}><Text style={styles.link}>LED Rate Board — connection, text, templates</Text></Pressable>
-          <Pressable onPress={() => router.push('/settings/whatsapp' as any)} hitSlop={6}><Text style={styles.link}>WhatsApp — fetch time, margins, message text</Text></Pressable>
+          <Pressable onPress={() => router.push('/settings/whatsapp-templates' as any)} hitSlop={6}><Text style={styles.link}>WhatsApp Messages — the broadcast text</Text></Pressable>
         </View>
       </ScrollView>
     </SafeAreaView>

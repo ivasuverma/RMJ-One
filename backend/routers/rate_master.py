@@ -2,9 +2,13 @@
 
 The Gold Rate screen confirms two base numbers: gold (24K) and silver (99.99). This master
 holds, for each product — gold 24K / 22K / 18K / 14K and silver 99.99 — a PERCENTAGE of its
-base rate (18K = 75% of the 24K rate), an optional ₹ adjustment on top, and a rounding rule:
+base rate (18K = 75% of the 24K rate):
 
-    rate = round( base * percent / 100 + adjust )
+    rate = round( base * percent / 100 )
+
+There is deliberately no margin or rounding setting here: the margin (₹ added/subtracted) is
+already applied to the base rate itself in Settings › WhatsApp, and the result is rounded the same
+way that base rate is — gold to the nearest ₹50, silver to the nearest ₹100.
 
 The LED board uses the results through placeholders such as {gold_22k} (see
 routers/led_board.py); `fields_for()` is the one place other features call to get them.
@@ -21,15 +25,15 @@ router = APIRouter()
 
 # base = which confirmed rate the percentage applies to
 DEFAULTS = [
-    {'key': 'gold_24k', 'label': 'Gold 24K', 'base': 'gold', 'percent': 100.0, 'adjust': 0, 'round_to': 50, 'round_mode': 'nearest', 'enabled': True},
-    {'key': 'gold_22k', 'label': 'Gold 22K', 'base': 'gold', 'percent': 91.6, 'adjust': 0, 'round_to': 50, 'round_mode': 'nearest', 'enabled': True},
-    {'key': 'gold_18k', 'label': 'Gold 18K', 'base': 'gold', 'percent': 75.0, 'adjust': 0, 'round_to': 50, 'round_mode': 'nearest', 'enabled': True},
-    {'key': 'gold_14k', 'label': 'Gold 14K', 'base': 'gold', 'percent': 58.5, 'adjust': 0, 'round_to': 50, 'round_mode': 'nearest', 'enabled': True},
-    {'key': 'silver_9999', 'label': 'Silver 99.99', 'base': 'silver', 'percent': 100.0, 'adjust': 0, 'round_to': 100, 'round_mode': 'nearest', 'enabled': True},
+    {'key': 'gold_24k', 'label': 'Gold 24K', 'base': 'gold', 'percent': 100.0, 'enabled': True},
+    {'key': 'gold_22k', 'label': 'Gold 22K', 'base': 'gold', 'percent': 91.6, 'enabled': True},
+    {'key': 'gold_18k', 'label': 'Gold 18K', 'base': 'gold', 'percent': 75.0, 'enabled': True},
+    {'key': 'gold_14k', 'label': 'Gold 14K', 'base': 'gold', 'percent': 58.5, 'enabled': True},
+    {'key': 'silver_9999', 'label': 'Silver 99.99', 'base': 'silver', 'percent': 100.0, 'enabled': True},
 ]
+ROUND_STEP = {'gold': 50, 'silver': 100}   # the same fixed steps the base rates use (gold_rate.py)
 KEYS = [d['key'] for d in DEFAULTS]
 _BASE_OF = {d['key']: d['base'] for d in DEFAULTS}
-ROUND_MODES = ('nearest', 'up', 'down')
 
 
 def round_value(v: float, step: int, mode: str) -> int:
@@ -62,9 +66,6 @@ async def get_items() -> list:
             'key': d['key'], 'base': d['base'],
             'label': (s.get('label') or d['label']).strip()[:40],
             'percent': _num(s.get('percent'), d['percent']),
-            'adjust': _num(s.get('adjust'), d['adjust']),
-            'round_to': int(s.get('round_to') or d['round_to']),
-            'round_mode': s.get('round_mode') if s.get('round_mode') in ROUND_MODES else d['round_mode'],
             'enabled': bool(s.get('enabled', d['enabled'])),
         })
     return out
@@ -74,11 +75,10 @@ def compute(items: list, gold: int, silver: int) -> list:
     res = []
     for it in items:
         base_val = gold if it['base'] == 'gold' else silver
-        raw = base_val * it['percent'] / 100.0 + it['adjust']
-        rate = round_value(raw, it['round_to'], it['round_mode'])
+        rate = round_value(base_val * it['percent'] / 100.0, ROUND_STEP[it['base']], 'nearest')
         res.append({
             'key': it['key'], 'label': it['label'], 'base': it['base'], 'base_value': base_val,
-            'percent': it['percent'], 'adjust': it['adjust'], 'enabled': it['enabled'],
+            'percent': it['percent'], 'enabled': it['enabled'],
             'rate': rate if rate > 0 else None,
             'error': None if rate > 0 else 'The rate comes out as zero or less',
         })
@@ -102,9 +102,6 @@ class RateItemIn(BaseModel):
     key: str
     label: Optional[str] = None
     percent: float
-    adjust: float = 0
-    round_to: int = 1
-    round_mode: str = 'nearest'
     enabled: bool = True
 
 
@@ -122,17 +119,10 @@ def _validate(items: list[RateItemIn]) -> list:
         if it.key not in KEYS or it.key in seen:
             raise HTTPException(status_code=400, detail=f'Unknown or repeated rate "{it.key}"')
         seen.add(it.key)
-        if it.round_mode not in ROUND_MODES:
-            raise HTTPException(status_code=400, detail='Rounding must be nearest, up or down')
-        if not (1 <= it.round_to <= 100000):
-            raise HTTPException(status_code=400, detail='Round-to step must be between 1 and 100000')
         if not math.isfinite(it.percent) or not (0 < it.percent <= 200):
             raise HTTPException(status_code=400, detail=f'{name}: percentage must be more than 0 and at most 200')
-        if not math.isfinite(it.adjust) or abs(it.adjust) > 1_000_000:
-            raise HTTPException(status_code=400, detail=f'{name}: the ₹ adjustment is out of range')
         out.append({'key': it.key, 'label': (it.label or '').strip()[:40] or next(d['label'] for d in DEFAULTS if d['key'] == it.key),
-                    'percent': round(it.percent, 3), 'adjust': round(it.adjust, 2), 'round_to': it.round_to,
-                    'round_mode': it.round_mode, 'enabled': it.enabled})
+                    'percent': round(it.percent, 3), 'enabled': it.enabled})
     order = {k: i for i, k in enumerate(KEYS)}
     return sorted(out, key=lambda i: order[i['key']])
 
@@ -158,9 +148,7 @@ async def rate_master_preview(body: RateMasterIn, _: dict = Depends(require_staf
     if not body.items:      # nothing typed: use the saved percentages
         return {'computed': compute(await get_items(), int(gold), int(silver)), 'base': {'gold': int(gold), 'silver': int(silver)}}
     items = [{'key': i.key, 'label': i.label or i.key, 'base': _BASE_OF[i.key],
-              'percent': i.percent if math.isfinite(i.percent) else 0, 'adjust': i.adjust if math.isfinite(i.adjust) else 0,
-              'round_to': max(1, i.round_to), 'round_mode': i.round_mode if i.round_mode in ROUND_MODES else 'nearest',
-              'enabled': i.enabled} for i in body.items if i.key in KEYS]
+              'percent': i.percent if math.isfinite(i.percent) else 0, 'enabled': i.enabled} for i in body.items if i.key in KEYS]
     return {'computed': compute(items, int(gold), int(silver)), 'base': {'gold': int(gold), 'silver': int(silver)}}
 
 
@@ -171,5 +159,5 @@ async def rate_master_put(body: RateMasterIn, user: dict = Depends(require_owner
         'id': 'rate_master', 'items': items, 'updated_at': now_utc().isoformat(),
     }}, upsert=True)
     await log_audit(user, 'settings.rate_master.update', 'settings', 'rate_master',
-                    '; '.join(f"{i['key']}={i['percent']}%{i['adjust']:+g}" for i in items)[:200])
+                    '; '.join(f"{i['key']}={i['percent']}%" for i in items)[:200])
     return await rate_master_get(user)
