@@ -18,7 +18,7 @@
   .\register-scheduled-task-openwa.ps1 -Time '02:20'
 #>
 param(
-    [string]$RepoRoot = 'E:\Rmj-One',
+    [string]$RepoRoot = 'D:\RMJ-One\RMJ-One',
     [string]$Time = '02:20',
     [string]$UserName = "$env:USERDOMAIN\$env:USERNAME",
     [string]$TaskName = 'OpenWA Daily Backup'
@@ -57,4 +57,4 @@ Write-Host ""
 Write-Host "Registered '$TaskName' to run daily at $Time as $($cred.UserName)."
 Write-Host "Test it right now with:"
 Write-Host "  Start-ScheduledTask -TaskName '$TaskName'"
-Write-Host "Then check the log at E:\OpenWA\backups\logs\ and the Google Drive folder."
+Write-Host "Then check the log at D:\RMJ-One\OpenWA\backups\logs\ and the Google Drive folder."

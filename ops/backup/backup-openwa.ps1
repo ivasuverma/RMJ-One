@@ -30,7 +30,7 @@
   folder private.
 #>
 param(
-    [string]$OpenWADir = 'E:\OpenWA',
+    [string]$OpenWADir = 'D:\RMJ-One\OpenWA',
     [string]$RcloneRemote = 'gdrive:RMJ-One-Backups/openwa',
     [int]$KeepCount = 5
 )
