@@ -56,7 +56,6 @@ export default function EmployeeLedgerScreen() {
 
   const rows: Row[] = [];
   rows.push({ key: 'my-ledger', label: 'My Ledger', icon: 'book-outline', route: `/ledger/${user?.id}`, summary: 'Your wages, advances and payments' });
-  if (hasModule('cash_book')) rows.push({ key: 'cash-book', label: 'Cash Book', icon: 'wallet-outline', route: '/cashbook', summary: 'Record cash in / out' });
   if (hasCustomer) rows.push({ key: 'customer-ledger', label: 'Customer Ledger', icon: 'person-outline', route: '/reports/customer-ledger', summary: custSummary || '…' });
   if (hasKarigar) rows.push({ key: 'karigar-ledger', label: 'Karigar Ledger', icon: 'hammer-outline', route: '/reports/karigar-ledger', summary: karigarSummary || '…' });
 

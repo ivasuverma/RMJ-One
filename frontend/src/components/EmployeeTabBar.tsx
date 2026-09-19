@@ -25,7 +25,8 @@ import { QuickDocCapture } from '@/src/components/QuickDocCapture';
 // owner-only screen. So it navigates by explicit href and works out which tab
 // is focused from the URL segments.
 export const EMP_WORK_MODULES = ['repairs', 'samples', 'cash_book', 'documents'];
-export const EMP_LEDGER_MODULES = ['cash_book', 'customer_ledger', 'karigar_ledger'];
+// (Cash Book is on the Work tab, not here.)
+export const EMP_LEDGER_MODULES = ['customer_ledger', 'karigar_ledger'];
 
 export function employeeTabAccess(hasModule: (key: string) => boolean) {
   return {
