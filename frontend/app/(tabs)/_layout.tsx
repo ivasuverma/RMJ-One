@@ -1,4 +1,4 @@
-import { Tabs, useRouter, useSegments } from 'expo-router';
+import { Tabs, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { View, ActivityIndicator } from 'react-native';
 import { useEffect } from 'react';
@@ -19,17 +19,14 @@ export default function OwnerTabsLayout() {
   const { user, loading } = useAuth();
   const { colors } = useTheme();
   const router = useRouter();
-  const segments = useSegments();
   const isEmployee = user?.role === 'employee';
-  const employeeAllowed = isEmployee && EMPLOYEE_SHARED_SCREENS.includes(String(segments[segments.length - 1] ?? ''));
 
   useEffect(() => {
     if (loading) return;
     if (!user) router.replace('/login');
-    else if (isEmployee && !employeeAllowed) router.replace('/(emp)/home');
-  }, [user, loading, router, isEmployee, employeeAllowed]);
+  }, [user, loading, router]);
 
-  if (loading || !user || (isEmployee && !employeeAllowed)) {
+  if (loading || !user) {
     return (
       <View style={{ flex: 1, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' }}>
         <ActivityIndicator color={colors.brandPrimary} size="large" />
@@ -50,6 +47,27 @@ export default function OwnerTabsLayout() {
       // here even though this navigator's routes are the owner's.
       tabBar={(props) => (isEmployee ? <EmployeeTabBar /> : <OwnerTabBar {...props} />)}
       screenOptions={{ headerShown: false }}
+      // Employees may only land on the shared module screens; anything else in
+      // this group is owner-only and sends them home. This runs off the
+      // navigator's own focus event, which names the screen actually being
+      // opened. (It used to compare useSegments() against the allow-list, but
+      // that value is only updated AFTER the new screen renders — so on the
+      // first render it still held the previous route, the guard saw "not
+      // allowed", and bounced employees home from Cash Book, Repairs, Stock
+      // In/Out and Documents before they ever arrived.)
+      screenListeners={({ navigation }) => ({
+        focus: () => {
+          if (!isEmployee) return;
+          // Re-read the focused screen a tick later rather than trusting the
+          // event that fired: a screen can be focused for an instant while the
+          // navigator settles on the one that was actually requested.
+          setTimeout(() => {
+            const state = navigation.getState();
+            const current = state?.routes?.[state.index]?.name;
+            if (current && !EMPLOYEE_SHARED_SCREENS.includes(current)) router.replace('/(emp)/home');
+          }, 0);
+        },
+      })}
     >
       {/* Four tabs (v3 IA): Dashboard, Work, Ledger, Settings — plus the
           center capture button OwnerTabBar renders between Work and Ledger.
