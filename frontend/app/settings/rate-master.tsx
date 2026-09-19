@@ -141,6 +141,12 @@ export default function RateMasterScreen() {
           );
         })}
 
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Related settings</Text>
+          <Pressable onPress={() => router.push('/settings/whatsapp' as any)} hitSlop={6}><Text style={styles.link}>Daily rate fetch time, margins & the WhatsApp message → Settings › WhatsApp</Text></Pressable>
+          <Pressable onPress={() => router.push('/settings/led-board' as any)} hitSlop={6}><Text style={styles.link}>Show these rates on the shop display → Settings › LED Rate Board</Text></Pressable>
+        </View>
+
         {isOwner ? (
           <Pressable onPress={save} disabled={saving || !dirty} style={[styles.primaryBtn, (saving || !dirty) && { opacity: 0.5 }]} testID="rm-save">
             {saving ? <ActivityIndicator color={colors.onBrandPrimary} size="small" /> : <Text style={styles.primaryBtnText}>{dirty ? 'Save formulas' : 'Saved'}</Text>}

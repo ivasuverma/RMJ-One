@@ -158,7 +158,7 @@ export default function LedBoardScreen() {
           <Text style={styles.label}>Text on the board</Text>
           <TextInput value={template} onChangeText={edit(setTemplate)} editable={isOwner} autoCapitalize="characters" placeholder={state?.default_template} placeholderTextColor={colors.mutedText} style={styles.input} testID="led-template" />
           <Text style={styles.hint}>Numbers: {'{gold_24k}'} {'{gold_22k}'} {'{gold_18k}'} {'{gold_14k}'} {'{silver_9999}'} — worked out by the Rate master formulas. Add _comma for 1,51,050 style (e.g. {'{gold_22k_comma}'}). {'{gold_rate}'} and {'{silver_rate}'} are the raw confirmed rates; {'{date}'} and {'{time}'} also work.</Text>
-          <Pressable onPress={() => router.push('/rate-master' as any)}><Text style={styles.link}>Edit the formulas in Rate master</Text></Pressable>
+          <Pressable onPress={() => router.push('/settings/rate-master' as any)}><Text style={styles.link}>Edit the formulas in Rate master</Text></Pressable>
 
           {isOwner ? (
             <View style={styles.row2}>

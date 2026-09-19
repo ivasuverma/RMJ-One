@@ -48,6 +48,7 @@ const GROUPS: GroupDef[] = [
       { key: 'item-master', label: 'Items & Purity', sub: 'Item master & purity', icon: 'diamond-outline', route: '/settings/item-master' },
       { key: 'sample-issue-types', label: 'Sample Issue Types', sub: 'Reasons for Stock In/Out', icon: 'swap-horizontal-outline', route: '/settings/sample-issue-types' },
       { key: 'cashbook-types', label: 'Cash Pay & Receive Types', sub: 'Predefined types for Cash Book entries', icon: 'cash-outline', route: '/settings/cashbook-types' },
+      { key: 'rate-master', label: 'Rate Master', sub: 'Formulas for 24K, 22K, 18K, 14K & silver 99.99', icon: 'calculator-outline', route: '/settings/rate-master' },
       { key: 'print-master', label: 'Print Master', sub: 'Fields, text size & shop name per receipt', icon: 'print-outline', route: '/settings/print-master' },
     ],
   },
@@ -55,6 +56,7 @@ const GROUPS: GroupDef[] = [
     title: 'Business', ownerOnly: true,
     rows: [
       { key: 'printer', label: 'Printer Settings', sub: 'WiFi thermal receipt printer', icon: 'print-outline', route: '/settings/printer' },
+      { key: 'led-board', label: 'LED Rate Board', sub: 'Shop display: connection, text & auto-update', icon: 'tv-outline', route: '/settings/led-board' },
       { key: 'whatsapp', label: 'WhatsApp', sub: 'Connection status & notice toggles', icon: 'logo-whatsapp', route: '/settings/whatsapp' },
       { key: 'security', label: 'Security', sub: 'Auto sign-out after inactivity', icon: 'lock-closed-outline', route: '/settings/security' },
       { key: 'google-drive', label: 'Google Drive & Backup', sub: 'Document and photo storage', icon: 'cloud-outline', route: '/settings/google-drive' },
