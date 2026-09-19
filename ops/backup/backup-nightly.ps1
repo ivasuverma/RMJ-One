@@ -29,6 +29,7 @@ try {
     Copy-Item "$app\frontend\.env" "$tmp\frontend.env" -Force
     Copy-Item "$root\mongod.cfg"   "$tmp\mongod.cfg"   -Force
     Copy-Item "$root\backup-local.ps1" "$tmp\backup-local.ps1" -Force
+    if (Test-Path 'C:\ProgramData\cloudflared\token') { Copy-Item 'C:\ProgramData\cloudflared\token' "$tmp\cloudflared.token" -Force }
     if (Test-Path 'D:\RMJ-One\OpenWA\.env') { Copy-Item 'D:\RMJ-One\OpenWA\.env' "$tmp\openwa.env" -Force }
     if (Test-Path 'D:\RMJ-One\OpenWA\data\.api-key') { Copy-Item 'D:\RMJ-One\OpenWA\data\.api-key' "$tmp\openwa.api-key" -Force }
     $svc = foreach ($n in 'RMJOneBackend','RMJOneWeb','RMJOneMongo','RMJOneWhatsApp','RMJOneRunner') {
