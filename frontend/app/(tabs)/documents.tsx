@@ -104,9 +104,9 @@ export default function DocumentsScreen() {
   const openFile = async (d: Doc) => {
     setOpening(true);
     try {
-      // Ask for the full-size original (served from Drive when only a local
-      // thumbnail remains after sync).
-      const res = await fetch(`${fileUri(d.id)}?full=1`, { headers: { Authorization: `Bearer ${token}` } });
+      // Ask for the untouched original (the on-screen viewer uses a lighter,
+      // readable-size copy instead).
+      const res = await fetch(`${fileUri(d.id)}?original=1`, { headers: { Authorization: `Bearer ${token}` } });
       if (!res.ok) throw new Error();
       const url = URL.createObjectURL(await res.blob());
       if (Platform.OS === 'web') window.open(url, '_blank');

@@ -109,11 +109,41 @@ async def _cache_write(doc_id: str, variant: str, raw: bytes) -> None:
 
 
 def _cache_drop(doc_id: str) -> None:
-    for variant in ('thumb', 'full'):
+    for variant in ('thumb', 'view', 'full'):
         try:
             _cache_file(doc_id, variant).unlink(missing_ok=True)
         except Exception:
             pass
+
+# This directory is the permanent local store for document images, no longer just
+# a cache: `.full` is the untouched original, `.view` a readable-size copy that the
+# app shows on screen (long side <= 1600 px, ~200-400 KB — text stays sharp but a
+# photo doesn't drag on a phone's connection), `.thumb` the grid thumbnail. The
+# originals stay here after they reach Google Drive; Drive is the off-site backup.
+VIEW_MAX_SIDE = 1600
+VIEW_QUALITY = 82
+_VIEW_REUSE_BYTES = 600 * 1024   # an already-small JPEG is served as-is
+
+
+def _make_view_sync(raw: bytes):
+    """Readable-size JPEG from an original. Returns None if it isn't an image PIL can read."""
+    try:
+        import io
+        from PIL import Image, ImageOps
+        img = Image.open(io.BytesIO(raw))
+        fmt = img.format
+        img = ImageOps.exif_transpose(img)
+        if fmt == 'JPEG' and max(img.size) <= VIEW_MAX_SIDE and len(raw) <= _VIEW_REUSE_BYTES:
+            return raw
+        if img.mode not in ('RGB', 'L'):
+            img = img.convert('RGB')
+        img.thumbnail((VIEW_MAX_SIDE, VIEW_MAX_SIDE), Image.LANCZOS)
+        out = io.BytesIO()
+        img.save(out, 'JPEG', quality=VIEW_QUALITY, optimize=True)
+        return out.getvalue()
+    except Exception:
+        return None
+
 
 # Seeded once (see seed_document_categories, called from server startup). Tuple
 # shape: key, label, Ionicons name, visible_to_roles, can_record_roles.
@@ -382,68 +412,32 @@ async def create_document(
         'pages': pages if 1 < pages <= 200 else None,
     }
 
-    # The bytes are normally stored inline as base64 in the Mongo document, and
-    # base64 inflates size by ~4/3 against MongoDB's 16 MB per-document cap — so
-    # a file over ~11 MB can't be inlined. Those STREAM STRAIGHT TO GOOGLE DRIVE
-    # here (no copy kept in the database), landing as a Drive-only document just
-    # like a small one becomes after the background sync. Anything the database
-    # can hold still takes the fast inline path (instant return, offline-safe).
-    INLINE_MAX = 11 * 1024 * 1024
-    if len(raw) > INLINE_MAX:
-        if not connected:
-            raise HTTPException(
-                status_code=400,
-                detail='This file is too large to store without Google Drive. Ask the owner to connect Google Drive in Settings, then upload it again.',
-            )
-        cfg = await drive_service.get_config()
-        file_meta = {'drive_file_id': None, 'mime': mime, 'size': len(raw), 'orig_name': orig_name}
-        try:
-            res = await drive_service.upload_raw(
-                cfg, cat.get('label', category_key),
-                _drive_filename({**base_doc, 'file': file_meta}, cat), raw, mime,
-            )
-        except Exception:
-            # Transient Drive/network failure → 502 so the upload queue RETRIES
-            # (not a permanent 4xx), instead of losing the file.
-            raise HTTPException(status_code=502, detail='Could not reach Google Drive — will retry.')
-        blob = {'local_data': thumb_clean or None, 'thumb_data': None}
-        doc = {
-            **base_doc,
-            'local_kind': 'thumb' if thumb_clean else 'none',   # full-size lives only in Drive
-            'file': {'drive_file_id': res['drive_file_id'], 'drive_view_link': res['drive_view_link'],
-                     'drive_thumbnail_link': res['drive_thumbnail_link'],
-                     'mime': mime, 'size': len(raw), 'orig_name': orig_name},
-            'upload_state': 'synced',
-        }
-    else:
-        blob = {'local_data': base64.b64encode(raw).decode('ascii'), 'thumb_data': thumb_clean or None}
-        doc = {
-            **base_doc,
-            'local_kind': 'full',                # 'full' | 'thumb' | 'none' (Drive-only)
-            'file': {'drive_file_id': None, 'drive_view_link': None, 'drive_thumbnail_link': None,
-                     'mime': mime, 'size': len(raw), 'orig_name': orig_name},
-            # 'queued' → the worker uploads it; 'local' → no Drive yet, lives
-            # locally until the owner connects Google (then re-queued).
-            'upload_state': 'queued' if connected else 'local',
-        }
-    # Bytes first: if this is interrupted the worst case is an orphan blob, never a
-    # queued document with nothing to upload.
-    if blob['local_data'] or blob['thumb_data']:
-        await db.document_blobs.replace_one({'id': doc['id']}, {'id': doc['id'], **blob}, upsert=True)
-    await db.documents.insert_one(dict(doc))
-    _bump()
-    # The thumbnail is already in memory — cache it now, so the first time this
-    # photo shows up in the grid it doesn't have to be read back out of Mongo.
+    # Every original is written to this server's disk (see DOC_CACHE_DIR) and stays
+    # there; the background worker copies it to Google Drive as the off-site
+    # backup. Written BEFORE the record exists so a queued document can never be
+    # missing its file. No size limit beyond the 60 MB ceiling above — nothing
+    # depends on Drive being connected to hold or open a file.
+    doc = {
+        **base_doc,
+        'local_kind': 'disk',
+        'file': {'drive_file_id': None, 'drive_view_link': None, 'drive_thumbnail_link': None,
+                 'mime': mime, 'size': len(raw), 'orig_name': orig_name},
+        # 'queued' → the worker uploads it; 'local' → no Drive yet, lives locally
+        # until the owner connects Google (then re-queued).
+        'upload_state': 'queued' if connected else 'local',
+    }
+    await _cache_write(doc['id'], 'full', raw)
     if thumb_clean:
         try:
             await _cache_write(doc['id'], 'thumb', base64.b64decode(thumb_clean))
         except Exception:
             pass
-    # Likewise the original: once it syncs to Drive the database keeps only the
-    # thumbnail, so without this the FIRST time anyone opens the photo would be a
-    # multi-second Google download. (Capped — nothing above 30 MB is worth a copy.)
-    if len(raw) <= 30 * 1024 * 1024:
-        await _cache_write(doc['id'], 'full', raw)
+    if mime.startswith('image/'):
+        view = await asyncio.to_thread(_make_view_sync, raw)
+        if view:
+            await _cache_write(doc['id'], 'view', view)
+    await db.documents.insert_one(dict(doc))
+    _bump()
     await log_audit(user, 'documents.create', 'document', doc['id'], f'{cat["label"]} · {doc["file"]["orig_name"]}')
     await _notify_record_holders(cat, doc, user)
     return {k: v for k, v in doc.items() if k not in ('_id', 'local_data', 'ocr')}
@@ -742,11 +736,18 @@ async def delete_document(doc_id: str, user=Depends(get_current)):
 
 
 async def _load_variant(meta: dict, doc_id: str, variant: str):
-    """Fetch one variant's bytes from Mongo / Google Drive. Returns
-    (bytes, cacheable) — bytes is None when this document has no such image.
+    """Fetch one variant's bytes when it isn't on disk yet: from the legacy Mongo
+    blob, Google Drive, or (for `view`) by resizing the original. Returns
+    (bytes, cacheable) - bytes is None when this document has no such image.
     `cacheable` is False for a stand-in (e.g. the thumbnail served because the
-    full-size original couldn't be fetched): caching that under "full" would pin
-    a low-resolution copy there for good."""
+    original couldn't be fetched): caching that under "full" would pin a
+    low-resolution copy there for good."""
+    if variant == 'view':
+        raw, ok = await _load_variant(meta, doc_id, 'full')
+        if not raw or not ok:
+            return raw, False
+        view = await asyncio.to_thread(_make_view_sync, raw)
+        return (view or raw), bool(view)
     async with _BLOB_SLOTS:
         if variant == 'thumb':
             row = await _blob_get(doc_id, {'thumb_data': 1, 'local_data': 1})
@@ -754,6 +755,9 @@ async def _load_variant(meta: dict, doc_id: str, variant: str):
             return (base64.b64decode(data) if data else None), True
         local_kind = meta.get('local_kind', 'full')
         drive_id = (meta.get('file') or {}).get('drive_file_id')
+        fp = _cache_file(doc_id, 'full')
+        if fp.is_file():
+            return await asyncio.to_thread(fp.read_bytes), True
         if local_kind == 'full':
             row = await _blob_get(doc_id, {'local_data': 1})
             if row.get('local_data'):
@@ -766,7 +770,7 @@ async def _load_variant(meta: dict, doc_id: str, variant: str):
             except Exception:
                 pass   # fall through to whatever local copy still exists
         # Stand-in when the original can't be fetched: use the thumbnail already
-        # saved on disk rather than reading it out of Mongo a second time (~1 s).
+        # saved on disk rather than reading it out of Mongo a second time.
         tp = _cache_file(doc_id, 'thumb')
         if tp.is_file():
             return await asyncio.to_thread(tp.read_bytes), False
@@ -777,11 +781,13 @@ async def _load_variant(meta: dict, doc_id: str, variant: str):
 
 @router.get('/documents/{doc_id}/file')
 async def document_file(
-    doc_id: str, full: bool = Query(default=False), thumb: bool = Query(default=False), user=Depends(get_current),
+    doc_id: str, full: bool = Query(default=False), thumb: bool = Query(default=False),
+    original: bool = Query(default=False), user=Depends(get_current),
 ):
     """Serve a document's image. `?thumb=1` is the small grid thumbnail;
-    `?full=1` is the full-size original (fetched from Drive when only a
-    thumbnail is still held locally); with neither, the best local copy.
+    `?full=1` is the on-screen copy - a readable-size JPEG for images (fast on a
+    phone), the file itself for PDFs; `?original=1` is always the untouched
+    original (for Open / download).
     Permission-checked against the caller's category visibility exactly as
     before — but the permission check reads only the document's metadata, and
     the image itself is served from the on-disk cache once it has been fetched
@@ -796,14 +802,14 @@ async def document_file(
     if not cat or not _can_see(cat, _role(user), rights):
         raise HTTPException(status_code=403, detail='No access to this document')
     mime = (d.get('file') or {}).get('mime', 'image/jpeg')
-    local_kind = d.get('local_kind', 'full')
+    is_image = mime.startswith('image/')
     if thumb:
         variant = 'thumb'
-    elif full:
+    elif original or not is_image:
         variant = 'full'
     else:
-        variant = 'full' if local_kind == 'full' else 'thumb'
-    media_type = 'image/jpeg' if variant == 'thumb' else mime
+        variant = 'view'
+    media_type = 'image/jpeg' if variant in ('thumb', 'view') else mime
     cache_headers = {'Cache-Control': f'private, max-age={_CACHE_TTL_SECONDS}'}
 
     path = _cache_file(doc_id, variant)
@@ -819,53 +825,41 @@ async def document_file(
     return Response(content=raw, media_type=media_type, headers=cache_headers)
 
 
-# Don't let the cache of originals grow without bound on the shop server's disk.
-_FULL_CACHE_BUDGET_BYTES = 2 * 1024 ** 3
-
-
-def _cache_dir_bytes() -> int:
-    try:
-        return sum(f.stat().st_size for f in DOC_CACHE_DIR.iterdir() if f.is_file())
-    except Exception:
-        return 0
-
-
 async def doc_cache_warm_loop() -> None:
-    """Fills the image cache for documents that predate it, in the background,
-    so nobody's first look at a photo is the slow one. New uploads are written
-    to the cache as they arrive, so after the first pass there is normally
-    nothing left to do. Thumbnails first (they're what the grid needs), then the
-    full-size originals — which otherwise cost a 2-5 s Google Drive download the
-    first time each one is opened. Gentle by design: one image at a time,
-    through the same limiter the request path uses."""
+    """Brings documents that predate the local store up to date, in the background:
+    every document gets its thumbnail, its untouched original (downloaded from
+    Google Drive if that is the only place it still is) and, for images, the
+    readable-size view copy. New uploads are written straight to disk, so after
+    the first pass there is normally nothing left to do. Gentle by design: one
+    file at a time, through the same limiter the request path uses."""
     await asyncio.sleep(45)
     while True:
         try:
             names = os.listdir(DOC_CACHE_DIR) if DOC_CACHE_DIR.is_dir() else []
-            have_thumb = {n[:-len('.thumb')] for n in names if n.endswith('.thumb')}
-            have_full = {n[:-len('.full')] for n in names if n.endswith('.full')}
+            have = {v: {n[:-len('.' + v)] for n in names if n.endswith('.' + v)} for v in ('thumb', 'view', 'full')}
             rows = await db.documents.find(
                 {'deleted': {'$ne': True}}, {'_id': 0, 'id': 1, 'local_kind': 1, 'file': 1},
             ).to_list(None)
-            thumbs = [r for r in rows if (r.get('file') or {}).get('mime', '').startswith('image/') and r['id'] not in have_thumb]
-            fulls = [r for r in rows if r['id'] not in have_full and (r.get('local_kind') == 'full' or (r.get('file') or {}).get('drive_file_id'))]
-            if thumbs or fulls:
-                logger.info(f'doc cache: warming {len(thumbs)} thumbnail(s), {len(fulls)} original(s)')
-            for r in thumbs:
-                raw, cacheable = await _load_variant(r, r['id'], 'thumb')
+            todo = []
+            for r in rows:
+                img = (r.get('file') or {}).get('mime', '').startswith('image/')
+                for v in ('thumb', 'full', 'view'):
+                    if r['id'] in have[v]:
+                        continue
+                    if v in ('thumb', 'view') and not img:
+                        continue
+                    if v == 'full' and not (r.get('local_kind') in ('full', 'disk') or (r.get('file') or {}).get('drive_file_id')):
+                        continue
+                    todo.append((r, v))
+            if todo:
+                logger.info(f'doc store: filling {len(todo)} missing file(s)')
+            for r, v in todo:
+                raw, cacheable = await _load_variant(r, r['id'], v)
                 if raw and cacheable:
-                    await _cache_write(r['id'], 'thumb', raw)
-                await asyncio.sleep(0.2)
-            for r in fulls:
-                if await asyncio.to_thread(_cache_dir_bytes) > _FULL_CACHE_BUDGET_BYTES:
-                    logger.warning('doc cache: size budget reached, not fetching more originals')
-                    break
-                raw, cacheable = await _load_variant(r, r['id'], 'full')
-                if raw and cacheable:
-                    await _cache_write(r['id'], 'full', raw)
-                await asyncio.sleep(0.5)
+                    await _cache_write(r['id'], v, raw)
+                await asyncio.sleep(0.3)
         except Exception as e:
-            logger.warning(f'doc cache warm error: {e}')
+            logger.warning(f'doc store warm error: {e}')
         await asyncio.sleep(3600)
 
 
@@ -961,29 +955,25 @@ async def upload_worker():
                     await db.documents.update_one({'id': doc['id']}, {'$set': {'upload_state': 'uploading'}})
                     _bump()
                     try:
-                        blob = await _blob_get(doc['id'], {'local_data': 1, 'thumb_data': 1})
-                        if not blob.get('local_data'):
+                        # The original comes off this server's disk (or, for a
+                        # document from before the local store, its stored blob).
+                        raw, ok = await _load_variant(doc, doc['id'], 'full')
+                        if not raw or not ok:
                             raise RuntimeError('No local copy left to upload')
+                        await _cache_write(doc['id'], 'full', raw)   # from now on it lives on disk
                         cat = (await _categories_map()).get(doc['category_key'], {})
-                        res = await drive_service.upload(cfg, cat.get('label', doc['category_key']), _drive_filename(doc, cat), blob['local_data'], (doc.get('file') or {}).get('mime', 'image/jpeg'))
-                        # Now that the original is safely in Drive, free the heavy
-                        # local copy: keep the small thumbnail for a fast grid if
-                        # we have one, otherwise go Drive-only (full-size is then
-                        # fetched from Drive on demand). This is what stops the
-                        # database from ballooning with full-size base64.
-                        thumb = blob.get('thumb_data')
-                        set_fields = {
+                        res = await drive_service.upload_raw(cfg, cat.get('label', doc['category_key']), _drive_filename(doc, cat), raw, (doc.get('file') or {}).get('mime', 'image/jpeg'))
+                        # Drive now holds the off-site backup. The original STAYS
+                        # here, so opening a photo never depends on Drive again;
+                        # any legacy inline copy in the database can go.
+                        await db.document_blobs.delete_one({'id': doc['id']})
+                        await db.documents.update_one({'id': doc['id']}, {'$set': {
                             'upload_state': 'synced',
                             'file.drive_file_id': res['drive_file_id'],
                             'file.drive_view_link': res['drive_view_link'],
                             'file.drive_thumbnail_link': res['drive_thumbnail_link'],
-                            'local_kind': 'thumb' if thumb else 'none',
-                        }
-                        if thumb:
-                            await db.document_blobs.replace_one({'id': doc['id']}, {'id': doc['id'], 'local_data': thumb, 'thumb_data': None}, upsert=True)
-                        else:
-                            await db.document_blobs.delete_one({'id': doc['id']})
-                        await db.documents.update_one({'id': doc['id']}, {'$set': set_fields, '$unset': {'local_data': '', 'thumb_data': ''}})
+                            'local_kind': 'disk',
+                        }, '$unset': {'local_data': '', 'thumb_data': ''}})
                         _bump()
                     except Exception as e:
                         err = str(e)[:200]

@@ -1,23 +1,46 @@
 """Record photos — high-res reference photos attached to a repair item, sample,
-employee, etc. Same storage strategy as Documents: keep only a small thumbnail
-in the database, push the full-resolution image to Google Drive in the
-background, and serve the original from Drive on demand. This keeps the DB light
-while preserving full quality.
+employee, etc. The original stays on this server for good (Google Drive is the
+off-site backup, filled in the background) and the app is shown a readable-size
+copy, so opening a photo is fast and never depends on Drive being connected.
 
 A photo is linked to its record by (ref_type, ref_id), e.g.
 ('repair_item', <id>). Fully self-contained and additive.
 """
 import base64
+import os
+import pathlib
 import re
 import uuid
 import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query, Response
+from fastapi.responses import FileResponse
 from server import db, get_current, now_utc, log_audit, resolve_modules, _notify_system_health
 
 router = APIRouter()
 
 _LIST_PROJ = {'_id': 0, 'local_data': 0, 'thumb_data': 0}
+
+# Readable-size copies (long side <= 1600 px) are built once and kept here.
+VIEW_DIR = pathlib.Path(__file__).resolve().parent.parent / 'data' / 'record_view'
+
+
+def _view_path(photo_id: str) -> pathlib.Path:
+    if not re.fullmatch(r'[0-9a-fA-F-]{8,64}', photo_id or ''):
+        raise HTTPException(status_code=404, detail='Photo not found')
+    return VIEW_DIR / f'{photo_id}.jpg'
+
+
+def _write_view_sync(path: pathlib.Path, raw: bytes):
+    from routers.documents import _make_view_sync
+    view = _make_view_sync(raw)
+    if not view:
+        return None
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f'{path.name}.{uuid.uuid4().hex}.tmp')
+    tmp.write_bytes(view)
+    os.replace(tmp, path)
+    return view
 
 _FOLDER_LABEL = {
     'repair_item': 'Repair Photos',
@@ -121,6 +144,10 @@ async def create_record_photo(
         'created_at': now_utc().isoformat(), 'deleted': False,
     }
     await db.record_photos.insert_one(dict(doc))
+    try:
+        await asyncio.to_thread(_write_view_sync, _view_path(doc['id']), raw)
+    except Exception:
+        pass
     await log_audit(user, 'record_photo.create', ref_type, ref_id, doc['id'])
     return {k: v for k, v in doc.items() if k not in ('_id', 'local_data', 'thumb_data')}
 
@@ -168,27 +195,51 @@ async def bulk_thumbnails(ref_type: str = Query(...), ref_ids: str = Query(...),
 
 
 @router.get('/record-photos/{photo_id}/file')
-async def record_photo_file(photo_id: str, full: bool = Query(default=False), user=Depends(get_current)):
+async def record_photo_file(photo_id: str, full: bool = Query(default=False), original: bool = Query(default=False), user=Depends(get_current)):
+    """`?full=1` is the readable-size copy shown on screen, `?original=1` the
+    untouched original, neither is the small thumbnail."""
     d = await db.record_photos.find_one({'id': photo_id, 'deleted': {'$ne': True}}, {'_id': 0})
     if not d:
         raise HTTPException(status_code=404, detail='Photo not found')
     await _require_read(user, d.get('ref_type', ''), d.get('ref_id', ''))
     mime = (d.get('file') or {}).get('mime', 'image/jpeg')
+    headers = {'Cache-Control': 'private, max-age=86400'}
+    if not (full or original):
+        thumb = d.get('thumb_data') or (d.get('local_data') if d.get('local_kind') == 'thumb' else None)
+        if thumb:
+            return Response(content=base64.b64decode(thumb), media_type='image/jpeg', headers=headers)
+    if full and not original:
+        vp = _view_path(photo_id)
+        if vp.is_file():
+            return FileResponse(vp, media_type='image/jpeg', headers=headers)
+    raw = await _original_bytes(d)
+    if not raw:
+        raise HTTPException(status_code=404, detail='No local copy')
+    if original:
+        return Response(content=raw, media_type=mime, headers=headers)
+    view = await asyncio.to_thread(_write_view_sync, _view_path(photo_id), raw) if full else None
+    return Response(content=view or raw, media_type='image/jpeg' if view else mime, headers=headers)
+
+
+async def _original_bytes(d: dict):
+    """The untouched original: stored with the record, or (for a photo from before
+    originals were kept) fetched from Drive once and then stored for good."""
+    if d.get('local_kind') == 'full' and d.get('local_data'):
+        return base64.b64decode(d['local_data'])
     drive_id = (d.get('file') or {}).get('drive_file_id')
-    local_kind = d.get('local_kind', 'full')
-    need_drive = drive_id and ((full and local_kind != 'full') or not d.get('local_data'))
-    if need_drive:
+    if drive_id:
         try:
             import drive_service
             cfg = await drive_service.get_config()
             raw = await drive_service.download(cfg, drive_id)
-            return Response(content=raw, media_type=mime)
+            await db.record_photos.update_one({'id': d['id']}, {'$set': {
+                'local_data': base64.b64encode(raw).decode('ascii'), 'local_kind': 'full'}})
+            return raw
         except Exception:
             pass
-    data = d.get('local_data')
-    if not data:
-        raise HTTPException(status_code=404, detail='No local copy')
-    return Response(content=base64.b64decode(data), media_type=mime)
+    if d.get('local_data'):
+        return base64.b64decode(d['local_data'])
+    return None
 
 
 @router.delete('/record-photos/{photo_id}')
@@ -226,15 +277,12 @@ async def record_photo_worker():
                     await db.record_photos.update_one({'id': doc['id']}, {'$set': {'upload_state': 'uploading'}})
                     try:
                         res = await drive_service.upload(cfg, _folder_for(doc.get('ref_type', '')), _drive_filename(doc), doc['local_data'], (doc.get('file') or {}).get('mime', 'image/jpeg'))
-                        thumb = doc.get('thumb_data')
+                        # Drive now holds the off-site backup; the original STAYS here.
                         await db.record_photos.update_one({'id': doc['id']}, {'$set': {
                             'upload_state': 'synced',
                             'file.drive_file_id': res['drive_file_id'],
                             'file.drive_view_link': res['drive_view_link'],
                             'file.drive_thumbnail_link': res['drive_thumbnail_link'],
-                            'local_data': thumb or None,
-                            'local_kind': 'thumb' if thumb else 'none',
-                            'thumb_data': None,
                         }})
                     except Exception as e:
                         err = str(e)[:200]
@@ -246,6 +294,16 @@ async def record_photo_worker():
                             await _notify_system_health('drive_upload_failed', 'Photo upload failed',
                                                          f'A record photo failed to upload to Google Drive: {err}', '/settings/google-drive')
                     continue
+            # One-time catch-up for photos synced before originals were kept: pull
+            # each original back from Drive (and build its on-screen copy).
+            legacy = await db.record_photos.find_one(
+                {'deleted': {'$ne': True}, 'upload_state': 'synced', 'local_kind': {'$ne': 'full'}, 'file.drive_file_id': {'$ne': None}}, {'_id': 0})
+            if legacy:
+                raw = await _original_bytes(legacy)
+                if raw:
+                    await asyncio.to_thread(_write_view_sync, _view_path(legacy['id']), raw)
+                    continue
+                await asyncio.sleep(60)   # Drive unavailable — don't spin on it
         except Exception:
             pass
         await asyncio.sleep(6)
