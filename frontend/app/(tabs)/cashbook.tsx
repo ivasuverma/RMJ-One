@@ -294,8 +294,8 @@ export default function CashBookScreen() {
               <View style={styles.list}>
                 {shown.map(({ e, bal, transfer }, i) => {
                   const k: Kind = transfer ? 'transfer' : e.type;
-                  const title = transfer ? (counterName(e.transfer_counter_id) || e.name.replace(/^Transfer\s+(to|from)\s+/i, '')) : e.name;
-                  const sub = transfer ? (e.type === 'paid' ? 'Transfer out' : 'Transfer in') : e.category || '';
+                  const title = transfer ? `${e.type === 'paid' ? 'To' : 'From'} ${counterName(e.transfer_counter_id) || e.name.replace(/^Transfer\s+(to|from)\s+/i, '')}` : e.name;
+                  const sub = transfer ? (e.type === 'paid' ? 'Transfer out ↑' : 'Transfer in ↓') : e.category || '';
                   return (
                     <Pressable key={e.id} disabled={!canEdit} onPress={() => openEdit(e)}
                       style={[styles.row, i > 0 && styles.rowBorder]} testID={`cashbook-entry-${e.id}`}>
