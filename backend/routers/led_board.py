@@ -133,13 +133,20 @@ async def _current_rates() -> Optional[dict]:
 
 
 async def push_rates(gold: int, silver: int, reason: str = 'manual') -> dict:
-    """Render and send the rate to the board; records the outcome in led_board_status."""
+    """Render the standard rate text and send it to the board."""
     cfg = await get_config()
     from routers.rate_master import fields_for
-    text = render_text(cfg['template'], gold, silver, extra=await fields_for(gold, silver))
+    return await push_text(render_text(cfg['template'], gold, silver, extra=await fields_for(gold, silver)), reason,
+                           {'gold': gold, 'silver': silver})
+
+
+async def push_text(text: str, reason: str = 'manual', rates: Optional[dict] = None) -> dict:
+    """Send ready-made text to the board; records the outcome in led_board_status."""
+    cfg = await get_config()
+    rates = rates or {}
     ok, err = True, None
     try:
-        await asyncio.wait_for(_DRIVERS[cfg['driver']](cfg, text, {'gold': gold, 'silver': silver}), timeout=20)
+        await asyncio.wait_for(_DRIVERS[cfg['driver']](cfg, text, rates), timeout=20)
     except LedBoardNotReady as e:
         ok, err = False, str(e)
     except asyncio.TimeoutError:
@@ -184,6 +191,40 @@ class LedBoardConfigIn(BaseModel):
 class LedBoardPushIn(BaseModel):
     gold_rate: Optional[int] = None
     silver_rate: Optional[int] = None
+    # A one-off message with the same {placeholders} as the board template. When given it is
+    # shown instead of the standard rate text (the next automatic update replaces it again).
+    template: Optional[str] = None
+
+
+class LedBoardPreviewIn(BaseModel):
+    template: str
+
+
+_RATE_PLACEHOLDER = re.compile(r'\{(gold_rate|silver_rate|gold_24k|gold_22k|gold_18k|gold_14k|silver_9999)(_comma)?\}')
+
+
+def _check_template(t: str) -> str:
+    t = (t or '').strip()
+    if not t:
+        raise HTTPException(status_code=400, detail='Type the text to show first')
+    if len(t) > 200:
+        raise HTTPException(status_code=400, detail='Text is too long for a board (max 200 characters)')
+    try:
+        t.format(**{k: 1 for k in ('gold_rate', 'silver_rate', 'date', 'time', 'gold_rate_comma', 'silver_rate_comma')},
+                 **{k: 1 for k in _MASTER_KEYS}, **{k + '_comma': '1' for k in _MASTER_KEYS})
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f'Unknown placeholder: {e}')
+    return t
+
+
+async def _render_custom(template: str, gold: Optional[int], silver: Optional[int]) -> str:
+    """Render a one-off message. Rate placeholders need a rate; plain text does not."""
+    template = _check_template(template)
+    if gold is None or silver is None:
+        if _RATE_PLACEHOLDER.search(template):
+            raise HTTPException(status_code=400, detail="There is no rate for today yet — fetch or enter it on the Gold Rate screen first")
+        return render_text(template, 0, 0)
+    return render_text(template, gold, silver, extra=await _extra({'gold': gold, 'silver': silver}))
 
 
 async def _extra(r: Optional[dict]) -> dict:
@@ -242,6 +283,15 @@ async def led_board_test(user: dict = Depends(require_admin_or_module_right('gol
     return res
 
 
+@router.post('/led-board/preview')
+async def led_board_preview(body: LedBoardPreviewIn, _: dict = Depends(require_staff_or_module('gold_rate'))):
+    r = await _current_rates()
+    try:
+        return {'text': await _render_custom(body.template, r['gold'] if r else None, r['silver'] if r else None), 'error': None}
+    except HTTPException as e:
+        return {'text': None, 'error': e.detail}
+
+
 @router.post('/led-board/push')
 async def led_board_push(body: LedBoardPushIn, user: dict = Depends(require_admin_or_module_right('gold_rate', 'edit'))):
     cfg = await get_config()
@@ -250,10 +300,14 @@ async def led_board_push(body: LedBoardPushIn, user: dict = Depends(require_admi
     gold, silver = body.gold_rate, body.silver_rate
     if gold is None or silver is None:
         r = await _current_rates()
-        if not r:
+        gold, silver = (r['gold'], r['silver']) if r else (None, None)
+    if body.template is not None:
+        text = await _render_custom(body.template, gold, silver)
+        res = await push_text(text, 'custom')
+    else:
+        if gold is None:
             raise HTTPException(status_code=400, detail="There is no rate for today yet — fetch or enter it on the Gold Rate screen first")
-        gold, silver = r['gold'], r['silver']
-    res = await push_rates(int(gold), int(silver), 'manual')
+        res = await push_rates(int(gold), int(silver), 'manual')
     await log_audit(user, 'led_board.push', 'settings', 'led_board', f"{'ok' if res['ok'] else 'failed'}: {res['text']}")
     if not res['ok']:
         raise HTTPException(status_code=502, detail=res['error'] or 'Could not update the board')

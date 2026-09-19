@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, TextInput, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -55,6 +55,10 @@ export default function GoldRateScreen() {
   const [silverRate, setSilverRate] = useState('');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState<'refetch' | 'send' | 'auto' | 'led' | null>(null);
+  // One-off text for the LED board, independent of the daily rate flow.
+  const [customText, setCustomText] = useState('');
+  const [customPreview, setCustomPreview] = useState<{ text: string | null; error: string | null } | null>(null);
+  const previewSeq = useRef(0);
   const [led, setLed] = useState<{ config: { enabled: boolean; auto_push: boolean }; status: { last_push_at: string | null; last_ok: boolean | null; last_error: string | null } } | null>(null);
 
   // `currentTemplate` is passed explicitly rather than read from the
@@ -97,6 +101,28 @@ export default function GoldRateScreen() {
     const s = parseInt(which === 'silver' ? v : silverRate, 10);
     if (g && s) setMessage(buildMessage(template, g, s, today?.fetched_at));
   };
+
+  useEffect(() => {
+    if (!customText.trim()) { setCustomPreview(null); return; }
+    const my = ++previewSeq.current;
+    const t = setTimeout(async () => {
+      try {
+        const r = await api.post<{ text: string | null; error: string | null }>('/led-board/preview', { template: customText });
+        if (my === previewSeq.current) setCustomPreview(r);
+      } catch { /* keep the last preview */ }
+    }, 300);
+    return () => clearTimeout(t);
+  }, [customText]);
+
+  const pushCustom = async () => {
+    setBusy('led');
+    try {
+      const r = await api.post<{ text: string }>('/led-board/push', { template: customText });
+      toast.success(`Board shows: ${r.text}`);
+    } catch (e: any) { toast.error(e?.detail || 'Could not update the board'); }
+    finally { setBusy(null); api.get<any>('/led-board').then(setLed).catch(() => {}); }
+  };
+  const addChip = (c: string) => setCustomText((t) => (t && !t.endsWith(' ') ? `${t} ${c}` : `${t}${c}`));
 
   const pushBoard = async () => {
     setBusy('led');
@@ -213,6 +239,30 @@ export default function GoldRateScreen() {
           </View>
         ) : null}
 
+        {led ? (
+          <View style={styles.customCard} testID="gold-rate-led-custom">
+            <Text style={styles.boardLinkTitle}>Custom message for the LED board</Text>
+            <Text style={styles.boardLinkSub}>Type any text. Tap a placeholder to add today's value. It replaces what the board shows until the next rate update.</Text>
+            <TextInput value={customText} onChangeText={setCustomText} placeholder="e.g. 22K {gold_22k}  18K {gold_18k}" placeholderTextColor={colors.mutedText}
+              autoCapitalize="characters" style={[styles.input, { marginTop: spacing.sm, marginBottom: 6 }]} testID="gold-rate-led-custom-text" />
+            <View style={styles.chipRow}>
+              {['{gold_24k}', '{gold_22k}', '{gold_18k}', '{gold_14k}', '{silver_9999}', '{date}', '{time}'].map((c) => (
+                <Pressable key={c} onPress={() => addChip(c)} style={styles.chip}><Text style={styles.chipText}>{c}</Text></Pressable>
+              ))}
+            </View>
+            {customPreview ? (
+              customPreview.error
+                ? <Text style={styles.customErr}>{customPreview.error}</Text>
+                : <Text style={styles.customPreview}>Board will show: <Text style={{ fontWeight: '800' }}>{customPreview.text}</Text></Text>
+            ) : null}
+            <Pressable onPress={pushCustom} disabled={busy === 'led' || !led.config.enabled || !customPreview?.text}
+              style={[styles.altBtn, styles.autoBtn, (busy === 'led' || !led.config.enabled || !customPreview?.text) && { opacity: 0.5 }]} testID="gold-rate-led-custom-push">
+              {busy === 'led' ? <ActivityIndicator color={colors.onBrandPrimary} size="small" /> : <><Ionicons name="cloud-upload-outline" size={15} color={colors.onBrandPrimary} /><Text style={[styles.altBtnText, styles.autoBtnText]}>Push to board</Text></>}
+            </Pressable>
+            {!led.config.enabled ? <Text style={styles.boardLinkSub}>The board is switched off — turn it on in Settings › LED Rate Board.</Text> : null}
+          </View>
+        ) : null}
+
         {today?.error ? (
           <View style={[styles.infoBox, styles.infoBoxWarn]}>
             <Ionicons name="alert-circle-outline" size={16} color={colors.onWarning} />
@@ -282,6 +332,12 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   infoText: { color: colors.onSurfaceTertiary, fontSize: 12, flex: 1 },
   hint: { color: colors.mutedText, fontSize: 12, marginBottom: spacing.md },
   boardCard: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.md },
+  customCard: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.md, gap: 6 },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 4 },
+  chip: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: radius.pill, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
+  chipText: { color: colors.brandSecondary, fontSize: 12, fontWeight: '700' },
+  customPreview: { color: colors.onSurface, fontSize: 13, marginTop: 2 },
+  customErr: { color: colors.onError, fontSize: 12, marginTop: 2 },
   boardBtn: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.brandSecondary },
   boardBtnText: { color: colors.brandSecondary, fontWeight: '700', fontSize: 12.5 },
   boardLink: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.md },
