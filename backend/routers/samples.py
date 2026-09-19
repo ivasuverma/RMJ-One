@@ -62,6 +62,10 @@ async def create_samples(body: SampleIn, user=Depends(require_admin_or_module('s
     for spec in body.items:
         if spec.weight <= 0:
             raise HTTPException(status_code=400, detail=f'Weight must be greater than 0 for "{spec.description}"')
+        # Purity is required: it is what turns the gross weight into fine gold on the karigar's and the
+        # metal ledger (without it every sample was counted as pure gold).
+        if not spec.purity or not (0 < spec.purity <= 100):
+            raise HTTPException(status_code=400, detail=f'Enter the purity for "{spec.description}" (100 for pure gold, 92 for 22K, 75 for 18K)')
 
     iso = now_utc().isoformat()
     created = []
@@ -70,7 +74,7 @@ async def create_samples(body: SampleIn, user=Depends(require_admin_or_module('s
         sample_code = await _next_sample_code()
         sample = {
             'id': sample_id, 'sample_code': sample_code, 'description': spec.description,
-            'tag_number': spec.tag_number or '', 'weight': spec.weight, 'pc_count': spec.pc_count or 1,
+            'tag_number': spec.tag_number or '', 'weight': spec.weight, 'purity': round(spec.purity, 3), 'pc_count': spec.pc_count or 1,
             'photo': spec.photo or '', 'photo_thumb': _make_photo_thumb(spec.photo or ''),
             'issue_type': body.issue_type or '', 'due_date': body.due_date,
             'karigar_id': karigar['id'], 'karigar_name': karigar['name'],
@@ -84,7 +88,7 @@ async def create_samples(body: SampleIn, user=Depends(require_admin_or_module('s
         tag_note = f" (tag {spec.tag_number})" if spec.tag_number else ''
         await post_gold_ledger_entry({
             'id': str(uuid.uuid4()), 'karigar_id': karigar['id'], 'karigar_name': karigar['name'], 'type': 'gold_out',
-            'weight': spec.weight, 'fine_weight': None, 'amount': None,
+            'weight': spec.weight, 'fine_weight': round(spec.weight * spec.purity / 100, 3), 'amount': None,
             'item_id': sample_id, 'item_code': sample_code,
             'note': f"Sample issued: {spec.description}{tag_note}", 'created_at': iso, 'created_by': user['name'],
         })
@@ -188,6 +192,13 @@ async def update_sample(sample_id: str, body: SampleUpdateIn, user=Depends(requi
         raise HTTPException(status_code=400, detail='This sample has already been received back — only description/tag/note edits before receipt are allowed')
 
     upd: dict = {}
+    if body.purity is not None:
+        if not (0 < body.purity <= 100):
+            raise HTTPException(status_code=400, detail='Purity must be more than 0 and at most 100')
+        upd['purity'] = round(body.purity, 3)
+        # keep the issue entry's fine weight in step with the corrected purity
+        w = body.weight if (body.weight is not None and body.weight > 0) else sample['weight']
+        await db.karigar_ledger.update_many({'item_id': sample_id, 'type': 'gold_out'}, {'$set': {'fine_weight': round(w * body.purity / 100, 3)}})
     if body.description is not None: upd['description'] = body.description
     if body.tag_number is not None: upd['tag_number'] = body.tag_number
     if body.pc_count is not None: upd['pc_count'] = max(1, body.pc_count)
@@ -202,8 +213,10 @@ async def update_sample(sample_id: str, body: SampleUpdateIn, user=Depends(requi
         # The weight was already booked to the karigar's gold-out ledger entry
         # at issue time — keep that entry in sync so the balance stays right,
         # instead of silently drifting from what the edited voucher now says.
+        pur = body.purity if body.purity else sample.get('purity')
         await db.karigar_ledger.update_many(
-            {'item_id': sample_id, 'type': 'gold_out'}, {'$set': {'weight': body.weight}},
+            {'item_id': sample_id, 'type': 'gold_out'},
+            {'$set': {'weight': body.weight, **({'fine_weight': round(body.weight * pur / 100, 3)} if pur else {})}},
         )
         await db.metal_ledger.update_many(
             {'item_id': sample_id, 'type': 'out'}, {'$set': {'weight': body.weight}},
@@ -306,6 +319,10 @@ async def _post_sample_receive_ledger(sample: dict, body: SampleReceiveIn, txn_i
     create and edit, same delete-then-repost pattern as repairs.py."""
     weight_diff = round(body.received_weight - sample['weight'], 3)
     write_off = bool(body.write_off_loss) and weight_diff < 0
+    pur = sample.get('purity')
+
+    def _fine(w: float):
+        return round(w * pur / 100, 3) if pur else None
     note = f"Sample received back: {sample['description']}"
     if weight_diff:
         note += f" (diff {weight_diff:+.3f}g vs issued — expected the same weight back)"
@@ -313,14 +330,15 @@ async def _post_sample_receive_ledger(sample: dict, body: SampleReceiveIn, txn_i
         note += ' · shortfall written off as loss'
     await post_gold_ledger_entry({
         'id': str(uuid.uuid4()), 'karigar_id': sample['karigar_id'], 'karigar_name': sample.get('karigar_name'), 'type': 'gold_in',
-        'weight': sample['weight'] if write_off else body.received_weight, 'fine_weight': None, 'amount': None,
+        'weight': sample['weight'] if write_off else body.received_weight,
+        'fine_weight': _fine(sample['weight'] if write_off else body.received_weight), 'amount': None,
         'item_id': sample['id'], 'item_code': sample['sample_code'], 'txn_id': txn_id,
         'note': note, 'created_at': iso, 'created_by': user['name'],
     })
     if write_off:
         await post_gold_ledger_entry({
             'id': str(uuid.uuid4()), 'karigar_id': sample['karigar_id'], 'karigar_name': sample.get('karigar_name'), 'type': 'loss',
-            'weight': abs(weight_diff), 'fine_weight': None, 'amount': None,
+            'weight': abs(weight_diff), 'fine_weight': _fine(abs(weight_diff)), 'amount': None,
             'item_id': sample['id'], 'item_code': sample['sample_code'], 'txn_id': txn_id,
             'note': f"Process loss declared: {sample['description']}",
             'created_at': iso, 'created_by': user['name'],

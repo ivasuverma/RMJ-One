@@ -19,6 +19,7 @@ type Entry = {
   id: string; type: 'gold_out' | 'gold_in' | 'wastage' | 'adjustment' | 'labour_payable' | 'payment' | 'receipt' | 'loss';
   weight: number | null; fine_weight?: number | null; amount: number | null; item_id?: string | null; item_code: string | null;
   note: string; created_at: string; created_by: string; slip_photo?: string | null; txn_id?: string | null; absorbs?: boolean;
+  void_reason?: string; voided_by?: string; voided_at?: string; replaces?: string; edit_reason?: string;
 };
 type Job = {
   itemId: string; itemCode: string; entries: Entry[];
@@ -38,9 +39,17 @@ export default function KarigarLedgerScreen() {
   const { colors } = useTheme();
   const { hasRight } = useAuth();
   const canDeleteEntry = hasRight('karigar_ledger', 'delete');
+  const canEditEntry = hasRight('karigar_ledger', 'edit');
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [karigar, setKarigar] = useState<Karigar | null>(null);
   const [entries, setEntries] = useState<Entry[]>([]);
+  const [cancelled, setCancelled] = useState<Entry[]>([]);
+  // Cancel / edit sheet for one entry — both need a reason, nothing is ever erased.
+  const [act, setAct] = useState<{ entry: Entry; mode: 'cancel' | 'edit' } | null>(null);
+  const [actReason, setActReason] = useState('');
+  const [actValue, setActValue] = useState('');
+  const [actNote, setActNote] = useState('');
+  const [actBusy, setActBusy] = useState(false);
   const [weightBalance, setWeightBalance] = useState(0);
   const [fineWeightBalance, setFineWeightBalance] = useState(0);
   const [amountDue, setAmountDue] = useState(0);
@@ -63,8 +72,8 @@ export default function KarigarLedgerScreen() {
   const load = useCallback(async () => {
     try {
       setError('');
-      const res = await api.get<{ karigar: Karigar; entries: Entry[]; weight_balance: number; fine_weight_balance?: number; amount_due: number }>(`/karigars/${id}/ledger`);
-      setKarigar(res.karigar); setEntries(res.entries); setWeightBalance(res.weight_balance); setFineWeightBalance(res.fine_weight_balance ?? 0); setAmountDue(res.amount_due);
+      const res = await api.get<{ karigar: Karigar; entries: Entry[]; cancelled?: Entry[]; weight_balance: number; fine_weight_balance?: number; amount_due: number }>(`/karigars/${id}/ledger`);
+      setKarigar(res.karigar); setEntries(res.entries); setCancelled(res.cancelled || []); setWeightBalance(res.weight_balance); setFineWeightBalance(res.fine_weight_balance ?? 0); setAmountDue(res.amount_due);
     } catch (e: any) { setError(e?.detail || 'Failed to load karigar'); }
     finally { setLoading(false); }
   }, [id]);
@@ -180,18 +189,26 @@ export default function KarigarLedgerScreen() {
     });
   };
 
-  const removeEntry = (e: Entry) => {
-    confirmAction(
-      'Delete entry?',
-      `Remove this ${ENTRY_LABEL[e.type].toLowerCase()} entry? This cannot be undone.`,
-      'Delete',
-      async () => {
-        setDeletingId(e.id);
-        try { await api.del(`/karigars/${id}/ledger/${e.id}`); await load(); }
-        catch (err: any) { notify('Failed', err?.detail || 'Could not delete this entry.'); }
-        finally { setDeletingId(''); }
-      },
-    );
+  const openAct = (e: Entry, mode: 'cancel' | 'edit') => {
+    setAct({ entry: e, mode }); setActReason(''); setActNote(e.note || '');
+    setActValue(e.weight != null ? String(e.weight) : e.amount != null ? String(Math.abs(e.amount)) : '');
+  };
+  const submitAct = async () => {
+    if (!act) return;
+    if (actReason.trim().length < 3) { notify('Reason needed', 'Give a reason — a few words is enough.'); return; }
+    setActBusy(true);
+    try {
+      if (act.mode === 'cancel') {
+        await api.post(`/karigars/${id}/ledger/${act.entry.id}/cancel`, { reason: actReason.trim() });
+      } else {
+        const isGold = act.entry.weight != null;
+        const v = parseFloat(actValue);
+        if (!v) { notify('Missing', isGold ? 'Enter the weight' : 'Enter the amount'); setActBusy(false); return; }
+        await api.put(`/karigars/${id}/ledger/${act.entry.id}`, { ...(isGold ? { weight: v } : { amount: v }), note: actNote, reason: actReason.trim() });
+      }
+      setAct(null); await load();
+    } catch (err: any) { notify('Failed', err?.detail || 'Could not save this change.'); }
+    finally { setActBusy(false); }
   };
 
   const renderEntry = (e: Entry, showItemCode: boolean) => (
@@ -209,9 +226,14 @@ export default function KarigarLedgerScreen() {
           <Image source={{ uri: e.slip_photo }} style={styles.entryThumb} />
         </Pressable>
       ) : null}
-      {!e.txn_id && canDeleteEntry && (
-        <Pressable onPress={() => removeEntry(e)} disabled={deletingId === e.id} style={styles.entryDelBtn} hitSlop={8} testID={`del-entry-${e.id}`}>
-          {deletingId === e.id ? <ActivityIndicator size="small" color={colors.onError} /> : <Ionicons name="trash-outline" size={14} color={colors.onError} />}
+      {(!e.txn_id || e.absorbs) && canEditEntry && (
+        <Pressable onPress={() => openAct(e, 'edit')} style={styles.entryDelBtn} hitSlop={8} testID={`edit-entry-${e.id}`}>
+          <Ionicons name="create-outline" size={14} color={colors.brandSecondary} />
+        </Pressable>
+      )}
+      {(!e.txn_id || e.absorbs) && canDeleteEntry && (
+        <Pressable onPress={() => openAct(e, 'cancel')} style={styles.entryDelBtn} hitSlop={8} testID={`del-entry-${e.id}`}>
+          <Ionicons name="close-circle-outline" size={15} color={colors.onError} />
         </Pressable>
       )}
     </View>
@@ -306,6 +328,20 @@ export default function KarigarLedgerScreen() {
               {general.map((e) => renderEntry(e, true))}
             </>
           )}
+
+          {cancelled.length > 0 && (
+            <>
+              <Text style={[styles.section, { marginTop: spacing.md }]}>Cancelled · {cancelled.length} (not counted)</Text>
+              {cancelled.map((e) => (
+                <View key={e.id} style={[styles.entryRow, { opacity: 0.55 }]} testID={`cancelled-${e.id}`}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.entryTitle, { textDecorationLine: 'line-through' }]}>{ENTRY_LABEL[e.type]}{e.item_code ? ` · ${e.item_code}` : ''} · {e.weight != null ? `${e.weight.toFixed(3)}g` : e.amount != null ? `₹${Math.abs(e.amount).toFixed(0)}` : ''}</Text>
+                    <Text style={styles.entryMeta}>Cancelled {e.voided_at ? istDate(e.voided_at) : ''} by {e.voided_by} — {e.void_reason}</Text>
+                  </View>
+                </View>
+              ))}
+            </>
+          )}
       </ScrollView>
 
       <Modal visible={!!previewPhoto} transparent animationType="fade" onRequestClose={() => setPreviewPhoto(null)}>
@@ -313,6 +349,28 @@ export default function KarigarLedgerScreen() {
           {previewPhoto ? <Image source={{ uri: previewPhoto }} style={styles.previewImage} resizeMode="contain" /> : null}
         </Pressable>
       </Modal>
+
+      <Sheet visible={!!act} onClose={() => setAct(null)} title={act?.mode === 'edit' ? 'Correct this entry' : 'Cancel this entry'} testID="entry-act-sheet">
+        {act ? (
+          <>
+            <Text style={styles.settleHintText}>{ENTRY_LABEL[act.entry.type]}{act.entry.item_code ? ` · ${act.entry.item_code}` : ''} · {act.entry.weight != null ? `${act.entry.weight.toFixed(3)}g` : `₹${Math.abs(act.entry.amount || 0).toFixed(0)}`}</Text>
+            <Text style={styles.settleHintText}>{act.mode === 'edit' ? 'A corrected entry is posted and the old one is cancelled — both stay on record.' : 'The entry stops counting but stays on record, greyed out, with your reason.'}</Text>
+            {act.mode === 'edit' ? (
+              <>
+                <Text style={styles.settleLabel}>{act.entry.weight != null ? 'Weight (g)' : 'Amount (₹)'}</Text>
+                <TextInput value={actValue} onChangeText={(v) => setActValue(v.replace(/[^0-9.\-]/g, ''))} keyboardType="decimal-pad" style={styles.settleInput} testID="entry-act-value" />
+                <Text style={styles.settleLabel}>Note</Text>
+                <TextInput value={actNote} onChangeText={setActNote} style={styles.settleInput} testID="entry-act-note" />
+              </>
+            ) : null}
+            <Text style={styles.settleLabel}>Reason (required)</Text>
+            <TextInput value={actReason} onChangeText={setActReason} placeholder="e.g. entered against the wrong job" placeholderTextColor={colors.mutedText} style={styles.settleInput} testID="entry-act-reason" />
+            <Pressable onPress={submitAct} disabled={actBusy} style={[styles.settleSaveBtn, actBusy && { opacity: 0.5 }]} testID="entry-act-submit">
+              {actBusy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.settleSaveBtnText}>{act.mode === 'edit' ? 'Save correction' : 'Cancel entry'}</Text>}
+            </Pressable>
+          </>
+        ) : null}
+      </Sheet>
 
       <Sheet visible={settleOpen} onClose={() => setSettleOpen(false)} title="Settle Balance" testID="settle-sheet">
         <Text style={styles.settleLabel}>Kind</Text>

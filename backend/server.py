@@ -976,6 +976,7 @@ class SampleItemSpec(BaseModel):
     weight: float
     pc_count: int = 1
     photo: Optional[str] = ''
+    purity: Optional[float] = None   # % pure gold (100 = fine, 92 = 22K, 75 = 18K) — required when issuing
 
 
 class SampleIn(BaseModel):
@@ -989,6 +990,7 @@ class SampleIn(BaseModel):
 
 
 class SampleUpdateIn(BaseModel):
+    purity: Optional[float] = None
     description: Optional[str] = None
     tag_number: Optional[str] = None
     weight: Optional[float] = None

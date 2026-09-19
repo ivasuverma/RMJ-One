@@ -17,7 +17,7 @@ import { useTheme } from '@/src/theme/ThemeContext';
 type Karigar = { id: string; name: string; active: boolean };
 type Sample = {
   id: string; sample_code: string; description: string; tag_number: string;
-  weight: number; pc_count?: number; issue_type?: string; due_date: string | null;
+  weight: number; purity?: number | null; pc_count?: number; issue_type?: string; due_date: string | null;
   photo: string; karigar_id: string; karigar_name: string; note: string;
 };
 
@@ -54,6 +54,7 @@ export default function NewSampleScreen() {
   const [description, setDescription] = useState('');
   const [weight, setWeight] = useState('');
   const [pcCount, setPcCount] = useState('1');
+  const [purity, setPurity] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [note, setNote] = useState('');
   const [photo, setPhoto] = useState('');
@@ -71,7 +72,7 @@ export default function NewSampleScreen() {
         // the effect below re-checks once it does.
         setIssueTypeOther(!!s.issue_type && !issueTypes.includes(s.issue_type));
         setDescription(s.description);
-        setWeight(String(s.weight ?? '')); setPcCount(String(s.pc_count ?? '1'));
+        setWeight(String(s.weight ?? '')); setPcCount(String(s.pc_count ?? '1')); setPurity(s.purity ? String(s.purity) : '');
         setDueDate(s.due_date || ''); setNote(s.note || ''); setPhoto(s.photo || '');
       } catch (e: any) { notify('Failed', e?.detail || 'Could not load this sample'); router.back(); }
       finally { setLoadingSample(false); }
@@ -100,19 +101,21 @@ export default function NewSampleScreen() {
     if (!description.trim()) { notify('Missing', 'Describe the sample piece'); return; }
     const w = parseFloat(weight);
     if (!w || w <= 0) { notify('Missing', 'Enter a weight greater than 0'); return; }
+    const pur = parseFloat(purity);
+    if (!pur || pur <= 0 || pur > 100) { notify('Missing', 'Enter the purity (100 for pure gold, 92 for 22K, 75 for 18K)'); return; }
     submittingRef.current = true;
     setSaving(true);
     try {
       if (isEdit) {
         await api.put(`/samples/${editId}`, {
-          description: description.trim(), weight: w, pc_count: parseInt(pcCount, 10) || 1,
+          description: description.trim(), weight: w, purity: pur, pc_count: parseInt(pcCount, 10) || 1,
           issue_type: issueType.trim(), due_date: dueDate || null, photo, note,
         });
         router.back();
       } else {
         const created = await api.post<{ id: string }[]>('/samples', {
           karigar_id: karigarId, note: note.trim(), issue_type: issueType.trim(), due_date: dueDate || null,
-          items: [{ description: description.trim(), tag_number: '', weight: w, pc_count: parseInt(pcCount, 10) || 1, photo: '' }],
+          items: [{ description: description.trim(), tag_number: '', weight: w, purity: pur, pc_count: parseInt(pcCount, 10) || 1, photo: '' }],
         });
         const rec = created?.[0];
         if (photo && rec?.id) {
@@ -217,6 +220,10 @@ export default function NewSampleScreen() {
             <View style={{ flex: 2 }}>
               <Text style={styles.label}>Weight (g)</Text>
               <TextInput testID="sample-weight" value={weight} onChangeText={(v) => setWeight(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0.000" placeholderTextColor={colors.mutedText} style={styles.input} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.label}>Purity %</Text>
+              <TextInput testID="sample-purity" value={purity} onChangeText={(v) => setPurity(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="92" placeholderTextColor={colors.mutedText} style={styles.input} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.label}>Pieces</Text>
