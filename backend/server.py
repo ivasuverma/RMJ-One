@@ -1462,8 +1462,8 @@ async def on_startup():
     asyncio.create_task(biometric_health_loop())
     asyncio.create_task(biometric_log_prune_loop())
     asyncio.create_task(log_retention_loop())
-    from routers.documents import doc_cache_warm_loop  # backfills the on-disk thumbnail cache
-    asyncio.create_task(doc_cache_warm_loop())
+    from routers.documents import doc_store_maintenance_loop  # thumbnails + clears the temporary image cache
+    asyncio.create_task(doc_store_maintenance_loop())
 
 
 @app.on_event('shutdown')

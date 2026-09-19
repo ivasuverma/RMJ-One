@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, TextInput, ActivityIndicator, Modal, Platform, PanResponder } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
@@ -396,7 +396,28 @@ function QuickView({ doc, categoryLabel, token, fileUri, onClose, onRecord, canR
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const insets = useSafeAreaInsets();
   const [imgLoaded, setImgLoaded] = useState(false);
-  useEffect(() => { setImgLoaded(false); }, [doc?.id]);
+  // Zoom: 1 = fit the screen; up to 4x. Zoomed content scrolls (drag) inside the frame; two-finger
+  // pinch also works on touch screens. The on-screen photo is 1600 px on its long side, so 4x is
+  // still sharp enough to read small print.
+  const ZOOM_STEPS = [1, 1.5, 2, 3, 4];
+  const [zoom, setZoom] = useState(1);
+  const zoomRef = useRef(1);
+  const [box, setBox] = useState({ w: 0, h: 0 });
+  const pinch = useRef<{ d0: number; z0: number } | null>(null);
+  const applyZoom = (z: number) => { const c = Math.max(1, Math.min(4, z)); zoomRef.current = c; setZoom(c); };
+  const stepZoom = (dir: 1 | -1) => {
+    const cur = zoomRef.current;
+    const next = dir > 0 ? ZOOM_STEPS.find((z) => z > cur + 0.01) : [...ZOOM_STEPS].reverse().find((z) => z < cur - 0.01);
+    applyZoom(next ?? (dir > 0 ? 4 : 1));
+  };
+  useEffect(() => { setImgLoaded(false); applyZoom(1); }, [doc?.id]);
+  const touchDist = (t: any) => Math.hypot(t[0].pageX - t[1].pageX, t[0].pageY - t[1].pageY);
+  const onTouchStart = (e: any) => { const t = e.nativeEvent?.touches; if (t && t.length === 2) pinch.current = { d0: touchDist(t) || 1, z0: zoomRef.current }; };
+  const onTouchMove = (e: any) => {
+    const t = e.nativeEvent?.touches;
+    if (pinch.current && t && t.length === 2) applyZoom(pinch.current.z0 * (touchDist(t) / pinch.current.d0));
+  };
+  const onTouchEnd = (e: any) => { if (!e.nativeEvent?.touches || e.nativeEvent.touches.length < 2) pinch.current = null; };
   // A merged multi-photo document: pull its photos out of the PDF and show them as a scrolling list.
   const [pagePics, setPagePics] = useState<string[] | null>(null);
   const multi = !!doc && (doc.pages || 0) > 1 && !!token;
@@ -421,7 +442,7 @@ function QuickView({ doc, categoryLabel, token, fileUri, onClose, onRecord, canR
   };
   // Swipe left → next, swipe right → previous (through the current list).
   const pan = useMemo(() => PanResponder.create({
-    onMoveShouldSetPanResponder: (_e, g) => Math.abs(g.dx) > 24 && Math.abs(g.dx) > Math.abs(g.dy),
+    onMoveShouldSetPanResponder: (_e, g) => zoomRef.current === 1 && !pinch.current && Math.abs(g.dx) > 24 && Math.abs(g.dx) > Math.abs(g.dy),
     onPanResponderRelease: (_e, g) => { if (g.dx <= -50) go(1); else if (g.dx >= 50) go(-1); },
   }), [idx, list]);
   if (!doc) return null;
@@ -439,16 +460,24 @@ function QuickView({ doc, categoryLabel, token, fileUri, onClose, onRecord, canR
             ? <Pressable onPress={() => onDelete(doc.id)} hitSlop={10} style={styles.qvIconBtn} testID="qv-delete"><Ionicons name="trash-outline" size={19} color={colors.onError} /></Pressable>
             : <View style={styles.qvIconBtn} />}
         </View>
-        <View style={styles.qvImgWrap} {...pan.panHandlers}>
+        <View style={styles.qvImgWrap} {...pan.panHandlers} onLayout={(e) => setBox({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
           {!multi && <Pressable style={StyleSheet.absoluteFill} onPress={() => !isImage && onOpenFile(doc)} />}
           {multi && pagePics && pagePics.length > 0
-            ? <ScrollView style={StyleSheet.absoluteFill} contentContainerStyle={{ padding: 8, gap: 8 }} testID="qv-pages">
-                {pagePics.map((u, i) => <Image key={u} source={{ uri: u }} style={{ width: '100%', aspectRatio: 0.75 }} contentFit="contain" />)}
+            ? <ScrollView horizontal={zoom > 1} style={StyleSheet.absoluteFill} contentContainerStyle={zoom > 1 ? { width: Math.max(box.w, 1) * zoom } : undefined} testID="qv-pages">
+                <ScrollView style={{ width: Math.max(box.w, 1) * zoom }} contentContainerStyle={{ padding: 8, gap: 8 }}>
+                  {pagePics.map((u) => <Image key={u} source={{ uri: u }} style={{ width: Math.max(box.w, 1) * zoom - 16, aspectRatio: 0.75 }} contentFit="contain" />)}
+                </ScrollView>
               </ScrollView>
             : multi && !pagePics
             ? <ActivityIndicator color="#fff" size="large" />
             : isImage && token
-            ? <Image key={doc.id} source={{ uri: `${fileUri(doc.id)}?full=1`, headers: { Authorization: `Bearer ${token}` } }} placeholder={{ uri: `${fileUri(doc.id)}?thumb=1`, headers: { Authorization: `Bearer ${token}` } }} placeholderContentFit="contain" transition={150} style={styles.qvImg} contentFit="contain" onLoadEnd={() => setImgLoaded(true)} />
+            ? (zoom > 1 && box.w > 0
+              ? <ScrollView horizontal style={StyleSheet.absoluteFill} contentContainerStyle={{ width: box.w * zoom }} showsHorizontalScrollIndicator={false} testID="qv-zoomed">
+                  <ScrollView style={{ width: box.w * zoom }} contentContainerStyle={{ height: box.h * zoom }} showsVerticalScrollIndicator={false}>
+                    <Image key={doc.id} source={{ uri: `${fileUri(doc.id)}?full=1`, headers: { Authorization: `Bearer ${token}` } }} style={{ width: box.w * zoom, height: box.h * zoom }} contentFit="contain" />
+                  </ScrollView>
+                </ScrollView>
+              : <Image key={doc.id} source={{ uri: `${fileUri(doc.id)}?full=1`, headers: { Authorization: `Bearer ${token}` } }} placeholder={{ uri: `${fileUri(doc.id)}?thumb=1`, headers: { Authorization: `Bearer ${token}` } }} placeholderContentFit="contain" transition={150} style={styles.qvImg} contentFit="contain" onLoadEnd={() => setImgLoaded(true)} />)
             : <View style={{ alignItems: 'center', gap: 10 }}>
                 {!opening && !!doc.pages && token && (
                   <Image key={doc.id} source={{ uri: `${fileUri(doc.id)}?thumb=1`, headers: { Authorization: `Bearer ${token}` } }} style={{ width: 220, height: 220 }} contentFit="contain" />
@@ -458,8 +487,15 @@ function QuickView({ doc, categoryLabel, token, fileUri, onClose, onRecord, canR
                   : <><Ionicons name="document-text-outline" size={doc.pages ? 28 : 64} color={colors.mutedText} /><Text style={{ color: '#fff', fontWeight: '700' }}>{doc.pages ? `Tap to open · ${doc.pages} pages` : 'Tap to open PDF'}</Text></>}
               </View>}
           {isImage && !imgLoaded && <View style={styles.qvImgLoading} pointerEvents="none"><ActivityIndicator color="#fff" size="small" /></View>}
-          {idx > 0 && <Pressable onPress={() => go(-1)} style={[styles.qvNav, { left: 6 }]} testID="qv-prev"><Ionicons name="chevron-back" size={26} color="#fff" /></Pressable>}
-          {idx >= 0 && idx < list.length - 1 && <Pressable onPress={() => go(1)} style={[styles.qvNav, { right: 6 }]} testID="qv-next"><Ionicons name="chevron-forward" size={26} color="#fff" /></Pressable>}
+          {(isImage || multi) && !!token && (
+            <View style={styles.qvZoom} testID="qv-zoom">
+              <Pressable onPress={() => stepZoom(-1)} disabled={zoom <= 1} hitSlop={6} style={[styles.qvZoomBtn, zoom <= 1 && { opacity: 0.4 }]} testID="qv-zoom-out"><Ionicons name="remove" size={20} color="#fff" /></Pressable>
+              <Pressable onPress={() => applyZoom(1)} hitSlop={6} testID="qv-zoom-reset"><Text style={styles.qvZoomText}>{Math.round(zoom * 100)}%</Text></Pressable>
+              <Pressable onPress={() => stepZoom(1)} disabled={zoom >= 4} hitSlop={6} style={[styles.qvZoomBtn, zoom >= 4 && { opacity: 0.4 }]} testID="qv-zoom-in"><Ionicons name="add" size={20} color="#fff" /></Pressable>
+            </View>
+          )}
+          {zoom === 1 && idx > 0 && <Pressable onPress={() => go(-1)} style={[styles.qvNav, { left: 6 }]} testID="qv-prev"><Ionicons name="chevron-back" size={26} color="#fff" /></Pressable>}
+          {zoom === 1 && idx >= 0 && idx < list.length - 1 && <Pressable onPress={() => go(1)} style={[styles.qvNav, { right: 6 }]} testID="qv-next"><Ionicons name="chevron-forward" size={26} color="#fff" /></Pressable>}
           <View style={styles.qvStamp}><Ionicons name={doc.upload_state === 'synced' ? 'cloud-done' : 'phone-portrait-outline'} size={12} color={colors.onSurface} /><Text style={styles.qvStampText}>{doc.upload_state === 'synced' ? 'In Drive' : 'Local'}{list.length > 1 && idx >= 0 ? ` · ${idx + 1}/${list.length}` : ''}</Text></View>
         </View>
         <View style={styles.qvPanel}>
@@ -663,6 +699,9 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   qvImg: { width: '100%', height: '100%' },
   qvImgLoading: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
   qvNav: { position: 'absolute', top: '50%', marginTop: -22, width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.45)' },
+  qvZoom: { position: 'absolute', left: spacing.md, bottom: spacing.md, flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(20,20,24,0.78)', borderRadius: radius.pill, paddingHorizontal: 6, paddingVertical: 4 },
+  qvZoomBtn: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
+  qvZoomText: { color: '#fff', fontSize: 12.5, fontWeight: '700', minWidth: 44, textAlign: 'center' },
   qvStamp: { position: 'absolute', top: spacing.md, right: spacing.lg, flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(30,30,34,0.9)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: radius.pill },
   qvStampText: { color: colors.onSurface, fontSize: 11, fontWeight: '700' },
   qvPanel: { backgroundColor: colors.surface, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, padding: spacing.lg, paddingBottom: spacing.xxl, gap: 8 },

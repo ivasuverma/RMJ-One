@@ -93,7 +93,7 @@ export default function GoogleDriveScreen() {
           <Ionicons name="save-outline" size={20} color={colors.brandSecondary} />
           <View style={{ flex: 1 }}>
             <Text style={styles.backupTitle}>Database backups in Drive</Text>
-            <Text style={styles.backupSub}>Older copies only — the daily backup now runs on the server</Text>
+            <Text style={styles.backupSub}>Nightly server backups are stored here</Text>
           </View>
           <Ionicons name="chevron-forward" size={18} color={colors.mutedText} />
         </Pressable>

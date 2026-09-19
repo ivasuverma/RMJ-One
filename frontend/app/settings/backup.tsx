@@ -84,7 +84,7 @@ export default function BackupScreen() {
           <ActivityIndicator color={colors.brandPrimary} style={{ marginTop: 40 }} />
         ) : (
           <>
-            <Text style={styles.intro}>The server makes the daily database backup itself (a local copy plus OneDrive), not Google Drive — Google Drive is used for documents and photos only. Copies already in Drive can still be restored here, and “Back up now” makes a one-off copy in Drive.</Text>
+            <Text style={styles.intro}>Every night the server makes a full database backup and sends it to Google Drive (folder “RMJ One Backups”) along with its configuration. Those nightly files are restored on the server (see ops/backup); the older in-app copies listed here can still be restored from this screen, and “Back up now” makes an extra one-off copy.</Text>
 
             {!status.drive_connected && (
               <View style={styles.warn}>

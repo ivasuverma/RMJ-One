@@ -115,14 +115,44 @@ def _cache_drop(doc_id: str) -> None:
         except Exception:
             pass
 
-# This directory is the permanent local store for document images, no longer just
-# a cache: `.full` is the untouched original, `.view` a readable-size copy that the
-# app shows on screen (long side <= 1600 px, ~200-400 KB — text stays sharp but a
-# photo doesn't drag on a phone's connection), `.thumb` the grid thumbnail. The
-# originals stay here after they reach Google Drive; Drive is the off-site backup.
+# This directory is a TEMPORARY cache, not storage: Google Drive holds the only
+# permanent copy of every document and photo (the shop doesn't want them kept on
+# this computer). `.full` is the untouched original, `.view` a readable-size copy
+# the app shows on screen (long side <= 1600 px, ~200-400 KB — text stays sharp but
+# a photo doesn't drag on a phone's connection), `.thumb` the small grid thumbnail.
+# A file that has reached Drive is deleted from here once it hasn't been opened for
+# CACHE_RETAIN_DAYS, or oldest-first when the cache passes CACHE_RETAIN_BYTES (see
+# doc_store_maintenance_loop); opening it later simply fetches it from Drive again.
+# Nothing not yet in Drive is ever deleted. Only the tiny thumbnails are kept.
+CACHE_RETAIN_DAYS = 7
+CACHE_RETAIN_BYTES = 1024 ** 3
+THUMB_SIDE = 240
 VIEW_MAX_SIDE = 1600
 VIEW_QUALITY = 82
 _VIEW_REUSE_BYTES = 600 * 1024   # an already-small JPEG is served as-is
+
+
+def _make_thumb_sync(raw: bytes):
+    try:
+        import io
+        from PIL import Image, ImageOps
+        img = ImageOps.exif_transpose(Image.open(io.BytesIO(raw)))
+        if img.mode not in ('RGB', 'L'):
+            img = img.convert('RGB')
+        img.thumbnail((THUMB_SIDE, THUMB_SIDE), Image.LANCZOS)
+        out = io.BytesIO()
+        img.save(out, 'JPEG', quality=72, optimize=True)
+        return out.getvalue()
+    except Exception:
+        return None
+
+
+def _touch(path) -> None:
+    """Mark a cached file as just used, so the 7-day clock restarts."""
+    try:
+        os.utime(path, None)
+    except Exception:
+        pass
 
 
 def _make_view_sync(raw: bytes):
@@ -748,11 +778,19 @@ async def _load_variant(meta: dict, doc_id: str, variant: str):
             return raw, False
         view = await asyncio.to_thread(_make_view_sync, raw)
         return (view or raw), bool(view)
+    if variant == 'thumb':
+        row = await _blob_get(doc_id, {'thumb_data': 1, 'local_data': 1})
+        data = row.get('thumb_data') or (row.get('local_data') if meta.get('local_kind') == 'thumb' else None)
+        if data:
+            return base64.b64decode(data), True
+        if (meta.get('file') or {}).get('mime', '').startswith('image/'):
+            raw, ok = await _load_variant(meta, doc_id, 'full')
+            if raw and ok:
+                t = await asyncio.to_thread(_make_thumb_sync, raw)
+                if t:
+                    return t, True
+        return None, True
     async with _BLOB_SLOTS:
-        if variant == 'thumb':
-            row = await _blob_get(doc_id, {'thumb_data': 1, 'local_data': 1})
-            data = row.get('thumb_data') or (row.get('local_data') if meta.get('local_kind') == 'thumb' else None)
-            return (base64.b64decode(data) if data else None), True
         local_kind = meta.get('local_kind', 'full')
         drive_id = (meta.get('file') or {}).get('drive_file_id')
         fp = _cache_file(doc_id, 'full')
@@ -814,6 +852,7 @@ async def document_file(
 
     path = _cache_file(doc_id, variant)
     if path.is_file():
+        _touch(path)
         return FileResponse(path, media_type=media_type, headers=cache_headers)
 
     raw, cacheable = await _load_variant(d, doc_id, variant)
@@ -825,41 +864,70 @@ async def document_file(
     return Response(content=raw, media_type=media_type, headers=cache_headers)
 
 
-async def doc_cache_warm_loop() -> None:
-    """Brings documents that predate the local store up to date, in the background:
-    every document gets its thumbnail, its untouched original (downloaded from
-    Google Drive if that is the only place it still is) and, for images, the
-    readable-size view copy. New uploads are written straight to disk, so after
-    the first pass there is normally nothing left to do. Gentle by design: one
-    file at a time, through the same limiter the request path uses."""
+def _evict_sync(synced_ids: set, all_ids: set) -> dict:
+    """Delete cached originals/on-screen copies that are safely in Drive and unused
+    for CACHE_RETAIN_DAYS (or oldest-first over the size budget), and any file whose
+    document no longer exists. Thumbnails are kept."""
+    import time as _t
+    now = _t.time()
+    removed = freed = 0
+    heavy = []   # (mtime, size, path) of evictable .full/.view files
+    for f in DOC_CACHE_DIR.iterdir():
+        if not f.is_file():
+            continue
+        name = f.name
+        if name.endswith('.tmp'):
+            continue
+        doc_id, _, variant = name.partition('.')
+        try:
+            st = f.stat()
+        except OSError:
+            continue
+        if doc_id not in all_ids:            # orphan of a deleted document
+            try:
+                f.unlink(); removed += 1; freed += st.st_size
+            except OSError:
+                pass
+            continue
+        if variant in ('full', 'view') and doc_id in synced_ids:
+            heavy.append((st.st_mtime, st.st_size, f))
+    total = sum(h[1] for h in heavy)
+    for mtime, size, f in sorted(heavy):     # oldest first
+        too_old = (now - mtime) > CACHE_RETAIN_DAYS * 86400
+        over_budget = total > CACHE_RETAIN_BYTES
+        if not (too_old or over_budget):
+            break
+        try:
+            f.unlink(); removed += 1; freed += size; total -= size
+        except OSError:
+            pass
+    return {'removed': removed, 'freed': freed}
+
+
+async def doc_store_maintenance_loop() -> None:
+    """Hourly: (1) make sure every image document has its small grid thumbnail,
+    rebuilding it from Drive if needed; (2) clear out cached originals that are in
+    Drive and no longer in use (see the policy note at DOC_CACHE_DIR)."""
     await asyncio.sleep(45)
     while True:
         try:
-            names = os.listdir(DOC_CACHE_DIR) if DOC_CACHE_DIR.is_dir() else []
-            have = {v: {n[:-len('.' + v)] for n in names if n.endswith('.' + v)} for v in ('thumb', 'view', 'full')}
             rows = await db.documents.find(
-                {'deleted': {'$ne': True}}, {'_id': 0, 'id': 1, 'local_kind': 1, 'file': 1},
+                {'deleted': {'$ne': True}}, {'_id': 0, 'id': 1, 'local_kind': 1, 'file': 1, 'upload_state': 1},
             ).to_list(None)
-            todo = []
+            names = os.listdir(DOC_CACHE_DIR) if DOC_CACHE_DIR.is_dir() else []
+            have_thumb = {n[:-len('.thumb')] for n in names if n.endswith('.thumb')}
             for r in rows:
-                img = (r.get('file') or {}).get('mime', '').startswith('image/')
-                for v in ('thumb', 'full', 'view'):
-                    if r['id'] in have[v]:
-                        continue
-                    if v in ('thumb', 'view') and not img:
-                        continue
-                    if v == 'full' and not (r.get('local_kind') in ('full', 'disk') or (r.get('file') or {}).get('drive_file_id')):
-                        continue
-                    todo.append((r, v))
-            if todo:
-                logger.info(f'doc store: filling {len(todo)} missing file(s)')
-            for r, v in todo:
-                raw, cacheable = await _load_variant(r, r['id'], v)
-                if raw and cacheable:
-                    await _cache_write(r['id'], v, raw)
-                await asyncio.sleep(0.3)
+                if (r.get('file') or {}).get('mime', '').startswith('image/') and r['id'] not in have_thumb:
+                    raw, ok = await _load_variant(r, r['id'], 'thumb')
+                    if raw and ok:
+                        await _cache_write(r['id'], 'thumb', raw)
+                    await asyncio.sleep(0.3)
+            synced = {r['id'] for r in rows if r.get('upload_state') == 'synced' and (r.get('file') or {}).get('drive_file_id')}
+            res = await asyncio.to_thread(_evict_sync, synced, {r['id'] for r in rows})
+            if res['removed']:
+                logger.info(f"doc cache: cleared {res['removed']} file(s), {res['freed'] // 1024} KB")
         except Exception as e:
-            logger.warning(f'doc store warm error: {e}')
+            logger.warning(f'doc store maintenance error: {e}')
         await asyncio.sleep(3600)
 
 

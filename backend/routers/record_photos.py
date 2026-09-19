@@ -1,13 +1,16 @@
 """Record photos — high-res reference photos attached to a repair item, sample,
-employee, etc. The original stays on this server for good (Google Drive is the
-off-site backup, filled in the background) and the app is shown a readable-size
-copy, so opening a photo is fast and never depends on Drive being connected.
+employee, etc. Google Drive holds the only permanent copy (the shop does not
+want photos kept on this computer): a photo sits in the database only until the
+background worker has uploaded it, after which just a tiny thumbnail remains.
+The app is shown a readable-size copy that is cached on disk for a few days and
+then cleared; opening an older photo fetches it from Drive again.
 
 A photo is linked to its record by (ref_type, ref_id), e.g.
 ('repair_item', <id>). Fully self-contained and additive.
 """
 import base64
 import os
+import time
 import pathlib
 import re
 import uuid
@@ -23,6 +26,7 @@ _LIST_PROJ = {'_id': 0, 'local_data': 0, 'thumb_data': 0}
 
 # Readable-size copies (long side <= 1600 px) are built once and kept here.
 VIEW_DIR = pathlib.Path(__file__).resolve().parent.parent / 'data' / 'record_view'
+VIEW_RETAIN_DAYS = 7
 
 
 def _view_path(photo_id: str) -> pathlib.Path:
@@ -211,6 +215,10 @@ async def record_photo_file(photo_id: str, full: bool = Query(default=False), or
     if full and not original:
         vp = _view_path(photo_id)
         if vp.is_file():
+            try:
+                os.utime(vp, None)   # in use: restart its 7-day clock
+            except OSError:
+                pass
             return FileResponse(vp, media_type='image/jpeg', headers=headers)
     raw = await _original_bytes(d)
     if not raw:
@@ -222,8 +230,8 @@ async def record_photo_file(photo_id: str, full: bool = Query(default=False), or
 
 
 async def _original_bytes(d: dict):
-    """The untouched original: stored with the record, or (for a photo from before
-    originals were kept) fetched from Drive once and then stored for good."""
+    """The untouched original: held with the record only until it has reached
+    Drive, otherwise fetched from Drive on demand (and never stored back)."""
     if d.get('local_kind') == 'full' and d.get('local_data'):
         return base64.b64decode(d['local_data'])
     drive_id = (d.get('file') or {}).get('drive_file_id')
@@ -231,10 +239,7 @@ async def _original_bytes(d: dict):
         try:
             import drive_service
             cfg = await drive_service.get_config()
-            raw = await drive_service.download(cfg, drive_id)
-            await db.record_photos.update_one({'id': d['id']}, {'$set': {
-                'local_data': base64.b64encode(raw).decode('ascii'), 'local_kind': 'full'}})
-            return raw
+            return await drive_service.download(cfg, drive_id)
         except Exception:
             pass
     if d.get('local_data'):
@@ -261,6 +266,21 @@ def _drive_filename(doc: dict) -> str:
     return f'{base}_{(doc.get("created_at") or "")[:10]}.{ext}'
 
 
+_last_view_clean = [0.0]
+
+
+def _clean_views() -> None:
+    if not VIEW_DIR.is_dir():
+        return
+    cutoff = time.time() - VIEW_RETAIN_DAYS * 86400
+    for f in VIEW_DIR.iterdir():
+        try:
+            if f.is_file() and f.stat().st_mtime < cutoff:
+                f.unlink()
+        except OSError:
+            pass
+
+
 async def record_photo_worker():
     """Background Drive sync — mirror of the Documents worker. Uploads one queued
     record photo per tick, then drops the heavy local copy (keeps the thumb)."""
@@ -277,12 +297,21 @@ async def record_photo_worker():
                     await db.record_photos.update_one({'id': doc['id']}, {'$set': {'upload_state': 'uploading'}})
                     try:
                         res = await drive_service.upload(cfg, _folder_for(doc.get('ref_type', '')), _drive_filename(doc), doc['local_data'], (doc.get('file') or {}).get('mime', 'image/jpeg'))
-                        # Drive now holds the off-site backup; the original STAYS here.
+                        # Drive now holds the only permanent copy: drop the local original
+                        # and keep just a small thumbnail for lists.
+                        thumb = doc.get('thumb_data')
+                        if not thumb:
+                            from routers.documents import _make_thumb_sync
+                            t = await asyncio.to_thread(_make_thumb_sync, base64.b64decode(doc['local_data']))
+                            thumb = base64.b64encode(t).decode('ascii') if t else None
                         await db.record_photos.update_one({'id': doc['id']}, {'$set': {
                             'upload_state': 'synced',
                             'file.drive_file_id': res['drive_file_id'],
                             'file.drive_view_link': res['drive_view_link'],
                             'file.drive_thumbnail_link': res['drive_thumbnail_link'],
+                            'local_data': None,
+                            'local_kind': 'thumb' if thumb else 'none',
+                            'thumb_data': thumb,
                         }})
                     except Exception as e:
                         err = str(e)[:200]
@@ -294,16 +323,10 @@ async def record_photo_worker():
                             await _notify_system_health('drive_upload_failed', 'Photo upload failed',
                                                          f'A record photo failed to upload to Google Drive: {err}', '/settings/google-drive')
                     continue
-            # One-time catch-up for photos synced before originals were kept: pull
-            # each original back from Drive (and build its on-screen copy).
-            legacy = await db.record_photos.find_one(
-                {'deleted': {'$ne': True}, 'upload_state': 'synced', 'local_kind': {'$ne': 'full'}, 'file.drive_file_id': {'$ne': None}}, {'_id': 0})
-            if legacy:
-                raw = await _original_bytes(legacy)
-                if raw:
-                    await asyncio.to_thread(_write_view_sync, _view_path(legacy['id']), raw)
-                    continue
-                await asyncio.sleep(60)   # Drive unavailable — don't spin on it
+            # Clear on-screen copies not opened for VIEW_RETAIN_DAYS (regenerated from Drive on demand).
+            if time.monotonic() - _last_view_clean[0] > 3600:
+                _last_view_clean[0] = time.monotonic()
+                await asyncio.to_thread(_clean_views)
         except Exception:
             pass
         await asyncio.sleep(6)

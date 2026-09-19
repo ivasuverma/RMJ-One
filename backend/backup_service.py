@@ -12,6 +12,9 @@ import gzip
 import json
 import logging
 import asyncio
+import os
+import pathlib
+import time
 
 from server import db, now_utc, _notify_system_health
 
@@ -82,6 +85,47 @@ async def run_backup() -> dict:
     return {'ok': True, 'file': fname, 'size': len(gz), 'documents': meta.get('total_documents')}
 
 
+SYSTEM_BACKUP_DIR = os.environ.get('SYSTEM_BACKUP_DIR', 'D:/RMJ-One/mongodb/backups')
+_SYSTEM_PATTERNS = ('rmj_one-*.gz', 'config-*.zip')   # database dump + configuration bundle
+_SYSTEM_MAX_AGE_DAYS = 3
+
+
+async def upload_system_backups() -> dict:
+    """Send the server's own nightly backup files (full database dump + configuration
+    bundle, written by the scheduled task in ops/backup) to Google Drive, so Drive is the
+    one off-site place for everything. Only new files from the last few days are sent;
+    Drive is pruned to the newest RETENTION files afterwards."""
+    import drive_service
+    cfg = await drive_service.get_config()
+    if not (cfg and cfg.get('refresh_token')):
+        return {'ok': False, 'error': 'Google Drive is not connected'}
+    d = pathlib.Path(SYSTEM_BACKUP_DIR)
+    if not d.is_dir():
+        return {'ok': True, 'sent': []}
+    cutoff = time.time() - _SYSTEM_MAX_AGE_DAYS * 86400
+    have = {f['name'] for f in await drive_service.list_backups(cfg)}
+    sent = []
+    for pat in _SYSTEM_PATTERNS:
+        for f in sorted(d.glob(pat), key=lambda x: x.stat().st_mtime, reverse=True):
+            if f.name in have or f.stat().st_mtime < cutoff or f.stat().st_size < 1024:
+                continue
+            # The scheduled task may still be writing it — wait until it stops growing.
+            size = f.stat().st_size
+            await asyncio.sleep(3)
+            if f.stat().st_size != size:
+                continue
+            raw = await asyncio.to_thread(f.read_bytes)
+            await drive_service.upload_backup(cfg, f.name, raw, 'application/zip' if f.suffix == '.zip' else 'application/gzip')
+            sent.append(f.name)
+    if sent:
+        await _prune(cfg)
+    await db.settings.update_one({'id': 'system_backup'}, {'$set': {
+        'id': 'system_backup', 'last_check_at': now_utc().isoformat(), 'last_error': None,
+        **({'last_sent_at': now_utc().isoformat(), 'last_sent': sent} if sent else {}),
+    }}, upsert=True)
+    return {'ok': True, 'sent': sent}
+
+
 async def backup_loop() -> None:
     """Runs a backup automatically ~daily when enabled and Drive is connected.
     Checks hourly and catches up if the last backup is stale (e.g. server was
@@ -91,7 +135,7 @@ async def backup_loop() -> None:
         try:
             cfg = await db.settings.find_one({'id': 'backup'}, {'_id': 0}) or {}
             # Off by default: the nightly database backup is now made on the server itself
-            # (local dump + OneDrive, see ops/backup); Google Drive is for documents and photos.
+            # (see ops/backup) and sent to Drive by upload_system_backups() below.
             if cfg.get('auto_enabled', False) is True:
                 import drive_service
                 dcfg = await drive_service.get_config()
@@ -111,4 +155,9 @@ async def backup_loop() -> None:
                             await db.settings.update_one({'id': 'backup'}, {'$set': {'last_error': res.get('error')}}, upsert=True)
         except Exception as e:
             logger.warning(f'backup loop error: {e}')
+        try:
+            await upload_system_backups()
+        except Exception as e:
+            logger.warning(f'system backup upload failed: {e}')
+            await db.settings.update_one({'id': 'system_backup'}, {'$set': {'id': 'system_backup', 'last_error': str(e)[:200]}}, upsert=True)
         await asyncio.sleep(3600)
