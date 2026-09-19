@@ -109,7 +109,7 @@ export function RecordPhotos({ refType, refId, label = 'Photos' }: { refType: st
   );
 }
 
-async function makeThumb(dataUri: string): Promise<string> {
+export async function makeThumb(dataUri: string): Promise<string> {
   if (typeof document === 'undefined') return '';
   try {
     const img = await new Promise<HTMLImageElement>((res, rej) => {

@@ -52,6 +52,7 @@ _FOLDER_LABEL = {
     'employee': 'Employee Photos',
     'task': 'Task Photos',
     'gold_loan': 'Gold Loan Photos',
+    'cashbook_entry': 'Cash Book Receipts',
 }
 
 # Every ref_type this feature supports maps to the module that gates its
@@ -62,7 +63,7 @@ _FOLDER_LABEL = {
 # separately below (_require_task_access) — an employee can always attach a
 # completion photo to their OWN task regardless of whether they hold the
 # 'tasks' staff module, the same as they can already comment on / complete it.
-_REF_MODULE = {'repair_item': 'repairs', 'sample': 'samples', 'employee': 'team', 'gold_loan': 'gold_loans'}
+_REF_MODULE = {'repair_item': 'repairs', 'sample': 'samples', 'employee': 'team', 'gold_loan': 'gold_loans', 'cashbook_entry': 'cash_book'}
 
 
 def _module_for_ref(ref_type: str) -> str:
