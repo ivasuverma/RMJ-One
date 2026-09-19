@@ -254,6 +254,10 @@ class GoldRateSendIn(BaseModel):
     # was actually broadcast, not just what was originally fetched.
     gold_rate: Optional[int] = None
     silver_rate: Optional[int] = None
+    # Where to send the confirmed rate. WhatsApp defaults on (as before); `led` None means "follow the
+    # LED board's own auto-update setting", True forces an update, False skips it.
+    whatsapp: bool = True
+    led: Optional[bool] = None
 
 
 @router.get('/settings/gold-rate')
@@ -317,21 +321,33 @@ async def set_gold_rate_manual(body: GoldRateManualIn, user: dict = Depends(requ
 
 @router.post('/settings/gold-rate/send')
 async def send_gold_rate(body: GoldRateSendIn, user: dict = Depends(require_admin_or_module_right('gold_rate', 'edit'))):
+    """Confirm today's rate and send it to the chosen places: the WhatsApp Channel and/or the LED board.
+    The rate is the same everywhere (see also the chatbot, which answers with today's confirmed rate)."""
+    if not body.whatsapp and body.led is False:
+        raise HTTPException(status_code=400, detail='Choose at least one place to send the rate to')
     today = await db.settings.find_one({'id': 'gold_rate_today'}, {'_id': 0})
     message = (body.message or (today or {}).get('message') or '').strip()
-    if not message:
-        raise HTTPException(status_code=400, detail='No rate message to send yet — fetch or enter a rate first')
-    ok = await send_whatsapp_channel(GOLD_RATE_CHANNEL_ID, message, flow='gold_rate_manual_send')
-    if not ok:
-        raise HTTPException(status_code=502, detail='Could not send — check the WhatsApp service is connected (Settings > WhatsApp)')
-    update = {'confirmed': True, 'sent_at': now_utc().isoformat(), 'message': message}
+    if body.whatsapp:
+        if not message:
+            raise HTTPException(status_code=400, detail='No rate message to send yet — fetch or enter a rate first')
+        ok = await send_whatsapp_channel(GOLD_RATE_CHANNEL_ID, message, flow='gold_rate_manual_send')
+        if not ok:
+            raise HTTPException(status_code=502, detail='Could not send — check the WhatsApp service is connected (Settings > WhatsApp)')
+    import gold_rate as _gr
+    # Confirming happens today, so the record is dated today — a hand-typed rate has no fetched date of its own.
+    update = {'confirmed': True, 'date': _gr.today_ist()}
+    if body.whatsapp:
+        update.update({'sent_at': now_utc().isoformat(), 'message': message})
     if body.gold_rate is not None:
         update['gold_rate'] = body.gold_rate
     if body.silver_rate is not None:
         update['silver_rate'] = body.silver_rate
     await db.settings.update_one({'id': 'gold_rate_today'}, {'$set': update}, upsert=True)
-    await log_audit(user, 'settings.gold_rate.send', 'settings', 'gold_rate_today', message[:60])
-    # The same confirmation also updates the LED board (if switched on); a board problem never fails the send.
-    from routers.led_board import push_after_confirm
-    await push_after_confirm(body.gold_rate, body.silver_rate)
-    return {'ok': True}
+    await log_audit(user, 'settings.gold_rate.send', 'settings', 'gold_rate_today',
+                    f"{'whatsapp ' if body.whatsapp else ''}{'led' if body.led is not False else ''} {message[:50]}".strip())
+    # LED board: never fails the send; the outcome is reported back so the screen can say what happened.
+    led = None
+    if body.led is not False:
+        from routers.led_board import push_after_confirm
+        led = await push_after_confirm(body.gold_rate, body.silver_rate, force=body.led is True)
+    return {'ok': True, 'whatsapp': body.whatsapp, 'led': led}

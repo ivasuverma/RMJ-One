@@ -163,20 +163,22 @@ async def push_text(text: str, reason: str = 'manual', rates: Optional[dict] = N
     return {'ok': ok, 'text': text, 'error': err}
 
 
-async def push_after_confirm(gold: Optional[int], silver: Optional[int], reason: str = 'rate_confirmed') -> None:
-    """Called after the daily rate is confirmed/sent. Never raises."""
+async def push_after_confirm(gold: Optional[int], silver: Optional[int], reason: str = 'rate_confirmed', force: bool = False) -> Optional[dict]:
+    """Called after the daily rate is confirmed/sent. Never raises. Returns the push result, or None
+    when nothing was sent (board off, or auto-update off and not `force`d, or no rate)."""
     try:
         cfg = await get_config()
-        if not (cfg['enabled'] and cfg['auto_push']):
-            return
+        if not cfg['enabled'] or not (cfg['auto_push'] or force):
+            return None
         if gold is None or silver is None:
             r = await _current_rates()
             if not r:
-                return
+                return None
             gold, silver = r['gold'], r['silver']
-        await push_rates(int(gold), int(silver), reason)
+        return await push_rates(int(gold), int(silver), reason)
     except Exception as e:
         logger.warning(f'LED board auto-push error: {e}')
+        return {'ok': False, 'text': None, 'error': str(e)[:200]}
 
 
 # ---------------- endpoints ----------------
@@ -199,6 +201,8 @@ class LedBoardPushIn(BaseModel):
 
 class LedBoardPreviewIn(BaseModel):
     template: str
+    gold_rate: Optional[int] = None      # preview against typed-but-unsaved rates
+    silver_rate: Optional[int] = None
 
 
 _RATE_PLACEHOLDER = re.compile(r'\{(gold_rate|silver_rate|gold_24k|gold_22k|gold_18k|gold_14k|silver_9999)(_comma)?\}')
@@ -332,8 +336,10 @@ async def led_board_test(user: dict = Depends(require_admin_or_module_right('gol
 @router.post('/led-board/preview')
 async def led_board_preview(body: LedBoardPreviewIn, _: dict = Depends(require_staff_or_module('gold_rate'))):
     r = await _current_rates()
+    gold = body.gold_rate if body.gold_rate else (r['gold'] if r else None)
+    silver = body.silver_rate if body.silver_rate else (r['silver'] if r else None)
     try:
-        return {'text': await _render_custom(body.template, r['gold'] if r else None, r['silver'] if r else None), 'error': None}
+        return {'text': await _render_custom(body.template, gold, silver), 'error': None}
     except HTTPException as e:
         return {'text': None, 'error': e.detail}
 

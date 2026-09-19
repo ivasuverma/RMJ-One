@@ -64,6 +64,13 @@ async def _rate_reply() -> str:
     # stays close to accurate through the day regardless of whether/when
     # the broadcast was sent.
     live = await db.settings.find_one({'id': 'gold_rate_live'}, {'_id': 0})
+    # The rate confirmed on the Rate Updater screen today is THE rate: it is what was sent to the
+    # channel and the LED board, so the chatbot answers with the same numbers. Before anything is
+    # confirmed (or on a later day) it falls back to the background-refreshed live rate.
+    from gold_rate import today_ist
+    conf = await db.settings.find_one({'id': 'gold_rate_today'}, {'_id': 0}) or {}
+    if conf.get('confirmed') and conf.get('date') == today_ist() and conf.get('gold_rate') and conf.get('silver_rate'):
+        live = {'gold_rate': conf['gold_rate'], 'silver_rate': conf['silver_rate'], 'fetched_at': conf.get('sent_at') or conf.get('fetched_at')}
     if not live or not live.get('gold_rate') or not live.get('silver_rate'):
         return "Today's rate isn't available right now — please call the store or check back later."
     date_str, time_str = format_ist_date_time(live.get('fetched_at'))

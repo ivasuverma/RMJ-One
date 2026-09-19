@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, TextInput, Switch, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,13 +9,15 @@ import { istDisplayDateTime } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { useToast } from '@/src/components/ui';
+import { confirmAction } from '@/src/utils/confirm';
 
 type Cfg = { enabled: boolean; driver: string; host: string; port: number; template: string; auto_push: boolean };
 type Status = {
   last_push_at: string | null; last_ok: boolean | null; last_error: string | null; last_text: string | null; last_reason: string | null;
   last_test_at: string | null; last_test_ok: boolean | null; last_test_detail: string | null;
 };
-type State = { config: Cfg; status: Status; drivers: string[]; today: { gold: number; silver: number; date: string; confirmed: boolean } | null; preview: string | null; default_template: string };
+type Tpl = { id: string; name: string; text: string };
+type State = { templates?: Tpl[]; config: Cfg; status: Status; drivers: string[]; today: { gold: number; silver: number; date: string; confirmed: boolean } | null; preview: string | null; default_template: string };
 
 const DRIVER_LABEL: Record<string, string> = { simulator: 'Simulator (no board)', huidu_w2: 'Huidu HD-W2' };
 
@@ -38,9 +40,15 @@ export default function LedBoardScreen() {
   const [template, setTemplate] = useState('');
   const [autoPush, setAutoPush] = useState(true);
   const [dirty, setDirty] = useState(false);
+  // One-off / saved custom messages
+  const [customText, setCustomText] = useState('');
+  const [customPreview, setCustomPreview] = useState<{ text: string | null; error: string | null } | null>(null);
+  const [saveName, setSaveName] = useState<string | null>(null);
+  const [tpls, setTpls] = useState<Tpl[]>([]);
+  const previewSeq = useRef(0);
 
   const apply = (s: State) => {
-    setState(s);
+    setState(s); setTpls(s.templates || []);
     setEnabled(s.config.enabled); setDriver(s.config.driver); setHost(s.config.host);
     setPort(s.config.port ? String(s.config.port) : ''); setTemplate(s.config.template); setAutoPush(s.config.auto_push);
     setDirty(false);
@@ -80,6 +88,37 @@ export default function LedBoardScreen() {
     } catch (e: any) { toast.error(e?.detail || 'Could not update the board'); }
     finally { setBusy(null); await load(); }
   };
+
+  useEffect(() => {
+    if (!customText.trim()) { setCustomPreview(null); return; }
+    const my = ++previewSeq.current;
+    const t = setTimeout(async () => {
+      try {
+        const r = await api.post<{ text: string | null; error: string | null }>('/led-board/preview', { template: customText });
+        if (my === previewSeq.current) setCustomPreview(r);
+      } catch { /* keep last */ }
+    }, 300);
+    return () => clearTimeout(t);
+  }, [customText]);
+  const addChip = (c: string) => setCustomText((t) => (t && !t.endsWith(' ') ? `${t} ${c}` : `${t}${c}`));
+  const pushCustom = async () => {
+    setBusy('push');
+    try {
+      const r = await api.post<{ text: string }>('/led-board/push', { template: customText });
+      toast.success(`Board shows: ${r.text}`);
+    } catch (e: any) { toast.error(e?.detail || 'Could not update the board'); }
+    finally { setBusy(null); await load(); }
+  };
+  const saveTemplate = async () => {
+    try {
+      const r = await api.post<{ items: Tpl[] }>('/led-board/templates', { name: saveName || '', text: customText });
+      setTpls(r.items); toast.success(`Saved template “${(saveName || '').trim()}”`); setSaveName(null);
+    } catch (e: any) { toast.error(e?.detail || 'Could not save the template'); }
+  };
+  const deleteTemplate = (t: Tpl) => confirmAction('Delete template?', `“${t.name}” will be removed.`, 'Delete', async () => {
+    try { const r = await api.del<{ items: Tpl[] }>(`/led-board/templates/${t.id}`); setTpls(r?.items ?? []); }
+    catch (e: any) { toast.error(e?.detail || 'Could not delete'); }
+  });
 
   if (loading) return <SafeAreaView style={styles.centered}><ActivityIndicator color={colors.brandPrimary} /></SafeAreaView>;
   const st = state?.status;
@@ -172,6 +211,47 @@ export default function LedBoardScreen() {
           ) : null}
           {st?.last_test_at ? <Text style={[styles.hint, { marginTop: spacing.sm }]}>Last test: {st.last_test_ok ? '✔' : '✖'} {st.last_test_detail}</Text> : null}
         </View>
+
+        <View style={styles.card} testID="led-custom-card">
+          <Text style={styles.cardTitle}>Custom message & templates</Text>
+          <Text style={styles.hint}>Show any text on the board — an offer, a notice — using the same placeholders. It stays until the next rate update. Save messages you use often as templates.</Text>
+          {tpls.length ? (
+            <View style={{ marginTop: 6 }}>
+              <Text style={styles.hint}>Saved templates — tap to use, ✕ to delete</Text>
+              <View style={styles.chipRow}>
+                {tpls.map((t) => (
+                  <View key={t.id} style={styles.tplChip} testID={`led-template-${t.id}`}>
+                    <Pressable onPress={() => setCustomText(t.text)} hitSlop={4}><Text style={styles.chipText}>{t.name}</Text></Pressable>
+                    <Pressable onPress={() => deleteTemplate(t)} hitSlop={8}><Ionicons name="close" size={13} color={colors.mutedText} /></Pressable>
+                  </View>
+                ))}
+              </View>
+            </View>
+          ) : null}
+          <TextInput value={customText} onChangeText={setCustomText} autoCapitalize="characters" placeholder="e.g. 22K {gold_22k}  18K {gold_18k}" placeholderTextColor={colors.mutedText}
+            style={[styles.input, { marginTop: spacing.sm }]} testID="led-custom-text" />
+          <View style={styles.chipRow}>
+            {['{gold_24k}', '{gold_22k}', '{gold_18k}', '{gold_14k}', '{silver_9999}', '{date}', '{time}'].map((c) => (
+              <Pressable key={c} onPress={() => addChip(c)} style={styles.chip}><Text style={styles.chipText}>{c}</Text></Pressable>
+            ))}
+          </View>
+          {customPreview ? (customPreview.error
+            ? <Text style={styles.err}>{customPreview.error}</Text>
+            : <Text style={styles.hint}>Board will show: <Text style={{ fontWeight: '800', color: colors.onSurface }}>{customPreview.text}</Text></Text>) : null}
+          {saveName === null ? (
+            <Pressable onPress={() => setSaveName('')} disabled={!customText.trim()} style={{ opacity: customText.trim() ? 1 : 0.4 }} testID="led-template-save-open"><Text style={styles.link}>Save this text as a template</Text></Pressable>
+          ) : (
+            <View style={styles.row2}>
+              <TextInput value={saveName} onChangeText={setSaveName} placeholder="Template name" placeholderTextColor={colors.mutedText} style={[styles.input, { flex: 1 }]} testID="led-template-name" />
+              <Pressable onPress={saveTemplate} disabled={!saveName.trim()} style={[styles.altBtn, { paddingHorizontal: 16 }, !saveName.trim() && { opacity: 0.5 }]} testID="led-template-save"><Text style={styles.altBtnText}>Save</Text></Pressable>
+              <Pressable onPress={() => setSaveName(null)} hitSlop={8} style={{ justifyContent: 'center' }}><Ionicons name="close" size={18} color={colors.mutedText} /></Pressable>
+            </View>
+          )}
+          <Pressable onPress={pushCustom} disabled={busy === 'push' || !enabled || dirty || !customPreview?.text} style={[styles.primaryBtn, (busy === 'push' || !enabled || dirty || !customPreview?.text) && { opacity: 0.5 }]} testID="led-custom-push">
+            {busy === 'push' ? <ActivityIndicator color={colors.onBrandPrimary} size="small" /> : <><Ionicons name="cloud-upload-outline" size={17} color={colors.onBrandPrimary} /><Text style={styles.primaryBtnText}>Push to board</Text></>}
+          </Pressable>
+          {!enabled ? <Text style={styles.hint}>Switch the board on above first.</Text> : dirty ? <Text style={styles.hint}>Save your changes first.</Text> : null}
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -189,6 +269,11 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   cardTitle: { color: colors.onSurface, fontSize: 15, fontWeight: '800', marginBottom: 4 },
   big: { color: colors.onSurface, fontSize: 22, fontWeight: '800', letterSpacing: 0.5, paddingVertical: spacing.sm },
   hint: { color: colors.mutedText, fontSize: 12 },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 },
+  chip: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: radius.pill, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
+  tplChip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 6, borderRadius: radius.pill, backgroundColor: colors.brandTertiary, borderWidth: 1, borderColor: colors.brandPrimary },
+  chipText: { color: colors.brandSecondary, fontSize: 12, fontWeight: '700' },
+  err: { color: colors.onError, fontSize: 12 },
   link: { color: colors.brandPrimary, fontSize: 12.5, fontWeight: '600', marginTop: 4 },
   label: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '600', marginTop: spacing.sm, marginBottom: 4 },
   switchRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: 4 },

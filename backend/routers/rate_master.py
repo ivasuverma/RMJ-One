@@ -155,6 +155,8 @@ async def rate_master_preview(body: RateMasterIn, _: dict = Depends(require_staf
     silver = body.silver if body.silver is not None else (base or {}).get('silver')
     if not gold or not silver:
         return {'computed': [], 'base': None}
+    if not body.items:      # nothing typed: use the saved percentages
+        return {'computed': compute(await get_items(), int(gold), int(silver)), 'base': {'gold': int(gold), 'silver': int(silver)}}
     items = [{'key': i.key, 'label': i.label or i.key, 'base': _BASE_OF[i.key],
               'percent': i.percent if math.isfinite(i.percent) else 0, 'adjust': i.adjust if math.isfinite(i.adjust) else 0,
               'round_to': max(1, i.round_to), 'round_mode': i.round_mode if i.round_mode in ROUND_MODES else 'nearest',

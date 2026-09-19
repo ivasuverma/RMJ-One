@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, TextInput, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, TextInput, RefreshControl, Switch } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -17,8 +17,11 @@ type Today = {
   fetched_at: string | null;
   error: string | null; manual: boolean; confirmed: boolean; sent_at: string | null; message: string | null;
 } | null;
+type Purity = { key: string; label: string; rate: number | null; enabled: boolean };
+type Led = { config: { enabled: boolean; auto_push: boolean; template: string }; status: { last_push_at: string | null; last_ok: boolean | null; last_error: string | null } };
 
 const DEFAULT_TEMPLATE = 'Today approx. rate update: \nGold 24k: {gold_rate} /tola\nSilver : {silver_rate} /kg\n\nClick bell icon above for notification \u{1F514}';
+const inr = (n: number) => n.toLocaleString('en-IN');
 
 // (date, time) in IST for {date}/{time} placeholders — mirrors the backend's
 // format_ist_date_time() closely enough for a live preview; the message
@@ -39,7 +42,10 @@ function buildMessage(template: string, goldRate: number, silverRate: number, fe
   return (template || DEFAULT_TEMPLATE).replace(/\{(\w+)\}/g, (m, k) => (k in vals ? vals[k] : m));
 }
 
-export default function GoldRateScreen() {
+// Rate Updater — ONE rate for the whole shop. Fetch it once, adjust it if needed, then send the same
+// numbers to every place that shows them: the WhatsApp Channel, the LED board (and the WhatsApp
+// chatbot answers with it too). What each place looks like is set up in Settings.
+export default function RateUpdaterScreen() {
   const router = useRouter();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
@@ -54,25 +60,22 @@ export default function GoldRateScreen() {
   const [goldRate, setGoldRate] = useState('');
   const [silverRate, setSilverRate] = useState('');
   const [message, setMessage] = useState('');
-  const [busy, setBusy] = useState<'refetch' | 'send' | 'auto' | 'led' | null>(null);
-  // One-off text for the LED board, independent of the daily rate flow.
-  const [customText, setCustomText] = useState('');
-  const [customPreview, setCustomPreview] = useState<{ text: string | null; error: string | null } | null>(null);
-  const previewSeq = useRef(0);
-  const [led, setLed] = useState<{ config: { enabled: boolean; auto_push: boolean }; templates?: { id: string; name: string; text: string }[] } | null>(null);
-  const [saveName, setSaveName] = useState<string | null>(null);   // non-null while the "save as template" name box is open
+  const [busy, setBusy] = useState<'fetch' | 'send' | 'fetchsend' | null>(null);
+  const [led, setLed] = useState<Led | null>(null);
+  const [toWhatsapp, setToWhatsapp] = useState(true);
+  const [toLed, setToLed] = useState(true);
+  const [purities, setPurities] = useState<Purity[]>([]);
+  const [ledPreview, setLedPreview] = useState<string | null>(null);
+  const [showMessage, setShowMessage] = useState(false);
 
-  // `currentTemplate` is passed explicitly rather than read from the
-  // `template` state: this can run in the same tick as setTemplate() (see
-  // load() below), whose update isn't visible yet in this closure.
+  // `currentTemplate` is passed explicitly rather than read from the `template` state: this can run in the
+  // same tick as setTemplate() (see load() below), whose update isn't visible yet in this closure.
   const applyToday = (doc: Today, currentTemplate: string) => {
     setToday(doc);
     setGoldRate(doc?.gold_rate != null ? String(doc.gold_rate) : '');
     setSilverRate(doc?.silver_rate != null ? String(doc.silver_rate) : '');
-    // Regenerate from the CURRENT template rather than trusting the stored
-    // `doc.message` — that's a snapshot from whenever it was last fetched,
-    // which goes stale the moment the owner edits the template afterwards
-    // (the whole point of "settings' template should show here").
+    // Regenerated from the CURRENT template rather than the stored `doc.message`, which is a snapshot
+    // from whenever it was fetched and goes stale the moment the template is edited.
     setMessage(
       doc?.gold_rate != null && doc?.silver_rate != null
         ? buildMessage(currentTemplate, doc.gold_rate, doc.silver_rate, doc.fetched_at)
@@ -87,236 +90,220 @@ export default function GoldRateScreen() {
       setTemplate(g.template || '');
       setChannelConnected(!!g.channel_connected);
       applyToday(g.today || null, g.template || '');
-      api.get<any>('/led-board').then(setLed).catch(() => setLed(null));
+      api.get<Led>('/led-board').then((l) => { setLed(l); setToLed(l.config.enabled); }).catch(() => setLed(null));
     } catch (e: any) { toast.error(e?.detail || 'Could not load'); }
     finally { setLoading(false); setRefreshing(false); }
   };
   useEffect(() => { load(); }, []);
+  useEffect(() => { if (!channelConnected) setToWhatsapp(false); }, [channelConnected]);
 
-  // Editing either rate regenerates the message from the template — the
-  // message is derived from the rates, not tracked separately, so it can
-  // never drift from what the two fields actually show.
-  const onRateChange = (which: 'gold' | 'silver', v: string) => {
-    if (which === 'gold') setGoldRate(v); else setSilverRate(v);
-    const g = parseInt(which === 'gold' ? v : goldRate, 10);
-    const s = parseInt(which === 'silver' ? v : silverRate, 10);
-    if (g && s) setMessage(buildMessage(template, g, s, today?.fetched_at));
-  };
+  const g = parseInt(goldRate, 10), s = parseInt(silverRate, 10);
 
+  // What the rate works out to for each purity (Rate Master percentages) and what the board will show —
+  // recomputed as the two rates are typed.
+  const seq = useRef(0);
   useEffect(() => {
-    if (!customText.trim()) { setCustomPreview(null); return; }
-    const my = ++previewSeq.current;
+    if (!g || !s) { setPurities([]); setLedPreview(null); return; }
+    const my = ++seq.current;
     const t = setTimeout(async () => {
       try {
-        const r = await api.post<{ text: string | null; error: string | null }>('/led-board/preview', { template: customText });
-        if (my === previewSeq.current) setCustomPreview(r);
-      } catch { /* keep the last preview */ }
-    }, 300);
+        const rm = await api.post<{ computed: Purity[] }>('/rate-master/preview', { items: [], gold: g, silver: s });
+        if (my === seq.current) setPurities(rm.computed);
+      } catch { /* keep last */ }
+      try {
+        if (led?.config.template) {
+          const p = await api.post<{ text: string | null }>('/led-board/preview', { template: led.config.template, gold_rate: g, silver_rate: s });
+          if (my === seq.current) setLedPreview(p.text);
+        }
+      } catch { /* ignore */ }
+    }, 350);
     return () => clearTimeout(t);
-  }, [customText]);
+  }, [goldRate, silverRate, led?.config.template]);
 
-  const pushCustom = async () => {
-    setBusy('led');
-    try {
-      const r = await api.post<{ text: string }>('/led-board/push', { template: customText });
-      toast.success(`Board shows: ${r.text}`);
-    } catch (e: any) { toast.error(e?.detail || 'Could not update the board'); }
-    finally { setBusy(null); api.get<any>('/led-board').then(setLed).catch(() => {}); }
+  // Editing either rate regenerates the message from the template — the message is derived from the rates,
+  // not tracked separately, so it can never drift from what the two fields actually show.
+  const onRateChange = (which: 'gold' | 'silver', v: string) => {
+    const clean = v.replace(/\D/g, '');
+    if (which === 'gold') setGoldRate(clean); else setSilverRate(clean);
+    const gg = parseInt(which === 'gold' ? clean : goldRate, 10);
+    const ss = parseInt(which === 'silver' ? clean : silverRate, 10);
+    if (gg && ss) setMessage(buildMessage(template, gg, ss, today?.fetched_at));
   };
-  const saveTemplate = async () => {
-    try {
-      const r = await api.post<{ items: { id: string; name: string; text: string }[] }>('/led-board/templates', { name: saveName || '', text: customText });
-      setLed((cur) => (cur ? { ...cur, templates: r.items } : cur));
-      toast.success(`Saved template “${(saveName || '').trim()}”`);
-      setSaveName(null);
-    } catch (e: any) { toast.error(e?.detail || 'Could not save the template'); }
-  };
-  const deleteTemplate = (t: { id: string; name: string }) => confirmAction('Delete template?', `“${t.name}” will be removed.`, 'Delete', async () => {
-    try {
-      const r = await api.del<{ items: { id: string; name: string; text: string }[] }>(`/led-board/templates/${t.id}`);
-      setLed((cur) => (cur ? { ...cur, templates: r?.items ?? [] } : cur));
-    } catch (e: any) { toast.error(e?.detail || 'Could not delete'); }
-  });
-  const addChip = (c: string) => setCustomText((t) => (t && !t.endsWith(' ') ? `${t} ${c}` : `${t}${c}`));
 
-  const refetch = async () => {
-    setBusy('refetch');
+  const fetchRates = async (): Promise<any | null> => {
+    const doc = await api.post<any>('/settings/gold-rate/refetch', {});
+    applyToday(doc, template);
+    if (doc.error) { toast.error(doc.error); return null; }
+    return doc;
+  };
+
+  const doFetch = async () => {
+    setBusy('fetch');
     try {
-      const doc = await api.post<any>('/settings/gold-rate/refetch', {});
-      applyToday(doc, template);
-      if (doc.error) toast.error(doc.error); else toast.success(`Fetched — Gold ₹${doc.gold_rate?.toLocaleString('en-IN')}, Silver ₹${doc.silver_rate?.toLocaleString('en-IN')}`);
+      const doc = await fetchRates();
+      if (doc) toast.success(`Fetched — Gold ₹${inr(doc.gold_rate)}, Silver ₹${inr(doc.silver_rate)}`);
     } catch (e: any) { toast.error(e?.detail || 'Could not fetch'); }
     finally { setBusy(null); }
   };
 
+  const destinations = [toWhatsapp && 'the WhatsApp Channel', toLed && led?.config.enabled && 'the LED board'].filter(Boolean) as string[];
+  const canSend = !!g && !!s && (toWhatsapp || (toLed && !!led?.config.enabled)) && !busy;
+
+  const sendPayload = (gold: number, silver: number, msg: string) => ({
+    message: msg, gold_rate: gold, silver_rate: silver,
+    whatsapp: toWhatsapp, led: toLed && led?.config.enabled ? true : false,
+  });
+  const report = (r: any) => {
+    if (r?.led && !r.led.ok) toast.error(`Sent, but the LED board did not update: ${r.led.error}`);
+    else toast.success(`Sent to ${destinations.join(' and ')}`);
+  };
+
   const send = () => confirmAction(
-    'Send to Channel?',
-    'This broadcasts the message below to everyone following the Ram Murti Jewellers WhatsApp Channel. Make sure it looks right.',
+    'Send the rate?',
+    `Gold ₹${inr(g || 0)} · Silver ₹${inr(s || 0)}\n\nThis goes to ${destinations.join(' and ')}.${toWhatsapp ? ' Everyone following the Ram Murti Jewellers WhatsApp Channel will see it.' : ''}`,
     'Send',
     async () => {
       setBusy('send');
-      try {
-        const g = parseInt(goldRate, 10);
-        const s = parseInt(silverRate, 10);
-        await api.post('/settings/gold-rate/send', { message, gold_rate: g || undefined, silver_rate: s || undefined });
-        toast.success('Sent to Channel');
-        load();
-      } catch (e: any) { toast.error(e?.detail || 'Could not send'); }
+      try { report(await api.post('/settings/gold-rate/send', sendPayload(g, s, message))); load(); }
+      catch (e: any) { toast.error(e?.detail || 'Could not send'); }
       finally { setBusy(null); }
     },
   );
 
-  // One-tap path for when you trust today's number and don't need to review
-  // it first — still a deliberate tap + confirm, not a silent background
-  // send (that stays off; see gold_rate.py).
+  // One tap for when you trust today's number: fetch, then send to the same places.
   const fetchAndSend = () => confirmAction(
-    'Fetch & Send?',
-    "Fetches today's rate and immediately sends it to the Channel — skips the separate review step.",
-    'Fetch & Send',
+    'Fetch & send?',
+    `Fetches today's rate and immediately sends it to ${destinations.join(' and ') || 'nowhere — pick a destination first'}.`,
+    'Fetch & send',
     async () => {
-      setBusy('auto');
+      setBusy('fetchsend');
       try {
-        const doc = await api.post<any>('/settings/gold-rate/refetch', {});
-        applyToday(doc, template);
-        if (doc.error) { toast.error(doc.error); return; }
-        await api.post('/settings/gold-rate/send', { message: doc.message, gold_rate: doc.gold_rate, silver_rate: doc.silver_rate });
-        toast.success('Fetched and sent to Channel');
+        const doc = await fetchRates();
+        if (!doc) return;
+        report(await api.post('/settings/gold-rate/send', sendPayload(doc.gold_rate, doc.silver_rate, doc.message)));
         load();
-      } catch (e: any) { toast.error(e?.detail || 'Could not fetch/send'); }
+      } catch (e: any) { toast.error(e?.detail || 'Could not fetch and send'); }
       finally { setBusy(null); }
     },
   );
-
-  const canSend = !!parseInt(goldRate, 10) && !!parseInt(silverRate, 10) && !!message.trim();
 
   if (loading) {
     return (
       <SafeAreaView style={styles.root} edges={['top']}>
         <View style={styles.header}>
-          <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
-            <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-          </Pressable>
-          <View style={{ flex: 1 }} />
-          <View style={{ width: 40 }} />
+          <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}><Ionicons name="chevron-back" size={22} color={colors.onSurface} /></Pressable>
+          <View style={{ flex: 1 }} /><View style={{ width: 40 }} />
         </View>
         <View style={styles.centered}><ActivityIndicator color={colors.brandPrimary} size="large" /></View>
       </SafeAreaView>
     );
   }
 
+  const sourceLine = today?.error
+    ? `Couldn't fetch: ${today.error}`
+    : today?.gold_rate
+      ? `${today.manual ? 'Entered by hand' : 'Fetched'}${today.fetched_at ? ` at ${istTime(today.fetched_at)}` : ''}${today.fetched_gold != null && (today.gold_margin_applied || today.silver_margin_applied) ? ` · margin added` : ''}`
+      : `Not fetched yet today — fetches by itself at ${fetchTime} IST`;
+  const statusOk = !!today?.sent_at || !!today?.confirmed;
+
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="gold-rate-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
-          <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-        </Pressable>
+        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}><Ionicons name="chevron-back" size={22} color={colors.onSurface} /></Pressable>
         <Text style={styles.title}>Rate Updater</Text>
-        <Pressable onPress={load} style={styles.iconBtn} testID="gold-rate-refresh-btn" hitSlop={12}>
-          <Ionicons name="refresh" size={18} color={colors.onSurface} />
-        </Pressable>
+        <Pressable onPress={load} style={styles.iconBtn} testID="gold-rate-refresh-btn" hitSlop={12}><Ionicons name="refresh" size={18} color={colors.onSurface} /></Pressable>
       </View>
 
-      <ScrollView
-        contentContainerStyle={{ padding: spacing.lg, paddingBottom: 60 }}
-        keyboardShouldPersistTaps="handled"
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}
-      >
-        <View style={styles.infoBox}>
-          <Ionicons name="pricetag-outline" size={16} color={colors.brandSecondary} />
-          <Text style={styles.infoText}>Fetches a reference rate from your supplier once a day. Confirm — and adjust the rates or message if needed — before it's sent to the "Ram Murti Jewellers" WhatsApp Channel.</Text>
-        </View>
+      <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 80 }} keyboardShouldPersistTaps="handled"
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}>
 
-        {led ? (
-          <View style={styles.customCard} testID="gold-rate-led-custom">
-            <Text style={styles.boardLinkTitle}>Custom message for the LED board</Text>
-            <Text style={styles.boardLinkSub}>Type any text. Tap a placeholder to add today's value. It replaces what the board shows until the next rate update.</Text>
-            {(led.templates || []).length ? (
-              <View>
-                <Text style={styles.boardLinkSub}>Saved templates — tap to use, ✕ to delete</Text>
-                <View style={[styles.chipRow, { marginTop: 4 }]}>
-                  {(led.templates || []).map((t) => (
-                    <View key={t.id} style={styles.tplChip} testID={`led-template-${t.id}`}>
-                      <Pressable onPress={() => setCustomText(t.text)} hitSlop={4}><Text style={styles.chipText}>{t.name}</Text></Pressable>
-                      <Pressable onPress={() => deleteTemplate(t)} hitSlop={8}><Ionicons name="close" size={13} color={colors.mutedText} /></Pressable>
-                    </View>
-                  ))}
-                </View>
-              </View>
-            ) : null}
-            <TextInput value={customText} onChangeText={setCustomText} placeholder="e.g. 22K {gold_22k}  18K {gold_18k}" placeholderTextColor={colors.mutedText}
-              autoCapitalize="characters" style={[styles.input, { marginTop: spacing.sm, marginBottom: 6 }]} testID="gold-rate-led-custom-text" />
-            <View style={styles.chipRow}>
-              {['{gold_24k}', '{gold_22k}', '{gold_18k}', '{gold_14k}', '{silver_9999}', '{date}', '{time}'].map((c) => (
-                <Pressable key={c} onPress={() => addChip(c)} style={styles.chip}><Text style={styles.chipText}>{c}</Text></Pressable>
+        {/* ---- 1. The rate (one for everything) ---- */}
+        <View style={styles.card} testID="ru-rates-card">
+          <View style={styles.cardHead}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.cardTitle}>Today's rate</Text>
+              <Text style={[styles.sub, today?.error && { color: colors.onError }]}>{sourceLine}</Text>
+            </View>
+            <Pressable onPress={doFetch} disabled={!!busy} style={[styles.fetchBtn, !!busy && { opacity: 0.6 }]} testID="gold-rate-refetch">
+              {busy === 'fetch' ? <ActivityIndicator color={colors.brandSecondary} size="small" /> : <><Ionicons name="refresh" size={15} color={colors.brandSecondary} /><Text style={styles.fetchBtnText}>Fetch</Text></>}
+            </Pressable>
+          </View>
+
+          <View style={styles.row2}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.label}>Gold 24K (₹)</Text>
+              <TextInput value={goldRate} onChangeText={(v) => onRateChange('gold', v)} keyboardType="numeric" placeholder="e.g. 151050" placeholderTextColor={colors.mutedText} style={styles.input} testID="gold-rate-gold-input" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.label}>Silver 99.99 (₹)</Text>
+              <TextInput value={silverRate} onChangeText={(v) => onRateChange('silver', v)} keyboardType="numeric" placeholder="e.g. 242200" placeholderTextColor={colors.mutedText} style={styles.input} testID="gold-rate-silver-input" />
+            </View>
+          </View>
+
+          {purities.filter((p) => p.enabled && p.rate).length ? (
+            <View style={styles.purityRow} testID="ru-purities">
+              {purities.filter((p) => p.enabled && p.rate && p.key !== 'gold_24k' && p.key !== 'silver_9999').map((p) => (
+                <View key={p.key} style={styles.purityChip}><Text style={styles.purityLabel}>{p.label}</Text><Text style={styles.purityVal}>₹{inr(p.rate as number)}</Text></View>
               ))}
             </View>
-            {customPreview ? (
-              customPreview.error
-                ? <Text style={styles.customErr}>{customPreview.error}</Text>
-                : <Text style={styles.customPreview}>Board will show: <Text style={{ fontWeight: '800' }}>{customPreview.text}</Text></Text>
-            ) : null}
-            {saveName === null ? (
-              <Pressable onPress={() => setSaveName('')} disabled={!customText.trim()} style={{ opacity: customText.trim() ? 1 : 0.4 }} testID="led-template-save-open">
-                <Text style={styles.link}>Save this text as a template</Text>
-              </Pressable>
-            ) : (
-              <View style={styles.row2}>
-                <TextInput value={saveName} onChangeText={setSaveName} placeholder="Template name" placeholderTextColor={colors.mutedText} style={[styles.input, { flex: 1, marginBottom: 0 }]} testID="led-template-name" />
-                <Pressable onPress={saveTemplate} disabled={!saveName.trim()} style={[styles.boardSave, !saveName.trim() && { opacity: 0.5 }]} testID="led-template-save"><Text style={styles.chipText}>Save</Text></Pressable>
-                <Pressable onPress={() => setSaveName(null)} hitSlop={8} style={{ justifyContent: 'center' }}><Ionicons name="close" size={18} color={colors.mutedText} /></Pressable>
-              </View>
-            )}
-            <Pressable onPress={pushCustom} disabled={busy === 'led' || !led.config.enabled || !customPreview?.text}
-              style={[styles.altBtn, styles.autoBtn, (busy === 'led' || !led.config.enabled || !customPreview?.text) && { opacity: 0.5 }]} testID="gold-rate-led-custom-push">
-              {busy === 'led' ? <ActivityIndicator color={colors.onBrandPrimary} size="small" /> : <><Ionicons name="cloud-upload-outline" size={15} color={colors.onBrandPrimary} /><Text style={[styles.altBtnText, styles.autoBtnText]}>Push to board</Text></>}
+          ) : null}
+          <Text style={styles.hint}>This one rate is used everywhere — the WhatsApp Channel, the LED board and the WhatsApp chatbot. Other purities follow the percentages in Settings › Rate Master.</Text>
+        </View>
+
+        {/* ---- 2. Where it goes ---- */}
+        <View style={styles.card} testID="ru-send-card">
+          <Text style={styles.cardTitle}>Send to</Text>
+
+          <View style={styles.destRow}>
+            <Ionicons name="logo-whatsapp" size={20} color={colors.brandSecondary} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.destTitle}>WhatsApp Channel</Text>
+              <Text style={styles.sub}>{channelConnected ? 'Connected' : 'Not connected — check Settings › WhatsApp'}</Text>
+            </View>
+            <Switch value={toWhatsapp} onValueChange={setToWhatsapp} disabled={!channelConnected} trackColor={{ true: colors.brandPrimary, false: colors.border }} thumbColor={colors.surface} testID="ru-to-whatsapp" />
+          </View>
+          {toWhatsapp ? (
+            <View style={styles.destBody}>
+              <Pressable onPress={() => setShowMessage((v) => !v)} hitSlop={6}><Text style={styles.link}>{showMessage ? 'Hide message' : 'Preview / edit message'}</Text></Pressable>
+              {showMessage ? <TextInput value={message} onChangeText={setMessage} multiline style={[styles.input, styles.inputMultiline]} testID="gold-rate-message" /> : null}
+            </View>
+          ) : null}
+
+          <View style={styles.divider} />
+
+          <View style={styles.destRow}>
+            <Ionicons name="tv-outline" size={20} color={colors.brandSecondary} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.destTitle}>LED rate board</Text>
+              <Text style={styles.sub}>
+                {!led ? '…' : !led.config.enabled ? 'Switched off in Settings › LED Rate Board'
+                  : led.status.last_push_at ? (led.status.last_ok ? `Last updated ${istTime(led.status.last_push_at)}` : `Last update failed: ${led.status.last_error}`) : 'Not updated yet'}
+              </Text>
+            </View>
+            <Switch value={toLed && !!led?.config.enabled} onValueChange={setToLed} disabled={!led?.config.enabled} trackColor={{ true: colors.brandPrimary, false: colors.border }} thumbColor={colors.surface} testID="ru-to-led" />
+          </View>
+          {toLed && led?.config.enabled && ledPreview ? <Text style={styles.destBody}>Board shows: <Text style={{ fontWeight: '800', color: colors.onSurface }}>{ledPreview}</Text></Text> : null}
+
+          <View style={styles.row2}>
+            <Pressable onPress={send} disabled={!canSend} style={[styles.sendBtn, { flex: 1 }, !canSend && { opacity: 0.5 }]} testID="gold-rate-send">
+              {busy === 'send' ? <ActivityIndicator color={colors.onBrandPrimary} size="small" /> : <><Ionicons name="paper-plane-outline" size={16} color={colors.onBrandPrimary} /><Text style={styles.sendBtnText}>Send</Text></>}
             </Pressable>
-            {!led.config.enabled ? <Text style={styles.boardLinkSub}>The board is switched off — turn it on in Settings › LED Rate Board.</Text> : null}
+            <Pressable onPress={fetchAndSend} disabled={!!busy || !destinations.length} style={[styles.altBtn, { flex: 1 }, (!!busy || !destinations.length) && { opacity: 0.5 }]} testID="gold-rate-fetch-and-send">
+              {busy === 'fetchsend' ? <ActivityIndicator color={colors.brandSecondary} size="small" /> : <><Ionicons name="flash" size={15} color={colors.brandSecondary} /><Text style={styles.altBtnText}>Fetch &amp; send</Text></>}
+            </Pressable>
           </View>
-        ) : null}
-
-        {today?.error ? (
-          <View style={[styles.infoBox, styles.infoBoxWarn]}>
-            <Ionicons name="alert-circle-outline" size={16} color={colors.onWarning} />
-            <Text style={[styles.infoText, { color: colors.onWarning }]}>Couldn't fetch today: {today.error}. Enter today's rates below.</Text>
-          </View>
-        ) : today?.sent_at ? (
-          <View style={[styles.infoBox, styles.infoBoxOk]}>
-            <Ionicons name="checkmark-circle-outline" size={16} color={colors.onSuccess} />
-            <Text style={[styles.infoText, { color: colors.onSuccess }]}>Sent at {istTime(today.sent_at)}{today.manual ? ' (entered manually)' : ''}</Text>
-          </View>
-        ) : today?.gold_rate ? (
-          <Text style={styles.hint}>Fetched — not sent yet.</Text>
-        ) : (
-          <Text style={styles.hint}>Not fetched yet today — will auto-fetch at {fetchTime} IST, or tap Fetch Now.</Text>
-        )}
-
-        <View style={styles.row2}>
-          <Pressable onPress={refetch} disabled={!!busy} style={[styles.altBtn, { flex: 1 }, busy === 'refetch' && { opacity: 0.6 }]} testID="gold-rate-refetch">
-            {busy === 'refetch' ? <ActivityIndicator color={colors.brandSecondary} size="small" /> : <><Ionicons name="refresh" size={15} color={colors.brandSecondary} /><Text style={styles.altBtnText}>Fetch Now</Text></>}
-          </Pressable>
-          <Pressable onPress={fetchAndSend} disabled={!!busy || !channelConnected} style={[styles.altBtn, styles.autoBtn, { flex: 1 }, (busy === 'auto' || !channelConnected) && { opacity: 0.6 }]} testID="gold-rate-fetch-and-send">
-            {busy === 'auto' ? <ActivityIndicator color={colors.onBrandPrimary} size="small" /> : <><Ionicons name="flash" size={15} color={colors.onBrandPrimary} /><Text style={[styles.altBtnText, styles.autoBtnText]}>Fetch &amp; Send</Text></>}
-          </Pressable>
+          {statusOk ? (
+            <Text style={styles.done}>✔ Sent today{today?.sent_at ? ` at ${istTime(today.sent_at)}` : ''}</Text>
+          ) : g && s ? <Text style={styles.hint}>Not sent yet today.</Text> : null}
         </View>
 
-        <Text style={styles.fieldLabel}>Rates (editable — changes update the message below)</Text>
-        <View style={styles.row2}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.colLabel}>Gold (₹/tola)</Text>
-            <TextInput value={goldRate} onChangeText={(v) => onRateChange('gold', v)} keyboardType="numeric" placeholder="e.g. 151050" placeholderTextColor={colors.mutedText} style={styles.input} testID="gold-rate-gold-input" />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.colLabel}>Silver (₹/kg)</Text>
-            <TextInput value={silverRate} onChangeText={(v) => onRateChange('silver', v)} keyboardType="numeric" placeholder="e.g. 242200" placeholderTextColor={colors.mutedText} style={styles.input} testID="gold-rate-silver-input" />
-          </View>
+        {/* ---- 3. Where each place is set up ---- */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Settings</Text>
+          <Pressable onPress={() => router.push('/settings/rate-master' as any)} hitSlop={6}><Text style={styles.link}>Rate Master — % for 22K, 18K, 14K & silver</Text></Pressable>
+          <Pressable onPress={() => router.push('/settings/led-board' as any)} hitSlop={6}><Text style={styles.link}>LED Rate Board — connection, text, templates</Text></Pressable>
+          <Pressable onPress={() => router.push('/settings/whatsapp' as any)} hitSlop={6}><Text style={styles.link}>WhatsApp — fetch time, margins, message text</Text></Pressable>
         </View>
-
-        <Text style={styles.fieldLabel}>Message to send</Text>
-        <TextInput value={message} onChangeText={setMessage} multiline style={[styles.input, styles.inputMultiline]} testID="gold-rate-message" />
-        <Pressable onPress={send} disabled={busy === 'send' || !channelConnected || !canSend} style={[styles.opt, styles.optPrimary, (busy === 'send' || !channelConnected || !canSend) && { opacity: 0.5 }]} testID="gold-rate-send">
-          {busy === 'send' ? <ActivityIndicator color={colors.onBrandPrimary} /> : <><Ionicons name="send" size={17} color={colors.onBrandPrimary} /><Text style={styles.optPrimaryText}>Confirm &amp; Send to Channel</Text></>}
-        </Pressable>
-        {!channelConnected && <Text style={styles.hint}>WhatsApp not connected — check Settings &gt; WhatsApp.</Text>}
       </ScrollView>
     </SafeAreaView>
   );
@@ -325,51 +312,32 @@ export default function GoldRateScreen() {
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   centered: { flex: 1, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
-  header: {
-    flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md, gap: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.divider,
-  },
-  iconBtn: {
-    width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surfaceSecondary,
-    alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border,
-  },
+  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg, paddingVertical: spacing.md, gap: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.divider },
+  iconBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surfaceSecondary, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border },
   title: { flex: 1, color: colors.onSurface, fontSize: 20, fontWeight: '600', fontFamily: fonts.display, textAlign: 'center' },
-  infoBox: {
-    flexDirection: 'row', gap: spacing.sm, alignItems: 'center', backgroundColor: colors.surfaceTertiary,
-    borderRadius: radius.md, padding: spacing.md, borderWidth: 1, borderColor: colors.border, marginBottom: spacing.md,
-  },
-  infoBoxOk: { backgroundColor: colors.success, borderColor: colors.success },
-  infoBoxWarn: { backgroundColor: colors.warning, borderColor: colors.warning },
-  infoText: { color: colors.onSurfaceTertiary, fontSize: 12, flex: 1 },
-  hint: { color: colors.mutedText, fontSize: 12, marginBottom: spacing.md },
-  customCard: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.md, gap: 6 },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 4 },
-  chip: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: radius.pill, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
-  tplChip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 6, borderRadius: radius.pill, backgroundColor: colors.brandTertiary, borderWidth: 1, borderColor: colors.brandPrimary },
-  boardSave: { paddingHorizontal: 14, justifyContent: 'center', borderRadius: radius.md, borderWidth: 1, borderColor: colors.brandSecondary },
-  link: { color: colors.brandPrimary, fontSize: 12.5, fontWeight: '600' },
-  chipText: { color: colors.brandSecondary, fontSize: 12, fontWeight: '700' },
-  customPreview: { color: colors.onSurface, fontSize: 13, marginTop: 2 },
-  customErr: { color: colors.onError, fontSize: 12, marginTop: 2 },
-  boardLink: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.md },
-  boardLinkTitle: { color: colors.onSurface, fontSize: 14, fontWeight: '700' },
-  boardLinkSub: { color: colors.mutedText, fontSize: 12, marginTop: 2 },
-  fieldLabel: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '600', marginBottom: 6 },
-  colLabel: { color: colors.mutedText, fontSize: 11, fontWeight: '600', marginBottom: 4 },
-  row2: { flexDirection: 'row', gap: spacing.sm },
-  input: {
-    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
-    color: colors.onSurface, paddingHorizontal: spacing.md, paddingVertical: 12, fontSize: 14, marginBottom: spacing.md,
-  },
-  inputMultiline: { minHeight: 90, textAlignVertical: 'top' },
-  altBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 12,
-    borderRadius: radius.md, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, marginBottom: spacing.md,
-  },
-  altBtnText: { color: colors.brandSecondary, fontSize: 13.5, fontWeight: '700' },
-  autoBtn: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
-  autoBtnText: { color: colors.onBrandPrimary },
-  opt: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingVertical: 15, borderRadius: radius.md, marginBottom: spacing.sm },
-  optPrimary: { backgroundColor: colors.brandPrimary },
-  optPrimaryText: { color: colors.onBrandPrimary, fontSize: 15, fontWeight: '700' },
+  card: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: spacing.lg, marginBottom: spacing.md, gap: 6 },
+  cardHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  cardTitle: { color: colors.onSurface, fontSize: 16, fontWeight: '800' },
+  sub: { color: colors.mutedText, fontSize: 12 },
+  hint: { color: colors.mutedText, fontSize: 12, marginTop: 2 },
+  done: { color: colors.success, fontSize: 12.5, fontWeight: '700', marginTop: 4 },
+  label: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '600', marginTop: spacing.sm, marginBottom: 4 },
+  row2: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
+  input: { backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, color: colors.onSurface, paddingHorizontal: spacing.md, paddingVertical: 12, fontSize: 16, fontWeight: '700' },
+  inputMultiline: { minHeight: 110, textAlignVertical: 'top', fontSize: 14, fontWeight: '400', marginTop: 6 },
+  fetchBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 10, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.brandSecondary },
+  fetchBtnText: { color: colors.brandSecondary, fontWeight: '700', fontSize: 13 },
+  purityRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: spacing.sm },
+  purityChip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 6, borderRadius: radius.pill, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
+  purityLabel: { color: colors.mutedText, fontSize: 11.5, fontWeight: '600' },
+  purityVal: { color: colors.onSurface, fontSize: 12.5, fontWeight: '800' },
+  destRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: 4 },
+  destTitle: { color: colors.onSurface, fontSize: 14.5, fontWeight: '700' },
+  destBody: { color: colors.mutedText, fontSize: 12.5, paddingLeft: 32 },
+  divider: { height: 1, backgroundColor: colors.divider, marginVertical: 6 },
+  sendBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: 14 },
+  sendBtnText: { color: colors.onBrandPrimary, fontWeight: '800', fontSize: 14.5 },
+  altBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.brandSecondary, paddingVertical: 14 },
+  altBtnText: { color: colors.brandSecondary, fontWeight: '700', fontSize: 13.5 },
+  link: { color: colors.brandPrimary, fontSize: 13, fontWeight: '600', marginTop: 4 },
 });
