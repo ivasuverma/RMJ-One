@@ -120,7 +120,7 @@ export default function CashBookScreen() {
       return { e, bal: Math.round(bal * 100) / 100, transfer: !!e.linked_entry_id };
     });
   }, [day]);
-  const shown = rows.filter((r) => filter === 'all' || (filter === 'transfer' ? r.transfer : filter === r.e.type));
+  const shown = rows.filter((r) => filter === 'all' || (filter === 'transfer' ? r.transfer : !r.transfer && filter === r.e.type));
   const net = day ? day.total_received - day.total_paid : 0;
   const otherCounters = transferOptions.filter((c) => c.id !== counterId);
   const tags = quickNames.filter((q) => kind !== 'transfer' && (q.entry_type == null || q.entry_type === kind));
