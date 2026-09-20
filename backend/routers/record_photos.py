@@ -104,6 +104,9 @@ async def _require_write(user: dict, ref_type: str, ref_id: str = '') -> None:
     role = user.get('role')
     if role in ('owner', 'admin'):
         return
+    # An accountant can record Cash Book entries (see require_admin_or_module), so may attach their receipts too.
+    if role == 'accountant' and ref_type == 'cashbook_entry':
+        return
     if role == 'employee' and mod in resolve_modules(user):
         return
     raise HTTPException(status_code=403, detail=f'No access to "{mod}"')
