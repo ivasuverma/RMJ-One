@@ -8,6 +8,7 @@ import { useAuth } from '@/src/auth/AuthContext';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { fmtCompactINR } from '@/src/utils/money';
+import { istTime } from '@/src/utils/datetime';
 import { ErrorState } from '@/src/components/ui';
 import { UploadQueueBadge } from '@/src/components/UploadQueueBadge';
 
@@ -21,13 +22,32 @@ type DashboardData = {
   cashbook_summary: { closing_balance: number };
   tasks_summary: { due_today: number; overdue: number };
   todays_attendance?: { present: number; absent: number; late: number; not_checked_in: number; total: number };
-  recent_activity?: { kind: 'repair' | 'cash' | 'stock' | 'ledger'; label: string; route: string }[];
+  recent_activity?: { kind: string; at?: string; label: string; route: string }[];
 };
 
 const fmtINR = (n: number) => `₹${Math.round(n || 0).toLocaleString('en-IN')}`;
 
+function timeAgo(iso?: string) {
+  if (!iso) return '';
+  const then = new Date(iso).getTime();
+  const diffMin = Math.max(0, Math.round((Date.now() - then) / 60000));
+  if (diffMin < 1) return 'just now';
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHr = Math.round(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h ago`;
+  return `${Math.round(diffHr / 24)}d ago`;
+}
+
 // One coloured segment of a process row's description.
 type Seg = { text: string; tone?: string };
+
+function renderSegs(segs: Seg[], colors: ThemeColors) {
+  return segs.map((s, i) => (
+    <Text key={i} style={s.tone === 'hot' ? { color: colors.onWarning } : s.tone === 'bad' ? { color: colors.onError } : s.tone === 'good' ? { color: colors.onSuccess, fontWeight: '700' } : s.tone === 'strong' ? { color: colors.onSurface, fontWeight: '700' } : undefined}>
+      {s.text}
+    </Text>
+  ));
+}
 
 export default function WorkScreen() {
   const router = useRouter();
@@ -59,7 +79,7 @@ export default function WorkScreen() {
   const toggleHidden = (key: string) => persistHidden(hidden.includes(key) ? hidden.filter((k) => k !== key) : [...hidden, key]);
 
   const [loanSummary, setLoanSummary] = useState<{ active: number; overdue: number; total_outstanding: number; total_interest_pending: number } | null>(null);
-  const [goldRateSummary, setGoldRateSummary] = useState<{ gold_rate: number | null; silver_rate: number | null; sent: boolean; error: boolean } | null>(null);
+  const [goldRateSummary, setGoldRateSummary] = useState<{ gold_rate: number | null; silver_rate: number | null; sent: boolean; sent_at: string | null; error: boolean } | null>(null);
   const load = useCallback(async () => {
     try { setError(''); setData(await api.get<DashboardData>('/dashboard')); }
     catch (e: any) { setError(e?.detail || 'Failed to load'); }
@@ -68,17 +88,25 @@ export default function WorkScreen() {
     if (hasModule('gold_loans')) api.get<{ active: number; overdue: number; total_outstanding: number; total_interest_pending: number }>('/gold-loans/dashboard').then(setLoanSummary).catch(() => {});
     if (hasModule('gold_rate')) api.get<any>('/settings/gold-rate').then((g) => setGoldRateSummary({
       gold_rate: g.today?.gold_rate ?? null, silver_rate: g.today?.silver_rate ?? null,
-      sent: !!g.today?.sent_at, error: !!g.today?.error,
+      sent: !!g.today?.sent_at, sent_at: g.today?.sent_at ?? null, error: !!g.today?.error,
     })).catch(() => {});
   }, [hasModule]);
   useFocusEffect(useCallback(() => { setLoading(true); load(); }, [load]));
 
   const go = (route: string) => router.push(route as any);
 
+  // Second line for a row backed by /dashboard's recent_activity feed — the
+  // most recent thing recorded for that module today, or a plain fallback.
+  const recentSeg = (kind: string): Seg[] => {
+    if (!data) return placeholder;
+    const r = (data.recent_activity || []).find((x) => x.kind === kind);
+    return r ? [{ text: r.label }, ...(r.at ? [{ text: ` · ${timeAgo(r.at)}` }] : [])] : [{ text: 'No activity yet today' }];
+  };
+
   // Rows are built from the modules this user has — ALWAYS, not gated on the
   // dashboard fetch — so the board renders instantly with its structure and the
   // live counts fill in when /dashboard returns (no blank skeleton wait).
-  type Row = { key: string; title: string; icon: keyof typeof Ionicons.glyphMap; segs: Seg[]; badge?: number; route: string };
+  type Row = { key: string; title: string; icon: keyof typeof Ionicons.glyphMap; segs: Seg[]; segs2: Seg[]; badge?: number; route: string };
   const placeholder: Seg[] = [{ text: '…' }];
   const rows: Row[] = [];
   if (hasModule('repairs')) rows.push({
@@ -89,6 +117,7 @@ export default function WorkScreen() {
       { text: `${data.repairs_summary.overdue} overdue`, tone: 'bad' }, { text: ' · ' },
       { text: `${data.repairs_summary.ready} to bill` },
     ] : placeholder,
+    segs2: recentSeg('repair'),
   });
   if (hasModule('gold_rate')) rows.push({
     key: 'gold_rate', title: 'Rate Updater', icon: 'trending-up-outline', route: '/gold-rate',
@@ -101,6 +130,9 @@ export default function WorkScreen() {
         ]
       : [{ text: 'Not fetched yet today' }]
     ) : placeholder,
+    segs2: !goldRateSummary ? placeholder
+      : goldRateSummary.sent_at ? [{ text: `Sent at ${istTime(goldRateSummary.sent_at)}`, tone: 'good' }]
+      : [{ text: 'Not sent to customers yet today', tone: 'hot' }],
   });
   if (hasModule('samples')) rows.push({
     key: 'stock', title: 'Stock In / Out', icon: 'diamond-outline', route: '/samples',
@@ -108,6 +140,7 @@ export default function WorkScreen() {
       { text: `${data.samples_summary.with_karigar} samples out` },
       ...(data.samples_summary.overdue > 0 ? [{ text: ' · ' }, { text: `${data.samples_summary.overdue} overdue`, tone: 'bad' as const }] : []),
     ] : placeholder,
+    segs2: recentSeg('stock'),
   });
   if (hasModule('gold_loans')) rows.push({
     key: 'loans', title: 'Gold Loans', icon: 'cash-outline', route: '/loans',
@@ -117,12 +150,14 @@ export default function WorkScreen() {
       ...(loanSummary.total_interest_pending > 0 ? [{ text: ' · ' }, { text: `${fmtINR(loanSummary.total_interest_pending)} interest due`, tone: 'bad' as const }] : []),
       ...(loanSummary.total_outstanding > 0 ? [{ text: ' · ' }, { text: fmtINR(loanSummary.total_outstanding), tone: 'strong' as const }] : []),
     ] : placeholder,
+    segs2: recentSeg('gold_loan'),
   });
   if (hasModule('cash_book')) rows.push({
     key: 'cash', title: 'Cash Book', icon: 'wallet-outline', route: '/cashbook',
     segs: data?.cashbook_summary
       ? [{ text: 'Balance ' }, { text: fmtCompactINR(data.cashbook_summary.closing_balance), tone: 'strong' }]
       : [{ text: 'Tap to view entries' }],
+    segs2: recentSeg('cash'),
   });
   if (hasModule('tasks')) rows.push({
     key: 'tasks', title: 'Tasks', icon: 'checkbox-outline', route: '/tasks', badge: data?.tasks_summary.due_today || undefined,
@@ -130,11 +165,13 @@ export default function WorkScreen() {
       { text: `${data.tasks_summary.due_today} due today` },
       ...(data.tasks_summary.overdue > 0 ? [{ text: ' · ' }, { text: `${data.tasks_summary.overdue} overdue`, tone: 'bad' as const }] : []),
     ] : placeholder,
+    segs2: recentSeg('task'),
   });
   if (hasModule('documents')) rows.push({
     key: 'documents', title: 'Documents', icon: 'documents-outline', route: '/documents',
     badge: docSummary?.pending_count || undefined,
     segs: docSummary ? (docSummary.pending_count > 0 ? [{ text: `${docSummary.pending_count} pending to record`, tone: 'hot' }] : [{ text: 'All recorded' }]) : placeholder,
+    segs2: recentSeg('document'),
   });
   if (hasModule('attendance')) rows.push({
     key: 'attendance', title: 'Attendance & Payroll', icon: 'calendar-outline', route: '/(tabs)/attendance?from=work',
@@ -143,6 +180,11 @@ export default function WorkScreen() {
       { text: `${data.todays_attendance.absent} absent`, tone: 'bad' },
       ...(data.todays_attendance.late > 0 ? [{ text: ' · ' }, { text: `${data.todays_attendance.late} late` }] : []),
     ] : placeholder,
+    segs2: data?.todays_attendance ? (
+      data.todays_attendance.not_checked_in > 0
+        ? [{ text: `${data.todays_attendance.not_checked_in} not checked in yet`, tone: 'hot' }]
+        : [{ text: 'Everyone due in has checked in', tone: 'good' }]
+    ) : placeholder,
   });
 
   // Apply the user's saved order; unknown/new rows fall to the end.
@@ -207,13 +249,8 @@ export default function WorkScreen() {
             <View style={styles.pi}><Ionicons name={r.icon} size={22} color={colors.brandSecondary} /></View>
             <View style={{ flex: 1, minWidth: 0 }}>
               <Text style={styles.pt}>{r.title}</Text>
-              <Text style={styles.pd} numberOfLines={2}>
-                {r.segs.map((s, i) => (
-                  <Text key={i} style={s.tone === 'hot' ? { color: colors.onWarning } : s.tone === 'bad' ? { color: colors.onError } : s.tone === 'good' ? { color: colors.onSuccess, fontWeight: '700' } : s.tone === 'strong' ? { color: colors.onSurface, fontWeight: '700' } : undefined}>
-                    {s.text}
-                  </Text>
-                ))}
-              </Text>
+              <Text style={styles.pd} numberOfLines={1}>{renderSegs(r.segs, colors)}</Text>
+              <Text style={[styles.pd, styles.pd2]} numberOfLines={1}>{renderSegs(r.segs2, colors)}</Text>
             </View>
             {editOrder ? (
               <View style={styles.reorderCtrls}>
@@ -270,6 +307,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   pi: { width: 46, height: 46, borderRadius: 13, backgroundColor: colors.surfaceTertiary, alignItems: 'center', justifyContent: 'center' },
   pt: { color: colors.onSurface, fontSize: 17, fontWeight: '600' },
   pd: { color: colors.mutedText, fontSize: 13.5, lineHeight: 18, marginTop: 3 },
+  pd2: { fontSize: 12, marginTop: 1 },
   badge: {
     minWidth: 22, height: 22, borderRadius: 11, paddingHorizontal: 6,
     backgroundColor: colors.brandPrimary, alignItems: 'center', justifyContent: 'center',

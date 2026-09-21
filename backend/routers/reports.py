@@ -120,9 +120,11 @@ async def dashboard_stream(request: Request, _: dict = Depends(get_current)):
 
 async def _recent_activity(d: str, limit: int = 12) -> list:
     """Newest-first feed across the record types staff actually create — repair
-    intake/delivery, cash book entries, stock returns, ledger entries. Used by
-    the dashboard's "Recently recorded" strip and re-sent on the SSE stream.
-    Cheap by design: small capped per-source queries merged and trimmed."""
+    intake/delivery, cash book entries, stock returns, ledger entries, gold
+    loan payments, tasks, and documents. Used by the dashboard's "Recently
+    recorded" strip, the Work tab's per-module "last activity" line, and
+    re-sent on the SSE stream. Cheap by design: small capped per-source
+    queries merged and trimmed."""
     items: list = []
     async for i in db.repair_items.find({'created_at': {'$regex': f'^{d}'}}, {'_id': 0, 'id': 1, 'created_at': 1, 'item_name': 1}).sort('created_at', -1).limit(limit):
         items.append({'kind': 'repair', 'at': i.get('created_at'), 'label': f"Repair in: {i.get('item_name') or 'item'}", 'route': f"/repairs/{i['id']}"})
@@ -133,6 +135,36 @@ async def _recent_activity(d: str, limit: int = 12) -> list:
         items.append({'kind': 'stock', 'at': s.get('received_at'), 'label': f"Stock returned: {s.get('tag') or 'item'}", 'route': f"/samples/{s['id']}"})
     async for e in db.ledger_entries.find({'created_at': {'$regex': f'^{d}'}}, {'_id': 0, 'account_id': 1, 'particulars': 1, 'created_at': 1}).sort('created_at', -1).limit(limit):
         items.append({'kind': 'ledger', 'at': e.get('created_at'), 'label': f"Ledger: {e.get('particulars') or ''}".strip(), 'route': f"/accounts/{e['account_id']}"})
+
+    # Gold loan payments — 'auto' excludes month-end interest postings the
+    # system makes on its own, keeping this to what staff actually recorded.
+    # The transaction only stores loan_id, so loan_no/customer_name are
+    # batch-looked-up once for whatever loans appear, not per transaction.
+    txns = await db.gold_loan_transactions.find(
+        {'created_at': {'$regex': f'^{d}'}, 'auto': False},
+        {'_id': 0, 'id': 1, 'loan_id': 1, 'type': 1, 'amount': 1, 'created_at': 1},
+    ).sort('created_at', -1).limit(limit).to_list(limit)
+    loan_ids = list({t['loan_id'] for t in txns})
+    loans_by_id = {}
+    if loan_ids:
+        async for ln in db.gold_loans.find({'id': {'$in': loan_ids}}, {'_id': 0, 'id': 1, 'loan_no': 1, 'customer_name': 1}):
+            loans_by_id[ln['id']] = ln
+    txn_kind_label = {'payment_interest': 'Interest', 'payment_principal': 'Principal', 'topup_principal': 'Top-up'}
+    for t in txns:
+        ln = loans_by_id.get(t['loan_id'], {})
+        who = ln.get('customer_name') or ln.get('loan_no') or ''
+        label = f"Gold Loan {txn_kind_label.get(t['type'], 'Payment')}: ₹{round(t.get('amount') or 0)}" + (f" — {who}" if who else '')
+        items.append({'kind': 'gold_loan', 'at': t.get('created_at'), 'label': label, 'route': f"/loans/{t['loan_id']}"})
+
+    async for tsk in db.tasks.find({'created_at': {'$regex': f'^{d}'}}, {'_id': 0, 'id': 1, 'title': 1, 'created_at': 1}).sort('created_at', -1).limit(limit):
+        items.append({'kind': 'task', 'at': tsk.get('created_at'), 'label': f"Task: {tsk.get('title') or 'Untitled'}", 'route': f"/tasks/{tsk['id']}"})
+
+    async for doc in db.documents.find(
+        {'created_at': {'$regex': f'^{d}'}, 'deleted': {'$ne': True}},
+        {'_id': 0, 'id': 1, 'uploaded_by_name': 1, 'created_at': 1},
+    ).sort('created_at', -1).limit(limit):
+        items.append({'kind': 'document', 'at': doc.get('created_at'), 'label': f"Document added by {doc.get('uploaded_by_name') or 'staff'}", 'route': '/documents'})
+
     items.sort(key=lambda x: x.get('at') or '', reverse=True)
     return items[:limit]
 
