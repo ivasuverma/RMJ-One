@@ -39,6 +39,17 @@ type Mode = 'view' | 'form' | 'settings';
 
 const fmtINR = (n: number) => `₹${Math.round(n || 0).toLocaleString('en-IN')}`;
 
+// Gives each counter pill its own colour (cycling through the theme's
+// tinted semantic pairs) so counters stay visually distinct at a glance,
+// not just by label.
+const counterTones = (colors: ThemeColors) => [
+  { bg: colors.brandTertiary, text: colors.brandSecondary },
+  { bg: colors.info, text: colors.onInfo },
+  { bg: colors.success, text: colors.onSuccess },
+  { bg: colors.warning, text: colors.onWarning },
+  { bg: colors.error, text: colors.onError },
+];
+
 export default function CashBookScreen() {
   const router = useRouter();
   const { manage } = useLocalSearchParams<{ manage?: string }>();
@@ -316,16 +327,6 @@ export default function CashBookScreen() {
 
       {mode === 'view' && (
         <>
-          {counters.length > 1 && (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.counterScroll} contentContainerStyle={styles.counterChipsRow}>
-              {counters.map((c) => (
-                <Pressable key={c.id} onPress={() => setCounterId(c.id)} style={[styles.counterChip, counterId === c.id && styles.counterChipActive]} testID={`cashbook-counter-${c.id}`}>
-                  <Text style={[styles.counterChipText, counterId === c.id && styles.counterChipTextActive]}>{c.name}</Text>
-                </Pressable>
-              ))}
-            </ScrollView>
-          )}
-
           {!isEmployee && (
             <View style={styles.dayNav}>
               <Pressable onPress={() => shiftDay(-1)} style={styles.navBtn} testID="cashbook-prev-day" hitSlop={10}>
@@ -344,6 +345,31 @@ export default function CashBookScreen() {
               )}
             </View>
           )}
+
+          {counters.length > 1 && (
+            <View style={styles.counterChipsRow}>
+              {counters.map((c, i) => {
+                const tones = counterTones(colors);
+                const tone = tones[i % tones.length];
+                const active = counterId === c.id;
+                return (
+                  <Pressable
+                    key={c.id}
+                    onPress={() => setCounterId(c.id)}
+                    style={[
+                      styles.counterChip,
+                      { backgroundColor: tone.bg },
+                      active && { borderColor: tone.text, borderWidth: 2 },
+                    ]}
+                    testID={`cashbook-counter-${c.id}`}
+                  >
+                    <Text style={[styles.counterChipText, { color: tone.text }, active && styles.counterChipTextActive]}>{c.name}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          )}
+
           <Text style={styles.dayLabel}>
             {displayDateOnlyWithWeekday(date)}{counters.length === 1 ? ` · ${counters[0].name}` : ''}
           </Text>
@@ -648,15 +674,13 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   title: { color: colors.onSurface, fontSize: 18, fontWeight: '600', fontFamily: fonts.display },
   titleInline: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 },
 
-  counterScroll: { flexGrow: 0, flexShrink: 0 },
-  counterChipsRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: 2 },
+  counterChipsRow: { flexDirection: 'row', alignItems: 'stretch', gap: spacing.sm, paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: 2 },
   counterChip: {
-    alignSelf: 'flex-start', paddingHorizontal: spacing.md, paddingVertical: 8, borderRadius: radius.pill,
-    backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border,
+    flex: 1, alignItems: 'center', paddingHorizontal: spacing.md, paddingVertical: 10, borderRadius: radius.pill,
+    borderWidth: 1, borderColor: 'transparent',
   },
-  counterChipActive: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
-  counterChipText: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '700' },
-  counterChipTextActive: { color: colors.onBrandPrimary },
+  counterChipText: { fontSize: 12.5, fontWeight: '700', textAlign: 'center' },
+  counterChipTextActive: { fontWeight: '800' },
 
   dayNav: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.lg, paddingTop: spacing.md },
   navBtn: {
