@@ -37,10 +37,11 @@ type DashboardData = {
   documents_pending?: number;
 };
 
-type RecentItem = { kind: 'repair' | 'cash' | 'stock' | 'ledger'; at?: string; label: string; route: string };
+type RecentItem = { kind: 'repair' | 'cash' | 'stock' | 'ledger' | 'gold_loan' | 'task' | 'document'; at?: string; label: string; route: string };
 
 const RECENT_ICON: Record<RecentItem['kind'], keyof typeof Ionicons.glyphMap> = {
   repair: 'construct-outline', cash: 'wallet-outline', stock: 'diamond-outline', ledger: 'book-outline',
+  gold_loan: 'cash-outline', task: 'checkbox-outline', document: 'documents-outline',
 };
 
 // Poll cadence tightened to ~15s (was 45s) so the "Live" pill reads honestly
