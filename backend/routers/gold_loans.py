@@ -3,10 +3,12 @@ with interest accruing monthly on the outstanding principal until the loan is
 closed (customer collects the pledge back).
 
 Two collections beyond the loan record itself:
-  - gold_loan_transactions: every interest charge (auto-posted monthly) and
+  - gold_loan_transactions: every interest charge (auto-posted monthly),
     every payment received (tagged interest or principal by whoever takes
-    the cash). Balances are always derived from this ledger, never stored,
-    same philosophy as routers/ledger.py — so editing history stays honest.
+    the cash), and every top-up paid out (more cash handed to the customer
+    against the same pledge, raising the outstanding principal). Balances
+    are always derived from this ledger, never stored, same philosophy as
+    routers/ledger.py — so editing history stays honest.
   - gold_loan_interest_generations: idempotency guard (loan_id + period) so
     the 15-minute reminder-loop poll can't double-post a month's interest.
 
@@ -81,7 +83,11 @@ def _compute_loan_state(loan: dict, txns: list) -> dict:
     interest_payments = [t for t in txns if t['type'] == 'payment_interest']
     interest_paid = sum(t['amount'] for t in interest_payments)
     principal_paid = sum(t['amount'] for t in txns if t['type'] == 'payment_principal')
-    principal_balance = round(loan['principal'] - principal_paid, 2)
+    # Top-ups (see GoldLoanPaymentIn) raise the balance the same way a
+    # repayment lowers it — more cash paid out to the customer against the
+    # same pledge.
+    principal_topup = sum(t['amount'] for t in txns if t['type'] == 'topup_principal')
+    principal_balance = round(loan['principal'] - principal_paid + principal_topup, 2)
     interest_balance = round(interest_due - interest_paid, 2)
 
     tagged_periods: set = set()
@@ -112,7 +118,8 @@ def _compute_loan_state(loan: dict, txns: list) -> dict:
         interest_months.append({'period': period, 'date': d['date'], 'amount': d['amount'], 'paid': paid})
 
     return {
-        'principal': loan['principal'], 'principal_paid': round(principal_paid, 2), 'principal_balance': principal_balance,
+        'principal': loan['principal'], 'principal_paid': round(principal_paid, 2), 'principal_topup': round(principal_topup, 2),
+        'principal_balance': principal_balance,
         'interest_due': round(interest_due, 2), 'interest_paid': round(interest_paid, 2), 'interest_balance': interest_balance,
         'total_outstanding': round(principal_balance + interest_balance, 2),
         'interest_months_total': len(dues_sorted), 'interest_months_received': months_received,
@@ -293,9 +300,10 @@ async def record_gold_loan_payment(loan_id: str, body: GoldLoanPaymentIn, user=D
     # of sitting as an unexplained negative balance until the next poll.
     await _backfill_loan_interest(loan)
     iso = now_utc().isoformat()
+    txn_type = {'interest': 'payment_interest', 'principal': 'payment_principal', 'topup': 'topup_principal'}[body.type]
     txn = {
         'id': str(uuid.uuid4()), 'loan_id': loan_id,
-        'type': 'payment_interest' if body.type == 'interest' else 'payment_principal',
+        'type': txn_type,
         'amount': body.amount, 'date': body.date or today_str(), 'note': body.note or '',
         # Months this payment covers, from the calendar picker — interest
         # payments only; None/empty falls back to FIFO matching in
@@ -306,6 +314,10 @@ async def record_gold_loan_payment(loan_id: str, body: GoldLoanPaymentIn, user=D
     await db.gold_loan_transactions.insert_one(dict(txn))
     await log_audit(user, 'gold_loan.payment', 'gold_loan', loan_id, loan['loan_no'],
                      {'type': body.type, 'amount': body.amount})
+    if body.type == 'topup':
+        await _notify_module('gold_loans', f"Top-up on {loan['loan_no']}",
+                              f"{loan['customer_name']} · {_inr(body.amount)} paid out · by {user['name']}", '/loans',
+                              script='gold_loan_topup', admin_only=True)
     return {k: v for k, v in txn.items() if k != '_id'}
 
 
@@ -427,7 +439,11 @@ def _principal_balance_for_period(loan: dict, principal_txns: list, period_start
     15" — not reduced.) This only controls the timing of one period's
     interest charge; the loan's overall principal_balance (see
     _compute_loan_state, used for display and for "how much is owed now")
-    already reflects every repayment immediately regardless of date."""
+    already reflects every repayment immediately regardless of date.
+
+    `principal_txns` carries repayments as positive amounts and top-ups
+    (see GoldLoanPaymentIn) as negative ones, so subtracting a top-up here
+    raises the balance under the same day-15 cutoff rule."""
     balance = loan['principal']
     for d, amt in principal_txns:
         if d < period_start:
@@ -481,12 +497,15 @@ async def _backfill_loan_interest(loan: dict) -> None:
         y, m = _add_month(y, m)
 
     raw_principal_txns = await db.gold_loan_transactions.find(
-        {'loan_id': loan['id'], 'type': 'payment_principal'}, {'_id': 0},
+        {'loan_id': loan['id'], 'type': {'$in': ['payment_principal', 'topup_principal']}}, {'_id': 0},
     ).to_list(5000)
     principal_txns = []
     for t in raw_principal_txns:
         try:
-            principal_txns.append((date.fromisoformat(t['date']), t['amount']))
+            # Top-ups raise the balance, so they go in negated — see
+            # _principal_balance_for_period's docstring.
+            amt = t['amount'] if t['type'] == 'payment_principal' else -t['amount']
+            principal_txns.append((date.fromisoformat(t['date']), amt))
         except (ValueError, KeyError):
             continue
 

@@ -20,12 +20,14 @@ const fmtINR = (n: number) => `₹${Math.round(n || 0).toLocaleString('en-IN')}`
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 // Split out of the loan detail screen so that screen stays summary-only —
-// this is the "transact" affordance it links to for recording a cash
-// payment against a gold loan (interest or principal, staff picks which).
-// For interest, staff can tap the specific pending month(s) this payment
-// covers on the same calendar the loan summary shows — that tags the
-// payment to those exact periods (see _compute_loan_state in
-// gold_loans.py) instead of leaving it to guess via FIFO matching.
+// this is the "transact" affordance it links to for recording cash moving
+// either direction on a gold loan: in from the customer (interest or
+// principal/redemption, staff picks which) or out to the customer
+// (top-up, more cash against the same pledge). For interest, staff can tap
+// the specific pending month(s) this payment covers on the same calendar
+// the loan summary shows — that tags the payment to those exact periods
+// (see _compute_loan_state in gold_loans.py) instead of leaving it to
+// guess via FIFO matching.
 export default function GoldLoanTransactScreen() {
   const { id, type: typeParam, amount: amountParam, periods: periodsParam } = useLocalSearchParams<{
     id: string; type?: string; amount?: string; periods?: string;
@@ -39,7 +41,9 @@ export default function GoldLoanTransactScreen() {
   // pending amount, or a specific month tapped on the loan's own interest
   // calendar) — still just a starting point, staff can adjust before saving.
   const [amount, setAmount] = useState(amountParam ? String(Math.round(parseFloat(amountParam))) : '');
-  const [type, setType] = useState<'interest' | 'principal'>(typeParam === 'principal' ? 'principal' : 'interest');
+  const [type, setType] = useState<'interest' | 'principal' | 'topup'>(
+    typeParam === 'principal' ? 'principal' : typeParam === 'topup' ? 'topup' : 'interest',
+  );
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -124,7 +128,7 @@ export default function GoldLoanTransactScreen() {
         <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
-        <Text style={styles.title}>Record Payment</Text>
+        <Text style={styles.title}>{type === 'topup' ? 'Pay Customer More' : 'Record Payment'}</Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -138,7 +142,17 @@ export default function GoldLoanTransactScreen() {
             <Pressable onPress={() => { setType('principal'); setSelected([]); }} style={[styles.chip, type === 'principal' && styles.chipActive]} testID="pay-type-principal">
               <Text style={[styles.chipText, type === 'principal' && styles.chipTextActive]}>Principal / Redemption</Text>
             </Pressable>
+            <Pressable onPress={() => { setType('topup'); setSelected([]); }} style={[styles.chip, type === 'topup' && styles.chipActive]} testID="pay-type-topup">
+              <Text style={[styles.chipText, type === 'topup' && styles.chipTextActive]}>Top-up</Text>
+            </Pressable>
           </View>
+
+          {type === 'topup' && (
+            <Text style={styles.helperText}>
+              Extra cash paid out to the customer against this same pledge — raises the outstanding principal, and
+              next month's interest is charged on the higher balance.
+            </Text>
+          )}
 
           {type === 'interest' && allMonths.length > 0 && (
             <View style={styles.calCard} testID="pay-month-picker">
@@ -192,7 +206,7 @@ export default function GoldLoanTransactScreen() {
           <TextInput testID="pay-note" value={note} onChangeText={setNote} placeholderTextColor={colors.mutedText} style={styles.input} />
 
           <Pressable onPress={submit} disabled={saving} style={[styles.submitBtn, saving && { opacity: 0.6 }]} testID="submit-payment-btn">
-            {saving ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.submitBtnText}>Record Payment</Text>}
+            {saving ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.submitBtnText}>{type === 'topup' ? 'Pay Customer' : 'Record Payment'}</Text>}
           </Pressable>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -213,6 +227,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   title: { flex: 1, color: colors.onSurface, fontSize: 18, fontWeight: '600', fontFamily: fonts.display },
 
   label: { color: colors.onSurfaceSecondary, fontSize: 12, marginBottom: 6, marginTop: spacing.md },
+  helperText: { color: colors.onWarning, fontSize: 11, marginTop: spacing.sm, lineHeight: 15 },
   input: {
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
     color: colors.onSurface, paddingHorizontal: spacing.md, paddingVertical: 12, fontSize: 14,

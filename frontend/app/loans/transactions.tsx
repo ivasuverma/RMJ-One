@@ -11,11 +11,19 @@ import { DateField } from '@/src/components/DateField';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
-type Txn = { id: string; type: 'interest_due' | 'payment_interest' | 'payment_principal'; amount: number; date: string; note: string; auto: boolean; created_by: string; created_at: string };
+type Txn = { id: string; type: 'interest_due' | 'payment_interest' | 'payment_principal' | 'topup_principal'; amount: number; date: string; note: string; auto: boolean; created_by: string; created_at: string };
 type Page = { items: Txn[]; total: number; skip: number; limit: number };
 
 const fmtINR = (n: number) => `₹${Math.round(n || 0).toLocaleString('en-IN')}`;
-const TXN_LABEL: Record<Txn['type'], string> = { interest_due: 'Interest posted', payment_interest: 'Interest received', payment_principal: 'Principal received' };
+const TXN_LABEL: Record<Txn['type'], string> = {
+  interest_due: 'Interest posted', payment_interest: 'Interest received', payment_principal: 'Principal received',
+  topup_principal: 'Top-up paid to customer',
+};
+// Entries that raise what's owed (interest posting, top-ups) show +; entries
+// that reduce it (payments) show −.
+const TXN_INCREASES_BALANCE: Record<Txn['type'], boolean> = {
+  interest_due: true, payment_interest: false, payment_principal: false, topup_principal: true,
+};
 const PAGE_SIZE = 20;
 
 // Paginated transaction ledger for one gold loan, split out of the (now
@@ -134,8 +142,8 @@ export default function GoldLoanTransactionsScreen() {
                       </View>
                     )}
                   </View>
-                  <Text style={[styles.txnAmount, t.type === 'interest_due' ? { color: colors.onWarning } : { color: colors.onSuccess }]}>
-                    {t.type === 'interest_due' ? '+' : '−'}{fmtINR(t.amount)}
+                  <Text style={[styles.txnAmount, TXN_INCREASES_BALANCE[t.type] ? { color: colors.onWarning } : { color: colors.onSuccess }]}>
+                    {TXN_INCREASES_BALANCE[t.type] ? '+' : '−'}{fmtINR(t.amount)}
                   </Text>
                 </>
               )}
