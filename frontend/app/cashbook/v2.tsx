@@ -165,6 +165,7 @@ export default function CashBookScreen() {
     if (!amt || amt <= 0) { toast.error('Enter an amount greater than 0'); return; }
     if (!counterId) { toast.error('Add a Cash Book counter first'); return; }
     if (isTransfer && !editing && !dest) { toast.error('Pick where the cash is going'); return; }
+    if (!isTransfer && !tag.trim()) { toast.error('Pick a tag for this entry'); return; }
     const label = isTransfer ? `Transfer ${dir === 'out' ? 'to' : 'from'} ${counterName(dest)}` : (name.trim() || tag.trim());
     if (!label) { toast.error('Enter a name or pick a tag'); return; }
     setBusy(true);
@@ -425,7 +426,7 @@ export default function CashBookScreen() {
                   placeholderTextColor={colors.mutedText} style={styles.input} />
               </View>
               <View>
-                <Text style={styles.label}>Tag (optional)</Text>
+                <Text style={styles.label}>Tag</Text>
                 <View style={styles.chips}>
                   {tags.map((q) => (
                     <Pressable key={q.id} onPress={() => setTag(tag === q.name ? '' : q.name)} style={[styles.chip, tag === q.name && styles.chipOn]}>

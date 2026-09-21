@@ -173,12 +173,17 @@ export default function CashBookScreen() {
 
   const submitEntry = async () => {
     const amt = parseFloat(amount);
+    // Whether this entry is (or already is) a transfer — for a new entry
+    // that's the toggle; for an edit, `isTransfer` is always reset to false
+    // in openEdit, so the entry's own link is what actually decides it.
+    const isActualTransfer = isTransfer || !!editing?.linked_entry_id;
     if (!amt || amt <= 0) { notify('Invalid', 'Enter an amount greater than 0'); return; }
     if (!name.trim()) { notify('Invalid', 'Enter a name / description'); return; }
+    if (!isActualTransfer && !category.trim()) { notify('Invalid', 'Pick a type/tag for this entry'); return; }
     if (!counterId) { notify('No counter selected', 'Add a Cash Book counter first.'); return; }
     if (isTransfer && !transferCounterId) { notify('Invalid', 'Pick the other counter for this transfer'); return; }
     setBusy(true);
-    const payload: any = { date, amount: amt, name: name.trim(), category: isTransfer ? '' : category.trim(), note };
+    const payload: any = { date, amount: amt, name: name.trim(), category: isActualTransfer ? '' : category.trim(), note };
     // A linked transfer entry can't change its type/counter (the backend
     // rejects it) — so when editing one, only send the editable fields.
     // Otherwise (new entry, or editing a normal entry) send them as before.
@@ -508,9 +513,9 @@ export default function CashBookScreen() {
               </View>
             </View>
 
-            {!isTransfer && (visibleQuickNames.length > 0 || addingQuickName) && (
+            {!isTransfer && !editing?.linked_entry_id && (
               <>
-                <Text style={styles.label}>Type (optional)</Text>
+                <Text style={styles.label}>Type</Text>
                 <View style={styles.chipRow}>
                   {visibleQuickNames.map((q) => {
                     const selected = category === q.name;
