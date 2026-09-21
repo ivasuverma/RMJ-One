@@ -468,40 +468,76 @@ async def samples_analytics(
 
     issued = await db.samples.find(
         {'created_at': {'$gte': start_s, '$lt': end_next_s}},
-        {'_id': 0, 'created_at': 1, 'issue_type': 1, 'weight': 1, 'karigar_name': 1},
+        {'_id': 0, 'created_at': 1, 'issue_type': 1, 'weight': 1, 'purity': 1, 'karigar_name': 1},
     ).to_list(20000)
     received = await db.samples.find(
         {'received_at': {'$gte': start_s, '$lt': end_next_s}},
-        {'_id': 0, 'received_at': 1, 'received_weight': 1},
+        {'_id': 0, 'received_at': 1, 'received_weight': 1, 'purity': 1, 'weight_diff': 1, 'karigar_name': 1},
     ).to_list(20000)
 
     by_type: dict = {}
     by_karigar: dict = {}
+    by_karigar_received: dict = {}
     by_date: dict = {}
     weight_issued = 0.0
+    fine_weight_issued = 0.0
     for s in issued:
         t = (s.get('issue_type') or '').strip() or 'Other'
         by_type[t] = by_type.get(t, 0) + 1
-        weight_issued += float(s.get('weight') or 0)
+        w = float(s.get('weight') or 0)
+        weight_issued += w
+        pur = s.get('purity')
+        if pur:
+            fine_weight_issued += w * pur / 100
         kn = s.get('karigar_name')
         if kn:
             by_karigar[kn] = by_karigar.get(kn, 0) + 1
         by_date.setdefault(s['created_at'][:10], {'issued': 0, 'received': 0})['issued'] += 1
 
+    # weight_diff (and its sign) is the same convention used everywhere else
+    # in the module: received_weight - issued weight, so positive means more
+    # gold came back than was issued (a gain) and negative means a shortfall
+    # (the loss written off via write_off_loss). Summed here as-is rather
+    # than split into separate loss/gain fields, matching how the single
+    # sample detail screen already surfaces it (one signed "diff" figure).
     weight_received = 0.0
+    fine_weight_received = 0.0
+    weight_diff_total = 0.0
     for s in received:
-        weight_received += float(s.get('received_weight') or 0)
+        rw = float(s.get('received_weight') or 0)
+        weight_received += rw
+        pur = s.get('purity')
+        if pur:
+            fine_weight_received += rw * pur / 100
+        weight_diff_total += float(s.get('weight_diff') or 0)
+        kn = s.get('karigar_name')
+        if kn:
+            by_karigar_received[kn] = by_karigar_received.get(kn, 0) + 1
         by_date.setdefault(s['received_at'][:10], {'issued': 0, 'received': 0})['received'] += 1
+
+    # Live (not period-filtered) point-in-time counts — same status/overdue
+    # definition as list_samples's own overdue filter, so these always agree
+    # with what the Stock In/Out list itself would show right now.
+    outstanding_count = await db.samples.count_documents({'status': 'with_karigar'})
+    overdue_count = await db.samples.count_documents(
+        {'status': 'with_karigar', 'due_date': {'$ne': None, '$lt': today_str()}},
+    )
 
     return {
         'period': period, 'start_date': start_s, 'end_date': end_s,
         'total_issued': len(issued), 'total_received': len(received),
         'weight_issued': round(weight_issued, 3), 'weight_received': round(weight_received, 3),
+        'fine_weight_issued': round(fine_weight_issued, 3), 'fine_weight_received': round(fine_weight_received, 3),
+        'weight_diff_total': round(weight_diff_total, 3),
+        'outstanding_count': outstanding_count, 'overdue_count': overdue_count,
         'by_type': sorted(
             [{'category': k, 'count': v} for k, v in by_type.items()], key=lambda x: -x['count'],
         ),
         'trend': [{'date': ds, **v} for ds, v in sorted(by_date.items())],
         'top_karigars': sorted(
             [{'name': k, 'count': v} for k, v in by_karigar.items()], key=lambda x: -x['count'],
+        )[:5],
+        'top_karigars_received': sorted(
+            [{'name': k, 'count': v} for k, v in by_karigar_received.items()], key=lambda x: -x['count'],
         )[:5],
     }

@@ -17,7 +17,10 @@ import { useTheme } from '@/src/theme/ThemeContext';
 // and Payroll use, so these numbers always agree with those.
 type Period = 'day' | 'week' | 'month';
 type StatusCount = { status: string; count: number };
-type TrendPoint = { date: string; present: number; absent: number };
+type TrendPoint = {
+  date: string; present: number; absent: number;
+  late: number; half_day: number; missing_punch: number; leave: number;
+};
 type NameCount = { employee_id: string; name: string; count: number };
 type Analytics = {
   period: Period; start_date: string; end_date: string;
@@ -26,6 +29,7 @@ type Analytics = {
   trend: TrendPoint[];
   top_late: NameCount[];
   top_absent: NameCount[];
+  avg_working_hours: number | null;
 };
 
 const PERIODS: { key: Period; label: string }[] = [
@@ -86,7 +90,13 @@ export default function AttendanceAnalyticsScreen() {
   if (!user || user.role !== 'owner') return null;
 
   const totalMarked = data ? Object.values(data.counts).reduce((a, b) => a + b, 0) : 0;
-  const maxTrend = Math.max(1, ...(data?.trend || []).flatMap((t) => [t.present, t.absent]));
+  // present/absent already aggregate late+half_day / missing_punch respectively, so their
+  // sum is that day's full non-leave headcount — used to scale the stacked trend bars.
+  const maxDayTotal = Math.max(1, ...(data?.trend || []).map((t) => t.present + t.absent));
+  const trendColors = {
+    present: colors.onSuccess, late: colors.onWarning, half_day: PALETTE[2],
+    absent: colors.onError, missing_punch: PALETTE[4],
+  };
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="attendance-analytics-screen">
@@ -137,6 +147,12 @@ export default function AttendanceAnalyticsScreen() {
               <Text style={styles.summaryLabel}>Absent</Text>
               <Text style={[styles.summaryValue, { color: colors.onError }]}>{data.counts.absent || 0}</Text>
             </View>
+            <View style={styles.summaryCard}>
+              <Text style={styles.summaryLabel}>Avg Hours</Text>
+              <Text style={[styles.summaryValue, { color: colors.onSurface }]}>
+                {data.avg_working_hours != null ? `${data.avg_working_hours}h` : '—'}
+              </Text>
+            </View>
           </View>
 
           {period !== 'day' && data.trend.length > 0 && (
@@ -144,19 +160,32 @@ export default function AttendanceAnalyticsScreen() {
               <Text style={styles.sectionLabel}>Trend</Text>
               <View style={styles.trendCard}>
                 <View style={styles.legendRow}>
-                  <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: colors.onSuccess }]} /><Text style={styles.legendText}>Present</Text></View>
-                  <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: colors.onError }]} /><Text style={styles.legendText}>Absent</Text></View>
+                  <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: trendColors.present }]} /><Text style={styles.legendText}>Present</Text></View>
+                  <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: trendColors.late }]} /><Text style={styles.legendText}>Late</Text></View>
+                  <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: trendColors.half_day }]} /><Text style={styles.legendText}>Half Day</Text></View>
+                  <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: trendColors.absent }]} /><Text style={styles.legendText}>Absent</Text></View>
+                  <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: trendColors.missing_punch }]} /><Text style={styles.legendText}>Missing Punch</Text></View>
                 </View>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                   <View style={styles.barsRow}>
                     {data.trend.map((t) => {
                       const d = new Date(t.date + 'T00:00:00');
                       const label = period === 'week' ? DAY_SHORT[d.getDay() === 0 ? 6 : d.getDay() - 1] : String(d.getDate());
+                      // Stacked single bar per day — present-only at the bottom, then late,
+                      // half_day, absent-only, missing_punch on top (leave stays out of the
+                      // trend to keep it legible; it's still in the Breakdown below).
+                      const scale = 90 / maxDayTotal;
+                      const seg = (n: number) => (n > 0 ? Math.max(2, n * scale) : 0);
+                      const presentOnly = t.present - t.late - t.half_day;
+                      const absentOnly = t.absent - t.missing_punch;
                       return (
                         <View key={t.date} style={styles.barCol}>
-                          <View style={styles.barPair}>
-                            <View style={[styles.bar, { height: Math.max(2, (t.present / maxTrend) * 90), backgroundColor: colors.onSuccess }]} />
-                            <View style={[styles.bar, { height: Math.max(2, (t.absent / maxTrend) * 90), backgroundColor: colors.onError }]} />
+                          <View style={styles.stackBar}>
+                            <View style={{ height: seg(presentOnly), backgroundColor: trendColors.present }} />
+                            <View style={{ height: seg(t.late), backgroundColor: trendColors.late }} />
+                            <View style={{ height: seg(t.half_day), backgroundColor: trendColors.half_day }} />
+                            <View style={{ height: seg(absentOnly), backgroundColor: trendColors.absent }} />
+                            <View style={{ height: seg(t.missing_punch), backgroundColor: trendColors.missing_punch }} />
                           </View>
                           <Text style={styles.barLabel}>{label}</Text>
                         </View>
@@ -290,8 +319,10 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   legendText: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '600' },
   barsRow: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing.md, paddingBottom: 4, minWidth: '100%' },
   barCol: { alignItems: 'center', gap: 6, width: 30 },
-  barPair: { flexDirection: 'row', alignItems: 'flex-end', gap: 3, height: 90 },
-  bar: { width: 8, borderRadius: 3 },
+  stackBar: {
+    width: 16, height: 90, borderRadius: 3, overflow: 'hidden',
+    flexDirection: 'column-reverse', backgroundColor: colors.divider,
+  },
   barLabel: { color: colors.mutedText, fontSize: 9.5 },
 
   breakdownCard: {

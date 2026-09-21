@@ -21,7 +21,10 @@ type Analytics = {
   period: Period; start_date: string; end_date: string;
   total_issued: number; total_received: number;
   weight_issued: number; weight_received: number;
-  by_type: TypeCount[]; trend: TrendPoint[]; top_karigars: NameCount[];
+  fine_weight_issued: number; fine_weight_received: number;
+  weight_diff_total: number;
+  outstanding_count: number; overdue_count: number;
+  by_type: TypeCount[]; trend: TrendPoint[]; top_karigars: NameCount[]; top_karigars_received: NameCount[];
 };
 
 const PERIODS: { key: Period; label: string }[] = [
@@ -81,6 +84,7 @@ export default function SamplesAnalyticsScreen() {
   const totalByType = data ? data.by_type.reduce((s, t) => s + t.count, 0) : 0;
   const netWeight = (data?.weight_issued || 0) - (data?.weight_received || 0);
   const maxTrend = Math.max(1, ...(data?.trend || []).flatMap((t) => [t.issued, t.received]));
+  const weightDiff = data?.weight_diff_total || 0;
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="samples-analytics-screen">
@@ -133,6 +137,36 @@ export default function SamplesAnalyticsScreen() {
             </View>
           </View>
 
+          <Text style={styles.sectionLabel}>Fine Weight</Text>
+          <View style={styles.summaryRow}>
+            <View style={styles.summaryCard}>
+              <Text style={styles.summaryLabel}>Fine Issued</Text>
+              <Text style={styles.summaryValue}>{data.fine_weight_issued.toFixed(3)}g</Text>
+            </View>
+            <View style={styles.summaryCard}>
+              <Text style={styles.summaryLabel}>Fine Received</Text>
+              <Text style={styles.summaryValue}>{data.fine_weight_received.toFixed(3)}g</Text>
+            </View>
+          </View>
+
+          <Text style={styles.sectionLabel}>Outstanding</Text>
+          <View style={styles.summaryRow}>
+            <View style={styles.summaryCard}>
+              <Text style={styles.summaryLabel}>Outstanding</Text>
+              <Text style={styles.summaryValue}>{data.outstanding_count}</Text>
+            </View>
+            <View style={styles.summaryCard}>
+              <Text style={styles.summaryLabel}>Overdue</Text>
+              <Text style={[styles.summaryValue, { color: colors.onError }]}>{data.overdue_count}</Text>
+            </View>
+            <View style={styles.summaryCard}>
+              <Text style={styles.summaryLabel}>Gain/Loss</Text>
+              <Text style={[styles.summaryValue, { color: weightDiff < 0 ? colors.onError : colors.onSuccess }]}>
+                {weightDiff > 0 ? '+' : ''}{weightDiff.toFixed(3)}g
+              </Text>
+            </View>
+          </View>
+
           {period !== 'day' && data.trend.length > 0 && (
             <>
               <Text style={styles.sectionLabel}>Trend</Text>
@@ -171,6 +205,20 @@ export default function SamplesAnalyticsScreen() {
               <View style={styles.leaderCard}>
                 {data.top_karigars.map((r, i) => (
                   <View key={r.name} style={[styles.leaderRow, i === data.top_karigars.length - 1 && { borderBottomWidth: 0 }]} testID={`top-karigar-${i}`}>
+                    <Text style={styles.leaderName} numberOfLines={1}>{r.name}</Text>
+                    <Text style={styles.leaderCount}>{r.count}</Text>
+                  </View>
+                ))}
+              </View>
+            </>
+          )}
+
+          {data.top_karigars_received.length > 0 && (
+            <>
+              <Text style={styles.sectionLabel}>Top Karigars (Received)</Text>
+              <View style={styles.leaderCard}>
+                {data.top_karigars_received.map((r, i) => (
+                  <View key={r.name} style={[styles.leaderRow, i === data.top_karigars_received.length - 1 && { borderBottomWidth: 0 }]} testID={`top-karigar-received-${i}`}>
                     <Text style={styles.leaderName} numberOfLines={1}>{r.name}</Text>
                     <Text style={styles.leaderCount}>{r.count}</Text>
                   </View>

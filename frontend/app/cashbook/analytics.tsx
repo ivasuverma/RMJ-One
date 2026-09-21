@@ -13,11 +13,13 @@ import { useTheme } from '@/src/theme/ThemeContext';
 type Period = 'day' | 'week' | 'month';
 type TypeAmount = { category: string; amount: number };
 type TrendPoint = { date: string; received: number; paid: number };
+type CounterAmount = { counter_id: string; counter_name: string; received: number; paid: number; net: number };
 type Analytics = {
   period: Period; start_date: string; end_date: string;
   total_received: number; total_paid: number;
   by_type_received: TypeAmount[]; by_type_paid: TypeAmount[];
   trend: TrendPoint[];
+  by_counter: CounterAmount[];
 };
 
 const PERIODS: { key: Period; label: string }[] = [
@@ -167,6 +169,13 @@ export default function CashbookAnalyticsScreen() {
 
           <Text style={styles.sectionLabel}>Paid by Type</Text>
           <TypeBreakdown data={data.by_type_paid} total={data.total_paid} colors={colors} styles={styles} />
+
+          {data.by_counter.length > 1 && (
+            <>
+              <Text style={styles.sectionLabel}>By Counter</Text>
+              <CounterBreakdown data={data.by_counter} colors={colors} styles={styles} />
+            </>
+          )}
         </ScrollView>
       )}
     </SafeAreaView>
@@ -213,6 +222,31 @@ function TypeBreakdown({ data, total, colors, styles }: { data: TypeAmount[]; to
           </View>
         ))}
       </View>
+    </View>
+  );
+}
+
+function CounterBreakdown({ data, colors, styles }: { data: CounterAmount[]; colors: ThemeColors; styles: any }) {
+  return (
+    <View style={styles.counterCard}>
+      <View style={styles.counterHeaderRow}>
+        <Text style={styles.counterName} />
+        <View style={styles.counterAmounts}>
+          <Text style={styles.counterHeaderText}>Received</Text>
+          <Text style={styles.counterHeaderText}>Paid</Text>
+          <Text style={styles.counterHeaderText}>Net</Text>
+        </View>
+      </View>
+      {data.map((c) => (
+        <View key={c.counter_id} style={styles.counterRow} testID={`analytics-counter-${c.counter_id}`}>
+          <Text style={styles.counterName} numberOfLines={1}>{c.counter_name}</Text>
+          <View style={styles.counterAmounts}>
+            <Text style={[styles.counterAmount, { color: colors.onSuccess }]}>{fmtINR(c.received)}</Text>
+            <Text style={[styles.counterAmount, { color: colors.onError }]}>{fmtINR(c.paid)}</Text>
+            <Text style={[styles.counterAmount, { color: c.net >= 0 ? colors.onSuccess : colors.onError, fontWeight: '800' }]}>{fmtINR(c.net)}</Text>
+          </View>
+        </View>
+      ))}
     </View>
   );
 }
@@ -274,4 +308,15 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   legendListLabel: { flex: 1, color: colors.onSurface, fontSize: 13, fontWeight: '600' },
   legendListPct: { color: colors.mutedText, fontSize: 11.5, width: 36, textAlign: 'right' },
   legendListValue: { color: colors.onSurface, fontSize: 12.5, fontWeight: '700', width: 88, textAlign: 'right' },
+
+  counterCard: {
+    backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border,
+    padding: spacing.md, marginBottom: spacing.lg, gap: 10,
+  },
+  counterHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  counterHeaderText: { color: colors.mutedText, fontSize: 10.5, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.3, width: 80, textAlign: 'right' },
+  counterRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  counterName: { flex: 1, color: colors.onSurface, fontSize: 13, fontWeight: '600' },
+  counterAmounts: { flexDirection: 'row' },
+  counterAmount: { fontSize: 12.5, fontWeight: '700', width: 80, textAlign: 'right' },
 });
