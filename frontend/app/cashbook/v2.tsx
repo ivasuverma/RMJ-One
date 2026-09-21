@@ -13,7 +13,7 @@ import { enqueueRecordPhoto } from '@/src/utils/uploadQueue';
 import { displayDateOnlyWithWeekday, localDateStr, todayIST } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
-import { counterTones } from '@/src/theme/palettes';
+import { counterToneFor } from '@/src/theme/palettes';
 import { useAuth } from '@/src/auth/AuthContext';
 import { Card, ErrorState, SegmentedControl, Sheet, useToast } from '@/src/components/ui';
 
@@ -28,7 +28,7 @@ type DayData = {
   date: string; counter_id: string; counter_name: string; opening_balance: number; entries: Entry[];
   total_received: number; total_paid: number; closing_balance: number;
 };
-type Counter = { id: string; name: string; active: boolean };
+type Counter = { id: string; name: string; color?: string | null; active: boolean };
 type CounterLite = { id: string; name: string };
 type QuickName = { id: string; name: string; entry_type: EntryType | null };
 type Shot = { id: string; blob: Blob; thumb: string };
@@ -127,8 +127,17 @@ export default function CashBookScreen() {
   const tags = quickNames.filter((q) => kind !== 'transfer' && (q.entry_type == null || q.entry_type === kind));
   const counterName = (id?: string | null) => transferOptions.find((c) => c.id === id)?.name || counters.find((c) => c.id === id)?.name || '';
 
+  // Tints the whole page to the selected counter's colour, so switching
+  // counters is unmistakable even at a glance — matches its chip's colour.
+  const selectedCounterIndex = counters.findIndex((c) => c.id === counterId);
+  const pageTone = selectedCounterIndex >= 0 ? counterToneFor(colors, counters[selectedCounterIndex].color, selectedCounterIndex) : null;
+
   const openAdd = (k: EntryType = 'received') => {
-    setEditing(null); setKind(k); setAmount(''); setName(''); setTag(''); setNote(''); setDest(''); setDir('out'); setShots([]);
+    setEditing(null); setKind(k); setAmount(''); setName(''); setTag(''); setNote(''); setDest('');
+    // Opened via the Received button defaults a Transfer's direction to
+    // "Receive in"; via Paid, to "Send out" — matches the button they tapped.
+    setDir(k === 'paid' ? 'out' : 'in');
+    setShots([]);
     setAddingTag(false); setNewTag(''); setSheet(true);
   };
   const openEdit = (e: Entry) => {
@@ -211,7 +220,7 @@ export default function CashBookScreen() {
   const editingTransfer = !!editing?.linked_entry_id;
 
   return (
-    <SafeAreaView style={styles.root} edges={['top']} testID="cashbook-screen">
+    <SafeAreaView style={[styles.root, pageTone && { backgroundColor: pageTone.bg }]} edges={['top']} testID="cashbook-screen">
       <View style={styles.header}>
         <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
@@ -249,8 +258,7 @@ export default function CashBookScreen() {
         {counters.length > 1 && (
           <View style={styles.counterRow}>
             {counters.map((c, i) => {
-              const tones = counterTones(colors);
-              const tone = tones[i % tones.length];
+              const tone = counterToneFor(colors, c.color, i);
               const active = counterId === c.id;
               return (
                 <Pressable
