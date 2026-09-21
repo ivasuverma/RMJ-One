@@ -29,6 +29,7 @@ type Loan = {
   interest_due: number; interest_paid: number; interest_balance: number; total_outstanding: number;
   interest_months_total: number; interest_months_received: number; interest_months_pending: number;
   interest_months: InterestMonth[];
+  interest_accrued_this_month: { period: string; days: number; amount: number } | null;
 };
 
 const fmtINR = (n: number) => `₹${Math.round(n || 0).toLocaleString('en-IN')}`;
@@ -198,20 +199,37 @@ export default function GoldLoanDetailScreen() {
             <View style={styles.balRow}><Text style={styles.balLabel}>Principal topped up</Text><Text style={[styles.balValue, { color: colors.onWarning }]}>{fmtINR(loan.principal_topup)}</Text></View>
           )}
           <View style={styles.balRow}><Text style={styles.balLabel}>Principal balance</Text><Text style={[styles.balValue, loan.principal_balance > 0 && { color: colors.onWarning }]}>{fmtINR(loan.principal_balance)}</Text></View>
-          <View style={[styles.balRow, { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 8, marginTop: 4 }]}><Text style={styles.balLabel}>Interest due (total posted)</Text><Text style={styles.balValue}>{fmtINR(loan.interest_due)}</Text></View>
-          <View style={styles.balRow}><Text style={styles.balLabel}>Interest paid</Text><Text style={styles.balValue}>{fmtINR(loan.interest_paid)}</Text></View>
-          <View style={styles.balRow}><Text style={styles.balLabel}>Interest balance</Text><Text style={[styles.balValue, loan.interest_balance > 0 && { color: colors.onWarning }]}>{fmtINR(loan.interest_balance)}</Text></View>
-          <View style={styles.balRow}><Text style={styles.balLabel}>Interest months received / pending</Text><Text style={styles.balValue}>{loan.interest_months_received} / {loan.interest_months_pending}</Text></View>
           <View style={[styles.balRow, { marginTop: 6 }]}><Text style={styles.balTotalLabel}>Total outstanding</Text><Text style={styles.balTotalValue}>{fmtINR(loan.total_outstanding)}</Text></View>
         </View>
 
-        <View style={styles.calCard} testID="interest-calendar">
-          <Pressable style={styles.calToggleRow} onPress={() => setCalExpanded((v) => !v)} testID="cal-toggle">
-            <Text style={styles.formHeaderText}>Interest Calendar</Text>
+        {/* Everything interest-related in one place: rate, live accrual,
+            due/paid/balance, the month calendar, and the day-wise workings
+            — the last two collapsed by default so this stays skimmable. */}
+        <View style={styles.interestCard} testID="interest-card">
+          <View style={styles.interestHeaderRow}>
+            <Text style={styles.formHeaderText}>Interest</Text>
+            <Text style={styles.interestRateBadge}>{loan.interest_rate_percent.toFixed(2)}% / month</Text>
+          </View>
+
+          {isActive && loan.interest_accrued_this_month && (
+            <Text style={styles.interestAccruedText}>
+              {MONTHS[parseInt(loan.interest_accrued_this_month.period.slice(5, 7), 10) - 1]} so far
+              {' '}({loan.interest_accrued_this_month.days} day{loan.interest_accrued_this_month.days === 1 ? '' : 's'}): {fmtINR2(loan.interest_accrued_this_month.amount)}
+              <Text style={styles.interestAccruedHint}> · not posted yet</Text>
+            </Text>
+          )}
+
+          <View style={styles.balRow}><Text style={styles.balLabel}>Interest due (posted)</Text><Text style={styles.balValue}>{fmtINR(loan.interest_due)}</Text></View>
+          <View style={styles.balRow}><Text style={styles.balLabel}>Interest paid</Text><Text style={styles.balValue}>{fmtINR(loan.interest_paid)}</Text></View>
+          <View style={styles.balRow}><Text style={styles.balLabel}>Interest balance</Text><Text style={[styles.balValue, loan.interest_balance > 0 && { color: colors.onWarning }]}>{fmtINR(loan.interest_balance)}</Text></View>
+          <View style={styles.balRow}><Text style={styles.balLabel}>Months received / pending</Text><Text style={styles.balValue}>{loan.interest_months_received} / {loan.interest_months_pending}</Text></View>
+
+          <Pressable style={styles.calcToggleRow} onPress={() => setCalExpanded((v) => !v)} testID="cal-toggle">
+            <Text style={styles.calcToggleText}>Interest Calendar</Text>
             {loan.interest_months_pending > 0 && (
               <Text style={styles.calToggleHint}>{loan.interest_months_pending} pending</Text>
             )}
-            <Ionicons name={calExpanded ? 'chevron-up' : 'chevron-down'} size={18} color={colors.onSurfaceSecondary} />
+            <Ionicons name={calExpanded ? 'chevron-up' : 'chevron-down'} size={16} color={colors.onSurfaceSecondary} />
           </Pressable>
 
           {calExpanded && (
@@ -252,10 +270,6 @@ export default function GoldLoanDetailScreen() {
               </View>
             </>
           )}
-        </View>
-
-        <View style={styles.detailCard}>
-          <View style={styles.detailRow}><Text style={styles.detailLabel}>Interest rate</Text><Text style={styles.detailValue}>{loan.interest_rate_percent.toFixed(2)}% / month</Text></View>
 
           <Pressable onPress={toggleCalc} style={styles.calcToggleRow} testID="interest-calc-toggle">
             <Text style={styles.calcToggleText}>How this is calculated</Text>
@@ -289,7 +303,9 @@ export default function GoldLoanDetailScreen() {
               ))}
             </View>
           )}
+        </View>
 
+        <View style={styles.detailCard}>
           <View style={styles.detailRow}><Text style={styles.detailLabel}>Loan date</Text><Text style={styles.detailValue}>{loan.loan_date}</Text></View>
           {!!loan.estimate_return_date && (
             <View style={styles.detailRow}><Text style={styles.detailLabel}>Est. return</Text><Text style={styles.detailValue}>{loan.estimate_return_date}</Text></View>
@@ -405,11 +421,14 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   balTotalLabel: { color: colors.onSurface, fontSize: 14, fontWeight: '800' },
   balTotalValue: { color: colors.brandSecondary, fontSize: 16, fontWeight: '800' },
 
-  calCard: {
+  interestCard: {
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border,
     padding: spacing.md, marginBottom: spacing.md,
   },
-  calToggleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  interestHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
+  interestRateBadge: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '700' },
+  interestAccruedText: { color: colors.brandSecondary, fontSize: 12, fontWeight: '700', marginBottom: spacing.sm },
+  interestAccruedHint: { color: colors.mutedText, fontSize: 11, fontWeight: '500' },
   calToggleHint: { flex: 1, textAlign: 'right', color: colors.onWarning, fontSize: 12, fontWeight: '600' },
   calYearRow: {
     flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.sm, marginBottom: spacing.md,
@@ -442,7 +461,10 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   detailLabel: { color: colors.mutedText, fontSize: 12 },
   detailValue: { color: colors.onSurface, fontSize: 13, fontWeight: '600' },
 
-  calcToggleRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 4 },
+  calcToggleRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 8, marginTop: 4,
+    borderTopWidth: 1, borderTopColor: colors.border,
+  },
   calcToggleText: { flex: 1, color: colors.brandSecondary, fontSize: 12, fontWeight: '700' },
   calcBox: {
     backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
