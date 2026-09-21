@@ -47,7 +47,11 @@ export function EmployeeTabBar() {
   const { colors } = useTheme();
   const { hasModule } = useAuth();
   const router = useRouter();
-  const segments = useSegments();
+  // useSegments()'s compile-time type is only as wide as the app's generated
+  // route literals (a 1-tuple here, since this project doesn't check in
+  // .expo/types/router.d.ts) — at runtime it's always the full path segment
+  // array, so this reflects that rather than the narrower inferred type.
+  const segments = useSegments() as unknown as string[];
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [captureDoc, setCaptureDoc] = useState(false);
