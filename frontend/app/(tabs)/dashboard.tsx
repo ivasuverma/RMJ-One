@@ -95,7 +95,13 @@ function sanitizeKeySet(saved: string[] | null): Set<TileKey> {
 type TileDetailRow = { label: string; value: string };
 type TileSpec = {
   key: TileKey; show: boolean; icon: keyof typeof Ionicons.glyphMap; label: string; value: string;
-  route: string; details?: TileDetailRow[];
+  // route: what tapping the tile body opens — always the module itself now.
+  // dashboardRoute: what tapping the icon opens — the module's own
+  // analytics screen where one exists (owner-only; those screens
+  // self-redirect anyone else back to the module). Falls back to `route`
+  // for tiles with no separate analytics screen, since for those the
+  // "individual dashboard" is just the expanded detail rows below.
+  route: string; dashboardRoute?: string; details?: TileDetailRow[];
 };
 
 export default function DashboardScreen() {
@@ -282,10 +288,11 @@ export default function DashboardScreen() {
                 attendance: {
                   key: 'attendance', show: hasModule('attendance'), icon: 'people-outline', label: 'Attendance',
                   value: `${a.present}/${a.total}`,
-                  // Owner sees the analytics dashboard (day/week/month
-                  // present/late/absent charts); everyone else goes straight
-                  // to the regular Today/Payroll screen, same as before.
-                  route: user?.role === 'owner' ? '/attendance/analytics' : '/(tabs)/attendance',
+                  // Tile body always goes to the regular Today/Payroll
+                  // screen; tapping the icon opens the analytics dashboard
+                  // (day/week/month present/late/absent charts) — owner
+                  // only, it self-redirects anyone else back here.
+                  route: '/(tabs)/attendance', dashboardRoute: '/attendance/analytics',
                   details: [
                     { label: 'Present', value: String(a.present) }, { label: 'Absent', value: String(a.absent) },
                     { label: 'Late', value: String(a.late) }, { label: 'Not checked in', value: String(a.not_checked_in) },
@@ -303,9 +310,10 @@ export default function DashboardScreen() {
                 stock: {
                   key: 'stock', show: hasModule('samples'), icon: 'diamond-outline', label: 'Stock In/Out',
                   value: String(sm.with_karigar),
-                  // Owner sees the analytics dashboard; everyone else goes
-                  // straight to the with-karigar list, same as before.
-                  route: user?.role === 'owner' ? '/samples/analytics' : '/samples?status=with_karigar',
+                  // Tile body always goes to the with-karigar list; the icon
+                  // opens the analytics dashboard (owner only, self-redirects
+                  // anyone else back to the list).
+                  route: '/samples?status=with_karigar', dashboardRoute: '/samples/analytics',
                   details: [
                     { label: 'With karigar', value: String(sm.with_karigar) }, { label: 'Overdue', value: String(sm.overdue) },
                     { label: 'Received today', value: String(sm.received_today) },
@@ -323,9 +331,10 @@ export default function DashboardScreen() {
                 repairs: {
                   key: 'repairs', show: showRepairsTile, icon: 'construct-outline', label: 'Repairs',
                   value: String(r.total_open),
-                  // Owner sees the analytics dashboard; everyone else goes
-                  // straight to the repairs list, same as before.
-                  route: user?.role === 'owner' ? '/repairs/analytics' : '/repairs',
+                  // Tile body always goes to the repairs list; the icon
+                  // opens the analytics dashboard (owner only, self-redirects
+                  // anyone else back to the list).
+                  route: '/repairs', dashboardRoute: '/repairs/analytics',
                   details: [
                     { label: 'Issued', value: String(r.with_karigar) }, { label: 'Ready', value: String(r.ready) },
                     { label: 'Delivered today', value: String(r.delivered_today) }, { label: 'Overdue', value: String(r.overdue) },
@@ -342,12 +351,12 @@ export default function DashboardScreen() {
                 },
                 cashbook: {
                   key: 'cashbook', show: hasModule('cash_book'), icon: 'wallet-outline', label: 'Cash Book',
-                  // Owner sees the analytics dashboard (day/week/month
-                  // charts by Type); it self-redirects anyone else straight
-                  // to the regular day ledger, same place this tile used to
-                  // go for them.
+                  // Tile body always goes to the regular day ledger; the
+                  // icon opens the analytics dashboard (day/week/month
+                  // charts by Type) — owner only, self-redirects anyone
+                  // else back to the day ledger.
                   value: fmtCompactINR(cb.closing_balance),
-                  route: user?.role === 'owner' ? '/cashbook/analytics' : '/cashbook',
+                  route: '/cashbook', dashboardRoute: '/cashbook/analytics',
                   details: (cb.counters && cb.counters.length > 0)
                     ? cb.counters.map((c) => ({ label: c.name, value: fmtCompactINR(c.closing) }))
                     : [{ label: 'Received today', value: fmtCompactINR(cb.received_today) }, { label: 'Paid today', value: fmtCompactINR(cb.paid_today) }],
@@ -374,6 +383,7 @@ export default function DashboardScreen() {
                         folded={foldedTiles.has(key)}
                         onToggleFold={() => toggleFolded(key)}
                         onPress={() => router.push(t.route as any)}
+                        onOpenDashboard={() => router.push((t.dashboardRoute || t.route) as any)}
                       />
                     );
                   })}
@@ -479,11 +489,15 @@ function NeedsAttention({ items, onGo }: { items: AttnItem[]; onGo: (route: stri
    to sit), and the label always stay visible — folding only hides/reveals
    the extra breakdown rows (`details`), via a chevron next to the label.
    Tiles with no details (nothing extra to show) render without a chevron
-   at all, so there's nothing to tap. Nested Pressables (fold button inside
-   the tile's own onPress) is the same pattern used before — the inner one
-   captures the tap before it reaches the outer. ---------------- */
-function Tile({ t, folded, onToggleFold, onPress }: {
-  t: TileSpec; folded: boolean; onToggleFold: () => void; onPress: () => void;
+   at all, so there's nothing to tap. Three separate taps on one tile: the
+   body opens the module, the icon opens that module's own analytics
+   dashboard (falls back to the same module route where no dashboard
+   exists — see TileSpec.dashboardRoute), and the fold chevron expands or
+   collapses the detail rows in place. Nested Pressables (icon and fold
+   button inside the tile's own onPress) is the same pattern throughout —
+   each inner one captures the tap before it reaches the outer. ---------------- */
+function Tile({ t, folded, onToggleFold, onPress, onOpenDashboard }: {
+  t: TileSpec; folded: boolean; onToggleFold: () => void; onPress: () => void; onOpenDashboard: () => void;
 }) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
@@ -492,14 +506,16 @@ function Tile({ t, folded, onToggleFold, onPress }: {
     <View style={styles.tile} testID={`dash-tile-${t.key}`}>
       <Pressable onPress={onPress} style={({ pressed }) => pressed && { opacity: 0.85 }}>
         <View style={styles.tileTopRow}>
-          <View style={styles.tileIcon}><Ionicons name={t.icon} size={20} color={colors.brandSecondary} /></View>
+          <Pressable onPress={onOpenDashboard} hitSlop={8} testID={`dash-tile-${t.key}-icon`}>
+            <View style={styles.tileIcon}><Ionicons name={t.icon} size={20} color={colors.brandSecondary} /></View>
+          </Pressable>
           <Text style={styles.tileValueTop} numberOfLines={1}>{t.value}</Text>
         </View>
         <View style={styles.tileLabelRow}>
           <Text style={styles.tileLabel} numberOfLines={1}>{t.label}</Text>
           {hasDetails && (
             <Pressable onPress={onToggleFold} hitSlop={10} style={styles.tileFoldBtn} testID={`dash-tile-${t.key}-fold`}>
-              <Ionicons name={folded ? 'chevron-down' : 'chevron-up'} size={15} color={colors.mutedText} />
+              <Ionicons name={folded ? 'chevron-down' : 'chevron-up'} size={19} color={colors.mutedText} />
             </Pressable>
           )}
         </View>
@@ -915,7 +931,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   tileIcon: { width: 40, height: 40, borderRadius: 11, backgroundColor: colors.surfaceTertiary, alignItems: 'center', justifyContent: 'center' },
   tileValueTop: { color: colors.onSurface, fontSize: 15, fontWeight: '800', flexShrink: 1, marginLeft: spacing.sm },
   tileLabelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  tileFoldBtn: { padding: 2 },
+  tileFoldBtn: { padding: 6 },
   tileLabel: { color: colors.onSurface, fontSize: 13, fontWeight: '700' },
   tileDetails: { borderTopWidth: 1, borderTopColor: colors.border, marginTop: spacing.sm, paddingTop: spacing.sm, gap: 6 },
   tileDetailRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
