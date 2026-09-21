@@ -1222,7 +1222,6 @@ async def edit_bill(item_id: str, body: DeliverIn, user=Depends(require_admin_or
     extra = body.extra_charges if body.extra_charges is not None else item.get('bill_extra_charges', 0) or 0
     prev_balance = body.previous_balance if body.previous_balance is not None else item.get('bill_previous_balance', 0) or 0
     billed_amount = round(prev_balance + labour + material_adj + extra, 2)
-    iso = now_utc().isoformat()
     weight_rate = body.weight_rate if body.weight_rate is not None else item.get('bill_weight_rate', 0) or 0
     value_add = body.value_add if body.value_add is not None else item.get('bill_value_add', 0) or 0
     await db.repair_items.update_one({'id': item_id}, {'$set': {

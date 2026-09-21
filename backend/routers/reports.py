@@ -246,7 +246,6 @@ async def _compute_dashboard() -> dict:
     tasks_done_today = await t_tdone
 
     # Business snapshot — revenue, intake, and who's carrying an open balance.
-    month_prefix = d[:7]
     delivered_billed = await t_billed
     revenue_today = sum(i.get('billed_amount') or 0 for i in delivered_billed if (i.get('delivered_at') or '').startswith(d))
     revenue_month = sum(i.get('billed_amount') or 0 for i in delivered_billed)
