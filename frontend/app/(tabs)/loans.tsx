@@ -67,6 +67,9 @@ export default function GoldLoansScreen() {
             {refreshing ? <ActivityIndicator size="small" color={colors.onSurface} /> : <Ionicons name="refresh" size={15} color={colors.onSurface} />}
           </Pressable>
         </View>
+        <Pressable onPress={() => router.push('/loans/calculator' as any)} style={styles.iconBtn} testID="loan-calculator-btn" hitSlop={12} accessibilityLabel="Gold value calculator">
+          <Ionicons name="calculator-outline" size={19} color={colors.onSurface} />
+        </Pressable>
         <Pressable onPress={() => router.push('/loans/new' as any)} style={[styles.iconBtn, styles.addBtn]} testID="new-loan-btn" hitSlop={12}>
           <Ionicons name="add" size={22} color={colors.onBrandPrimary} />
         </Pressable>
