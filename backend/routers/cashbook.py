@@ -45,6 +45,12 @@ from server import (
 
 router = APIRouter()
 
+# Kept in sync with frontend/src/theme/palettes.ts's counterColorKeys — an
+# invalid/unknown value is just ignored (counter falls back to the app's
+# default cycling colour) rather than rejected, so this list can grow
+# without a hard failure on older clients.
+COUNTER_COLOR_KEYS = {'gold', 'blue', 'green', 'amber', 'red'}
+
 
 async def _get_counter(counter_id: str) -> dict:
     counter = await db.cashbook_counters.find_one({'id': counter_id}, {'_id': 0})
@@ -114,6 +120,7 @@ async def create_cashbook_counter(body: CashBookCounterIn, user=Depends(require_
     counter_id = str(uuid.uuid4())
     counter = {
         'id': counter_id, 'name': body.name.strip(), 'opening_balance': body.opening_balance or 0,
+        'color': body.color if body.color in COUNTER_COLOR_KEYS else None,
         'active': True, 'created_at': now_utc().isoformat(), 'created_by': user['name'],
     }
     await db.cashbook_counters.insert_one(dict(counter))
@@ -133,6 +140,8 @@ async def update_cashbook_counter(counter_id: str, body: CashBookCounterUpdateIn
         upd['opening_balance'] = body.opening_balance
     if body.active is not None:
         upd['active'] = body.active
+    if body.color is not None:
+        upd['color'] = body.color if body.color in COUNTER_COLOR_KEYS else None
     if upd:
         await db.cashbook_counters.update_one({'id': counter_id}, {'$set': upd})
         await log_audit(user, 'cashbook.counter.update', 'cashbook_counter', counter_id, counter['name'], upd)

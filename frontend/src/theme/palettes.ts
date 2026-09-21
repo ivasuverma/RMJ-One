@@ -69,15 +69,35 @@ export const lightColors: ThemeColors = {
 };
 
 // Gives each Cash Book counter its own colour (cycling through the tinted
-// semantic pairs below) so counters stay visually distinct at a glance, not
-// just by label — used by both the classic and v2 Cash Book screens.
-export const counterTones = (colors: ThemeColors) => [
-  { bg: colors.brandTertiary, text: colors.brandSecondary },
-  { bg: colors.info, text: colors.onInfo },
-  { bg: colors.success, text: colors.onSuccess },
-  { bg: colors.warning, text: colors.onWarning },
-  { bg: colors.error, text: colors.onError },
-];
+// semantic pairs below by default, or a colour the owner picked explicitly
+// in counter settings) so counters — and the whole Cash Book page while
+// that counter is open — stay visually distinct at a glance, not just by
+// label. Used by both the classic and v2 Cash Book screens.
+export const counterColorKeys = ['gold', 'blue', 'green', 'amber', 'red'] as const;
+export type CounterColorKey = typeof counterColorKeys[number];
+
+export const counterTones = (colors: ThemeColors): Record<CounterColorKey, { bg: string; text: string }> => ({
+  gold: { bg: colors.brandTertiary, text: colors.brandSecondary },
+  blue: { bg: colors.info, text: colors.onInfo },
+  green: { bg: colors.success, text: colors.onSuccess },
+  amber: { bg: colors.warning, text: colors.onWarning },
+  red: { bg: colors.error, text: colors.onError },
+});
+
+// Labelled options for a colour-picker UI (Cash Book > counter settings).
+export const counterColorOptions = (colors: ThemeColors) => {
+  const tones = counterTones(colors);
+  return counterColorKeys.map((key) => ({ key, label: key[0].toUpperCase() + key.slice(1), swatch: tones[key].text }));
+};
+
+// A counter's chosen colour if it picked one, else a stable cycling fallback
+// by list position — so every counter still gets a distinct colour even
+// before anyone sets one explicitly.
+export const counterToneFor = (colors: ThemeColors, color: string | null | undefined, index: number) => {
+  const tones = counterTones(colors);
+  if (color && (counterColorKeys as readonly string[]).includes(color)) return tones[color as CounterColorKey];
+  return tones[counterColorKeys[index % counterColorKeys.length]];
+};
 
 // Dark — the "RMJ One" signature look (matches the v2 design comp): a
 // near-black #0B0B0C canvas, layered #161619 / #1E1E22 cards with hairline

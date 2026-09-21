@@ -13,7 +13,7 @@ import { DateField } from '@/src/components/DateField';
 import { displayDateOnlyWithWeekday, localDateStr, todayIST } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
-import { counterTones } from '@/src/theme/palettes';
+import { counterColorOptions, counterToneFor } from '@/src/theme/palettes';
 import { useAuth } from '@/src/auth/AuthContext';
 import { ErrorState } from '@/src/components/ui';
 
@@ -28,7 +28,7 @@ type DayData = {
   date: string; counter_id: string; counter_name: string; opening_balance: number; entries: Entry[];
   total_received: number; total_paid: number; closing_balance: number;
 };
-type Counter = { id: string; name: string; opening_balance: number; active: boolean; created_at: string; created_by?: string };
+type Counter = { id: string; name: string; opening_balance: number; color?: string | null; active: boolean; created_at: string; created_by?: string };
 // Id+name only, for every active counter regardless of this employee's own
 // assigned counters — used solely to pick a transfer partner (see
 // /cashbook/counters/transfer-options: naming a counter as a transfer
@@ -67,7 +67,7 @@ export default function CashBookScreen() {
   const [counterId, setCounterId] = useState('');
   const [countersLoading, setCountersLoading] = useState(true);
   // null = counter list view (inside Manage mode); non-null = add/edit form for one counter
-  const [counterForm, setCounterForm] = useState<{ id: string | null; name: string; opening_balance: string } | null>(null);
+  const [counterForm, setCounterForm] = useState<{ id: string | null; name: string; opening_balance: string; color: string } | null>(null);
   // Unrestricted list of every active counter (id+name), for the transfer
   // picker — deliberately separate from `counters` above, which is
   // filtered down to whatever this employee is assigned to.
@@ -226,11 +226,11 @@ export default function CashBookScreen() {
       let selectId: string | undefined = counterForm.id || undefined;
       if (counterForm.id) {
         await api.put(`/cashbook/counters/${counterForm.id}`, {
-          name: counterForm.name.trim(), opening_balance: parseFloat(counterForm.opening_balance) || 0,
+          name: counterForm.name.trim(), opening_balance: parseFloat(counterForm.opening_balance) || 0, color: counterForm.color,
         });
       } else {
         const created = await api.post<Counter>('/cashbook/counters', {
-          name: counterForm.name.trim(), opening_balance: parseFloat(counterForm.opening_balance) || 0,
+          name: counterForm.name.trim(), opening_balance: parseFloat(counterForm.opening_balance) || 0, color: counterForm.color,
         });
         selectId = created.id;
       }
@@ -259,6 +259,11 @@ export default function CashBookScreen() {
   const received = day?.entries.filter((e) => e.type === 'received') || [];
   const paid = day?.entries.filter((e) => e.type === 'paid') || [];
   const isToday = date === todayIST();
+
+  // Tints the whole page to the selected counter's colour, so switching
+  // counters is unmistakable even at a glance — matches its chip's colour.
+  const selectedCounterIndex = counters.findIndex((c) => c.id === counterId);
+  const pageTone = selectedCounterIndex >= 0 ? counterToneFor(colors, counters[selectedCounterIndex].color, selectedCounterIndex) : null;
 
   const renderEntry = (e: Entry, amountColor: string) => {
     // A transfer shows only the other counter's name + the swap sign — the
@@ -290,7 +295,7 @@ export default function CashBookScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.root} edges={['top']} testID="cashbook-screen">
+    <SafeAreaView style={[styles.root, pageTone && { backgroundColor: pageTone.bg }]} edges={['top']} testID="cashbook-screen">
       <View style={styles.header}>
         <Pressable onPress={onBack} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
@@ -339,8 +344,7 @@ export default function CashBookScreen() {
           {counters.length > 1 && (
             <View style={styles.counterChipsRow}>
               {counters.map((c, i) => {
-                const tones = counterTones(colors);
-                const tone = tones[i % tones.length];
+                const tone = counterToneFor(colors, c.color, i);
                 const active = counterId === c.id;
                 return (
                   <Pressable
@@ -375,7 +379,7 @@ export default function CashBookScreen() {
                 {isOwner ? 'No Cash Book counters yet — add one to start recording entries.' : 'No Cash Book counters have been set up yet.'}
               </Text>
               {isOwner && (
-                <Pressable onPress={() => { setMode('settings'); setCounterForm({ id: null, name: '', opening_balance: '0' }); }} style={styles.addCounterBtn} testID="cashbook-add-first-counter">
+                <Pressable onPress={() => { setMode('settings'); setCounterForm({ id: null, name: '', opening_balance: '0', color: '' }); }} style={styles.addCounterBtn} testID="cashbook-add-first-counter">
                   <Ionicons name="add" size={16} color={colors.onBrandPrimary} />
                   <Text style={styles.addCounterBtnText}>Add Counter</Text>
                 </Pressable>
@@ -461,19 +465,6 @@ export default function CashBookScreen() {
                 </Text>
               </View>
             )}
-            {counters.length > 1 && (
-              <>
-                <Text style={styles.label}>Counter</Text>
-                <View style={styles.chipRow}>
-                  {counters.map((c) => (
-                    <Pressable key={c.id} onPress={() => setCounterId(c.id)} style={[styles.typeChip, counterId === c.id && styles.typeChipReceived]} testID={`cashbook-form-counter-${c.id}`}>
-                      <Text style={[styles.typeChipText, counterId === c.id && styles.typeChipTextActive]}>{c.name}</Text>
-                    </Pressable>
-                  ))}
-                </View>
-              </>
-            )}
-
             <View style={styles.chipRow}>
               {(['received', 'paid'] as const).map((t) => (
                 <Pressable key={t} onPress={() => setEntryType(t)} style={[styles.typeChip, entryType === t && (t === 'received' ? styles.typeChipReceived : styles.typeChipPaid)]} testID={`cashbook-type-${t}`}>
@@ -610,6 +601,28 @@ export default function CashBookScreen() {
                   : 'One-time starting balance for this counter — used only as the base for its very first day. Every day after that carries forward automatically.'}
               </Text>
 
+              <Text style={styles.label}>Background colour</Text>
+              <View style={styles.colorRow}>
+                <Pressable
+                  onPress={() => setCounterForm((f) => (f ? { ...f, color: '' } : f))}
+                  style={[styles.colorSwatch, !counterForm.color && styles.colorSwatchSelected]}
+                  testID="counter-color-auto"
+                >
+                  {!counterForm.color && <Ionicons name="checkmark" size={16} color={colors.onSurface} />}
+                </Pressable>
+                {counterColorOptions(colors).map((opt) => (
+                  <Pressable
+                    key={opt.key}
+                    onPress={() => setCounterForm((f) => (f ? { ...f, color: opt.key } : f))}
+                    style={[styles.colorSwatch, { backgroundColor: opt.swatch }, counterForm.color === opt.key && styles.colorSwatchSelected]}
+                    testID={`counter-color-${opt.key}`}
+                  >
+                    {counterForm.color === opt.key && <Ionicons name="checkmark" size={16} color={colors.onBrandPrimary} />}
+                  </Pressable>
+                ))}
+              </View>
+              <Text style={styles.hint}>Tints this counter's chip, and the whole Cash Book page while it's selected. Leave the first (grey) swatch to use the app's default.</Text>
+
               <Pressable onPress={saveCounter} disabled={busy} style={[styles.saveBtn, busy && { opacity: 0.6 }]} testID="counter-form-save">
                 {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.saveBtnText}>{counterForm.id ? 'Save Changes' : 'Add Counter'}</Text>}
               </Pressable>
@@ -631,7 +644,7 @@ export default function CashBookScreen() {
             <>
               <Text style={styles.hint}>Each counter keeps its own entries and its own running balance — use this for separate cash registers or tills.</Text>
               {counters.map((c) => (
-                <Pressable key={c.id} onPress={() => setCounterForm({ id: c.id, name: c.name, opening_balance: String(c.opening_balance) })} style={styles.counterManageRow} testID={`counter-manage-${c.id}`}>
+                <Pressable key={c.id} onPress={() => setCounterForm({ id: c.id, name: c.name, opening_balance: String(c.opening_balance), color: c.color || '' })} style={styles.counterManageRow} testID={`counter-manage-${c.id}`}>
                   <View style={{ flex: 1, minWidth: 0 }}>
                     <Text style={styles.entryName}>{c.name}</Text>
                     <Text style={styles.entryNote}>Opening balance {fmtINR(c.opening_balance)}</Text>
@@ -639,7 +652,7 @@ export default function CashBookScreen() {
                   <Ionicons name="chevron-forward" size={16} color={colors.mutedText} />
                 </Pressable>
               ))}
-              <Pressable onPress={() => setCounterForm({ id: null, name: '', opening_balance: '0' })} style={styles.addCounterBtn} testID="add-counter-btn">
+              <Pressable onPress={() => setCounterForm({ id: null, name: '', opening_balance: '0', color: '' })} style={styles.addCounterBtn} testID="add-counter-btn">
                 <Ionicons name="add" size={16} color={colors.onBrandPrimary} />
                 <Text style={styles.addCounterBtnText}>Add Counter</Text>
               </Pressable>
@@ -745,6 +758,12 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     color: colors.onSurface, paddingHorizontal: spacing.md, paddingVertical: 12, fontSize: 14,
   },
   hint: { color: colors.mutedText, fontSize: 12, marginBottom: spacing.md },
+  colorRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.sm },
+  colorSwatch: {
+    width: 36, height: 36, borderRadius: 18, backgroundColor: colors.surfaceTertiary,
+    borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center',
+  },
+  colorSwatchSelected: { borderWidth: 2, borderColor: colors.onSurface },
   amountNameRow: { flexDirection: 'row', gap: spacing.sm },
   transferInfoBox: {
     flexDirection: 'row', alignItems: 'flex-start', gap: 6,

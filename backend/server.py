@@ -1102,12 +1102,17 @@ class CashBookCounterIn(BaseModel):
     # cash position when the shop switches over from the paper book — every
     # day after that carries forward automatically from entries alone.
     opening_balance: Optional[float] = 0
+    # One of COUNTER_COLOR_KEYS below, or unset/empty for the app's default
+    # cycling colour — tints this counter's chip and (while it's the
+    # selected counter) the whole Cash Book page.
+    color: Optional[str] = None
 
 
 class CashBookCounterUpdateIn(BaseModel):
     name: Optional[str] = None
     opening_balance: Optional[float] = None
     active: Optional[bool] = None
+    color: Optional[str] = None
 
 
 class CashBookQuickNameIn(BaseModel):
