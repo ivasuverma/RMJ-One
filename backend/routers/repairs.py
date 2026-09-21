@@ -1308,7 +1308,9 @@ async def repairs_analytics(
     by repair type and by karigar — same day/week/month period shape as
     Cash Book and Attendance analytics. Aggregated in Python rather than a
     Mongo pipeline, matching this module's existing style (cash-ledger,
-    loss-ledger) at a shop's scale."""
+    loss-ledger) at a shop's scale — except revenue_by_mode below, which
+    mirrors GET /cash-ledger's own $group/$cond by_mode pipeline instead,
+    since that's a genuine per-mode rollup best left to Mongo."""
     d = date.fromisoformat(date_)
     if period == 'day':
         start = end = d
@@ -1323,12 +1325,20 @@ async def repairs_analytics(
 
     received_items = await db.repair_items.find(
         {'created_at': {'$gte': start_s, '$lt': end_next_s}},
-        {'_id': 0, 'created_at': 1, 'repair_type': 1},
+        {'_id': 0, 'created_at': 1, 'repair_type': 1, 'gross_weight': 1},
     ).to_list(20000)
     delivered_items = await db.repair_items.find(
         {'delivered_at': {'$gte': start_s, '$lt': end_next_s}},
-        {'_id': 0, 'delivered_at': 1, 'billed_amount': 1, 'karigar_name': 1},
+        {'_id': 0, 'delivered_at': 1, 'billed_amount': 1, 'karigar_name': 1, 'gross_weight': 1, 'fine_weight': 1},
     ).to_list(20000)
+    # Same "open and past its due date" definition as the dashboard's own
+    # repairs_overdue tile (reports.py _compute_dashboard) — not period-scoped,
+    # a current snapshot of the whole backlog, so this number always agrees
+    # with what the dashboard and the Outstanding Repairs list show.
+    today = today_str()
+    overdue_count = await db.repair_items.count_documents({
+        'status': {'$ne': 'delivered'}, 'due_date': {'$ne': None, '$lt': today},
+    })
 
     by_type: dict = {}
     for i in received_items:
@@ -1339,25 +1349,51 @@ async def repairs_analytics(
     for i in received_items:
         by_date.setdefault(i['created_at'][:10], {'received': 0, 'delivered': 0})['received'] += 1
 
+    weight_received = round(sum(float(i.get('gross_weight') or 0) for i in received_items), 3)
+
     revenue = 0.0
+    weight_delivered = 0.0
     by_karigar: dict = {}
     for i in delivered_items:
         revenue += float(i.get('billed_amount') or 0)
+        # Fine weight is what actually left the shop's gold stock — falls back
+        # to gross for the rare legacy doc that never got a fine_weight set.
+        weight_delivered += float(i.get('fine_weight') if i.get('fine_weight') is not None else (i.get('gross_weight') or 0))
         by_date.setdefault(i['delivered_at'][:10], {'received': 0, 'delivered': 0})['delivered'] += 1
         kn = i.get('karigar_name')
         if kn:
-            by_karigar[kn] = by_karigar.get(kn, 0) + 1
+            agg = by_karigar.setdefault(kn, {'count': 0, 'revenue': 0.0})
+            agg['count'] += 1
+            agg['revenue'] += float(i.get('billed_amount') or 0)
+    weight_delivered = round(weight_delivered, 3)
+
+    # Delivered-in-period revenue split by payment mode, same $group/$cond
+    # rollup pattern as GET /cash-ledger's by_mode (a null/unset mode falls
+    # back to 'cash', matching that endpoint's own fallback).
+    revenue_by_mode_agg = [m async for m in db.repair_items.aggregate([
+        {'$match': {'delivered_at': {'$gte': start_s, '$lt': end_next_s}}},
+        {'$group': {
+            '_id': '$payment_mode',
+            'amount': {'$sum': {'$ifNull': ['$billed_amount', 0]}},
+            'count': {'$sum': 1},
+        }},
+        {'$sort': {'amount': -1}},
+    ])]
+    revenue_by_mode = [{'mode': m['_id'] or 'cash', 'amount': round(m['amount'], 2), 'count': m['count']} for m in revenue_by_mode_agg]
 
     return {
         'period': period, 'start_date': start_s, 'end_date': end_s,
         'total_received': len(received_items), 'total_delivered': len(delivered_items),
         'revenue': round(revenue, 2),
+        'weight_received': weight_received, 'weight_delivered': weight_delivered,
+        'overdue_count': overdue_count,
+        'revenue_by_mode': revenue_by_mode,
         'by_type': sorted(
             [{'category': k, 'count': v} for k, v in by_type.items()], key=lambda x: -x['count'],
         ),
         'trend': [{'date': ds, **v} for ds, v in sorted(by_date.items())],
         'top_karigars': sorted(
-            [{'name': k, 'count': v} for k, v in by_karigar.items()], key=lambda x: -x['count'],
+            [{'name': k, 'count': v['count'], 'revenue': round(v['revenue'], 2)} for k, v in by_karigar.items()], key=lambda x: -x['count'],
         )[:5],
     }
 

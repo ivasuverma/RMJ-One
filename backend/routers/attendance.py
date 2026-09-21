@@ -256,6 +256,8 @@ async def attendance_analytics(
     trend: dict = {}
     late_by_emp: dict = {}
     absent_by_emp: dict = {}
+    hours_sum = 0.0
+    hours_count = 0
 
     d_iter = start
     while d_iter <= end_capped:
@@ -264,7 +266,9 @@ async def attendance_analytics(
             d_iter += timedelta(days=1)
             continue
         is_today = ds == today_ds
-        day_bucket = trend.setdefault(ds, {'present': 0, 'absent': 0})
+        day_bucket = trend.setdefault(ds, {
+            'present': 0, 'absent': 0, 'late': 0, 'half_day': 0, 'missing_punch': 0, 'leave': 0,
+        })
         for e in employees:
             a = att_map.get((e['id'], ds))
             if a:
@@ -280,8 +284,16 @@ async def attendance_analytics(
                 counts[bucket] += 1
             if bucket in ('present', 'late', 'half_day'):
                 day_bucket['present'] += 1
+                wh = a.get('working_hours') if a else None
+                if wh:
+                    hours_sum += wh
+                    hours_count += 1
             elif bucket in ('absent', 'missing_punch'):
                 day_bucket['absent'] += 1
+            # Per-status counts alongside the present/absent aggregates above, so the
+            # trend can also break out late/half_day/missing_punch/leave per day.
+            if bucket in ('late', 'half_day', 'missing_punch', 'leave'):
+                day_bucket[bucket] += 1
             if bucket == 'late':
                 late_by_emp[e['id']] = late_by_emp.get(e['id'], 0) + 1
             elif bucket == 'absent':
@@ -290,7 +302,7 @@ async def attendance_analytics(
 
     def top(counter):
         return [{'employee_id': k, 'name': name_by_id.get(k, '?'), 'count': v}
-                for k, v in sorted(counter.items(), key=lambda kv: -kv[1])[:5] if v > 0]
+                for k, v in sorted(counter.items(), key=lambda kv: -kv[1])[:10] if v > 0]
 
     return {
         'period': period, 'start_date': start_s, 'end_date': end_s,
@@ -301,6 +313,7 @@ async def attendance_analytics(
         'trend': [{'date': ds, **v} for ds, v in sorted(trend.items())],
         'top_late': top(late_by_emp),
         'top_absent': top(absent_by_emp),
+        'avg_working_hours': round(hours_sum / hours_count, 1) if hours_count > 0 else None,
     }
 
 

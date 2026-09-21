@@ -16,10 +16,13 @@ import { useTheme } from '@/src/theme/ThemeContext';
 type Period = 'day' | 'week' | 'month';
 type TypeCount = { category: string; count: number };
 type TrendPoint = { date: string; received: number; delivered: number };
-type NameCount = { name: string; count: number };
+type NameCount = { name: string; count: number; revenue: number };
+type ModeAmount = { mode: string; amount: number; count: number };
 type Analytics = {
   period: Period; start_date: string; end_date: string;
   total_received: number; total_delivered: number; revenue: number;
+  weight_received: number; weight_delivered: number; overdue_count: number;
+  revenue_by_mode: ModeAmount[];
   by_type: TypeCount[]; trend: TrendPoint[]; top_karigars: NameCount[];
 };
 
@@ -29,6 +32,7 @@ const PERIODS: { key: Period; label: string }[] = [
 const PALETTE = ['#A9812F', '#5B8DB8', '#8A6BB0', '#4E9E82', '#C0764A', '#B0567A', '#5E7A9E', '#9E9247'];
 
 const fmtINR = (n: number) => `₹${Math.round(n || 0).toLocaleString('en-IN')}`;
+const fmtG = (n: number) => `${(n || 0).toFixed(3)}g`;
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const DAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
@@ -132,6 +136,21 @@ export default function RepairsAnalyticsScreen() {
             </View>
           </View>
 
+          <View style={styles.summaryRow}>
+            <View style={styles.summaryCard}>
+              <Text style={styles.summaryLabel}>Wt. Received</Text>
+              <Text style={styles.summaryValue}>{fmtG(data.weight_received)}</Text>
+            </View>
+            <View style={styles.summaryCard}>
+              <Text style={styles.summaryLabel}>Wt. Delivered</Text>
+              <Text style={styles.summaryValue}>{fmtG(data.weight_delivered)}</Text>
+            </View>
+            <View style={styles.summaryCard}>
+              <Text style={styles.summaryLabel}>Overdue</Text>
+              <Text style={[styles.summaryValue, data.overdue_count > 0 && { color: colors.onWarning }]}>{data.overdue_count}</Text>
+            </View>
+          </View>
+
           {period !== 'day' && data.trend.length > 0 && (
             <>
               <Text style={styles.sectionLabel}>Trend</Text>
@@ -164,6 +183,23 @@ export default function RepairsAnalyticsScreen() {
           <Text style={styles.sectionLabel}>Received by Repair Type</Text>
           <TypeBreakdown data={data.by_type} total={totalByType} colors={colors} styles={styles} />
 
+          {data.revenue_by_mode.length > 0 && (
+            <>
+              <Text style={styles.sectionLabel}>Revenue by Payment Mode</Text>
+              <View style={styles.leaderCard}>
+                {data.revenue_by_mode.map((m, i) => (
+                  <View key={m.mode} style={[styles.leaderRow, i === data.revenue_by_mode.length - 1 && { borderBottomWidth: 0 }]} testID={`mode-${m.mode}`}>
+                    <Text style={styles.leaderName} numberOfLines={1}>{(m.mode || 'cash').toUpperCase()}</Text>
+                    <View style={styles.leaderRight}>
+                      <Text style={styles.leaderCount}>{fmtINR(m.amount)}</Text>
+                      <Text style={styles.leaderRevenue}>{m.count} bill{m.count === 1 ? '' : 's'}</Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            </>
+          )}
+
           {data.top_karigars.length > 0 && (
             <>
               <Text style={styles.sectionLabel}>Top Karigars (Delivered)</Text>
@@ -171,7 +207,10 @@ export default function RepairsAnalyticsScreen() {
                 {data.top_karigars.map((r, i) => (
                   <View key={r.name} style={[styles.leaderRow, i === data.top_karigars.length - 1 && { borderBottomWidth: 0 }]} testID={`top-karigar-${i}`}>
                     <Text style={styles.leaderName} numberOfLines={1}>{r.name}</Text>
-                    <Text style={styles.leaderCount}>{r.count}</Text>
+                    <View style={styles.leaderRight}>
+                      <Text style={styles.leaderCount}>{r.count}</Text>
+                      <Text style={styles.leaderRevenue}>{fmtINR(r.revenue)}</Text>
+                    </View>
                   </View>
                 ))}
               </View>
@@ -294,5 +333,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     paddingVertical: 12, paddingHorizontal: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.divider,
   },
   leaderName: { flex: 1, color: colors.onSurface, fontSize: 14, fontWeight: '600' },
-  leaderCount: { color: colors.onSurface, fontSize: 15, fontWeight: '800' },
+  leaderCount: { color: colors.onSurface, fontSize: 15, fontWeight: '800', textAlign: 'right' },
+  leaderRight: { alignItems: 'flex-end', gap: 2 },
+  leaderRevenue: { color: colors.onSuccess, fontSize: 11.5, fontWeight: '700' },
 });

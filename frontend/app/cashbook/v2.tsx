@@ -165,6 +165,7 @@ export default function CashBookScreen() {
     if (!amt || amt <= 0) { toast.error('Enter an amount greater than 0'); return; }
     if (!counterId) { toast.error('Add a Cash Book counter first'); return; }
     if (isTransfer && !editing && !dest) { toast.error('Pick where the cash is going'); return; }
+    if (!isTransfer && !tag.trim()) { toast.error('Pick a tag for this entry'); return; }
     const label = isTransfer ? `Transfer ${dir === 'out' ? 'to' : 'from'} ${counterName(dest)}` : (name.trim() || tag.trim());
     if (!label) { toast.error('Enter a name or pick a tag'); return; }
     setBusy(true);
@@ -224,7 +225,7 @@ export default function CashBookScreen() {
   const editingTransfer = !!editing?.linked_entry_id;
 
   return (
-    <SafeAreaView style={[styles.root, pageTone && { backgroundColor: pageTone.bg }]} edges={['top']} testID="cashbook-screen">
+    <SafeAreaView style={[styles.root, pageTone && { backgroundColor: pageTone.pageBg }]} edges={['top']} testID="cashbook-screen">
       <View style={styles.header}>
         <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
@@ -405,8 +406,7 @@ export default function CashBookScreen() {
           {isTransfer ? (
             !editing ? (
               <View>
-                <SegmentedControl testID="cashbook-dir" options={[{ key: 'out', label: 'Send out' }, { key: 'in', label: 'Receive in' }]} value={dir} onChange={(k) => setDir(k as 'out' | 'in')} />
-                <Text style={[styles.label, { marginTop: spacing.md }]}>
+                <Text style={styles.label}>
                   {dir === 'out' ? `Move cash from ${counters.find((c) => c.id === counterId)?.name || 'here'} to` : `Bring cash into ${counters.find((c) => c.id === counterId)?.name || 'here'} from`}
                 </Text>
                 <View style={styles.chips}>
@@ -426,7 +426,7 @@ export default function CashBookScreen() {
                   placeholderTextColor={colors.mutedText} style={styles.input} />
               </View>
               <View>
-                <Text style={styles.label}>Tag (optional)</Text>
+                <Text style={styles.label}>Tag</Text>
                 <View style={styles.chips}>
                   {tags.map((q) => (
                     <Pressable key={q.id} onPress={() => setTag(tag === q.name ? '' : q.name)} style={[styles.chip, tag === q.name && styles.chipOn]}>

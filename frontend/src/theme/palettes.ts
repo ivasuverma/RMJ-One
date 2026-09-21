@@ -133,13 +133,38 @@ const EXTRA_COUNTER_TONES: Record<'light' | 'dark', Record<'purple' | 'teal' | '
   },
 };
 
-export const counterTones = (colors: ThemeColors, scheme: 'light' | 'dark'): Record<CounterColorKey, { bg: string; text: string }> => ({
-  gold: { bg: colors.brandTertiary, text: colors.brandSecondary },
-  blue: { bg: colors.info, text: colors.onInfo },
-  green: { bg: colors.success, text: colors.onSuccess },
-  red: { bg: colors.error, text: colors.onError },
-  ...EXTRA_COUNTER_TONES[scheme],
+// Alpha-blends a solid hex colour over another solid hex colour and returns
+// a solid hex result — used for the Cash Book full-page tint below. A plain
+// translucent `rgba(...)` background only reads correctly if whatever sits
+// behind the screen happens to be the dark canvas; on the tab-navigator's
+// base screen that isn't guaranteed (it rendered washed-out/light in dark
+// mode), so the page tint is pre-mixed into a solid colour against the
+// theme's own surface instead of left translucent.
+const hexToRgb = (hex: string) => ({
+  r: parseInt(hex.slice(1, 3), 16),
+  g: parseInt(hex.slice(3, 5), 16),
+  b: parseInt(hex.slice(5, 7), 16),
 });
+const blendSolid = (fgHex: string, alpha: number, bgHex: string) => {
+  const fg = hexToRgb(fgHex);
+  const bg = hexToRgb(bgHex);
+  const mix = (a: number, b: number) => Math.round(a * alpha + b * (1 - alpha));
+  const toHex = (v: number) => v.toString(16).padStart(2, '0');
+  return `#${toHex(mix(fg.r, bg.r))}${toHex(mix(fg.g, bg.g))}${toHex(mix(fg.b, bg.b))}`;
+};
+
+export const counterTones = (colors: ThemeColors, scheme: 'light' | 'dark'): Record<CounterColorKey, { bg: string; text: string; pageBg: string }> => {
+  const base: Record<CounterColorKey, { bg: string; text: string }> = {
+    gold: { bg: colors.brandTertiary, text: colors.brandSecondary },
+    blue: { bg: colors.info, text: colors.onInfo },
+    green: { bg: colors.success, text: colors.onSuccess },
+    red: { bg: colors.error, text: colors.onError },
+    ...EXTRA_COUNTER_TONES[scheme],
+  };
+  return Object.fromEntries(
+    counterColorKeys.map((key) => [key, { ...base[key], pageBg: blendSolid(base[key].text, 0.1, colors.surface) }]),
+  ) as Record<CounterColorKey, { bg: string; text: string; pageBg: string }>;
+};
 
 // Labelled options for a colour-picker UI (Cash Book > counter settings).
 export const counterColorOptions = (colors: ThemeColors, scheme: 'light' | 'dark') => {

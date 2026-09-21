@@ -394,10 +394,12 @@ async def cashbook_analytics(
     _: dict = Depends(require_owner),
 ):
     """Shop-wide (every counter combined) totals by Type for the selected
-    day/week/month, plus a per-day trend for the bar chart. Aggregated in
-    Python rather than a Mongo pipeline — a shop's cash book is at most a
-    few hundred entries a month, nowhere near where that would matter, and
-    it keeps this readable next to the rest of the module's style."""
+    day/week/month, plus a per-day trend for the bar chart and a per-counter
+    breakdown (every active counter, including ones with no activity this
+    period). Aggregated in Python rather than a Mongo pipeline — a shop's
+    cash book is at most a few hundred entries a month, nowhere near where
+    that would matter, and it keeps this readable next to the rest of the
+    module's style."""
     d = _date.fromisoformat(date_)
     if period == 'day':
         start = end = d
@@ -410,12 +412,13 @@ async def cashbook_analytics(
     start_s, end_s = start.isoformat(), end.isoformat()
 
     entries = await db.cashbook_entries.find(
-        {'date': {'$gte': start_s, '$lte': end_s}}, {'_id': 0, 'date': 1, 'type': 1, 'amount': 1, 'category': 1},
+        {'date': {'$gte': start_s, '$lte': end_s}}, {'_id': 0, 'date': 1, 'type': 1, 'amount': 1, 'category': 1, 'counter_id': 1},
     ).to_list(20000)
 
     by_type = {'received': {}, 'paid': {}}
     totals = {'received': 0.0, 'paid': 0.0}
     by_date: dict = {}
+    by_counter: dict = {}
     for e in entries:
         t = e['type']
         cat = (e.get('category') or '').strip() or 'Uncategorized'
@@ -424,11 +427,27 @@ async def cashbook_analytics(
         totals[t] += amt
         day_bucket = by_date.setdefault(e['date'], {'received': 0.0, 'paid': 0.0})
         day_bucket[t] += amt
+        counter_bucket = by_counter.setdefault(e.get('counter_id'), {'received': 0.0, 'paid': 0.0})
+        counter_bucket[t] += amt
 
     trend = [
         {'date': ds, 'received': round(v['received'], 2), 'paid': round(v['paid'], 2)}
         for ds, v in sorted(by_date.items())
     ]
+
+    # Every active counter, even ones with no activity this period — so a
+    # shop can see "this counter had nothing this period" too, same as the
+    # totals above would silently omit it otherwise.
+    counters = await db.cashbook_counters.find({'active': True}, {'_id': 0, 'id': 1, 'name': 1}).sort('name', 1).to_list(200)
+    by_counter_rows = []
+    for c in counters:
+        v = by_counter.get(c['id'], {'received': 0.0, 'paid': 0.0})
+        by_counter_rows.append({
+            'counter_id': c['id'], 'counter_name': c['name'],
+            'received': round(v['received'], 2), 'paid': round(v['paid'], 2),
+            'net': round(v['received'] - v['paid'], 2),
+        })
+
     return {
         'period': period, 'start_date': start_s, 'end_date': end_s,
         'total_received': round(totals['received'], 2), 'total_paid': round(totals['paid'], 2),
@@ -441,4 +460,5 @@ async def cashbook_analytics(
             key=lambda x: -x['amount'],
         ),
         'trend': trend,
+        'by_counter': by_counter_rows,
     }
