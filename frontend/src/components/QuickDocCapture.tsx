@@ -12,7 +12,7 @@ import { useTheme } from '@/src/theme/ThemeContext';
 
 // Compress a captured photo. "Balanced" keeps receipts easily readable at a
 // fraction of the size; toggle off to upload the untouched original.
-async function compressImage(file: File, on: boolean): Promise<Blob> {
+export async function compressImage(file: File, on: boolean): Promise<Blob> {
   if (!on || typeof document === 'undefined' || !file.type.startsWith('image/')) return file;
   try {
     const url = URL.createObjectURL(file);

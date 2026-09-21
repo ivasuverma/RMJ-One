@@ -10,8 +10,10 @@ export type SegmentOption = { key: string; label: string };
  * form, or Timeline/Details/Payroll on an employee profile. Unlike
  * FilterChips (horizontal-scroll, variable width), segments split the full
  * row evenly and don't scroll. */
-export function SegmentedControl({ options, value, onChange, testID }: {
+export function SegmentedControl({ options, value, onChange, testID, tones }: {
   options: SegmentOption[];
+  /** Optional per-segment active colours (background tint, border and text), keyed by option key. */
+  tones?: Record<string, { bg: string; fg: string }>;
   value: string;
   onChange: (key: string) => void;
   testID?: string;
@@ -26,10 +28,10 @@ export function SegmentedControl({ options, value, onChange, testID }: {
           <Pressable
             key={o.key}
             onPress={() => { if (!active) { haptics.selection(); onChange(o.key); } }}
-            style={({ pressed }) => [styles.segment, active && styles.segmentActive, pressed && { opacity: pressedOpacity }]}
+            style={({ pressed }) => [styles.segment, active && styles.segmentActive, active && tones?.[o.key] && { backgroundColor: tones[o.key].bg, borderColor: tones[o.key].fg }, pressed && { opacity: pressedOpacity }]}
             testID={testID ? `${testID}-${o.key}` : undefined}
           >
-            <Text style={[styles.text, active && styles.textActive]} numberOfLines={1}>{o.label}</Text>
+            <Text style={[styles.text, active && styles.textActive, active && tones?.[o.key] && { color: tones[o.key].fg }]} numberOfLines={1}>{o.label}</Text>
           </Pressable>
         );
       })}

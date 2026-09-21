@@ -195,6 +195,14 @@ async def get_cashbook_day(date: str = Query(...), counter_id: str = Query(...),
     counter = await _get_counter(counter_id)
     entries = await db.cashbook_entries.find({'date': date, 'counter_id': counter_id}, {'_id': 0}).sort('created_at', 1).to_list(1000)
     opening = await _opening_balance_for(counter_id, date)
+    # Which entries carry a receipt photo (Record Photos, ref_type 'cashbook_entry') - one query for the whole day.
+    ids = [e['id'] for e in entries]
+    if ids:
+        counts = {r['_id']: r['n'] async for r in db.record_photos.aggregate([
+            {'$match': {'ref_type': 'cashbook_entry', 'ref_id': {'$in': ids}, 'deleted': {'$ne': True}}},
+            {'$group': {'_id': '$ref_id', 'n': {'$sum': 1}}}])}
+        for e in entries:
+            e['photo_count'] = counts.get(e['id'], 0)
     total_received = round(sum(e['amount'] for e in entries if e['type'] == 'received'), 2)
     total_paid = round(sum(e['amount'] for e in entries if e['type'] == 'paid'), 2)
     closing = round(opening + total_received - total_paid, 2)
