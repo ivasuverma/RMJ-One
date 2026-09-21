@@ -42,7 +42,7 @@ const inr = (n: number) => `${n < 0 ? '−' : ''}₹${fmt(n)}`;
 // Optional — reached from the default (classic) Cash Book tab via its ✨ button ("Classic view" here returns to it).
 export default function CashBookScreen() {
   const router = useRouter();
-  const { colors } = useTheme();
+  const { colors, scheme } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const toast = useToast();
   const { user, hasRight } = useAuth();
@@ -67,7 +67,11 @@ export default function CashBookScreen() {
   // Compose / edit sheet
   const [sheet, setSheet] = useState(false);
   const [editing, setEditing] = useState<Entry | null>(null);
-  const [kind, setKind] = useState<Kind>('received');
+  const [kind, setKind] = useState<EntryType>('received');
+  // Only meaningful for a new entry (or one already linked as a transfer) —
+  // there's no Received/Paid/Transfer selector in the sheet any more, so
+  // this toggle is the only way in, matching the classic Cash Book view.
+  const [isTransfer, setIsTransfer] = useState(false);
   const [amount, setAmount] = useState('');
   const [name, setName] = useState('');
   const [tag, setTag] = useState('');
@@ -124,16 +128,16 @@ export default function CashBookScreen() {
   const shown = rows.filter((r) => filter === 'all' || (filter === 'transfer' ? r.transfer : !r.transfer && filter === r.e.type));
   const net = day ? day.total_received - day.total_paid : 0;
   const otherCounters = transferOptions.filter((c) => c.id !== counterId);
-  const tags = quickNames.filter((q) => kind !== 'transfer' && (q.entry_type == null || q.entry_type === kind));
+  const tags = quickNames.filter((q) => !isTransfer && (q.entry_type == null || q.entry_type === kind));
   const counterName = (id?: string | null) => transferOptions.find((c) => c.id === id)?.name || counters.find((c) => c.id === id)?.name || '';
 
   // Tints the whole page to the selected counter's colour, so switching
   // counters is unmistakable even at a glance — matches its chip's colour.
   const selectedCounterIndex = counters.findIndex((c) => c.id === counterId);
-  const pageTone = selectedCounterIndex >= 0 ? counterToneFor(colors, counters[selectedCounterIndex].color, selectedCounterIndex) : null;
+  const pageTone = selectedCounterIndex >= 0 ? counterToneFor(colors, scheme, counters[selectedCounterIndex].color, selectedCounterIndex) : null;
 
   const openAdd = (k: EntryType = 'received') => {
-    setEditing(null); setKind(k); setAmount(''); setName(''); setTag(''); setNote(''); setDest('');
+    setEditing(null); setKind(k); setIsTransfer(false); setAmount(''); setName(''); setTag(''); setNote(''); setDest('');
     // Opened via the Received button defaults a Transfer's direction to
     // "Receive in"; via Paid, to "Send out" — matches the button they tapped.
     setDir(k === 'paid' ? 'out' : 'in');
@@ -141,14 +145,14 @@ export default function CashBookScreen() {
     setAddingTag(false); setNewTag(''); setSheet(true);
   };
   const openEdit = (e: Entry) => {
-    setEditing(e); setKind(e.linked_entry_id ? 'transfer' : e.type); setAmount(String(e.amount)); setName(e.name);
+    setEditing(e); setKind(e.type); setIsTransfer(!!e.linked_entry_id); setAmount(String(e.amount)); setName(e.name);
     setTag(e.category || ''); setNote(e.note || ''); setDest(e.transfer_counter_id || ''); setShots([]);
     setAddingTag(false); setNewTag(''); setSheet(true);
   };
 
   const saveTag = async () => {
     const n = newTag.trim();
-    if (!n || kind === 'transfer') return;
+    if (!n || isTransfer) return;
     try {
       const created = await api.post<QuickName>('/cashbook/quick-names', { name: n, entry_type: kind });
       setQuickNames((p) => (p.some((q) => q.id === created.id) ? p : [...p, created].sort((a, b) => a.name.localeCompare(b.name))));
@@ -160,13 +164,13 @@ export default function CashBookScreen() {
     const amt = parseFloat(amount);
     if (!amt || amt <= 0) { toast.error('Enter an amount greater than 0'); return; }
     if (!counterId) { toast.error('Add a Cash Book counter first'); return; }
-    if (kind === 'transfer' && !editing && !dest) { toast.error('Pick where the cash is going'); return; }
-    const label = kind === 'transfer' ? `Transfer ${dir === 'out' ? 'to' : 'from'} ${counterName(dest)}` : (name.trim() || tag.trim());
+    if (isTransfer && !editing && !dest) { toast.error('Pick where the cash is going'); return; }
+    const label = isTransfer ? `Transfer ${dir === 'out' ? 'to' : 'from'} ${counterName(dest)}` : (name.trim() || tag.trim());
     if (!label) { toast.error('Enter a name or pick a tag'); return; }
     setBusy(true);
-    const payload: any = { date, amount: amt, name: kind === 'transfer' && editing ? name.trim() || label : label, category: kind === 'transfer' ? '' : tag.trim(), note };
-    if (!editing || !editing.linked_entry_id) { payload.counter_id = counterId; payload.type = kind === 'transfer' ? (dir === 'out' ? 'paid' : 'received') : kind; }
-    if (kind === 'transfer' && !editing) payload.transfer_counter_id = dest;
+    const payload: any = { date, amount: amt, name: isTransfer && editing ? name.trim() || label : label, category: isTransfer ? '' : tag.trim(), note };
+    if (!editing || !editing.linked_entry_id) { payload.counter_id = counterId; payload.type = isTransfer ? (dir === 'out' ? 'paid' : 'received') : kind; }
+    if (isTransfer && !editing) payload.transfer_counter_id = dest;
     try {
       let savedId = editing?.id || '';
       if (editing) await api.put(`/cashbook/entries/${editing.id}`, payload);
@@ -258,7 +262,7 @@ export default function CashBookScreen() {
         {counters.length > 1 && (
           <View style={styles.counterRow}>
             {counters.map((c, i) => {
-              const tone = counterToneFor(colors, c.color, i);
+              const tone = counterToneFor(colors, scheme, c.color, i);
               const active = counterId === c.id;
               return (
                 <Pressable
@@ -374,24 +378,31 @@ export default function CashBookScreen() {
         </View>
       ) : null}
 
-      <Sheet visible={sheet} onClose={() => setSheet(false)} title={editing ? 'Edit entry' : 'New entry'} testID="cashbook-sheet">
+      <Sheet visible={sheet} onClose={() => setSheet(false)} title={editing ? 'Edit entry' : (kind === 'received' ? 'Cash Received' : 'Cash Paid')} testID="cashbook-sheet">
         <View style={{ gap: spacing.md }}>
           {editing ? (
             editingTransfer ? <Text style={styles.hint}>A transfer's direction and location can't change — delete it and add it again to change them.</Text> : null
           ) : null}
-          {!editingTransfer && (
-            <SegmentedControl testID="cashbook-kind"
-              options={[{ key: 'received', label: 'Received' }, { key: 'paid', label: 'Paid' }, ...(editing ? [] : [{ key: 'transfer', label: 'Transfer' }])]}
-              value={kind} onChange={(k) => { setKind(k as Kind); setTag(''); }} />
-          )}
-
           <View style={styles.amountBox}>
             <Text style={styles.rupee}>₹</Text>
             <TextInput testID="cashbook-amount" value={amount} onChangeText={(v) => setAmount(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad"
               placeholder="0" placeholderTextColor={colors.mutedText} style={styles.amountInput} autoFocus={!editing} />
           </View>
 
-          {kind === 'transfer' ? (
+          {!editing && otherCounters.length > 0 && (
+            <Pressable
+              onPress={() => { setIsTransfer((v) => !v); setDest(''); setTag(''); }}
+              style={[styles.transferToggleBtn, isTransfer && styles.transferToggleBtnActive]}
+              testID="cashbook-transfer-toggle"
+            >
+              <Ionicons name="swap-horizontal-outline" size={16} color={isTransfer ? colors.onBrandPrimary : colors.brandSecondary} />
+              <Text style={[styles.transferToggleText, isTransfer && styles.transferToggleTextActive]}>
+                This is a transfer to/from another counter
+              </Text>
+            </Pressable>
+          )}
+
+          {isTransfer ? (
             !editing ? (
               <View>
                 <SegmentedControl testID="cashbook-dir" options={[{ key: 'out', label: 'Send out' }, { key: 'in', label: 'Receive in' }]} value={dir} onChange={(k) => setDir(k as 'out' | 'in')} />
@@ -539,6 +550,14 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   amountInput: { color: colors.onSurface, fontSize: 40, fontWeight: '700', fontFamily: fonts.display, minWidth: 90, textAlign: 'center' },
   label: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '600', marginBottom: 6 },
   input: { backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, paddingHorizontal: spacing.md, paddingVertical: 11, color: colors.onSurface, fontSize: 15 },
+  transferToggleBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+    paddingVertical: 10, paddingHorizontal: spacing.md, borderRadius: radius.md,
+    borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceTertiary,
+  },
+  transferToggleBtnActive: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
+  transferToggleText: { flex: 1, color: colors.onSurfaceSecondary, fontSize: 13, fontWeight: '600' },
+  transferToggleTextActive: { color: colors.onBrandPrimary },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 13, paddingVertical: 8, borderRadius: radius.pill, backgroundColor: colors.surfaceTertiary, borderWidth: 1, borderColor: colors.border },
   chipOn: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },

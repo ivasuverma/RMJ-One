@@ -49,7 +49,7 @@ router = APIRouter()
 # invalid/unknown value is just ignored (counter falls back to the app's
 # default cycling colour) rather than rejected, so this list can grow
 # without a hard failure on older clients.
-COUNTER_COLOR_KEYS = {'gold', 'blue', 'green', 'amber', 'red'}
+COUNTER_COLOR_KEYS = {'gold', 'blue', 'green', 'red', 'purple', 'teal', 'pink', 'orange'}
 
 
 async def _get_counter(counter_id: str) -> dict:

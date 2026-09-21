@@ -43,7 +43,7 @@ const fmtINR = (n: number) => `₹${Math.round(n || 0).toLocaleString('en-IN')}`
 export default function CashBookScreen() {
   const router = useRouter();
   const { manage } = useLocalSearchParams<{ manage?: string }>();
-  const { colors } = useTheme();
+  const { colors, scheme } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const { user, hasRight } = useAuth();
   const canEdit = hasRight('cash_book', 'edit');
@@ -263,7 +263,7 @@ export default function CashBookScreen() {
   // Tints the whole page to the selected counter's colour, so switching
   // counters is unmistakable even at a glance — matches its chip's colour.
   const selectedCounterIndex = counters.findIndex((c) => c.id === counterId);
-  const pageTone = selectedCounterIndex >= 0 ? counterToneFor(colors, counters[selectedCounterIndex].color, selectedCounterIndex) : null;
+  const pageTone = selectedCounterIndex >= 0 ? counterToneFor(colors, scheme, counters[selectedCounterIndex].color, selectedCounterIndex) : null;
 
   const renderEntry = (e: Entry, amountColor: string) => {
     // A transfer shows only the other counter's name + the swap sign — the
@@ -344,7 +344,7 @@ export default function CashBookScreen() {
           {counters.length > 1 && (
             <View style={styles.counterChipsRow}>
               {counters.map((c, i) => {
-                const tone = counterToneFor(colors, c.color, i);
+                const tone = counterToneFor(colors, scheme, c.color, i);
                 const active = counterId === c.id;
                 return (
                   <Pressable
@@ -465,14 +465,6 @@ export default function CashBookScreen() {
                 </Text>
               </View>
             )}
-            <View style={styles.chipRow}>
-              {(['received', 'paid'] as const).map((t) => (
-                <Pressable key={t} onPress={() => setEntryType(t)} style={[styles.typeChip, entryType === t && (t === 'received' ? styles.typeChipReceived : styles.typeChipPaid)]} testID={`cashbook-type-${t}`}>
-                  <Text style={[styles.typeChipText, entryType === t && styles.typeChipTextActive]}>{t === 'received' ? 'Received' : 'Paid'}</Text>
-                </Pressable>
-              ))}
-            </View>
-
             {!editing && transferOptions.length > 1 && (
               <>
                 <Pressable
@@ -610,7 +602,7 @@ export default function CashBookScreen() {
                 >
                   {!counterForm.color && <Ionicons name="checkmark" size={16} color={colors.onSurface} />}
                 </Pressable>
-                {counterColorOptions(colors).map((opt) => (
+                {counterColorOptions(colors, scheme).map((opt) => (
                   <Pressable
                     key={opt.key}
                     onPress={() => setCounterForm((f) => (f ? { ...f, color: opt.key } : f))}
@@ -748,7 +740,6 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.md },
   typeChip: { flex: 1, alignItems: 'center', paddingVertical: 12, borderRadius: radius.md, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border },
   typeChipReceived: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
-  typeChipPaid: { backgroundColor: colors.error, borderColor: colors.error },
   typeChipText: { color: colors.onSurfaceSecondary, fontSize: 13, fontWeight: '700' },
   typeChipTextActive: { color: colors.onBrandPrimary },
 
