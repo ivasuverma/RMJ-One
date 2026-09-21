@@ -189,7 +189,12 @@ export default function GoldLoanDetailScreen() {
             <View style={styles.balRow}><Text style={styles.balLabel}>Principal topped up</Text><Text style={[styles.balValue, { color: colors.onWarning }]}>{fmtINR(loan.principal_topup)}</Text></View>
           )}
           <View style={styles.balRow}><Text style={styles.balLabel}>Principal balance</Text><Text style={[styles.balValue, loan.principal_balance > 0 && { color: colors.onWarning }]}>{fmtINR(loan.principal_balance)}</Text></View>
-          <View style={[styles.balRow, { marginTop: 6 }]}><Text style={styles.balTotalLabel}>Total outstanding</Text><Text style={styles.balTotalValue}>{fmtINR(loan.total_outstanding)}</Text></View>
+          <View style={styles.balRow}><Text style={styles.balLabel}>Interest balance</Text><Text style={[styles.balValue, loan.interest_balance > 0 && { color: colors.onWarning }]}>{fmtINR(loan.interest_balance)}</Text></View>
+          <View style={[styles.balRow, { marginTop: 6, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 10 }]}>
+            <Text style={styles.balTotalLabel}>Total outstanding</Text>
+            <Text style={styles.balTotalValue}>{fmtINR(loan.total_outstanding)}</Text>
+          </View>
+          <Text style={styles.balFormula}>Principal balance {fmtINR(loan.principal_balance)} + Interest balance {fmtINR(loan.interest_balance)}</Text>
         </View>
 
         {/* Everything interest-related in one place: rate, live accrual,
@@ -394,6 +399,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   balValue: { color: colors.onSurface, fontSize: 13, fontWeight: '600' },
   balTotalLabel: { color: colors.onSurface, fontSize: 14, fontWeight: '800' },
   balTotalValue: { color: colors.brandSecondary, fontSize: 16, fontWeight: '800' },
+  balFormula: { color: colors.mutedText, fontSize: 10.5, marginTop: 2 },
 
   interestCard: {
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border,
