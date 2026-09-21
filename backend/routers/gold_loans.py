@@ -1,6 +1,6 @@
 """Loan Against Gold: cash paid out to a customer against pledged gold items,
-with interest accruing monthly on the outstanding principal until the loan is
-closed (customer collects the pledge back).
+with interest accruing day-wise on the outstanding principal (posted once a
+month) until the loan is closed (customer collects the pledge back).
 
 Two collections beyond the loan record itself:
   - gold_loan_transactions: every interest charge (auto-posted monthly),
@@ -17,7 +17,7 @@ print helpers rather than duplicating either."""
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Optional
 from calendar import monthrange
-from datetime import date
+from datetime import date, timedelta
 import re
 import uuid
 from server import (
@@ -428,29 +428,31 @@ async def gold_loan_voucher_print(loan_id: str, user=Depends(require_staff_or_mo
     return {'ok': True}
 
 
-# ---------------- Monthly interest auto-post ----------------
-def _principal_balance_for_period(loan: dict, principal_txns: list, period_start: date, period_end: date) -> float:
-    """Principal balance to charge THIS period's interest on — the shop's
-    own day-15 cutoff convention: a principal repayment made by the 15th of
-    the calendar month it falls in reduces the balance for the period it
-    lands in; made on or after the 15th, that period still bills interest
-    on the pre-payment balance in full, and the lower balance only takes
-    effect starting the following period. (Day 15 itself counts as "on/after
-    15" — not reduced.) This only controls the timing of one period's
-    interest charge; the loan's overall principal_balance (see
-    _compute_loan_state, used for display and for "how much is owed now")
-    already reflects every repayment immediately regardless of date.
+# ---------------- Day-wise interest auto-post ----------------
+def _month_interest_daywise(loan: dict, principal_txns: list, period_start: date, period_end: date, loan_date: date) -> float:
+    """Sums one calendar month's interest as day * balance-on-that-day * daily
+    rate, rather than snapping the whole month to a single before/after
+    balance. Daily rate = monthly rate / 30 (the shop's convention — every
+    day is worth the same regardless of how long the calendar month actually
+    is). A repayment or top-up (see GoldLoanPaymentIn; top-ups carry a
+    negative amount here so subtracting one raises the balance) takes effect
+    the same day it's dated — no cutoff, no snapping to month boundaries.
 
-    `principal_txns` carries repayments as positive amounts and top-ups
-    (see GoldLoanPaymentIn) as negative ones, so subtracting a top-up here
-    raises the balance under the same day-15 cutoff rule."""
-    balance = loan['principal']
-    for d, amt in principal_txns:
-        if d < period_start:
-            balance -= amt
-        elif period_start <= d < period_end and d.day < 15:
-            balance -= amt
-    return round(max(balance, 0), 2)
+    Starting the walk at max(period_start, loan_date) is what prorates a
+    loan's first, partial month correctly (e.g. a loan taken on the 20th
+    only charges the 11-12 remaining days of that month) instead of the old
+    day-15 either/or of "whole month" or "no month"."""
+    rate = loan['interest_rate_percent'] / 100 / 30
+    total = 0.0
+    d = max(period_start, loan_date)
+    while d < period_end:
+        balance = loan['principal']
+        for txn_date, amt in principal_txns:
+            if txn_date <= d:
+                balance -= amt
+        total += max(balance, 0) * rate
+        d += timedelta(days=1)
+    return round(total, 2)
 
 
 def _add_month(y: int, m: int) -> tuple:
@@ -463,21 +465,21 @@ def _add_month(y: int, m: int) -> tuple:
 async def _backfill_loan_interest(loan: dict) -> None:
     """Walks every calendar month the loan has been running, posting
     whichever of those periods aren't in db.gold_loan_interest_generations
-    yet. Two shop conventions decide the schedule:
+    yet. Each month's amount is computed day-wise (see
+    _month_interest_daywise) — daily rate = monthly rate / 30, applied to
+    whatever the balance actually was on each individual day, so a loan's
+    first partial month and any mid-month repayment/top-up are charged
+    exactly, not snapped to a day-15 cutoff.
 
-    - Which month interest starts from: gold received on the 1st-15th of a
-      month starts accruing interest from THAT SAME calendar month; received
-      on the 16th or later, accrual starts the following month.
-    - When each month's interest posts: on the LAST day of that calendar
-      month (not the loan's own day-of-month) — so a loan from 1 July posts
-      its July interest on 31 July, its August interest on 31 August, etc.
+    Interest still POSTS on the LAST day of each calendar month (not the
+    loan's own day-of-month) — so a loan from 1 July posts its July interest
+    on 31 July, its August interest on 31 August, etc. That's just the
+    posting schedule; the amount itself already reflects every day
+    individually.
 
     Walking the whole span (not just "is today the due day") means a period
     is never permanently skipped just because this didn't happen to run on
-    its exact due date. Each period's interest is computed against that
-    period's own principal balance under a separate day-15 cutoff rule (see
-    _principal_balance_for_period) — a different convention, about how a
-    mid-period principal repayment affects that same period's charge.
+    its exact due date.
 
     Called from three places: the 15-minute reminder loop (check_interest_due,
     below) for the steady-state case, and synchronously from create/get/pay
@@ -492,9 +494,7 @@ async def _backfill_loan_interest(loan: dict) -> None:
     except (ValueError, KeyError):
         return
 
-    y, m = loan_date.year, loan_date.month
-    if loan_date.day > 15:
-        y, m = _add_month(y, m)
+    y, m = loan_date.year, loan_date.month  # day-wise proration handles the partial first month itself — no month-snapping needed
 
     raw_principal_txns = await db.gold_loan_transactions.find(
         {'loan_id': loan['id'], 'type': {'$in': ['payment_principal', 'topup_principal']}}, {'_id': 0},
@@ -503,7 +503,7 @@ async def _backfill_loan_interest(loan: dict) -> None:
     for t in raw_principal_txns:
         try:
             # Top-ups raise the balance, so they go in negated — see
-            # _principal_balance_for_period's docstring.
+            # _month_interest_daywise's docstring.
             amt = t['amount'] if t['type'] == 'payment_principal' else -t['amount']
             principal_txns.append((date.fromisoformat(t['date']), amt))
         except (ValueError, KeyError):
@@ -527,10 +527,7 @@ async def _backfill_loan_interest(loan: dict) -> None:
         await db.gold_loan_interest_generations.update_one(
             gen_key, {'$set': {**gen_key, 'created_at': now_utc().isoformat()}}, upsert=True,
         )
-        principal_balance = _principal_balance_for_period(loan, principal_txns, period_start, period_end)
-        if principal_balance <= 0:
-            continue  # fully repaid (under this period's cutoff rule) — nothing left to charge interest on
-        amount = round(principal_balance * (loan['interest_rate_percent'] / 100), 2)
+        amount = _month_interest_daywise(loan, principal_txns, period_start, period_end, loan_date)
         if amount <= 0:
             continue
         await db.gold_loan_transactions.insert_one({
