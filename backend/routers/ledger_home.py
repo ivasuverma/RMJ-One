@@ -13,7 +13,7 @@ For an employee, amount POSITIVE = the shop owes the employee (salary); negative
 import re
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from server import (
