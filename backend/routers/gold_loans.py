@@ -1,22 +1,30 @@
 """Loan Against Gold: cash paid out to a customer against pledged gold items,
-with interest accruing day-wise on the outstanding principal (posted once a
-month) until the loan is closed (customer collects the pledge back).
+with interest accruing day-wise on the outstanding principal (posted once
+every 30 days) until the loan is closed (customer collects the pledge back).
+
+Interest periods are exact 30-day blocks counted from the loan's own start
+date (day 1-30, 31-60, ...), NOT calendar months — the shop's convention is
+that "a month" always means 30 days, so every posted period is worth
+exactly one month's rate regardless of how long the calendar month actually
+is (a 31-day calendar month used to be charged slightly more than one
+month's interest, and February slightly less; 30-day periods fix that). A
+period is identified by its own start date (e.g. '2025-06-15'), not a
+'YYYY-MM' string — see _backfill_loan_interest below.
 
 Two collections beyond the loan record itself:
-  - gold_loan_transactions: every interest charge (auto-posted monthly),
-    every payment received (tagged interest or principal by whoever takes
-    the cash), and every top-up paid out (more cash handed to the customer
-    against the same pledge, raising the outstanding principal). Balances
-    are always derived from this ledger, never stored, same philosophy as
-    routers/ledger.py — so editing history stays honest.
+  - gold_loan_transactions: every interest charge (auto-posted every 30
+    days), every payment received (tagged interest or principal by whoever
+    takes the cash), and every top-up paid out (more cash handed to the
+    customer against the same pledge, raising the outstanding principal).
+    Balances are always derived from this ledger, never stored, same
+    philosophy as routers/ledger.py — so editing history stays honest.
   - gold_loan_interest_generations: idempotency guard (loan_id + period) so
-    the 15-minute reminder-loop poll can't double-post a month's interest.
+    the 15-minute reminder-loop poll can't double-post a period's interest.
 
 Reuses the repairs module's customer directory (db.customers) and thermal
 print helpers rather than duplicating either."""
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Optional
-from calendar import monthrange
 from datetime import date, timedelta
 import re
 import uuid
@@ -251,20 +259,23 @@ async def gold_loans_dashboard(_: dict = Depends(require_staff_or_module('gold_l
     }
 
 
-async def _current_month_accrual(loan: dict) -> Optional[dict]:
-    """Interest accrued so far in the current, not-yet-posted calendar month
+async def _current_period_accrual(loan: dict) -> Optional[dict]:
+    """Interest accrued so far in the current, not-yet-posted 30-day period
     — a live preview using _month_interest_daywise itself (period end =
     tomorrow, so today's own day counts), not a separately maintained
     calculation. Only meaningful for an active loan that's already started;
-    None once nothing has accrued yet this month or the loan is closed."""
+    None once nothing has accrued yet this period or the loan is closed."""
     try:
         loan_date = date.fromisoformat(loan['loan_date'])
     except (ValueError, KeyError):
         return None
     today = now_utc().astimezone(IST).date()
-    period_start = date(today.year, today.month, 1)
     if loan_date > today:
         return None
+    # Same 30-day-block math as _backfill_loan_interest: jump straight to
+    # whichever period today falls in, without walking every prior one.
+    elapsed_periods = (today - loan_date).days // 30
+    period_start = loan_date + timedelta(days=30 * elapsed_periods)
     raw_principal_txns = await db.gold_loan_transactions.find(
         {'loan_id': loan['id'], 'type': {'$in': ['payment_principal', 'topup_principal']}}, {'_id': 0},
     ).to_list(5000)
@@ -279,7 +290,8 @@ async def _current_month_accrual(loan: dict) -> Optional[dict]:
     if amount <= 0:
         return None
     days = (today - max(period_start, loan_date)).days + 1
-    return {'period': today.strftime('%Y-%m'), 'days': days, 'amount': amount}
+    period_end = period_start + timedelta(days=30)
+    return {'period': period_start.isoformat(), 'period_end': (period_end - timedelta(days=1)).isoformat(), 'days': days, 'amount': amount}
 
 
 @router.get('/gold-loans/{loan_id}')
@@ -292,7 +304,7 @@ async def get_gold_loan(loan_id: str, _: dict = Depends(require_staff_or_module(
     if loan['status'] == 'active':
         await _backfill_loan_interest(loan)  # catch up before computing balances — don't wait on the poll
     bal = await _loan_balances(loan)
-    accrued = await _current_month_accrual(loan) if loan['status'] == 'active' else None
+    accrued = await _current_period_accrual(loan) if loan['status'] == 'active' else None
     return {**loan, **bal, 'interest_accrued_this_month': accrued}
 
 
@@ -310,14 +322,14 @@ async def list_gold_loan_transactions(
 
 @router.get('/gold-loans/{loan_id}/interest-breakdown')
 async def gold_loan_interest_breakdown(loan_id: str, _: dict = Depends(require_staff_or_module('gold_loans'))):
-    """The day-by-day workings behind each already-posted month of interest —
-    for staff who want to see exactly how a month's figure was reached, not
-    just the total. One entry per posted interest_due period, oldest first;
-    each carries the real posted amount (from the ledger, authoritative) plus
-    the day-wise segments that explain it (see _month_interest_segments —
-    display only, its own rounding can differ from the posted amount by a
-    paisa or two on a month with more than one segment, same as any
-    itemised bill)."""
+    """The day-by-day workings behind each already-posted 30-day period of
+    interest — for staff who want to see exactly how a period's figure was
+    reached, not just the total. One entry per posted interest_due period,
+    oldest first; each carries the real posted amount (from the ledger,
+    authoritative) plus the day-wise segments that explain it (see
+    _month_interest_segments — display only, its own rounding can differ
+    from the posted amount by a paisa or two on a period with more than one
+    segment, same as any itemised bill)."""
     loan = await _get_loan(loan_id)
     try:
         loan_date = date.fromisoformat(loan['loan_date'])
@@ -345,14 +357,15 @@ async def gold_loan_interest_breakdown(loan_id: str, _: dict = Depends(require_s
         if not period:
             continue
         try:
-            y, m = int(period[:4]), int(period[5:7])
-        except (ValueError, IndexError):
+            period_start = date.fromisoformat(period)
+        except ValueError:
             continue
-        period_start = date(y, m, 1)
-        next_y, next_m = _add_month(y, m)
-        period_end = date(next_y, next_m, 1)
+        period_end = period_start + timedelta(days=30)
         segments = _month_interest_segments(loan, principal_txns, period_start, period_end, loan_date)
-        months.append({'period': period, 'posted_amount': round(float(entry.get('amount') or 0), 2), 'segments': segments})
+        months.append({
+            'period': period, 'period_end': (period_end - timedelta(days=1)).isoformat(),
+            'posted_amount': round(float(entry.get('amount') or 0), 2), 'segments': segments,
+        })
 
     return {'daily_rate_percent': round(loan['interest_rate_percent'] / 30, 5), 'months': months}
 
@@ -511,18 +524,19 @@ async def gold_loan_voucher_print(loan_id: str, user=Depends(require_staff_or_mo
 
 # ---------------- Day-wise interest auto-post ----------------
 def _month_interest_daywise(loan: dict, principal_txns: list, period_start: date, period_end: date, loan_date: date) -> float:
-    """Sums one calendar month's interest as day * balance-on-that-day * daily
-    rate, rather than snapping the whole month to a single before/after
-    balance. Daily rate = monthly rate / 30 (the shop's convention — every
-    day is worth the same regardless of how long the calendar month actually
-    is). A repayment or top-up (see GoldLoanPaymentIn; top-ups carry a
-    negative amount here so subtracting one raises the balance) takes effect
-    the same day it's dated — no cutoff, no snapping to month boundaries.
+    """Sums one period's interest as day * balance-on-that-day * daily rate,
+    rather than snapping the whole period to a single before/after balance.
+    Daily rate = monthly rate / 30 (the shop's convention — every day is
+    worth the same, and periods are 30-day blocks from the loan's own start
+    date, not calendar months — see _backfill_loan_interest). A repayment or
+    top-up (see GoldLoanPaymentIn; top-ups carry a negative amount here so
+    subtracting one raises the balance) takes effect the same day it's
+    dated — no cutoff, no snapping to period boundaries.
 
     Starting the walk at max(period_start, loan_date) is what prorates a
-    loan's first, partial month correctly (e.g. a loan taken on the 20th
-    only charges the 11-12 remaining days of that month) instead of the old
-    day-15 either/or of "whole month" or "no month".
+    loan's first period correctly when period_start predates the loan (not
+    normally possible now that periods are anchored to loan_date itself, but
+    kept as a safety net).
 
     This is the SOLE authority for what actually posts — kept independent of
     _month_interest_segments (below) on purpose, so a display-only feature
@@ -574,27 +588,22 @@ def _month_interest_segments(loan: dict, principal_txns: list, period_start: dat
     return segments
 
 
-def _add_month(y: int, m: int) -> tuple:
-    m += 1
-    if m > 12:
-        return y + 1, 1
-    return y, m
-
-
 async def _backfill_loan_interest(loan: dict) -> None:
-    """Walks every calendar month the loan has been running, posting
+    """Walks every 30-day period the loan has been running (day 1-30, 31-60,
+    ... from the loan's own start date — NOT calendar months), posting
     whichever of those periods aren't in db.gold_loan_interest_generations
-    yet. Each month's amount is computed day-wise (see
+    yet. Each period's amount is computed day-wise (see
     _month_interest_daywise) — daily rate = monthly rate / 30, applied to
     whatever the balance actually was on each individual day, so a loan's
-    first partial month and any mid-month repayment/top-up are charged
-    exactly, not snapped to a day-15 cutoff.
+    first (always exactly 30-day) period and any mid-period repayment/top-up
+    are charged exactly.
 
-    Interest still POSTS on the LAST day of each calendar month (not the
-    loan's own day-of-month) — so a loan from 1 July posts its July interest
-    on 31 July, its August interest on 31 August, etc. That's just the
-    posting schedule; the amount itself already reflects every day
-    individually.
+    A period POSTS on its own 30th day (loan_date + 30, +60, +90, ...), not
+    calendar month-end — so every posted period is worth exactly one
+    month's rate. (The old calendar-month version charged a 31-day month
+    slightly more than one month's interest, and February slightly less,
+    since the daily rate was always monthly/30 regardless of how long the
+    calendar month actually was.)
 
     Walking the whole span (not just "is today the due day") means a period
     is never permanently skipped just because this didn't happen to run on
@@ -613,7 +622,7 @@ async def _backfill_loan_interest(loan: dict) -> None:
     except (ValueError, KeyError):
         return
 
-    y, m = loan_date.year, loan_date.month  # day-wise proration handles the partial first month itself — no month-snapping needed
+    period_start = loan_date
 
     raw_principal_txns = await db.gold_loan_transactions.find(
         {'loan_id': loan['id'], 'type': {'$in': ['payment_principal', 'topup_principal']}}, {'_id': 0},
@@ -629,29 +638,26 @@ async def _backfill_loan_interest(loan: dict) -> None:
             continue
 
     while True:
-        last_day = monthrange(y, m)[1]
-        due_date = date(y, m, last_day)  # posts on the last day of the month
+        period_end = period_start + timedelta(days=30)
+        due_date = period_end - timedelta(days=1)  # posts on the period's own 30th day
         if due_date > today:
-            break  # this month hasn't ended yet — don't post early
+            break  # this period hasn't ended yet — don't post early
 
-        period_start = date(y, m, 1)
-        next_y, next_m = _add_month(y, m)
-        period_end = date(next_y, next_m, 1)
-
-        period = due_date.strftime('%Y-%m')
+        period = period_start.isoformat()
         gen_key = {'loan_id': loan['id'], 'period': period}
-        y, m = next_y, next_m  # advance to the next month regardless of what happens below
+        this_period_start = period_start
+        period_start = period_end  # advance to the next period regardless of what happens below
         if await db.gold_loan_interest_generations.find_one(gen_key, {'_id': 0}) is not None:
             continue  # already posted for this period
         await db.gold_loan_interest_generations.update_one(
             gen_key, {'$set': {**gen_key, 'created_at': now_utc().isoformat()}}, upsert=True,
         )
-        amount = _month_interest_daywise(loan, principal_txns, period_start, period_end, loan_date)
+        amount = _month_interest_daywise(loan, principal_txns, this_period_start, period_end, loan_date)
         if amount <= 0:
             continue
         await db.gold_loan_transactions.insert_one({
             'id': str(uuid.uuid4()), 'loan_id': loan['id'], 'type': 'interest_due', 'period': period,
-            'amount': amount, 'date': due_date.isoformat(), 'note': f'Interest for {period}',
+            'amount': amount, 'date': due_date.isoformat(), 'note': f'Interest for {this_period_start.isoformat()} to {due_date.isoformat()}',
             'auto': True, 'created_by': 'system', 'created_by_id': None, 'created_at': now_utc().isoformat(),
         })
         await _notify_module(
