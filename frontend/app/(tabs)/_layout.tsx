@@ -46,6 +46,16 @@ export default function OwnerTabsLayout() {
       // owner-only screens. EmployeeTabBar navigates by href, so it works
       // here even though this navigator's routes are the owner's.
       tabBar={(props) => (isEmployee ? <EmployeeTabBar /> : <OwnerTabBar {...props} />)}
+      // Each module's landing screen below (cashbook/attendance/documents/
+      // samples/loans/repairs) is registered here as its own tab so it keeps
+      // the bottom bar, even though it's normally reached by pushing from
+      // Work or a Dashboard tile rather than tapping a visible tab button.
+      // React Navigation's tab back-behavior defaults to 'firstRoute' —
+      // back/swipe-back from ANY tab always jumps to the first one declared
+      // (dashboard) regardless of where you actually came from. 'history'
+      // instead follows the real visit order, so leaving a module this way
+      // returns to Work (or Dashboard) — whichever you pushed it from.
+      backBehavior="history"
       screenOptions={{ headerShown: false }}
       // Employees may only land on the shared module screens; anything else in
       // this group is owner-only and sends them home. This runs off the
