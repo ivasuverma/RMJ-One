@@ -1045,7 +1045,11 @@ class GoldLoanUpdateIn(BaseModel):
 
 class GoldLoanPaymentIn(BaseModel):
     amount: float
-    type: Literal['interest', 'principal']
+    # 'topup' is the reverse of 'principal': more cash paid OUT to the
+    # customer against the same pledge, raising the outstanding principal
+    # instead of reducing it (e.g. gold price rose, customer wants more
+    # against it without a fresh loan). See _compute_loan_state.
+    type: Literal['interest', 'principal', 'topup']
     date: Optional[str] = None  # YYYY-MM-DD, defaults to today
     note: Optional[str] = ''
     periods: Optional[List[str]] = None  # 'YYYY-MM' months this interest payment covers, from the calendar picker
@@ -2269,6 +2273,7 @@ NOTIFICATION_SCRIPTS = [
     {'key': 'document_recorded', 'module': 'documents', 'label': 'Document recorded to Done', 'admin_only': True},
     {'key': 'document_pending_reminder', 'module': 'documents', 'label': 'Document pending more than 1 day (daily reminder)', 'admin_only': False},
     {'key': 'gold_loan_created', 'module': 'gold_loans', 'label': 'New gold loan created', 'admin_only': True},
+    {'key': 'gold_loan_topup', 'module': 'gold_loans', 'label': 'Top-up paid out on an existing gold loan', 'admin_only': True},
     {'key': 'gold_loan_interest_posted', 'module': 'gold_loans', 'label': 'Monthly interest posted', 'admin_only': True},
     {'key': 'gold_loan_monthly_interest_reminder', 'module': 'gold_loans', 'label': 'Monthly reminder to collect pending interest', 'admin_only': True},
     {'key': 'drive_upload_failed', 'module': 'system_health', 'label': 'Document/photo failed to upload to Google Drive', 'admin_only': True},

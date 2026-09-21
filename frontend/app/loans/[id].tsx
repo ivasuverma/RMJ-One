@@ -22,7 +22,7 @@ type Loan = {
   loan_date: string; estimate_return_date: string | null;
   status: 'active' | 'closed'; closed_at: string | null; closed_by: string | null;
   note: string; created_at: string; created_by: string;
-  principal_paid: number; principal_balance: number;
+  principal_paid: number; principal_topup: number; principal_balance: number;
   interest_due: number; interest_paid: number; interest_balance: number; total_outstanding: number;
   interest_months_total: number; interest_months_received: number; interest_months_pending: number;
   interest_months: InterestMonth[];
@@ -172,6 +172,9 @@ export default function GoldLoanDetailScreen() {
         <View style={styles.balanceCard}>
           <View style={styles.balRow}><Text style={styles.balLabel}>Principal</Text><Text style={styles.balValue}>{fmtINR(loan.principal)}</Text></View>
           <View style={styles.balRow}><Text style={styles.balLabel}>Principal paid</Text><Text style={styles.balValue}>{fmtINR(loan.principal_paid)}</Text></View>
+          {loan.principal_topup > 0 && (
+            <View style={styles.balRow}><Text style={styles.balLabel}>Principal topped up</Text><Text style={[styles.balValue, { color: colors.onWarning }]}>{fmtINR(loan.principal_topup)}</Text></View>
+          )}
           <View style={styles.balRow}><Text style={styles.balLabel}>Principal balance</Text><Text style={[styles.balValue, loan.principal_balance > 0 && { color: colors.onWarning }]}>{fmtINR(loan.principal_balance)}</Text></View>
           <View style={[styles.balRow, { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 8, marginTop: 4 }]}><Text style={styles.balLabel}>Interest due (total posted)</Text><Text style={styles.balValue}>{fmtINR(loan.interest_due)}</Text></View>
           <View style={styles.balRow}><Text style={styles.balLabel}>Interest paid</Text><Text style={styles.balValue}>{fmtINR(loan.interest_paid)}</Text></View>
@@ -265,6 +268,12 @@ export default function GoldLoanDetailScreen() {
             <Ionicons name="list-outline" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>Transactions</Text>
           </Pressable>
         </View>
+
+        {isActive && (
+          <Pressable onPress={() => router.push(`/loans/transact?id=${loan.id}&type=topup` as any)} style={styles.actionBtn} testID="topup-loan-btn">
+            <Ionicons name="add-circle-outline" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>Pay Customer More (Top-up)</Text>
+          </Pressable>
+        )}
 
         {isActive && (
           <Pressable
