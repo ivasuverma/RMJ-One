@@ -465,19 +465,6 @@ export default function CashBookScreen() {
                 </Text>
               </View>
             )}
-            {counters.length > 1 && (
-              <>
-                <Text style={styles.label}>Counter</Text>
-                <View style={styles.chipRow}>
-                  {counters.map((c) => (
-                    <Pressable key={c.id} onPress={() => setCounterId(c.id)} style={[styles.typeChip, counterId === c.id && styles.typeChipReceived]} testID={`cashbook-form-counter-${c.id}`}>
-                      <Text style={[styles.typeChipText, counterId === c.id && styles.typeChipTextActive]}>{c.name}</Text>
-                    </Pressable>
-                  ))}
-                </View>
-              </>
-            )}
-
             <View style={styles.chipRow}>
               {(['received', 'paid'] as const).map((t) => (
                 <Pressable key={t} onPress={() => setEntryType(t)} style={[styles.typeChip, entryType === t && (t === 'received' ? styles.typeChipReceived : styles.typeChipPaid)]} testID={`cashbook-type-${t}`}>
