@@ -251,6 +251,37 @@ async def gold_loans_dashboard(_: dict = Depends(require_staff_or_module('gold_l
     }
 
 
+async def _current_month_accrual(loan: dict) -> Optional[dict]:
+    """Interest accrued so far in the current, not-yet-posted calendar month
+    — a live preview using _month_interest_daywise itself (period end =
+    tomorrow, so today's own day counts), not a separately maintained
+    calculation. Only meaningful for an active loan that's already started;
+    None once nothing has accrued yet this month or the loan is closed."""
+    try:
+        loan_date = date.fromisoformat(loan['loan_date'])
+    except (ValueError, KeyError):
+        return None
+    today = now_utc().astimezone(IST).date()
+    period_start = date(today.year, today.month, 1)
+    if loan_date > today:
+        return None
+    raw_principal_txns = await db.gold_loan_transactions.find(
+        {'loan_id': loan['id'], 'type': {'$in': ['payment_principal', 'topup_principal']}}, {'_id': 0},
+    ).to_list(5000)
+    principal_txns = []
+    for t in raw_principal_txns:
+        try:
+            amt = t['amount'] if t['type'] == 'payment_principal' else -t['amount']
+            principal_txns.append((date.fromisoformat(t['date']), amt))
+        except (ValueError, KeyError):
+            continue
+    amount = _month_interest_daywise(loan, principal_txns, period_start, today + timedelta(days=1), loan_date)
+    if amount <= 0:
+        return None
+    days = (today - max(period_start, loan_date)).days + 1
+    return {'period': today.strftime('%Y-%m'), 'days': days, 'amount': amount}
+
+
 @router.get('/gold-loans/{loan_id}')
 async def get_gold_loan(loan_id: str, _: dict = Depends(require_staff_or_module('gold_loans'))):
     """Summary only — loan fields, derived balances, and the interest-month
@@ -261,7 +292,8 @@ async def get_gold_loan(loan_id: str, _: dict = Depends(require_staff_or_module(
     if loan['status'] == 'active':
         await _backfill_loan_interest(loan)  # catch up before computing balances — don't wait on the poll
     bal = await _loan_balances(loan)
-    return {**loan, **bal}
+    accrued = await _current_month_accrual(loan) if loan['status'] == 'active' else None
+    return {**loan, **bal, 'interest_accrued_this_month': accrued}
 
 
 @router.get('/gold-loans/{loan_id}/transactions')
