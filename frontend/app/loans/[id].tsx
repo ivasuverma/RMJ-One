@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Platform, Modal } from 'react-native';
 import { notify } from '@/src/utils/notify';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -14,9 +14,12 @@ import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { ErrorState } from '@/src/components/ui';
 
+// A "month" here is really a 30-day interest period (loan_date + 30, +60, ...
+// — see gold_loans.py) — `period` is the period's own start date and `date`
+// is its due date (last day of the period), not a calendar month.
 type InterestMonth = { period: string; date: string; amount: number; paid: boolean };
 type InterestSegment = { from: string; to: string; days: number; balance: number; amount: number };
-type InterestBreakdownMonth = { period: string; posted_amount: number; segments: InterestSegment[] };
+type InterestBreakdownMonth = { period: string; period_end: string; posted_amount: number; segments: InterestSegment[] };
 type InterestBreakdown = { daily_rate_percent: number; months: InterestBreakdownMonth[] };
 type Loan = {
   id: string; loan_no: string; customer_name: string; customer_mobile: string;
@@ -29,7 +32,7 @@ type Loan = {
   interest_due: number; interest_paid: number; interest_balance: number; total_outstanding: number;
   interest_months_total: number; interest_months_received: number; interest_months_pending: number;
   interest_months: InterestMonth[];
-  interest_accrued_this_month: { period: string; days: number; amount: number } | null;
+  interest_accrued_this_month: { period: string; period_end: string; days: number; amount: number } | null;
 };
 
 const fmtINR = (n: number) => `₹${Math.round(n || 0).toLocaleString('en-IN')}`;
@@ -64,20 +67,12 @@ export default function GoldLoanDetailScreen() {
   }, [id]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  // Interest calendar — year picker + a selected-month detail sheet, same
-  // pattern as AttendanceCalendarView's month view, just one level up (a
-  // whole year of months instead of a month of days), since interest here
-  // is booked per calendar month, not per day.
-  const [calYear, setCalYear] = useState(new Date().getFullYear());
+  // Interest periods — a chronological list (newest first) of posted 30-day
+  // periods, each opening a detail sheet on tap. No calendar grid: periods
+  // don't align to calendar months, so there's no meaningful month/year to
+  // group them under.
   const [calSelected, setCalSelected] = useState<InterestMonth | null>(null);
   const [calExpanded, setCalExpanded] = useState(false);
-  useEffect(() => {
-    if (loan && loan.interest_months.length > 0) {
-      const years = loan.interest_months.map((m) => parseInt(m.period.slice(0, 4), 10));
-      setCalYear(years[years.length - 1]);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loan?.id]);
 
   // Interest calculation workings — day-by-day breakdown behind each
   // posted month's figure (see gold_loan_interest_breakdown in
@@ -153,13 +148,8 @@ export default function GoldLoanDetailScreen() {
   const isActive = loan.status === 'active';
   const canClose = isActive && loan.total_outstanding <= 0.01;
 
-  // Month-number -> entry for the currently-viewed year only — the year
-  // stepper (below) swaps this out instead of rendering every year at once.
-  const calMonthByNum: Record<string, InterestMonth> = {};
-  loan.interest_months.forEach((m) => {
-    const [y, mm] = m.period.split('-');
-    if (parseInt(y, 10) === calYear) calMonthByNum[mm] = m;
-  });
+  // Newest period first, for the list below.
+  const periodsDesc = [...loan.interest_months].reverse();
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="loan-detail-screen">
@@ -199,7 +189,12 @@ export default function GoldLoanDetailScreen() {
             <View style={styles.balRow}><Text style={styles.balLabel}>Principal topped up</Text><Text style={[styles.balValue, { color: colors.onWarning }]}>{fmtINR(loan.principal_topup)}</Text></View>
           )}
           <View style={styles.balRow}><Text style={styles.balLabel}>Principal balance</Text><Text style={[styles.balValue, loan.principal_balance > 0 && { color: colors.onWarning }]}>{fmtINR(loan.principal_balance)}</Text></View>
-          <View style={[styles.balRow, { marginTop: 6 }]}><Text style={styles.balTotalLabel}>Total outstanding</Text><Text style={styles.balTotalValue}>{fmtINR(loan.total_outstanding)}</Text></View>
+          <View style={styles.balRow}><Text style={styles.balLabel}>Interest balance</Text><Text style={[styles.balValue, loan.interest_balance > 0 && { color: colors.onWarning }]}>{fmtINR(loan.interest_balance)}</Text></View>
+          <View style={[styles.balRow, { marginTop: 6, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 10 }]}>
+            <Text style={styles.balTotalLabel}>Total outstanding</Text>
+            <Text style={styles.balTotalValue}>{fmtINR(loan.total_outstanding)}</Text>
+          </View>
+          <Text style={styles.balFormula}>Principal balance {fmtINR(loan.principal_balance)} + Interest balance {fmtINR(loan.interest_balance)}</Text>
         </View>
 
         {/* Everything interest-related in one place: rate, live accrual,
@@ -213,7 +208,7 @@ export default function GoldLoanDetailScreen() {
 
           {isActive && loan.interest_accrued_this_month && (
             <Text style={styles.interestAccruedText}>
-              {MONTHS[parseInt(loan.interest_accrued_this_month.period.slice(5, 7), 10) - 1]} so far
+              Current period ({fmtDay(loan.interest_accrued_this_month.period)}–{fmtDay(loan.interest_accrued_this_month.period_end)}) so far
               {' '}({loan.interest_accrued_this_month.days} day{loan.interest_accrued_this_month.days === 1 ? '' : 's'}): {fmtINR2(loan.interest_accrued_this_month.amount)}
               <Text style={styles.interestAccruedHint}> · not posted yet</Text>
             </Text>
@@ -222,10 +217,10 @@ export default function GoldLoanDetailScreen() {
           <View style={styles.balRow}><Text style={styles.balLabel}>Interest due (posted)</Text><Text style={styles.balValue}>{fmtINR(loan.interest_due)}</Text></View>
           <View style={styles.balRow}><Text style={styles.balLabel}>Interest paid</Text><Text style={styles.balValue}>{fmtINR(loan.interest_paid)}</Text></View>
           <View style={styles.balRow}><Text style={styles.balLabel}>Interest balance</Text><Text style={[styles.balValue, loan.interest_balance > 0 && { color: colors.onWarning }]}>{fmtINR(loan.interest_balance)}</Text></View>
-          <View style={styles.balRow}><Text style={styles.balLabel}>Months received / pending</Text><Text style={styles.balValue}>{loan.interest_months_received} / {loan.interest_months_pending}</Text></View>
+          <View style={styles.balRow}><Text style={styles.balLabel}>Periods received / pending</Text><Text style={styles.balValue}>{loan.interest_months_received} / {loan.interest_months_pending}</Text></View>
 
           <Pressable style={styles.calcToggleRow} onPress={() => setCalExpanded((v) => !v)} testID="cal-toggle">
-            <Text style={styles.calcToggleText}>Interest Calendar</Text>
+            <Text style={styles.calcToggleText}>Interest Periods (30 days each)</Text>
             {loan.interest_months_pending > 0 && (
               <Text style={styles.calToggleHint}>{loan.interest_months_pending} pending</Text>
             )}
@@ -234,39 +229,23 @@ export default function GoldLoanDetailScreen() {
 
           {calExpanded && (
             <>
-              <View style={styles.calYearRow}>
-                <Pressable onPress={() => setCalYear((y) => y - 1)} style={styles.calYearNav} testID="cal-prev-year">
-                  <Ionicons name="chevron-back" size={18} color={colors.onSurface} />
-                </Pressable>
-                <Text style={styles.calYearLabel}>{calYear}</Text>
-                <Pressable onPress={() => setCalYear((y) => y + 1)} style={styles.calYearNav} testID="cal-next-year">
-                  <Ionicons name="chevron-forward" size={18} color={colors.onSurface} />
-                </Pressable>
-              </View>
-
-              <View style={styles.calGrid}>
-                {MONTHS.map((lbl, i) => {
-                  const mm = String(i + 1).padStart(2, '0');
-                  const cell = calMonthByNum[mm];
-                  const cellStyle = cell ? (cell.paid ? styles.calCellPaid : styles.calCellPending) : styles.calCellEmpty;
-                  const textStyle = cell ? (cell.paid ? styles.calCellTextPaid : styles.calCellTextPending) : styles.calCellTextEmpty;
-                  return (
-                    <Pressable
-                      key={mm} style={styles.calCellWrap} testID={`cal-${calYear}-${mm}`}
-                      onPress={() => cell && setCalSelected(cell)} disabled={!cell}
-                    >
-                      <View style={[styles.calCell, cellStyle]}>
-                        <Text style={[styles.calCellText, textStyle]}>{lbl}</Text>
-                      </View>
+              {periodsDesc.length === 0 ? (
+                <Text style={styles.calcEmptyText}>No interest posted yet.</Text>
+              ) : (
+                <View style={styles.periodList}>
+                  {periodsDesc.map((m, i) => (
+                    <Pressable key={m.period} onPress={() => setCalSelected(m)} style={[styles.periodRow, i === 0 && { borderTopWidth: 0 }]} testID={`period-${m.period}`}>
+                      <Text style={styles.periodRange} numberOfLines={1}>{fmtDay(m.period)} – {fmtDay(m.date)}</Text>
+                      <Text style={styles.periodAmount}>{fmtINR(m.amount)}</Text>
+                      <View style={[styles.periodDot, m.paid ? styles.calCellPaid : styles.calCellPending]} />
                     </Pressable>
-                  );
-                })}
-              </View>
+                  ))}
+                </View>
+              )}
 
               <View style={styles.legend}>
                 <View style={styles.legendItem}><View style={[styles.legendDot, styles.calCellPending]} /><Text style={styles.legendText}>Pending</Text></View>
                 <View style={styles.legendItem}><View style={[styles.legendDot, styles.calCellPaid]} /><Text style={styles.legendText}>Received</Text></View>
-                <View style={styles.legendItem}><View style={[styles.legendDot, styles.calCellEmpty]} /><Text style={styles.legendText}>Not due yet</Text></View>
               </View>
             </>
           )}
@@ -289,7 +268,7 @@ export default function GoldLoanDetailScreen() {
                 <View key={mo.period} style={styles.calcMonth}>
                   <View style={styles.calcMonthHeader}>
                     <Text style={styles.calcMonthLabel}>
-                      {MONTHS[parseInt(mo.period.slice(5, 7), 10) - 1]} {mo.period.slice(0, 4)}
+                      {fmtDay(mo.period)} – {fmtDay(mo.period_end)}
                     </Text>
                     <Text style={styles.calcMonthTotal}>{fmtINR2(mo.posted_amount)}</Text>
                   </View>
@@ -359,7 +338,7 @@ export default function GoldLoanDetailScreen() {
             <Pressable style={{ flex: 1 }} onPress={() => setCalSelected(null)} />
             <View style={styles.sheet} testID="cal-month-sheet">
               <View style={styles.sheetGrip} />
-              <Text style={styles.sheetTitle}>{MONTHS[parseInt(calSelected.period.slice(5, 7), 10) - 1]} {calSelected.period.slice(0, 4)}</Text>
+              <Text style={styles.sheetTitle}>{fmtDay(calSelected.period)} – {fmtDay(calSelected.date)}</Text>
               <View style={styles.detailRow}><Text style={styles.detailLabel}>Amount</Text><Text style={styles.detailValue}>{fmtINR(calSelected.amount)}</Text></View>
               <View style={styles.detailRow}><Text style={styles.detailLabel}>Due date</Text><Text style={styles.detailValue}>{calSelected.date}</Text></View>
               <View style={styles.detailRow}>
@@ -420,6 +399,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   balValue: { color: colors.onSurface, fontSize: 13, fontWeight: '600' },
   balTotalLabel: { color: colors.onSurface, fontSize: 14, fontWeight: '800' },
   balTotalValue: { color: colors.brandSecondary, fontSize: 16, fontWeight: '800' },
+  balFormula: { color: colors.mutedText, fontSize: 10.5, marginTop: 2 },
 
   interestCard: {
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border,
@@ -430,24 +410,19 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   interestAccruedText: { color: colors.brandSecondary, fontSize: 12, fontWeight: '700', marginBottom: spacing.sm },
   interestAccruedHint: { color: colors.mutedText, fontSize: 11, fontWeight: '500' },
   calToggleHint: { flex: 1, textAlign: 'right', color: colors.onWarning, fontSize: 12, fontWeight: '600' },
-  calYearRow: {
-    flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.sm, marginBottom: spacing.md,
-    backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: 6,
+  periodList: {
+    borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    backgroundColor: colors.surfaceTertiary, marginTop: spacing.sm, overflow: 'hidden',
   },
-  calYearNav: { width: 32, height: 32, borderRadius: radius.md, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
-  calYearLabel: { flex: 1, textAlign: 'center', color: colors.onSurface, fontWeight: '700', fontSize: 15 },
-  // 4 columns x 3 rows for the 12 months — same filled-rounded-cell language
-  // as AttendanceCalendarView's day grid (which uses 7 columns for weekdays).
-  calGrid: { flexDirection: 'row', flexWrap: 'wrap' },
-  calCellWrap: { width: '25%', aspectRatio: 1.6, padding: 4 },
-  calCell: { width: '100%', height: '100%', borderRadius: radius.sm, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
-  calCellText: { fontSize: 12, fontWeight: '700' },
-  calCellEmpty: { backgroundColor: colors.surfaceTertiary, borderColor: colors.border },
-  calCellTextEmpty: { color: colors.mutedText },
+  periodRow: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+    paddingVertical: 10, paddingHorizontal: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border,
+  },
+  periodRange: { flex: 1, color: colors.onSurface, fontSize: 12.5, fontWeight: '600' },
+  periodAmount: { color: colors.onSurfaceSecondary, fontSize: 12.5, fontWeight: '700' },
+  periodDot: { width: 9, height: 9, borderRadius: 3, borderWidth: 1.5 },
   calCellPaid: { backgroundColor: colors.success, borderColor: colors.onSuccess },
-  calCellTextPaid: { color: colors.onSuccess },
   calCellPending: { backgroundColor: colors.error, borderColor: colors.onError },
-  calCellTextPending: { color: colors.onError },
   legend: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md, marginTop: spacing.md },
   legendItem: { flexDirection: 'row', gap: 4, alignItems: 'center' },
   legendDot: { width: 10, height: 10, borderRadius: 3, borderWidth: 1.5 },
