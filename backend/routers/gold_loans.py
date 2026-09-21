@@ -276,6 +276,55 @@ async def list_gold_loan_transactions(
     return {'items': items, 'total': total, 'skip': skip, 'limit': limit}
 
 
+@router.get('/gold-loans/{loan_id}/interest-breakdown')
+async def gold_loan_interest_breakdown(loan_id: str, _: dict = Depends(require_staff_or_module('gold_loans'))):
+    """The day-by-day workings behind each already-posted month of interest —
+    for staff who want to see exactly how a month's figure was reached, not
+    just the total. One entry per posted interest_due period, oldest first;
+    each carries the real posted amount (from the ledger, authoritative) plus
+    the day-wise segments that explain it (see _month_interest_segments —
+    display only, its own rounding can differ from the posted amount by a
+    paisa or two on a month with more than one segment, same as any
+    itemised bill)."""
+    loan = await _get_loan(loan_id)
+    try:
+        loan_date = date.fromisoformat(loan['loan_date'])
+    except (ValueError, KeyError):
+        return {'daily_rate_percent': 0, 'months': []}
+
+    txns = await db.gold_loan_transactions.find(
+        {'loan_id': loan_id, 'type': {'$in': ['payment_principal', 'topup_principal', 'interest_due']}}, {'_id': 0},
+    ).to_list(5000)
+    principal_txns = []
+    interest_due = []
+    for t in txns:
+        if t['type'] == 'interest_due':
+            interest_due.append(t)
+            continue
+        try:
+            amt = t['amount'] if t['type'] == 'payment_principal' else -t['amount']
+            principal_txns.append((date.fromisoformat(t['date']), amt))
+        except (ValueError, KeyError):
+            continue
+
+    months = []
+    for entry in sorted(interest_due, key=lambda e: e.get('period') or ''):
+        period = entry.get('period')
+        if not period:
+            continue
+        try:
+            y, m = int(period[:4]), int(period[5:7])
+        except (ValueError, IndexError):
+            continue
+        period_start = date(y, m, 1)
+        next_y, next_m = _add_month(y, m)
+        period_end = date(next_y, next_m, 1)
+        segments = _month_interest_segments(loan, principal_txns, period_start, period_end, loan_date)
+        months.append({'period': period, 'posted_amount': round(float(entry.get('amount') or 0), 2), 'segments': segments})
+
+    return {'daily_rate_percent': round(loan['interest_rate_percent'] / 30, 5), 'months': months}
+
+
 @router.put('/gold-loans/{loan_id}')
 async def update_gold_loan(loan_id: str, body: GoldLoanUpdateIn, user=Depends(require_admin_or_module_right('gold_loans', 'edit'))):
     loan = await _get_loan(loan_id)
@@ -441,7 +490,11 @@ def _month_interest_daywise(loan: dict, principal_txns: list, period_start: date
     Starting the walk at max(period_start, loan_date) is what prorates a
     loan's first, partial month correctly (e.g. a loan taken on the 20th
     only charges the 11-12 remaining days of that month) instead of the old
-    day-15 either/or of "whole month" or "no month"."""
+    day-15 either/or of "whole month" or "no month".
+
+    This is the SOLE authority for what actually posts — kept independent of
+    _month_interest_segments (below) on purpose, so a display-only feature
+    can never nudge the real ledger by a paisa of rounding drift."""
     rate = loan['interest_rate_percent'] / 100 / 30
     total = 0.0
     d = max(period_start, loan_date)
@@ -453,6 +506,40 @@ def _month_interest_daywise(loan: dict, principal_txns: list, period_start: date
         total += max(balance, 0) * rate
         d += timedelta(days=1)
     return round(total, 2)
+
+
+def _month_interest_segments(loan: dict, principal_txns: list, period_start: date, period_end: date, loan_date: date) -> list:
+    """Same day-walk as _month_interest_daywise, but grouped into consecutive
+    same-balance segments for display (see GET .../interest-breakdown) — the
+    "9 days at ₹1,00,000, then 22 days at ₹60,000" workings behind a month's
+    total. Each segment's amount is rounded independently for readability;
+    across a month with more than one segment this can differ from the
+    actual posted total by a paisa or two of rounding, same as any itemised
+    bill — the posted amount (from _month_interest_daywise / the real ledger
+    entry) is always the authoritative figure, not the sum of these lines."""
+    rate = loan['interest_rate_percent'] / 100 / 30
+    segments = []
+    seg_start = None
+    seg_balance = None
+    seg_days = 0
+    d = max(period_start, loan_date)
+    while d < period_end:
+        balance = loan['principal']
+        for txn_date, amt in principal_txns:
+            if txn_date <= d:
+                balance -= amt
+        balance = max(balance, 0)
+        if seg_balance is None or balance != seg_balance:
+            if seg_start is not None:
+                segments.append({'from': seg_start.isoformat(), 'to': (d - timedelta(days=1)).isoformat(),
+                                  'days': seg_days, 'balance': round(seg_balance, 2), 'amount': round(seg_balance * rate * seg_days, 2)})
+            seg_start, seg_balance, seg_days = d, balance, 0
+        seg_days += 1
+        d += timedelta(days=1)
+    if seg_start is not None:
+        segments.append({'from': seg_start.isoformat(), 'to': (d - timedelta(days=1)).isoformat(),
+                          'days': seg_days, 'balance': round(seg_balance, 2), 'amount': round(seg_balance * rate * seg_days, 2)})
+    return segments
 
 
 def _add_month(y: int, m: int) -> tuple:

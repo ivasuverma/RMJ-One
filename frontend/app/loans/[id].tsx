@@ -15,6 +15,9 @@ import { useTheme } from '@/src/theme/ThemeContext';
 import { ErrorState } from '@/src/components/ui';
 
 type InterestMonth = { period: string; date: string; amount: number; paid: boolean };
+type InterestSegment = { from: string; to: string; days: number; balance: number; amount: number };
+type InterestBreakdownMonth = { period: string; posted_amount: number; segments: InterestSegment[] };
+type InterestBreakdown = { daily_rate_percent: number; months: InterestBreakdownMonth[] };
 type Loan = {
   id: string; loan_no: string; customer_name: string; customer_mobile: string;
   description: string; weight: number; pc_count: number;
@@ -29,7 +32,9 @@ type Loan = {
 };
 
 const fmtINR = (n: number) => `₹${Math.round(n || 0).toLocaleString('en-IN')}`;
+const fmtINR2 = (n: number) => `₹${(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const fmtDay = (iso: string) => { const [, m, d] = iso.split('-'); return `${parseInt(d, 10)} ${MONTHS[parseInt(m, 10) - 1]}`; };
 
 // This screen is summary only — balances, terms, and an at-a-glance
 // interest calendar. Recording a payment and browsing/editing the full
@@ -72,6 +77,23 @@ export default function GoldLoanDetailScreen() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loan?.id]);
+
+  // Interest calculation workings — day-by-day breakdown behind each
+  // posted month's figure (see gold_loan_interest_breakdown in
+  // gold_loans.py). Fetched lazily on first expand, not on every page load,
+  // since most visits just want the summary numbers already on the page.
+  const [calcExpanded, setCalcExpanded] = useState(false);
+  const [breakdown, setBreakdown] = useState<InterestBreakdown | null>(null);
+  const [breakdownLoading, setBreakdownLoading] = useState(false);
+  const toggleCalc = () => {
+    setCalcExpanded((v) => !v);
+    if (!breakdown && !breakdownLoading) {
+      setBreakdownLoading(true);
+      api.get<InterestBreakdown>(`/gold-loans/${id}/interest-breakdown`)
+        .then(setBreakdown).catch(() => notify('Failed', 'Could not load the calculation breakdown'))
+        .finally(() => setBreakdownLoading(false));
+    }
+  };
 
   const closeLoan = () => {
     if (!loan) return;
@@ -234,6 +256,40 @@ export default function GoldLoanDetailScreen() {
 
         <View style={styles.detailCard}>
           <View style={styles.detailRow}><Text style={styles.detailLabel}>Interest rate</Text><Text style={styles.detailValue}>{loan.interest_rate_percent.toFixed(2)}% / month</Text></View>
+
+          <Pressable onPress={toggleCalc} style={styles.calcToggleRow} testID="interest-calc-toggle">
+            <Text style={styles.calcToggleText}>How this is calculated</Text>
+            {breakdownLoading ? <ActivityIndicator size="small" color={colors.onSurfaceSecondary} /> : (
+              <Ionicons name={calcExpanded ? 'chevron-up' : 'chevron-down'} size={16} color={colors.onSurfaceSecondary} />
+            )}
+          </Pressable>
+
+          {calcExpanded && breakdown && (
+            <View style={styles.calcBox} testID="interest-calc-detail">
+              <Text style={styles.calcRateText}>
+                Daily rate: {loan.interest_rate_percent.toFixed(2)}% ÷ 30 = {breakdown.daily_rate_percent.toFixed(4)}%/day
+              </Text>
+              {breakdown.months.length === 0 ? (
+                <Text style={styles.calcEmptyText}>No interest posted yet.</Text>
+              ) : breakdown.months.map((mo) => (
+                <View key={mo.period} style={styles.calcMonth}>
+                  <View style={styles.calcMonthHeader}>
+                    <Text style={styles.calcMonthLabel}>
+                      {MONTHS[parseInt(mo.period.slice(5, 7), 10) - 1]} {mo.period.slice(0, 4)}
+                    </Text>
+                    <Text style={styles.calcMonthTotal}>{fmtINR2(mo.posted_amount)}</Text>
+                  </View>
+                  {mo.segments.map((s, i) => (
+                    <Text key={i} style={styles.calcSegmentText}>
+                      {s.from === s.to ? fmtDay(s.from) : `${fmtDay(s.from)}–${fmtDay(s.to)}`} ({s.days} day{s.days === 1 ? '' : 's'})
+                      {'  ×  '}{fmtINR(s.balance)}{'  =  '}{fmtINR2(s.amount)}
+                    </Text>
+                  ))}
+                </View>
+              ))}
+            </View>
+          )}
+
           <View style={styles.detailRow}><Text style={styles.detailLabel}>Loan date</Text><Text style={styles.detailValue}>{loan.loan_date}</Text></View>
           {!!loan.estimate_return_date && (
             <View style={styles.detailRow}><Text style={styles.detailLabel}>Est. return</Text><Text style={styles.detailValue}>{loan.estimate_return_date}</Text></View>
@@ -268,12 +324,6 @@ export default function GoldLoanDetailScreen() {
             <Ionicons name="list-outline" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>Transactions</Text>
           </Pressable>
         </View>
-
-        {isActive && (
-          <Pressable onPress={() => router.push(`/loans/transact?id=${loan.id}&type=topup` as any)} style={styles.actionBtn} testID="topup-loan-btn">
-            <Ionicons name="add-circle-outline" size={16} color={colors.onSurfaceSecondary} /><Text style={styles.actionBtnText}>Pay Customer More (Top-up)</Text>
-          </Pressable>
-        )}
 
         {isActive && (
           <Pressable
@@ -391,6 +441,20 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   detailRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6 },
   detailLabel: { color: colors.mutedText, fontSize: 12 },
   detailValue: { color: colors.onSurface, fontSize: 13, fontWeight: '600' },
+
+  calcToggleRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 4 },
+  calcToggleText: { flex: 1, color: colors.brandSecondary, fontSize: 12, fontWeight: '700' },
+  calcBox: {
+    backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    padding: spacing.sm, marginTop: 4, marginBottom: 6,
+  },
+  calcRateText: { color: colors.onSurfaceSecondary, fontSize: 11, fontWeight: '600', marginBottom: spacing.sm },
+  calcEmptyText: { color: colors.mutedText, fontSize: 12 },
+  calcMonth: { marginBottom: spacing.sm },
+  calcMonthHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 2 },
+  calcMonthLabel: { color: colors.onSurface, fontSize: 12, fontWeight: '700' },
+  calcMonthTotal: { color: colors.onSurface, fontSize: 12, fontWeight: '700' },
+  calcSegmentText: { color: colors.mutedText, fontSize: 11, lineHeight: 16 },
 
   formHeaderText: { color: colors.onSurface, fontSize: 13, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
 

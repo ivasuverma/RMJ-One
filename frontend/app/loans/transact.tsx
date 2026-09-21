@@ -5,6 +5,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
+import { DateField } from '@/src/components/DateField';
+import { todayIST } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
@@ -46,6 +48,13 @@ export default function GoldLoanTransactScreen() {
     typeParam === 'principal' ? 'principal' : typeParam === 'topup' ? 'topup' : 'interest',
   );
   const [note, setNote] = useState('');
+  // Principal repayments and top-ups feed the day-wise interest calculation
+  // directly (see _month_interest_daywise in gold_loans.py) — the exact
+  // date matters, so staff can backdate to when the cash actually changed
+  // hands instead of it silently defaulting to today. Not needed for
+  // interest: that's tagged to a period via the month calendar below, not a
+  // single date, and doesn't feed the balance math.
+  const [txnDate, setTxnDate] = useState(todayIST());
   const [saving, setSaving] = useState(false);
 
   const [pendingMonths, setPendingMonths] = useState<InterestMonth[]>([]);
@@ -117,10 +126,12 @@ export default function GoldLoanTransactScreen() {
   const submit = async () => {
     const amt = parseFloat(amount);
     if (!amt || amt <= 0) { notify('Missing', 'Enter an amount greater than 0'); return; }
+    if (type !== 'interest' && !txnDate) { notify('Missing', 'Pick the date this happened'); return; }
     setSaving(true);
     try {
       const body: any = { amount: amt, type, note: note.trim() };
       if (type === 'interest' && selected.length > 0) body.periods = selected;
+      if (type !== 'interest') body.date = txnDate;
       await api.post(`/gold-loans/${id}/payment`, body);
       router.back();
     } catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
@@ -206,6 +217,17 @@ export default function GoldLoanTransactScreen() {
 
           <Text style={styles.label}>Amount (₹)</Text>
           <TextInput testID="pay-amount" value={amount} onChangeText={(v) => setAmount(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />
+
+          {type !== 'interest' && (
+            <>
+              <DateField label="Date this happened" value={txnDate} onChange={setTxnDate} testID="pay-date" />
+              <Text style={styles.helperText}>
+                {type === 'topup'
+                  ? 'This is when the balance actually goes up — interest from this date is charged on the higher amount.'
+                  : 'This is when the balance actually goes down — interest from this date is charged on the lower amount.'}
+              </Text>
+            </>
+          )}
 
           <Text style={styles.label}>Note (optional)</Text>
           <TextInput testID="pay-note" value={note} onChangeText={setNote} placeholderTextColor={colors.mutedText} style={styles.input} />
