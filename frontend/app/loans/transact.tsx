@@ -15,6 +15,7 @@ type Loan = {
 };
 
 const addMonth = (y: number, m: number): [number, number] => (m === 12 ? [y + 1, 1] : [y, m + 1]);
+const daysInMonth = (y: number, m: number) => new Date(y, m, 0).getDate();
 
 const fmtINR = (n: number) => `₹${Math.round(n || 0).toLocaleString('en-IN')}`;
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -59,15 +60,19 @@ export default function GoldLoanTransactScreen() {
 
       // Months not yet due can still be recorded against (advance/prepaid
       // interest) — project them forward from the last known period (or
-      // from the loan's own start period, using the same 1-15 cutoff the
-      // backend uses) at the current outstanding balance and rate. Once
-      // the real due entry posts on schedule, it'll match this period tag
-      // and show as paid — see _compute_loan_state in gold_loans.py.
+      // from the loan's own start month — day-wise proration on the
+      // backend means even a loan's first partial month already has its
+      // own due entry, so no day-15 skip-to-next-month here either) at the
+      // current outstanding balance and rate, day-wise per projected month
+      // (daily rate = monthly rate / 30, times however many days that
+      // calendar month actually has). Once the real due entry posts on
+      // schedule, it'll match this period tag and show as paid — see
+      // _month_interest_daywise in gold_loans.py.
       const rate = loan.interest_rate_percent || 0;
       const bal = loan.principal_balance || 0;
-      const projAmount = Math.round(bal * rate / 100);
+      const dailyRate = rate / 100 / 30;
       const future: InterestMonth[] = [];
-      if (projAmount > 0) {
+      if (bal > 0 && dailyRate > 0) {
         let ay: number; let am: number;
         if (loan.interest_months.length > 0) {
           const maxPeriod = loan.interest_months.reduce((mx, mo) => (mo.period > mx ? mo.period : mx), loan.interest_months[0].period);
@@ -76,12 +81,12 @@ export default function GoldLoanTransactScreen() {
         } else if (loan.loan_date) {
           const ld = new Date(`${loan.loan_date}T00:00:00`);
           ay = ld.getFullYear(); am = ld.getMonth() + 1;
-          if (ld.getDate() > 15) [ay, am] = addMonth(ay, am);
         } else {
           const now = new Date(); ay = now.getFullYear(); am = now.getMonth() + 1;
         }
         let y = ay; let m = am;
         for (let i = 0; i < 24; i += 1) {
+          const projAmount = Math.round(bal * dailyRate * daysInMonth(y, m));
           future.push({ period: `${y}-${String(m).padStart(2, '0')}`, date: '', amount: projAmount, paid: false, projected: true });
           [y, m] = addMonth(y, m);
         }
