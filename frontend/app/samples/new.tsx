@@ -15,6 +15,7 @@ import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
 type Karigar = { id: string; name: string; active: boolean };
+type ItemMaster = { id: string; name: string; purity: number; category: string; active: boolean };
 type Sample = {
   id: string; sample_code: string; description: string; tag_number: string;
   weight: number; purity?: number | null; pc_count?: number; issue_type?: string; due_date: string | null;
@@ -34,12 +35,17 @@ export default function NewSampleScreen() {
 
   const [karigars, setKarigars] = useState<Karigar[]>([]);
   const [issueTypes, setIssueTypes] = useState<string[]>([]);
+  const [itemMasters, setItemMasters] = useState<ItemMaster[]>([]);
   const load = useCallback(async () => {
     try { setKarigars((await api.get<Karigar[]>('/karigars')).filter((k) => k.active)); }
     catch (_e) { setKarigars([]); }
     // Owner-configurable at Settings › Masters › Sample Issue Types.
     try { setIssueTypes((await api.get<{ issue_types: string[] }>('/samples/issue-types')).issue_types); }
     catch (_e) { setIssueTypes([]); }
+    // Settings › Items & Purity — picking one just pre-fills the Purity %
+    // field below (still freely editable after), same as repairs/new.tsx.
+    try { setItemMasters(await api.get<ItemMaster[]>('/item-master')); }
+    catch (_e) { setItemMasters([]); }
   }, []);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
@@ -55,6 +61,9 @@ export default function NewSampleScreen() {
   const [weight, setWeight] = useState('');
   const [pcCount, setPcCount] = useState('1');
   const [purity, setPurity] = useState('');
+  const [itemMasterId, setItemMasterId] = useState('');
+  const [imPickerOpen, setImPickerOpen] = useState(false);
+  const pickItemMaster = (im: ItemMaster) => { setItemMasterId(im.id); setPurity(String(im.purity)); setImPickerOpen(false); };
   const [dueDate, setDueDate] = useState('');
   const [note, setNote] = useState('');
   const [photo, setPhoto] = useState('');
@@ -211,6 +220,25 @@ export default function NewSampleScreen() {
               placeholder="Describe the reason" placeholderTextColor={colors.mutedText}
               style={[styles.input, { marginTop: spacing.sm }]}
             />
+          )}
+
+          <Text style={styles.label}>Item type (optional)</Text>
+          <Pressable onPress={() => setImPickerOpen((v) => !v)} style={styles.picker} testID="sample-item-master-toggle">
+            <Text style={itemMasterId ? styles.pickerValue : styles.pickerPlaceholder}>
+              {itemMasterId ? `${itemMasters.find((im) => im.id === itemMasterId)?.name} (${itemMasters.find((im) => im.id === itemMasterId)?.purity}%)` : 'Choose to fill in the purity below'}
+            </Text>
+            <Ionicons name={imPickerOpen ? 'chevron-up' : 'chevron-down'} size={16} color={colors.mutedText} />
+          </Pressable>
+          {imPickerOpen && (
+            <ScrollView style={styles.pickerList} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+              {itemMasters.filter((im) => im.active).map((im) => (
+                <Pressable key={im.id} onPress={() => pickItemMaster(im)} style={styles.pickerRow} testID={`sample-item-master-${im.id}`}>
+                  <Text style={styles.pickerRowName}>{im.name}</Text>
+                  <Text style={styles.pickerRowMeta}>{im.purity}%</Text>
+                </Pressable>
+              ))}
+              {itemMasters.length === 0 && <Text style={[styles.pickerRowMeta, { padding: spacing.md }]}>No items set up yet — Settings › Items &amp; Purity</Text>}
+            </ScrollView>
           )}
 
           <Text style={styles.label}>Description</Text>
