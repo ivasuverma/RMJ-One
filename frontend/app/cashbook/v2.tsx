@@ -13,8 +13,9 @@ import { enqueueRecordPhoto } from '@/src/utils/uploadQueue';
 import { displayDateOnlyWithWeekday, localDateStr, todayIST } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { counterTones } from '@/src/theme/palettes';
 import { useAuth } from '@/src/auth/AuthContext';
-import { Card, ErrorState, FilterChips, SegmentedControl, Sheet, useToast } from '@/src/components/ui';
+import { Card, ErrorState, SegmentedControl, Sheet, useToast } from '@/src/components/ui';
 
 type EntryType = 'received' | 'paid';
 type Kind = EntryType | 'transfer';
@@ -37,7 +38,7 @@ const fmt = (n: number) => Math.round(Math.abs(n || 0)).toLocaleString('en-IN');
 const inr = (n: number) => `${n < 0 ? '−' : ''}₹${fmt(n)}`;
 
 // The newer Cash Book view: one running statement per location and day (Received / Paid / Transfer in a single ordered
-// list, with the balance after every entry), a summary card on top, and one ＋ button that opens the compose sheet.
+// list, with the balance after every entry), a summary card on top, and Received/Paid buttons that open the compose sheet.
 // Optional — reached from the default (classic) Cash Book tab via its ✨ button ("Classic view" here returns to it).
 export default function CashBookScreen() {
   const router = useRouter();
@@ -126,8 +127,8 @@ export default function CashBookScreen() {
   const tags = quickNames.filter((q) => kind !== 'transfer' && (q.entry_type == null || q.entry_type === kind));
   const counterName = (id?: string | null) => transferOptions.find((c) => c.id === id)?.name || counters.find((c) => c.id === id)?.name || '';
 
-  const openAdd = () => {
-    setEditing(null); setKind('received'); setAmount(''); setName(''); setTag(''); setNote(''); setDest(''); setDir('out'); setShots([]);
+  const openAdd = (k: EntryType = 'received') => {
+    setEditing(null); setKind(k); setAmount(''); setName(''); setTag(''); setNote(''); setDest(''); setDir('out'); setShots([]);
     setAddingTag(false); setNewTag(''); setSheet(true);
   };
   const openEdit = (e: Entry) => {
@@ -227,16 +228,7 @@ export default function CashBookScreen() {
         ) : null}
       </View>
 
-      <ScrollView
-        contentContainerStyle={{ padding: spacing.lg, paddingBottom: 120, gap: spacing.md }}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(date, counterId); }} tintColor={colors.brandPrimary} />}
-      >
-        {counters.length > 1 ? (
-          counters.length <= 4
-            ? <SegmentedControl testID="cashbook-counters" options={counters.map((c) => ({ key: c.id, label: c.name }))} value={counterId} onChange={setCounterId} />
-            : <FilterChips testID="cashbook-counters" options={counters.map((c) => ({ key: c.id, label: c.name }))} value={counterId} onChange={setCounterId} />
-        ) : null}
-
+      <View style={styles.stickyBar}>
         {!isEmployee && (
           <View style={styles.dayNav}>
             <Pressable onPress={() => shiftDay(-1)} style={styles.navBtn} testID="cashbook-prev-day" hitSlop={10}>
@@ -253,13 +245,43 @@ export default function CashBookScreen() {
             )}
           </View>
         )}
-        <Text style={styles.dayLabel}>{isToday ? 'Today · ' : ''}{displayDateOnlyWithWeekday(date)}</Text>
 
+        {counters.length > 1 && (
+          <View style={styles.counterRow}>
+            {counters.map((c, i) => {
+              const tones = counterTones(colors);
+              const tone = tones[i % tones.length];
+              const active = counterId === c.id;
+              return (
+                <Pressable
+                  key={c.id}
+                  onPress={() => setCounterId(c.id)}
+                  style={[
+                    styles.counterChip,
+                    { backgroundColor: tone.bg },
+                    active && { borderColor: tone.text, borderWidth: 2 },
+                  ]}
+                  testID={`cashbook-counter-${c.id}`}
+                >
+                  <Text style={[styles.counterChipText, { color: tone.text }, active && styles.counterChipTextActive]}>{c.name}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
+
+        <Text style={styles.dayLabel}>{isToday ? 'Today · ' : ''}{displayDateOnlyWithWeekday(date)}</Text>
+      </View>
+
+      <ScrollView
+        contentContainerStyle={{ padding: spacing.lg, paddingTop: spacing.sm, paddingBottom: 100, gap: spacing.md }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(date, counterId); }} tintColor={colors.brandPrimary} />}
+      >
         {loading ? <View style={{ paddingVertical: 60 }}><ActivityIndicator color={colors.brandPrimary} /></View>
           : dayError ? <ErrorState message={dayError} onRetry={() => load(date, counterId)} testID="cashbook-day-error" />
           : !day ? <Text style={styles.empty}>No Cash Book location is set up yet.</Text> : (
           <>
-            <Card>
+            <Card style={styles.heroCard}>
               <View style={styles.heroTotals}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.heroLabel}>Received</Text>
@@ -271,11 +293,15 @@ export default function CashBookScreen() {
                 </View>
               </View>
               <View style={styles.heroRule} />
-              <Text style={styles.heroLabel}>Closing balance · {day.counter_name}</Text>
-              <Text style={styles.heroBig} testID="cashbook-closing">{inr(day.closing_balance)}</Text>
-              <Text style={[styles.net, { color: net >= 0 ? colors.onSuccess : colors.onError }]}>
-                {net >= 0 ? '▲' : '▼'} {inr(Math.abs(net))} net {isToday ? 'today' : 'this day'}
-              </Text>
+              <View style={styles.heroCloseRow}>
+                <View>
+                  <Text style={styles.heroLabel}>Closing · {day.counter_name}</Text>
+                  <Text style={styles.heroBig} testID="cashbook-closing">{inr(day.closing_balance)}</Text>
+                </View>
+                <Text style={[styles.net, { color: net >= 0 ? colors.onSuccess : colors.onError }]}>
+                  {net >= 0 ? '▲' : '▼'} {inr(Math.abs(net))} net {isToday ? 'today' : 'this day'}
+                </Text>
+              </View>
             </Card>
 
             <SegmentedControl
@@ -328,9 +354,16 @@ export default function CashBookScreen() {
       </ScrollView>
 
       {counterId ? (
-        <Pressable onPress={openAdd} style={styles.fab} testID="cashbook-add" accessibilityLabel="Add entry">
-          <Ionicons name="add" size={30} color={colors.onBrandPrimary} />
-        </Pressable>
+        <View style={styles.fabRow}>
+          <Pressable onPress={() => openAdd('received')} style={[styles.fab, { backgroundColor: colors.brandPrimary }]} testID="cashbook-add-received">
+            <Ionicons name="add" size={18} color={colors.onBrandPrimary} />
+            <Text style={styles.fabText}>Received</Text>
+          </Pressable>
+          <Pressable onPress={() => openAdd('paid')} style={[styles.fab, styles.fabSecondary]} testID="cashbook-add-paid">
+            <Ionicons name="add" size={18} color={colors.onSurface} />
+            <Text style={[styles.fabText, { color: colors.onSurface }]}>Paid</Text>
+          </Pressable>
+        </View>
       ) : null}
 
       <Sheet visible={sheet} onClose={() => setSheet(false)} title={editing ? 'Edit entry' : 'New entry'} testID="cashbook-sheet">
@@ -456,17 +489,24 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   title: { flex: 1, color: colors.onSurface, fontSize: 20, fontWeight: '600', fontFamily: fonts.display },
   classicBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, height: 34, borderRadius: radius.pill, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border },
   classicText: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '700' },
+  stickyBar: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.xs, gap: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.divider },
   dayNav: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   navBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
   todayPill: { paddingHorizontal: 14, height: 34, borderRadius: radius.pill, backgroundColor: colors.brandPrimary, alignItems: 'center', justifyContent: 'center' },
   todayText: { color: colors.onBrandPrimary, fontSize: 12, fontWeight: '700' },
   dayLabel: { color: colors.mutedText, fontSize: 12, textAlign: 'center' },
+  counterRow: { flexDirection: 'row', alignItems: 'stretch', gap: spacing.sm },
+  counterChip: { flex: 1, alignItems: 'center', paddingHorizontal: spacing.md, paddingVertical: 10, borderRadius: radius.pill, borderWidth: 1, borderColor: 'transparent' },
+  counterChipText: { fontSize: 12.5, fontWeight: '700', textAlign: 'center' },
+  counterChipTextActive: { fontWeight: '800' },
+  heroCard: { padding: spacing.md },
   heroTotals: { flexDirection: 'row' },
   heroLabel: { color: colors.mutedText, fontSize: 11, letterSpacing: 0.8, textTransform: 'uppercase' },
-  heroSmall: { fontSize: 18, fontWeight: '700', marginTop: 2 },
-  heroRule: { height: 1, backgroundColor: colors.divider, marginVertical: spacing.md },
-  heroBig: { color: colors.brandPrimary, fontSize: 36, fontWeight: '700', fontFamily: fonts.display, marginTop: 4 },
-  net: { fontSize: 12.5, fontWeight: '600', marginTop: 4 },
+  heroSmall: { fontSize: 17, fontWeight: '700', marginTop: 2 },
+  heroRule: { height: 1, backgroundColor: colors.divider, marginVertical: spacing.sm },
+  heroCloseRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' },
+  heroBig: { color: colors.brandPrimary, fontSize: 26, fontWeight: '700', fontFamily: fonts.display, marginTop: 2 },
+  net: { fontSize: 12, fontWeight: '600' },
   opening: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: 10 },
   openingLabel: { color: colors.onSurfaceSecondary, fontSize: 13, fontWeight: '600' },
   openingVal: { color: colors.onSurface, fontSize: 14, fontWeight: '700' },
@@ -481,7 +521,10 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   rowAmt: { fontSize: 15, fontWeight: '700' },
   rowBal: { color: colors.mutedText, fontSize: 11, marginTop: 2 },
   empty: { color: colors.mutedText, textAlign: 'center', paddingVertical: 40 },
-  fab: { position: 'absolute', right: 20, bottom: 24, width: 58, height: 58, borderRadius: 29, backgroundColor: colors.brandPrimary, alignItems: 'center', justifyContent: 'center', elevation: 6, shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } },
+  fabRow: { position: 'absolute', left: spacing.lg, right: spacing.lg, bottom: spacing.lg, flexDirection: 'row', gap: spacing.sm },
+  fab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, borderRadius: radius.pill, paddingVertical: 13, elevation: 6, shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } },
+  fabSecondary: { backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border },
+  fabText: { color: colors.onBrandPrimary, fontWeight: '700', fontSize: 13 },
   hint: { color: colors.mutedText, fontSize: 12, lineHeight: 17 },
   amountBox: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: spacing.sm },
   rupee: { color: colors.mutedText, fontSize: 30, fontWeight: '600' },

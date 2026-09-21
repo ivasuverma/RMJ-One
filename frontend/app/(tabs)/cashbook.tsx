@@ -13,6 +13,7 @@ import { DateField } from '@/src/components/DateField';
 import { displayDateOnlyWithWeekday, localDateStr, todayIST } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { counterTones } from '@/src/theme/palettes';
 import { useAuth } from '@/src/auth/AuthContext';
 import { ErrorState } from '@/src/components/ui';
 
@@ -38,17 +39,6 @@ type QuickName = { id: string; name: string; entry_type: EntryType | null };
 type Mode = 'view' | 'form' | 'settings';
 
 const fmtINR = (n: number) => `₹${Math.round(n || 0).toLocaleString('en-IN')}`;
-
-// Gives each counter pill its own colour (cycling through the theme's
-// tinted semantic pairs) so counters stay visually distinct at a glance,
-// not just by label.
-const counterTones = (colors: ThemeColors) => [
-  { bg: colors.brandTertiary, text: colors.brandSecondary },
-  { bg: colors.info, text: colors.onInfo },
-  { bg: colors.success, text: colors.onSuccess },
-  { bg: colors.warning, text: colors.onWarning },
-  { bg: colors.error, text: colors.onError },
-];
 
 export default function CashBookScreen() {
   const router = useRouter();

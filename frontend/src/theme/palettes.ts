@@ -68,6 +68,17 @@ export const lightColors: ThemeColors = {
   mutedText: '#8B887E',
 };
 
+// Gives each Cash Book counter its own colour (cycling through the tinted
+// semantic pairs below) so counters stay visually distinct at a glance, not
+// just by label — used by both the classic and v2 Cash Book screens.
+export const counterTones = (colors: ThemeColors) => [
+  { bg: colors.brandTertiary, text: colors.brandSecondary },
+  { bg: colors.info, text: colors.onInfo },
+  { bg: colors.success, text: colors.onSuccess },
+  { bg: colors.warning, text: colors.onWarning },
+  { bg: colors.error, text: colors.onError },
+];
+
 // Dark — the "RMJ One" signature look (matches the v2 design comp): a
 // near-black #0B0B0C canvas, layered #161619 / #1E1E22 cards with hairline
 // white borders, warm ivory ink, and antique gold reserved for primary
