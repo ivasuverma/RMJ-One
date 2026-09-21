@@ -614,6 +614,9 @@ class SelfAccountUpdateIn(BaseModel):
     new_name: Optional[str] = None
     new_username: Optional[str] = None
     new_password: Optional[str] = None
+    # Not used to send anything yet — captured here so it's on hand once the
+    # WhatsApp-alerts-to-admin feature is built.
+    new_mobile: Optional[str] = None
 
 
 class ModuleAccessUpdateIn(BaseModel):

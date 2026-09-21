@@ -72,6 +72,7 @@ async def login(body: LoginIn, request: Request):
         'access_token': tok, 'token_type': 'bearer',
         'user': {
             'id': user['id'], 'username': user['username'], 'name': user['name'], 'role': user.get('role', 'owner'),
+            'mobile': user.get('mobile') or '',
             'modules': resolve_modules(user),
         },
     }
@@ -96,6 +97,7 @@ async def employee_login(body: EmployeeLoginIn, request: Request):
             'id': emp['id'], 'username': emp.get('username', uname), 'name': emp['name'], 'role': 'employee',
             'employee_code': code, 'designation': emp.get('designation'),
             'department': emp.get('department'), 'photo': emp.get('photo', ''),
+            'mobile': emp.get('mobile') or '',
             'modules': resolve_modules({**emp, 'role': 'employee'}), 'module_rights': emp.get('module_rights') or {},
             'must_change_password': bool(emp.get('must_change_password')),
         },
@@ -117,6 +119,7 @@ async def login_unified(body: LoginIn, request: Request):
             'access_token': tok, 'token_type': 'bearer',
             'user': {
                 'id': user['id'], 'username': user['username'], 'name': user['name'], 'role': user.get('role', 'owner'),
+                'mobile': user.get('mobile') or '',
                 'modules': resolve_modules(user),
             },
         }
@@ -133,6 +136,7 @@ async def login_unified(body: LoginIn, request: Request):
                 'id': emp['id'], 'username': emp.get('username', uname), 'name': emp['name'], 'role': 'employee',
                 'employee_code': code, 'designation': emp.get('designation'),
                 'department': emp.get('department'), 'photo': emp.get('photo', ''),
+                'mobile': emp.get('mobile') or '',
                 'modules': resolve_modules({**emp, 'role': 'employee'}), 'module_rights': emp.get('module_rights') or {},
                 'must_change_password': bool(emp.get('must_change_password')),
             },
@@ -146,6 +150,7 @@ async def me(user=Depends(get_current)):
     if user['role'] in ('owner', 'admin', 'accountant'):
         return {
             'id': user['id'], 'username': user['username'], 'name': user['name'], 'role': user['role'],
+            'mobile': user.get('mobile') or '',
             'modules': resolve_modules(user),
         }
     # Work-from-home employees don't record attendance, so the app hides the
@@ -155,6 +160,7 @@ async def me(user=Depends(get_current)):
         'id': user['id'], 'username': user.get('username') or user.get('employee_code'), 'name': user['name'], 'role': 'employee',
         'employee_code': user['employee_code'], 'designation': user.get('designation'),
         'department': user.get('department'), 'photo': user.get('photo_thumb') or '',
+        'mobile': user.get('mobile') or '',
         'shift': user.get('shift'), 'remote': bool(shift_doc and shift_doc.get('remote')),
         'modules': resolve_modules(user), 'module_rights': user.get('module_rights') or {},
         'must_change_password': bool(user.get('must_change_password')),

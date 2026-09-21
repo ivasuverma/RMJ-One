@@ -109,6 +109,8 @@ async def update_my_account(body: SelfAccountUpdateIn, user=Depends(get_current)
         # See get_current: ends sessions on other devices. The fresh token
         # issued below is minted after this stamp, so the caller stays signed in.
         upd['tokens_valid_from'] = now_utc().isoformat()
+    if body.new_mobile is not None:
+        upd['mobile'] = body.new_mobile.strip()
     if not upd:
         raise HTTPException(status_code=400, detail='Nothing to update')
     upd['updated_at'] = now_utc().isoformat()
@@ -121,6 +123,7 @@ async def update_my_account(body: SelfAccountUpdateIn, user=Depends(get_current)
             'id': updated['id'], 'username': updated.get('username'), 'name': updated['name'], 'role': 'employee',
             'employee_code': updated.get('employee_code'), 'designation': updated.get('designation'),
             'department': updated.get('department'), 'photo': updated.get('photo', ''),
+            'mobile': updated.get('mobile') or '',
             'modules': resolve_modules({**updated, 'role': 'employee'}), 'module_rights': updated.get('module_rights') or {},
         }
     else:

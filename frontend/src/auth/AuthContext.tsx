@@ -12,6 +12,9 @@ export type User = {
   designation?: string;
   department?: string;
   photo?: string;
+  // Not used to send anything yet — captured on My Account ahead of the
+  // WhatsApp-alerts-to-admin feature.
+  mobile?: string;
   // Employee-only: their assigned shift, and whether that shift is a
   // work-from-home one (no attendance; hide check-in and attendance tiles).
   shift?: string;
@@ -41,7 +44,7 @@ type AuthState = {
   loginEmployee: (username: string, password: string, remember?: boolean) => Promise<void>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
-  updateMyAccount: (currentPassword: string, newUsername?: string, newPassword?: string, newName?: string) => Promise<void>;
+  updateMyAccount: (currentPassword: string, newUsername?: string, newPassword?: string, newName?: string, newMobile?: string) => Promise<void>;
   hasModule: (key: string) => boolean;
   hasRight: (key: string, right: 'edit' | 'delete') => boolean;
 };
@@ -145,7 +148,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
   }, []);
 
-  const updateMyAccount = useCallback(async (currentPassword: string, newUsername?: string, newPassword?: string, newName?: string) => {
+  const updateMyAccount = useCallback(async (currentPassword: string, newUsername?: string, newPassword?: string, newName?: string, newMobile?: string) => {
     // Re-save the fresh token the same way the current one is stored — a
     // session-only ("don't remember me") login shouldn't silently become
     // persistent just because the password changed.
@@ -155,6 +158,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       new_username: newUsername || undefined,
       new_password: newPassword || undefined,
       new_name: newName || undefined,
+      new_mobile: newMobile,
     });
     await saveToken(res.access_token, remember);
     setUser(res.user);
