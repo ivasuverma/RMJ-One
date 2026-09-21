@@ -295,7 +295,7 @@ export default function CashBookScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.root, pageTone && { backgroundColor: pageTone.bg }]} edges={['top']} testID="cashbook-screen">
+    <SafeAreaView style={[styles.root, pageTone && { backgroundColor: pageTone.pageBg }]} edges={['top']} testID="cashbook-screen">
       <View style={styles.header}>
         <Pressable onPress={onBack} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />

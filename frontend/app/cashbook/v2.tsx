@@ -224,7 +224,7 @@ export default function CashBookScreen() {
   const editingTransfer = !!editing?.linked_entry_id;
 
   return (
-    <SafeAreaView style={[styles.root, pageTone && { backgroundColor: pageTone.bg }]} edges={['top']} testID="cashbook-screen">
+    <SafeAreaView style={[styles.root, pageTone && { backgroundColor: pageTone.pageBg }]} edges={['top']} testID="cashbook-screen">
       <View style={styles.header}>
         <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
@@ -405,8 +405,7 @@ export default function CashBookScreen() {
           {isTransfer ? (
             !editing ? (
               <View>
-                <SegmentedControl testID="cashbook-dir" options={[{ key: 'out', label: 'Send out' }, { key: 'in', label: 'Receive in' }]} value={dir} onChange={(k) => setDir(k as 'out' | 'in')} />
-                <Text style={[styles.label, { marginTop: spacing.md }]}>
+                <Text style={styles.label}>
                   {dir === 'out' ? `Move cash from ${counters.find((c) => c.id === counterId)?.name || 'here'} to` : `Bring cash into ${counters.find((c) => c.id === counterId)?.name || 'here'} from`}
                 </Text>
                 <View style={styles.chips}>
