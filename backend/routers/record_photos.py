@@ -52,6 +52,7 @@ _FOLDER_LABEL = {
     'employee': 'Employee Photos',
     'task': 'Task Photos',
     'gold_loan': 'Gold Loan Photos',
+    'cashbook_entry': 'Cash Book Receipts',
 }
 
 # Every ref_type this feature supports maps to the module that gates its
@@ -62,7 +63,7 @@ _FOLDER_LABEL = {
 # separately below (_require_task_access) — an employee can always attach a
 # completion photo to their OWN task regardless of whether they hold the
 # 'tasks' staff module, the same as they can already comment on / complete it.
-_REF_MODULE = {'repair_item': 'repairs', 'sample': 'samples', 'employee': 'team', 'gold_loan': 'gold_loans'}
+_REF_MODULE = {'repair_item': 'repairs', 'sample': 'samples', 'employee': 'team', 'gold_loan': 'gold_loans', 'cashbook_entry': 'cash_book'}
 
 
 def _module_for_ref(ref_type: str) -> str:
@@ -102,6 +103,9 @@ async def _require_write(user: dict, ref_type: str, ref_id: str = '') -> None:
     mod = _module_for_ref(ref_type)
     role = user.get('role')
     if role in ('owner', 'admin'):
+        return
+    # An accountant can record Cash Book entries (see require_admin_or_module), so may attach their receipts too.
+    if role == 'accountant' and ref_type == 'cashbook_entry':
         return
     if role == 'employee' and mod in resolve_modules(user):
         return
