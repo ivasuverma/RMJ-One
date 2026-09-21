@@ -207,7 +207,7 @@ export default function WorkScreen() {
             <View style={styles.pi}><Ionicons name={r.icon} size={22} color={colors.brandSecondary} /></View>
             <View style={{ flex: 1, minWidth: 0 }}>
               <Text style={styles.pt}>{r.title}</Text>
-              <Text style={styles.pd} numberOfLines={1}>
+              <Text style={styles.pd} numberOfLines={2}>
                 {r.segs.map((s, i) => (
                   <Text key={i} style={s.tone === 'hot' ? { color: colors.onWarning } : s.tone === 'bad' ? { color: colors.onError } : s.tone === 'good' ? { color: colors.onSuccess, fontWeight: '700' } : s.tone === 'strong' ? { color: colors.onSurface, fontWeight: '700' } : undefined}>
                     {s.text}
@@ -269,7 +269,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   prowHidden: { opacity: 0.45 },
   pi: { width: 46, height: 46, borderRadius: 13, backgroundColor: colors.surfaceTertiary, alignItems: 'center', justifyContent: 'center' },
   pt: { color: colors.onSurface, fontSize: 17, fontWeight: '600' },
-  pd: { color: colors.mutedText, fontSize: 13.5, marginTop: 3 },
+  pd: { color: colors.mutedText, fontSize: 13.5, lineHeight: 18, marginTop: 3 },
   badge: {
     minWidth: 22, height: 22, borderRadius: 11, paddingHorizontal: 6,
     backgroundColor: colors.brandPrimary, alignItems: 'center', justifyContent: 'center',
