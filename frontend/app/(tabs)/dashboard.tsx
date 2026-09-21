@@ -117,7 +117,6 @@ export default function DashboardScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [unread, setUnread] = useState(0);
   const [, forceTick] = useState(0);
-  const [composeOpen, setComposeOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [tileOrder, setTileOrder] = useState<TileKey[]>(DEFAULT_TILE_ORDER);
   const [hiddenTiles, setHiddenTiles] = useState<Set<TileKey>>(new Set());
@@ -249,9 +248,6 @@ export default function DashboardScreen() {
         <Pressable onPress={() => router.push('/notifications' as any)} style={styles.iconBtn} testID="notifications-btn" hitSlop={10}>
           <Ionicons name="notifications-outline" size={19} color={colors.onSurface} />
           {unread > 0 && <View style={styles.bellDot} />}
-        </Pressable>
-        <Pressable onPress={() => setComposeOpen(true)} style={[styles.iconBtn, styles.iconBtnGold]} testID="dashboard-compose-btn" hitSlop={10}>
-          <Ionicons name="add" size={22} color={colors.onBrandPrimary} />
         </Pressable>
       </View>
 
@@ -423,7 +419,6 @@ export default function DashboardScreen() {
         </>
       ) : null}
 
-      <ComposeSheet visible={composeOpen} onClose={() => setComposeOpen(false)} />
       <SearchOverlay visible={searchOpen} onClose={() => setSearchOpen(false)} />
       <ReorderSheet
         visible={reorderOpen}
@@ -710,41 +705,6 @@ function ApprovalRow({ title, subtitle, last, onApprove, onReject, testID }: {
   );
 }
 
-/* ---------------- Compose action sheet ---------------- */
-function ComposeSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
-  const { colors } = useTheme();
-  const router = useRouter();
-  const { hasModule } = useAuth();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
-
-  type Action = { key: string; label: string; icon: keyof typeof Ionicons.glyphMap; route: string; show: boolean };
-  const actions: Action[] = [
-    { key: 'task', label: 'New task', icon: 'checkbox-outline', route: '/tasks/new', show: hasModule('tasks') },
-    { key: 'repair', label: 'New repair', icon: 'construct-outline', route: '/repairs/new', show: hasModule('repairs') },
-    { key: 'stock', label: 'Stock In/Out', icon: 'diamond-outline', route: '/samples/new', show: hasModule('samples') },
-    { key: 'adv-ded', label: 'Advance / Deduction', icon: 'swap-vertical-outline', route: '/(tabs)/employees?from=work', show: hasModule('team') || hasModule('payroll') },
-    { key: 'cash', label: 'Cash in/out', icon: 'wallet-outline', route: '/cashbook', show: hasModule('cash_book') },
-    { key: 'document', label: 'Add document', icon: 'document-attach-outline', route: '/documents?capture=1', show: hasModule('documents') },
-  ];
-  const visibleActions = actions.filter((a) => a.show);
-
-  const go = (route: string) => { onClose(); router.push(route as any); };
-
-  return (
-    <Sheet visible={visible} onClose={onClose} title="Create" testID="compose-sheet">
-      {visibleActions.length === 0 ? (
-        <Text style={styles.sheetEmpty}>Nothing to create with your current access.</Text>
-      ) : visibleActions.map((a) => (
-        <Pressable key={a.key} onPress={() => go(a.route)} style={({ pressed }) => [styles.sheetRow, pressed && { opacity: 0.7 }]} testID={`compose-${a.key}`}>
-          <View style={styles.sheetIcon}><Ionicons name={a.icon} size={18} color={colors.brandSecondary} /></View>
-          <Text style={styles.sheetLabel}>{a.label}</Text>
-          <Ionicons name="chevron-forward" size={16} color={colors.mutedText} />
-        </Pressable>
-      ))}
-    </Sheet>
-  );
-}
-
 /* ---------------- Global search overlay ---------------- */
 type SearchHit = { kind: 'customer' | 'karigar' | 'employee' | 'transaction'; id: string; name: string; sub?: string; route: string };
 
@@ -873,7 +833,6 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     position: 'absolute', top: 8, right: 9, width: 8, height: 8, borderRadius: 4,
     backgroundColor: colors.error, borderWidth: 1, borderColor: colors.surface,
   },
-  iconBtnGold: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
   headerSearch: {
     flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: spacing.lg,
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
@@ -982,10 +941,6 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   sheetHandle: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, marginBottom: spacing.md },
   sheetTitle: { color: colors.onSurface, fontSize: 16, fontWeight: '700', fontFamily: fonts.display, marginBottom: spacing.sm },
-  sheetEmpty: { color: colors.mutedText, fontSize: 13, paddingVertical: spacing.md },
-  sheetRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: 13 },
-  sheetIcon: { width: 34, height: 34, borderRadius: radius.md, backgroundColor: colors.surfaceTertiary, alignItems: 'center', justifyContent: 'center' },
-  sheetLabel: { flex: 1, color: colors.onSurface, fontSize: 14, fontWeight: '600' },
 
   // Reorder sheet
   reorderRow: {
