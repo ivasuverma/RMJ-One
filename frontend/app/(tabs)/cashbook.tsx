@@ -11,6 +11,7 @@ import { api } from '@/src/api/client';
 import { confirmAction } from '@/src/utils/confirm';
 import { DateField } from '@/src/components/DateField';
 import { displayDateOnlyWithWeekday, localDateStr, todayIST } from '@/src/utils/datetime';
+import { fmtCompactINR } from '@/src/utils/money';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { counterColorOptions, counterToneFor } from '@/src/theme/palettes';
@@ -28,7 +29,10 @@ type DayData = {
   date: string; counter_id: string; counter_name: string; opening_balance: number; entries: Entry[];
   total_received: number; total_paid: number; closing_balance: number;
 };
-type Counter = { id: string; name: string; opening_balance: number; color?: string | null; active: boolean; created_at: string; created_by?: string };
+type Counter = {
+  id: string; name: string; opening_balance: number; closing_balance: number;
+  color?: string | null; active: boolean; created_at: string; created_by?: string;
+};
 // Id+name only, for every active counter regardless of this employee's own
 // assigned counters — used solely to pick a transfer partner (see
 // /cashbook/counters/transfer-options: naming a counter as a transfer
@@ -363,6 +367,7 @@ export default function CashBookScreen() {
                     testID={`cashbook-counter-${c.id}`}
                   >
                     <Text style={[styles.counterChipText, { color: tone.text }, active && styles.counterChipTextActive]}>{c.name}</Text>
+                    <Text style={[styles.counterChipBalance, { color: tone.text }]}>{fmtCompactINR(c.closing_balance)}</Text>
                   </Pressable>
                 );
               })}
@@ -680,6 +685,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     borderWidth: 1, borderColor: 'transparent',
   },
   counterChipText: { fontSize: 12.5, fontWeight: '700', textAlign: 'center' },
+  counterChipBalance: { fontSize: 10, fontWeight: '600', textAlign: 'center', opacity: 0.75, marginTop: 1 },
   counterChipTextActive: { fontWeight: '800' },
 
   dayNav: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.lg, paddingTop: spacing.md },
