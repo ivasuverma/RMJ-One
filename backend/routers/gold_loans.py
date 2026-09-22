@@ -17,7 +17,7 @@ print helpers rather than duplicating either."""
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Optional
 from calendar import monthrange
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 import re
 import uuid
 from server import (
@@ -311,6 +311,19 @@ async def list_gold_loan_transactions(
     return {'items': items, 'total': total, 'skip': skip, 'limit': limit}
 
 
+def _closed_date(loan: dict) -> Optional[date]:
+    """The IST calendar date a loan was closed on, or None if it's active
+    (or the timestamp is somehow missing/malformed). Used to stop a
+    display walk at the actual close date instead of the full calendar
+    month — the loan wasn't outstanding for the rest of that month."""
+    if loan.get('status') != 'closed' or not loan.get('closed_at'):
+        return None
+    try:
+        return datetime.fromisoformat(loan['closed_at']).astimezone(IST).date()
+    except ValueError:
+        return None
+
+
 @router.get('/gold-loans/{loan_id}/interest-breakdown')
 async def gold_loan_interest_breakdown(loan_id: str, _: dict = Depends(require_staff_or_module('gold_loans'))):
     """The day-by-day workings behind each already-posted month of interest —
@@ -326,6 +339,7 @@ async def gold_loan_interest_breakdown(loan_id: str, _: dict = Depends(require_s
         loan_date = date.fromisoformat(loan['loan_date'])
     except (ValueError, KeyError):
         return {'daily_rate_percent': 0, 'months': []}
+    closed_date = _closed_date(loan)
 
     txns = await db.gold_loan_transactions.find(
         {'loan_id': loan_id, 'type': {'$in': ['payment_principal', 'topup_principal', 'interest_due']}}, {'_id': 0},
@@ -356,7 +370,14 @@ async def gold_loan_interest_breakdown(loan_id: str, _: dict = Depends(require_s
         period_start = date(y, m, 1)
         next_y, next_m = _add_month(y, m)
         period_end = date(next_y, next_m, 1)
-        segments = _month_interest_segments(loan, principal_txns, period_start, period_end, loan_date)
+        # No top-up for the loan's own stub first period, or for the stub
+        # period it was closed in (that period was deliberately cut short,
+        # not a genuinely short calendar month) — see _month_interest_daywise.
+        allow_topup = loan_date <= period_start
+        if closed_date and closed_date < period_end:
+            period_end = closed_date
+            allow_topup = False
+        segments = _month_interest_segments(loan, principal_txns, period_start, period_end, loan_date, allow_topup=allow_topup)
         months.append({'period': period, 'posted_amount': round(float(entry.get('amount') or 0), 2), 'segments': segments})
 
     return {'daily_rate_percent': round(loan['interest_rate_percent'] / 30, 5), 'months': months}
@@ -444,6 +465,13 @@ async def close_gold_loan(loan_id: str, user=Depends(require_admin_or_module('go
     loan = await _get_loan(loan_id)
     if loan['status'] != 'active':
         raise HTTPException(status_code=400, detail='This loan is already closed')
+    # Post any already-complete months first, then the final partial period
+    # up to today — so the outstanding check below (and what staff collect
+    # before closing) includes every day the loan was actually outstanding,
+    # not just whatever was posted as of the last calendar month-end.
+    await _backfill_loan_interest(loan)
+    await _post_closing_interest(loan, now_utc().astimezone(IST).date())
+    loan = await _get_loan(loan_id)
     bal = await _loan_balances(loan)
     if bal['total_outstanding'] > 0.01:
         raise HTTPException(
@@ -581,20 +609,21 @@ def _month_interest_daywise(loan: dict, principal_txns: list, period_start: date
     return round(total, 2)
 
 
-def _month_interest_segments(loan: dict, principal_txns: list, period_start: date, period_end: date, loan_date: date) -> list:
+def _month_interest_segments(loan: dict, principal_txns: list, period_start: date, period_end: date, loan_date: date,
+                              allow_topup: bool = True) -> list:
     """Same day-walk as _month_interest_daywise (capped at 30 actual days,
-    short months topped up to 30 — see its docstring), but grouped into
-    consecutive same-balance segments for display (see GET
-    .../interest-breakdown) — the "9 days at ₹1,00,000, then 22 days at
-    ₹60,000" workings behind a month's total. A topped-up short month's
-    extra days have no real calendar dates to show, so they're folded into
-    the last real segment's day-count/amount instead of inventing fake
-    dates past the month's actual end. Each segment's amount is rounded
-    independently for readability; across a month with more than one
-    segment this can differ from the actual posted total by a paisa or two
-    of rounding, same as any itemised bill — the posted amount (from
-    _month_interest_daywise / the real ledger entry) is always the
-    authoritative figure, not the sum of these lines."""
+    short months topped up to 30 unless allow_topup=False — see its
+    docstring), but grouped into consecutive same-balance segments for
+    display (see GET .../interest-breakdown) — the "9 days at ₹1,00,000,
+    then 22 days at ₹60,000" workings behind a month's total. A topped-up
+    short month's extra days have no real calendar dates to show, so
+    they're folded into the last real segment's day-count/amount instead
+    of inventing fake dates past the month's actual end. Each segment's
+    amount is rounded independently for readability; across a month with
+    more than one segment this can differ from the actual posted total by
+    a paisa or two of rounding, same as any itemised bill — the posted
+    amount (from _month_interest_daywise / the real ledger entry) is
+    always the authoritative figure, not the sum of these lines."""
     rate = loan['interest_rate_percent'] / 100 / 30
     segments = []
     seg_start = None
@@ -612,7 +641,7 @@ def _month_interest_segments(loan: dict, principal_txns: list, period_start: dat
         seg_days += 1
         days_counted += 1
         d += timedelta(days=1)
-    if days_counted < 30:
+    if allow_topup and days_counted < 30:
         # Short month — top up the last segment's day-count (see docstring)
         # instead of fabricating dates past the month's real end.
         if seg_balance is None:
@@ -696,7 +725,12 @@ async def _backfill_loan_interest(loan: dict) -> None:
         await db.gold_loan_interest_generations.update_one(
             gen_key, {'$set': {**gen_key, 'created_at': now_utc().isoformat()}}, upsert=True,
         )
-        amount = _month_interest_daywise(loan, principal_txns, period_start, period_end, loan_date)
+        # No top-up for the loan's own stub first period (loan started mid-
+        # month) — charge only the real days it was actually outstanding.
+        # Every later period has the loan already running before it starts,
+        # so a genuinely short calendar month (February) still tops up.
+        allow_topup = loan_date <= period_start
+        amount = _month_interest_daywise(loan, principal_txns, period_start, period_end, loan_date, allow_topup=allow_topup)
         if amount <= 0:
             continue
         await db.gold_loan_transactions.insert_one({
@@ -709,6 +743,58 @@ async def _backfill_loan_interest(loan: dict) -> None:
             f"{loan['loan_no']} · {loan['customer_name']} · {_inr(amount)}", '/loans',
             script='gold_loan_interest_posted', admin_only=True,
         )
+
+
+async def _post_closing_interest(loan: dict, close_date: date) -> None:
+    """Posts the loan's final, partial period of interest at closing time —
+    from the start of whatever calendar month hasn't been posted yet up to
+    (not including) close_date, the day the loan is actually settled. Real
+    days only, never topped up to 30 (allow_topup=False): the loan is being
+    wound up on purpose, not running a genuinely short calendar month.
+    close_date itself isn't charged — the loan is being paid off that day,
+    not held through it, mirroring how the loan's own start day IS charged
+    (it was outstanding, in full, for that whole day).
+
+    Idempotent via the same gold_loan_interest_generations guard
+    _backfill_loan_interest uses, keyed by the same 'YYYY-MM' period — if
+    the month somehow already posted in full before this ran, this is a
+    no-op, never a double-post. Call _backfill_loan_interest first so any
+    already-COMPLETE months post normally before this covers the stub."""
+    try:
+        loan_date = date.fromisoformat(loan['loan_date'])
+    except (ValueError, KeyError):
+        return
+    period_start = date(close_date.year, close_date.month, 1)
+    if max(period_start, loan_date) >= close_date:
+        return  # nothing outstanding for even a full day this period
+
+    period = close_date.strftime('%Y-%m')
+    gen_key = {'loan_id': loan['id'], 'period': period}
+    if await db.gold_loan_interest_generations.find_one(gen_key, {'_id': 0}) is not None:
+        return  # already posted (e.g. the month completed and backfilled before closing ran)
+    await db.gold_loan_interest_generations.update_one(
+        gen_key, {'$set': {**gen_key, 'created_at': now_utc().isoformat()}}, upsert=True,
+    )
+
+    raw_principal_txns = await db.gold_loan_transactions.find(
+        {'loan_id': loan['id'], 'type': {'$in': ['payment_principal', 'topup_principal']}}, {'_id': 0},
+    ).to_list(5000)
+    principal_txns = []
+    for t in raw_principal_txns:
+        try:
+            amt = t['amount'] if t['type'] == 'payment_principal' else -t['amount']
+            principal_txns.append((date.fromisoformat(t['date']), amt))
+        except (ValueError, KeyError):
+            continue
+
+    amount = _month_interest_daywise(loan, principal_txns, period_start, close_date, loan_date, allow_topup=False)
+    if amount <= 0:
+        return
+    await db.gold_loan_transactions.insert_one({
+        'id': str(uuid.uuid4()), 'loan_id': loan['id'], 'type': 'interest_due', 'period': period,
+        'amount': amount, 'date': close_date.isoformat(), 'note': f'Interest for {period} (partial — loan closed)',
+        'auto': True, 'created_by': 'system', 'created_by_id': None, 'created_at': now_utc().isoformat(),
+    })
 
 
 async def check_interest_due() -> None:
