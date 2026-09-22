@@ -151,17 +151,22 @@ export default function GoldValueCalculatorScreen() {
             <View style={styles.card} testID="calc-summary-card">
               <Text style={styles.cardTitle}>Summary</Text>
               <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Total lent</Text><Text style={styles.summaryValue}>{fmtINR(totalLent)}</Text></View>
-              <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Total interest</Text><Text style={styles.summaryValue}>{fmtINR(totalInterest)}</Text></View>
-              <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Paid interest</Text><Text style={styles.summaryValue}>{fmtINR(paidInterest)}</Text></View>
-              <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Value of gold</Text><Text style={styles.summaryValue}>{fmtINR(goldValue)}</Text></View>
-              <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Outstanding</Text><Text style={styles.summaryValue}>{fmtINR(totalOutstanding)}</Text></View>
+              <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Total interest</Text><Text style={styles.summaryValue}>+ {fmtINR(totalInterest)}</Text></View>
+              <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Paid interest</Text><Text style={styles.summaryValue}>− {fmtINR(paidInterest)}</Text></View>
+              <View style={[styles.summaryRow, { marginTop: 6, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 10 }]}>
+                <Text style={styles.summaryLabelTotal}>Outstanding</Text>
+                <Text style={styles.summaryValueTotal}>{fmtINR(totalOutstanding)}</Text>
+              </View>
+              <View style={[styles.summaryRow, { marginTop: spacing.sm }]}>
+                <Text style={styles.summaryLabel}>Value of gold</Text><Text style={styles.summaryValue}>− {fmtINR(goldValue)}</Text>
+              </View>
               <View style={[styles.summaryRow, { marginTop: 6, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 10 }]}>
                 <Text style={styles.summaryLabelTotal}>{balance > 0 ? 'Total receivable' : balance < 0 ? 'Total payable' : 'Settled'}</Text>
                 <Text style={[styles.summaryValueTotal, { color: balance > 0 ? colors.onWarning : balance < 0 ? colors.onError : colors.onSuccess }]}>
                   {fmtINR(Math.abs(balance))}
                 </Text>
               </View>
-              <Text style={styles.formula}>Outstanding (or your adjusted receivable above) − value of gold = total receivable/payable</Text>
+              <Text style={styles.formula}>Total lent + total interest − paid interest = outstanding. Outstanding (or your adjusted receivable above) − value of gold = total receivable/payable.</Text>
             </View>
           )}
         </ScrollView>
