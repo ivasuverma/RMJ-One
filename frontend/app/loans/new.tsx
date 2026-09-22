@@ -115,6 +115,7 @@ export default function NewGoldLoanScreen() {
     if (!p || p <= 0) { notify('Missing', 'Enter the amount paid to the customer'); return; }
     const r = parseFloat(rate);
     if (!rate || r < 0) { notify('Missing', 'Enter the monthly interest rate'); return; }
+    if (!isEdit && !photo) { notify('Missing', 'Add a pledge photo before saving'); return; }
 
     submittingRef.current = true;
     setSaving(true);

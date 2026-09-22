@@ -102,6 +102,7 @@ export default function NewRepairOrderScreen() {
     // Same rule as a ledger account: a new party must have a mobile number.
     if (mode === 'new' && newMobile.replace(/\D/g, '').length < 7) { notify('Missing', 'A mobile number is required for a new customer'); return; }
     if (!description.trim()) { notify('Missing', 'Enter a description for the item'); return; }
+    if (!photo) { notify('Missing', 'Add a photo of the item before saving'); return; }
     submittingRef.current = true;
     setSaving(true);
     try {
