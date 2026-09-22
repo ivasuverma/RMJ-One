@@ -11,6 +11,7 @@ import { pickWebFile, makeThumb } from '@/src/components/DocumentCaptureSheet';
 import { compressImage } from '@/src/components/QuickDocCapture';
 import { enqueueRecordPhoto } from '@/src/utils/uploadQueue';
 import { displayDateOnlyWithWeekday, localDateStr, todayIST } from '@/src/utils/datetime';
+import { fmtCompactINR } from '@/src/utils/money';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { counterToneFor } from '@/src/theme/palettes';
@@ -28,7 +29,7 @@ type DayData = {
   date: string; counter_id: string; counter_name: string; opening_balance: number; entries: Entry[];
   total_received: number; total_paid: number; closing_balance: number;
 };
-type Counter = { id: string; name: string; color?: string | null; active: boolean };
+type Counter = { id: string; name: string; closing_balance: number; color?: string | null; active: boolean };
 type CounterLite = { id: string; name: string };
 type QuickName = { id: string; name: string; entry_type: EntryType | null };
 type Shot = { id: string; blob: Blob; thumb: string };
@@ -277,6 +278,7 @@ export default function CashBookScreen() {
                   testID={`cashbook-counter-${c.id}`}
                 >
                   <Text style={[styles.counterChipText, { color: tone.text }, active && styles.counterChipTextActive]}>{c.name}</Text>
+                  <Text style={[styles.counterChipBalance, { color: tone.text }]}>{fmtCompactINR(c.closing_balance)}</Text>
                 </Pressable>
               );
             })}
@@ -325,8 +327,8 @@ export default function CashBookScreen() {
             />
 
             <View style={styles.opening} testID="cashbook-opening">
-              <Text style={styles.openingLabel}>Opening balance</Text>
               <Text style={styles.openingVal}>{inr(day.opening_balance)}</Text>
+              <Text style={styles.openingLabel}>Opening balance</Text>
             </View>
 
             {shown.length === 0 ? (
@@ -517,6 +519,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   counterRow: { flexDirection: 'row', alignItems: 'stretch', gap: spacing.sm },
   counterChip: { flex: 1, alignItems: 'center', paddingHorizontal: spacing.md, paddingVertical: 10, borderRadius: radius.pill, borderWidth: 1, borderColor: 'transparent' },
   counterChipText: { fontSize: 12.5, fontWeight: '700', textAlign: 'center' },
+  counterChipBalance: { fontSize: 10, fontWeight: '600', textAlign: 'center', opacity: 0.75, marginTop: 1 },
   counterChipTextActive: { fontWeight: '800' },
   heroCard: { padding: spacing.md },
   heroTotals: { flexDirection: 'row' },
