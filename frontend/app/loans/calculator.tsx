@@ -34,11 +34,21 @@ export default function GoldValueCalculatorScreen() {
   // (deductions, purity, rate) is still theirs to fill in/adjust, and
   // reset() returns to these starting values rather than wiping them, so
   // it stays useful as "start over" in that context instead of "start blank".
-  const { grossWeight: grossWeightParam, receivable: receivableParam, loanNo } = useLocalSearchParams<{
+  // principal/interestDue/interestPaid are read-only facts about the loan —
+  // shown in the Summary card, never edited here.
+  const {
+    grossWeight: grossWeightParam, receivable: receivableParam, loanNo,
+    principal: principalParam, interestDue: interestDueParam, interestPaid: interestPaidParam,
+  } = useLocalSearchParams<{
     grossWeight?: string; receivable?: string; loanNo?: string;
+    principal?: string; interestDue?: string; interestPaid?: string;
   }>();
   const initialGrossWeight = grossWeightParam ? String(parseFloat(grossWeightParam)) : '';
   const initialReceivable = receivableParam ? String(Math.round(parseFloat(receivableParam))) : '';
+  const totalOutstanding = receivableParam ? parseFloat(receivableParam) : 0;
+  const totalLent = principalParam ? parseFloat(principalParam) : 0;
+  const totalInterest = interestDueParam ? parseFloat(interestDueParam) : 0;
+  const paidInterest = interestPaidParam ? parseFloat(interestPaidParam) : 0;
 
   const [grossWeight, setGrossWeight] = useState(initialGrossWeight);
   const [deductWeight, setDeductWeight] = useState('');
@@ -73,14 +83,33 @@ export default function GoldValueCalculatorScreen() {
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 60 }} keyboardShouldPersistTaps="handled">
           {!!loanNo && (
-            <Text style={styles.prefillNote} testID="calc-prefill-note">Weight and receivable pre-filled from {loanNo} — adjust anything before it's final.</Text>
+            <>
+              <Text style={styles.prefillNote} testID="calc-prefill-note">Weight and receivable pre-filled from {loanNo} — adjust anything before it's final.</Text>
+              <View style={styles.card} testID="calc-summary-card">
+                <Text style={styles.cardTitle}>Summary</Text>
+                <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Total lent</Text><Text style={styles.summaryValue}>{fmtINR(totalLent)}</Text></View>
+                <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Total interest</Text><Text style={styles.summaryValue}>{fmtINR(totalInterest)}</Text></View>
+                <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Paid interest</Text><Text style={styles.summaryValue}>{fmtINR(paidInterest)}</Text></View>
+                <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Value of gold</Text><Text style={styles.summaryValue}>{fmtINR(goldValue)}</Text></View>
+                <View style={[styles.summaryRow, { marginTop: 6, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 10 }]}>
+                  <Text style={styles.summaryLabelTotal}>Outstanding</Text>
+                  <Text style={styles.summaryValueTotal}>{fmtINR(totalOutstanding)}</Text>
+                </View>
+              </View>
+            </>
           )}
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Weight</Text>
-            <Text style={styles.label}>Gross weight (g)</Text>
-            <TextInput testID="calc-gross" value={grossWeight} onChangeText={(v) => setGrossWeight(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0.000" placeholderTextColor={colors.mutedText} style={styles.input} />
-            <Text style={styles.label}>Stones / beads weight (g)</Text>
-            <TextInput testID="calc-deduct" value={deductWeight} onChangeText={(v) => setDeductWeight(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0.000" placeholderTextColor={colors.mutedText} style={styles.input} />
+            <View style={styles.row}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>Gross weight (g)</Text>
+                <TextInput testID="calc-gross" value={grossWeight} onChangeText={(v) => setGrossWeight(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0.000" placeholderTextColor={colors.mutedText} style={styles.input} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>Stones / beads (g)</Text>
+                <TextInput testID="calc-deduct" value={deductWeight} onChangeText={(v) => setDeductWeight(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0.000" placeholderTextColor={colors.mutedText} style={styles.input} />
+              </View>
+            </View>
             <View style={styles.resultRow}>
               <Text style={styles.resultLabel}>Net weight</Text>
               <Text style={styles.resultValue}>{netWeight.toFixed(3)}g</Text>
@@ -98,9 +127,16 @@ export default function GoldValueCalculatorScreen() {
                 </Pressable>
               ))}
             </View>
-            <TextInput testID="calc-purity-custom" value={purity} onChangeText={(v) => setPurity(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="Purity %" placeholderTextColor={colors.mutedText} style={styles.input} />
-            <Text style={styles.label}>Rate (₹ / gram)</Text>
-            <TextInput testID="calc-rate" value={rate} onChangeText={(v) => setRate(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />
+            <View style={styles.row}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>Purity %</Text>
+                <TextInput testID="calc-purity-custom" value={purity} onChangeText={(v) => setPurity(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="Purity %" placeholderTextColor={colors.mutedText} style={styles.input} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>Rate (₹ / gram)</Text>
+                <TextInput testID="calc-rate" value={rate} onChangeText={(v) => setRate(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />
+              </View>
+            </View>
             <View style={styles.resultRow}>
               <Text style={styles.resultLabel}>Gold value</Text>
               <Text style={styles.resultValue}>{fmtINR(goldValue)}</Text>
@@ -147,7 +183,13 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     padding: spacing.md, marginBottom: spacing.md,
   },
   cardTitle: { color: colors.onSurface, fontSize: 13, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: spacing.sm },
+  row: { flexDirection: 'row', gap: spacing.sm },
   label: { color: colors.onSurfaceSecondary, fontSize: 12, marginBottom: 6, marginTop: spacing.sm },
+  summaryRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 4 },
+  summaryLabel: { color: colors.onSurfaceSecondary, fontSize: 13 },
+  summaryValue: { color: colors.onSurface, fontSize: 14, fontWeight: '600' },
+  summaryLabelTotal: { color: colors.onSurface, fontSize: 14, fontWeight: '700' },
+  summaryValueTotal: { color: colors.brandSecondary, fontSize: 16, fontWeight: '800' },
   input: {
     backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
     color: colors.onSurface, paddingHorizontal: spacing.md, paddingVertical: 12, fontSize: 14,

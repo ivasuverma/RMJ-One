@@ -178,7 +178,10 @@ export default function GoldLoanDetailScreen() {
         </Pressable>
         <Text style={styles.title} numberOfLines={1}>{loan.loan_no}</Text>
         <Pressable
-          onPress={() => router.push(`/loans/calculator?grossWeight=${loan.weight}&receivable=${loan.total_outstanding}&loanNo=${loan.loan_no}` as any)}
+          onPress={() => router.push(
+            `/loans/calculator?grossWeight=${loan.weight}&receivable=${loan.total_outstanding}&loanNo=${loan.loan_no}`
+            + `&principal=${loan.principal}&interestDue=${loan.interest_due}&interestPaid=${loan.interest_paid}` as any,
+          )}
           style={styles.iconBtn} testID="open-calculator-btn" hitSlop={12}
         >
           <Ionicons name="calculator-outline" size={18} color={colors.onSurface} />
