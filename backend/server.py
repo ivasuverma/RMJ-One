@@ -2275,6 +2275,7 @@ NOTIFICATION_SCRIPTS = [
     {'key': 'cashbook_transfer', 'module': 'cash_book', 'label': 'Cash transferred between counters', 'admin_only': True},
     {'key': 'cashbook_entry', 'module': 'cash_book', 'label': 'Employee recorded cash in / out', 'admin_only': True},
     {'key': 'cashbook_edit', 'module': 'cash_book', 'label': 'Employee edited a cash entry', 'admin_only': True},
+    {'key': 'cashbook_over_limit', 'module': 'cash_book', 'label': 'Cash counter over ₹1,00,000 (owner/admin copy — assigned employees are always notified)', 'admin_only': True},
     {'key': 'document_recorded', 'module': 'documents', 'label': 'Document recorded to Done', 'admin_only': True},
     {'key': 'document_pending_reminder', 'module': 'documents', 'label': 'Document pending more than 1 day (daily reminder)', 'admin_only': False},
     {'key': 'gold_loan_created', 'module': 'gold_loans', 'label': 'New gold loan created', 'admin_only': True},
