@@ -262,6 +262,7 @@ export default function GoldLoanDetailScreen() {
                     >
                       <View style={[styles.calCell, cellStyle]}>
                         <Text style={[styles.calCellText, textStyle]}>{lbl}</Text>
+                        {cell && <Text style={[styles.calCellAmount, textStyle]} numberOfLines={1}>{fmtINR(cell.amount)}</Text>}
                       </View>
                     </Pressable>
                   );
@@ -448,6 +449,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   calCellWrap: { width: '25%', aspectRatio: 1.6, padding: 4 },
   calCell: { width: '100%', height: '100%', borderRadius: radius.sm, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
   calCellText: { fontSize: 12, fontWeight: '700' },
+  calCellAmount: { fontSize: 9.5, fontWeight: '600', marginTop: 2 },
   calCellEmpty: { backgroundColor: colors.surfaceTertiary, borderColor: colors.border },
   calCellTextEmpty: { color: colors.mutedText },
   calCellPaid: { backgroundColor: colors.success, borderColor: colors.onSuccess },
