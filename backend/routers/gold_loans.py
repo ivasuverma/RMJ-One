@@ -255,8 +255,11 @@ async def _current_month_accrual(loan: dict) -> Optional[dict]:
     """Interest accrued so far in the current, not-yet-posted calendar month
     — a live preview using _month_interest_daywise itself (period end =
     tomorrow, so today's own day counts), not a separately maintained
-    calculation. Only meaningful for an active loan that's already started;
-    None once nothing has accrued yet this month or the loan is closed."""
+    calculation. allow_topup=False because the month isn't over — see that
+    function's docstring for why topping up an in-progress month would
+    overstate the preview. Only meaningful for an active loan that's
+    already started; None once nothing has accrued yet this month or the
+    loan is closed."""
     try:
         loan_date = date.fromisoformat(loan['loan_date'])
     except (ValueError, KeyError):
@@ -275,7 +278,7 @@ async def _current_month_accrual(loan: dict) -> Optional[dict]:
             principal_txns.append((date.fromisoformat(t['date']), amt))
         except (ValueError, KeyError):
             continue
-    amount = _month_interest_daywise(loan, principal_txns, period_start, today + timedelta(days=1), loan_date)
+    amount = _month_interest_daywise(loan, principal_txns, period_start, today + timedelta(days=1), loan_date, allow_topup=False)
     if amount <= 0:
         return None
     days = (today - max(period_start, loan_date)).days + 1
@@ -520,7 +523,8 @@ def _day_balance(loan: dict, principal_txns: list, d: date) -> float:
     return max(balance, 0)
 
 
-def _month_interest_daywise(loan: dict, principal_txns: list, period_start: date, period_end: date, loan_date: date) -> float:
+def _month_interest_daywise(loan: dict, principal_txns: list, period_start: date, period_end: date, loan_date: date,
+                             allow_topup: bool = True) -> float:
     """Sums one calendar month's interest as day * balance-on-that-day * daily
     rate, rather than snapping the whole month to a single before/after
     balance. Daily rate = monthly rate / 30 (the shop's convention), and
@@ -542,6 +546,18 @@ def _month_interest_daywise(loan: dict, principal_txns: list, period_start: date
     only charges the 11-12 remaining days of that month, then tops up to
     30) instead of the old day-15 either/or of "whole month" or "no month".
 
+    allow_topup=False skips the top-up-to-30-days step entirely — for a
+    LIVE preview of a month that's still in progress (see
+    _current_month_accrual), period_end is an artificial "as of today"
+    cutoff, not the month's real end, so falling short of 30 days doesn't
+    mean the month was short; it means the month isn't over yet. Topping
+    that up would charge for days that haven't happened, priced at
+    whatever the balance happens to be today — overstating the preview
+    every time there are fewer than 30 days elapsed, worst right after a
+    top-up. Only ever pass False for a preview; real posting always wants
+    the default (True), which is what makes every completed month worth
+    exactly one month's interest.
+
     This is the SOLE authority for what actually posts — kept independent of
     _month_interest_segments (below) on purpose, so a display-only feature
     can never nudge the real ledger by a paisa of rounding drift."""
@@ -555,7 +571,7 @@ def _month_interest_daywise(loan: dict, principal_txns: list, period_start: date
         total += last_balance * rate
         days_counted += 1
         d += timedelta(days=1)
-    if days_counted < 30:
+    if allow_topup and days_counted < 30:
         # Short month (or the tail end of the loan's first partial month) —
         # top up to a full 30 days at the balance on the last actual day, so
         # every full month still charges exactly one month's interest.
