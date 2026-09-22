@@ -6,20 +6,32 @@ WHY
     Periods stay calendar months (1st-to-1st, posting on month-end — that
     part didn't change), but the amount used to be actual-days-in-month *
     daily rate. That meant a 31-day month charged slightly MORE than one
-    month's interest, and February slightly LESS. Every posted month is
-    now worth EXACTLY 30 days of the daily rate: a 31-day month's last day
-    accrues nothing extra, and a short month (February, or a loan's
-    partial first month) tops up to 30 days at the balance on its last
-    actual day.
+    month's interest, and February slightly LESS. Every posted FULL month
+    is now worth EXACTLY 30 days of the daily rate: a 31-day month's last
+    day accrues nothing extra, and a short calendar month that falls in
+    the middle of an ongoing loan's life (February) tops up to 30 days at
+    the balance on its last actual day. The loan's own STUB first month
+    (it started mid-month) is the one exception — that's not a short
+    month, it's a partial one, so it charges only the real days the loan
+    was actually outstanding, never topped up.
 
 WHAT IT DOES
     For every gold_loans loan (active or closed), walks its existing
     interest_due transactions and recomputes each one's amount with the
-    30-day-capped-and-topped-up formula, the same way _backfill_loan_interest
-    now does going forward. Only interest_due entries are touched —
-    payments, top-ups, and every other transaction type are left exactly
-    as they are. Period identifiers ('YYYY-MM') are unchanged, so this
-    never affects which period a payment is tagged to.
+    30-day-capped formula, the same way _backfill_loan_interest now does
+    going forward — topped up to 30 days unless this is the loan's own
+    stub first period (loan_date falls after this period's calendar
+    start), which charges real days only. Only interest_due entries are
+    touched — payments, top-ups, and every other transaction type are left
+    exactly as they are. Period identifiers ('YYYY-MM') are unchanged, so
+    this never affects which period a payment is tagged to.
+
+    Does NOT retroactively charge a missing final partial period for a
+    loan that was already closed before this fix existed — that would be
+    asking already-settled customers for more money after the fact, which
+    needs a deliberate human decision, not a migration. See
+    routers/gold_loans.py's _post_closing_interest for the going-forward
+    fix (applies to loans closed from now on).
 
     For a CLOSED loan this only corrects the historical record of what
     was owed; it does not reopen the loan or change what the customer
@@ -72,7 +84,8 @@ def _day_balance(principal: float, principal_txns: list, d: date) -> float:
 
 
 def _month_interest_daywise(principal: float, rate_percent: float, principal_txns: list,
-                             period_start: date, period_end: date, loan_date: date) -> float:
+                             period_start: date, period_end: date, loan_date: date,
+                             allow_topup: bool = True) -> float:
     rate = rate_percent / 100 / 30
     total = 0.0
     d = max(period_start, loan_date)
@@ -83,7 +96,7 @@ def _month_interest_daywise(principal: float, rate_percent: float, principal_txn
         total += last_balance * rate
         days_counted += 1
         d += timedelta(days=1)
-    if days_counted < 30:
+    if allow_topup and days_counted < 30:
         if days_counted == 0:
             last_balance = _day_balance(principal, principal_txns, d)
         total += last_balance * rate * (30 - days_counted)
@@ -138,9 +151,11 @@ async def main(commit: bool):
             period_start = date(y, m, 1)
             next_y, next_m = _add_month(y, m)
             period_end = date(next_y, next_m, 1)
+            allow_topup = loan_date <= period_start  # no top-up for the loan's own stub first period
 
             new_amount = _month_interest_daywise(
                 loan['principal'], loan['interest_rate_percent'], principal_txns, period_start, period_end, loan_date,
+                allow_topup=allow_topup,
             )
             old_amount = round(float(entry.get('amount') or 0), 2)
             if old_amount == new_amount:
