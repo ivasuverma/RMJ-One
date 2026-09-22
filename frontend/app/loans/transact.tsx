@@ -17,7 +17,6 @@ type Loan = {
 };
 
 const addMonth = (y: number, m: number): [number, number] => (m === 12 ? [y + 1, 1] : [y, m + 1]);
-const daysInMonth = (y: number, m: number) => new Date(y, m, 0).getDate();
 
 const fmtINR = (n: number) => `₹${Math.round(n || 0).toLocaleString('en-IN')}`;
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -72,11 +71,13 @@ export default function GoldLoanTransactScreen() {
       // from the loan's own start month — day-wise proration on the
       // backend means even a loan's first partial month already has its
       // own due entry, so no day-15 skip-to-next-month here either) at the
-      // current outstanding balance and rate, day-wise per projected month
-      // (daily rate = monthly rate / 30, times however many days that
-      // calendar month actually has). Once the real due entry posts on
-      // schedule, it'll match this period tag and show as paid — see
-      // _month_interest_daywise in gold_loans.py.
+      // current outstanding balance and rate. Every one of these is a
+      // full future month (the loan's already running by then, never a
+      // stub), so — same as the backend's _month_interest_daywise — it's
+      // always worth exactly 30 days of the daily rate, not however many
+      // calendar days that month actually has (a 31-day month isn't worth
+      // more). Once the real due entry posts on schedule, it'll match this
+      // period tag and show as paid.
       const rate = loan.interest_rate_percent || 0;
       const bal = loan.principal_balance || 0;
       const dailyRate = rate / 100 / 30;
@@ -95,7 +96,7 @@ export default function GoldLoanTransactScreen() {
         }
         let y = ay; let m = am;
         for (let i = 0; i < 24; i += 1) {
-          const projAmount = Math.round(bal * dailyRate * daysInMonth(y, m));
+          const projAmount = Math.round(bal * dailyRate * 30);
           future.push({ period: `${y}-${String(m).padStart(2, '0')}`, date: '', amount: projAmount, paid: false, projected: true });
           [y, m] = addMonth(y, m);
         }
@@ -260,7 +261,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     color: colors.onSurface, paddingHorizontal: spacing.md, paddingVertical: 12, fontSize: 14,
   },
   chipRow: { flexDirection: 'row', gap: spacing.sm },
-  chip: { flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: radius.md, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border },
+  chip: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 10, borderRadius: radius.md, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border },
   chipActive: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
   chipText: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '700' },
   chipTextActive: { color: colors.onBrandPrimary },
