@@ -93,12 +93,13 @@ async def _opening_balance_for(counter_id: str, date: str) -> float:
     return round(base + received - paid, 2)
 
 
-async def _counters_current_balances(counter_ids: list) -> dict:
-    """Current (right now, not tied to any one date) balance for each of
-    these counters: base opening_balance plus every entry ever recorded
-    against it, received minus paid. Used both to show each counter's live
-    total on its picker button and to guard against closing one that isn't
-    at zero."""
+async def _counters_closing_balances(counter_ids: list) -> dict:
+    """Right-now closing balance for each of these counters — same figure
+    get_cashbook_day calls closing_balance for whatever the latest dated
+    entry happens to be, computed directly instead: base opening_balance
+    plus every entry ever recorded against it, received minus paid. Used
+    both to show each counter's live total on its picker button and to
+    guard against closing one that isn't at zero."""
     if not counter_ids:
         return {}
     counters = await db.cashbook_counters.find(
@@ -124,9 +125,9 @@ async def list_cashbook_counters(user: dict = Depends(require_staff_or_module('c
     allowed = _employee_allowed_counter_ids(user)
     if allowed is not None:
         counters = [c for c in counters if c['id'] in allowed]
-    balances = await _counters_current_balances([c['id'] for c in counters])
+    balances = await _counters_closing_balances([c['id'] for c in counters])
     for c in counters:
-        c['current_balance'] = balances.get(c['id'], 0)
+        c['closing_balance'] = balances.get(c['id'], 0)
     return counters
 
 

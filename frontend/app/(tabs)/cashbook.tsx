@@ -30,7 +30,7 @@ type DayData = {
   total_received: number; total_paid: number; closing_balance: number;
 };
 type Counter = {
-  id: string; name: string; opening_balance: number; current_balance: number;
+  id: string; name: string; opening_balance: number; closing_balance: number;
   color?: string | null; active: boolean; created_at: string; created_by?: string;
 };
 // Id+name only, for every active counter regardless of this employee's own
@@ -367,7 +367,7 @@ export default function CashBookScreen() {
                     testID={`cashbook-counter-${c.id}`}
                   >
                     <Text style={[styles.counterChipText, { color: tone.text }, active && styles.counterChipTextActive]}>{c.name}</Text>
-                    <Text style={[styles.counterChipBalance, { color: tone.text }]}>{fmtCompactINR(c.current_balance)}</Text>
+                    <Text style={[styles.counterChipBalance, { color: tone.text }]}>{fmtCompactINR(c.closing_balance)}</Text>
                   </Pressable>
                 );
               })}
