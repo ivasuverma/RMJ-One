@@ -92,12 +92,38 @@ def _compute_loan_state(loan: dict, txns: list) -> dict:
 
     tagged_periods: set = set()
     tagged_amount = 0.0
+    tagged_period_dates: dict = {}  # period -> latest payment date that tagged it
     for p in interest_payments:
         periods = p.get('periods') or []
         if periods:
             tagged_periods.update(periods)
             tagged_amount += p['amount']
+            for per in periods:
+                if per not in tagged_period_dates or p['date'] > tagged_period_dates[per]:
+                    tagged_period_dates[per] = p['date']
     untagged_pool = interest_paid - tagged_amount
+
+    # Mirrors untagged_pool's FIFO consumption above but as a per-payment
+    # queue, purely so each covered period can report WHEN it was actually
+    # paid — same coverage decision either way, this just narrates it.
+    untagged_queue = [
+        [p['date'], p['amount']] for p in sorted(
+            (p for p in interest_payments if not (p.get('periods') or [])), key=lambda p: p['date'],
+        )
+    ]
+
+    def _consume_untagged(amount_needed: float):
+        remaining = amount_needed
+        last_date = None
+        while remaining > 0.01 and untagged_queue:
+            pay_date, amt = untagged_queue[0]
+            take = min(amt, remaining)
+            remaining -= take
+            untagged_queue[0][1] -= take
+            last_date = pay_date
+            if untagged_queue[0][1] <= 0.01:
+                untagged_queue.pop(0)
+        return last_date
 
     dues_sorted = sorted(interest_due_txns, key=lambda t: (t.get('period') or t['date']))
     months_received = 0
@@ -105,17 +131,20 @@ def _compute_loan_state(loan: dict, txns: list) -> dict:
     interest_months = []
     for d in dues_sorted:
         period = d.get('period') or (d['date'] or '')[:7]
+        paid_date = None
         if period in tagged_periods:
             paid = True
+            paid_date = tagged_period_dates.get(period)
         else:
             paid = still_covering and untagged_pool + 0.01 >= d['amount']
             if paid:
                 untagged_pool -= d['amount']
+                paid_date = _consume_untagged(d['amount'])
             else:
                 still_covering = False  # FIFO by month order — once one untagged month is short, later ones can't jump ahead of it
         if paid:
             months_received += 1
-        interest_months.append({'period': period, 'date': d['date'], 'amount': d['amount'], 'paid': paid})
+        interest_months.append({'period': period, 'date': d['date'], 'amount': d['amount'], 'paid': paid, 'paid_date': paid_date})
 
     return {
         'principal': loan['principal'], 'principal_paid': round(principal_paid, 2), 'principal_topup': round(principal_topup, 2),
