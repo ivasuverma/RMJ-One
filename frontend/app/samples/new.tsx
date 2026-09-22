@@ -112,6 +112,7 @@ export default function NewSampleScreen() {
     if (!w || w <= 0) { notify('Missing', 'Enter a weight greater than 0'); return; }
     const pur = parseFloat(purity);
     if (!pur || pur <= 0 || pur > 100) { notify('Missing', 'Enter the purity (100 for pure gold, 92 for 22K, 75 for 18K)'); return; }
+    if (!isEdit && !photo) { notify('Missing', 'Add a photo of the sample before saving'); return; }
     submittingRef.current = true;
     setSaving(true);
     try {
