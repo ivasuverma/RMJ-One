@@ -23,6 +23,7 @@ management (create/rename/deactivate) is owner-only — entry CRUD follows
 the usual module/right checks and applies across whichever counter the
 caller is working in."""
 from fastapi import APIRouter, Depends, HTTPException, Query
+from typing import Optional
 import asyncio
 import re
 import uuid
@@ -41,6 +42,7 @@ from server import (
     CashBookQuickNameIn,
     log_audit,
     _notify_module,
+    notify_user,
 )
 
 router = APIRouter()
@@ -50,6 +52,11 @@ router = APIRouter()
 # default cycling colour) rather than rejected, so this list can grow
 # without a hard failure on older clients.
 COUNTER_COLOR_KEYS = {'gold', 'blue', 'green', 'red', 'purple', 'teal', 'pink', 'orange'}
+
+# A counter's cash is a physical security risk once it piles up — nudge
+# whoever's handling it (plus owners/admins) to move it to the locker/bank
+# once a single counter crosses this. Not (yet) configurable per shop.
+CASH_LIMIT_THRESHOLD = 100000.0
 
 
 async def _get_counter(counter_id: str) -> dict:
@@ -116,6 +123,59 @@ async def _counters_closing_balances(counter_ids: list) -> dict:
         sign = 1 if a['_id']['type'] == 'received' else -1
         net[cid] = net.get(cid, 0) + sign * a['total']
     return {cid: round(bases.get(cid, 0) + net.get(cid, 0), 2) for cid in counter_ids}
+
+
+async def _walk_balance(counter_id: str, from_date: str, delta_received: float, delta_paid: float,
+                         exclude_entry_id: Optional[str] = None) -> tuple:
+    """Walks this counter's running Counter Bal day-by-day from `from_date`
+    onward — starting at that day's opening balance, then applying each
+    later day's own (received − paid) in turn — as if (delta_received −
+    delta_paid) were also applied on `from_date` alongside whatever's
+    already there. `exclude_entry_id` leaves one existing entry out (the
+    one being edited, since its NEW contribution is what delta_* already
+    represents). Returns (min_balance, final_balance): min_balance is the
+    lowest the running balance ever dips to across every day walked — must
+    never go negative, checked before writing anything (see create/update
+    below); final_balance is the balance as of the latest dated activity,
+    i.e. the counter's balance right now — used for the over-limit alert."""
+    running = await _opening_balance_for(counter_id, from_date)
+    entries = await db.cashbook_entries.find(
+        {'counter_id': counter_id, 'date': {'$gte': from_date}}, {'_id': 0, 'id': 1, 'date': 1, 'type': 1, 'amount': 1},
+    ).to_list(20000)
+    if exclude_entry_id:
+        entries = [e for e in entries if e['id'] != exclude_entry_id]
+    by_date: dict = {}
+    for e in entries:
+        by_date.setdefault(e['date'], []).append(e)
+    min_balance = running
+    for d in sorted(set(by_date.keys()) | {from_date}):
+        day_entries = by_date.get(d, [])
+        received = sum(e['amount'] for e in day_entries if e['type'] == 'received')
+        paid = sum(e['amount'] for e in day_entries if e['type'] == 'paid')
+        if d == from_date:
+            received += delta_received
+            paid += delta_paid
+        running = running + received - paid
+        min_balance = min(min_balance, running)
+    return round(min_balance, 2), round(running, 2)
+
+
+async def _notify_counter_over_limit(counter: dict, balance: float) -> None:
+    """Cash sitting in a till is a security risk once it piles up — tell
+    whoever's actually assigned to this counter to go transfer it out,
+    unconditionally (bypasses each employee's own notif_prefs opt-in,
+    unlike every other cash_book alert — this one is a standing safety
+    rule tied to having access to the counter, not a discretionary FYI).
+    Owners/admins get the same alert through the usual module broadcast."""
+    amt = f"₹{balance:,.0f}"
+    body = f"{counter['name']} has {amt} in cash — transfer it out immediately."
+    async for e in db.employees.find(
+        {'status': {'$ne': 'inactive'}, 'cashbook_counter_ids': counter['id']}, {'_id': 0, 'id': 1},
+    ):
+        await notify_user(e['id'], 'Cash Limit Exceeded', body, '/cashbook')
+    await _notify_module(
+        'cash_book', 'Cash Limit Exceeded', body, '/cashbook', script='cashbook_over_limit', admin_only=True,
+    )
 
 
 # ---------------- Counters ----------------
@@ -319,12 +379,34 @@ async def create_cashbook_entry(body: CashBookEntryIn, user=Depends(require_admi
         }
         entry['linked_entry_id'] = mirror_id
 
+    # A cash book's balance can never go negative — check every counter
+    # this entry touches (both sides of a transfer) before writing either
+    # side, so a transfer that would overdraw its source is rejected
+    # atomically instead of leaving a mirror entry with nothing to match.
+    entry_delta_received = body.amount if body.type == 'received' else 0.0
+    entry_delta_paid = body.amount if body.type == 'paid' else 0.0
+    entry_min, entry_final = await _walk_balance(counter['id'], body.date, entry_delta_received, entry_delta_paid)
+    if entry_min < -0.01:
+        raise HTTPException(status_code=400, detail=f"This would put {counter['name']} into a negative balance — not allowed.")
+    mirror_final = None
+    if mirror:
+        mirror_delta_received = body.amount if mirror['type'] == 'received' else 0.0
+        mirror_delta_paid = body.amount if mirror['type'] == 'paid' else 0.0
+        mirror_min, mirror_final = await _walk_balance(other_counter['id'], body.date, mirror_delta_received, mirror_delta_paid)
+        if mirror_min < -0.01:
+            raise HTTPException(status_code=400, detail=f"This would put {other_counter['name']} into a negative balance — not allowed.")
+
     if mirror:
         await asyncio.gather(
             db.cashbook_entries.insert_one(dict(entry)), db.cashbook_entries.insert_one(dict(mirror)),
         )
     else:
         await db.cashbook_entries.insert_one(dict(entry))
+
+    if entry_final > CASH_LIMIT_THRESHOLD:
+        await _notify_counter_over_limit(counter, entry_final)
+    if mirror_final is not None and mirror_final > CASH_LIMIT_THRESHOLD:
+        await _notify_counter_over_limit(other_counter, mirror_final)
 
     # Audit logging never affects the result (log_audit swallows its own
     # failures) and doesn't need to hold up the response — fire it and move on.
@@ -381,10 +463,43 @@ async def update_cashbook_entry(entry_id: str, body: CashBookEntryUpdateIn, user
     if body.category is not None: upd['category'] = body.category.strip()
     if body.note is not None: upd['note'] = body.note
     if upd:
+        # Same negative-balance guard as create, applied to what this entry
+        # (and its linked mirror, if any — counter/type can't change on a
+        # linked entry, only date/amount, see the check above) would look
+        # like AFTER this edit, excluding its own current contribution.
+        final_date = upd.get('date', entry['date'])
+        final_counter_id = upd.get('counter_id', entry['counter_id'])
+        final_type = upd.get('type', entry['type'])
+        final_amount = upd.get('amount', entry['amount'])
+        final_counter = await _get_counter(final_counter_id)
+        entry_min, entry_final = await _walk_balance(
+            final_counter_id, final_date,
+            final_amount if final_type == 'received' else 0.0, final_amount if final_type == 'paid' else 0.0,
+            exclude_entry_id=entry_id,
+        )
+        if entry_min < -0.01:
+            raise HTTPException(status_code=400, detail=f"This would put {final_counter['name']} into a negative balance — not allowed.")
+        mirror_final = None
+        mirror_counter = None
+        if linked_id:
+            mirror_type = 'paid' if entry['type'] == 'received' else 'received'
+            mirror_counter = await _get_counter(entry['transfer_counter_id'])
+            mirror_min, mirror_final = await _walk_balance(
+                entry['transfer_counter_id'], final_date,
+                final_amount if mirror_type == 'received' else 0.0, final_amount if mirror_type == 'paid' else 0.0,
+                exclude_entry_id=linked_id,
+            )
+            if mirror_min < -0.01:
+                raise HTTPException(status_code=400, detail=f"This would put {mirror_counter['name']} into a negative balance — not allowed.")
+
         upd['updated_at'] = now_utc().isoformat()
         upd['updated_by'] = user['name']
         await db.cashbook_entries.update_one({'id': entry_id}, {'$set': upd})
         await log_audit(user, 'cashbook.update', 'cashbook_entry', entry_id, entry.get('name', ''), upd)
+        if entry_final > CASH_LIMIT_THRESHOLD:
+            await _notify_counter_over_limit(final_counter, entry_final)
+        if mirror_final is not None and mirror_final > CASH_LIMIT_THRESHOLD:
+            await _notify_counter_over_limit(mirror_counter, mirror_final)
         # Keep a linked transfer's other side in sync on whatever actually
         # changed here (date/amount/note) — name is deliberately NOT synced,
         # since each side legitimately describes itself differently

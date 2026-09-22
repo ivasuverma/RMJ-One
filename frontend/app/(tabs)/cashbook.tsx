@@ -401,8 +401,8 @@ export default function CashBookScreen() {
               refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(date, counterId); }} tintColor={colors.brandPrimary} />}
             >
               <View style={styles.openingRow} testID="cashbook-opening">
-                <Text style={styles.openingLabel}>Opening Balance</Text>
                 <Text style={styles.openingValue}>{fmtINR(day?.opening_balance || 0)}</Text>
+                <Text style={styles.openingLabel}>Opening Balance</Text>
               </View>
 
               <View style={styles.columnsRow}>
