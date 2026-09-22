@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
@@ -28,11 +28,23 @@ export default function GoldValueCalculatorScreen() {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
-  const [grossWeight, setGrossWeight] = useState('');
+  // Opened from a loan's detail screen (see the calculator button there),
+  // gross weight and current total outstanding arrive pre-filled so staff
+  // don't have to re-key numbers the app already knows — everything else
+  // (deductions, purity, rate) is still theirs to fill in/adjust, and
+  // reset() returns to these starting values rather than wiping them, so
+  // it stays useful as "start over" in that context instead of "start blank".
+  const { grossWeight: grossWeightParam, receivable: receivableParam, loanNo } = useLocalSearchParams<{
+    grossWeight?: string; receivable?: string; loanNo?: string;
+  }>();
+  const initialGrossWeight = grossWeightParam ? String(parseFloat(grossWeightParam)) : '';
+  const initialReceivable = receivableParam ? String(Math.round(parseFloat(receivableParam))) : '';
+
+  const [grossWeight, setGrossWeight] = useState(initialGrossWeight);
   const [deductWeight, setDeductWeight] = useState('');
   const [purity, setPurity] = useState('91.6');
   const [rate, setRate] = useState('');
-  const [receivable, setReceivable] = useState('');
+  const [receivable, setReceivable] = useState(initialReceivable);
 
   useEffect(() => {
     api.get<any>('/settings/gold-rate')
@@ -44,7 +56,7 @@ export default function GoldValueCalculatorScreen() {
   const goldValue = netWeight * (num(purity) / 100) * num(rate);
   const balance = num(receivable) - goldValue;
 
-  const reset = () => { setGrossWeight(''); setDeductWeight(''); setReceivable(''); };
+  const reset = () => { setGrossWeight(initialGrossWeight); setDeductWeight(''); setReceivable(initialReceivable); };
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="gold-calculator-screen">
@@ -60,6 +72,9 @@ export default function GoldValueCalculatorScreen() {
 
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 60 }} keyboardShouldPersistTaps="handled">
+          {!!loanNo && (
+            <Text style={styles.prefillNote} testID="calc-prefill-note">Weight and receivable pre-filled from {loanNo} — adjust anything before it's final.</Text>
+          )}
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Weight</Text>
             <Text style={styles.label}>Gross weight (g)</Text>
@@ -125,6 +140,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border,
   },
   title: { flex: 1, color: colors.onSurface, fontSize: 18, fontWeight: '600', fontFamily: fonts.display },
+  prefillNote: { color: colors.onSurfaceTertiary, fontSize: 12, marginBottom: spacing.md },
 
   card: {
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border,

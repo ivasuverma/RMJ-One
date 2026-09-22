@@ -14,7 +14,7 @@ import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { ErrorState } from '@/src/components/ui';
 
-type InterestMonth = { period: string; date: string; amount: number; paid: boolean };
+type InterestMonth = { period: string; date: string; amount: number; paid: boolean; paid_date: string | null };
 type InterestSegment = { from: string; to: string; days: number; balance: number; amount: number };
 type InterestBreakdownMonth = { period: string; posted_amount: number; segments: InterestSegment[] };
 type InterestBreakdown = { daily_rate_percent: number; months: InterestBreakdownMonth[] };
@@ -177,6 +177,12 @@ export default function GoldLoanDetailScreen() {
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
         <Text style={styles.title} numberOfLines={1}>{loan.loan_no}</Text>
+        <Pressable
+          onPress={() => router.push(`/loans/calculator?grossWeight=${loan.weight}&receivable=${loan.total_outstanding}&loanNo=${loan.loan_no}` as any)}
+          style={styles.iconBtn} testID="open-calculator-btn" hitSlop={12}
+        >
+          <Ionicons name="calculator-outline" size={18} color={colors.onSurface} />
+        </Pressable>
         {isActive && canEdit && (
           <Pressable onPress={() => router.push(`/loans/new?id=${loan.id}` as any)} style={styles.iconBtn} testID="edit-loan-btn" hitSlop={12}>
             <Ionicons name="pencil-outline" size={18} color={colors.onSurface} />
@@ -383,6 +389,9 @@ export default function GoldLoanDetailScreen() {
                   {calSelected.paid ? 'Received' : 'Pending'}
                 </Text>
               </View>
+              {calSelected.paid && calSelected.paid_date && (
+                <View style={styles.detailRow}><Text style={styles.detailLabel}>Paid on</Text><Text style={styles.detailValue}>{calSelected.paid_date}</Text></View>
+              )}
               {!calSelected.paid && isActive && (
                 <Pressable
                   style={styles.primaryBtn}
