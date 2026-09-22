@@ -93,6 +93,30 @@ async def _opening_balance_for(counter_id: str, date: str) -> float:
     return round(base + received - paid, 2)
 
 
+async def _counters_current_balances(counter_ids: list) -> dict:
+    """Current (right now, not tied to any one date) balance for each of
+    these counters: base opening_balance plus every entry ever recorded
+    against it, received minus paid. Used both to show each counter's live
+    total on its picker button and to guard against closing one that isn't
+    at zero."""
+    if not counter_ids:
+        return {}
+    counters = await db.cashbook_counters.find(
+        {'id': {'$in': counter_ids}}, {'_id': 0, 'id': 1, 'opening_balance': 1},
+    ).to_list(len(counter_ids))
+    bases = {c['id']: c.get('opening_balance') or 0 for c in counters}
+    agg = await db.cashbook_entries.aggregate([
+        {'$match': {'counter_id': {'$in': counter_ids}}},
+        {'$group': {'_id': {'counter_id': '$counter_id', 'type': '$type'}, 'total': {'$sum': '$amount'}}},
+    ]).to_list(2000)
+    net: dict = {}
+    for a in agg:
+        cid = a['_id']['counter_id']
+        sign = 1 if a['_id']['type'] == 'received' else -1
+        net[cid] = net.get(cid, 0) + sign * a['total']
+    return {cid: round(bases.get(cid, 0) + net.get(cid, 0), 2) for cid in counter_ids}
+
+
 # ---------------- Counters ----------------
 @router.get('/cashbook/counters')
 async def list_cashbook_counters(user: dict = Depends(require_staff_or_module('cash_book'))):
@@ -100,6 +124,9 @@ async def list_cashbook_counters(user: dict = Depends(require_staff_or_module('c
     allowed = _employee_allowed_counter_ids(user)
     if allowed is not None:
         counters = [c for c in counters if c['id'] in allowed]
+    balances = await _counters_current_balances([c['id'] for c in counters])
+    for c in counters:
+        c['current_balance'] = balances.get(c['id'], 0)
     return counters
 
 
@@ -138,6 +165,25 @@ async def update_cashbook_counter(counter_id: str, body: CashBookCounterUpdateIn
         upd['name'] = body.name.strip()
     if body.opening_balance is not None:
         upd['opening_balance'] = body.opening_balance
+    if body.active is False:
+        # A drawer/counter can only be closed at zero — whatever's still
+        # sitting in it has to be transferred out (or reconciled via
+        # opening_balance, if that's also being changed in this same
+        # request) first, or it'd just vanish from every balance/report the
+        # moment this counter stops showing up as active.
+        base = body.opening_balance if body.opening_balance is not None else (counter.get('opening_balance') or 0)
+        agg = await db.cashbook_entries.aggregate([
+            {'$match': {'counter_id': counter_id}},
+            {'$group': {'_id': '$type', 'total': {'$sum': '$amount'}}},
+        ]).to_list(10)
+        received = sum(a['total'] for a in agg if a['_id'] == 'received')
+        paid = sum(a['total'] for a in agg if a['_id'] == 'paid')
+        balance = round(base + received - paid, 2)
+        if abs(balance) > 0.01:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{counter['name']} still has ₹{balance:,.0f} — transfer it out to zero before closing this counter.",
+            )
     if body.active is not None:
         upd['active'] = body.active
     if body.color is not None:
