@@ -340,14 +340,16 @@ async def gold_loan_interest_breakdown(loan_id: str, _: dict = Depends(require_s
             continue
 
     months = []
+    seen_periods = set()
     for entry in sorted(interest_due, key=lambda e: e.get('period') or ''):
         period = entry.get('period')
-        if not period:
-            continue
+        if not period or period in seen_periods:
+            continue  # one card per period — never show the same month twice
         try:
             y, m = int(period[:4]), int(period[5:7])
         except (ValueError, IndexError):
             continue
+        seen_periods.add(period)
         period_start = date(y, m, 1)
         next_y, next_m = _add_month(y, m)
         period_end = date(next_y, next_m, 1)

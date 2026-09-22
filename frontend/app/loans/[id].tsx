@@ -161,6 +161,15 @@ export default function GoldLoanDetailScreen() {
     if (parseInt(y, 10) === calYear) calMonthByNum[mm] = m;
   });
 
+  // One card per period, even if a stale/duplicate fetch ever handed us the
+  // same period twice — keeps "How this is calculated" from ever showing a
+  // month more than once, regardless of what the network layer did.
+  const breakdownMonths: InterestBreakdownMonth[] = [];
+  const seenPeriods = new Set<string>();
+  (breakdown?.months || []).forEach((mo) => {
+    if (!seenPeriods.has(mo.period)) { seenPeriods.add(mo.period); breakdownMonths.push(mo); }
+  });
+
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="loan-detail-screen">
       <View style={styles.header}>
@@ -289,9 +298,9 @@ export default function GoldLoanDetailScreen() {
               <Text style={styles.calcRateText}>
                 Daily rate: {loan.interest_rate_percent.toFixed(2)}% ÷ 30 = {breakdown.daily_rate_percent.toFixed(4)}%/day
               </Text>
-              {breakdown.months.length === 0 ? (
+              {breakdownMonths.length === 0 ? (
                 <Text style={styles.calcEmptyText}>No interest posted yet.</Text>
-              ) : breakdown.months.map((mo) => (
+              ) : breakdownMonths.map((mo) => (
                 <View key={mo.period} style={styles.calcMonth}>
                   <View style={styles.calcMonthHeader}>
                     <Text style={styles.calcMonthLabel}>
