@@ -45,6 +45,10 @@ param(
   [string]$RepoUrl      = 'https://github.com/ivasuverma/RMJ-One.git',
   [string]$Branch       = 'main',
   [string]$ApiUrl       = 'https://api.rmj.co.in',   # public backend URL baked into the web build
+  [string]$LocalApiUrl  = '',                          # this PC's own LAN address (e.g. http://192.168.31.31:8000) -
+                                                         # baked into the web build too, as a fallback the app only
+                                                         # uses if ApiUrl is unreachable (see frontend/src/api/client.ts).
+                                                         # Leave blank to skip the fallback entirely.
   [int]   $BackendPort  = 8000,                       # local port uvicorn listens on
   [int]   $WebPort      = 3000,                        # local port the static web build is served on
   [string]$EnvFile      = '',                          # path to your saved backend\.env (optional)
@@ -131,7 +135,12 @@ if ($EnvFile -and (Test-Path $EnvFile)) {
 } else {
   Copy-Item (Join-Path $backend '.env.example') $envPath -Force
   Warn 'No .env supplied. Opening the template in Notepad - paste in your saved secrets'
-  Warn 'and set ENVIRONMENT=production plus ALLOWED_ORIGINS=https://app.rmj.co.in, then Save & close.'
+  $allowedOriginsHint = 'https://app.rmj.co.in'
+  if ($LocalApiUrl) {
+    $localWebOrigin = "http://" + ([Uri]$LocalApiUrl).Host + ":$WebPort"
+    $allowedOriginsHint += ",$localWebOrigin"
+  }
+  Warn "and set ENVIRONMENT=production plus ALLOWED_ORIGINS=$allowedOriginsHint, then Save & close."
   Start-Process notepad $envPath -Wait
 }
 
@@ -152,7 +161,9 @@ Ok 'Backend dependencies installed'
 # ------------------------------------------------------------------ 5. frontend build
 Say '5/10  Building the web app'
 $frontend = Join-Path $RepoDir 'frontend'
-"EXPO_PUBLIC_BACKEND_URL=$ApiUrl" | Set-Content -Path (Join-Path $frontend '.env') -Encoding ASCII
+$frontendEnv = "EXPO_PUBLIC_BACKEND_URL=$ApiUrl"
+if ($LocalApiUrl) { $frontendEnv += "`nEXPO_PUBLIC_LOCAL_BACKEND_URL=$LocalApiUrl" }
+$frontendEnv | Set-Content -Path (Join-Path $frontend '.env') -Encoding ASCII
 cd $frontend
 cmd /c 'npm ci'
 $env:EXPO_NO_TELEMETRY = '1'
@@ -222,21 +233,40 @@ function Reinstall-Service($name, $exe, $params, $dir) {
   nssm set $name AppStderr (Join-Path $dir "$name.err.log") | Out-Null
 }
 
-# Backend: uvicorn on localhost:BackendPort
+# Backend: uvicorn on 0.0.0.0:BackendPort - reachable from the shop's own
+# LAN (not just this PC), so a device still on the WiFi can reach it
+# directly if the internet (and so the Cloudflare tunnel) goes down. Only
+# safe because the shop WiFi is staff-only; on a shared/guest network this
+# would need to stay 127.0.0.1 instead.
 Reinstall-Service 'RMJOneBackend' $venvPy `
-  "-m uvicorn server:app --host 127.0.0.1 --port $BackendPort" $backend
+  "-m uvicorn server:app --host 0.0.0.0 --port $BackendPort" $backend
 
-# Web: serve the static build on localhost:WebPort. Run node against serve's
-# entry point directly (most reliable way to service a global npm CLI).
+# Web: serve the static build on 0.0.0.0:WebPort, same LAN-reachability
+# reasoning as the backend above. Run node against serve's entry point
+# directly (most reliable way to service a global npm CLI).
 $node    = (Get-Command node).Source
 $serveJs = Join-Path (cmd /c 'npm root -g').Trim() 'serve\build\main.js'
 if (-not (Test-Path $serveJs)) { $serveJs = Join-Path (cmd /c 'npm root -g').Trim() 'serve\bin\serve.js' }
 Reinstall-Service 'RMJOneWeb' $node `
-  "`"$serveJs`" -s dist -l $WebPort --no-clipboard" $frontend
+  "`"$serveJs`" -s dist -l tcp://0.0.0.0:$WebPort --no-clipboard" $frontend
 
 # WhatsApp gateway: run the built Nest app directly with node, exactly how the
 # shop's existing box runs it - AppDirectory + relative `dist/main`.
 Reinstall-Service 'RMJOneWhatsApp' $node 'dist/main' $OpenWADir
+
+# Let the LAN actually reach the two ports above - Windows Firewall blocks
+# inbound by default even once a service binds to 0.0.0.0. Scoped to the
+# Private profile only (never Public/Domain), and safe to re-run (removes
+# any rule of the same name first).
+foreach ($fw in @(
+  @{ Name = 'RMJOne Backend (LAN)'; Port = $BackendPort },
+  @{ Name = 'RMJOne Web (LAN)';     Port = $WebPort }
+)) {
+  Remove-NetFirewallRule -DisplayName $fw.Name -ErrorAction SilentlyContinue
+  New-NetFirewallRule -DisplayName $fw.Name -Direction Inbound -Protocol TCP `
+    -LocalPort $fw.Port -Action Allow -Profile Private | Out-Null
+}
+Ok 'Firewall rules added for LAN access to the backend + web ports (Private profile only)'
 
 nssm start RMJOneBackend | Out-Null
 nssm start RMJOneWeb | Out-Null
@@ -280,6 +310,19 @@ if (Get-Command cloudflared -ErrorAction SilentlyContinue) {
 
 # ------------------------------------------------------------------ done
 Say 'Setup finished - remaining MANUAL steps'
+$lanUrlsBlock = ''
+if ($LocalApiUrl) {
+  $lanHost = ([Uri]$LocalApiUrl).Host
+  $lanUrlsBlock = @"
+
+  LAN fallback (staff WiFi, works even if the shop's internet is down):
+     App:  http://${lanHost}:${WebPort}
+     API:  ${LocalApiUrl}/api/
+  The web build already knows to fall back to this automatically - see
+  frontend/src/api/client.ts. Only reachable from a device on the same LAN
+  as this PC.
+"@
+}
 @"
   These need your accounts/logins and can't be scripted unattended:
 
@@ -313,5 +356,6 @@ Say 'Setup finished - remaining MANUAL steps'
   Live URLs once the tunnel + DNS are up:
      App:  https://app.rmj.co.in
      API:  https://api.rmj.co.in/api/
+$lanUrlsBlock
 "@ | Write-Host -ForegroundColor Gray
 Ok 'All automated steps complete.'
