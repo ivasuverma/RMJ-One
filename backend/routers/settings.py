@@ -271,7 +271,12 @@ async def get_gold_rate(_: dict = Depends(require_staff_or_module('gold_rate')))
     cfg = await gold_rate.get_config()
     today = await db.settings.find_one({'id': 'gold_rate_today'}, {'_id': 0})
     status = await get_whatsapp_status()
-    return {**cfg, 'channel_connected': status.get('connected', False), 'today': today}
+    # Raw scrape diagnostics (fetched_at/error + each row's raw scraped
+    # text) so a stale/wrong field can be diagnosed from what was actually
+    # read off the source page, without needing DB access - see
+    # gold_rate._extract_extra.
+    live = await db.settings.find_one({'id': 'gold_rate_live'}, {'_id': 0})
+    return {**cfg, 'channel_connected': status.get('connected', False), 'today': today, 'live': live}
 
 
 @router.put('/settings/gold-rate/config')

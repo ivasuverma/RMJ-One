@@ -27,6 +27,13 @@ const DAILY_DEFAULT: Daily = {
   skip_weekend_fetch: true, auto_send_enabled: false,
   chatbot_refresh_enabled: true, chatbot_refresh_interval_min: '120', chatbot_refresh_start: '12:30', chatbot_refresh_end: '19:00',
 };
+type LiveDebug = {
+  fetched_at: string | null; error: string | null;
+  fetched_gold: number | null; fetched_silver: number | null;
+  gold_row_text: string | null; silver_row_text: string | null;
+  xau_row_text: string | null; xag_row_text: string | null;
+} | null;
+
 const inr = (n: number) => n.toLocaleString('en-IN');
 const toEdit = (i: ServerItem): Item => ({ key: i.key, label: i.label, base: i.base, percent: String(i.percent), enabled: i.enabled });
 const toServer = (i: Item) => ({ key: i.key, label: i.label, percent: parseFloat(i.percent) || 0, enabled: i.enabled });
@@ -55,6 +62,8 @@ export default function RateMasterScreen() {
   const [broadcastTemplate, setBroadcastTemplate] = useState('');
   const [dailyDirty, setDailyDirty] = useState(false);
   const [dailySaving, setDailySaving] = useState(false);
+  const [live, setLive] = useState<LiveDebug>(null);
+  const [refetching, setRefetching] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -72,6 +81,7 @@ export default function RateMasterScreen() {
           chatbot_refresh_start: g.chatbot_refresh_start || '12:30', chatbot_refresh_end: g.chatbot_refresh_end || '19:00',
         });
         setDailyDirty(false);
+        setLive(g.live || null);
       } catch { /* leave the defaults */ }
     } catch (e: any) { toast.error(e?.detail || 'Could not load'); }
     finally { setLoading(false); setRefreshing(false); }
@@ -116,6 +126,15 @@ export default function RateMasterScreen() {
     try { await api.put('/rate-master', { items: items.map(toServer) }); toast.success('Rate master saved'); await load(); }
     catch (e: any) { toast.error(e?.detail || 'Could not save'); }
     finally { setSaving(false); }
+  };
+  const refetchNow = async () => {
+    setRefetching(true);
+    try {
+      await api.post('/settings/gold-rate/refetch');
+      toast.success('Refetched');
+      await load();
+    } catch (e: any) { toast.error(e?.detail || 'Refetch failed'); }
+    finally { setRefetching(false); }
   };
 
   if (loading) return <SafeAreaView style={styles.centered}><ActivityIndicator color={colors.brandPrimary} /></SafeAreaView>;
@@ -191,6 +210,39 @@ export default function RateMasterScreen() {
           ) : null}
         </View>
 
+        <View style={styles.card} testID="rm-diagnostics-card">
+          <View style={styles.rowHead}>
+            <Text style={styles.cardTitle}>Last scrape (diagnostics)</Text>
+            {isOwner && (
+              <Pressable onPress={refetchNow} disabled={refetching} style={styles.iconBtn} hitSlop={10} testID="gold-rate-refetch-now">
+                {refetching ? <ActivityIndicator color={colors.onSurface} size="small" /> : <Ionicons name="cloud-download-outline" size={17} color={colors.onSurface} />}
+              </Pressable>
+            )}
+          </View>
+          <Text style={styles.hint}>
+            What was actually read off the source page last time — useful when a rate looks stuck or wrong. Tap the
+            icon to refetch right now.
+          </Text>
+          {!live ? (
+            <Text style={styles.hint}>No scrape recorded yet.</Text>
+          ) : (
+            <>
+              <Text style={styles.hint}>
+                {live.fetched_at ? new Date(live.fetched_at).toLocaleString() : 'Never'}
+                {live.error ? ` — failed: ${live.error}` : ''}
+              </Text>
+              <Text style={styles.label}>Gold {live.fetched_gold != null ? `→ ₹${inr(live.fetched_gold)}` : ''}</Text>
+              <Text style={styles.diagText}>{live.gold_row_text || '—'}</Text>
+              <Text style={styles.label}>Silver {live.fetched_silver != null ? `→ ₹${inr(live.fetched_silver)}` : ''}</Text>
+              <Text style={styles.diagText}>{live.silver_row_text || '—'}</Text>
+              <Text style={styles.label}>Gold spot (XAU)</Text>
+              <Text style={styles.diagText}>{live.xau_row_text || '—'}</Text>
+              <Text style={styles.label}>Silver spot (XAG)</Text>
+              <Text style={styles.diagText}>{live.xag_row_text || '—'}</Text>
+            </>
+          )}
+        </View>
+
         <View style={styles.infoBox}>
           <Ionicons name="calculator-outline" size={16} color={colors.brandSecondary} />
           <Text style={styles.infoText}>Each rate is a percentage of the rate you confirm every day — for example 18K = 75% of the 24K rate. Gold purities use the 24K rate, silver uses the silver rate. The margin (₹ added or subtracted) is set above, with the daily rate. Results here are rounded the same way as the base rate (gold to ₹50, silver to ₹100).</Text>
@@ -261,6 +313,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   infoBox: { flexDirection: 'row', gap: spacing.sm, alignItems: 'flex-start', backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, padding: spacing.md, borderWidth: 1, borderColor: colors.border, marginBottom: spacing.md },
   infoText: { color: colors.onSurfaceTertiary, fontSize: 12, flex: 1, lineHeight: 18 },
   code: { fontFamily: 'monospace', color: colors.brandPrimary, fontWeight: '700' },
+  diagText: { fontFamily: 'monospace', color: colors.onSurfaceSecondary, fontSize: 11.5, lineHeight: 16 },
   card: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: spacing.lg, marginBottom: spacing.md, gap: 4 },
   cardTitle: { color: colors.onSurface, fontSize: 15, fontWeight: '800' },
   rowHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
