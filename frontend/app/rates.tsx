@@ -93,7 +93,7 @@ export default function PublicRatesScreen() {
           <>
             <View style={styles.metalRow}>
               <View style={styles.metalCard} testID="rate-gold">
-                <Text style={styles.metalLabel}>GOLD <Text style={styles.metalSub}>· 24K / 10g</Text></Text>
+                <Text style={styles.metalLabel}>GOLD <Text style={styles.metalSub}>· 995 Purity / 10g</Text></Text>
                 <View style={styles.buySellRow}>
                   <View style={styles.buySellCol}>
                     <Text style={styles.buySellLabel}>Sell</Text>
@@ -108,7 +108,7 @@ export default function PublicRatesScreen() {
               </View>
 
               <View style={styles.metalCard} testID="rate-silver">
-                <Text style={styles.metalLabel}>SILVER <Text style={styles.metalSub}>· / kg</Text></Text>
+                <Text style={styles.metalLabel}>SILVER <Text style={styles.metalSub}>· 999 Purity / 1kg</Text></Text>
                 <View style={styles.buySellRow}>
                   <View style={styles.buySellCol}>
                     <Text style={styles.buySellLabel}>Sell</Text>
