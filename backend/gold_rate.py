@@ -189,11 +189,23 @@ def _buy_rate(sell_rate: int, buy_margin: int) -> int:
 
 def _extract_extra(result: dict) -> dict:
     """xau/xag/usd_inr are best-effort informational fields — None on a miss
-    rather than failing the whole fetch (see fetch_rates_raw's docstring)."""
+    rather than failing the whole fetch (see fetch_rates_raw's docstring).
+    Also carries each row's raw scraped text (row_text, already returned by
+    fetch_gold_rate.js) through to gold_rate_live purely for diagnosis - if
+    a field goes stale or wrong again, this is what it actually read off the
+    page that time, without needing to reproduce the scrape to find out."""
     def rate_of(key):
         row = result.get(key)
         return row.get('rate') if row else None
-    return {'xau_usd': rate_of('xau'), 'xag_usd': rate_of('xag'), 'usd_inr': rate_of('usd_inr')}
+
+    def text_of(key):
+        row = result.get(key)
+        return row.get('row_text') if row else None
+    return {
+        'xau_usd': rate_of('xau'), 'xag_usd': rate_of('xag'), 'usd_inr': rate_of('usd_inr'),
+        'gold_row_text': text_of('gold'), 'silver_row_text': text_of('silver'),
+        'xau_row_text': text_of('xau'), 'xag_row_text': text_of('xag'),
+    }
 
 
 async def _store_live_rate(fetched_gold, fetched_silver, gold_rate, silver_rate, cfg: dict, fetched_at: str,

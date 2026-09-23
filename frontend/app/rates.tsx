@@ -77,13 +77,13 @@ export default function PublicRatesScreen() {
                 <Text style={styles.metalLabel}>GOLD <Text style={styles.metalSub}>· 24K / 10g</Text></Text>
                 <View style={styles.buySellRow}>
                   <View style={styles.buySellCol}>
-                    <Text style={styles.buySellLabel}>Buy</Text>
-                    <Text style={styles.buySellValue}>{fmtINR(data?.gold_buy ?? null)}</Text>
+                    <Text style={styles.buySellLabel}>Sell</Text>
+                    <Text style={[styles.buySellValue, styles.sellValue]}>{fmtINR(data?.gold_sell ?? null)}</Text>
                   </View>
                   <View style={styles.buySellDivider} />
                   <View style={styles.buySellCol}>
-                    <Text style={styles.buySellLabel}>Sell</Text>
-                    <Text style={[styles.buySellValue, styles.sellValue]}>{fmtINR(data?.gold_sell ?? null)}</Text>
+                    <Text style={styles.buySellLabel}>Buyback</Text>
+                    <Text style={styles.buySellValue}>{fmtINR(data?.gold_buy ?? null)}</Text>
                   </View>
                 </View>
               </View>
@@ -92,13 +92,13 @@ export default function PublicRatesScreen() {
                 <Text style={styles.metalLabel}>SILVER <Text style={styles.metalSub}>· / kg</Text></Text>
                 <View style={styles.buySellRow}>
                   <View style={styles.buySellCol}>
-                    <Text style={styles.buySellLabel}>Buy</Text>
-                    <Text style={styles.buySellValue}>{fmtINR(data?.silver_buy ?? null)}</Text>
+                    <Text style={styles.buySellLabel}>Sell</Text>
+                    <Text style={[styles.buySellValue, styles.sellValue]}>{fmtINR(data?.silver_sell ?? null)}</Text>
                   </View>
                   <View style={styles.buySellDivider} />
                   <View style={styles.buySellCol}>
-                    <Text style={styles.buySellLabel}>Sell</Text>
-                    <Text style={[styles.buySellValue, styles.sellValue]}>{fmtINR(data?.silver_sell ?? null)}</Text>
+                    <Text style={styles.buySellLabel}>Buyback</Text>
+                    <Text style={styles.buySellValue}>{fmtINR(data?.silver_buy ?? null)}</Text>
                   </View>
                 </View>
               </View>
@@ -121,6 +121,9 @@ export default function PublicRatesScreen() {
                 <Text style={styles.spotUnit}>spot</Text>
               </View>
             </View>
+            <Text style={styles.spotDisclaimer}>
+              XAU/XAG are international spot benchmarks in USD — informational only, not the local ₹ rate above.
+            </Text>
 
             <View style={styles.statusRow}>
               {!!error && <Text style={styles.errorText}>{error}</Text>}
@@ -186,6 +189,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   spotLabel: { color: colors.onSurfaceTertiary, fontSize: 10, fontWeight: '700', letterSpacing: 0.4 },
   spotValue: { color: colors.onSurface, fontFamily: fonts.display, fontSize: 16, fontWeight: '700', marginTop: 4 },
   spotUnit: { color: colors.mutedText, fontSize: 10, marginTop: 2 },
+  spotDisclaimer: { color: colors.mutedText, fontSize: 10.5, textAlign: 'center', marginBottom: spacing.lg, lineHeight: 14 },
 
   statusRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, marginBottom: spacing.xl },
   updatedText: { color: colors.mutedText, fontSize: typography.caption.fontSize },

@@ -65,6 +65,14 @@ const USDINR_LABEL = process.env.GOLD_RATE_USDINR_LABEL || 'USD/INR';
       // because this is a third-party page we don't control. Numbers may
       // carry a decimal part (spot $ prices and USD/INR do; INR rupee
       // amounts don't, but matching one anyway is harmless).
+      //
+      // Only numbers AFTER the label's own text count. Climbing up the DOM
+      // can land on an ancestor that also wraps a neighboring row (e.g. a
+      // table row holding both "GOLD SPOT 2634.50" and "SILVER SPOT 31.20"
+      // side by side) - counting numbers anywhere in that ancestor let an
+      // earlier row's value satisfy minNums and get returned instead of this
+      // row's own value (this is what made "silver spot" read back a stuck/
+      // wrong number - it was quietly picking up gold's).
       function extractRow(label, minNums) {
         const all = Array.from(document.querySelectorAll('body *'));
         const hit = all.find((el) => el.children.length === 0 && el.textContent && el.textContent.includes(label));
@@ -72,9 +80,13 @@ const USDINR_LABEL = process.env.GOLD_RATE_USDINR_LABEL || 'USD/INR';
         let node = hit;
         for (let i = 0; i < 6 && node; i++) {
           const text = node.textContent || '';
-          const nums = text.match(/\d[\d,]*(?:\.\d+)?/g);
-          if (nums && nums.length >= minNums) {
-            return { rowText: text.replace(/\s+/g, ' ').trim().slice(0, 200), numbers: nums.map((n) => parseFloat(n.replace(/,/g, ''))) };
+          const idx = text.indexOf(label);
+          if (idx !== -1) {
+            const after = text.slice(idx + label.length);
+            const nums = after.match(/\d[\d,]*(?:\.\d+)?/g);
+            if (nums && nums.length >= minNums) {
+              return { rowText: text.replace(/\s+/g, ' ').trim().slice(0, 200), numbers: nums.map((n) => parseFloat(n.replace(/,/g, ''))) };
+            }
           }
           node = node.parentElement;
         }
