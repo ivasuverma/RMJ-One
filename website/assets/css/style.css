@@ -214,6 +214,17 @@ img { max-width: 100%; display: block; }
 .rates-status button { background: none; border: none; color: var(--red); font-weight: 700; font-size: 13px; cursor: pointer; }
 .rates-error { color: var(--red); font-size: 13px; text-align: center; margin-bottom: 8px; }
 
+.contact-row { display: flex; gap: 12px; max-width: 640px; margin: 0 auto 20px; flex-wrap: wrap; }
+.contact-btn {
+  flex: 1 1 140px;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  background: var(--white); border: 1px solid var(--gold); border-radius: 6px;
+  padding: 12px 10px;
+  color: var(--ink); font-weight: 700; font-size: 13px;
+}
+.contact-btn:hover { background: var(--gold-light); color: var(--ink); }
+.contact-icon { width: 17px; height: 17px; flex: 0 0 auto; }
+
 .disclaimer {
   max-width: 640px;
   margin: 24px auto 0;
