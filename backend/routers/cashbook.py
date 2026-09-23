@@ -162,16 +162,22 @@ async def _walk_balance(counter_id: str, from_date: str, delta_received: float, 
 
 async def _notify_counter_over_limit(counter: dict, balance: float) -> None:
     """Cash sitting in a till is a security risk once it piles up — tell
-    whoever's actually assigned to this counter to go transfer it out,
-    unconditionally (bypasses each employee's own notif_prefs opt-in,
-    unlike every other cash_book alert — this one is a standing safety
-    rule tied to having access to the counter, not a discretionary FYI).
-    Owners/admins get the same alert through the usual module broadcast."""
+    whoever's actually assigned to this counter to go transfer it out. On by
+    default (cashbook_over_limit_employee, unlike every other cash_book
+    alert, which are admin_only) — this is a standing safety rule tied to
+    having access to the counter, not a discretionary FYI — but still
+    toggleable per employee like everything else. Owners/admins get the same
+    alert through the usual module broadcast (cashbook_over_limit)."""
     amt = f"₹{balance:,.0f}"
     body = f"{counter['name']} has {amt} in cash — transfer it out immediately."
     async for e in db.employees.find(
-        {'status': {'$ne': 'inactive'}, 'cashbook_counter_ids': counter['id']}, {'_id': 0, 'id': 1},
+        {'status': {'$ne': 'inactive'}, 'cashbook_counter_ids': counter['id']},
+        {'_id': 0, 'id': 1, 'notifications_enabled': 1, 'notif_prefs': 1},
     ):
+        if e.get('notifications_enabled') is False:
+            continue
+        if (e.get('notif_prefs') or {}).get('cashbook_over_limit_employee', True) is False:
+            continue
         await notify_user(e['id'], 'Cash Limit Exceeded', body, '/cashbook')
     await _notify_module(
         'cash_book', 'Cash Limit Exceeded', body, '/cashbook', script='cashbook_over_limit', admin_only=True,
