@@ -649,8 +649,11 @@ class ModuleAccessUpdateIn(BaseModel):
     notifications_enabled: Optional[bool] = None
     # Per-module notification opt-in, e.g. {'attendance': True, 'payroll': False}.
     # A module left out falls back to that module's default roles. None = leave
-    # unchanged.
+    # unchanged. Same shape/key-space as notif_prefs but for the WhatsApp
+    # channel specifically — independent of it (push can be on with WhatsApp
+    # off, or vice versa), see _wants_script_whatsapp.
     notif_prefs: Optional[Dict[str, bool]] = None
+    notif_prefs_whatsapp: Optional[Dict[str, bool]] = None
     # Per-category document permissions, e.g.
     # {'kyc': {'view': True, 'record': False}}. None = leave unchanged. When an
     # account has this set, it overrides the category's role-based visibility.
@@ -1949,26 +1952,33 @@ async def _store_notification(user_id: str, title: str, body: str, url: str):
     })
 
 
-async def _notify_user_impl(user_id: str, title: str, body: str, url: str = '/'):
+async def _notify_user_impl(user_id: str, title: str, body: str, url: str = '/', push: bool = True, whatsapp: bool = True):
     try:
         await _store_notification(user_id, title, body, url)
-        subs = await db.push_subscriptions.find({'user_id': user_id}, {'_id': 0}).to_list(20)
-        await _send_push_to_subs(subs, title, body, url)
-        await _notify_whatsapp(user_id, title, body)
+        if push:
+            subs = await db.push_subscriptions.find({'user_id': user_id}, {'_id': 0}).to_list(20)
+            await _send_push_to_subs(subs, title, body, url)
+        if whatsapp:
+            await _notify_whatsapp(user_id, title, body)
     except Exception as e:
         logger.warning(f'notify_user failed: {e}')
 
 
-async def notify_user(user_id: str, title: str, body: str, url: str = '/'):
+async def notify_user(user_id: str, title: str, body: str, url: str = '/', push: bool = True, whatsapp: bool = True):
     # Fire-and-forget: notification storage + web-push delivery involve
     # several sequential DB writes and outbound HTTP calls to push services,
     # none of which the caller (a form-save request handler) should have to
     # wait on. Scheduling as a background task lets the API response return
     # the instant the actual record is saved instead of blocking on this.
-    asyncio.create_task(_notify_user_impl(user_id, title, body, url))
+    # `push`/`whatsapp`: which channels to actually fire (in-app history is
+    # always stored regardless) — callers that already resolved per-account
+    # channel preference (see _notify_module_impl) pass these through; every
+    # other caller leaves both True, an always-on personal notice on both
+    # channels, same as before this became independently toggleable.
+    asyncio.create_task(_notify_user_impl(user_id, title, body, url, push, whatsapp))
 
 
-async def _notify_roles_impl(roles: list, title: str, body: str, url: str = '/'):
+async def _notify_roles_impl(roles: list, title: str, body: str, url: str = '/', push: bool = True, whatsapp: bool = True):
     try:
         if not roles:
             return
@@ -1983,18 +1993,20 @@ async def _notify_roles_impl(roles: list, title: str, body: str, url: str = '/')
                 recipient_ids.add(e['id'])
         for uid in recipient_ids:
             await _store_notification(uid, title, body, url)
-        subs = await db.push_subscriptions.find({'role': {'$in': roles}}, {'_id': 0}).to_list(200)
-        await _send_push_to_subs(subs, title, body, url)
-        for uid in recipient_ids:
-            await _notify_whatsapp(uid, title, body)
+        if push:
+            subs = await db.push_subscriptions.find({'role': {'$in': roles}}, {'_id': 0}).to_list(200)
+            await _send_push_to_subs(subs, title, body, url)
+        if whatsapp:
+            for uid in recipient_ids:
+                await _notify_whatsapp(uid, title, body)
     except Exception as e:
         logger.warning(f'notify_roles failed: {e}')
 
 
-async def notify_roles(roles: list, title: str, body: str, url: str = '/'):
+async def notify_roles(roles: list, title: str, body: str, url: str = '/', push: bool = True, whatsapp: bool = True):
     # Same rationale as notify_user: don't block the caller on the recipient
     # resolution + per-recipient inserts + push delivery below.
-    asyncio.create_task(_notify_roles_impl(roles, title, body, url))
+    asyncio.create_task(_notify_roles_impl(roles, title, body, url, push, whatsapp))
 
 
 async def _notify_whatsapp(account_id: str, title: str, body: str) -> None:
@@ -2356,6 +2368,21 @@ def _wants_script(acc: dict, role: str, module: str, script: Optional[str] = Non
     return role in set(NOTIFICATION_MODULE_DEFAULT_ROLES.get(module, ['owner', 'admin']))
 
 
+def _wants_script_whatsapp(acc: dict, role: str, module: str, script: Optional[str] = None) -> bool:
+    """WhatsApp counterpart to _wants_script — identical fallback order, but
+    reads notif_prefs_whatsapp instead of notif_prefs, so someone can have
+    push on with WhatsApp off (or vice versa) per category. Still a no-op in
+    practice for anyone with no mobile number saved (see _notify_whatsapp)."""
+    if acc.get('notifications_enabled') is False:
+        return False
+    prefs = acc.get('notif_prefs_whatsapp') or {}
+    if script and script in prefs:
+        return bool(prefs[script])
+    if module in prefs:
+        return bool(prefs[module])
+    return role in set(NOTIFICATION_MODULE_DEFAULT_ROLES.get(module, ['owner', 'admin']))
+
+
 async def _notify_module_impl(module: str, title: str, body: str, url: str = '/', script: Optional[str] = None,
                                subject_employee_id: Optional[str] = None, admin_only: bool = False):
     """Broadcast a module event to whichever people opted in for it. Recipients
@@ -2378,17 +2405,21 @@ async def _notify_module_impl(module: str, title: str, body: str, url: str = '/'
     ever get, even if they've opted into the module and even if it happens to
     be about them (they already know they filed their own request)."""
     try:
-        proj = {'_id': 0, 'id': 1, 'role': 1, 'notifications_enabled': 1, 'notif_prefs': 1}
+        proj = {'_id': 0, 'id': 1, 'role': 1, 'notifications_enabled': 1, 'notif_prefs': 1, 'notif_prefs_whatsapp': 1}
         async for u in db.users.find({}, proj):
-            if _wants_script(u, u.get('role', ''), module, script):
-                await notify_user(u['id'], title, body, url)
+            wants_push = _wants_script(u, u.get('role', ''), module, script)
+            wants_wa = _wants_script_whatsapp(u, u.get('role', ''), module, script)
+            if wants_push or wants_wa:
+                await notify_user(u['id'], title, body, url, push=wants_push, whatsapp=wants_wa)
         if admin_only:
             return
         async for e in db.employees.find({'status': {'$ne': 'inactive'}}, proj):
             if subject_employee_id is not None and e['id'] != subject_employee_id:
                 continue
-            if _wants_script(e, 'employee', module, script):
-                await notify_user(e['id'], title, body, url)
+            wants_push = _wants_script(e, 'employee', module, script)
+            wants_wa = _wants_script_whatsapp(e, 'employee', module, script)
+            if wants_push or wants_wa:
+                await notify_user(e['id'], title, body, url, push=wants_push, whatsapp=wants_wa)
     except Exception as e:
         logger.warning(f'_notify_module failed for {module}: {e}')
 

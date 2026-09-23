@@ -1,9 +1,16 @@
-import { useMemo } from 'react';
-import { View, Text, Pressable, Switch, StyleSheet } from 'react-native';
+import { useMemo, useState } from 'react';
+import { View, Text, Pressable, Switch, StyleSheet, LayoutAnimation, Platform, UIManager } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { spacing, radius, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { AccessEditor } from '@/src/hooks/use-access-editor';
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+function animateNext() {
+  try { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); } catch { /* web: no-op */ }
+}
 
 // Content-only building blocks (no card/heading chrome — callers wrap these
 // in whatever container matches their own screen: a tabbed detail card on
@@ -20,66 +27,133 @@ function canReceiveAdminOnly(role?: string) {
 export function NotificationsSection({ editor, testIdPrefix }: { editor: AccessEditor; testIdPrefix: string }) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
-  const { acc, notifOn, setNotifOn, notifModules, notifPrefs, setNotifPrefs } = editor;
+  const {
+    acc, notifOn, setNotifOn, notifModules, notifPrefs, setNotifPrefs, notifPrefsWhatsapp, setNotifPrefsWhatsapp,
+  } = editor;
   const canAdminOnly = canReceiveAdminOnly(acc?.role);
+  // Collapsed by default — a module's detail (its individual events) is a
+  // drill-down, not something shown all at once for every category, the
+  // way an iOS grouped settings list works. Presentation-only, not saved.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const toggleExpanded = (key: string) => {
+    animateNext();
+    setExpanded((p) => {
+      const n = new Set(p);
+      if (n.has(key)) n.delete(key); else n.add(key);
+      return n;
+    });
+  };
+
   return (
     <>
-      <View style={styles.switchRow}>
+      <View style={styles.masterRow}>
         <View style={{ flex: 1 }}>
           <Text style={styles.switchTitle}>Allow notifications</Text>
-          <Text style={styles.switchSub}>Push &amp; in-app alerts for this person</Text>
+          <Text style={styles.switchSub}>Push, in-app &amp; WhatsApp alerts for this person</Text>
         </View>
         <Switch value={notifOn} onValueChange={setNotifOn} trackColor={{ true: colors.brandPrimary, false: colors.border }} thumbColor={colors.surface} testID={`${testIdPrefix}-notif-master`} />
       </View>
-      {notifOn && notifModules.map((nm) => {
-        const on = notifPrefs[nm.key] !== false;
-        const allEvents = nm.events || [];
-        // Hide events that can never fire for this account — and if EVERY
-        // event under this module is one of those (e.g. Tasks/Payroll/Cash
-        // Book for a regular employee — every event they carry is
-        // admin_only), the whole module toggle does nothing for this
-        // account either, so skip rendering it entirely rather than show a
-        // switch with no effect.
-        const events = canAdminOnly ? allEvents : allEvents.filter((ev) => !ev.admin_only);
-        if (allEvents.length > 0 && events.length === 0) return null;
-        return (
-          <View key={nm.key}>
-            <View style={styles.switchRow}>
-              <Text style={styles.notifModLabel}>{nm.label}</Text>
-              <Switch
-                value={on}
-                onValueChange={(v) => setNotifPrefs((p) => ({ ...p, [nm.key]: v }))}
-                trackColor={{ true: colors.brandPrimary, false: colors.border }}
-                thumbColor={colors.surface}
-                testID={`${testIdPrefix}-notif-${nm.key}`}
-              />
-            </View>
-            {on && events.length > 0 && (
-              <View style={styles.eventList}>
-                {events.map((ev) => {
-                  // Unset (never individually toggled) visually inherits the
-                  // module's own current state — toggling it pins an
-                  // explicit override for just this one event.
-                  const evOn = ev.key in notifPrefs ? notifPrefs[ev.key] !== false : on;
-                  return (
-                    <View key={ev.key} style={styles.eventRow}>
-                      <Text style={styles.eventText}>{ev.label}</Text>
-                      <Switch
-                        value={evOn}
-                        onValueChange={(v) => setNotifPrefs((p) => ({ ...p, [ev.key]: v }))}
-                        trackColor={{ true: colors.brandPrimary, false: colors.border }}
-                        thumbColor={colors.surface}
-                        style={styles.eventSwitch}
-                        testID={`${testIdPrefix}-notif-${ev.key}`}
-                      />
-                    </View>
-                  );
-                })}
-              </View>
-            )}
+      {notifOn && !acc?.mobile && (
+        <Text style={styles.mobileHint}>No mobile number saved for this person — the WhatsApp switches below won&apos;t deliver anything until one is added.</Text>
+      )}
+
+      {notifOn && (
+        <>
+          <View style={styles.channelHeadRow}>
+            <View style={{ flex: 1 }} />
+            <Ionicons name="notifications-outline" size={13} color={colors.mutedText} style={styles.channelHeadIcon} />
+            <Ionicons name="logo-whatsapp" size={13} color={colors.mutedText} style={styles.channelHeadIcon} />
           </View>
-        );
-      })}
+
+          <View style={styles.group}>
+            {notifModules.map((nm, i) => {
+              const on = notifPrefs[nm.key] !== false;
+              const onWa = notifPrefsWhatsapp[nm.key] !== false;
+              const allEvents = nm.events || [];
+              // Hide events that can never fire for this account — and if
+              // EVERY event under this module is one of those (e.g. Tasks/
+              // Payroll/Cash Book for a regular employee — every event they
+              // carry is admin_only), the whole module row does nothing for
+              // this account either, so skip rendering it entirely rather
+              // than show switches with no effect.
+              const events = canAdminOnly ? allEvents : allEvents.filter((ev) => !ev.admin_only);
+              if (allEvents.length > 0 && events.length === 0) return null;
+              const isOpen = expanded.has(nm.key);
+              const canExpand = events.length > 0;
+              return (
+                <View key={nm.key} style={[styles.moduleRow, i > 0 && styles.moduleRowDivider]}>
+                  <View style={styles.moduleHeaderRow}>
+                    <Pressable
+                      onPress={() => canExpand && toggleExpanded(nm.key)}
+                      disabled={!canExpand}
+                      style={styles.moduleLabelTap}
+                      hitSlop={6}
+                      testID={`${testIdPrefix}-notif-expand-${nm.key}`}
+                    >
+                      <Ionicons
+                        name={canExpand ? (isOpen ? 'chevron-down' : 'chevron-forward') : 'remove'}
+                        size={15}
+                        color={canExpand ? colors.mutedText : 'transparent'}
+                        style={styles.chevron}
+                      />
+                      <Text style={styles.notifModLabel} numberOfLines={1}>{nm.label}</Text>
+                    </Pressable>
+                    <Switch
+                      value={on}
+                      onValueChange={(v) => setNotifPrefs((p) => ({ ...p, [nm.key]: v }))}
+                      trackColor={{ true: colors.brandPrimary, false: colors.border }}
+                      thumbColor={colors.surface}
+                      style={styles.channelSwitch}
+                      testID={`${testIdPrefix}-notif-${nm.key}`}
+                    />
+                    <Switch
+                      value={onWa}
+                      onValueChange={(v) => setNotifPrefsWhatsapp((p) => ({ ...p, [nm.key]: v }))}
+                      trackColor={{ true: colors.brandPrimary, false: colors.border }}
+                      thumbColor={colors.surface}
+                      style={styles.channelSwitch}
+                      testID={`${testIdPrefix}-notif-wa-${nm.key}`}
+                    />
+                  </View>
+                  {isOpen && (
+                    <View style={styles.eventList}>
+                      {events.map((ev) => {
+                        // Unset (never individually toggled) visually inherits
+                        // the module's own current state for that same
+                        // channel — toggling it pins an explicit override for
+                        // just this one event, independently per channel.
+                        const evOn = ev.key in notifPrefs ? notifPrefs[ev.key] !== false : on;
+                        const evOnWa = ev.key in notifPrefsWhatsapp ? notifPrefsWhatsapp[ev.key] !== false : onWa;
+                        return (
+                          <View key={ev.key} style={styles.eventRow}>
+                            <Text style={styles.eventText}>{ev.label}</Text>
+                            <Switch
+                              value={evOn}
+                              onValueChange={(v) => setNotifPrefs((p) => ({ ...p, [ev.key]: v }))}
+                              trackColor={{ true: colors.brandPrimary, false: colors.border }}
+                              thumbColor={colors.surface}
+                              style={styles.eventSwitch}
+                              testID={`${testIdPrefix}-notif-${ev.key}`}
+                            />
+                            <Switch
+                              value={evOnWa}
+                              onValueChange={(v) => setNotifPrefsWhatsapp((p) => ({ ...p, [ev.key]: v }))}
+                              trackColor={{ true: colors.brandPrimary, false: colors.border }}
+                              thumbColor={colors.surface}
+                              style={styles.eventSwitch}
+                              testID={`${testIdPrefix}-notif-wa-${ev.key}`}
+                            />
+                          </View>
+                        );
+                      })}
+                    </View>
+                  )}
+                </View>
+              );
+            })}
+          </View>
+        </>
+      )}
     </>
   );
 }
@@ -178,8 +252,24 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   switchTitle: { color: colors.onSurface, fontSize: 14, fontWeight: '600' },
   switchSub: { color: colors.mutedText, fontSize: 11.5, marginTop: 2 },
   notifModLabel: { flex: 1, color: colors.onSurfaceSecondary, fontSize: 14 },
-  eventList: { paddingLeft: 4, paddingBottom: 10, gap: 5 },
-  eventRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  masterRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: 8 },
+  mobileHint: { color: colors.mutedText, fontSize: 11.5, lineHeight: 16, paddingBottom: 4 },
+  channelHeadRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingTop: 4, paddingBottom: 2 },
+  channelHeadIcon: { width: 40, textAlign: 'center' },
+
+  // The module list reads as one rounded "grouped table" card (iOS Settings
+  // style) rather than a flat list of individually-bordered rows — each
+  // module is a drill-down row inside it, not its own standalone card.
+  group: { backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' },
+  moduleRow: { paddingHorizontal: spacing.md },
+  moduleRowDivider: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.divider },
+  moduleHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, minHeight: 46 },
+  moduleLabelTap: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 12 },
+  chevron: { width: 15 },
+  channelSwitch: { transform: [{ scaleX: 0.85 }, { scaleY: 0.85 }] },
+
+  eventList: { paddingLeft: 21, paddingBottom: 12, gap: 9 },
+  eventRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   eventText: { color: colors.mutedText, fontSize: 12.5, flex: 1 },
   eventSwitch: { transform: [{ scaleX: 0.8 }, { scaleY: 0.8 }] },
 

@@ -188,6 +188,7 @@ async def list_access_accounts(_: dict = Depends(require_owner), _mod=Depends(re
             'resolved_modules': resolve_modules(u),
             'notifications_enabled': u.get('notifications_enabled', True) is not False,
             'notif_prefs': u.get('notif_prefs') or {},
+            'notif_prefs_whatsapp': u.get('notif_prefs_whatsapp') or {},
             'doc_category_rights': u.get('doc_category_rights') or {},
             'doc_see_done': u.get('doc_see_done', True) is not False,
         })
@@ -201,6 +202,7 @@ async def list_access_accounts(_: dict = Depends(require_owner), _mod=Depends(re
             'resolved_modules': resolve_modules({'role': 'employee', 'module_access': e.get('module_access')}),
             'notifications_enabled': e.get('notifications_enabled', True) is not False,
             'notif_prefs': e.get('notif_prefs') or {},
+            'notif_prefs_whatsapp': e.get('notif_prefs_whatsapp') or {},
             'doc_category_rights': e.get('doc_category_rights') or {},
             'doc_see_done': e.get('doc_see_done', True) is not False,
         })
@@ -229,6 +231,11 @@ async def update_access(account_id: str, body: ModuleAccessUpdateIn, user=Depend
         # _wants_script in server.py for how the two are resolved together).
         allowed_notif_keys = NOTIFICATION_MODULE_KEYS | NOTIFICATION_SCRIPT_KEYS
         extra['notif_prefs'] = {k: bool(v) for k, v in (body.notif_prefs or {}).items() if k in allowed_notif_keys}
+    if body.notif_prefs_whatsapp is not None:
+        # WhatsApp's own copy of the above, independent of it — see
+        # _wants_script_whatsapp in server.py.
+        allowed_notif_keys = NOTIFICATION_MODULE_KEYS | NOTIFICATION_SCRIPT_KEYS
+        extra['notif_prefs_whatsapp'] = {k: bool(v) for k, v in (body.notif_prefs_whatsapp or {}).items() if k in allowed_notif_keys}
     if body.doc_category_rights is not None:
         extra['doc_category_rights'] = {
             k: {'view': bool((v or {}).get('view')), 'record': bool((v or {}).get('record'))}
