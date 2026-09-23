@@ -72,6 +72,7 @@ async def login(body: LoginIn, request: Request):
         'access_token': tok, 'token_type': 'bearer',
         'user': {
             'id': user['id'], 'username': user['username'], 'name': user['name'], 'role': user.get('role', 'owner'),
+            'mobile': user.get('mobile') or '',
             'modules': resolve_modules(user),
         },
     }
@@ -117,6 +118,7 @@ async def login_unified(body: LoginIn, request: Request):
             'access_token': tok, 'token_type': 'bearer',
             'user': {
                 'id': user['id'], 'username': user['username'], 'name': user['name'], 'role': user.get('role', 'owner'),
+                'mobile': user.get('mobile') or '',
                 'modules': resolve_modules(user),
             },
         }
@@ -146,6 +148,7 @@ async def me(user=Depends(get_current)):
     if user['role'] in ('owner', 'admin', 'accountant'):
         return {
             'id': user['id'], 'username': user['username'], 'name': user['name'], 'role': user['role'],
+            'mobile': user.get('mobile') or '',
             'modules': resolve_modules(user),
         }
     # Work-from-home employees don't record attendance, so the app hides the

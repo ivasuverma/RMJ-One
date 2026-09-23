@@ -112,7 +112,9 @@ export default function PersonScreen() {
         {/* Account / password (staff logins) */}
         {acc.account_type === 'user' && (
           <Section title="Account">
-            <Text style={styles.fieldLabel}>Reset password</Text>
+            <Text style={styles.fieldLabel}>Mobile number</Text>
+            <TextInput value={editor.mobile} onChangeText={editor.setMobile} placeholder="For important WhatsApp alerts" placeholderTextColor={colors.mutedText} keyboardType="phone-pad" style={styles.input} testID="person-mobile" />
+            <Text style={[styles.fieldLabel, { marginTop: spacing.md }]}>Reset password</Text>
             <TextInput value={newPass} onChangeText={setNewPass} placeholder="New password (leave blank to keep current)" placeholderTextColor={colors.mutedText} secureTextEntry style={styles.input} testID="person-password" />
           </Section>
         )}

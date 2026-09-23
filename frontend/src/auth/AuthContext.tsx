@@ -8,6 +8,10 @@ export type User = {
   username: string;
   name: string;
   role: 'owner' | 'admin' | 'accountant' | 'employee';
+  // Owner/admin/accountant only — WhatsApp number for important alerts (see
+  // notify_user/notify_roles on the backend). Employees have their own
+  // mobile field on their profile instead (routers/employees.py).
+  mobile?: string;
   employee_code?: string;
   designation?: string;
   department?: string;
@@ -41,7 +45,7 @@ type AuthState = {
   loginEmployee: (username: string, password: string, remember?: boolean) => Promise<void>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
-  updateMyAccount: (currentPassword: string, newUsername?: string, newPassword?: string, newName?: string) => Promise<void>;
+  updateMyAccount: (currentPassword: string, newUsername?: string, newPassword?: string, newName?: string, newMobile?: string) => Promise<void>;
   hasModule: (key: string) => boolean;
   hasRight: (key: string, right: 'edit' | 'delete') => boolean;
 };
@@ -145,7 +149,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
   }, []);
 
-  const updateMyAccount = useCallback(async (currentPassword: string, newUsername?: string, newPassword?: string, newName?: string) => {
+  const updateMyAccount = useCallback(async (currentPassword: string, newUsername?: string, newPassword?: string, newName?: string, newMobile?: string) => {
     // Re-save the fresh token the same way the current one is stored — a
     // session-only ("don't remember me") login shouldn't silently become
     // persistent just because the password changed.
@@ -155,6 +159,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       new_username: newUsername || undefined,
       new_password: newPassword || undefined,
       new_name: newName || undefined,
+      new_mobile: newMobile,
     });
     await saveToken(res.access_token, remember);
     setUser(res.user);

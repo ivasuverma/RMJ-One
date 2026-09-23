@@ -18,6 +18,7 @@ export default function MyAccountScreen() {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newName, setNewName] = useState(user?.name || '');
   const [newUsername, setNewUsername] = useState(user?.username || '');
+  const [newMobile, setNewMobile] = useState(user?.mobile || '');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [secure, setSecure] = useState(true);
@@ -31,9 +32,10 @@ export default function MyAccountScreen() {
     }
     const nameChanged = newName.trim() !== (user?.name || '') && newName.trim().length > 0;
     const usernameChanged = newUsername.trim().toLowerCase() !== (user?.username || '');
+    const mobileChanged = newMobile.trim() !== (user?.mobile || '');
     const passwordChanged = newPassword.length > 0;
-    if (!nameChanged && !usernameChanged && !passwordChanged) {
-      notify('No changes', 'Enter a new name, username, or password to update.'); return;
+    if (!nameChanged && !usernameChanged && !mobileChanged && !passwordChanged) {
+      notify('No changes', 'Enter a new name, username, mobile number, or password to update.'); return;
     }
     if (passwordChanged) {
       if (newPassword.length < 4) { notify('Too short', 'New password must be 4+ characters.'); return; }
@@ -47,6 +49,7 @@ export default function MyAccountScreen() {
         usernameChanged ? newUsername.trim() : undefined,
         passwordChanged ? newPassword : undefined,
         nameChanged ? newName.trim() : undefined,
+        mobileChanged ? newMobile.trim() : undefined,
       );
       router.back();
     } catch (e: any) {
@@ -68,7 +71,7 @@ export default function MyAccountScreen() {
         <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 120 }} keyboardShouldPersistTaps="handled">
           <View style={styles.infoBox}>
             <Ionicons name="information-circle-outline" size={16} color={colors.brandSecondary} />
-            <Text style={styles.infoText}>Change your own display name, login username, and/or password. Your current password is required to confirm.</Text>
+            <Text style={styles.infoText}>Change your own display name, login username, mobile number, and/or password. Your current password is required to confirm.</Text>
           </View>
 
           <Text style={styles.label}>Name</Text>
@@ -81,6 +84,13 @@ export default function MyAccountScreen() {
           <TextInput
             testID="acc-username" value={newUsername} onChangeText={(v) => setNewUsername(v.toLowerCase().replace(/\s/g, ''))}
             autoCapitalize="none" autoCorrect={false} style={styles.input}
+          />
+
+          <Text style={styles.label}>Mobile number</Text>
+          <TextInput
+            testID="acc-mobile" value={newMobile} onChangeText={setNewMobile}
+            placeholder="For important WhatsApp alerts" placeholderTextColor={colors.mutedText}
+            keyboardType="phone-pad" style={styles.input}
           />
 
           <Text style={styles.label}>New Password</Text>

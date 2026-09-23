@@ -46,6 +46,7 @@ async def create_user(body: UserCreateIn, user: dict = Depends(require_owner), _
     uid = str(uuid.uuid4())
     doc = {
         'id': uid, 'username': uname, 'name': body.name.strip(), 'role': body.role,
+        'mobile': (body.mobile or '').strip(),
         'password_hash': hash_secret(body.password), 'created_at': now_utc().isoformat(),
     }
     await db.users.insert_one(dict(doc))
@@ -69,6 +70,7 @@ async def update_user(uid: str, body: UserUpdateIn, user: dict = Depends(require
                 raise HTTPException(status_code=400, detail='Username already exists')
             upd['username'] = uname
     if body.name: upd['name'] = body.name.strip()
+    if body.mobile is not None: upd['mobile'] = body.mobile.strip()
     if body.password:
         if len(body.password) < 4: raise HTTPException(status_code=400, detail='Password must be 4+ characters')
         upd['password_hash'] = hash_secret(body.password)
@@ -103,6 +105,11 @@ async def update_my_account(body: SelfAccountUpdateIn, user=Depends(get_current)
             if await coll.find_one({'username': uname, 'id': {'$ne': user['id']}}):
                 raise HTTPException(status_code=400, detail='Username already exists')
             upd['username'] = uname
+    if body.new_mobile is not None and not is_employee:
+        # Employees already have their own mobile field, edited from their own
+        # profile (/employees/me) — this self-service path only needs to cover
+        # owner/admin/accountant, who had no mobile field before this at all.
+        upd['mobile'] = body.new_mobile.strip()
     if body.new_password:
         if len(body.new_password) < 4: raise HTTPException(status_code=400, detail='Password must be 4+ characters')
         upd['password_hash'] = hash_secret(body.new_password)
@@ -176,6 +183,7 @@ async def list_access_accounts(_: dict = Depends(require_owner), _mod=Depends(re
     async for u in db.users.find({}, _slim):
         out.append({
             'id': u['id'], 'name': u['name'], 'username': u.get('username'), 'role': u.get('role'),
+            'mobile': u.get('mobile') or '',
             'account_type': 'user', 'module_access': u.get('module_access'),
             'resolved_modules': resolve_modules(u),
             'notifications_enabled': u.get('notifications_enabled', True) is not False,
@@ -186,6 +194,7 @@ async def list_access_accounts(_: dict = Depends(require_owner), _mod=Depends(re
     async for e in db.employees.find({}, _slim):
         out.append({
             'id': e['id'], 'name': e['name'], 'username': e.get('username'), 'role': 'employee',
+            'mobile': e.get('mobile') or '',
             'account_type': 'employee', 'designation': e.get('designation'), 'status': e.get('status'),
             'module_access': e.get('module_access'), 'module_rights': e.get('module_rights') or {},
             'cashbook_counter_ids': e.get('cashbook_counter_ids') or [],
