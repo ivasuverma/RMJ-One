@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ram Murti Jewellers — Live Gold &amp; Silver Rates</title>
+<meta name="description" content="Ram Murti Jewellers: live gold and silver rates, updated throughout the day. Certified purity, transparent pricing.">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Source+Sans+3:wght@400;600;700&display=swap">
+<link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="wrap">
+    <a href="index.html" class="brand">
+      <span class="brand-mark">R</span>
+      <span class="brand-name">
+        <span class="l1">RAM MURTI</span>
+        <span class="l2">JEWELLERS</span>
+      </span>
+    </a>
+    <nav id="nav-links" class="nav-links">
+      <a href="index.html" class="active">Home</a>
+      <a href="index.html#rates">Rates</a>
+      <a href="about.html">About</a>
+      <a href="payment.html">Payment</a>
+      <a href="contact.html">Contact</a>
+    </nav>
+    <button id="nav-toggle" class="nav-toggle" aria-label="Toggle menu" aria-expanded="false" aria-controls="nav-links">
+      <span></span>
+    </button>
+  </div>
+</header>
+
+<section class="hero">
+  <span class="hero-eyebrow">EST. FAMILY JEWELLERS</span>
+  <h1>Timeless Gold &amp; Silver, Crafted With Trust</h1>
+  <p>Certified purity. Fair, transparent rates updated throughout the day.</p>
+  <div class="hero-actions">
+    <a href="#rates" class="btn btn-primary">View Live Rates</a>
+    <a href="contact.html" class="btn btn-ghost">Get Directions</a>
+  </div>
+</section>
+
+<section id="rates" class="rates-section">
+  <h2 class="section-title red">Today's Rates</h2>
+  <p class="section-sub" id="rate-updated">Loading rates&hellip;</p>
+
+  <div class="rate-cards">
+    <div class="rate-card">
+      <div class="label">GOLD &middot; 24K / 10g</div>
+      <div class="buy-sell-row">
+        <div class="buy-sell-col">
+          <div class="k">Buy</div>
+          <div class="v" id="rate-gold-buy">&mdash;</div>
+        </div>
+        <div class="buy-sell-col">
+          <div class="k">Sell</div>
+          <div class="v sell" id="rate-gold-sell">&mdash;</div>
+        </div>
+      </div>
+    </div>
+    <div class="rate-card">
+      <div class="label">SILVER &middot; / kg</div>
+      <div class="buy-sell-row">
+        <div class="buy-sell-col">
+          <div class="k">Buy</div>
+          <div class="v" id="rate-silver-buy">&mdash;</div>
+        </div>
+        <div class="buy-sell-col">
+          <div class="k">Sell</div>
+          <div class="v sell" id="rate-silver-sell">&mdash;</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="spot-tiles">
+    <div class="spot-tile">
+      <div class="k">GOLD (XAU)</div>
+      <div class="v" id="rate-xau">&mdash;</div>
+      <div class="u">per troy oz</div>
+    </div>
+    <div class="spot-tile">
+      <div class="k">SILVER (XAG)</div>
+      <div class="v" id="rate-xag">&mdash;</div>
+      <div class="u">per troy oz</div>
+    </div>
+    <div class="spot-tile">
+      <div class="k">USD/INR</div>
+      <div class="v" id="rate-usdinr">&mdash;</div>
+      <div class="u">spot</div>
+    </div>
+  </div>
+
+  <div class="rates-status">
+    <span id="rate-error" class="rates-error"></span>
+    <button id="rates-refresh-btn" type="button">Refresh</button>
+  </div>
+
+  <p class="disclaimer">
+    Rates shown are for reference only and are subject to change without notice. They do not constitute a firm
+    offer to buy or sell. Please confirm the final rate with Ram Murti Jewellers before any transaction.
+  </p>
+</section>
+
+<section class="split-section">
+  <div class="wrap">
+    <div class="split-media">[ Store Photograph ]</div>
+    <div class="split-copy">
+      <span class="eyebrow">OUR STORY</span>
+      <h2>A Family Legacy Since Generations</h2>
+      <p>Four generations of craftsmanship, trust, and honest pricing &mdash; serving families across the city with
+        certified gold and silver jewellery.</p>
+      <a href="about.html">Our Story &rarr;</a>
+    </div>
+  </div>
+</section>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <div class="footer-cols">
+      <div class="footer-col">
+        <span class="h">VISIT US</span>
+        <span>[Shop Address Line 1]<br>[City, State &ndash; PIN]</span>
+      </div>
+      <div class="footer-col">
+        <span class="h">CONNECT</span>
+        <a href="tel:+910000000000">[Phone Number]</a>
+        <span>Instagram &middot; Facebook</span>
+      </div>
+      <div class="footer-col">
+        <span class="h">HOURS</span>
+        <span>Mon&ndash;Sat: 10:00 AM &ndash; 8:00 PM<br>Sunday: Closed</span>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      Rates shown are for reference only and are subject to change without notice. &copy; Ram Murti Jewellers.
+    </div>
+  </div>
+</footer>
+
+<script src="assets/js/nav.js"></script>
+<script src="assets/js/rates.js"></script>
+</body>
+</html>
