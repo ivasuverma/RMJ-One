@@ -42,6 +42,9 @@ GOLD_RATE_CHANNEL_ID = os.environ.get('GOLD_RATE_CHANNEL_ID', '12036342061215871
 GOLD_RATE_SOURCE_URL = os.environ.get('GOLD_RATE_SOURCE_URL', 'https://ayodhyabullion.com')
 GOLD_RATE_ROW_LABEL = os.environ.get('GOLD_RATE_ROW_LABEL', 'GOLD RETAIL HAJIR')
 GOLD_RATE_SILVER_LABEL = os.environ.get('GOLD_RATE_SILVER_LABEL', 'SILVER RETAIL HAJIR')
+GOLD_RATE_XAU_LABEL = os.environ.get('GOLD_RATE_XAU_LABEL', 'GOLD SPOT')
+GOLD_RATE_XAG_LABEL = os.environ.get('GOLD_RATE_XAG_LABEL', 'SILVER SPOT')
+GOLD_RATE_USDINR_LABEL = os.environ.get('GOLD_RATE_USDINR_LABEL', 'USD/INR')
 
 # Inbound WhatsApp auto-reply bot (see routers/whatsapp_bot.py) — verifies
 # OpenWA's `X-OpenWA-Signature: sha256=<hmac>` header on every webhook
@@ -2941,7 +2944,7 @@ from routers import (
     auth, employees, settings as settings_router, attendance, tasks, repairs,
     users, payroll, notifications, biometric, reports, assistant, samples,
     cashbook, ledger, documents, backup, record_photos, gold_loans, whatsapp_bot,
-    whatsapp_meta_bot, print_settings, system_health, led_board, rate_master, statements, ledger_home,
+    whatsapp_meta_bot, print_settings, system_health, led_board, rate_master, statements, ledger_home, public,
 )
 
 # ---------------- Mount ----------------
@@ -2972,6 +2975,7 @@ api.include_router(led_board.router)
 api.include_router(rate_master.router)
 api.include_router(statements.router)
 api.include_router(ledger_home.router)
+api.include_router(public.router)
 
 app.include_router(api)
 app.include_router(biometric.iclock_router)  # /iclock/* — real device protocol, no /api prefix

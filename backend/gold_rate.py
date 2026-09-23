@@ -26,6 +26,7 @@ from datetime import datetime
 
 from server import (
     db, now_utc, IST, format_ist_date_time, GOLD_RATE_SOURCE_URL, GOLD_RATE_ROW_LABEL, GOLD_RATE_SILVER_LABEL,
+    GOLD_RATE_XAU_LABEL, GOLD_RATE_XAG_LABEL, GOLD_RATE_USDINR_LABEL,
     GOLD_RATE_CHANNEL_ID, send_whatsapp_channel, _notify_module,
 )
 
@@ -37,6 +38,11 @@ OPENWA_NODE_MODULES = r'D:\RMJ-One\OpenWA\node_modules'
 DEFAULT_FETCH_TIME = '12:30'
 DEFAULT_GOLD_MARGIN = 0
 DEFAULT_SILVER_MARGIN = 0
+# Subtracted from the sell rate (gold_rate/silver_rate above, margin already
+# applied) to get what the public rates page shows as the buy rate — a
+# separate, owner-set spread, not derived from the source page in any way.
+DEFAULT_GOLD_BUY_MARGIN = 0
+DEFAULT_SILVER_BUY_MARGIN = 0
 GOLD_ROUND_TO = 50     # gold rate rounds to the nearest ₹50
 SILVER_ROUND_TO = 100  # silver rate rounds to the nearest ₹100
 POLL_SECONDS = 300
@@ -92,8 +98,11 @@ def _read_puppeteer_executable_path() -> str:
 
 async def fetch_rates_raw() -> dict:
     """Runs the headless-Chrome scraper. Returns
-    {'ok': True, 'gold': {'rate': int, ...}, 'silver': {'rate': int, ...}}
-    or {'ok': False, 'error': str} — never raises."""
+    {'ok': True, 'gold': {'rate': int, ...}, 'silver': {'rate': int, ...},
+    'xau': {...}|None, 'xag': {...}|None, 'usd_inr': {...}|None}
+    or {'ok': False, 'error': str} — never raises. xau/xag/usd_inr are
+    best-effort informational fields (see fetch_gold_rate.js) — a miss on
+    those doesn't turn ok False."""
     chrome_path = _read_puppeteer_executable_path()
     if not chrome_path:
         return {'ok': False, 'error': "Could not find OpenWA's Chrome path (E:\\OpenWA\\.env)"}
@@ -104,6 +113,9 @@ async def fetch_rates_raw() -> dict:
         'GOLD_RATE_SOURCE_URL': GOLD_RATE_SOURCE_URL,
         'GOLD_RATE_ROW_LABEL': GOLD_RATE_ROW_LABEL,
         'GOLD_RATE_SILVER_LABEL': GOLD_RATE_SILVER_LABEL,
+        'GOLD_RATE_XAU_LABEL': GOLD_RATE_XAU_LABEL,
+        'GOLD_RATE_XAG_LABEL': GOLD_RATE_XAG_LABEL,
+        'GOLD_RATE_USDINR_LABEL': GOLD_RATE_USDINR_LABEL,
     }
     try:
         proc = await asyncio.create_subprocess_exec(
@@ -142,6 +154,8 @@ async def get_config() -> dict:
         'fetch_time': doc.get('fetch_time') or DEFAULT_FETCH_TIME,
         'gold_margin': int(doc.get('gold_margin') or DEFAULT_GOLD_MARGIN),
         'silver_margin': int(doc.get('silver_margin') or DEFAULT_SILVER_MARGIN),
+        'gold_buy_margin': int(doc.get('gold_buy_margin') or DEFAULT_GOLD_BUY_MARGIN),
+        'silver_buy_margin': int(doc.get('silver_buy_margin') or DEFAULT_SILVER_BUY_MARGIN),
         'template': doc.get('template') or DEFAULT_TEMPLATE,
         'chatbot_refresh_enabled': doc.get('chatbot_refresh_enabled', DEFAULT_CHATBOT_REFRESH_ENABLED),
         'chatbot_refresh_interval_min': int(doc.get('chatbot_refresh_interval_min') or DEFAULT_CHATBOT_REFRESH_INTERVAL_MIN),
@@ -165,17 +179,43 @@ async def default_message(gold_rate: int, silver_rate: int, fetched_at: str = No
         return DEFAULT_TEMPLATE.format(**fields)
 
 
-async def _store_live_rate(fetched_gold, fetched_silver, gold_rate, silver_rate, cfg: dict, fetched_at: str, error: str = None) -> None:
+def _buy_rate(sell_rate: int, buy_margin: int) -> int:
+    """Buy = sell minus the owner's own configured spread — never derived
+    from the source page (it has no buy-side concept RMJ-One uses), and
+    never below 0 (a misconfigured margin bigger than the rate itself must
+    not show a negative buy price on the public page)."""
+    return max(0, sell_rate - int(buy_margin))
+
+
+def _extract_extra(result: dict) -> dict:
+    """xau/xag/usd_inr are best-effort informational fields — None on a miss
+    rather than failing the whole fetch (see fetch_rates_raw's docstring)."""
+    def rate_of(key):
+        row = result.get(key)
+        return row.get('rate') if row else None
+    return {'xau_usd': rate_of('xau'), 'xag_usd': rate_of('xag'), 'usd_inr': rate_of('usd_inr')}
+
+
+async def _store_live_rate(fetched_gold, fetched_silver, gold_rate, silver_rate, cfg: dict, fetched_at: str,
+                            error: str = None, extra: dict = None) -> None:
     """gold_rate_live is the chatbot's own cache — separate from
     gold_rate_today so a background refresh can never disturb an
     already-confirmed/sent broadcast or an in-progress edit on the Work-tab
-    screen (that doc's confirmed/sent_at/message stay untouched)."""
+    screen (that doc's confirmed/sent_at/message stay untouched). Also the
+    public rates page's source: gold_buy_rate/silver_buy_rate and
+    xau_usd/xag_usd/usd_inr live here too, not on gold_rate_today, so the
+    public page always reflects the latest scrape regardless of whether
+    today's broadcast has been confirmed/sent yet."""
+    extra = extra or {'xau_usd': None, 'xag_usd': None, 'usd_inr': None}
     await db.settings.update_one({'id': 'gold_rate_live'}, {'$set': {
         'id': 'gold_rate_live', 'fetched_at': fetched_at, 'error': error,
         'fetched_gold': fetched_gold, 'fetched_silver': fetched_silver,
         'gold_margin_applied': cfg.get('gold_margin') if error is None else None,
         'silver_margin_applied': cfg.get('silver_margin') if error is None else None,
         'gold_rate': gold_rate, 'silver_rate': silver_rate,
+        'gold_buy_rate': _buy_rate(gold_rate, cfg['gold_buy_margin']) if gold_rate is not None else None,
+        'silver_buy_rate': _buy_rate(silver_rate, cfg['silver_buy_margin']) if silver_rate is not None else None,
+        **extra,
     }}, upsert=True)
 
 
@@ -193,7 +233,7 @@ async def refresh_live_rate(cfg: dict = None) -> dict:
         fetched_silver = int(result['silver']['rate'])
         gold_rate = round_to(fetched_gold + int(cfg['gold_margin']), GOLD_ROUND_TO)
         silver_rate = round_to(fetched_silver + int(cfg['silver_margin']), SILVER_ROUND_TO)
-        await _store_live_rate(fetched_gold, fetched_silver, gold_rate, silver_rate, cfg, fetched_at)
+        await _store_live_rate(fetched_gold, fetched_silver, gold_rate, silver_rate, cfg, fetched_at, extra=_extract_extra(result))
         logger.info(f'live rate refreshed: gold {gold_rate}, silver {silver_rate}')
         return {'ok': True, 'gold_rate': gold_rate, 'silver_rate': silver_rate}
     error = result.get('error') or 'fetch failed'
@@ -227,7 +267,7 @@ async def run_fetch_and_store() -> dict:
         logger.info(f'rates fetched: gold {fetched_gold}+{cfg["gold_margin"]}->{gold_rate}, silver {fetched_silver}+{cfg["silver_margin"]}->{silver_rate}')
         # Same scrape feeds the chatbot's cache too — no need for the
         # periodic refresh to launch a second Chrome at the same moment.
-        await _store_live_rate(fetched_gold, fetched_silver, gold_rate, silver_rate, cfg, doc['fetched_at'])
+        await _store_live_rate(fetched_gold, fetched_silver, gold_rate, silver_rate, cfg, doc['fetched_at'], extra=_extract_extra(result))
         await _notify_module(
             'gold_rate', 'Gold Rate Updated',
             f"Gold ₹{gold_rate:,}/g · Silver ₹{silver_rate:,}/g", '/settings/whatsapp',

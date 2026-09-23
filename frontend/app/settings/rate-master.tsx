@@ -17,11 +17,14 @@ type Computed = { key: string; rate: number | null; error: string | null; base_v
 type State = { items: ServerItem[]; base: { gold: number; silver: number; date: string } | null; defaults: ServerItem[]; computed: Computed[] };
 
 type Daily = {
-  fetch_time: string; gold_margin: string; silver_margin: string; skip_weekend_fetch: boolean; auto_send_enabled: boolean;
+  fetch_time: string; gold_margin: string; silver_margin: string;
+  gold_buy_margin: string; silver_buy_margin: string;
+  skip_weekend_fetch: boolean; auto_send_enabled: boolean;
   chatbot_refresh_enabled: boolean; chatbot_refresh_interval_min: string; chatbot_refresh_start: string; chatbot_refresh_end: string;
 };
 const DAILY_DEFAULT: Daily = {
-  fetch_time: '12:30', gold_margin: '0', silver_margin: '0', skip_weekend_fetch: true, auto_send_enabled: false,
+  fetch_time: '12:30', gold_margin: '0', silver_margin: '0', gold_buy_margin: '0', silver_buy_margin: '0',
+  skip_weekend_fetch: true, auto_send_enabled: false,
   chatbot_refresh_enabled: true, chatbot_refresh_interval_min: '120', chatbot_refresh_start: '12:30', chatbot_refresh_end: '19:00',
 };
 const inr = (n: number) => n.toLocaleString('en-IN');
@@ -63,6 +66,7 @@ export default function RateMasterScreen() {
         setBroadcastTemplate(g.template || '');
         setDaily({
           fetch_time: g.fetch_time || '12:30', gold_margin: String(g.gold_margin ?? 0), silver_margin: String(g.silver_margin ?? 0),
+          gold_buy_margin: String(g.gold_buy_margin ?? 0), silver_buy_margin: String(g.silver_buy_margin ?? 0),
           skip_weekend_fetch: g.skip_weekend_fetch !== false, auto_send_enabled: g.auto_send_enabled === true,
           chatbot_refresh_enabled: g.chatbot_refresh_enabled !== false, chatbot_refresh_interval_min: String(g.chatbot_refresh_interval_min ?? 120),
           chatbot_refresh_start: g.chatbot_refresh_start || '12:30', chatbot_refresh_end: g.chatbot_refresh_end || '19:00',
@@ -98,6 +102,7 @@ export default function RateMasterScreen() {
     try {
       await api.put('/settings/gold-rate/config', {
         fetch_time: daily.fetch_time, gold_margin: parseInt(daily.gold_margin, 10) || 0, silver_margin: parseInt(daily.silver_margin, 10) || 0,
+        gold_buy_margin: parseInt(daily.gold_buy_margin, 10) || 0, silver_buy_margin: parseInt(daily.silver_buy_margin, 10) || 0,
         template: broadcastTemplate || undefined, skip_weekend_fetch: daily.skip_weekend_fetch, auto_send_enabled: daily.auto_send_enabled,
         chatbot_refresh_enabled: daily.chatbot_refresh_enabled, chatbot_refresh_interval_min: parseInt(daily.chatbot_refresh_interval_min, 10) || 120,
         chatbot_refresh_start: daily.chatbot_refresh_start, chatbot_refresh_end: daily.chatbot_refresh_end,
@@ -145,6 +150,17 @@ export default function RateMasterScreen() {
             <View style={{ flex: 1 }}>
               <Text style={styles.label}>Silver margin (₹, rounds to ₹100)</Text>
               <TextInput value={daily.silver_margin} onChangeText={(v) => setD({ silver_margin: v.replace(/[^0-9\-]/g, '') })} editable={isOwner} keyboardType="numeric" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} testID="gold-rate-silver-margin" />
+            </View>
+          </View>
+          <Text style={styles.hint}>Buy rate (shown on the public rates page) is the sell rate above minus this spread — independent of the margins above.</Text>
+          <View style={styles.row2}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.label}>Gold buy spread (₹)</Text>
+              <TextInput value={daily.gold_buy_margin} onChangeText={(v) => setD({ gold_buy_margin: v.replace(/[^0-9\-]/g, '') })} editable={isOwner} keyboardType="numeric" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} testID="gold-rate-gold-buy-margin" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.label}>Silver buy spread (₹)</Text>
+              <TextInput value={daily.silver_buy_margin} onChangeText={(v) => setD({ silver_buy_margin: v.replace(/[^0-9\-]/g, '') })} editable={isOwner} keyboardType="numeric" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} testID="gold-rate-silver-buy-margin" />
             </View>
           </View>
           <View style={styles.switchRow}>
