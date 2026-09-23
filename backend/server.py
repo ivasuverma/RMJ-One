@@ -2241,7 +2241,11 @@ NOTIFICATION_MODULES = [
     {'key': 'payroll', 'label': 'Payroll', 'default_roles': ['owner', 'admin']},
     {'key': 'repairs', 'label': 'Repair', 'default_roles': ['owner', 'admin']},
     {'key': 'samples', 'label': 'Stock In/Out', 'default_roles': ['owner', 'admin']},
-    {'key': 'cash_book', 'label': 'Cash Book', 'default_roles': ['owner', 'admin']},
+    # 'employee' included here (unlike every other module) because it carries
+    # cashbook_over_limit_employee, on by default — the module toggle needs
+    # to default ON for an employee too or the sub-toggle stays hidden behind
+    # an off module switch that doesn't match the actual default behavior.
+    {'key': 'cash_book', 'label': 'Cash Book', 'default_roles': ['owner', 'admin', 'employee']},
     {'key': 'documents', 'label': 'Documents', 'default_roles': ['owner', 'admin']},
     {'key': 'gold_loans', 'label': 'Gold Loans', 'default_roles': ['owner', 'admin']},
     {'key': 'gold_rate', 'label': 'Gold Rate', 'default_roles': ['owner', 'admin']},
@@ -2264,8 +2268,8 @@ NOTIFICATION_MODULE_DEFAULT_ROLES = {m['key']: m['default_roles'] for m in NOTIF
 # with each call site's own admin_only=True / (no subject_employee_id) choice
 # below — it's descriptive of the code, not enforced from here.
 NOTIFICATION_SCRIPTS = [
-    {'key': 'attendance_checkin', 'module': 'attendance', 'label': 'Employee checked in', 'admin_only': False},
-    {'key': 'attendance_checkout', 'module': 'attendance', 'label': 'Employee checked out', 'admin_only': False},
+    {'key': 'attendance_checkin', 'module': 'attendance', 'label': 'Employee checked in (owner/admin copy — the employee always gets their own confirmation)', 'admin_only': True},
+    {'key': 'attendance_checkout', 'module': 'attendance', 'label': 'Employee checked out (owner/admin copy — the employee always gets their own confirmation)', 'admin_only': True},
     {'key': 'attendance_discrepancy', 'module': 'attendance', 'label': 'Missed punch / attendance discrepancy', 'admin_only': True},
     {'key': 'attendance_absentee_summary', 'module': 'attendance', 'label': 'Daily absentee summary (9 PM)', 'admin_only': True},
     {'key': 'attendance_correction_request', 'module': 'attendance', 'label': 'New attendance correction request', 'admin_only': True},
@@ -2282,7 +2286,8 @@ NOTIFICATION_SCRIPTS = [
     {'key': 'cashbook_transfer', 'module': 'cash_book', 'label': 'Cash transferred between counters', 'admin_only': True},
     {'key': 'cashbook_entry', 'module': 'cash_book', 'label': 'Employee recorded cash in / out', 'admin_only': True},
     {'key': 'cashbook_edit', 'module': 'cash_book', 'label': 'Employee edited a cash entry', 'admin_only': True},
-    {'key': 'cashbook_over_limit', 'module': 'cash_book', 'label': 'Cash counter over ₹1,00,000 (owner/admin copy — assigned employees are always notified)', 'admin_only': True},
+    {'key': 'cashbook_over_limit', 'module': 'cash_book', 'label': 'Cash counter over ₹1,00,000 (owner/admin copy)', 'admin_only': True},
+    {'key': 'cashbook_over_limit_employee', 'module': 'cash_book', 'label': 'Your assigned counter goes over ₹1,00,000 (on by default)', 'admin_only': False},
     {'key': 'document_recorded', 'module': 'documents', 'label': 'Document recorded to Done', 'admin_only': True},
     {'key': 'document_pending_reminder', 'module': 'documents', 'label': 'Document pending more than 1 day (daily reminder)', 'admin_only': False},
     {'key': 'gold_loan_created', 'module': 'gold_loans', 'label': 'New gold loan created', 'admin_only': True},
@@ -2548,6 +2553,11 @@ async def _check_daily_absentee_summary():
         if leave:
             continue
         absent_names.append(emp['name'])
+        # Personal notice to the employee themselves — always sent, same as
+        # the missed-check-in/check-out reminders, independent of the
+        # owner/admin summary broadcast below.
+        await notify_user(emp['id'], 'Marked absent today',
+                           "You were marked absent today — no check-in was recorded and you weren't on approved leave.", '/')
 
     await db.absentee_summaries.update_one(
         {'date': today},

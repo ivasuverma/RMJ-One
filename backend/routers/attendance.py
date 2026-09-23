@@ -64,9 +64,14 @@ async def check_in(body: PunchIn, user=Depends(require_employee)):
         raise HTTPException(status_code=400, detail='Already checked in today')
 
     now_local = now.astimezone(IST)
-    await _notify_module('attendance', f"{user['name']} checked in",
-                          f"{now_local.strftime('%I:%M %p')}{' · Late' if result['is_late'] else ''}", '/(tabs)/attendance',
-                          script='attendance_checkin', subject_employee_id=user['id'])
+    time_label = f"{now_local.strftime('%I:%M %p')}{' · Late' if result['is_late'] else ''}"
+    # Personal confirmation to the employee themselves — always sent, same as
+    # the missed-check-in/check-out reminders, not gated by the owner's
+    # Notification Settings toggle (that toggle below is the separate
+    # owner/admin broadcast copy).
+    await notify_user(user['id'], 'Checked in', f"You checked in at {time_label}", '/')
+    await _notify_module('attendance', f"{user['name']} checked in", time_label, '/(tabs)/attendance',
+                          script='attendance_checkin', admin_only=True)
 
     return {'ok': True, 'attendance_id': result['attendance_id'], 'is_late': result['is_late'], 'timestamp': result['timestamp']}
 
@@ -92,9 +97,11 @@ async def check_out(body: PunchIn, user=Depends(require_employee)):
         raise HTTPException(status_code=400, detail=detail)
 
     hours = result['working_hours']
-    await _notify_module('attendance', f"{user['name']} checked out",
-                          f"Worked {hours}h today" + (' · Half day' if result['status'] == 'half_day' else ''), '/(tabs)/attendance',
-                          script='attendance_checkout', subject_employee_id=user['id'])
+    detail = f"Worked {hours}h today" + (' · Half day' if result['status'] == 'half_day' else '')
+    # Personal confirmation, same rationale as check-in above.
+    await notify_user(user['id'], 'Checked out', f"You checked out — {detail}", '/')
+    await _notify_module('attendance', f"{user['name']} checked out", detail, '/(tabs)/attendance',
+                          script='attendance_checkout', admin_only=True)
     return {'ok': True, 'working_hours': hours, 'timestamp': result['timestamp']}
 
 
