@@ -67,13 +67,20 @@ DEFAULT_REFRESH_END = '19:00'
 # confirm-before-send flow (see run_fetch_and_store's docstring) is a human
 # look before anything reaches customers; this is an explicit, deliberate
 # opt-out of that once the owner trusts the scrape enough (their call, not
-# a default this app should ever pick for them).
+# a default this app should ever pick for them). When it's on, the send
+# itself happens once a day, at auto_send_time (IST) - decoupled from the
+# refresh_* schedule above, which keeps fetching every refresh_interval_min
+# regardless, purely to keep the live rate and the unconfirmed draft fresh;
+# only the irreversible send action is pinned to one predictable time.
 DEFAULT_AUTO_SEND_ENABLED = False
+DEFAULT_AUTO_SEND_TIME = '12:30'
 
-# The reference source is a commodity-market feed — nothing moves Sat/Sun, so
-# by default the loop doesn't bother fetching (would just re-scrape Friday's
-# frozen value) and never auto-sends on those days even if a fetch happens
-# anyway (e.g. someone hits "Fetch now" manually — see run_fetch_and_store).
+# The reference source is a commodity-market feed — closed Sunday, so by
+# default the loop doesn't bother fetching (would just re-scrape Saturday's
+# frozen value) and never auto-sends that day either, even if a fetch
+# happens anyway (e.g. someone hits "Fetch now" manually — see
+# run_fetch_and_store). The name stuck around from when this also skipped
+# Saturday; it only means Sunday now.
 DEFAULT_SKIP_WEEKEND_FETCH = True
 
 
@@ -82,7 +89,7 @@ def today_ist() -> str:
 
 
 def is_weekend_ist() -> bool:
-    return now_utc().astimezone(IST).weekday() >= 5  # Mon=0 ... Sat=5, Sun=6
+    return now_utc().astimezone(IST).weekday() == 6  # Sunday only (Mon=0 ... Sun=6)
 
 
 def round_to(value: int, nearest: int) -> int:
@@ -169,6 +176,7 @@ async def get_config() -> dict:
         'refresh_start': doc.get('refresh_start') or DEFAULT_REFRESH_START,
         'refresh_end': doc.get('refresh_end') or DEFAULT_REFRESH_END,
         'auto_send_enabled': doc.get('auto_send_enabled', DEFAULT_AUTO_SEND_ENABLED),
+        'auto_send_time': doc.get('auto_send_time') or DEFAULT_AUTO_SEND_TIME,
         'skip_weekend_fetch': doc.get('skip_weekend_fetch', DEFAULT_SKIP_WEEKEND_FETCH),
     }
 
@@ -289,14 +297,28 @@ async def refresh_live_rate(cfg: dict = None) -> dict:
 
 
 async def _maybe_auto_send(doc: dict, gold_rate: int, silver_rate: int, cfg: dict) -> None:
-    """If auto_send_enabled, sends today's message to the Channel and marks
+    """If auto_send_enabled AND it's at or past today's configured
+    auto_send_time (IST), sends today's message to the Channel and marks
     `doc` confirmed/sent in place - shared by the manual fetch and the
     periodic auto-fetch cycle, called before either's single write of the
-    gold_rate_today doc."""
+    gold_rate_today doc. Fires at most once a day: whichever call is the
+    first to land at-or-after auto_send_time sends and marks today
+    confirmed/sent, which makes every later call that day (periodic or
+    manual) see today as locked before it ever reaches this function again
+    - see _auto_fetch_cycle/run_fetch_and_store's today_locked checks."""
     if not cfg.get('auto_send_enabled'):
         return
     if is_weekend_ist():
-        logger.info('gold rate auto-send skipped — weekend (market closed)')
+        logger.info('gold rate auto-send skipped — Sunday (market closed)')
+        return
+    send_time = cfg.get('auto_send_time') or DEFAULT_AUTO_SEND_TIME
+    try:
+        sh, sm = (int(x) for x in send_time.split(':'))
+    except Exception:
+        sh, sm = (int(x) for x in DEFAULT_AUTO_SEND_TIME.split(':'))
+    now_ist = now_utc().astimezone(IST)
+    if now_ist.hour * 60 + now_ist.minute < sh * 60 + sm:
+        logger.info(f'gold rate auto-send waiting for {send_time} IST')
         return
     sent = await send_whatsapp_channel(GOLD_RATE_CHANNEL_ID, doc['message'], flow='gold_rate_auto_send')
     if sent:

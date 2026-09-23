@@ -240,10 +240,15 @@ class GoldRateConfigIn(BaseModel):
     refresh_start: str = '12:30'
     refresh_end: str = '19:00'
     # Fully-automatic daily send — off by default, deliberate owner opt-in
-    # only (see gold_rate.py's DEFAULT_AUTO_SEND_ENABLED docstring).
+    # only (see gold_rate.py's DEFAULT_AUTO_SEND_ENABLED docstring). Fires
+    # once a day, at auto_send_time (IST) — decoupled from refresh_* above,
+    # which keeps fetching all day regardless, purely to keep the live rate
+    # and the unconfirmed draft fresh.
     auto_send_enabled: bool = False
-    # Commodity market is closed Sat/Sun — on by default (see gold_rate.py's
-    # DEFAULT_SKIP_WEEKEND_FETCH docstring).
+    auto_send_time: str = '12:30'
+    # Commodity market is closed Sunday — on by default (see gold_rate.py's
+    # DEFAULT_SKIP_WEEKEND_FETCH docstring; the name predates it meaning
+    # just Sunday).
     skip_weekend_fetch: bool = True
 
 
@@ -283,7 +288,7 @@ async def get_gold_rate(_: dict = Depends(require_staff_or_module('gold_rate')))
 @router.put('/settings/gold-rate/config')
 async def update_gold_rate_config(body: GoldRateConfigIn, user: dict = Depends(require_owner)):
     import gold_rate
-    for label, val in (('refresh_start', body.refresh_start), ('refresh_end', body.refresh_end)):
+    for label, val in (('refresh_start', body.refresh_start), ('refresh_end', body.refresh_end), ('auto_send_time', body.auto_send_time)):
         if not re.match(r'^([01]\d|2[0-3]):[0-5]\d$', val):
             raise HTTPException(status_code=400, detail=f'{label} must be HH:MM (24-hour)')
     if body.template:
@@ -300,6 +305,7 @@ async def update_gold_rate_config(body: GoldRateConfigIn, user: dict = Depends(r
         'refresh_interval_min': max(15, body.refresh_interval_min),
         'refresh_start': body.refresh_start, 'refresh_end': body.refresh_end,
         'auto_send_enabled': body.auto_send_enabled,
+        'auto_send_time': body.auto_send_time,
         'skip_weekend_fetch': body.skip_weekend_fetch,
         'updated_at': now_utc().isoformat(),
     }
@@ -308,7 +314,8 @@ async def update_gold_rate_config(body: GoldRateConfigIn, user: dict = Depends(r
         user, 'settings.gold_rate.config_update', 'settings', 'gold_rate_config',
         f'every {body.refresh_interval_min}min {body.refresh_start}-{body.refresh_end} '
         f'gold+{body.gold_margin}(-{body.gold_buy_margin}buy) '
-        f'silver+{body.silver_margin}(-{body.silver_buy_margin}buy) auto_send={body.auto_send_enabled} skip_weekend={body.skip_weekend_fetch}',
+        f'silver+{body.silver_margin}(-{body.silver_buy_margin}buy) '
+        f'auto_send={body.auto_send_enabled}@{body.auto_send_time} skip_weekend={body.skip_weekend_fetch}',
     )
     return await gold_rate.get_config()
 

@@ -86,7 +86,7 @@ export default function WhatsAppTemplatesScreen() {
           template: goldRateTemplate || undefined,
           refresh_enabled: grConfig.refresh_enabled, refresh_interval_min: grConfig.refresh_interval_min,
           refresh_start: grConfig.refresh_start, refresh_end: grConfig.refresh_end,
-          auto_send_enabled: grConfig.auto_send_enabled, skip_weekend_fetch: grConfig.skip_weekend_fetch,
+          auto_send_enabled: grConfig.auto_send_enabled, auto_send_time: grConfig.auto_send_time, skip_weekend_fetch: grConfig.skip_weekend_fetch,
         }),
       ]);
       toast.success('Templates saved');
