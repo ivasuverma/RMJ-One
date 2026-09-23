@@ -13,27 +13,24 @@
 // Env:   GOLD_RATE_SOURCE_URL     (default: https://ayodhyabullion.com)
 //        GOLD_RATE_ROW_LABEL      (default: GOLD RETAIL HAJIR)
 //        GOLD_RATE_SILVER_LABEL   (default: SILVER RETAIL HAJIR)
-//        GOLD_RATE_XAU_LABEL      (default: GOLD) — international $/oz spot, informational only.
-//                                  Bare "GOLD" because the source page lays out the top-of-page
-//                                  spot box as separate "GOLD"/"SPOT ( $ )" cells, not one label -
-//                                  it's the first thing on the page, so this stays unambiguous.
-//        GOLD_RATE_XAG_LABEL      (default: SILVER) — same, silver
 //        GOLD_RATE_USDINR_LABEL   (default: USD/INR)
 //        PUPPETEER_EXECUTABLE_PATH (required — path to chrome.exe)
 // Prints one JSON line to stdout: {ok, gold: {rate, row_text}, silver: {rate,
-// row_text}, xau: {rate, row_text}|null, xag: {rate, row_text}|null,
-// usd_inr: {rate, row_text}|null, source_url} or {ok: false, error}. Exit
-// code non-zero on failure, or if EITHER of gold/silver couldn't be read —
-// xau/xag/usd_inr are best-effort (null on a miss, doesn't fail the whole
-// fetch) since they're informational display fields, not what the shop
-// actually prices off.
+// row_text}, usd_inr: {rate, row_text}|null, source_url} or {ok: false,
+// error}. Exit code non-zero on failure, or if EITHER of gold/silver
+// couldn't be read — usd_inr is best-effort (null on a miss, doesn't fail
+// the whole fetch) since it's an informational display field, not what the
+// shop actually prices off. XAU/XAG spot come from a separate, independent
+// source (twelvedata.com's API — see gold_rate.py's _fetch_spot_prices),
+// not from this scrape: the source page lays those out as separate cells
+// with no reliable single label to anchor on, and a dedicated price API is
+// far less fragile than DOM-scraping a page whose markup can (and did,
+// twice) change under us.
 const puppeteer = require('puppeteer-core');
 
 const URL = process.env.GOLD_RATE_SOURCE_URL || 'https://ayodhyabullion.com';
 const GOLD_LABEL = process.env.GOLD_RATE_ROW_LABEL || 'GOLD RETAIL HAJIR';
 const SILVER_LABEL = process.env.GOLD_RATE_SILVER_LABEL || 'SILVER RETAIL HAJIR';
-const XAU_LABEL = process.env.GOLD_RATE_XAU_LABEL || 'GOLD';
-const XAG_LABEL = process.env.GOLD_RATE_XAG_LABEL || 'SILVER';
 const USDINR_LABEL = process.env.GOLD_RATE_USDINR_LABEL || 'USD/INR';
 
 (async () => {
@@ -50,7 +47,7 @@ const USDINR_LABEL = process.env.GOLD_RATE_USDINR_LABEL || 'USD/INR';
     // Both row labels render immediately, but the Buy/Sell numbers populate a
     // moment later once the live feed pushes a value — wait for a number to
     // show up near each label, not just the labels themselves. Only gold+silver
-    // gate the wait — xau/xag/usd_inr are best-effort (see file header).
+    // gate the wait — usd_inr is best-effort (see file header).
     await page.waitForFunction(
       (goldLabel, silverLabel) => {
         const text = document.body.innerText;
@@ -60,14 +57,14 @@ const USDINR_LABEL = process.env.GOLD_RATE_USDINR_LABEL || 'USD/INR';
       { timeout: 25000 },
       GOLD_LABEL, SILVER_LABEL,
     );
-    const result = await page.evaluate((goldLabel, silverLabel, xauLabel, xagLabel, usdInrLabel) => {
+    const result = await page.evaluate((goldLabel, silverLabel, usdInrLabel) => {
       // For a given row label, find the leaf element whose text contains it,
       // then walk up to the smallest ancestor whose text also contains at
       // least `minNums` numbers (2 for a Buy+Sell row, 1 for a single spot
       // value) — resilient to exact class names/markup, which matters
       // because this is a third-party page we don't control. Numbers may
-      // carry a decimal part (spot $ prices and USD/INR do; INR rupee
-      // amounts don't, but matching one anyway is harmless).
+      // carry a decimal part (USD-INR does; INR rupee amounts don't, but
+      // matching one anyway is harmless).
       //
       // Only numbers AFTER the label's own text count (numbers from an
       // earlier, unrelated row merged into the same ancestor don't get
@@ -111,9 +108,9 @@ const USDINR_LABEL = process.env.GOLD_RATE_USDINR_LABEL || 'USD/INR';
       }
       return {
         gold: extractRow(goldLabel, 2, 1000), silver: extractRow(silverLabel, 2, 1000),
-        xau: extractRow(xauLabel, 1), xag: extractRow(xagLabel, 1), usd_inr: extractRow(usdInrLabel, 1),
+        usd_inr: extractRow(usdInrLabel, 1),
       };
-    }, GOLD_LABEL, SILVER_LABEL, XAU_LABEL, XAG_LABEL, USDINR_LABEL);
+    }, GOLD_LABEL, SILVER_LABEL, USDINR_LABEL);
 
     const pickLast = (row) => (row && row.numbers && row.numbers.length ? { rate: row.numbers[row.numbers.length - 1], row_text: row.rowText } : null);
     // Spot/USD-INR rows show just the one value — pick the first number
@@ -125,10 +122,8 @@ const USDINR_LABEL = process.env.GOLD_RATE_USDINR_LABEL || 'USD/INR';
     if (!gold || !silver) {
       throw new Error(`could not extract both rows (gold=${gold ? 'ok' : 'missing'}, silver=${silver ? 'ok' : 'missing'})`);
     }
-    const xau = pickFirst(result.xau);
-    const xag = pickFirst(result.xag);
     const usd_inr = pickFirst(result.usd_inr);
-    console.log(JSON.stringify({ ok: true, gold, silver, xau, xag, usd_inr, source_url: URL }));
+    console.log(JSON.stringify({ ok: true, gold, silver, usd_inr, source_url: URL }));
   } catch (e) {
     console.log(JSON.stringify({ ok: false, error: String((e && e.message) || e) }));
     process.exitCode = 1;

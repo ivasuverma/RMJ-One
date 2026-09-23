@@ -42,13 +42,14 @@ GOLD_RATE_CHANNEL_ID = os.environ.get('GOLD_RATE_CHANNEL_ID', '12036342061215871
 GOLD_RATE_SOURCE_URL = os.environ.get('GOLD_RATE_SOURCE_URL', 'https://ayodhyabullion.com')
 GOLD_RATE_ROW_LABEL = os.environ.get('GOLD_RATE_ROW_LABEL', 'GOLD RETAIL HAJIR')
 GOLD_RATE_SILVER_LABEL = os.environ.get('GOLD_RATE_SILVER_LABEL', 'SILVER RETAIL HAJIR')
-# The top-of-page spot-price box on the source site lays "GOLD"/"SILVER"
-# and "SPOT ( $ )" out as separate cells, not one combined label, so a bare
-# "GOLD"/"SILVER" is what actually finds it (it's the first thing on the
-# page, well before any other row mentioning gold/silver).
-GOLD_RATE_XAU_LABEL = os.environ.get('GOLD_RATE_XAU_LABEL', 'GOLD')
-GOLD_RATE_XAG_LABEL = os.environ.get('GOLD_RATE_XAG_LABEL', 'SILVER')
 GOLD_RATE_USDINR_LABEL = os.environ.get('GOLD_RATE_USDINR_LABEL', 'USD/INR')
+# XAU/XAG spot (international $/oz) come from twelvedata.com's free API
+# instead of scraping the source page for them - a dedicated price API is
+# far less fragile than DOM-scraping a page whose markup can (and did,
+# twice) change under us. Free tier: https://twelvedata.com, no card
+# needed. Blank means "not configured" - those two display fields just
+# show "—" rather than the fetch failing (see gold_rate._fetch_spot_prices).
+TWELVEDATA_API_KEY = os.environ.get('TWELVEDATA_API_KEY', '')
 
 # Inbound WhatsApp auto-reply bot (see routers/whatsapp_bot.py) — verifies
 # OpenWA's `X-OpenWA-Signature: sha256=<hmac>` header on every webhook

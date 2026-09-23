@@ -31,7 +31,7 @@ type LiveDebug = {
   fetched_at: string | null; error: string | null;
   fetched_gold: number | null; fetched_silver: number | null;
   gold_row_text: string | null; silver_row_text: string | null;
-  xau_row_text: string | null; xag_row_text: string | null;
+  xau_usd: number | null; xag_usd: number | null;
 } | null;
 
 const inr = (n: number) => n.toLocaleString('en-IN');
@@ -230,10 +230,10 @@ export default function RateMasterScreen() {
               <Text style={styles.diagText}>{live.gold_row_text || '—'}</Text>
               <Text style={styles.label}>Silver {live.fetched_silver != null ? `→ ₹${inr(live.fetched_silver)}` : ''}</Text>
               <Text style={styles.diagText}>{live.silver_row_text || '—'}</Text>
-              <Text style={styles.label}>Gold spot (XAU)</Text>
-              <Text style={styles.diagText}>{live.xau_row_text || '—'}</Text>
-              <Text style={styles.label}>Silver spot (XAG)</Text>
-              <Text style={styles.diagText}>{live.xag_row_text || '—'}</Text>
+              <Text style={styles.label}>Gold spot (XAU) · via twelvedata.com</Text>
+              <Text style={styles.diagText}>{live.xau_usd != null ? `$${live.xau_usd.toFixed(2)}` : '—'}</Text>
+              <Text style={styles.label}>Silver spot (XAG) · via twelvedata.com</Text>
+              <Text style={styles.diagText}>{live.xag_usd != null ? `$${live.xag_usd.toFixed(2)}` : '—'}</Text>
             </>
           )}
         </View>

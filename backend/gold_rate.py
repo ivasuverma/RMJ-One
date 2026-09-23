@@ -25,9 +25,11 @@ import logging
 import os
 from datetime import datetime
 
+import httpx
+
 from server import (
     db, now_utc, IST, format_ist_date_time, GOLD_RATE_SOURCE_URL, GOLD_RATE_ROW_LABEL, GOLD_RATE_SILVER_LABEL,
-    GOLD_RATE_XAU_LABEL, GOLD_RATE_XAG_LABEL, GOLD_RATE_USDINR_LABEL,
+    GOLD_RATE_USDINR_LABEL, TWELVEDATA_API_KEY,
     GOLD_RATE_CHANNEL_ID, send_whatsapp_channel, _notify_module,
 )
 
@@ -107,10 +109,10 @@ def _read_puppeteer_executable_path() -> str:
 async def fetch_rates_raw() -> dict:
     """Runs the headless-Chrome scraper. Returns
     {'ok': True, 'gold': {'rate': int, ...}, 'silver': {'rate': int, ...},
-    'xau': {...}|None, 'xag': {...}|None, 'usd_inr': {...}|None}
-    or {'ok': False, 'error': str} — never raises. xau/xag/usd_inr are
-    best-effort informational fields (see fetch_gold_rate.js) — a miss on
-    those doesn't turn ok False."""
+    'usd_inr': {...}|None} or {'ok': False, 'error': str} — never raises.
+    usd_inr is a best-effort informational field (see fetch_gold_rate.js) —
+    a miss on it doesn't turn ok False. XAU/XAG spot are NOT part of this
+    scrape - see _fetch_spot_prices, a separate call to twelvedata.com."""
     chrome_path = _read_puppeteer_executable_path()
     if not chrome_path:
         return {'ok': False, 'error': "Could not find OpenWA's Chrome path (E:\\OpenWA\\.env)"}
@@ -121,8 +123,6 @@ async def fetch_rates_raw() -> dict:
         'GOLD_RATE_SOURCE_URL': GOLD_RATE_SOURCE_URL,
         'GOLD_RATE_ROW_LABEL': GOLD_RATE_ROW_LABEL,
         'GOLD_RATE_SILVER_LABEL': GOLD_RATE_SILVER_LABEL,
-        'GOLD_RATE_XAU_LABEL': GOLD_RATE_XAU_LABEL,
-        'GOLD_RATE_XAG_LABEL': GOLD_RATE_XAG_LABEL,
         'GOLD_RATE_USDINR_LABEL': GOLD_RATE_USDINR_LABEL,
     }
     try:
@@ -195,12 +195,14 @@ def _buy_rate(sell_rate: int, buy_margin: int) -> int:
 
 
 def _extract_extra(result: dict) -> dict:
-    """xau/xag/usd_inr are best-effort informational fields — None on a miss
-    rather than failing the whole fetch (see fetch_rates_raw's docstring).
-    Also carries each row's raw scraped text (row_text, already returned by
-    fetch_gold_rate.js) through to gold_rate_live purely for diagnosis - if
-    a field goes stale or wrong again, this is what it actually read off the
-    page that time, without needing to reproduce the scrape to find out."""
+    """usd_inr is a best-effort informational field — None on a miss rather
+    than failing the whole fetch (see fetch_rates_raw's docstring). Also
+    carries the gold/silver rows' raw scraped text (row_text, already
+    returned by fetch_gold_rate.js) through to gold_rate_live purely for
+    diagnosis - if a field goes stale or wrong again, this is what it
+    actually read off the page that time, without needing to reproduce the
+    scrape to find out. XAU/XAG spot no longer come from this scrape at all
+    (see _fetch_spot_prices) - callers merge that in separately."""
     def rate_of(key):
         row = result.get(key)
         return row.get('rate') if row else None
@@ -209,9 +211,8 @@ def _extract_extra(result: dict) -> dict:
         row = result.get(key)
         return row.get('row_text') if row else None
     return {
-        'xau_usd': rate_of('xau'), 'xag_usd': rate_of('xag'), 'usd_inr': rate_of('usd_inr'),
+        'usd_inr': rate_of('usd_inr'),
         'gold_row_text': text_of('gold'), 'silver_row_text': text_of('silver'),
-        'xau_row_text': text_of('xau'), 'xag_row_text': text_of('xag'),
     }
 
 
@@ -224,18 +225,31 @@ async def _store_live_rate(fetched_gold, fetched_silver, gold_rate, silver_rate,
     public rates page's source: gold_buy_rate/silver_buy_rate and
     xau_usd/xag_usd/usd_inr live here too, not on gold_rate_today, so the
     public page always reflects the latest scrape regardless of whether
-    today's broadcast has been confirmed/sent yet."""
-    extra = extra or {'xau_usd': None, 'xag_usd': None, 'usd_inr': None}
-    await db.settings.update_one({'id': 'gold_rate_live'}, {'$set': {
-        'id': 'gold_rate_live', 'fetched_at': fetched_at, 'error': error,
-        'fetched_gold': fetched_gold, 'fetched_silver': fetched_silver,
-        'gold_margin_applied': cfg.get('gold_margin') if error is None else None,
-        'silver_margin_applied': cfg.get('silver_margin') if error is None else None,
-        'gold_rate': gold_rate, 'silver_rate': silver_rate,
-        'gold_buy_rate': _buy_rate(gold_rate, cfg['gold_buy_margin']) if gold_rate is not None else None,
-        'silver_buy_rate': _buy_rate(silver_rate, cfg['silver_buy_margin']) if silver_rate is not None else None,
-        **extra,
-    }}, upsert=True)
+    today's broadcast has been confirmed/sent yet.
+
+    A None passed for any field here means "this attempt didn't get a new
+    value for it" (a failed scrape, a failed spot-price call, ...), NOT
+    "clear whatever was there" — so those fields are left OUT of the $set
+    entirely rather than written as None, and the document keeps its last
+    known good value. `error`/`fetched_at` are the only fields that always
+    get written, since they describe the latest ATTEMPT, not the latest
+    success. (fetched_gold/fetched_silver/margins/gold_rate/silver_rate
+    are all-or-nothing together — gold_rate is None exactly when the
+    others are, so gating the whole group on it is equivalent to gating
+    each one individually.)"""
+    fields = {'id': 'gold_rate_live', 'fetched_at': fetched_at, 'error': error}
+    if gold_rate is not None:
+        fields.update({
+            'fetched_gold': fetched_gold, 'fetched_silver': fetched_silver,
+            'gold_margin_applied': cfg.get('gold_margin'), 'silver_margin_applied': cfg.get('silver_margin'),
+            'gold_rate': gold_rate, 'silver_rate': silver_rate,
+            'gold_buy_rate': _buy_rate(gold_rate, cfg['gold_buy_margin']),
+            'silver_buy_rate': _buy_rate(silver_rate, cfg['silver_buy_margin']),
+        })
+    for k, v in (extra or {}).items():
+        if v is not None:
+            fields[k] = v
+    await db.settings.update_one({'id': 'gold_rate_live'}, {'$set': fields}, upsert=True)
 
 
 def _compute_rates(result: dict, cfg: dict) -> tuple:
@@ -247,6 +261,38 @@ def _compute_rates(result: dict, cfg: dict) -> tuple:
     gold_rate = round_to(fetched_gold + int(cfg['gold_margin']), GOLD_ROUND_TO)
     silver_rate = round_to(fetched_silver + int(cfg['silver_margin']), SILVER_ROUND_TO)
     return fetched_gold, fetched_silver, gold_rate, silver_rate
+
+
+TWELVEDATA_URL = 'https://api.twelvedata.com/price'
+
+
+async def _fetch_spot_prices() -> dict:
+    """XAU/XAG spot (USD/troy oz) via twelvedata.com's free API — purely
+    informational display fields on the public rates page, entirely
+    independent of the Puppeteer scrape used for the shop's actual
+    gold/silver retail rate and USD/INR. Deliberately a separate source so
+    these two fields don't share a single point of failure with the retail
+    scrape (or go stale together with it) - see _store_live_rate's "keep
+    last known good" behavior, which now applies per-field rather than
+    all-or-nothing, so a twelvedata hiccup doesn't wipe out a still-good
+    retail rate and vice versa. Returns {'xau_usd': float|None, 'xag_usd':
+    float|None} - never raises; no configured key or any failure just
+    means both stay None for this attempt (last known good persists)."""
+    if not TWELVEDATA_API_KEY:
+        return {'xau_usd': None, 'xag_usd': None}
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(TWELVEDATA_URL, params={'symbol': 'XAU/USD,XAG/USD', 'apikey': TWELVEDATA_API_KEY})
+        data = resp.json()
+        xau = (data.get('XAU/USD') or {}).get('price')
+        xag = (data.get('XAG/USD') or {}).get('price')
+        return {
+            'xau_usd': float(xau) if xau is not None else None,
+            'xag_usd': float(xag) if xag is not None else None,
+        }
+    except Exception as e:
+        logger.warning(f'twelvedata spot fetch failed: {e}')
+        return {'xau_usd': None, 'xag_usd': None}
 
 
 async def refresh_live_rate(cfg: dict = None) -> dict:
@@ -261,16 +307,20 @@ async def refresh_live_rate(cfg: dict = None) -> dict:
         cfg = await get_config()
     result = await fetch_rates_raw()
     fetched_at = now_utc().isoformat()
+    # Independent of the retail scrape's outcome — a twelvedata hiccup or a
+    # site scrape hiccup should never take the other one down with it (see
+    # _fetch_spot_prices).
+    extra = {**_extract_extra(result), **(await _fetch_spot_prices())}
     if result.get('ok'):
         fetched_gold, fetched_silver, gold_rate, silver_rate = _compute_rates(result, cfg)
-        await _store_live_rate(fetched_gold, fetched_silver, gold_rate, silver_rate, cfg, fetched_at, extra=_extract_extra(result))
+        await _store_live_rate(fetched_gold, fetched_silver, gold_rate, silver_rate, cfg, fetched_at, extra=extra)
         logger.info(f'live rate refreshed: gold {gold_rate}, silver {silver_rate}')
         return {
             'ok': True, 'gold_rate': gold_rate, 'silver_rate': silver_rate,
             'fetched_gold': fetched_gold, 'fetched_silver': fetched_silver, 'fetched_at': fetched_at,
         }
     error = result.get('error') or 'fetch failed'
-    await _store_live_rate(None, None, None, None, cfg, fetched_at, error)
+    await _store_live_rate(None, None, None, None, cfg, fetched_at, error, extra=extra)
     logger.warning(f'live rate refresh failed: {error}')
     return {'ok': False, 'error': error, 'fetched_at': fetched_at}
 
@@ -310,6 +360,8 @@ async def run_fetch_and_store() -> dict:
         'id': 'gold_rate_today', 'date': date_str, 'fetched_at': now_utc().isoformat(),
         'manual': False, 'confirmed': False, 'sent_at': None,
     }
+    # Independent of the retail scrape's outcome — see refresh_live_rate.
+    extra = {**_extract_extra(result), **(await _fetch_spot_prices())}
     if result.get('ok'):
         fetched_gold, fetched_silver, gold_rate, silver_rate = _compute_rates(result, cfg)
         doc.update({
@@ -321,7 +373,7 @@ async def run_fetch_and_store() -> dict:
         logger.info(f'rates fetched: gold {fetched_gold}+{cfg["gold_margin"]}->{gold_rate}, silver {fetched_silver}+{cfg["silver_margin"]}->{silver_rate}')
         # Same scrape feeds the live cache too — no need for the periodic
         # cycle to launch a second Chrome at the same moment.
-        await _store_live_rate(fetched_gold, fetched_silver, gold_rate, silver_rate, cfg, doc['fetched_at'], extra=_extract_extra(result))
+        await _store_live_rate(fetched_gold, fetched_silver, gold_rate, silver_rate, cfg, doc['fetched_at'], extra=extra)
         await _notify_module(
             'gold_rate', 'Gold Rate Updated',
             f"Gold ₹{gold_rate:,}/g · Silver ₹{silver_rate:,}/g", '/settings/whatsapp',
@@ -334,6 +386,12 @@ async def run_fetch_and_store() -> dict:
             'gold_rate': None, 'silver_rate': None, 'error': result.get('error') or 'fetch failed', 'message': None,
         })
         logger.warning(f"gold/silver rate fetch failed: {doc['error']}")
+        # Still worth recording on gold_rate_live even though the retail
+        # scrape failed - _store_live_rate's per-field "keep last known
+        # good" behavior means this only ever adds fresh spot prices (if
+        # twelvedata succeeded) and the error/timestamp, never wipes the
+        # still-good gold_rate/silver_rate sitting there from before.
+        await _store_live_rate(None, None, None, None, cfg, doc['fetched_at'], doc['error'], extra=extra)
     await db.settings.update_one({'id': 'gold_rate_today'}, {'$set': doc}, upsert=True)
     return doc
 
