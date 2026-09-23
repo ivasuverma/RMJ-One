@@ -7,6 +7,7 @@ import { istTime } from '@/src/utils/datetime';
 import { spacing, radius, fonts, typography, images, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { useAuth } from '@/src/auth/AuthContext';
+import { RatesInstallHint } from '@/src/components/RatesInstallHint';
 
 type PublicRates = {
   store_name: string;
@@ -88,6 +89,8 @@ export default function PublicRatesScreen() {
           <Text style={styles.storeName}>{data?.store_name || 'Ram Murti Jewellers'}</Text>
           <Text style={styles.tagline}>Live Gold &amp; Silver Rates</Text>
         </View>
+
+        <RatesInstallHint />
 
         {loading ? (
           <View style={styles.loaderBox}><ActivityIndicator color={colors.brandPrimary} size="large" /></View>
