@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { Modal, Pressable, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
+import { Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -118,7 +118,6 @@ export default function DashboardScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [unread, setUnread] = useState(0);
   const [, forceTick] = useState(0);
-  const [searchOpen, setSearchOpen] = useState(false);
   const [tileOrder, setTileOrder] = useState<TileKey[]>(DEFAULT_TILE_ORDER);
   const [hiddenTiles, setHiddenTiles] = useState<Set<TileKey>>(new Set());
   const [foldedTiles, setFoldedTiles] = useState<Set<TileKey>>(new Set());
@@ -283,12 +282,6 @@ export default function DashboardScreen() {
         </Pressable>
       )}
 
-      {/* Search bar (Apple §16: direct, always-visible) */}
-      <Pressable onPress={() => setSearchOpen(true)} style={styles.headerSearch} testID="dashboard-search-btn">
-        <Ionicons name="search-outline" size={17} color={colors.mutedText} />
-        <Text style={styles.headerSearchText}>Search customers, karigars, staff, transactions…</Text>
-      </Pressable>
-
       {loading ? (
         <DashboardSkeleton />
       ) : error && !data ? (
@@ -451,7 +444,6 @@ export default function DashboardScreen() {
         </>
       ) : null}
 
-      <SearchOverlay visible={searchOpen} onClose={() => setSearchOpen(false)} />
       <ReorderSheet
         visible={reorderOpen}
         onClose={() => setReorderOpen(false)}
@@ -737,93 +729,6 @@ function ApprovalRow({ title, subtitle, last, onApprove, onReject, testID }: {
   );
 }
 
-/* ---------------- Global search overlay ---------------- */
-type SearchHit = { kind: 'customer' | 'karigar' | 'employee' | 'transaction'; id: string; name: string; sub?: string; route: string };
-
-function SearchOverlay({ visible, onClose }: { visible: boolean; onClose: () => void }) {
-  const { colors } = useTheme();
-  const router = useRouter();
-  const { hasModule } = useAuth();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
-  const [q, setQ] = useState('');
-  const [hits, setHits] = useState<SearchHit[]>([]);
-  const [searching, setSearching] = useState(false);
-  const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const runSearch = useCallback(async (query: string) => {
-    if (!query.trim()) { setHits([]); return; }
-    setSearching(true);
-    try {
-      // Search the party directories the caller can actually see. Selecting a
-      // result opens its current detail screen; Phase 5 repoints these at the
-      // unified ledger account view.
-      const reqs: Promise<SearchHit[]>[] = [];
-      if (hasModule('repairs') || hasModule('customer_ledger')) {
-        reqs.push(api.get<any[]>(`/customers?q=${encodeURIComponent(query)}`).then((cs) => cs.slice(0, 8).map((c) => ({ kind: 'customer' as const, id: c.id, name: c.name, sub: c.mobile, route: `/customers/${c.id}` }))).catch(() => []));
-      }
-      if (hasModule('repairs') || hasModule('karigar_ledger')) {
-        reqs.push(api.get<any[]>(`/karigars?q=${encodeURIComponent(query)}`).then((ks) => ks.slice(0, 8).map((k) => ({ kind: 'karigar' as const, id: k.id, name: k.name, sub: k.mobile, route: `/karigars/${k.id}` }))).catch(() => []));
-      }
-      if (hasModule('team') || hasModule('payroll')) {
-        reqs.push(api.get<any[]>(`/employees?q=${encodeURIComponent(query)}`).then((es) => es.slice(0, 8).map((e) => ({ kind: 'employee' as const, id: e.id, name: e.name, sub: e.employee_code, route: `/ledger/${e.id}` }))).catch(() => []));
-      }
-      const results = (await Promise.all(reqs)).flat();
-      setHits(results);
-    } finally { setSearching(false); }
-  }, [hasModule]);
-
-  const onChange = (text: string) => {
-    setQ(text);
-    if (debounce.current) clearTimeout(debounce.current);
-    debounce.current = setTimeout(() => runSearch(text), 250);
-  };
-
-  const go = (route: string) => { onClose(); setQ(''); setHits([]); router.push(route as any); };
-
-  const KIND_ICON: Record<SearchHit['kind'], keyof typeof Ionicons.glyphMap> = {
-    customer: 'person-outline', karigar: 'hammer-outline', employee: 'people-outline',
-    transaction: 'receipt-outline',
-  };
-
-  return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <View style={styles.searchRoot} testID="search-overlay">
-        <View style={styles.searchBar}>
-          <Ionicons name="search-outline" size={18} color={colors.mutedText} />
-          <TextInput
-            value={q}
-            onChangeText={onChange}
-            placeholder="Search customers, karigars, staff, transactions…"
-            placeholderTextColor={colors.mutedText}
-            style={styles.searchInput}
-            autoFocus
-            testID="search-input"
-          />
-          <Pressable onPress={onClose} hitSlop={10} testID="search-close">
-            <Text style={styles.searchCancel}>Cancel</Text>
-          </Pressable>
-        </View>
-        {searching && <Text style={styles.searchHint}>Searching…</Text>}
-        {!searching && q.trim() !== '' && hits.length === 0 && (
-          <Text style={styles.searchHint}>No matches for “{q}”.</Text>
-        )}
-        <View>
-          {hits.map((h) => (
-            <Pressable key={`${h.kind}-${h.id}`} onPress={() => go(h.route)} style={({ pressed }) => [styles.searchRow, pressed && { opacity: 0.7 }]} testID={`search-hit-${h.id}`}>
-              <View style={styles.searchIconWrap}><Ionicons name={KIND_ICON[h.kind]} size={16} color={colors.brandSecondary} /></View>
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={styles.searchName} numberOfLines={1}>{h.name}</Text>
-                {!!h.sub && <Text style={styles.searchSub} numberOfLines={1}>{h.kind} · {h.sub}</Text>}
-              </View>
-              <Ionicons name="chevron-forward" size={16} color={colors.mutedText} />
-            </Pressable>
-          ))}
-        </View>
-      </View>
-    </Modal>
-  );
-}
-
 /* ---------------- Skeleton ---------------- */
 function DashboardSkeleton() {
   return (
@@ -865,12 +770,6 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     position: 'absolute', top: 8, right: 9, width: 8, height: 8, borderRadius: 4,
     backgroundColor: colors.error, borderWidth: 1, borderColor: colors.surface,
   },
-  headerSearch: {
-    flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: spacing.lg,
-    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
-    paddingHorizontal: spacing.md, height: 46,
-  },
-  headerSearchText: { color: colors.mutedText, fontSize: 15 },
   rateTile: {
     flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.md,
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
@@ -996,22 +895,4 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   reorderArrowDisabled: { opacity: 0.4 },
   reorderReset: { alignItems: 'center', paddingVertical: spacing.md, marginTop: spacing.sm },
   reorderResetText: { color: colors.brandSecondary, fontSize: 13, fontWeight: '700' },
-
-  // Search overlay
-  searchRoot: { flex: 1, backgroundColor: colors.surface, paddingTop: 56, paddingHorizontal: spacing.lg },
-  searchBar: {
-    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
-    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
-    paddingHorizontal: spacing.md, paddingVertical: 4,
-  },
-  searchInput: { flex: 1, color: colors.onSurface, fontSize: 15, paddingVertical: 10 },
-  searchCancel: { color: colors.brandSecondary, fontSize: 13, fontWeight: '700' },
-  searchHint: { color: colors.mutedText, fontSize: 13, marginTop: spacing.lg },
-  searchRow: {
-    flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: 12,
-    borderBottomWidth: 1, borderBottomColor: colors.divider,
-  },
-  searchIconWrap: { width: 34, height: 34, borderRadius: 17, backgroundColor: colors.surfaceTertiary, alignItems: 'center', justifyContent: 'center' },
-  searchName: { color: colors.onSurface, fontSize: 14, fontWeight: '600' },
-  searchSub: { color: colors.mutedText, fontSize: 11, marginTop: 1, textTransform: 'capitalize' },
 });
