@@ -42,8 +42,12 @@ GOLD_RATE_CHANNEL_ID = os.environ.get('GOLD_RATE_CHANNEL_ID', '12036342061215871
 GOLD_RATE_SOURCE_URL = os.environ.get('GOLD_RATE_SOURCE_URL', 'https://ayodhyabullion.com')
 GOLD_RATE_ROW_LABEL = os.environ.get('GOLD_RATE_ROW_LABEL', 'GOLD RETAIL HAJIR')
 GOLD_RATE_SILVER_LABEL = os.environ.get('GOLD_RATE_SILVER_LABEL', 'SILVER RETAIL HAJIR')
-GOLD_RATE_XAU_LABEL = os.environ.get('GOLD_RATE_XAU_LABEL', 'GOLD SPOT')
-GOLD_RATE_XAG_LABEL = os.environ.get('GOLD_RATE_XAG_LABEL', 'SILVER SPOT')
+# The top-of-page spot-price box on the source site lays "GOLD"/"SILVER"
+# and "SPOT ( $ )" out as separate cells, not one combined label, so a bare
+# "GOLD"/"SILVER" is what actually finds it (it's the first thing on the
+# page, well before any other row mentioning gold/silver).
+GOLD_RATE_XAU_LABEL = os.environ.get('GOLD_RATE_XAU_LABEL', 'GOLD')
+GOLD_RATE_XAG_LABEL = os.environ.get('GOLD_RATE_XAG_LABEL', 'SILVER')
 GOLD_RATE_USDINR_LABEL = os.environ.get('GOLD_RATE_USDINR_LABEL', 'USD/INR')
 
 # Inbound WhatsApp auto-reply bot (see routers/whatsapp_bot.py) — verifies
