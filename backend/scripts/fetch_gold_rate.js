@@ -13,8 +13,11 @@
 // Env:   GOLD_RATE_SOURCE_URL     (default: https://ayodhyabullion.com)
 //        GOLD_RATE_ROW_LABEL      (default: GOLD RETAIL HAJIR)
 //        GOLD_RATE_SILVER_LABEL   (default: SILVER RETAIL HAJIR)
-//        GOLD_RATE_XAU_LABEL      (default: GOLD SPOT) — international $/oz spot, informational only
-//        GOLD_RATE_XAG_LABEL      (default: SILVER SPOT) — same, silver
+//        GOLD_RATE_XAU_LABEL      (default: GOLD) — international $/oz spot, informational only.
+//                                  Bare "GOLD" because the source page lays out the top-of-page
+//                                  spot box as separate "GOLD"/"SPOT ( $ )" cells, not one label -
+//                                  it's the first thing on the page, so this stays unambiguous.
+//        GOLD_RATE_XAG_LABEL      (default: SILVER) — same, silver
 //        GOLD_RATE_USDINR_LABEL   (default: USD/INR)
 //        PUPPETEER_EXECUTABLE_PATH (required — path to chrome.exe)
 // Prints one JSON line to stdout: {ok, gold: {rate, row_text}, silver: {rate,
@@ -29,8 +32,8 @@ const puppeteer = require('puppeteer-core');
 const URL = process.env.GOLD_RATE_SOURCE_URL || 'https://ayodhyabullion.com';
 const GOLD_LABEL = process.env.GOLD_RATE_ROW_LABEL || 'GOLD RETAIL HAJIR';
 const SILVER_LABEL = process.env.GOLD_RATE_SILVER_LABEL || 'SILVER RETAIL HAJIR';
-const XAU_LABEL = process.env.GOLD_RATE_XAU_LABEL || 'GOLD SPOT';
-const XAG_LABEL = process.env.GOLD_RATE_XAG_LABEL || 'SILVER SPOT';
+const XAU_LABEL = process.env.GOLD_RATE_XAU_LABEL || 'GOLD';
+const XAG_LABEL = process.env.GOLD_RATE_XAG_LABEL || 'SILVER';
 const USDINR_LABEL = process.env.GOLD_RATE_USDINR_LABEL || 'USD/INR';
 
 (async () => {

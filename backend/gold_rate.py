@@ -224,18 +224,31 @@ async def _store_live_rate(fetched_gold, fetched_silver, gold_rate, silver_rate,
     public rates page's source: gold_buy_rate/silver_buy_rate and
     xau_usd/xag_usd/usd_inr live here too, not on gold_rate_today, so the
     public page always reflects the latest scrape regardless of whether
-    today's broadcast has been confirmed/sent yet."""
-    extra = extra or {'xau_usd': None, 'xag_usd': None, 'usd_inr': None}
-    await db.settings.update_one({'id': 'gold_rate_live'}, {'$set': {
-        'id': 'gold_rate_live', 'fetched_at': fetched_at, 'error': error,
-        'fetched_gold': fetched_gold, 'fetched_silver': fetched_silver,
-        'gold_margin_applied': cfg.get('gold_margin') if error is None else None,
-        'silver_margin_applied': cfg.get('silver_margin') if error is None else None,
-        'gold_rate': gold_rate, 'silver_rate': silver_rate,
-        'gold_buy_rate': _buy_rate(gold_rate, cfg['gold_buy_margin']) if gold_rate is not None else None,
-        'silver_buy_rate': _buy_rate(silver_rate, cfg['silver_buy_margin']) if silver_rate is not None else None,
-        **extra,
-    }}, upsert=True)
+    today's broadcast has been confirmed/sent yet.
+
+    A None passed for any field here means "this attempt didn't get a new
+    value for it" (a failed scrape, a missed xau/xag/usd_inr row, ...), NOT
+    "clear whatever was there" — so those fields are left OUT of the $set
+    entirely rather than written as None, and the document keeps its last
+    known good value. `error`/`fetched_at` are the only fields that always
+    get written, since they describe the latest ATTEMPT, not the latest
+    success. (fetched_gold/fetched_silver/margins/gold_rate/silver_rate
+    are all-or-nothing together — gold_rate is None exactly when the
+    others are, so gating the whole group on it is equivalent to gating
+    each one individually.)"""
+    fields = {'id': 'gold_rate_live', 'fetched_at': fetched_at, 'error': error}
+    if gold_rate is not None:
+        fields.update({
+            'fetched_gold': fetched_gold, 'fetched_silver': fetched_silver,
+            'gold_margin_applied': cfg.get('gold_margin'), 'silver_margin_applied': cfg.get('silver_margin'),
+            'gold_rate': gold_rate, 'silver_rate': silver_rate,
+            'gold_buy_rate': _buy_rate(gold_rate, cfg['gold_buy_margin']),
+            'silver_buy_rate': _buy_rate(silver_rate, cfg['silver_buy_margin']),
+        })
+    for k, v in (extra or {}).items():
+        if v is not None:
+            fields[k] = v
+    await db.settings.update_one({'id': 'gold_rate_live'}, {'$set': fields}, upsert=True)
 
 
 def _compute_rates(result: dict, cfg: dict) -> tuple:
