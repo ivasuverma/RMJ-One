@@ -226,6 +226,11 @@ class GoldRateConfigIn(BaseModel):
     fetch_time: str = '12:30'   # "HH:MM", 24-hour, IST — mirrors gold_rate.DEFAULT_FETCH_TIME
     gold_margin: int = 0
     silver_margin: int = 0
+    # Subtracted from the (already-margined) sell rate to get the buy rate
+    # shown on the public rates page — see gold_rate._buy_rate. Independent
+    # of gold_margin/silver_margin above, which only affect the sell side.
+    gold_buy_margin: int = 0
+    silver_buy_margin: int = 0
     template: Optional[str] = None   # None/blank = use the built-in default
     # Chatbot live-rate refresh (RATE keyword freshness) — independent of
     # fetch_time above, which is only the once-daily broadcast fetch.
@@ -282,7 +287,9 @@ async def update_gold_rate_config(body: GoldRateConfigIn, user: dict = Depends(r
             raise HTTPException(status_code=400, detail=f'Template has an unknown placeholder: {e}')
     payload = {
         'id': 'gold_rate_config', 'fetch_time': body.fetch_time,
-        'gold_margin': body.gold_margin, 'silver_margin': body.silver_margin, 'template': body.template,
+        'gold_margin': body.gold_margin, 'silver_margin': body.silver_margin,
+        'gold_buy_margin': body.gold_buy_margin, 'silver_buy_margin': body.silver_buy_margin,
+        'template': body.template,
         'chatbot_refresh_enabled': body.chatbot_refresh_enabled,
         'chatbot_refresh_interval_min': max(15, body.chatbot_refresh_interval_min),
         'chatbot_refresh_start': body.chatbot_refresh_start, 'chatbot_refresh_end': body.chatbot_refresh_end,
@@ -291,7 +298,11 @@ async def update_gold_rate_config(body: GoldRateConfigIn, user: dict = Depends(r
         'updated_at': now_utc().isoformat(),
     }
     await db.settings.update_one({'id': 'gold_rate_config'}, {'$set': payload}, upsert=True)
-    await log_audit(user, 'settings.gold_rate.config_update', 'settings', 'gold_rate_config', f'{body.fetch_time} gold+{body.gold_margin} silver+{body.silver_margin} auto_send={body.auto_send_enabled} skip_weekend={body.skip_weekend_fetch}')
+    await log_audit(
+        user, 'settings.gold_rate.config_update', 'settings', 'gold_rate_config',
+        f'{body.fetch_time} gold+{body.gold_margin}(-{body.gold_buy_margin}buy) '
+        f'silver+{body.silver_margin}(-{body.silver_buy_margin}buy) auto_send={body.auto_send_enabled} skip_weekend={body.skip_weekend_fetch}',
+    )
     return await gold_rate.get_config()
 
 
