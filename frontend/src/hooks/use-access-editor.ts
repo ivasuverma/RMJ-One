@@ -16,6 +16,7 @@ export type DocCategory = { key: string; label: string };
 export type NotifModule = { key: string; label: string; default_roles: string[]; events?: { key: string; label: string; admin_only?: boolean }[] };
 export type AccessAccount = {
   id: string; name: string; username?: string; role: string; account_type: 'user' | 'employee';
+  mobile?: string;
   designation?: string; status?: string; module_access: string[] | null; resolved_modules: string[];
   module_rights?: Record<string, Rights>; cashbook_counter_ids?: string[];
   notifications_enabled?: boolean; notif_prefs?: Record<string, boolean>;
@@ -35,6 +36,7 @@ export function useAccessEditor(accountId: string | undefined) {
   const [mods, setMods] = useState<Set<string>>(new Set());
   const [rights, setRights] = useState<Record<string, Rights>>({});
   const [counterSel, setCounterSel] = useState<Set<string>>(new Set());
+  const [mobile, setMobile] = useState('');
   const [notifOn, setNotifOn] = useState(true);
   const [notifPrefs, setNotifPrefs] = useState<Record<string, boolean>>({});
   const [docRights, setDocRights] = useState<Record<string, DocRight>>({});
@@ -57,6 +59,7 @@ export function useAccessEditor(accountId: string | undefined) {
         setMods(new Set(a.resolved_modules));
         setRights({ ...(a.module_rights || {}) });
         setCounterSel(new Set(a.cashbook_counter_ids || []));
+        setMobile(a.mobile || '');
         setNotifOn(a.notifications_enabled !== false);
         const prefs: Record<string, boolean> = {};
         for (const nmod of nm) {
@@ -115,9 +118,16 @@ export function useAccessEditor(accountId: string | undefined) {
     if (!acc) return { ok: false, error: 'Nothing loaded yet' };
     setSaving(true);
     try {
-      if (opts?.newPassword?.trim() && acc.account_type === 'user') {
-        if (opts.newPassword.trim().length < 4) return { ok: false, error: 'Password must be 4+ characters.' };
-        await api.put(`/users/${acc.id}`, { name: acc.name, username: acc.username, role: acc.role, password: opts.newPassword.trim() });
+      const mobileChanged = acc.account_type === 'user' && mobile.trim() !== (acc.mobile || '');
+      if (acc.account_type === 'user' && (opts?.newPassword?.trim() || mobileChanged)) {
+        if (opts?.newPassword?.trim() && opts.newPassword.trim().length < 4) {
+          return { ok: false, error: 'Password must be 4+ characters.' };
+        }
+        await api.put(`/users/${acc.id}`, {
+          name: acc.name, username: acc.username, role: acc.role,
+          mobile: mobile.trim(),
+          ...(opts?.newPassword?.trim() ? { password: opts.newPassword.trim() } : {}),
+        });
       }
       const payload: any = { notifications_enabled: notifOn, notif_prefs: notifPrefs };
       if (!isOwner) {
@@ -146,12 +156,13 @@ export function useAccessEditor(accountId: string | undefined) {
     } finally {
       setSaving(false);
     }
-  }, [acc, notifOn, notifPrefs, isOwner, isEmployee, availableModules, mods, rights, docRights, counterSel, seeDone]);
+  }, [acc, notifOn, notifPrefs, isOwner, isEmployee, availableModules, mods, rights, docRights, counterSel, seeDone, mobile]);
 
   return {
     acc, loading, loadError, saving, isOwner, isEmployee,
     availableModules, notifModules, docCats, counters,
     mods, toggleMod, rights, toggleRight, counterSel, toggleCounter,
+    mobile, setMobile,
     notifOn, setNotifOn, notifPrefs, setNotifPrefs,
     docRights, toggleDoc, seeDone, setSeeDone,
     save, reload: load,

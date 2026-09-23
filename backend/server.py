@@ -607,6 +607,7 @@ class UserCreateIn(BaseModel):
     name: str
     password: str
     role: Literal['owner', 'admin', 'accountant']
+    mobile: Optional[str] = None
 
 
 class UserUpdateIn(BaseModel):
@@ -614,6 +615,7 @@ class UserUpdateIn(BaseModel):
     name: Optional[str] = None
     password: Optional[str] = None
     role: Optional[Literal['owner', 'admin', 'accountant']] = None
+    mobile: Optional[str] = None
 
 
 class SelfAccountUpdateIn(BaseModel):
@@ -621,6 +623,10 @@ class SelfAccountUpdateIn(BaseModel):
     new_name: Optional[str] = None
     new_username: Optional[str] = None
     new_password: Optional[str] = None
+    # WhatsApp number for important alerts (see notify_user/notify_roles) —
+    # not gated behind a role/module check like the rest of this endpoint,
+    # so an empty string is accepted deliberately (clears it).
+    new_mobile: Optional[str] = None
 
 
 class ModuleAccessUpdateIn(BaseModel):
@@ -1948,6 +1954,7 @@ async def _notify_user_impl(user_id: str, title: str, body: str, url: str = '/')
         await _store_notification(user_id, title, body, url)
         subs = await db.push_subscriptions.find({'user_id': user_id}, {'_id': 0}).to_list(20)
         await _send_push_to_subs(subs, title, body, url)
+        await _notify_whatsapp(user_id, title, body)
     except Exception as e:
         logger.warning(f'notify_user failed: {e}')
 
@@ -1978,6 +1985,8 @@ async def _notify_roles_impl(roles: list, title: str, body: str, url: str = '/')
             await _store_notification(uid, title, body, url)
         subs = await db.push_subscriptions.find({'role': {'$in': roles}}, {'_id': 0}).to_list(200)
         await _send_push_to_subs(subs, title, body, url)
+        for uid in recipient_ids:
+            await _notify_whatsapp(uid, title, body)
     except Exception as e:
         logger.warning(f'notify_roles failed: {e}')
 
@@ -1986,6 +1995,27 @@ async def notify_roles(roles: list, title: str, body: str, url: str = '/'):
     # Same rationale as notify_user: don't block the caller on the recipient
     # resolution + per-recipient inserts + push delivery below.
     asyncio.create_task(_notify_roles_impl(roles, title, body, url))
+
+
+async def _notify_whatsapp(account_id: str, title: str, body: str) -> None:
+    """Third delivery channel alongside in-app + browser push, for whoever's
+    filled in a mobile number on their profile (Settings > My Account for
+    owner/admin/accountant, their own profile for employees) — mirrors push
+    exactly: same recipients, same events, gated only by "do we have a number
+    for them", not a separate on/off (the existing master switch + per-module
+    notif_prefs already decided whether this call happened at all, for the
+    broadcasts that go through _notify_module; the person-specific ones below
+    — your task, your salary, your missed punch — always fired for push and
+    do the same here)."""
+    u = await db.users.find_one({'id': account_id}, {'_id': 0, 'mobile': 1})
+    mobile = (u or {}).get('mobile')
+    if not mobile:
+        e = await db.employees.find_one({'id': account_id}, {'_id': 0, 'mobile': 1})
+        mobile = (e or {}).get('mobile')
+    if not mobile:
+        return
+    text = f'{title}\n{body}' if body else title
+    await send_whatsapp(mobile, text, flow='app_notification')
 
 
 # ---------------- WhatsApp (OpenWA gateway) ----------------

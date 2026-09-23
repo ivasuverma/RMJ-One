@@ -35,6 +35,7 @@ export default function PeopleScreen() {
   const [showAdd, setShowAdd] = useState(false);
   const [addName, setAddName] = useState('');
   const [addUser, setAddUser] = useState('');
+  const [addMobile, setAddMobile] = useState('');
   const [addPass, setAddPass] = useState('');
   const [addRole, setAddRole] = useState<'admin' | 'accountant'>('admin');
   const [adding, setAdding] = useState(false);
@@ -53,8 +54,8 @@ export default function PeopleScreen() {
     }
     setAdding(true);
     try {
-      await api.post('/users', { name: addName.trim(), username: addUser.trim(), password: addPass, role: addRole });
-      setShowAdd(false); setAddName(''); setAddUser(''); setAddPass(''); setAddRole('admin');
+      await api.post('/users', { name: addName.trim(), username: addUser.trim(), password: addPass, role: addRole, mobile: addMobile.trim() });
+      setShowAdd(false); setAddName(''); setAddUser(''); setAddMobile(''); setAddPass(''); setAddRole('admin');
       await load();
     } catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
     finally { setAdding(false); }
@@ -114,6 +115,7 @@ export default function PeopleScreen() {
               <Text style={styles.sectionLabel}>New staff login</Text>
               <TextInput value={addName} onChangeText={setAddName} placeholder="Full name" placeholderTextColor={colors.mutedText} style={styles.input} testID="add-name" />
               <TextInput value={addUser} onChangeText={(v) => setAddUser(v.toLowerCase().replace(/\s/g, ''))} placeholder="Username" placeholderTextColor={colors.mutedText} autoCapitalize="none" style={[styles.input, { marginTop: spacing.sm }]} testID="add-username" />
+              <TextInput value={addMobile} onChangeText={setAddMobile} placeholder="Mobile number (for WhatsApp alerts)" placeholderTextColor={colors.mutedText} keyboardType="phone-pad" style={[styles.input, { marginTop: spacing.sm }]} testID="add-mobile" />
               <TextInput value={addPass} onChangeText={setAddPass} placeholder="Temporary password" placeholderTextColor={colors.mutedText} secureTextEntry style={[styles.input, { marginTop: spacing.sm }]} testID="add-password" />
               <View style={styles.roleRow}>
                 {(['admin', 'accountant'] as const).map((r) => (
