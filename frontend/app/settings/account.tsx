@@ -17,6 +17,7 @@ export default function MyAccountScreen() {
   const { user, updateMyAccount } = useAuth();
   const [currentPassword, setCurrentPassword] = useState('');
   const [newName, setNewName] = useState(user?.name || '');
+  const [newMobile, setNewMobile] = useState(user?.mobile || '');
   const [newUsername, setNewUsername] = useState(user?.username || '');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -24,16 +25,19 @@ export default function MyAccountScreen() {
   const [saving, setSaving] = useState(false);
   const submittingRef = useRef(false);
 
+  const initials = (user?.name || '?').trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() || '').join('');
+
   const save = async () => {
     if (submittingRef.current) return;
     if (!currentPassword) {
       notify('Missing', 'Enter your current password to confirm changes.'); return;
     }
     const nameChanged = newName.trim() !== (user?.name || '') && newName.trim().length > 0;
+    const mobileChanged = newMobile.trim() !== (user?.mobile || '');
     const usernameChanged = newUsername.trim().toLowerCase() !== (user?.username || '');
     const passwordChanged = newPassword.length > 0;
-    if (!nameChanged && !usernameChanged && !passwordChanged) {
-      notify('No changes', 'Enter a new name, username, or password to update.'); return;
+    if (!nameChanged && !mobileChanged && !usernameChanged && !passwordChanged) {
+      notify('No changes', 'Enter a new name, mobile number, username, or password to update.'); return;
     }
     if (passwordChanged) {
       if (newPassword.length < 4) { notify('Too short', 'New password must be 4+ characters.'); return; }
@@ -47,6 +51,7 @@ export default function MyAccountScreen() {
         usernameChanged ? newUsername.trim() : undefined,
         passwordChanged ? newPassword : undefined,
         nameChanged ? newName.trim() : undefined,
+        mobileChanged ? newMobile.trim() : undefined,
       );
       router.back();
     } catch (e: any) {
@@ -66,48 +71,76 @@ export default function MyAccountScreen() {
 
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 120 }} keyboardShouldPersistTaps="handled">
+          <View style={styles.avatarRow}>
+            <View style={styles.avatar}><Text style={styles.avatarText}>{initials}</Text></View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.avatarName}>{user?.name}</Text>
+              <Text style={styles.avatarRole}>{user?.role ? user.role[0].toUpperCase() + user.role.slice(1) : ''}</Text>
+            </View>
+          </View>
+
           <View style={styles.infoBox}>
             <Ionicons name="information-circle-outline" size={16} color={colors.brandSecondary} />
-            <Text style={styles.infoText}>Change your own display name, login username, and/or password. Your current password is required to confirm.</Text>
+            <Text style={styles.infoText}>Change your own display name, mobile number, login username, and/or password. Your current password is required to confirm.</Text>
           </View>
 
-          <Text style={styles.label}>Name</Text>
-          <TextInput
-            testID="acc-name" value={newName} onChangeText={setNewName}
-            placeholder="Your name" placeholderTextColor={colors.mutedText} style={styles.input}
-          />
-
-          <Text style={styles.label}>Username</Text>
-          <TextInput
-            testID="acc-username" value={newUsername} onChangeText={(v) => setNewUsername(v.toLowerCase().replace(/\s/g, ''))}
-            autoCapitalize="none" autoCorrect={false} style={styles.input}
-          />
-
-          <Text style={styles.label}>New Password</Text>
-          <View style={styles.passwordRow}>
+          <Text style={styles.cardLabel}>Profile</Text>
+          <View style={styles.card}>
+            <Text style={styles.label}>Name</Text>
             <TextInput
-              testID="acc-new-password" value={newPassword} onChangeText={setNewPassword}
-              secureTextEntry={secure} placeholder="Leave blank to keep current password"
-              placeholderTextColor={colors.mutedText} style={[styles.input, { flex: 1, marginBottom: 0 }]}
+              testID="acc-name" value={newName} onChangeText={setNewName}
+              placeholder="Your name" placeholderTextColor={colors.mutedText} style={styles.input}
             />
-            <Pressable onPress={() => setSecure((s) => !s)} style={styles.eyeBtn} hitSlop={12} testID="acc-toggle-secure">
-              <Ionicons name={secure ? 'eye-off-outline' : 'eye-outline'} size={18} color={colors.onSurfaceTertiary} />
-            </Pressable>
+
+            <Text style={styles.label}>Mobile Number</Text>
+            <View style={styles.inputRow}>
+              <Ionicons name="logo-whatsapp" size={17} color={colors.mutedText} style={{ marginRight: 4 }} />
+              <TextInput
+                testID="acc-mobile" value={newMobile} onChangeText={(v) => setNewMobile(v.replace(/[^0-9+\s]/g, ''))}
+                placeholder="e.g. 98765 43210" placeholderTextColor={colors.mutedText} keyboardType="phone-pad"
+                style={[styles.input, { flex: 1, marginBottom: 0, borderWidth: 0, paddingHorizontal: 0 }]}
+              />
+            </View>
+            <Text style={styles.hint}>Used to send you alerts on WhatsApp — set up soon.</Text>
           </View>
 
-          <Text style={styles.label}>Confirm New Password</Text>
-          <TextInput
-            testID="acc-confirm-password" value={confirmPassword} onChangeText={setConfirmPassword}
-            secureTextEntry={secure} placeholder="Repeat new password"
-            placeholderTextColor={colors.mutedText} style={styles.input}
-          />
+          <Text style={styles.cardLabel}>Login Details</Text>
+          <View style={styles.card}>
+            <Text style={styles.label}>Username</Text>
+            <TextInput
+              testID="acc-username" value={newUsername} onChangeText={(v) => setNewUsername(v.toLowerCase().replace(/\s/g, ''))}
+              autoCapitalize="none" autoCorrect={false} style={styles.input}
+            />
 
-          <Text style={[styles.label, { marginTop: spacing.xl }]}>Current Password</Text>
-          <TextInput
-            testID="acc-current-password" value={currentPassword} onChangeText={setCurrentPassword}
-            secureTextEntry placeholder="Required to save changes"
-            placeholderTextColor={colors.mutedText} style={styles.input}
-          />
+            <Text style={styles.label}>New Password</Text>
+            <View style={styles.passwordRow}>
+              <TextInput
+                testID="acc-new-password" value={newPassword} onChangeText={setNewPassword}
+                secureTextEntry={secure} placeholder="Leave blank to keep current password"
+                placeholderTextColor={colors.mutedText} style={[styles.input, { flex: 1, marginBottom: 0 }]}
+              />
+              <Pressable onPress={() => setSecure((s) => !s)} style={styles.eyeBtn} hitSlop={12} testID="acc-toggle-secure">
+                <Ionicons name={secure ? 'eye-off-outline' : 'eye-outline'} size={18} color={colors.onSurfaceTertiary} />
+              </Pressable>
+            </View>
+
+            <Text style={styles.label}>Confirm New Password</Text>
+            <TextInput
+              testID="acc-confirm-password" value={confirmPassword} onChangeText={setConfirmPassword}
+              secureTextEntry={secure} placeholder="Repeat new password"
+              placeholderTextColor={colors.mutedText} style={[styles.input, { marginBottom: 0 }]}
+            />
+          </View>
+
+          <Text style={styles.cardLabel}>Confirm</Text>
+          <View style={[styles.card, styles.confirmCard]}>
+            <Text style={styles.label}>Current Password</Text>
+            <TextInput
+              testID="acc-current-password" value={currentPassword} onChangeText={setCurrentPassword}
+              secureTextEntry placeholder="Required to save changes"
+              placeholderTextColor={colors.mutedText} style={[styles.input, { marginBottom: 0 }]}
+            />
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
 
@@ -131,21 +164,47 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border,
   },
   title: { flex: 1, color: colors.onSurface, fontSize: 22, fontWeight: '600', fontFamily: fonts.display },
+
+  avatarRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: spacing.lg },
+  avatar: {
+    width: 56, height: 56, borderRadius: 28, backgroundColor: colors.brandTertiary,
+    borderWidth: 1, borderColor: colors.brand, alignItems: 'center', justifyContent: 'center',
+  },
+  avatarText: { color: colors.brandSecondary, fontSize: 20, fontWeight: '800' },
+  avatarName: { color: colors.onSurface, fontSize: 17, fontWeight: '700' },
+  avatarRole: { color: colors.mutedText, fontSize: 12, marginTop: 2 },
+
   infoBox: {
     flexDirection: 'row', gap: spacing.sm, alignItems: 'center', backgroundColor: colors.surfaceTertiary,
     borderRadius: radius.md, padding: spacing.md, borderWidth: 1, borderColor: colors.border, marginBottom: spacing.lg,
   },
   infoText: { color: colors.onSurfaceTertiary, fontSize: 12, flex: 1 },
-  label: { color: colors.onSurfaceSecondary, fontSize: 12, marginBottom: 6, marginTop: spacing.md, fontWeight: '600' },
+
+  cardLabel: {
+    color: colors.mutedText, fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5,
+    marginBottom: spacing.sm, marginTop: spacing.sm,
+  },
+  card: {
+    backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border,
+    padding: spacing.md, marginBottom: spacing.lg,
+  },
+  confirmCard: { borderColor: colors.brand },
+
+  label: { color: colors.onSurfaceSecondary, fontSize: 12, marginBottom: 6, marginTop: spacing.sm, fontWeight: '600' },
   input: {
-    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1,
+    backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, borderWidth: 1,
     borderColor: colors.border, color: colors.onSurface, paddingHorizontal: spacing.md,
     paddingVertical: 12, fontSize: 14, marginBottom: spacing.xs,
   },
+  inputRow: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surfaceTertiary, borderRadius: radius.md,
+    borderWidth: 1, borderColor: colors.border, paddingHorizontal: spacing.md,
+  },
+  hint: { color: colors.mutedText, fontSize: 11, marginTop: 4 },
   passwordRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   eyeBtn: {
     width: 44, height: 44, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md,
+    backgroundColor: colors.surfaceTertiary, borderRadius: radius.md,
     borderWidth: 1, borderColor: colors.border,
   },
   footer: { position: 'absolute', left: 0, right: 0, bottom: 0, padding: spacing.lg, backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.divider },
