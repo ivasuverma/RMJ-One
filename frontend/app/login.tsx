@@ -6,6 +6,7 @@ import {
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/src/auth/AuthContext';
 import { spacing, radius, images, fonts, ThemeColors } from '@/src/theme';
@@ -27,6 +28,7 @@ export default function LoginScreen() {
   const [secure, setSecure] = useState(true);
   const { login } = useAuth();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const submittingRef = useRef(false);
 
   const onSubmit = async () => {
@@ -58,6 +60,16 @@ export default function LoginScreen() {
         locations={[0, 0.45, 0.9]}
         style={StyleSheet.absoluteFill}
       />
+
+      <Pressable
+        testID="login-live-rates-btn"
+        onPress={() => router.push('/rates')}
+        style={[styles.ratesBtn, { top: insets.top + spacing.md }]}
+        hitSlop={8}
+      >
+        <Ionicons name="trending-up-outline" size={14} color={colors.onSurface} />
+        <Text style={styles.ratesBtnText}>Live Rates</Text>
+      </Pressable>
 
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
@@ -126,6 +138,13 @@ export default function LoginScreen() {
 
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
+  ratesBtn: {
+    position: 'absolute', right: spacing.xl, zIndex: 10,
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border,
+    borderRadius: radius.pill, paddingHorizontal: 14, paddingVertical: 8,
+  },
+  ratesBtnText: { color: colors.onSurface, fontSize: 12, fontWeight: '700', letterSpacing: 0.3 },
   scroll: { flexGrow: 1, justifyContent: 'space-between', padding: spacing.xl, paddingTop: 60, paddingBottom: 40 },
   brand: { alignItems: 'flex-start' },
   brandLogo: {
