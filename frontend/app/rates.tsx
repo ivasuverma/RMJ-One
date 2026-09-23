@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Image, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Image, Platform, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '@/src/api/client';
@@ -21,6 +21,8 @@ type PublicRates = {
 };
 
 const REFRESH_MS = 60000;
+const STORE_PHONE = '+919781800888';
+const WHATSAPP_CHANNEL_URL = 'https://whatsapp.com/channel/0029VbBHBNPEKyZB1820vR3n';
 
 const fmtINR = (n: number | null) => (n == null ? '—' : `₹${Math.round(n).toLocaleString('en-IN')}`);
 const fmtUSD = (n: number | null) => (n == null ? '—' : `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
@@ -165,6 +167,33 @@ export default function PublicRatesScreen() {
           </>
         )}
 
+        <View style={styles.contactRow}>
+          <Pressable
+            onPress={() => Linking.openURL(`tel:${STORE_PHONE}`)}
+            style={styles.contactBtn}
+            testID="rates-call-btn"
+          >
+            <Ionicons name="call-outline" size={17} color={colors.onSurface} />
+            <Text style={styles.contactBtnText}>Call Us</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => Linking.openURL(`https://wa.me/${STORE_PHONE.replace('+', '')}?text=${encodeURIComponent('RATE')}`)}
+            style={styles.contactBtn}
+            testID="rates-whatsapp-btn"
+          >
+            <Ionicons name="logo-whatsapp" size={17} color={colors.onSurface} />
+            <Text style={styles.contactBtnText}>WhatsApp</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => Linking.openURL(WHATSAPP_CHANNEL_URL)}
+            style={styles.contactBtn}
+            testID="rates-channel-btn"
+          >
+            <Ionicons name="megaphone-outline" size={17} color={colors.onSurface} />
+            <Text style={styles.contactBtnText}>Daily Rate Channel</Text>
+          </Pressable>
+        </View>
+
         <View style={styles.disclaimerBox}>
           <Text style={styles.disclaimerText}>
             Rates shown are indicative and for reference only, and may change without notice through the day. They
@@ -229,6 +258,13 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   refreshBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   refreshText: { color: colors.onSurfaceSecondary, fontSize: typography.caption.fontSize, fontWeight: '600' },
 
+  contactRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.lg },
+  contactBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    paddingVertical: 12, paddingHorizontal: 8,
+  },
+  contactBtnText: { color: colors.onSurface, fontSize: 12.5, fontWeight: '700', textAlign: 'center' },
   disclaimerBox: { paddingTop: spacing.lg, borderTopWidth: 1, borderTopColor: colors.divider },
   disclaimerText: { color: colors.mutedText, fontSize: 11, lineHeight: 16, textAlign: 'center' },
 });
