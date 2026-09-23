@@ -6,6 +6,7 @@ import { api } from '@/src/api/client';
 import { istTime } from '@/src/utils/datetime';
 import { spacing, radius, fonts, typography, images, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { useAuth } from '@/src/auth/AuthContext';
 
 type PublicRates = {
   store_name: string;
@@ -33,10 +34,13 @@ const fmtUSD = (n: number | null) => (n == null ? '—' : `$${n.toLocaleString('
 export default function PublicRatesScreen() {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'owner' || user?.role === 'admin';
 
   const [data, setData] = useState<PublicRates | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [fetchingNew, setFetchingNew] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const load = useCallback(async () => {
@@ -56,6 +60,21 @@ export default function PublicRatesScreen() {
     timerRef.current = setInterval(load, REFRESH_MS);
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [load]);
+
+  // Admin-only — triggers an actual new scrape of the source page (same as
+  // Settings > Rate Master's refetch), not just a re-read of the cached
+  // gold_rate_live doc like the plain Refresh button below does.
+  const fetchNewRate = async () => {
+    setFetchingNew(true);
+    try {
+      await api.post('/settings/gold-rate/refetch');
+      await load();
+    } catch (e: any) {
+      setError(e?.detail || 'Could not fetch a new rate');
+    } finally {
+      setFetchingNew(false);
+    }
+  };
 
   const updatedLabel = data?.fetched_at ? `Updated ${istTime(data.fetched_at)} IST` : null;
 
@@ -132,6 +151,16 @@ export default function PublicRatesScreen() {
                 <Ionicons name="refresh" size={14} color={colors.onSurfaceSecondary} />
                 <Text style={styles.refreshText}>Refresh</Text>
               </Pressable>
+              {isAdmin && (
+                <Pressable onPress={fetchNewRate} disabled={fetchingNew} style={styles.refreshBtn} testID="rates-fetch-new-btn" hitSlop={10}>
+                  {fetchingNew ? (
+                    <ActivityIndicator size="small" color={colors.brandSecondary} />
+                  ) : (
+                    <Ionicons name="cloud-download-outline" size={14} color={colors.brandSecondary} />
+                  )}
+                  <Text style={[styles.refreshText, { color: colors.brandSecondary }]}>Fetch New Rate</Text>
+                </Pressable>
+              )}
             </View>
           </>
         )}

@@ -66,14 +66,19 @@ const USDINR_LABEL = process.env.GOLD_RATE_USDINR_LABEL || 'USD/INR';
       // carry a decimal part (spot $ prices and USD/INR do; INR rupee
       // amounts don't, but matching one anyway is harmless).
       //
-      // Only numbers AFTER the label's own text count. Climbing up the DOM
-      // can land on an ancestor that also wraps a neighboring row (e.g. a
-      // table row holding both "GOLD SPOT 2634.50" and "SILVER SPOT 31.20"
-      // side by side) - counting numbers anywhere in that ancestor let an
-      // earlier row's value satisfy minNums and get returned instead of this
-      // row's own value (this is what made "silver spot" read back a stuck/
-      // wrong number - it was quietly picking up gold's).
-      function extractRow(label, minNums) {
+      // Only numbers AFTER the label's own text count (numbers from an
+      // earlier, unrelated row merged into the same ancestor don't get
+      // counted). Two more exclusions, found from a real captured row
+      // ("SILVER RETAIL HAJIR – 99.99%SILVER 5KG LOT" — no price in it at
+      // all): a number immediately followed by '%' is a purity figure, and
+      // for the two retail rows (minValue set) anything under minValue is
+      // noise like a lot-size count ("5" from "5KG LOT"), not a price — real
+      // gold/silver retail rates are always 4+ digits. Both used to be able
+      // to satisfy minNums on their own, on a level of the tree the walk
+      // reached before it got to the row's actual Buy/Sell numbers, so
+      // extraction stopped there and returned lot-size/purity noise as if
+      // it were the rate.
+      function extractRow(label, minNums, minValue) {
         const all = Array.from(document.querySelectorAll('body *'));
         const hit = all.find((el) => el.children.length === 0 && el.textContent && el.textContent.includes(label));
         if (!hit) return null;
@@ -83,9 +88,18 @@ const USDINR_LABEL = process.env.GOLD_RATE_USDINR_LABEL || 'USD/INR';
           const idx = text.indexOf(label);
           if (idx !== -1) {
             const after = text.slice(idx + label.length);
-            const nums = after.match(/\d[\d,]*(?:\.\d+)?/g);
-            if (nums && nums.length >= minNums) {
-              return { rowText: text.replace(/\s+/g, ' ').trim().slice(0, 200), numbers: nums.map((n) => parseFloat(n.replace(/,/g, ''))) };
+            const numRe = /\d[\d,]*(?:\.\d+)?/g;
+            const nums = [];
+            let m;
+            while ((m = numRe.exec(after)) !== null) {
+              const tail = after.slice(m.index + m[0].length, m.index + m[0].length + 2);
+              if (/^\s?%/.test(tail)) continue; // purity, e.g. "99.99%" — never the price
+              const val = parseFloat(m[0].replace(/,/g, ''));
+              if (val < (minValue || 0)) continue; // lot-size/count noise, too small to be a real price
+              nums.push(val);
+            }
+            if (nums.length >= minNums) {
+              return { rowText: text.replace(/\s+/g, ' ').trim().slice(0, 200), numbers: nums };
             }
           }
           node = node.parentElement;
@@ -93,7 +107,7 @@ const USDINR_LABEL = process.env.GOLD_RATE_USDINR_LABEL || 'USD/INR';
         return null;
       }
       return {
-        gold: extractRow(goldLabel, 2), silver: extractRow(silverLabel, 2),
+        gold: extractRow(goldLabel, 2, 1000), silver: extractRow(silverLabel, 2, 1000),
         xau: extractRow(xauLabel, 1), xag: extractRow(xagLabel, 1), usd_inr: extractRow(usdInrLabel, 1),
       };
     }, GOLD_LABEL, SILVER_LABEL, XAU_LABEL, XAG_LABEL, USDINR_LABEL);
