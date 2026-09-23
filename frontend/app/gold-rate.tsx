@@ -53,7 +53,7 @@ export default function RateUpdaterScreen() {
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [fetchTime, setFetchTime] = useState('12:30');
+  const [refreshStart, setRefreshStart] = useState('12:30');
   const [template, setTemplate] = useState('');
   const [channelConnected, setChannelConnected] = useState(false);
   const [today, setToday] = useState<Today>(null);
@@ -86,7 +86,7 @@ export default function RateUpdaterScreen() {
   const load = async () => {
     try {
       const g = await api.get<any>('/settings/gold-rate');
-      setFetchTime(g.fetch_time || '12:30');
+      setRefreshStart(g.refresh_start || '12:30');
       setTemplate(g.template || '');
       setChannelConnected(!!g.channel_connected);
       applyToday(g.today || null, g.template || '');
@@ -203,7 +203,7 @@ export default function RateUpdaterScreen() {
     ? `Couldn't fetch: ${today.error}`
     : today?.gold_rate
       ? `${today.manual ? 'Entered by hand' : 'Fetched'}${today.fetched_at ? ` at ${istTime(today.fetched_at)}` : ''}${today.fetched_gold != null && (today.gold_margin_applied || today.silver_margin_applied) ? ` · margin added` : ''}`
-      : `Not fetched yet today — fetches by itself at ${fetchTime} IST`;
+      : `Not fetched yet today — fetches by itself starting at ${refreshStart} IST`;
   const statusOk = !!today?.sent_at || !!today?.confirmed;
 
   return (

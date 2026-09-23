@@ -17,15 +17,15 @@ type Computed = { key: string; rate: number | null; error: string | null; base_v
 type State = { items: ServerItem[]; base: { gold: number; silver: number; date: string } | null; defaults: ServerItem[]; computed: Computed[] };
 
 type Daily = {
-  fetch_time: string; gold_margin: string; silver_margin: string;
+  gold_margin: string; silver_margin: string;
   gold_buy_margin: string; silver_buy_margin: string;
   skip_weekend_fetch: boolean; auto_send_enabled: boolean;
-  chatbot_refresh_enabled: boolean; chatbot_refresh_interval_min: string; chatbot_refresh_start: string; chatbot_refresh_end: string;
+  refresh_enabled: boolean; refresh_interval_min: string; refresh_start: string; refresh_end: string;
 };
 const DAILY_DEFAULT: Daily = {
-  fetch_time: '12:30', gold_margin: '0', silver_margin: '0', gold_buy_margin: '0', silver_buy_margin: '0',
+  gold_margin: '0', silver_margin: '0', gold_buy_margin: '0', silver_buy_margin: '0',
   skip_weekend_fetch: true, auto_send_enabled: false,
-  chatbot_refresh_enabled: true, chatbot_refresh_interval_min: '120', chatbot_refresh_start: '12:30', chatbot_refresh_end: '19:00',
+  refresh_enabled: true, refresh_interval_min: '120', refresh_start: '12:30', refresh_end: '19:00',
 };
 type LiveDebug = {
   fetched_at: string | null; error: string | null;
@@ -74,11 +74,11 @@ export default function RateMasterScreen() {
         const g = await api.get<any>('/settings/gold-rate');
         setBroadcastTemplate(g.template || '');
         setDaily({
-          fetch_time: g.fetch_time || '12:30', gold_margin: String(g.gold_margin ?? 0), silver_margin: String(g.silver_margin ?? 0),
+          gold_margin: String(g.gold_margin ?? 0), silver_margin: String(g.silver_margin ?? 0),
           gold_buy_margin: String(g.gold_buy_margin ?? 0), silver_buy_margin: String(g.silver_buy_margin ?? 0),
           skip_weekend_fetch: g.skip_weekend_fetch !== false, auto_send_enabled: g.auto_send_enabled === true,
-          chatbot_refresh_enabled: g.chatbot_refresh_enabled !== false, chatbot_refresh_interval_min: String(g.chatbot_refresh_interval_min ?? 120),
-          chatbot_refresh_start: g.chatbot_refresh_start || '12:30', chatbot_refresh_end: g.chatbot_refresh_end || '19:00',
+          refresh_enabled: g.refresh_enabled !== false, refresh_interval_min: String(g.refresh_interval_min ?? 120),
+          refresh_start: g.refresh_start || '12:30', refresh_end: g.refresh_end || '19:00',
         });
         setDailyDirty(false);
         setLive(g.live || null);
@@ -111,11 +111,11 @@ export default function RateMasterScreen() {
     setDailySaving(true);
     try {
       await api.put('/settings/gold-rate/config', {
-        fetch_time: daily.fetch_time, gold_margin: parseInt(daily.gold_margin, 10) || 0, silver_margin: parseInt(daily.silver_margin, 10) || 0,
+        gold_margin: parseInt(daily.gold_margin, 10) || 0, silver_margin: parseInt(daily.silver_margin, 10) || 0,
         gold_buy_margin: parseInt(daily.gold_buy_margin, 10) || 0, silver_buy_margin: parseInt(daily.silver_buy_margin, 10) || 0,
         template: broadcastTemplate || undefined, skip_weekend_fetch: daily.skip_weekend_fetch, auto_send_enabled: daily.auto_send_enabled,
-        chatbot_refresh_enabled: daily.chatbot_refresh_enabled, chatbot_refresh_interval_min: parseInt(daily.chatbot_refresh_interval_min, 10) || 120,
-        chatbot_refresh_start: daily.chatbot_refresh_start, chatbot_refresh_end: daily.chatbot_refresh_end,
+        refresh_enabled: daily.refresh_enabled, refresh_interval_min: parseInt(daily.refresh_interval_min, 10) || 120,
+        refresh_start: daily.refresh_start, refresh_end: daily.refresh_end,
       });
       toast.success('Daily rate settings saved'); setDailyDirty(false);
     } catch (e: any) { toast.error(e?.detail || 'Could not save'); }
@@ -153,13 +153,20 @@ export default function RateMasterScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}>
 
         <View style={styles.card} testID="rm-daily-card">
-          <Text style={styles.cardTitle}>Daily rate</Text>
-          <Text style={styles.hint}>How the base gold and silver rate is fetched each day. Sending it is done on the Rate Updater screen.</Text>
-          <View style={styles.row2}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.label}>Fetch time (24h, IST)</Text>
-              <TextInput value={daily.fetch_time} onChangeText={(v) => setD({ fetch_time: v })} editable={isOwner} placeholder="12:30" placeholderTextColor={colors.mutedText} style={styles.input} testID="gold-rate-fetch-time" />
-            </View>
+          <Text style={styles.cardTitle}>Auto-fetch schedule</Text>
+          <Text style={styles.hint}>
+            One shared schedule for everything: the WhatsApp broadcast draft, the RATE chatbot reply, the public
+            rates page, and the dashboard tile. Fetches every N minutes in the window below — once you confirm or
+            send today's rate, it stops touching that draft for the rest of the day, but keeps the others fresh.
+          </Text>
+          <View style={styles.switchRow}>
+            <View style={{ flex: 1 }}><Text style={styles.label}>Auto-fetch enabled</Text></View>
+            <Switch value={daily.refresh_enabled} onValueChange={(v) => setD({ refresh_enabled: v })} disabled={!isOwner} trackColor={{ true: colors.brandPrimary, false: colors.border }} thumbColor={colors.surface} testID="gold-rate-refresh-enabled-toggle" />
+          </View>
+          <View style={[styles.row2, !daily.refresh_enabled && { opacity: 0.5 }]}>
+            <View style={{ flex: 1 }}><Text style={styles.label}>Every (minutes)</Text><TextInput value={daily.refresh_interval_min} onChangeText={(v) => setD({ refresh_interval_min: v.replace(/\D/g, '') })} editable={isOwner && daily.refresh_enabled} keyboardType="numeric" style={styles.input} testID="gold-rate-refresh-interval" /></View>
+            <View style={{ flex: 1 }}><Text style={styles.label}>From</Text><TextInput value={daily.refresh_start} onChangeText={(v) => setD({ refresh_start: v })} editable={isOwner && daily.refresh_enabled} placeholder="12:30" placeholderTextColor={colors.mutedText} style={styles.input} testID="gold-rate-refresh-start" /></View>
+            <View style={{ flex: 1 }}><Text style={styles.label}>To</Text><TextInput value={daily.refresh_end} onChangeText={(v) => setD({ refresh_end: v })} editable={isOwner && daily.refresh_enabled} placeholder="19:00" placeholderTextColor={colors.mutedText} style={styles.input} testID="gold-rate-refresh-end" /></View>
           </View>
           <View style={styles.row2}>
             <View style={{ flex: 1 }}>
@@ -187,20 +194,8 @@ export default function RateMasterScreen() {
             <Switch value={daily.skip_weekend_fetch} onValueChange={(v) => setD({ skip_weekend_fetch: v })} disabled={!isOwner} trackColor={{ true: colors.brandPrimary, false: colors.border }} thumbColor={colors.surface} testID="gold-rate-skip-weekend-toggle" />
           </View>
           <View style={styles.switchRow}>
-            <View style={{ flex: 1 }}><Text style={styles.label}>Fully automatic — fetch &amp; send daily</Text><Text style={styles.hint}>Each day's fetch goes straight out, with no review. Off means it waits for you on the Rate Updater screen.</Text></View>
+            <View style={{ flex: 1 }}><Text style={styles.label}>Fully automatic — fetch &amp; send daily</Text><Text style={styles.hint}>The first fetch each day (right at "From" above) goes straight out, with no review. Off means it waits for you on the Rate Updater screen.</Text></View>
             <Switch value={daily.auto_send_enabled} onValueChange={(v) => setD({ auto_send_enabled: v })} disabled={!isOwner} trackColor={{ true: colors.brandPrimary, false: colors.border }} thumbColor={colors.surface} testID="gold-rate-auto-send-toggle" />
-          </View>
-
-          <Text style={[styles.cardTitle, { marginTop: spacing.md }]}>Chatbot rate freshness</Text>
-          <Text style={styles.hint}>Keeps the rate the WhatsApp chatbot quotes topped up through the day, until you confirm today's rate.</Text>
-          <View style={styles.switchRow}>
-            <View style={{ flex: 1 }}><Text style={styles.label}>Auto-refresh for the chatbot</Text></View>
-            <Switch value={daily.chatbot_refresh_enabled} onValueChange={(v) => setD({ chatbot_refresh_enabled: v })} disabled={!isOwner} trackColor={{ true: colors.brandPrimary, false: colors.border }} thumbColor={colors.surface} testID="gold-rate-refresh-enabled-toggle" />
-          </View>
-          <View style={[styles.row2, !daily.chatbot_refresh_enabled && { opacity: 0.5 }]}>
-            <View style={{ flex: 1 }}><Text style={styles.label}>Every (minutes)</Text><TextInput value={daily.chatbot_refresh_interval_min} onChangeText={(v) => setD({ chatbot_refresh_interval_min: v.replace(/\D/g, '') })} editable={isOwner && daily.chatbot_refresh_enabled} keyboardType="numeric" style={styles.input} testID="gold-rate-refresh-interval" /></View>
-            <View style={{ flex: 1 }}><Text style={styles.label}>From</Text><TextInput value={daily.chatbot_refresh_start} onChangeText={(v) => setD({ chatbot_refresh_start: v })} editable={isOwner && daily.chatbot_refresh_enabled} placeholder="12:30" placeholderTextColor={colors.mutedText} style={styles.input} testID="gold-rate-refresh-start" /></View>
-            <View style={{ flex: 1 }}><Text style={styles.label}>To</Text><TextInput value={daily.chatbot_refresh_end} onChangeText={(v) => setD({ chatbot_refresh_end: v })} editable={isOwner && daily.chatbot_refresh_enabled} placeholder="19:00" placeholderTextColor={colors.mutedText} style={styles.input} testID="gold-rate-refresh-end" /></View>
           </View>
 
           {isOwner ? (

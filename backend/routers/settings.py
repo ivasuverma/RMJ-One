@@ -223,7 +223,6 @@ async def list_whatsapp_messages(
 # fetched number needs a human look (margin on top, possible scrape hiccup)
 # before it reaches the WhatsApp Channel's followers.
 class GoldRateConfigIn(BaseModel):
-    fetch_time: str = '12:30'   # "HH:MM", 24-hour, IST — mirrors gold_rate.DEFAULT_FETCH_TIME
     gold_margin: int = 0
     silver_margin: int = 0
     # Subtracted from the (already-margined) sell rate to get the buy rate
@@ -232,12 +231,14 @@ class GoldRateConfigIn(BaseModel):
     gold_buy_margin: int = 0
     silver_buy_margin: int = 0
     template: Optional[str] = None   # None/blank = use the built-in default
-    # Chatbot live-rate refresh (RATE keyword freshness) — independent of
-    # fetch_time above, which is only the once-daily broadcast fetch.
-    chatbot_refresh_enabled: bool = True
-    chatbot_refresh_interval_min: int = 120
-    chatbot_refresh_start: str = '12:30'
-    chatbot_refresh_end: str = '19:00'
+    # One shared periodic schedule drives both the live rate cache and
+    # today's still-open broadcast draft — see gold_rate.DEFAULT_REFRESH_*
+    # and _auto_fetch_cycle for how the two used to be (and no longer are)
+    # independent schedules.
+    refresh_enabled: bool = True
+    refresh_interval_min: int = 120
+    refresh_start: str = '12:30'
+    refresh_end: str = '19:00'
     # Fully-automatic daily send — off by default, deliberate owner opt-in
     # only (see gold_rate.py's DEFAULT_AUTO_SEND_ENABLED docstring).
     auto_send_enabled: bool = False
@@ -282,7 +283,7 @@ async def get_gold_rate(_: dict = Depends(require_staff_or_module('gold_rate')))
 @router.put('/settings/gold-rate/config')
 async def update_gold_rate_config(body: GoldRateConfigIn, user: dict = Depends(require_owner)):
     import gold_rate
-    for label, val in (('fetch_time', body.fetch_time), ('chatbot_refresh_start', body.chatbot_refresh_start), ('chatbot_refresh_end', body.chatbot_refresh_end)):
+    for label, val in (('refresh_start', body.refresh_start), ('refresh_end', body.refresh_end)):
         if not re.match(r'^([01]\d|2[0-3]):[0-5]\d$', val):
             raise HTTPException(status_code=400, detail=f'{label} must be HH:MM (24-hour)')
     if body.template:
@@ -291,13 +292,13 @@ async def update_gold_rate_config(body: GoldRateConfigIn, user: dict = Depends(r
         except Exception as e:
             raise HTTPException(status_code=400, detail=f'Template has an unknown placeholder: {e}')
     payload = {
-        'id': 'gold_rate_config', 'fetch_time': body.fetch_time,
+        'id': 'gold_rate_config',
         'gold_margin': body.gold_margin, 'silver_margin': body.silver_margin,
         'gold_buy_margin': body.gold_buy_margin, 'silver_buy_margin': body.silver_buy_margin,
         'template': body.template,
-        'chatbot_refresh_enabled': body.chatbot_refresh_enabled,
-        'chatbot_refresh_interval_min': max(15, body.chatbot_refresh_interval_min),
-        'chatbot_refresh_start': body.chatbot_refresh_start, 'chatbot_refresh_end': body.chatbot_refresh_end,
+        'refresh_enabled': body.refresh_enabled,
+        'refresh_interval_min': max(15, body.refresh_interval_min),
+        'refresh_start': body.refresh_start, 'refresh_end': body.refresh_end,
         'auto_send_enabled': body.auto_send_enabled,
         'skip_weekend_fetch': body.skip_weekend_fetch,
         'updated_at': now_utc().isoformat(),
@@ -305,7 +306,8 @@ async def update_gold_rate_config(body: GoldRateConfigIn, user: dict = Depends(r
     await db.settings.update_one({'id': 'gold_rate_config'}, {'$set': payload}, upsert=True)
     await log_audit(
         user, 'settings.gold_rate.config_update', 'settings', 'gold_rate_config',
-        f'{body.fetch_time} gold+{body.gold_margin}(-{body.gold_buy_margin}buy) '
+        f'every {body.refresh_interval_min}min {body.refresh_start}-{body.refresh_end} '
+        f'gold+{body.gold_margin}(-{body.gold_buy_margin}buy) '
         f'silver+{body.silver_margin}(-{body.silver_buy_margin}buy) auto_send={body.auto_send_enabled} skip_weekend={body.skip_weekend_fetch}',
     )
     return await gold_rate.get_config()

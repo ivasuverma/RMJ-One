@@ -81,11 +81,12 @@ export default function WhatsAppTemplatesScreen() {
           chatbot_rate_template: chatbotTemplate || undefined,
         }),
         api.put('/settings/gold-rate/config', {
-          fetch_time: grConfig.fetch_time, gold_margin: grConfig.gold_margin, silver_margin: grConfig.silver_margin,
+          gold_margin: grConfig.gold_margin, silver_margin: grConfig.silver_margin,
+          gold_buy_margin: grConfig.gold_buy_margin, silver_buy_margin: grConfig.silver_buy_margin,
           template: goldRateTemplate || undefined,
-          chatbot_refresh_enabled: grConfig.chatbot_refresh_enabled, chatbot_refresh_interval_min: grConfig.chatbot_refresh_interval_min,
-          chatbot_refresh_start: grConfig.chatbot_refresh_start, chatbot_refresh_end: grConfig.chatbot_refresh_end,
-          auto_send_enabled: grConfig.auto_send_enabled,
+          refresh_enabled: grConfig.refresh_enabled, refresh_interval_min: grConfig.refresh_interval_min,
+          refresh_start: grConfig.refresh_start, refresh_end: grConfig.refresh_end,
+          auto_send_enabled: grConfig.auto_send_enabled, skip_weekend_fetch: grConfig.skip_weekend_fetch,
         }),
       ]);
       toast.success('Templates saved');

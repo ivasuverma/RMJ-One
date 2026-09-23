@@ -7,7 +7,7 @@ from data RMJ-One already has:
 
   RATE   -> latest gold/silver rate (gold_rate.py's gold_rate_live cache,
             refreshed periodically through the day — see
-            gold_rate._maybe_refresh_live_rate)
+            gold_rate._auto_fetch_cycle)
   STATUS -> the sender's most recent repair item's status
 
 Anything else gets no reply at all — silent, not a help prompt. Deliberately
@@ -58,11 +58,11 @@ def _verify_signature(raw_body: bytes, signature_header: str) -> bool:
 
 
 async def _rate_reply() -> str:
-    # Reads the chatbot's own live-refresh cache (gold_rate.py's
-    # gold_rate_live, kept fresh independently of the once-daily broadcast
-    # doc — see _maybe_refresh_live_rate), not gold_rate_today, so RATE
-    # stays close to accurate through the day regardless of whether/when
-    # the broadcast was sent.
+    # Reads the live-refresh cache (gold_rate.py's gold_rate_live, kept
+    # fresh by the same periodic auto-fetch cycle that also feeds the
+    # broadcast draft — see gold_rate._auto_fetch_cycle), not gold_rate_today
+    # directly, so RATE stays close to accurate through the day regardless
+    # of whether/when the broadcast was sent.
     live = await db.settings.find_one({'id': 'gold_rate_live'}, {'_id': 0})
     # The rate confirmed on the Rate Updater screen today is THE rate: it is what was sent to the
     # channel and the LED board, so the chatbot answers with the same numbers. Before anything is
