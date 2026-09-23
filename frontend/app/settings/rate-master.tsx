@@ -19,12 +19,12 @@ type State = { items: ServerItem[]; base: { gold: number; silver: number; date: 
 type Daily = {
   gold_margin: string; silver_margin: string;
   gold_buy_margin: string; silver_buy_margin: string;
-  skip_weekend_fetch: boolean; auto_send_enabled: boolean;
+  skip_weekend_fetch: boolean; auto_send_enabled: boolean; auto_send_time: string;
   refresh_enabled: boolean; refresh_interval_min: string; refresh_start: string; refresh_end: string;
 };
 const DAILY_DEFAULT: Daily = {
   gold_margin: '0', silver_margin: '0', gold_buy_margin: '0', silver_buy_margin: '0',
-  skip_weekend_fetch: true, auto_send_enabled: false,
+  skip_weekend_fetch: true, auto_send_enabled: false, auto_send_time: '12:30',
   refresh_enabled: true, refresh_interval_min: '120', refresh_start: '12:30', refresh_end: '19:00',
 };
 type LiveDebug = {
@@ -77,6 +77,7 @@ export default function RateMasterScreen() {
           gold_margin: String(g.gold_margin ?? 0), silver_margin: String(g.silver_margin ?? 0),
           gold_buy_margin: String(g.gold_buy_margin ?? 0), silver_buy_margin: String(g.silver_buy_margin ?? 0),
           skip_weekend_fetch: g.skip_weekend_fetch !== false, auto_send_enabled: g.auto_send_enabled === true,
+          auto_send_time: g.auto_send_time || '12:30',
           refresh_enabled: g.refresh_enabled !== false, refresh_interval_min: String(g.refresh_interval_min ?? 120),
           refresh_start: g.refresh_start || '12:30', refresh_end: g.refresh_end || '19:00',
         });
@@ -113,7 +114,8 @@ export default function RateMasterScreen() {
       await api.put('/settings/gold-rate/config', {
         gold_margin: parseInt(daily.gold_margin, 10) || 0, silver_margin: parseInt(daily.silver_margin, 10) || 0,
         gold_buy_margin: parseInt(daily.gold_buy_margin, 10) || 0, silver_buy_margin: parseInt(daily.silver_buy_margin, 10) || 0,
-        template: broadcastTemplate || undefined, skip_weekend_fetch: daily.skip_weekend_fetch, auto_send_enabled: daily.auto_send_enabled,
+        template: broadcastTemplate || undefined, skip_weekend_fetch: daily.skip_weekend_fetch,
+        auto_send_enabled: daily.auto_send_enabled, auto_send_time: daily.auto_send_time,
         refresh_enabled: daily.refresh_enabled, refresh_interval_min: parseInt(daily.refresh_interval_min, 10) || 120,
         refresh_start: daily.refresh_start, refresh_end: daily.refresh_end,
       });
@@ -155,9 +157,10 @@ export default function RateMasterScreen() {
         <View style={styles.card} testID="rm-daily-card">
           <Text style={styles.cardTitle}>Auto-fetch schedule</Text>
           <Text style={styles.hint}>
-            One shared schedule for everything: the WhatsApp broadcast draft, the RATE chatbot reply, the public
-            rates page, and the dashboard tile. Fetches every N minutes in the window below — once you confirm or
-            send today's rate, it stops touching that draft for the rest of the day, but keeps the others fresh.
+            One shared refresh schedule for the WhatsApp broadcast draft, the RATE chatbot reply, the public rates
+            page, and the dashboard tile. Fetches every N minutes in the window below — once you confirm or send
+            today's rate, it stops touching that draft for the rest of the day, but keeps the others fresh. If
+            "Fully automatic" below is on, the actual send still only happens once a day, at its own time.
           </Text>
           <View style={styles.switchRow}>
             <View style={{ flex: 1 }}><Text style={styles.label}>Auto-fetch enabled</Text></View>
@@ -190,13 +193,19 @@ export default function RateMasterScreen() {
             </View>
           </View>
           <View style={styles.switchRow}>
-            <View style={{ flex: 1 }}><Text style={styles.label}>Skip Saturday &amp; Sunday</Text><Text style={styles.hint}>The market is closed — no fetch on weekends, and never an automatic send.</Text></View>
+            <View style={{ flex: 1 }}><Text style={styles.label}>Skip Sunday</Text><Text style={styles.hint}>The market is closed — no fetch on Sunday, and never an automatic send.</Text></View>
             <Switch value={daily.skip_weekend_fetch} onValueChange={(v) => setD({ skip_weekend_fetch: v })} disabled={!isOwner} trackColor={{ true: colors.brandPrimary, false: colors.border }} thumbColor={colors.surface} testID="gold-rate-skip-weekend-toggle" />
           </View>
           <View style={styles.switchRow}>
-            <View style={{ flex: 1 }}><Text style={styles.label}>Fully automatic — fetch &amp; send daily</Text><Text style={styles.hint}>The first fetch each day (right at "From" above) goes straight out, with no review. Off means it waits for you on the Rate Updater screen.</Text></View>
+            <View style={{ flex: 1 }}><Text style={styles.label}>Fully automatic — fetch &amp; send daily</Text><Text style={styles.hint}>Sends once a day, at the time below, straight out with no review. Off means it waits for you on the Rate Updater screen.</Text></View>
             <Switch value={daily.auto_send_enabled} onValueChange={(v) => setD({ auto_send_enabled: v })} disabled={!isOwner} trackColor={{ true: colors.brandPrimary, false: colors.border }} thumbColor={colors.surface} testID="gold-rate-auto-send-toggle" />
           </View>
+          {daily.auto_send_enabled && (
+            <View style={{ flex: 1, maxWidth: 160 }}>
+              <Text style={styles.label}>Send time (24h, IST)</Text>
+              <TextInput value={daily.auto_send_time} onChangeText={(v) => setD({ auto_send_time: v })} editable={isOwner} placeholder="12:30" placeholderTextColor={colors.mutedText} style={styles.input} testID="gold-rate-auto-send-time" />
+            </View>
+          )}
 
           {isOwner ? (
             <Pressable onPress={saveDaily} disabled={dailySaving || !dailyDirty} style={[styles.primaryBtn, (dailySaving || !dailyDirty) && { opacity: 0.5 }]} testID="gold-rate-save-config">
