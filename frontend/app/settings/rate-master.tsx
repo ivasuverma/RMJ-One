@@ -152,14 +152,14 @@ export default function RateMasterScreen() {
               <TextInput value={daily.silver_margin} onChangeText={(v) => setD({ silver_margin: v.replace(/[^0-9\-]/g, '') })} editable={isOwner} keyboardType="numeric" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} testID="gold-rate-silver-margin" />
             </View>
           </View>
-          <Text style={styles.hint}>Buy rate (shown on the public rates page) is the sell rate above minus this spread — independent of the margins above.</Text>
+          <Text style={styles.hint}>Buyback rate (shown on the public rates page) is the sell rate above minus this spread — independent of the margins above.</Text>
           <View style={styles.row2}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.label}>Gold buy spread (₹)</Text>
+              <Text style={styles.label}>Gold buyback spread (₹)</Text>
               <TextInput value={daily.gold_buy_margin} onChangeText={(v) => setD({ gold_buy_margin: v.replace(/[^0-9\-]/g, '') })} editable={isOwner} keyboardType="numeric" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} testID="gold-rate-gold-buy-margin" />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.label}>Silver buy spread (₹)</Text>
+              <Text style={styles.label}>Silver buyback spread (₹)</Text>
               <TextInput value={daily.silver_buy_margin} onChangeText={(v) => setD({ silver_buy_margin: v.replace(/[^0-9\-]/g, '') })} editable={isOwner} keyboardType="numeric" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} testID="gold-rate-silver-buy-margin" />
             </View>
           </View>
