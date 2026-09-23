@@ -20,6 +20,7 @@ export type AccessAccount = {
   designation?: string; status?: string; module_access: string[] | null; resolved_modules: string[];
   module_rights?: Record<string, Rights>; cashbook_counter_ids?: string[];
   notifications_enabled?: boolean; notif_prefs?: Record<string, boolean>;
+  notif_prefs_whatsapp?: Record<string, boolean>;
   doc_category_rights?: Record<string, DocRight>; doc_see_done?: boolean;
 };
 
@@ -39,6 +40,7 @@ export function useAccessEditor(accountId: string | undefined) {
   const [mobile, setMobile] = useState('');
   const [notifOn, setNotifOn] = useState(true);
   const [notifPrefs, setNotifPrefs] = useState<Record<string, boolean>>({});
+  const [notifPrefsWhatsapp, setNotifPrefsWhatsapp] = useState<Record<string, boolean>>({});
   const [docRights, setDocRights] = useState<Record<string, DocRight>>({});
   const [seeDone, setSeeDone] = useState(true);
 
@@ -62,12 +64,17 @@ export function useAccessEditor(accountId: string | undefined) {
         setMobile(a.mobile || '');
         setNotifOn(a.notifications_enabled !== false);
         const prefs: Record<string, boolean> = {};
+        const prefsWa: Record<string, boolean> = {};
         for (const nmod of nm) {
           prefs[nmod.key] = a.notif_prefs && nmod.key in a.notif_prefs
             ? !!a.notif_prefs[nmod.key]
             : nmod.default_roles.includes(a.role);
+          prefsWa[nmod.key] = a.notif_prefs_whatsapp && nmod.key in a.notif_prefs_whatsapp
+            ? !!a.notif_prefs_whatsapp[nmod.key]
+            : nmod.default_roles.includes(a.role);
         }
         setNotifPrefs(prefs);
+        setNotifPrefsWhatsapp(prefsWa);
         setDocRights({ ...(a.doc_category_rights || {}) });
         setSeeDone(a.doc_see_done !== false);
       }
@@ -129,7 +136,7 @@ export function useAccessEditor(accountId: string | undefined) {
           ...(opts?.newPassword?.trim() ? { password: opts.newPassword.trim() } : {}),
         });
       }
-      const payload: any = { notifications_enabled: notifOn, notif_prefs: notifPrefs };
+      const payload: any = { notifications_enabled: notifOn, notif_prefs: notifPrefs, notif_prefs_whatsapp: notifPrefsWhatsapp };
       if (!isOwner) {
         const mr: Record<string, Rights> = {};
         if (isEmployee) {
@@ -156,7 +163,7 @@ export function useAccessEditor(accountId: string | undefined) {
     } finally {
       setSaving(false);
     }
-  }, [acc, notifOn, notifPrefs, isOwner, isEmployee, availableModules, mods, rights, docRights, counterSel, seeDone, mobile]);
+  }, [acc, notifOn, notifPrefs, notifPrefsWhatsapp, isOwner, isEmployee, availableModules, mods, rights, docRights, counterSel, seeDone, mobile]);
 
   return {
     acc, loading, loadError, saving, isOwner, isEmployee,
@@ -164,6 +171,7 @@ export function useAccessEditor(accountId: string | undefined) {
     mods, toggleMod, rights, toggleRight, counterSel, toggleCounter,
     mobile, setMobile,
     notifOn, setNotifOn, notifPrefs, setNotifPrefs,
+    notifPrefsWhatsapp, setNotifPrefsWhatsapp,
     docRights, toggleDoc, seeDone, setSeeDone,
     save, reload: load,
   };
