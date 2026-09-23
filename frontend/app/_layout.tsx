@@ -69,7 +69,17 @@ function AppShell() {
   // repeatedly — the browser no-ops an already-registered worker.
   useEffect(() => {
     if (Platform.OS !== 'web' || typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
-    navigator.serviceWorker.register('/sw.js').catch(() => { /* offline support just won't activate */ });
+    try {
+      // navigator.serviceWorker.register() throws SYNCHRONOUSLY (not a
+      // rejected promise) when this page is running inside a sandboxed
+      // iframe missing the allow-same-origin flag — e.g. embedded on
+      // another site's homepage via a site builder's preview canvas (see
+      // app/rates.tsx). A synchronous throw here would otherwise escape
+      // this effect and hit the app's top-level ErrorBoundary, taking the
+      // whole app down over a feature (offline caching) nothing but this
+      // one screen needs anyway.
+      navigator.serviceWorker.register('/sw.js').catch(() => { /* offline support just won't activate */ });
+    } catch { /* same — sandboxed/restricted context, offline support just won't activate */ }
     // Resume any document uploads left in the on-device outbox (e.g. the app
     // was closed mid-upload) — they retry automatically in the background.
     startUploadQueue();
