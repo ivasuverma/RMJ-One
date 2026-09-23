@@ -2,6 +2,46 @@ import { Platform } from 'react-native';
 import { storage } from '@/src/utils/storage';
 
 const BASE = process.env.EXPO_PUBLIC_BACKEND_URL || '';
+// Optional — the shop server's own LAN address (e.g. http://192.168.31.31:8000).
+// Set only on builds where that's meaningful (see ops/setup-new-pc.ps1); blank
+// everywhere else, which disables the fallback below entirely. The point: the
+// backend runs on the shop's own on-site server, so unlike a cloud-hosted
+// backend, the shop's WiFi can keep working even when its internet doesn't —
+// a device still on that WiFi can reach the server directly.
+const LOCAL_BASE = process.env.EXPO_PUBLIC_LOCAL_BACKEND_URL || '';
+const PRIMARY_TIMEOUT_MS = 6000;
+// Once the primary's found unreachable, assume so for a while rather than
+// re-probing (and paying its timeout) on every single request — a real
+// outage doesn't clear up request-to-request.
+const FALLBACK_COOLDOWN_MS = 60000;
+let primaryDownUntil = 0;
+
+// Tries the primary backend first; if LOCAL_BASE is configured and the
+// primary is genuinely unreachable (times out or fails to connect — NOT a
+// reachable server returning an HTTP error), retries the same request
+// against it. A no-op wrapper (plain fetch, no timeout added) when
+// LOCAL_BASE isn't set, so this changes nothing for any build that doesn't
+// opt in.
+async function smartFetch(path: string, init: RequestInit): Promise<Response> {
+  if (!LOCAL_BASE || LOCAL_BASE === BASE) {
+    return fetch(`${BASE}/api${path}`, init);
+  }
+  if (Date.now() >= primaryDownUntil) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), PRIMARY_TIMEOUT_MS);
+    try {
+      const res = await fetch(`${BASE}/api${path}`, { ...init, signal: ctrl.signal });
+      clearTimeout(timer);
+      return res;
+    } catch {
+      clearTimeout(timer);
+      primaryDownUntil = Date.now() + FALLBACK_COOLDOWN_MS;
+      // fall through to the local address below
+    }
+  }
+  return fetch(`${LOCAL_BASE}/api${path}`, init);
+}
+
 export const TOKEN_KEY = 'rmj.access_token';
 
 export type ApiError = { status: number; detail: string };
@@ -86,7 +126,7 @@ export const api = {
   async post<T>(path: string, body?: any, auth = true): Promise<T> {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (auth) Object.assign(headers, await authHeaders());
-    const res = await fetch(`${BASE}/api${path}`, {
+    const res = await smartFetch(path, {
       method: 'POST',
       headers,
       body: body ? JSON.stringify(body) : undefined,
@@ -95,7 +135,7 @@ export const api = {
   },
   async put<T>(path: string, body?: any): Promise<T> {
     const headers: Record<string, string> = { 'Content-Type': 'application/json', ...(await authHeaders()) };
-    const res = await fetch(`${BASE}/api${path}`, {
+    const res = await smartFetch(path, {
       method: 'PUT',
       headers,
       body: body ? JSON.stringify(body) : undefined,
@@ -103,16 +143,16 @@ export const api = {
     return handle(res, true) as Promise<T>;
   },
   async get<T>(path: string): Promise<T> {
-    const res = await fetch(`${BASE}/api${path}`, { headers: await authHeaders() });
+    const res = await smartFetch(path, { headers: await authHeaders() });
     return handle(res, true) as Promise<T>;
   },
   async del<T>(path: string): Promise<T> {
-    const res = await fetch(`${BASE}/api${path}`, { method: 'DELETE', headers: await authHeaders() });
+    const res = await smartFetch(path, { method: 'DELETE', headers: await authHeaders() });
     return handle(res, true) as Promise<T>;
   },
   async patch<T>(path: string, body?: any): Promise<T> {
     const headers: Record<string, string> = { 'Content-Type': 'application/json', ...(await authHeaders()) };
-    const res = await fetch(`${BASE}/api${path}`, {
+    const res = await smartFetch(path, {
       method: 'PATCH', headers, body: body ? JSON.stringify(body) : undefined,
     });
     return handle(res, true) as Promise<T>;
