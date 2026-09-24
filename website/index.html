@@ -443,8 +443,12 @@
    LOGIN_URL: where staff sign in to RMJ One.
    ================================================================ */
 const CONFIG = {
-  RATES_URL: 'https://app.rmj.co.in/api/public/rates',       // ← set to your RMJ One URL
-  INSTAGRAM_URL: 'https://app.rmj.co.in/api/public/instagram', // ← set to your RMJ One URL
+  // app.rmj.co.in is the web app's own static frontend (where staff sign
+  // in) — it does not proxy /api/*, so rates/Instagram must hit
+  // api.rmj.co.in (the actual FastAPI backend) directly, or every fetch
+  // 404s and silently falls back to sample data.
+  RATES_URL: 'https://api.rmj.co.in/api/public/rates',        // ← set to your RMJ One URL
+  INSTAGRAM_URL: 'https://api.rmj.co.in/api/public/instagram', // ← set to your RMJ One URL
   LOGIN_URL: 'https://app.rmj.co.in',                         // ← set to your RMJ One URL
   REFRESH_MS: 60 * 1000,                                  // same cadence as the app's rates screen
   STALE_AFTER_MS: 6 * 60 * 60 * 1000,                     // flag rates older than 6 hours

@@ -45,8 +45,11 @@ still needs filling in.
 
 ## One-time backend change this site depends on
 
-`index.html` fetches live rates from `https://app.rmj.co.in/api/public/rates`
-in the browser, from the `rmj.co.in` origin — the API's CORS allowlist has to
+`index.html` fetches live rates (and the Instagram feed) from
+`https://api.rmj.co.in/api/public/...` — the actual backend, not
+`app.rmj.co.in` (that's the web app's own static frontend, which doesn't
+proxy `/api/*`) — in the browser, from the `rmj.co.in` origin. The API's
+CORS allowlist has to
 include `https://rmj.co.in` (and `https://www.rmj.co.in` if the site will
 also answer on the `www` subdomain) or the browser will block the request.
 Add both to `ALLOWED_ORIGINS` in the backend's production `.env` on the shop
