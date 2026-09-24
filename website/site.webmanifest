@@ -1,7 +1,7 @@
 {
   "name": "Ram Murti Jewellers — Live Rate",
   "short_name": "RMJ Rate",
-  "description": "Live gold and silver rates, Field Ganj, Ludhiana.",
+  "description": "Live gold and silver rates, Ludhiana.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
