@@ -84,15 +84,25 @@ export function useAccessEditor(accountId: string | undefined) {
         setCounterSel(new Set(a.cashbook_counter_ids || []));
         setMobile(a.mobile || '');
         setNotifOn(a.notifications_enabled !== false);
+        // Start from every key actually stored on the account, not just the
+        // module-level ones — the previous version only copied nmod.key
+        // (e.g. 'attendance') into local state, silently dropping any
+        // individually-toggled event override (e.g. 'attendance_checkin')
+        // that lives in the same flat dict. Reopening the editor then showed
+        // that event falling back to the module's own state — looking
+        // exactly like "I turned it off, saved, and it came back on" even
+        // though the correct value was sitting in the account doc the whole
+        // time. Only module keys missing altogether (never saved) need a
+        // role-default fallback; event keys either aren't there yet (fall
+        // back to their module below, same as before) or already carry the
+        // real stored value.
         const prefs: Record<string, boolean> = {};
         const prefsWa: Record<string, boolean> = {};
+        for (const [k, v] of Object.entries(a.notif_prefs || {})) prefs[k] = !!v;
+        for (const [k, v] of Object.entries(a.notif_prefs_whatsapp || {})) prefsWa[k] = !!v;
         for (const nmod of nm) {
-          prefs[nmod.key] = a.notif_prefs && nmod.key in a.notif_prefs
-            ? !!a.notif_prefs[nmod.key]
-            : nmod.default_roles.includes(a.role);
-          prefsWa[nmod.key] = a.notif_prefs_whatsapp && nmod.key in a.notif_prefs_whatsapp
-            ? !!a.notif_prefs_whatsapp[nmod.key]
-            : nmod.default_roles.includes(a.role);
+          if (!(nmod.key in prefs)) prefs[nmod.key] = nmod.default_roles.includes(a.role);
+          if (!(nmod.key in prefsWa)) prefsWa[nmod.key] = nmod.default_roles.includes(a.role);
         }
         setNotifPrefs(prefs);
         setNotifPrefsWhatsapp(prefsWa);
