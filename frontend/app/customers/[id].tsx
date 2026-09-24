@@ -41,7 +41,7 @@ export default function CustomerDetailScreen() {
     return (
       <SafeAreaView style={styles.root} edges={['top']}>
         <View style={styles.header}>
-          <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
+          <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
             <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
           </Pressable>
           <View style={{ flex: 1 }} />
@@ -59,7 +59,7 @@ export default function CustomerDetailScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="customer-detail-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
+        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
         <Text style={styles.title} numberOfLines={1}>{customer.name}</Text>
@@ -152,5 +152,5 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   statusBadge: { borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1 },
   statusOpen: { backgroundColor: colors.brandTertiary, borderColor: colors.brand },
   statusDone: { backgroundColor: colors.success, borderColor: colors.onSuccess },
-  statusText: { fontSize: 10, fontWeight: '700', color: colors.onSurface, textTransform: 'uppercase' },
+  statusText: { fontSize: 11, fontWeight: '700', color: colors.onSurface, textTransform: 'uppercase' },
 });

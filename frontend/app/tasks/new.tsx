@@ -12,6 +12,7 @@ import { DateField } from '@/src/components/DateField';
 import { StarPicker } from '@/src/components/StarPicker';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { ToggleSwitch } from '@/src/components/ui/ToggleSwitch';
 
 type Emp = { id: string; name: string; employee_code: string; designation?: string };
 type Priority = 'low' | 'normal' | 'urgent';
@@ -201,7 +202,7 @@ export default function NewTaskScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="task-new-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
+        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
         <Text style={styles.title}>{editingTemplate ? 'Edit Recurring Task' : repeat ? 'New Recurring Task' : 'Assign Task'}</Text>
@@ -268,9 +269,7 @@ export default function NewTaskScreen() {
                   <Text style={styles.toggleLabel}>Repeat Task</Text>
                   <Text style={styles.toggleSub}>Spawns a fresh copy of this task automatically, on a schedule</Text>
                 </View>
-                <View style={[styles.switch, repeat && styles.switchOn]}>
-                  <View style={[styles.switchKnob, repeat && styles.switchKnobOn]} />
-                </View>
+                <ToggleSwitch value={!!(repeat)} />
               </Pressable>
             )}
 
@@ -350,9 +349,7 @@ export default function NewTaskScreen() {
               <Text style={styles.toggleLabel}>Remind repeatedly until done</Text>
               <Text style={styles.toggleSub}>Nudges the employee until marked done, instead of just once</Text>
             </View>
-            <View style={[styles.switch, repeatReminder && styles.switchOn]}>
-              <View style={[styles.switchKnob, repeatReminder && styles.switchKnobOn]} />
-            </View>
+            <ToggleSwitch value={!!(repeatReminder)} />
           </Pressable>
           {repeatReminder && (
             <>
@@ -443,12 +440,6 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   toggleLabel: { color: colors.onSurface, fontSize: 14, fontWeight: '600' },
   toggleSub: { color: colors.mutedText, fontSize: 11, marginTop: 2 },
-  switch: {
-    width: 44, height: 26, borderRadius: 13, backgroundColor: colors.surfaceTertiary,
-    borderWidth: 1, borderColor: colors.border, padding: 2, justifyContent: 'center',
-  },
-  switchOn: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
-  switchKnob: { width: 20, height: 20, borderRadius: 10, backgroundColor: colors.onSurfaceTertiary },
   switchKnobOn: { backgroundColor: colors.onBrandPrimary, transform: [{ translateX: 18 }] },
 
   radioRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.sm },

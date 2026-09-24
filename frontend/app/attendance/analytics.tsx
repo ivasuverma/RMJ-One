@@ -101,7 +101,7 @@ export default function AttendanceAnalyticsScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="attendance-analytics-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
+        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
         <Text style={styles.title}>Attendance Analytics</Text>
@@ -323,7 +323,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     width: 16, height: 90, borderRadius: 3, overflow: 'hidden',
     flexDirection: 'column-reverse', backgroundColor: colors.divider,
   },
-  barLabel: { color: colors.mutedText, fontSize: 9.5 },
+  barLabel: { color: colors.mutedText, fontSize: 11 },
 
   breakdownCard: {
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border,

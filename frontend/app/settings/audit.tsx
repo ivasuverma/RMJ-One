@@ -57,7 +57,7 @@ export default function AuditLogsScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="audit-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
+        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
         <Text style={styles.title}>Audit Logs</Text>
@@ -132,7 +132,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   action: { color: colors.brandSecondary, fontSize: 12, fontWeight: '800', letterSpacing: 0.4 },
   meta: { color: colors.onSurfaceTertiary, fontSize: 11, marginTop: 4 },
   entity: { color: colors.mutedText, fontSize: 11, marginTop: 2 },
-  when: { color: colors.mutedText, fontSize: 10, marginLeft: spacing.sm },
+  when: { color: colors.mutedText, fontSize: 11, marginLeft: spacing.sm },
   empty: { alignItems: 'center', paddingVertical: 60, gap: spacing.sm },
   emptyText: { color: colors.onSurfaceTertiary },
   loadMoreBtn: {

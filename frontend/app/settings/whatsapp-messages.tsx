@@ -78,7 +78,7 @@ export default function WhatsAppMessagesScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="whatsapp-messages-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
+        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
         <Text style={styles.title}>WhatsApp Messages</Text>
@@ -188,12 +188,12 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   meta: { color: colors.onSurfaceTertiary, fontSize: 11, marginTop: 4 },
   body: { color: colors.mutedText, fontSize: 11, marginTop: 4 },
   errorText: { color: colors.onError, fontSize: 11, marginTop: 4 },
-  when: { color: colors.mutedText, fontSize: 10, marginTop: 6 },
+  when: { color: colors.mutedText, fontSize: 11, marginTop: 6 },
   badge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.sm, backgroundColor: colors.surfaceTertiary },
   badgeOk: { backgroundColor: colors.success },
   badgeBad: { backgroundColor: colors.error },
   badgeWarn: { backgroundColor: colors.warning },
-  badgeText: { fontSize: 10, fontWeight: '700', color: colors.onSurfaceTertiary },
+  badgeText: { fontSize: 11, fontWeight: '700', color: colors.onSurfaceTertiary },
   badgeTextOk: { color: colors.onSuccess },
   badgeTextBad: { color: colors.onError },
   badgeTextWarn: { color: colors.onWarning },

@@ -302,7 +302,7 @@ export default function DocumentsScreen() {
     <SafeAreaView style={styles.root} edges={['top']} testID="documents-screen">
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled"
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}>
-        <Pressable onPress={() => (doneCat ? setDoneCat(null) : router.back())} style={styles.backRow} hitSlop={8} testID="back-btn">
+        <Pressable onPress={() => (doneCat ? setDoneCat(null) : router.back())} style={styles.backRow} hitSlop={8} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back">
           <Ionicons name="chevron-back" size={18} color={colors.brandPrimary} />
           <Text style={styles.backText}>{doneCat ? 'Folders' : 'Work'}</Text>
         </Pressable>
@@ -310,7 +310,7 @@ export default function DocumentsScreen() {
           <View style={{ flex: 1 }}>
             <View style={styles.titleInline}>
               <Text style={styles.h1}>{doneCat ? (catMap[doneCat]?.label || 'Documents') : 'Documents'}</Text>
-              <Pressable onPress={() => { setRefreshing(true); load(); }} disabled={refreshing} testID="documents-refresh-btn" hitSlop={10}>
+              <Pressable onPress={() => { setRefreshing(true); load(); }} disabled={refreshing} testID="documents-refresh-btn" accessibilityRole="button" accessibilityLabel="Refresh" hitSlop={10}>
                 {refreshing ? <ActivityIndicator size="small" color={colors.brandSecondary} /> : <Ionicons name="refresh" size={15} color={colors.brandSecondary} />}
               </Pressable>
             </View>
@@ -672,7 +672,7 @@ const DocThumb = memo(function DocThumb({ d, size, base, token }: { d: Doc; size
       {!!d.pages && d.pages > 1 && (
         <View style={{ position: 'absolute', right: 3, bottom: 3, zIndex: 2, flexDirection: 'row', alignItems: 'center', gap: 2, backgroundColor: 'rgba(0,0,0,0.65)', borderRadius: 8, paddingHorizontal: 5, paddingVertical: 1 }}>
           <Ionicons name="copy-outline" size={9} color="#fff" />
-          <Text style={{ color: '#fff', fontSize: 10, fontWeight: '800' }}>{d.pages}</Text>
+          <Text style={{ color: '#fff', fontSize: 11, fontWeight: '800' }}>{d.pages}</Text>
         </View>
       )}
       {isImg ? (
@@ -742,7 +742,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   // Done grid
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: spacing.md },
   gridItem: { position: 'relative' },
-  gridCaption: { color: colors.onSurfaceSecondary, fontSize: 10, marginTop: 3, lineHeight: 13 },
+  gridCaption: { color: colors.onSurfaceSecondary, fontSize: 11, marginTop: 3, lineHeight: 13 },
   syncBadge: { position: 'absolute', right: 5, bottom: 5, width: 18, height: 18, borderRadius: 9, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center' },
 
   empty: { alignItems: 'center', paddingVertical: 40, gap: spacing.sm },

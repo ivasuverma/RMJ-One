@@ -81,7 +81,7 @@ export default function RateFormulasScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="rate-formulas-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} hitSlop={12} testID="back-btn"><Ionicons name="chevron-back" size={22} color={colors.onSurface} /></Pressable>
+        <Pressable onPress={() => router.back()} style={styles.iconBtn} hitSlop={12} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back"><Ionicons name="chevron-back" size={22} color={colors.onSurface} /></Pressable>
         <Text style={styles.title}>Purity Formulas</Text>
         <Pressable onPress={load} style={styles.iconBtn} hitSlop={12}><Ionicons name="refresh" size={18} color={colors.onSurface} /></Pressable>
       </View>
@@ -127,7 +127,7 @@ export default function RateFormulasScreen() {
 
               <View style={styles.switchRow}>
                 <Text style={[styles.hint, { flex: 1 }]}>Show this rate (LED board placeholder: <Text style={styles.code}>{`{${it.key}}`}</Text>)</Text>
-                <Switch value={it.enabled} onValueChange={(v) => patch(it.key, { enabled: v })} disabled={!isOwner} trackColor={{ true: colors.brandPrimary, false: colors.border }} thumbColor={colors.surface} />
+                <Switch value={it.enabled} onValueChange={(v) => patch(it.key, { enabled: v })} disabled={!isOwner} trackColor={{ true: colors.brandPrimary, false: colors.border }} thumbColor={colors.surface} {...({ activeThumbColor: colors.surface } as object)} />
               </View>
               {!isDefault && isOwner && def ? <Pressable onPress={() => resetOne(it.key)}><Text style={styles.link}>Reset to standard ({def.percent}%)</Text></Pressable> : null}
             </View>

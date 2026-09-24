@@ -139,7 +139,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   cardTitle: { color: colors.onSurface, fontWeight: '700', fontSize: 14 },
   cardMeta: { color: colors.mutedText, fontSize: 11, marginTop: 2 },
   overdueBadge: { backgroundColor: colors.error, borderColor: colors.onError, borderWidth: 1, borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 3 },
-  overdueText: { color: colors.onError, fontSize: 10, fontWeight: '700' },
+  overdueText: { color: colors.onError, fontSize: 11, fontWeight: '700' },
   pointsBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 3,
     backgroundColor: colors.warning, borderColor: colors.onWarning, borderWidth: 1,
@@ -156,5 +156,5 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   perfStatsRow: { flexDirection: 'row' },
   perfStat: { flex: 1, alignItems: 'center' },
   perfStatValue: { color: colors.onSurface, fontSize: 16, fontWeight: '700' },
-  perfStatLabel: { color: colors.mutedText, fontSize: 10, marginTop: 2 },
+  perfStatLabel: { color: colors.mutedText, fontSize: 11, marginTop: 2 },
 });

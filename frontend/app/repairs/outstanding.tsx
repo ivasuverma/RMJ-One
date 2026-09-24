@@ -65,7 +65,7 @@ export default function OutstandingRepairsScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="outstanding-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
+        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
         <Text style={styles.title}>Outstanding Repairs</Text>
@@ -154,5 +154,5 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   statusBadge: { borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 4, borderWidth: 1 },
   statusOpen: { backgroundColor: colors.surfaceTertiary, borderColor: colors.border },
   statusOverdue: { backgroundColor: colors.error, borderColor: colors.onError },
-  statusText: { fontSize: 9, fontWeight: '700', color: colors.onSurface, textTransform: 'uppercase' },
+  statusText: { fontSize: 11, fontWeight: '700', color: colors.onSurface, textTransform: 'uppercase' },
 });

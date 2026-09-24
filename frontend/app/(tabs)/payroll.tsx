@@ -104,7 +104,7 @@ export default function OwnerPayroll() {
     <SafeAreaView style={styles.root} edges={['top']} testID="payroll-screen">
       <View style={styles.header}>
         {(router.canGoBack() || from === 'transactions') && (
-          <Pressable onPress={goBack} style={styles.backBtn} testID="back-btn" hitSlop={12}>
+          <Pressable onPress={goBack} style={styles.backBtn} testID="back-btn" hitSlop={12} accessibilityRole="button" accessibilityLabel="Back">
             <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
           </Pressable>
         )}
@@ -287,7 +287,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     flex: 1, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md,
     borderWidth: 1, borderColor: colors.border, padding: spacing.md,
   },
-  summaryLabel: { color: colors.mutedText, fontSize: 10, letterSpacing: 0.6, textTransform: 'uppercase' },
+  summaryLabel: { color: colors.mutedText, fontSize: 11, letterSpacing: 0.6, textTransform: 'uppercase' },
   summaryValue: { color: colors.onSurface, fontSize: 16, fontWeight: '700', marginTop: 4 },
 
   actionsRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md },
@@ -323,14 +323,14 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   avatarPhoto: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surfaceTertiary },
   empName: { color: colors.onSurface, fontSize: 14, fontWeight: '600' },
   empSub: { color: colors.onSurfaceTertiary, fontSize: 11, marginTop: 2 },
-  empExtras: { color: colors.mutedText, fontSize: 10, marginTop: 2 },
+  empExtras: { color: colors.mutedText, fontSize: 11, marginTop: 2 },
   netVal: { color: colors.brandPrimary, fontSize: 16, fontWeight: '800' },
   paidChip: {
     marginTop: 4, backgroundColor: colors.brandTertiary, borderColor: colors.brandPrimary,
     borderWidth: 1, borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 2,
   },
-  paidText: { color: colors.brandSecondary, fontSize: 9, fontWeight: '800' },
-  pendingText: { color: colors.mutedText, fontSize: 10, marginTop: 4 },
+  paidText: { color: colors.brandSecondary, fontSize: 11, fontWeight: '800' },
+  pendingText: { color: colors.mutedText, fontSize: 11, marginTop: 4 },
 
   emptyBox: { alignItems: 'center', paddingVertical: 60, gap: spacing.sm },
   emptyText: { color: colors.onSurfaceTertiary },

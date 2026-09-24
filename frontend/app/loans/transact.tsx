@@ -142,7 +142,7 @@ export default function GoldLoanTransactScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="loan-transact-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
+        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
         <Text style={styles.title}>{type === 'topup' ? 'Pay Customer More' : 'Record Payment'}</Text>
@@ -281,7 +281,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   calCellWrap: { width: '25%', aspectRatio: 1.3, padding: 4 },
   calCell: { width: '100%', height: '100%', borderRadius: radius.sm, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
   calCellText: { fontSize: 12, fontWeight: '700' },
-  calCellAmount: { fontSize: 9, fontWeight: '600', marginTop: 1 },
+  calCellAmount: { fontSize: 11, fontWeight: '600', marginTop: 1 },
   calCellEmpty: { backgroundColor: colors.surfaceTertiary, borderColor: colors.border },
   calCellTextEmpty: { color: colors.mutedText },
   calCellPending: { backgroundColor: colors.error, borderColor: colors.onError },
@@ -294,7 +294,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   legendRow: { flexDirection: 'row', gap: spacing.md, marginTop: 6 },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   legendDot: { width: 8, height: 8, borderRadius: 4 },
-  legendText: { color: colors.mutedText, fontSize: 10 },
+  legendText: { color: colors.mutedText, fontSize: 11 },
 
   submitBtn: {
     flexDirection: 'row', gap: spacing.sm, alignItems: 'center', justifyContent: 'center',

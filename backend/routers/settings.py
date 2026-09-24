@@ -9,6 +9,7 @@ from typing import Literal, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from server import (
+    META_WA_ALERT_TEMPLATE,
     db,
     now_utc,
     get_current,
@@ -127,6 +128,7 @@ async def get_whatsapp_settings(_: dict = Depends(get_current)):
     return {
         'enabled': doc.get('enabled', True),
         'provider': doc.get('provider') if doc.get('provider') in ('openwa', 'meta') else 'openwa',
+        'meta_alert_template': bool(META_WA_ALERT_TEMPLATE),
         'repair_ready_notice': doc.get('repair_ready_notice', True),
         'repair_ready_template': doc.get('repair_ready_template') or DEFAULT_REPAIR_READY_TEMPLATE,
         'repair_received_notice': doc.get('repair_received_notice', True),

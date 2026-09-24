@@ -8,6 +8,7 @@ import { notify } from '@/src/utils/notify';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { useToast } from '@/src/components/ui';
+import { ToggleSwitch } from '@/src/components/ui/ToggleSwitch';
 
 type Provider = 'openwa' | 'meta';
 type Form = {
@@ -32,6 +33,7 @@ export default function WhatsAppSettingsScreen() {
   const toast = useToast();
   const [form, setForm] = useState<Form>(EMPTY);
   const [status, setStatus] = useState<WhatsAppStatus | null>(null);
+  const [metaAlertTemplate, setMetaAlertTemplate] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const submittingRef = useRef(false);
@@ -74,6 +76,7 @@ export default function WhatsAppSettingsScreen() {
         chatbot_rate_enabled: w.chatbot_rate_enabled !== false, chatbot_status_enabled: w.chatbot_status_enabled !== false,
       });
       setStatus({ configured: !!w.configured, connected: !!w.connected, phone: w.phone || null });
+      setMetaAlertTemplate(w.meta_alert_template === true);
     } catch (_e) { /* ignore — form stays at defaults */ }
     finally { setLoading(false); }
   };
@@ -96,7 +99,7 @@ export default function WhatsAppSettingsScreen() {
     return (
       <SafeAreaView style={styles.root} edges={['top']}>
         <View style={styles.header}>
-          <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
+          <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
             <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
           </Pressable>
           <View style={{ flex: 1 }} />
@@ -110,11 +113,11 @@ export default function WhatsAppSettingsScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="whatsapp-settings-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
+        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
         <Text style={styles.title}>WhatsApp</Text>
-        <Pressable onPress={load} style={styles.iconBtn} testID="whatsapp-refresh-btn" hitSlop={12}>
+        <Pressable onPress={load} style={styles.iconBtn} testID="whatsapp-refresh-btn" hitSlop={12} accessibilityRole="button" accessibilityLabel="Refresh">
           <Ionicons name="refresh" size={18} color={colors.onSurface} />
         </Pressable>
       </View>
@@ -153,9 +156,7 @@ export default function WhatsAppSettingsScreen() {
                   <Text style={styles.toggleLabel}>{p.label}</Text>
                   <Text style={styles.toggleSub}>{p.sub}</Text>
                 </View>
-                <View style={[styles.switch, on && styles.switchOn]}>
-                  <View style={[styles.switchKnob, on && styles.switchKnobOn]} />
-                </View>
+                <ToggleSwitch value={!!(on)} />
               </Pressable>
             );
           })}
@@ -163,7 +164,10 @@ export default function WhatsAppSettingsScreen() {
             <View style={[styles.infoBox, styles.infoBoxWarn, { marginBottom: 0 }]} testID="whatsapp-provider-meta-warning">
               <Ionicons name="alert-circle-outline" size={16} color={colors.onWarning} />
               <Text style={[styles.infoText, { color: colors.onWarning }]}>
-                On Meta, repair notices and app alerts only reach a customer who messaged the Meta number in the last 24 hours (other sends fail and show in the Sent Messages Log). Gold rate posts to the WhatsApp Channel need OpenWA.
+                {metaAlertTemplate
+                  ? 'Staff alerts go through your approved Meta template. '
+                  : 'Staff alerts need an approved Meta template (META_WA_ALERT_TEMPLATE in backend/.env) — without it they only reach staff who messaged the Meta number in the last 24 hours. '}
+                Repair notices to customers have the same 24-hour limit, and gold rate posts to the WhatsApp Channel need OpenWA. Failed sends show in the Sent Messages Log.
               </Text>
             </View>
           )}
@@ -196,9 +200,7 @@ export default function WhatsAppSettingsScreen() {
             <Text style={styles.toggleLabel}>Enable WhatsApp notices</Text>
             <Text style={styles.toggleSub}>Master switch — off disables every group below, whatever their own toggles say</Text>
           </View>
-          <View style={[styles.switch, form.enabled && styles.switchOn]}>
-            <View style={[styles.switchKnob, form.enabled && styles.switchKnobOn]} />
-          </View>
+          <ToggleSwitch value={!!(form.enabled)} />
         </Pressable>
 
         {/* ---------------- Repair ---------------- */}
@@ -217,9 +219,7 @@ export default function WhatsAppSettingsScreen() {
               <Text style={styles.toggleLabel}>Ready-for-pickup notice</Text>
               <Text style={styles.toggleSub}>Lets staff send a "your item is ready" WhatsApp message from a billed tag's detail screen</Text>
             </View>
-            <View style={[styles.switch, form.enabled && form.repair_ready_notice && styles.switchOn]}>
-              <View style={[styles.switchKnob, form.enabled && form.repair_ready_notice && styles.switchKnobOn]} />
-            </View>
+            <ToggleSwitch value={!!(form.enabled && form.repair_ready_notice)} />
           </Pressable>
           <Pressable
             onPress={() => form.enabled && setForm((f) => ({ ...f, repair_received_notice: !f.repair_received_notice }))}
@@ -231,9 +231,7 @@ export default function WhatsAppSettingsScreen() {
               <Text style={styles.toggleLabel}>Item received notice</Text>
               <Text style={styles.toggleSub}>Lets staff send a "we've received your item" WhatsApp message from a freshly-intake tag's detail screen</Text>
             </View>
-            <View style={[styles.switch, form.enabled && form.repair_received_notice && styles.switchOn]}>
-              <View style={[styles.switchKnob, form.enabled && form.repair_received_notice && styles.switchKnobOn]} />
-            </View>
+            <ToggleSwitch value={!!(form.enabled && form.repair_received_notice)} />
           </Pressable>
         </View>
 
@@ -253,9 +251,7 @@ export default function WhatsAppSettingsScreen() {
               <Text style={styles.toggleLabel}>Auto-reply chatbot</Text>
               <Text style={styles.toggleSub}>Customers who message the shop's number and reply RATE or STATUS get an automatic reply — no AI, fixed answers only</Text>
             </View>
-            <View style={[styles.switch, form.enabled && form.chatbot_enabled && styles.switchOn]}>
-              <View style={[styles.switchKnob, form.enabled && form.chatbot_enabled && styles.switchKnobOn]} />
-            </View>
+            <ToggleSwitch value={!!(form.enabled && form.chatbot_enabled)} />
           </Pressable>
           <View style={styles.row2}>
             <Pressable
@@ -265,9 +261,7 @@ export default function WhatsAppSettingsScreen() {
               testID="whatsapp-chatbot-rate-keyword-toggle"
             >
               <Text style={styles.toggleLabel}>RATE</Text>
-              <View style={[styles.switch, form.enabled && form.chatbot_enabled && form.chatbot_rate_enabled && styles.switchOn]}>
-                <View style={[styles.switchKnob, form.enabled && form.chatbot_enabled && form.chatbot_rate_enabled && styles.switchKnobOn]} />
-              </View>
+              <ToggleSwitch value={!!(form.enabled && form.chatbot_enabled && form.chatbot_rate_enabled)} />
             </Pressable>
             <Pressable
               onPress={() => form.enabled && form.chatbot_enabled && setForm((f) => ({ ...f, chatbot_status_enabled: !f.chatbot_status_enabled }))}
@@ -276,9 +270,7 @@ export default function WhatsAppSettingsScreen() {
               testID="whatsapp-chatbot-status-keyword-toggle"
             >
               <Text style={styles.toggleLabel}>STATUS</Text>
-              <View style={[styles.switch, form.enabled && form.chatbot_enabled && form.chatbot_status_enabled && styles.switchOn]}>
-                <View style={[styles.switchKnob, form.enabled && form.chatbot_enabled && form.chatbot_status_enabled && styles.switchKnobOn]} />
-              </View>
+              <ToggleSwitch value={!!(form.enabled && form.chatbot_enabled && form.chatbot_status_enabled)} />
             </Pressable>
           </View>
         </View>
@@ -299,7 +291,7 @@ export default function WhatsAppSettingsScreen() {
                 : 'Configured but the Graph API call failed — check the token and phone number id'}
             </Text>
           </View>
-          <Pressable onPress={loadMetaStatus} style={styles.altBtn} testID="whatsapp-meta-refresh-btn">
+          <Pressable onPress={loadMetaStatus} style={styles.altBtn} testID="whatsapp-meta-refresh-btn" accessibilityRole="button" accessibilityLabel="Refresh">
             <Ionicons name="refresh" size={14} color={colors.brandSecondary} />
             <Text style={styles.altBtnText}>Refresh Status</Text>
           </Pressable>
@@ -368,12 +360,6 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1,
     borderColor: colors.border, padding: spacing.md, marginBottom: spacing.md,
   },
-  switch: {
-    width: 44, height: 26, borderRadius: 13, backgroundColor: colors.surfaceTertiary,
-    borderWidth: 1, borderColor: colors.border, padding: 2, justifyContent: 'center',
-  },
-  switchOn: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
-  switchKnob: { width: 20, height: 20, borderRadius: 10, backgroundColor: colors.onSurfaceTertiary },
   switchKnobOn: { backgroundColor: colors.onBrandPrimary, transform: [{ translateX: 18 }] },
   infoBox: {
     flexDirection: 'row', gap: spacing.sm, alignItems: 'center', backgroundColor: colors.surfaceTertiary,

@@ -67,7 +67,7 @@ export default function NotificationsScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="notifications-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
+        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
         <Text style={styles.title}>Notifications</Text>
@@ -138,5 +138,5 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   notifTitle: { color: colors.onSurface, fontWeight: '700', fontSize: 13 },
   notifBody: { color: colors.onSurfaceTertiary, fontSize: 12, marginTop: 2 },
-  notifTime: { color: colors.mutedText, fontSize: 10, marginTop: 4 },
+  notifTime: { color: colors.mutedText, fontSize: 11, marginTop: 4 },
 });

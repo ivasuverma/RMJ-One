@@ -228,7 +228,7 @@ export default function CashBookScreen() {
   return (
     <SafeAreaView style={[styles.root, pageTone && { backgroundColor: pageTone.pageBg }]} edges={['top']} testID="cashbook-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
+        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
         <Text style={styles.title}>Cash Book</Text>
@@ -519,7 +519,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   counterRow: { flexDirection: 'row', alignItems: 'stretch', gap: spacing.sm },
   counterChip: { flex: 1, alignItems: 'center', paddingHorizontal: spacing.md, paddingVertical: 10, borderRadius: radius.pill, borderWidth: 1, borderColor: 'transparent' },
   counterChipText: { fontSize: 12.5, fontWeight: '700', textAlign: 'center' },
-  counterChipBalance: { fontSize: 10, fontWeight: '600', textAlign: 'center', opacity: 0.75, marginTop: 1 },
+  counterChipBalance: { fontSize: 11, fontWeight: '600', textAlign: 'center', opacity: 0.75, marginTop: 1 },
   counterChipTextActive: { fontWeight: '800' },
   heroCard: { padding: spacing.md },
   heroTotals: { flexDirection: 'row' },

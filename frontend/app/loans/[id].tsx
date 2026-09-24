@@ -139,7 +139,7 @@ export default function GoldLoanDetailScreen() {
     return (
       <SafeAreaView style={styles.root} edges={['top']}>
         <View style={styles.header}>
-          <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
+          <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
             <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
           </Pressable>
           <View style={{ flex: 1 }} /><View style={{ width: 40 }} />
@@ -173,7 +173,7 @@ export default function GoldLoanDetailScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="loan-detail-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
+        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
         <Text style={styles.title} numberOfLines={1}>{loan.loan_no}</Text>
@@ -431,7 +431,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   badge: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: radius.sm, marginBottom: spacing.md },
   badgeActive: { backgroundColor: colors.brandTertiary },
   badgeClosed: { backgroundColor: colors.success },
-  badgeText: { fontSize: 10, fontWeight: '700' },
+  badgeText: { fontSize: 11, fontWeight: '700' },
   badgeTextActive: { color: colors.brandSecondary },
   badgeTextClosed: { color: colors.onSuccess },
 
@@ -447,7 +447,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   balValue: { color: colors.onSurface, fontSize: 13, fontWeight: '600' },
   balTotalLabel: { color: colors.onSurface, fontSize: 14, fontWeight: '800' },
   balTotalValue: { color: colors.brandSecondary, fontSize: 16, fontWeight: '800' },
-  balFormula: { color: colors.mutedText, fontSize: 10.5, marginTop: 2 },
+  balFormula: { color: colors.mutedText, fontSize: 11, marginTop: 2 },
 
   interestCard: {
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border,
@@ -470,7 +470,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   calCellWrap: { width: '25%', aspectRatio: 1.6, padding: 4 },
   calCell: { width: '100%', height: '100%', borderRadius: radius.sm, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
   calCellText: { fontSize: 12, fontWeight: '700' },
-  calCellAmount: { fontSize: 9.5, fontWeight: '600', marginTop: 2 },
+  calCellAmount: { fontSize: 11, fontWeight: '600', marginTop: 2 },
   calCellEmpty: { backgroundColor: colors.surfaceTertiary, borderColor: colors.border },
   calCellTextEmpty: { color: colors.mutedText },
   calCellPaid: { backgroundColor: colors.success, borderColor: colors.onSuccess },

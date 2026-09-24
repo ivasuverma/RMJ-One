@@ -100,7 +100,7 @@ export default function AttendanceCalendarView({ empId, onBack, title = 'Calenda
     <View style={styles.root} testID="calendar-screen">
       {onBack && (
         <View style={styles.header}>
-          <Pressable onPress={onBack} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
+          <Pressable onPress={onBack} style={styles.iconBtn} testID="back-btn" hitSlop={12} accessibilityRole="button" accessibilityLabel="Back">
             <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
           </Pressable>
           <Text style={styles.title}>{title}</Text>
@@ -464,7 +464,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   monthSummary: { flexDirection: 'row', backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, paddingVertical: spacing.sm, marginBottom: spacing.md },
   sumCell: { flex: 1, alignItems: 'center' },
   sumVal: { fontSize: 16, fontWeight: '800' },
-  sumLbl: { color: colors.mutedText, fontSize: 10, marginTop: 2 },
+  sumLbl: { color: colors.mutedText, fontSize: 11, marginTop: 2 },
   weekRow: { flexDirection: 'row', marginBottom: spacing.sm },
   weekLabel: { flex: 1, textAlign: 'center', color: colors.mutedText, fontSize: 11, fontWeight: '700' },
   grid: { flexDirection: 'row', flexWrap: 'wrap' },
@@ -496,7 +496,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   shiftChipActive: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
   shiftChipText: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '700' },
-  shiftChipTime: { color: colors.mutedText, fontSize: 10, marginTop: 1 },
+  shiftChipTime: { color: colors.mutedText, fontSize: 11, marginTop: 1 },
   shiftChipTextActive: { color: colors.onBrandPrimary },
   previewBox: {
     flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: spacing.sm,
@@ -504,7 +504,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     alignSelf: 'flex-start',
   },
   previewText: { color: colors.brandSecondary, fontSize: 11, fontWeight: '700' },
-  hintText: { color: colors.mutedText, fontSize: 10, marginTop: 6 },
+  hintText: { color: colors.mutedText, fontSize: 11, marginTop: 6 },
   sheetGrip: { width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: spacing.md },
   sheetTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   sheetTitle: { color: colors.onSurface, fontSize: 18, fontWeight: '700', flex: 1 },
@@ -523,7 +523,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   statusRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   statusBtn: { flex: 1, minWidth: 70, paddingVertical: 8, borderRadius: radius.md, backgroundColor: colors.surfaceTertiary, borderWidth: 1, borderColor: colors.border, alignItems: 'center' },
   statusBtnActive: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
-  statusText: { color: colors.onSurfaceTertiary, fontSize: 10, fontWeight: '700' },
+  statusText: { color: colors.onSurfaceTertiary, fontSize: 11, fontWeight: '700' },
   statusTextActive: { color: colors.onBrandPrimary },
   hourText: { color: colors.mutedText, fontSize: 12, marginTop: spacing.md },
   sheetActions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg },

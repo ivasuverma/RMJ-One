@@ -64,7 +64,7 @@ export default function HolidaysScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="holidays-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
+        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
         <Text style={styles.title}>Holidays</Text>
@@ -149,7 +149,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     borderWidth: 1, borderColor: colors.border, alignItems: 'center',
   },
   typeBtnActive: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
-  typeText: { color: colors.onSurfaceTertiary, fontSize: 10, fontWeight: '700' },
+  typeText: { color: colors.onSurfaceTertiary, fontSize: 11, fontWeight: '700' },
   typeTextActive: { color: colors.onBrandPrimary },
   addBtn: {
     flexDirection: 'row', gap: spacing.sm, alignItems: 'center', justifyContent: 'center',

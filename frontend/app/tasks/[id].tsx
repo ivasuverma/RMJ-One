@@ -16,6 +16,7 @@ import { StarPicker } from '@/src/components/StarPicker';
 import { RecordPhotos } from '@/src/components/RecordPhotos';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { ToggleSwitch } from '@/src/components/ui/ToggleSwitch';
 
 type Comment = { id: string; author_name: string; author_role: string; text: string; created_at: string };
 type Task = {
@@ -136,7 +137,7 @@ export default function TaskDetailScreen() {
     return (
       <SafeAreaView style={styles.root} edges={['top']}>
         <View style={styles.header}>
-          <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
+          <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
             <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
           </Pressable>
           <View style={{ flex: 1 }} />
@@ -153,7 +154,7 @@ export default function TaskDetailScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="task-detail-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
+        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
         <Text style={styles.headerTitle} numberOfLines={1}>Task</Text>
@@ -201,9 +202,7 @@ export default function TaskDetailScreen() {
                   <Text style={styles.toggleLabel}>Repeat reminder until done</Text>
                   <Text style={styles.toggleSub}>Nudges the employee until marked done</Text>
                 </View>
-                <View style={[styles.switch, eRepeatReminder && styles.switchOn]}>
-                  <View style={[styles.switchKnob, eRepeatReminder && styles.switchKnobOn]} />
-                </View>
+                <ToggleSwitch value={!!(eRepeatReminder)} />
               </Pressable>
               {eRepeatReminder && (
                 <>
@@ -409,12 +408,6 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   toggleLabel: { color: colors.onSurface, fontSize: 14, fontWeight: '600' },
   toggleSub: { color: colors.mutedText, fontSize: 11, marginTop: 2 },
-  switch: {
-    width: 44, height: 26, borderRadius: 13, backgroundColor: colors.surfaceTertiary,
-    borderWidth: 1, borderColor: colors.border, padding: 2, justifyContent: 'center',
-  },
-  switchOn: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
-  switchKnob: { width: 20, height: 20, borderRadius: 10, backgroundColor: colors.onSurfaceTertiary },
   switchKnobOn: { backgroundColor: colors.onBrandPrimary, transform: [{ translateX: 18 }] },
   editActions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.xl },
   cancelBtn: { flex: 1, alignItems: 'center', paddingVertical: 12, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border },

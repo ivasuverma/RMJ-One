@@ -14,7 +14,7 @@ def _login(username: str, password: str) -> str:
 
 
 def _emp_login(code: str, pin: str) -> tuple:
-    r = requests.post(f'{BASE_URL}/api/auth/employee-login', json={'employee_code': code, 'pin': pin}, timeout=30)
+    r = requests.post(f'{BASE_URL}/api/auth/employee-login', json={'username': code.lower(), 'password': pin}, timeout=30)
     assert r.status_code == 200, r.text
     j = r.json()
     return j['access_token'], j['user']
@@ -37,13 +37,13 @@ def acc_h():
 
 @pytest.fixture(scope='module')
 def emp1():
-    tok, u = _emp_login('RMJ001', '0001')
+    tok, u = _emp_login('RMJ001', '1234')
     return {'h': {'Authorization': f'Bearer {tok}'}, 'user': u}
 
 
 @pytest.fixture(scope='module')
 def emp2():
-    tok, u = _emp_login('RMJ002', '0002')
+    tok, u = _emp_login('RMJ002', '2345')
     return {'h': {'Authorization': f'Bearer {tok}'}, 'user': u}
 
 
@@ -68,7 +68,7 @@ class TestAuthRoles:
         assert r.status_code == 200 and r.json()['user']['role'] == 'accountant'
 
     def test_employee_login(self):
-        r = requests.post(f'{BASE_URL}/api/auth/employee-login', json={'employee_code': 'RMJ001', 'pin': '0001'})
+        r = requests.post(f'{BASE_URL}/api/auth/employee-login', json={'username': 'rmj001', 'password': '1234'})
         assert r.status_code == 200 and r.json()['user']['role'] == 'employee'
 
 

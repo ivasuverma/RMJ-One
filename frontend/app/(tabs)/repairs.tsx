@@ -84,7 +84,7 @@ export default function RepairOrdersScreen() {
         contentContainerStyle={styles.scroll}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(filter); }} tintColor={colors.brandPrimary} />}
       >
-        <Pressable onPress={() => router.back()} style={styles.backRow} testID="back-btn" hitSlop={8}>
+        <Pressable onPress={() => router.back()} style={styles.backRow} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={8}>
           <Ionicons name="chevron-back" size={18} color={colors.brandPrimary} />
           <Text style={styles.backText}>Work</Text>
         </Pressable>
@@ -92,7 +92,7 @@ export default function RepairOrdersScreen() {
           <View style={{ flex: 1 }}>
             <View style={styles.titleInline}>
               <Text style={styles.h1}>Repairs</Text>
-              <Pressable onPress={() => { setRefreshing(true); load(filter); }} disabled={refreshing} testID="repairs-refresh-btn" hitSlop={10}>
+              <Pressable onPress={() => { setRefreshing(true); load(filter); }} disabled={refreshing} testID="repairs-refresh-btn" accessibilityRole="button" accessibilityLabel="Refresh" hitSlop={10}>
                 {refreshing ? <ActivityIndicator size="small" color={colors.brandSecondary} /> : <Ionicons name="refresh" size={16} color={colors.brandSecondary} />}
               </Pressable>
             </View>
@@ -221,7 +221,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   stage: { flex: 1, alignItems: 'center' },
   stageBar: { height: 5, borderRadius: 3, backgroundColor: colors.surfaceTertiary, alignSelf: 'stretch', overflow: 'hidden', marginBottom: 9 },
   stageNum: { color: colors.onSurface, fontSize: 19, fontWeight: '700', letterSpacing: -0.4 },
-  stageLbl: { color: colors.mutedText, fontSize: 10.5, textAlign: 'center', marginTop: 2, lineHeight: 13 },
+  stageLbl: { color: colors.mutedText, fontSize: 11, textAlign: 'center', marginTop: 2, lineHeight: 13 },
 
   sectionLabel: { color: colors.mutedText, fontSize: 12, fontWeight: '700', letterSpacing: 0.8, textTransform: 'uppercase', marginTop: spacing.xl, marginBottom: spacing.md },
   empty: { alignItems: 'center', paddingVertical: 40, gap: spacing.sm },

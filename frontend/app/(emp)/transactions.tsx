@@ -241,7 +241,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between',
     marginTop: spacing.md, marginBottom: 6,
   },
-  dashCaption: { color: colors.mutedText, fontSize: 10.5, fontWeight: '600' },
+  dashCaption: { color: colors.mutedText, fontSize: 11, fontWeight: '600' },
   dashCard: {
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md,
     borderWidth: 1, borderColor: colors.border, overflow: 'hidden',

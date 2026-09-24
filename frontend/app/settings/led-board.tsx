@@ -141,7 +141,7 @@ export default function LedBoardScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="led-board-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} hitSlop={12} testID="back-btn"><Ionicons name="chevron-back" size={22} color={colors.onSurface} /></Pressable>
+        <Pressable onPress={() => router.back()} style={styles.iconBtn} hitSlop={12} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back"><Ionicons name="chevron-back" size={22} color={colors.onSurface} /></Pressable>
         <Text style={styles.title}>LED Rate Board</Text>
         <Pressable onPress={load} style={styles.iconBtn} hitSlop={12}><Ionicons name="refresh" size={18} color={colors.onSurface} /></Pressable>
       </View>
@@ -183,11 +183,11 @@ export default function LedBoardScreen() {
           <Text style={styles.cardTitle}>Settings{isOwner ? '' : ' (owner only)'}</Text>
           <View style={styles.switchRow}>
             <View style={{ flex: 1 }}><Text style={styles.label}>Board switched on</Text><Text style={styles.hint}>Nothing is sent to the board while this is off.</Text></View>
-            <Switch value={enabled} onValueChange={edit(setEnabled)} disabled={!isOwner} trackColor={{ true: colors.brandPrimary, false: colors.border }} thumbColor={colors.surface} testID="led-enabled" />
+            <Switch value={enabled} onValueChange={edit(setEnabled)} disabled={!isOwner} trackColor={{ true: colors.brandPrimary, false: colors.border }} thumbColor={colors.surface} {...({ activeThumbColor: colors.surface } as object)} testID="led-enabled" />
           </View>
           <View style={styles.switchRow}>
             <View style={{ flex: 1 }}><Text style={styles.label}>Update automatically</Text><Text style={styles.hint}>Push to the board whenever the daily rate is confirmed.</Text></View>
-            <Switch value={autoPush} onValueChange={edit(setAutoPush)} disabled={!isOwner} trackColor={{ true: colors.brandPrimary, false: colors.border }} thumbColor={colors.surface} testID="led-auto" />
+            <Switch value={autoPush} onValueChange={edit(setAutoPush)} disabled={!isOwner} trackColor={{ true: colors.brandPrimary, false: colors.border }} thumbColor={colors.surface} {...({ activeThumbColor: colors.surface } as object)} testID="led-auto" />
           </View>
 
           <Text style={[styles.cardTitle, { marginTop: spacing.md }]}>Automatic mode</Text>
@@ -226,7 +226,7 @@ export default function LedBoardScreen() {
           {autoMode !== 'off' ? (
             <View style={styles.switchRow}>
               <View style={{ flex: 1 }}><Text style={styles.label}>Skip Saturday &amp; Sunday</Text><Text style={styles.hint}>The market is closed — leave the board as it is.</Text></View>
-              <Switch value={skipWeekend} onValueChange={edit(setSkipWeekend)} disabled={!isOwner} trackColor={{ true: colors.brandPrimary, false: colors.border }} thumbColor={colors.surface} testID="led-auto-skipweekend" />
+              <Switch value={skipWeekend} onValueChange={edit(setSkipWeekend)} disabled={!isOwner} trackColor={{ true: colors.brandPrimary, false: colors.border }} thumbColor={colors.surface} {...({ activeThumbColor: colors.surface } as object)} testID="led-auto-skipweekend" />
             </View>
           ) : null}
           {autoMode !== 'off' && !enabled ? <Text style={styles.err}>Switch the board on (top of this card) for automatic mode to run.</Text> : null}

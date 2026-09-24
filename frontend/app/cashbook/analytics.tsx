@@ -87,7 +87,7 @@ export default function CashbookAnalyticsScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="cashbook-analytics-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
+        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
         <Text style={styles.title}>Cash Book Analytics</Text>
@@ -297,7 +297,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   barCol: { alignItems: 'center', gap: 6, width: 30 },
   barPair: { flexDirection: 'row', alignItems: 'flex-end', gap: 3, height: 90 },
   bar: { width: 8, borderRadius: 3 },
-  barLabel: { color: colors.mutedText, fontSize: 9.5 },
+  barLabel: { color: colors.mutedText, fontSize: 11 },
 
   breakdownCard: {
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border,
@@ -314,7 +314,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     padding: spacing.md, marginBottom: spacing.lg, gap: 10,
   },
   counterHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  counterHeaderText: { color: colors.mutedText, fontSize: 10.5, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.3, width: 80, textAlign: 'right' },
+  counterHeaderText: { color: colors.mutedText, fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.3, width: 80, textAlign: 'right' },
   counterRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   counterName: { flex: 1, color: colors.onSurface, fontSize: 13, fontWeight: '600' },
   counterAmounts: { flexDirection: 'row' },

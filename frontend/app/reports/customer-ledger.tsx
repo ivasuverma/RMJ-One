@@ -43,7 +43,7 @@ export default function CustomerLedgerScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="customer-ledger-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
+        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
         <Text style={styles.title}>Customer Ledger</Text>
@@ -141,5 +141,5 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   cMeta: { color: colors.onSurfaceTertiary, fontSize: 12, marginTop: 2 },
   balanceBadge: { alignItems: 'flex-end', marginRight: spacing.xs },
   balanceValue: { color: colors.onWarning, fontWeight: '700', fontSize: 13 },
-  balanceLabel: { color: colors.mutedText, fontSize: 10, marginTop: 1 },
+  balanceLabel: { color: colors.mutedText, fontSize: 11, marginTop: 1 },
 });

@@ -1487,6 +1487,7 @@ async def on_startup():
     from routers.led_board import led_board_auto_loop  # LED board: fetch + push at a time / at intervals
     asyncio.create_task(led_board_auto_loop())
     asyncio.create_task(_whatsapp_health_loop())
+    asyncio.create_task(_whatsapp_retry_loop())
     from routers.biometric import biometric_health_loop, biometric_log_prune_loop
     asyncio.create_task(biometric_health_loop())
     asyncio.create_task(biometric_log_prune_loop())
@@ -2017,13 +2018,26 @@ async def _notify_whatsapp(account_id: str, title: str, body: str) -> None:
     notif_prefs already decided whether this call happened at all, for the
     broadcasts that go through _notify_module; the person-specific ones below
     — your task, your salary, your missed punch — always fired for push and
-    do the same here)."""
+    do the same here). Like push and the in-app bell, nothing goes out to
+    someone whose master notification switch is off."""
+    if await _muted_account_ids([account_id]):
+        return
     u = await db.users.find_one({'id': account_id}, {'_id': 0, 'mobile': 1})
     mobile = (u or {}).get('mobile')
     if not mobile:
         e = await db.employees.find_one({'id': account_id}, {'_id': 0, 'mobile': 1})
         mobile = (e or {}).get('mobile')
     if not mobile:
+        return
+    if META_WA_ALERT_TEMPLATE and await whatsapp_provider() == 'meta':
+        # Meta rejects business-initiated freeform text outside the 24-hour
+        # window, which is almost every staff alert — send them through an
+        # approved template with the title/body as its {{1}}/{{2}} instead.
+        # Template parameters may not contain newlines or tabs.
+        import whatsapp_meta
+        params = [' '.join(str(v or '').split())[:900] or '-' for v in (title, body)]
+        await whatsapp_meta.send_template(mobile, META_WA_ALERT_TEMPLATE, META_WA_ALERT_TEMPLATE_LANG,
+                                          body_params=params, flow='app_notification')
         return
     text = f'{title}\n{body}' if body else title
     await send_whatsapp(mobile, text, flow='app_notification')
@@ -2136,6 +2150,11 @@ async def log_whatsapp_message(
 
 
 WHATSAPP_PROVIDERS = ('openwa', 'meta')
+# Approved Meta template for staff alerts while Meta is the active provider:
+# body "{{1}}\n{{2}}" (title, then detail). Unset = alerts go as plain text,
+# which Meta only delivers inside the 24-hour window.
+META_WA_ALERT_TEMPLATE = os.environ.get('META_WA_ALERT_TEMPLATE', '').strip()
+META_WA_ALERT_TEMPLATE_LANG = os.environ.get('META_WA_ALERT_TEMPLATE_LANG', 'en').strip() or 'en'
 
 
 async def whatsapp_provider() -> str:
@@ -2245,6 +2264,45 @@ async def get_whatsapp_status() -> dict:
     except Exception as e:
         logger.warning(f'openwa status check failed: {e}')
         return {'configured': True, 'connected': False, 'phone': None}
+
+
+WHATSAPP_RETRY_SEC = 300
+WHATSAPP_RETRY_MAX = 3
+WHATSAPP_RETRY_WINDOW_MIN = 60
+
+
+async def _whatsapp_retry_loop() -> None:
+    """Re-sends OpenWA text messages that failed in the last hour (gateway
+    briefly down, session re-pairing) instead of losing them — up to
+    WHATSAPP_RETRY_MAX tries, updating the same Sent Messages Log entry.
+    Channel posts are never retried (a gold-rate post is left for manual
+    review, see gold_rate._maybe_auto_send), nor Meta sends, whose failures
+    (24-hour window, bad number) are almost always permanent."""
+    await asyncio.sleep(180)
+    while True:
+        try:
+            if await whatsapp_provider() == 'openwa':
+                cutoff = (now_utc() - timedelta(minutes=WHATSAPP_RETRY_WINDOW_MIN)).isoformat()
+                failed = await db.whatsapp_messages.find({
+                    'provider': 'openwa', 'message_type': 'text', 'success': False,
+                    'created_at': {'$gte': cutoff}, 'retry_count': {'$not': {'$gte': WHATSAPP_RETRY_MAX}},
+                    'error': {'$ne': 'invalid or missing mobile number'},
+                }, {'_id': 0}).sort('created_at', 1).to_list(50)
+                for m in failed:
+                    body, to = m.get('body') or '', m.get('to') or ''
+                    if not body or len(body) >= 1000:  # log keeps only 1000 chars — never send a truncated copy
+                        continue
+                    chat_id = to if '@' in to else _to_whatsapp_chat_id(to)
+                    ok = bool(chat_id) and await _openwa_send_text(chat_id, body)
+                    await db.whatsapp_messages.update_one({'id': m['id']}, {
+                        '$inc': {'retry_count': 1},
+                        '$set': {'success': ok, 'retried_at': now_utc().isoformat(), **({'error': None} if ok else {})},
+                    })
+                    if not ok:
+                        break  # gateway still down — try the rest next cycle
+        except Exception as e:
+            logger.warning(f'whatsapp retry loop error: {e}')
+        await asyncio.sleep(WHATSAPP_RETRY_SEC)
 
 
 WHATSAPP_HEALTH_CHECK_SEC = 900  # 15 min — get_whatsapp_status() is otherwise

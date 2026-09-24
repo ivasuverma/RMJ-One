@@ -172,7 +172,7 @@ export default function OwnerAttendance() {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); if (seg === 'pay') loadPay(); if (seg === 'live') loadLive(); }} tintColor={colors.brandPrimary} />}
       >
-        <Pressable onPress={goBack} style={styles.backRow} hitSlop={8} testID="back-btn">
+        <Pressable onPress={goBack} style={styles.backRow} hitSlop={8} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back">
           <Ionicons name="chevron-back" size={18} color={colors.brandPrimary} />
           <Text style={styles.backText}>Work</Text>
         </Pressable>
@@ -183,7 +183,7 @@ export default function OwnerAttendance() {
               <Pressable
                 onPress={() => { setRefreshing(true); load(); if (seg === 'pay') loadPay(); if (seg === 'live') loadLive(); }}
                 disabled={refreshing}
-                testID="attendance-refresh-btn"
+                testID="attendance-refresh-btn" accessibilityRole="button" accessibilityLabel="Refresh"
                 hitSlop={10}
               >
                 {refreshing ? <ActivityIndicator size="small" color={colors.onSurface} /> : <Ionicons name="refresh" size={16} color={colors.onSurface} />}

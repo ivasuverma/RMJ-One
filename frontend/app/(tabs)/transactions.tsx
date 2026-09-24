@@ -105,5 +105,5 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   tileIconDisabled: { backgroundColor: colors.surfaceTertiary, borderColor: colors.border },
   tileLabel: { color: colors.onSurface, fontSize: 13, fontWeight: '700', textAlign: 'center' },
   tileLabelDisabled: { color: colors.onSurfaceTertiary },
-  soon: { color: colors.mutedText, fontSize: 10, marginTop: 2 },
+  soon: { color: colors.mutedText, fontSize: 11, marginTop: 2 },
 });

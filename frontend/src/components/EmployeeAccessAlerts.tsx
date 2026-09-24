@@ -86,7 +86,7 @@ export function EmployeeAccessAlerts({ editor, onSave }: { editor: AccessEditor;
             <Text style={styles.masterTitle}>Allow notifications</Text>
             <Text style={styles.masterSub}>Push &amp; WhatsApp for modules he can access</Text>
           </View>
-          <Switch value={notifOn} onValueChange={setNotifOn} trackColor={{ true: colors.brandPrimary, false: colors.border }} thumbColor={colors.surface} testID="ea-notif-master" />
+          <Switch value={notifOn} onValueChange={setNotifOn} trackColor={{ true: colors.brandPrimary, false: colors.border }} thumbColor={colors.surface} {...({ activeThumbColor: colors.surface } as object)} testID="ea-notif-master" />
         </View>
       </View>
 
@@ -156,7 +156,7 @@ export function EmployeeAccessAlerts({ editor, onSave }: { editor: AccessEditor;
                 value={on}
                 onValueChange={(v) => { toggleMod(m.key); if (v) setExpanded((p) => new Set(p).add(m.key)); }}
                 trackColor={{ true: colors.brandPrimary, false: colors.border }}
-                thumbColor={colors.surface}
+                thumbColor={colors.surface} {...({ activeThumbColor: colors.surface } as object)}
                 testID={`ea-mod-switch-${m.key}`}
               />
             </Pressable>
@@ -212,7 +212,7 @@ export function EmployeeAccessAlerts({ editor, onSave }: { editor: AccessEditor;
                     })}
                     <View style={styles.seeDoneRow}>
                       <Text style={styles.folderLabel}>Browse &quot;Done&quot; folder</Text>
-                      <Switch value={seeDone} onValueChange={setSeeDone} trackColor={{ true: colors.brandPrimary, false: colors.border }} thumbColor={colors.surface} testID="ea-see-done" />
+                      <Switch value={seeDone} onValueChange={setSeeDone} trackColor={{ true: colors.brandPrimary, false: colors.border }} thumbColor={colors.surface} {...({ activeThumbColor: colors.surface } as object)} testID="ea-see-done" />
                     </View>
                   </>
                 )}

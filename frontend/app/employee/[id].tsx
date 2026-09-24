@@ -222,7 +222,7 @@ export default function EmployeeProfile() {
     return (
       <SafeAreaView style={styles.root} edges={['top']}>
         <View style={styles.headerBar}>
-          <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
+          <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
             <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
           </Pressable>
         </View>
@@ -252,7 +252,7 @@ export default function EmployeeProfile() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="employee-profile">
       <View style={styles.headerBar}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
+        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
         <View style={{ flex: 1 }} />

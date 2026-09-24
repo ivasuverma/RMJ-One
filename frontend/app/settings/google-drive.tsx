@@ -45,9 +45,9 @@ export default function GoogleDriveScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="google-drive-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} hitSlop={12} testID="back-btn"><Ionicons name="chevron-back" size={22} color={colors.onSurface} /></Pressable>
+        <Pressable onPress={() => router.back()} style={styles.iconBtn} hitSlop={12} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back"><Ionicons name="chevron-back" size={22} color={colors.onSurface} /></Pressable>
         <Text style={styles.title}>Google Drive</Text>
-        <Pressable onPress={load} style={styles.iconBtn} hitSlop={12} testID="drive-refresh"><Ionicons name="refresh" size={19} color={colors.onSurface} /></Pressable>
+        <Pressable onPress={load} style={styles.iconBtn} hitSlop={12} testID="drive-refresh" accessibilityRole="button" accessibilityLabel="Refresh"><Ionicons name="refresh" size={19} color={colors.onSurface} /></Pressable>
       </View>
 
       <ScrollView contentContainerStyle={{ padding: spacing.lg }}>
