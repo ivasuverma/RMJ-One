@@ -71,18 +71,32 @@
   .status.stale i{background:#FF9F0A; animation:none}
   @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(52,199,89,.55)}70%{box-shadow:0 0 0 8px rgba(52,199,89,0)}100%{box-shadow:0 0 0 0 rgba(52,199,89,0)}}
 
-  .board{display:grid; grid-template-columns:repeat(4,1fr); gap:clamp(10px,1.4vw,16px); margin:clamp(40px,6vw,60px) auto 0; max-width:1000px}
-  .rate{background:var(--char); border:1px solid #262628; border-radius:var(--r-lg); padding:clamp(18px,2.4vw,26px) clamp(14px,2vw,22px); text-align:left; position:relative}
-  .rate.hl{border-color:rgba(217,180,106,.45); background:linear-gradient(180deg,#1b170f,#141414)}
-  .rate .k{font-size:14px; color:var(--gold-lt); font-weight:600}
-  .rate .v{font-size:clamp(28px,3.8vw,44px); font-weight:700; letter-spacing:-.035em; margin-top:10px; font-variant-numeric:tabular-nums; white-space:nowrap}
-  .rate .v small{font-size:.52em; font-weight:500; margin-right:2px; vertical-align:.32em; color:#A1A1A6}
-  .rate .u{font-size:13px; color:#86868B; margin-top:2px; display:flex; justify-content:space-between; gap:6px; flex-wrap:wrap}
-  .rate .chg{font-weight:600}
-  .rate .chg.up{color:var(--up)} .rate .chg.dn{color:var(--down)}
-  .rate .v.flash{animation:flash 1s ease}
+  /* Same two numbers (Sell / Buyback) per metal, plus the three international
+     spot tiles, as the app's own public rates screen (frontend/app/rates.tsx)
+     — this board reads the identical GET /api/public/rates response, just
+     restyled for the black hero instead of re-inventing a different rate
+     shape (the earlier per-purity 24K/22K/18K board didn't match what the
+     API actually returns). */
+  .metals{display:grid; grid-template-columns:repeat(2,1fr); gap:clamp(12px,1.6vw,18px); margin:clamp(40px,6vw,60px) auto 0; max-width:760px}
+  .metal{background:var(--char); border:1px solid #262628; border-radius:var(--r-lg); padding:clamp(20px,2.6vw,30px) clamp(18px,2.4vw,26px); text-align:left}
+  .mhead{font-size:15px; color:var(--gold-lt); font-weight:700}
+  .mhead span{font-size:12.5px; color:#86868B; font-weight:500; margin-left:6px}
+  .pair{display:flex; align-items:center; margin-top:16px}
+  .pcol{flex:1; text-align:center}
+  .pdiv{width:1px; height:40px; background:#2a2a2c}
+  .plabel{display:block; font-size:11.5px; color:#86868B; font-weight:700; text-transform:uppercase; letter-spacing:.4px; margin-bottom:6px}
+  .pval{display:block; font-size:clamp(20px,2.6vw,26px); font-weight:700; letter-spacing:-.02em; font-variant-numeric:tabular-nums; color:#F5F5F7}
+  .pval.sell{color:var(--gold-hi)}
+  .pval.flash{animation:flash 1s ease}
   @keyframes flash{0%{color:var(--gold-hi)}100%{color:inherit}}
-  .fine{font-size:13px; color:#86868B; max-width:600px; margin:28px auto 0; line-height:1.55}
+
+  .spots{display:flex; gap:10px; max-width:760px; margin:14px auto 0; flex-wrap:wrap; justify-content:center}
+  .spot{flex:1; min-width:140px; background:var(--char); border:1px solid #262628; border-radius:var(--r-md); padding:12px 10px; text-align:center}
+  .slabel{display:block; font-size:10px; color:#86868B; font-weight:700; letter-spacing:.4px}
+  .sval{display:block; font-size:15px; font-weight:700; margin-top:3px; color:#F5F5F7; font-variant-numeric:tabular-nums}
+  .sunit{display:block; font-size:10px; color:#86868B; margin-top:1px}
+
+  .fine{font-size:13px; color:#86868B; max-width:600px; margin:20px auto 0; line-height:1.55}
   .actions{display:flex; gap:12px; justify-content:center; margin-top:30px; flex-wrap:wrap}
   .btn{display:inline-flex; align-items:center; justify-content:center; gap:8px; font-size:17px; font-weight:500; text-decoration:none; padding:13px 24px; border-radius:980px; transition:transform .15s, background .2s; min-height:48px}
   .btn:active{transform:scale(.97)}
@@ -179,7 +193,6 @@
 
   /* ---------- RESPONSIVE ---------- */
   @media (max-width:980px){
-    .board{grid-template-columns:repeat(2,1fr)}
     .promises{grid-template-columns:repeat(2,1fr)}
   }
   @media (max-width:820px){
@@ -197,7 +210,8 @@
     footer{padding-bottom:calc(110px + env(safe-area-inset-bottom))}
   }
   @media (max-width:420px){
-    .rate .v{font-size:27px}
+    .metals{grid-template-columns:1fr}
+    .pval{font-size:22px}
     .hero h1{font-size:36px}
     .brand .wm small{display:none}
   }
@@ -244,8 +258,30 @@
     <div class="monogram"><img src="assets/images/logo-mark.png" alt="Ram Murti Jewellers logo"></div>
     <h1>Today's <span class="g">gold rate</span><br>in Ludhiana.</h1>
     <div class="status" id="status" aria-live="polite"><i></i><span id="statusText">Loading today's rates</span></div>
-    <div class="board" id="board"></div>
-    <p class="fine">Gold per 10 grams, silver per kilogram. Rates update through the day. Your final price adds making charges and 3% GST. Ask us for an exact quote on any piece.</p>
+    <div class="metals">
+      <div class="metal">
+        <div class="mhead">Gold<span>995 purity · 10 g</span></div>
+        <div class="pair">
+          <div class="pcol"><span class="plabel">Sell</span><span class="pval sell" id="goldSell">—</span></div>
+          <div class="pdiv"></div>
+          <div class="pcol"><span class="plabel">Buyback</span><span class="pval" id="goldBuy">—</span></div>
+        </div>
+      </div>
+      <div class="metal">
+        <div class="mhead">Silver<span>999 purity · 1 kg</span></div>
+        <div class="pair">
+          <div class="pcol"><span class="plabel">Sell</span><span class="pval sell" id="silverSell">—</span></div>
+          <div class="pdiv"></div>
+          <div class="pcol"><span class="plabel">Buyback</span><span class="pval" id="silverBuy">—</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="spots">
+      <div class="spot"><span class="slabel">Gold (XAU)</span><span class="sval" id="xau">—</span><span class="sunit">per troy oz</span></div>
+      <div class="spot"><span class="slabel">Silver (XAG)</span><span class="sval" id="xag">—</span><span class="sunit">per troy oz</span></div>
+      <div class="spot"><span class="slabel">USD/INR</span><span class="sval" id="usdinr">—</span><span class="sunit">spot</span></div>
+    </div>
+    <p class="fine">Rates are indicative and exclude making charges, wastage and GST — they can change through the day, and the rate applicable to any transaction is the one in effect at billing, not the rate shown here. Buyback is offered only on items purchased from us, subject to purity verification.</p>
     <div class="actions">
       <a class="btn wa" href="https://wa.me/919781800888?text=Hello%2C%20I%27d%20like%20a%20quote%20at%20today%27s%20gold%20rate.">Get a quote on WhatsApp</a>
       <a class="btn ghost" href="tel:+919781800888">Call the shop</a>
@@ -383,66 +419,60 @@
 <script>
 /* ================================================================
    CONFIG — connect to RMJ One
-   RATES_URL: public, read-only endpoint on RMJ One returning the
-   latest rates (see the Cowork brief for the exact JSON contract).
+   RATES_URL: the exact same GET /api/public/rates endpoint the app's
+   own public rates screen (frontend/app/rates.tsx) reads — same
+   response shape, same 60s refresh cadence, so this board is never a
+   second source of truth or a different-looking rate elsewhere.
    LOGIN_URL: where staff sign in to RMJ One.
    ================================================================ */
 const CONFIG = {
   RATES_URL: 'https://app.rmj.co.in/api/public/rates',   // ← set to your RMJ One URL
   LOGIN_URL: 'https://app.rmj.co.in',                     // ← set to your RMJ One URL
-  REFRESH_MS: 5 * 60 * 1000,                              // refresh every 5 minutes
+  REFRESH_MS: 60 * 1000,                                  // same cadence as the app's rates screen
   STALE_AFTER_MS: 6 * 60 * 60 * 1000,                     // flag rates older than 6 hours
 };
 
-/* Fallback shown only until the first successful fetch (sample figures). */
-const FALLBACK = { updated_at:null, rates:[
-  {key:'24k', label:'24K fine gold', value:110500, unit:'per 10 g', change:null},
-  {key:'22k', label:'22K jewellery', value:101300, unit:'per 10 g', change:null},
-  {key:'18k', label:'18K jewellery', value:82900,  unit:'per 10 g', change:null},
-  {key:'silver', label:'Silver',     value:128000, unit:'per kg',   change:null},
-]};
+/* Fallback shown only until the first successful fetch (sample figures) —
+   same field names as GET /api/public/rates: store_name, fetched_at,
+   gold_sell, gold_buy, silver_sell, silver_buy, xau_usd, xag_usd, usd_inr. */
+const FALLBACK = {
+  store_name: 'Ram Murti Jewellers', fetched_at: null,
+  gold_sell: 110500, gold_buy: 106500, silver_sell: 128000, silver_buy: 122500,
+  xau_usd: null, xag_usd: null, usd_inr: null,
+};
 
 ['staffBtn','staffBtnM','staffBtnF'].forEach(id=>{ const a=document.getElementById(id); if(a){ a.href=CONFIG.LOGIN_URL; a.rel='nofollow'; }});
 
-const board=document.getElementById('board'), statusEl=document.getElementById('status'), statusText=document.getElementById('statusText');
+const statusEl=document.getElementById('status'), statusText=document.getElementById('statusText');
 const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
-const inr=v=>Math.round(v).toLocaleString('en-IN');
+const inr=v=>v==null?'—':'₹'+Math.round(v).toLocaleString('en-IN');
+const usd=v=>v==null?'—':'$'+v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 let shown={}, firstPaint=true;
 
-function paint(data, source){
-  const rates=data.rates||[];
-  if(!board.children.length || board.children.length!==rates.length){
-    board.innerHTML=rates.map((r,i)=>`
-      <div class="rate ${i===1?'hl':''}" data-key="${r.key}">
-        <div class="k">${r.label}</div>
-        <div class="v"><small>₹</small><span>0</span></div>
-        <div class="u"><span>${r.unit}</span><span class="chg"></span></div>
-      </div>`).join('');
+function setVal(id, val, fmt){
+  const el=document.getElementById(id);
+  const prev=shown[id];
+  el.textContent=fmt(val);
+  if(!firstPaint && !reduce && prev!==undefined && prev!==val){
+    el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash');
   }
-  rates.forEach(r=>{
-    const card=board.querySelector(`[data-key="${r.key}"]`); if(!card) return;
-    const span=card.querySelector('.v span'), from=shown[r.key]??0, to=r.value;
-    const chg=card.querySelector('.chg');
-    if(typeof r.change==='number' && r.change!==0){
-      chg.textContent=(r.change>0?'▲ ₹':'▼ ₹')+inr(Math.abs(r.change));
-      chg.className='chg '+(r.change>0?'up':'dn');
-    } else { chg.textContent=''; chg.className='chg'; }
-    if(from===to){ span.textContent=inr(to); return; }
-    if(reduce || (!firstPaint && Math.abs(to-from)<1)){ span.textContent=inr(to); }
-    else{
-      const t0=performance.now(), dur=firstPaint?1100:600;
-      const step=t=>{const p=Math.min((t-t0)/dur,1), e=1-Math.pow(1-p,3); span.textContent=inr(from+(to-from)*e); if(p<1) requestAnimationFrame(step);};
-      requestAnimationFrame(step);
-      if(!firstPaint){ const v=card.querySelector('.v'); v.classList.remove('flash'); void v.offsetWidth; v.classList.add('flash'); }
-    }
-    shown[r.key]=to;
-  });
-  const r22=rates.find(r=>r.key==='22k'); if(r22) document.getElementById('mbarRate').textContent='₹'+inr(r22.value);
+  shown[id]=val;
+}
+
+function paint(data, source){
+  setVal('goldSell', data.gold_sell, inr);
+  setVal('goldBuy', data.gold_buy, inr);
+  setVal('silverSell', data.silver_sell, inr);
+  setVal('silverBuy', data.silver_buy, inr);
+  setVal('xau', data.xau_usd, usd);
+  setVal('xag', data.xag_usd, usd);
+  setVal('usdinr', data.usd_inr, v=>v==null?'—':'₹'+v.toFixed(2));
+  document.getElementById('mbarRate').textContent = data.gold_sell!=null ? inr(data.gold_sell) : 'Rate';
   firstPaint=false;
 
   // status line
-  if(source==='live' && data.updated_at){
-    const t=new Date(data.updated_at), age=Date.now()-t;
+  if(source==='live' && data.fetched_at){
+    const t=new Date(data.fetched_at), age=Date.now()-t;
     const when=t.toLocaleTimeString('en-IN',{hour:'numeric',minute:'2-digit'});
     const day=t.toDateString()===new Date().toDateString()?'today':t.toLocaleDateString('en-IN',{day:'numeric',month:'short'});
     statusText.textContent=`Live rate, updated ${day} at ${when}`;
@@ -459,16 +489,16 @@ async function load(){
     const res=await fetch(CONFIG.RATES_URL,{cache:'no-store'});
     if(!res.ok) throw new Error(res.status);
     const data=await res.json();
-    if(!Array.isArray(data.rates) || !data.rates.length) throw new Error('empty');
+    if(data.gold_sell==null && data.silver_sell==null) throw new Error('empty');
     try{ localStorage.setItem('rmj_rates', JSON.stringify(data)); }catch(e){}
     paint(data,'live');
   }catch(e){
     let cached=null; try{ cached=JSON.parse(localStorage.getItem('rmj_rates')); }catch(_){}
-    if(cached && cached.rates) paint(cached,'cache'); else paint(FALLBACK,'sample');
+    if(cached) paint(cached,'cache'); else paint(FALLBACK,'sample');
   }
 }
 // paint instantly from cache, then fetch fresh
-try{ const c=JSON.parse(localStorage.getItem('rmj_rates')); if(c&&c.rates){ paint(c,'cache'); } }catch(e){}
+try{ const c=JSON.parse(localStorage.getItem('rmj_rates')); if(c){ paint(c,'cache'); } }catch(e){}
 load();
 setInterval(()=>{ if(!document.hidden) load(); }, CONFIG.REFRESH_MS);
 document.addEventListener('visibilitychange',()=>{ if(!document.hidden) load(); });
