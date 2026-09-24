@@ -4,12 +4,10 @@ import {
   Text,
   StyleSheet,
   TextInput,
-  FlatList,
+  SectionList,
   Pressable,
   ActivityIndicator,
-  ScrollView,
   RefreshControl,
-  Platform,
 } from 'react-native';
 import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { Image } from 'expo-image';
@@ -18,7 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '@/src/api/client';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
-import { ErrorState } from '@/src/components/ui';
+import { ErrorState, SegmentedControl } from '@/src/components/ui';
 
 type Emp = {
   id: string; name: string; employee_code: string; department: string;
@@ -26,17 +24,16 @@ type Emp = {
   salary: number;
 };
 
-// 'left' isn't a real status value the backend stores — it's inactive AND
-// settled (final salary paid, ledger nil) AND deactivated 30+ days ago (see
-// GET /employees). "Inactive" here means "recently left, dues pending";
-// once settled they graduate out of that chip and into this one.
-const CHIPS: { key: string; label: string; status?: string }[] = [
+const SEGMENTS = [
+  { key: 'active', label: 'Active' },
+  { key: 'on_leave', label: 'On Leave' },
+  { key: 'inactive', label: 'Inactive' },
   { key: 'all', label: 'All' },
-  { key: 'active', label: 'Active', status: 'active' },
-  { key: 'on_leave', label: 'On Leave', status: 'on_leave' },
-  { key: 'inactive', label: 'Inactive', status: 'inactive' },
-  { key: 'left', label: 'Left', status: 'left' },
 ];
+
+const DOT_COLOR: Record<Emp['status'], keyof ThemeColors> = {
+  active: 'onSuccess', on_leave: 'brandPrimary', inactive: 'mutedText',
+};
 
 export default function EmployeesScreen() {
   const router = useRouter();
@@ -56,8 +53,7 @@ export default function EmployeesScreen() {
       setError('');
       const query = new URLSearchParams();
       if (q.trim()) query.set('q', q.trim());
-      const chip = CHIPS.find((c) => c.key === filter);
-      if (chip?.status) query.set('status', chip.status);
+      if (filter !== 'all') query.set('status', filter);
       const path = `/employees${query.toString() ? `?${query.toString()}` : ''}`;
       const res = await api.get<Emp[]>(path);
       setItems(res || []);
@@ -77,6 +73,23 @@ export default function EmployeesScreen() {
   const empty = !loading && items.length === 0;
 
   const initials = (name: string) => name.trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() || '').join('');
+
+  // Grouped by department — an inset "Shop · 7" section per department,
+  // department-less employees collected into one group at the end.
+  const sections = useMemo(() => {
+    const byDept = new Map<string, Emp[]>();
+    for (const e of items) {
+      const key = e.department?.trim() || 'No Department';
+      if (!byDept.has(key)) byDept.set(key, []);
+      byDept.get(key)!.push(e);
+    }
+    const keys = [...byDept.keys()].sort((a, b) => {
+      if (a === 'No Department') return 1;
+      if (b === 'No Department') return -1;
+      return a.localeCompare(b);
+    });
+    return keys.map((k) => ({ title: k, data: byDept.get(k)! }));
+  }, [items]);
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="employees-screen">
@@ -116,26 +129,7 @@ export default function EmployeesScreen() {
           )}
         </View>
 
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.chipsRow}
-          style={styles.chipsScroll}
-        >
-          {CHIPS.map((c) => {
-            const active = filter === c.key;
-            return (
-              <Pressable
-                key={c.key}
-                testID={`chip-${c.key}`}
-                onPress={() => setFilter(c.key)}
-                style={[styles.chip, active && styles.chipActive]}
-              >
-                <Text style={[styles.chipText, active && styles.chipTextActive]}>{c.label}</Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
+        <SegmentedControl options={SEGMENTS} value={filter} onChange={setFilter} testID="employees-status-seg" />
       </View>
 
       {loading && items.length === 0 ? (
@@ -155,36 +149,53 @@ export default function EmployeesScreen() {
           </Pressable>
         </View>
       ) : (
-        <FlatList
-          data={items}
+        <SectionList
+          sections={sections}
           keyExtractor={(i) => i.id}
           contentContainerStyle={styles.list}
+          stickySectionHeadersEnabled={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.brandPrimary} />}
-          ItemSeparatorComponent={() => <View style={{ height: spacing.sm }} />}
-          renderItem={({ item }) => (
+          renderSectionHeader={({ section }) => (
+            <Text style={styles.sectionHeader}>{section.title} · {section.data.length}</Text>
+          )}
+          renderItem={({ item, index, section }) => (
             <Pressable
               testID={`emp-row-${item.id}`}
-              style={({ pressed }) => [styles.row, pressed && { opacity: 0.85 }]}
+              style={({ pressed }) => [
+                styles.row,
+                index === 0 && styles.rowFirst,
+                index === section.data.length - 1 && styles.rowLast,
+                index > 0 && styles.rowDivider,
+                pressed && { opacity: 0.85 },
+              ]}
               onPress={() => router.push(from === 'transactions' ? `/ledger/${item.id}` : `/employee/${item.id}`)}
             >
-              {item.photo ? (
-                <Image source={{ uri: item.photo }} style={styles.avatarPhoto} />
-              ) : (
-                <View style={styles.avatar}>
-                  <Text style={styles.avatarText}>{initials(item.name)}</Text>
-                </View>
-              )}
-              <View style={{ flex: 1 }}>
+              <View style={styles.avatarWrap}>
+                {item.photo ? (
+                  <Image source={{ uri: item.photo }} style={styles.avatarPhoto} />
+                ) : (
+                  <View style={styles.avatar}>
+                    <Text style={styles.avatarText}>{initials(item.name)}</Text>
+                  </View>
+                )}
+                <View style={[styles.statusDot, { backgroundColor: colors[DOT_COLOR[item.status]] as string, borderColor: colors.surfaceSecondary }]} />
+              </View>
+              <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={styles.rowName} numberOfLines={1}>{item.name}</Text>
                 <Text style={styles.rowSub} numberOfLines={1}>
-                  {item.designation || '—'}  ·  {item.department || '—'}
+                  {item.designation || '—'} · {item.employee_code}
                 </Text>
-                <Text style={styles.rowCode}>{item.employee_code}</Text>
               </View>
-              <StatusChip status={item.status} />
               <Ionicons name="chevron-forward" size={18} color={colors.mutedText} />
             </Pressable>
           )}
+          ListFooterComponent={
+            <Text style={styles.legend}>
+              <Text style={{ color: colors.onSuccess }}>● </Text>active ·{' '}
+              <Text style={{ color: colors.brandPrimary }}>● </Text>on leave ·{' '}
+              <Text style={{ color: colors.mutedText }}>● </Text>inactive
+            </Text>
+          }
         />
       )}
 
@@ -192,22 +203,6 @@ export default function EmployeesScreen() {
         <Ionicons name="add" size={26} color={colors.onBrandPrimary} />
       </Pressable>
     </SafeAreaView>
-  );
-}
-
-function StatusChip({ status }: { status: 'active' | 'inactive' | 'on_leave' }) {
-  const { colors } = useTheme();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
-  const map = {
-    active: { label: 'Active', bg: colors.success, bd: colors.onSuccess, fg: colors.onSuccess },
-    on_leave: { label: 'On Leave', bg: colors.warning, bd: colors.onWarning, fg: colors.onWarning },
-    inactive: { label: 'Inactive', bg: colors.error, bd: colors.onError, fg: colors.onError },
-  } as const;
-  const s = map[status] || map.active;
-  return (
-    <View style={[styles.statusChip, { backgroundColor: s.bg, borderColor: s.bd }]}>
-      <Text style={[styles.statusChipText, { color: s.fg }]}>{s.label}</Text>
-    </View>
   );
 }
 
@@ -241,39 +236,34 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   searchInput: { flex: 1, color: colors.onSurface, fontSize: 14, paddingVertical: 0 },
 
-  chipsScroll: { height: 40 },
-  chipsRow: { gap: spacing.sm, paddingRight: spacing.lg, alignItems: 'center', height: 40 },
-  chip: {
-    flexShrink: 0, height: 36, paddingHorizontal: spacing.lg,
-    borderRadius: radius.pill, borderWidth: 1, borderColor: colors.border,
-    backgroundColor: colors.surfaceSecondary, alignItems: 'center', justifyContent: 'center',
-  },
-  chipActive: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
-  chipText: { color: colors.onSurfaceTertiary, fontSize: 13, fontWeight: '600' },
-  chipTextActive: { color: colors.onBrandPrimary },
-
   list: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: 100 },
+  sectionHeader: {
+    color: colors.mutedText, fontSize: 12, fontWeight: '700', letterSpacing: 0.4, textTransform: 'uppercase',
+    marginTop: spacing.md, marginBottom: spacing.xs,
+  },
   row: {
     flexDirection: 'row', alignItems: 'center', gap: spacing.md,
-    backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg,
-    borderWidth: 1, borderColor: colors.border,
-    padding: spacing.md, minHeight: 72,
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1, borderColor: colors.border, borderTopWidth: 0,
+    paddingHorizontal: spacing.md, paddingVertical: spacing.md, minHeight: 68,
   },
+  rowFirst: { borderTopWidth: 1, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg },
+  rowLast: { borderBottomLeftRadius: radius.lg, borderBottomRightRadius: radius.lg },
+  rowDivider: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.divider },
+  avatarWrap: { width: 44, height: 44 },
   avatar: {
-    width: 48, height: 48, borderRadius: 24,
+    width: 44, height: 44, borderRadius: 22,
     backgroundColor: colors.brandTertiary, alignItems: 'center', justifyContent: 'center',
     borderWidth: 1, borderColor: colors.brand,
   },
-  avatarText: { color: colors.brandSecondary, fontWeight: '700', fontSize: 16 },
-  avatarPhoto: { width: 48, height: 48, borderRadius: 24, backgroundColor: colors.surfaceTertiary },
-  rowName: { color: colors.onSurface, fontSize: 15, fontWeight: '600' },
-  rowSub: { color: colors.onSurfaceTertiary, fontSize: 12, marginTop: 2 },
-  rowCode: { color: colors.mutedText, fontSize: 11, marginTop: 2 },
-  statusChip: {
-    paddingHorizontal: 10, paddingVertical: 4, borderRadius: radius.pill,
-    borderWidth: 1,
+  avatarText: { color: colors.brandSecondary, fontWeight: '700', fontSize: 15 },
+  avatarPhoto: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.surfaceTertiary },
+  statusDot: {
+    position: 'absolute', right: -1, bottom: -1, width: 13, height: 13, borderRadius: 7, borderWidth: 2,
   },
-  statusChipText: { fontSize: 11, fontWeight: '700' },
+  rowName: { color: colors.onSurface, fontSize: 15.5, fontWeight: '600' },
+  rowSub: { color: colors.onSurfaceTertiary, fontSize: 12.5, marginTop: 2 },
+  legend: { color: colors.mutedText, fontSize: 12, textAlign: 'center', marginTop: spacing.lg },
 
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl, gap: spacing.md },
   emptyTitle: { color: colors.onSurface, fontSize: 18, fontWeight: '600', marginTop: spacing.md },

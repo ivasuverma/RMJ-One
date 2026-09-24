@@ -30,7 +30,7 @@ import time
 import uuid
 from datetime import timedelta
 
-from server import db, now_utc, get_current, require_owner, log_audit, _notify_system_health
+from server import db, now_utc, get_current, require_owner, log_audit, _notify_system_health, resolve_modules
 
 router = APIRouter()
 logger = logging.getLogger('documents')
@@ -202,13 +202,81 @@ async def seed_document_categories() -> None:
             })
 
 
+async def migrate_employee_id_proofs() -> None:
+    """One-time: ID proofs used to live as a base64 array on the employee doc
+    (routers/employees.py's own dedicated upload endpoints, now removed).
+    They're ordinary 'ids'-category Documents now, linked to the employee
+    (linked_ref) exactly like any other captured-and-filed document — one
+    upload path instead of two. Guarded so this only ever runs once; the
+    original id_proofs array is left in place afterward, untouched, never
+    read or written by the app again (nothing is deleted)."""
+    if await db.settings.find_one({'id': 'id_proofs_migrated'}, {'_id': 0, 'id': 1}):
+        return
+    migrated = 0
+    async for emp in db.employees.find({'id_proofs': {'$exists': True, '$ne': []}}, {'_id': 0, 'id': 1, 'name': 1, 'id_proofs': 1}):
+        for proof in emp.get('id_proofs') or []:
+            data_uri = proof.get('data_uri') or ''
+            if ',' not in data_uri:
+                continue
+            header, b64 = data_uri.split(',', 1)
+            mime = 'image/jpeg'
+            if header.startswith('data:') and ';base64' in header:
+                mime = header[5:header.index(';')] or mime
+            try:
+                raw = base64.b64decode(b64)
+            except Exception:
+                continue
+            doc_id = str(uuid.uuid4())
+            now_iso = proof.get('uploaded_at') or now_utc().isoformat()
+            await _cache_write(doc_id, 'full', raw)
+            if mime.startswith('image/'):
+                view = await asyncio.to_thread(_make_view_sync, raw)
+                if view:
+                    await _cache_write(doc_id, 'view', view)
+                thumb = await asyncio.to_thread(_make_thumb_sync, raw)
+                if thumb:
+                    await _cache_write(doc_id, 'thumb', thumb)
+            await db.documents.insert_one({
+                'id': doc_id, 'category_key': 'ids', 'status': 'done', 'client_id': None,
+                'linked_ref': {'type': 'employee', 'id': emp['id'], 'label': emp.get('name', '')},
+                'note': proof.get('name', ''), 'uploaded_by': 'system', 'uploaded_by_name': 'Migration',
+                'created_at': now_iso, 'recorded_at': now_iso, 'recorded_by': 'system', 'recorded_by_name': 'Migration',
+                'last_pending_reminder_at': None, 'ocr': {'text': None, 'fields': {}, 'status': 'none'},
+                'deleted': False, 'pages': None, 'local_kind': 'disk',
+                'file': {'drive_file_id': None, 'drive_view_link': None, 'drive_thumbnail_link': None,
+                         'mime': mime, 'size': len(raw), 'orig_name': proof.get('name') or 'ID proof'},
+                'upload_state': 'local',
+            })
+            migrated += 1
+    await db.settings.update_one(
+        {'id': 'id_proofs_migrated'},
+        {'$set': {'id': 'id_proofs_migrated', 'migrated_count': migrated, 'migrated_at': now_utc().isoformat()}},
+        upsert=True,
+    )
+    logger.warning(f'Migrated {migrated} employee ID proof(s) into Documents (category "ids").')
+
+
 def _role(user: dict) -> str:
     return user.get('role', '')
+
+
+def _has_documents_module(role: str, rights: dict = None) -> bool:
+    """An employee's per-category rights only matter if they can currently
+    open the Documents module at all — the Access & Alerts module switch is
+    now the single on/off for this whole area (folder rights included), not
+    just the Work-tab row. Owner/admin/accountant were never gated by
+    module_access here and stay that way (resolve_modules would fold in only
+    if this ever grows a per-staff-login toggle for them too)."""
+    if role != 'employee':
+        return True
+    return 'documents' in resolve_modules({'role': role, 'module_access': (rights or {}).get('module_access')})
 
 
 def _can_see(cat: dict, role: str, rights: dict = None) -> bool:
     if role == 'owner':
         return True
+    if not _has_documents_module(role, rights):
+        return False
     # Per-person overrides (Settings › People). As soon as ANY category is set
     # for this person, the whole map is authoritative — a category not marked
     # View is denied (it does NOT fall back to the role). Only a completely
@@ -223,6 +291,8 @@ def _can_see(cat: dict, role: str, rights: dict = None) -> bool:
 def _can_record(cat: dict, role: str, rights: dict = None) -> bool:
     if role == 'owner':
         return True
+    if not _has_documents_module(role, rights):
+        return False
     override = (rights or {}).get('doc_category_rights') or {}
     if override:
         return bool((override.get(cat.get('key')) or {}).get('record'))
@@ -244,8 +314,8 @@ async def _account_rights(user: dict) -> dict:
     if not uid:
         return {}
     async def load():
-        return (await db.users.find_one({'id': uid}, {'_id': 0, 'doc_category_rights': 1, 'doc_see_done': 1})
-                or await db.employees.find_one({'id': uid}, {'_id': 0, 'doc_category_rights': 1, 'doc_see_done': 1})
+        return (await db.users.find_one({'id': uid}, {'_id': 0, 'doc_category_rights': 1, 'doc_see_done': 1, 'module_access': 1})
+                or await db.employees.find_one({'id': uid}, {'_id': 0, 'doc_category_rights': 1, 'doc_see_done': 1, 'module_access': 1})
                 or {})
     return await _memo(('rights_all', uid), 15, load)   # a permission change shows up within seconds
 
@@ -482,7 +552,7 @@ async def _notify_record_holders(cat: dict, doc: dict, actor: dict) -> None:
     title = f'New {cat.get("label", "document")} to record'
     body = (doc.get('note') or (doc.get('file') or {}).get('orig_name') or 'A document was captured.')[:120]
     actor_id = actor.get('id')
-    proj = {'_id': 0, 'id': 1, 'role': 1, 'doc_category_rights': 1, 'status': 1}
+    proj = {'_id': 0, 'id': 1, 'role': 1, 'doc_category_rights': 1, 'status': 1, 'module_access': 1}
     sent = set()
     try:
         async for u in db.users.find({}, proj):
@@ -547,7 +617,7 @@ async def check_pending_reminders() -> None:
         await db.documents.update_one({'id': d['id']}, {'$set': {'last_pending_reminder_at': now_utc().isoformat()}})
         title = f'Still pending: {cat.get("label", "document")}'
         body = (d.get('note') or (d.get('file') or {}).get('orig_name') or 'Waiting to be recorded.')[:120]
-        proj = {'_id': 0, 'id': 1, 'role': 1, 'notifications_enabled': 1, 'notif_prefs': 1, 'notif_prefs_whatsapp': 1}
+        proj = {'_id': 0, 'id': 1, 'role': 1, 'notifications_enabled': 1, 'notif_prefs': 1, 'notif_prefs_whatsapp': 1, 'module_access': 1}
         sent = set()
         try:
             async for u in db.users.find({}, proj):
@@ -573,6 +643,7 @@ async def check_pending_reminders() -> None:
 async def list_documents(
     status: Optional[str] = None, category: Optional[str] = None, q: Optional[str] = None,
     cursor: Optional[str] = None, limit: int = 50,
+    linked_ref_type: Optional[str] = None, linked_ref_id: Optional[str] = None,
     user=Depends(get_current),
 ):
     role = _role(user)
@@ -584,6 +655,11 @@ async def list_documents(
         if category not in visible:
             raise HTTPException(status_code=403, detail='No access to this category')
         query['category_key'] = category
+    # Documents linked to one specific record (e.g. an employee's ID proofs) —
+    # both given together, since an id alone isn't unique across ref types.
+    if linked_ref_type and linked_ref_id:
+        query['linked_ref.type'] = linked_ref_type
+        query['linked_ref.id'] = linked_ref_id
     if status in ('pending', 'done'):
         # Someone without Done-folder access can never list done documents.
         if status == 'done' and not _can_see_done(user, rights):

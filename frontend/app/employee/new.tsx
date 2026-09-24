@@ -23,7 +23,7 @@ type Location = { id: string; name: string };
 type EmployeeFormState = {
   name: string; employee_code: string; biometric_id: string; department_id: string; location_id: string; designation: string;
   shift: string; salary: string; joining_date: string; mobile: string; address: string;
-  gender: string; guardian_name: string;
+  gender: string; guardian_name: string; date_of_birth: string;
   aadhaar: string; pan: string; bank_account: string; bank_ifsc: string; bank_name: string;
   status: 'active' | 'inactive' | 'on_leave'; notes: string;
   auto_advance_amount: string; auto_advance_day: string; photo: string;
@@ -31,7 +31,7 @@ type EmployeeFormState = {
 
 const EMPTY: EmployeeFormState = {
   name: '', employee_code: '', biometric_id: '', department_id: '', location_id: '', designation: '', shift: 'General', salary: '',
-  joining_date: todayIST(), mobile: '', address: '', gender: '', guardian_name: '',
+  joining_date: todayIST(), mobile: '', address: '', gender: '', guardian_name: '', date_of_birth: '',
   aadhaar: '', pan: '', bank_account: '', bank_ifsc: '', bank_name: '', status: 'active', notes: '',
   auto_advance_amount: '', auto_advance_day: '', photo: '',
 };
@@ -76,6 +76,7 @@ export default function EmployeeForm() {
           designation: e.designation || '', shift: e.shift || 'General',
           salary: String(e.salary ?? ''), joining_date: e.joining_date || '',
           mobile: e.mobile || '', address: e.address || '', gender: e.gender || '', guardian_name: e.guardian_name || '',
+          date_of_birth: e.date_of_birth || '',
           aadhaar: e.aadhaar || '',
           pan: e.pan || '', bank_account: e.bank_account || '', bank_ifsc: e.bank_ifsc || '',
           bank_name: e.bank_name || '', status: e.status || 'active', notes: e.notes || '',
@@ -196,6 +197,9 @@ export default function EmployeeForm() {
           <Field label="Guardian's / Father's Name" value={form.guardian_name} onChangeText={(v) => setField('guardian_name', v)} testID="field-guardian" />
           <Field label="Mobile" value={form.mobile} onChangeText={(v) => setField('mobile', v)} keyboardType="phone-pad" testID="field-mobile" />
           <Field label="Address" value={form.address} onChangeText={(v) => setField('address', v)} multiline testID="field-address" />
+          <View style={{ marginBottom: spacing.md }}>
+            <DateField label="Date of Birth" value={form.date_of_birth} onChange={(v) => setField('date_of_birth', v)} testID="field-dob" />
+          </View>
 
           <Text style={styles.label}>Gender</Text>
           <View style={styles.statusRow}>

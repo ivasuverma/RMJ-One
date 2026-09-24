@@ -506,6 +506,7 @@ class EmployeeIn(BaseModel):
     address: Optional[str] = ''
     gender: Optional[str] = None
     guardian_name: Optional[str] = ''
+    date_of_birth: Optional[str] = None  # YYYY-MM-DD, same convention as joining_date
     aadhaar: Optional[str] = ''
     pan: Optional[str] = ''
     bank_account: Optional[str] = ''
@@ -588,11 +589,6 @@ class LeaveIn(BaseModel):
 class DecisionIn(BaseModel):
     action: Literal['approve', 'reject']
     note: Optional[str] = ''
-
-
-class IdProofIn(BaseModel):
-    name: str
-    data_uri: str  # base64 data URI (image or PDF)
 
 
 class PushSubscriptionIn(BaseModel):
@@ -1263,8 +1259,9 @@ async def seed():
     # Seed the Documents category master (Customer KYC, IDs, Supplier, Cash
     # Sheets, Bills, Bank/CC Statements, Expense Bills) with default per-role
     # view/record permissions — editable in Settings afterward.
-    from routers.documents import seed_document_categories
+    from routers.documents import seed_document_categories, migrate_employee_id_proofs
     await seed_document_categories()
+    await migrate_employee_id_proofs()
 
     # One-time setup/migration: every shop needs at least one Cash Book
     # counter to have anywhere to record entries. If none exist yet, create
@@ -2405,7 +2402,7 @@ async def _notify_module_impl(module: str, title: str, body: str, url: str = '/'
     ever get, even if they've opted into the module and even if it happens to
     be about them (they already know they filed their own request)."""
     try:
-        proj = {'_id': 0, 'id': 1, 'role': 1, 'notifications_enabled': 1, 'notif_prefs': 1, 'notif_prefs_whatsapp': 1}
+        proj = {'_id': 0, 'id': 1, 'role': 1, 'notifications_enabled': 1, 'notif_prefs': 1, 'notif_prefs_whatsapp': 1, 'module_access': 1}
         async for u in db.users.find({}, proj):
             wants_push = _wants_script(u, u.get('role', ''), module, script)
             wants_wa = _wants_script_whatsapp(u, u.get('role', ''), module, script)
@@ -2413,8 +2410,17 @@ async def _notify_module_impl(module: str, title: str, body: str, url: str = '/'
                 await notify_user(u['id'], title, body, url, push=wants_push, whatsapp=wants_wa)
         if admin_only:
             return
+        # An employee-assignable module's alerts are only ever meaningful to
+        # someone who can currently open that module — an owner turning off
+        # e.g. Repairs for someone stops their repair alerts too, immediately,
+        # regardless of whatever they'd separately opted into here before.
+        # Modules with no such access concept for employees (attendance,
+        # tasks, payroll, ...) are unaffected — nothing here to gate on.
+        module_gated = module in EMPLOYEE_ASSIGNABLE_MODULES
         async for e in db.employees.find({'status': {'$ne': 'inactive'}}, proj):
             if subject_employee_id is not None and e['id'] != subject_employee_id:
+                continue
+            if module_gated and module not in resolve_modules({'role': 'employee', 'module_access': e.get('module_access')}):
                 continue
             wants_push = _wants_script(e, 'employee', module, script)
             wants_wa = _wants_script_whatsapp(e, 'employee', module, script)

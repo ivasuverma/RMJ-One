@@ -43,6 +43,7 @@ from server import (
     log_audit,
     _notify_module,
     notify_user,
+    resolve_modules,
 )
 
 router = APIRouter()
@@ -173,9 +174,15 @@ async def _notify_counter_over_limit(counter: dict, balance: float) -> None:
     body = f"{counter['name']} has {amt} in cash — transfer it out immediately."
     async for e in db.employees.find(
         {'status': {'$ne': 'inactive'}, 'cashbook_counter_ids': counter['id']},
-        {'_id': 0, 'id': 1, 'notifications_enabled': 1, 'notif_prefs': 1, 'notif_prefs_whatsapp': 1},
+        {'_id': 0, 'id': 1, 'notifications_enabled': 1, 'notif_prefs': 1, 'notif_prefs_whatsapp': 1, 'module_access': 1},
     ):
         if e.get('notifications_enabled') is False:
+            continue
+        # Belt-and-suspenders: the one UI path that assigns a counter already
+        # clears it the moment Cash Book access is revoked, but check access
+        # here too rather than trust that invariant held everywhere it could
+        # have been touched.
+        if 'cash_book' not in resolve_modules({'role': 'employee', 'module_access': e.get('module_access')}):
             continue
         wants_push = (e.get('notif_prefs') or {}).get('cashbook_over_limit_employee', True) is not False
         wants_wa = (e.get('notif_prefs_whatsapp') or {}).get('cashbook_over_limit_employee', True) is not False

@@ -113,6 +113,10 @@ export function useAccessEditor(accountId: string | undefined) {
     r[which] = !r[which];
     return { ...p, [k]: r };
   });
+  // Set both flags at once — used by the View/Edit/Full permission-level
+  // picker (see EmployeeAccessAlerts) where a single choice needs to land
+  // atomically, unlike toggleRight's one-flag-at-a-time flips.
+  const setModuleRights = (k: string, r: Rights) => setRights((p) => ({ ...p, [k]: r }));
   const toggleDoc = (k: string, which: 'view' | 'record') => setDocRights((p) => {
     const r = { ...(p[k] || {}) };
     r[which] = !r[which];
@@ -168,7 +172,7 @@ export function useAccessEditor(accountId: string | undefined) {
   return {
     acc, loading, loadError, saving, isOwner, isEmployee,
     availableModules, notifModules, docCats, counters,
-    mods, toggleMod, rights, toggleRight, counterSel, toggleCounter,
+    mods, toggleMod, rights, toggleRight, setModuleRights, counterSel, toggleCounter,
     mobile, setMobile,
     notifOn, setNotifOn, notifPrefs, setNotifPrefs,
     notifPrefsWhatsapp, setNotifPrefsWhatsapp,
