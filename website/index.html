@@ -76,7 +76,9 @@
   .status{display:inline-flex; align-items:center; gap:8px; margin-top:18px; font-size:clamp(14px,1.6vw,17px); color:#A1A1A6}
   .status i{width:8px; height:8px; border-radius:50%; background:var(--up); box-shadow:0 0 0 0 rgba(52,199,89,.6); animation:pulse 2.4s infinite}
   .status.stale i{background:#FF9F0A; animation:none}
-  .rfr{display:inline-flex; align-items:center; justify-content:center; width:34px; height:34px; margin-left:2px; border:none; border-radius:50%; background:rgba(255,255,255,.08); color:#F5F5F7; cursor:pointer}
+  .rfr{display:inline-flex; align-items:center; justify-content:center; gap:5px; flex-shrink:0; min-width:34px; height:34px; padding:0 10px; margin-left:2px; border:none; border-radius:980px; background:rgba(255,255,255,.08); color:#F5F5F7; cursor:pointer; font:inherit; font-size:12.5px; font-weight:600; font-variant-numeric:tabular-nums}
+  .rfr span{min-width:2.4ch; text-align:left; color:#A1A1A6}
+  .rfr span:empty{display:none}
   .rfr:hover{background:rgba(255,255,255,.14)}
   .rfr svg{width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round}
   .rfr.spin svg{animation:spin .8s linear infinite}
@@ -117,8 +119,8 @@
   .pval.flash{animation:flash 1s ease}
   @keyframes flash{0%{color:var(--gold-hi)}100%{color:inherit}}
 
-  .spots{display:flex; gap:10px; max-width:760px; margin:14px auto 0; flex-wrap:wrap; justify-content:center}
-  .spot{flex:1; min-width:140px; background:var(--char); border:1px solid #262628; border-radius:var(--r-md); padding:12px 10px; text-align:center}
+  .spots{display:flex; gap:10px; max-width:760px; margin:14px auto 0; justify-content:center}
+  .spot{flex:1; min-width:0; background:var(--char); border:1px solid #262628; border-radius:var(--r-md); padding:12px 10px; text-align:center}
   .slabel{display:block; font-size:10px; color:#86868B; font-weight:700; letter-spacing:.4px}
   .sval{display:block; font-size:15px; font-weight:700; margin-top:3px; color:#F5F5F7; font-variant-numeric:tabular-nums}
   .sunit{display:block; font-size:10px; color:#86868B; margin-top:1px}
@@ -245,6 +247,10 @@
     footer{padding-bottom:calc(110px + env(safe-area-inset-bottom))}
   }
   @media (max-width:420px){
+    .spots{gap:6px}
+    .spot{padding:10px 4px}
+    .slabel{font-size:9px; letter-spacing:.2px}
+    .sval{font-size:13px}
     .metals{grid-template-columns:1fr}
     .pval{font-size:22px}
     .hero h1{font-size:36px}
@@ -291,7 +297,7 @@
 <header class="hero" id="top">
   <div class="wrap">
     <h1>Today's <span class="g">gold rate</span><br>in Ludhiana.</h1>
-    <div class="status" id="status" aria-live="polite"><i></i><span id="statusText">Loading today's rates</span><button class="rfr" id="rfrBtn" type="button" aria-label="Refresh rates"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg></button></div>
+    <div class="status" id="status" aria-live="polite"><i></i><span id="statusText">Loading today's rates</span><button class="rfr" id="rfrBtn" type="button" aria-label="Refresh rates now"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg><span id="rfrCount" aria-hidden="true"></span></button></div>
 
     <div class="installhint" id="installHint">
       <div class="ihHead">
@@ -562,17 +568,28 @@ async function load(){
 }
 // paint instantly from cache, then fetch fresh
 try{ const c=JSON.parse(localStorage.getItem('rmj_rates')); if(c){ paint(c,'cache'); } }catch(e){}
-load();
-setInterval(()=>{ if(!document.hidden) load(); }, CONFIG.REFRESH_MS);
-/* Manual refresh — same rates-only fetch as the 1-minute auto refresh; the page itself never reloads. */
-const rfrBtn=document.getElementById('rfrBtn');
-rfrBtn.onclick=async()=>{
+/* Rates-only refresh (the page itself never reloads): automatic every
+   REFRESH_MS with a visible countdown on the button, on tap, and whenever
+   the tab comes back into view. Every refresh restarts the countdown. */
+const rfrBtn=document.getElementById('rfrBtn'), rfrCount=document.getElementById('rfrCount');
+let nextAt=0;
+async function refreshNow(){
   if(rfrBtn.classList.contains('spin')) return;
-  rfrBtn.classList.add('spin');
+  rfrBtn.classList.add('spin'); rfrCount.textContent='';
   await Promise.all([load(), new Promise(r=>setTimeout(r,700))]);
   rfrBtn.classList.remove('spin');
-};
-document.addEventListener('visibilitychange',()=>{ if(!document.hidden) load(); });
+  nextAt=Date.now()+CONFIG.REFRESH_MS; tick();
+}
+function tick(){
+  if(rfrBtn.classList.contains('spin')) return;
+  const left=Math.max(0,Math.ceil((nextAt-Date.now())/1000));
+  rfrCount.textContent=left+'s';
+  if(left===0 && !document.hidden) refreshNow();
+}
+rfrBtn.onclick=refreshNow;
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden) refreshNow(); });
+setInterval(tick,1000);
+refreshNow();
 
 /* nav: dark over the hero, light after */
 const nav=document.getElementById('nav'), hero=document.getElementById('top');
