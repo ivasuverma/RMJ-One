@@ -42,9 +42,9 @@ type Shot = { id: string; blob: Blob; thumb: string; isImage: boolean };
 // Fast document capture for the Home/Work camera button: pick a category once,
 // the camera opens immediately, and "Capture another" keeps going.
 //
-// Photos taken in one stretch — from picking a category until Done, Change
-// category or closing the sheet — become ONE document with ONE caption: they're
-// merged into a single multi-page PDF. (One document, not several, so the
+// Photos taken in one stretch — from picking a category until Done or
+// closing the sheet — become ONE document with ONE caption: they're merged
+// into a single multi-page PDF. (One document, not several, so the
 // Pending count, the "new document to record" notification, recording it,
 // deleting it and its Drive file are all one thing.) A stretch of a single
 // photo stays a plain image, exactly as before.
@@ -134,8 +134,6 @@ export function QuickDocCapture({ visible, onClose, onSaved }: {
   };
 
   const close = async () => { await finalize(); kickUpload(); onClose(); };
-
-  const changeCategory = async () => { await finalize(); setPhase('category'); };
 
   const removeShot = async (id: string) => {
     await cancelUpload(id);
@@ -227,15 +225,12 @@ export function QuickDocCapture({ visible, onClose, onSaved }: {
             />
           </View>
 
-          <View style={{ alignSelf: 'stretch', gap: spacing.sm, marginTop: spacing.md }}>
-            <Pressable onPress={() => catKey && shoot(catKey)} disabled={busy} style={[styles.btn, styles.btnPrimary]} testID="quick-capture-another">
+          <View style={{ alignSelf: 'stretch', flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md }}>
+            <Pressable onPress={() => catKey && shoot(catKey)} disabled={busy} style={[styles.btn, styles.btnPrimary, { flex: 1 }]} testID="quick-capture-another">
               <Ionicons name="camera" size={20} color={colors.onBrandPrimary} />
               <Text style={styles.btnPrimaryText}>Capture another</Text>
             </Pressable>
-            <Pressable onPress={changeCategory} disabled={busy} style={styles.btnGhost} testID="quick-change-category">
-              <Text style={styles.btnGhostText}>Change category</Text>
-            </Pressable>
-            <Pressable onPress={close} disabled={busy} style={styles.btnGhost} testID="quick-done">
+            <Pressable onPress={close} disabled={busy} style={[styles.btnGhost, { flex: 1 }]} testID="quick-done">
               <Text style={styles.btnGhostText}>Done</Text>
             </Pressable>
           </View>
