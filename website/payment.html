@@ -85,7 +85,9 @@
   .qr.missing span{display:block}
   .steps{margin:14px 0 0 20px; color:var(--ink2); font-size:16px; line-height:1.5}
   .steps li{padding:4px 0}
-  .gst{font-size:13px !important; color:var(--ink3) !important; margin-top:18px !important}
+  .gst{font-size:13px !important; color:var(--ink3) !important; margin-top:18px !important; line-height:1.55 !important}
+  .upiid{font-size:14px !important; margin:0 0 14px !important}
+  .upiid span{font-weight:600; color:var(--ink); user-select:all; -webkit-user-select:all}
   .help{text-align:center; margin-top:28px; color:var(--ink2); font-size:15px}
   .help a{color:var(--gold); text-decoration:none; font-weight:600}
   .btn{display:inline-flex; align-items:center; justify-content:center; gap:8px; font-size:16px; font-weight:500; text-decoration:none; padding:13px 24px; border-radius:980px; margin-top:20px; min-height:48px}
@@ -158,12 +160,14 @@
   <div class="wrap">
     <div class="visit">
       <div class="panel qrpanel">
-        <!-- Drop the shop's UPI QR image at assets/images/upi-qr.png; until
-             then the fallback text below shows instead of a broken image. -->
+        <!-- QR cropped from the shop's Paytm standee; decodes to
+             upi://pay?pa=paytmqr5idq69@ptys. Fallback text shows only if
+             the image ever fails to load. -->
         <div class="qr" id="qrBox">
           <img src="assets/images/upi-qr.png" alt="UPI QR code for Ram Murti Jewellers" onerror="document.getElementById('qrBox').classList.add('missing'); this.remove();">
           <span>QR code coming soon. Message us on WhatsApp for UPI details.</span>
         </div>
+        <p class="upiid">UPI ID: <span>paytmqr5idq69@ptys</span></p>
         <h3>Scan and pay with any UPI app</h3>
         <p>Google Pay, PhonePe, Paytm or your bank's app.</p>
       </div>
@@ -175,7 +179,7 @@
           <li>Send the screenshot to us on WhatsApp so we can confirm it right away.</li>
         </ol>
         <a class="btn wa" href="https://wa.me/919781800888?text=Hello%2C%20I%27ve%20made%20a%20payment.%20Sharing%20the%20screenshot%20here.">Share screenshot on WhatsApp</a>
-        <p class="gst">GSTIN: [GSTIN Number]</p>
+        <p class="gst">Ram Murti Jewellers<br>1694/3 Field Ganj Main Road, Ludhiana 141008<br>GSTIN: 03ACFPK9166Q1Z0</p>
       </div>
     </div>
   </div>
