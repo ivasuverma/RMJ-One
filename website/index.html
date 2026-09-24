@@ -3,9 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Ram Murti Jewellers, Field Ganj, Ludhiana | Jewellers Since 1932</title>
-<meta name="description" content="Ram Murti Jewellers, Field Ganj main road, Ludhiana — jewellers from three generations, since 1932. Today's live gold and silver rate, hallmarked gold, diamond and silver jewellery, custom orders and repairs. Call or WhatsApp 97818 00888.">
-<meta property="og:title" content="Ram Murti Jewellers, Field Ganj, Ludhiana — Since 1932">
+<title>Ram Murti Jewellers, Ludhiana | Jewellers Since 1932</title>
+<meta name="description" content="Ram Murti Jewellers, Ludhiana — jewellers from three generations, since 1932. Today's live gold and silver rate, hallmarked gold, diamond and silver jewellery, custom orders and repairs. Call or WhatsApp 97818 00888.">
+<meta property="og:title" content="Ram Murti Jewellers, Ludhiana — Since 1932">
 <meta property="og:description" content="Three generations of the Verma family, jewellers in Ludhiana since 1932. Live gold rate, gold, diamond and silver jewellery, custom orders and repairs.">
 <meta property="og:image" content="https://assets.zyrosite.com/cdn-cgi/image/format=auto,w=1440,h=756,fit=crop,f=jpeg/m2Wbv2leXaTxwqRD/web-mnl6gE63eoFNxEJN.png">
 <meta name="theme-color" content="#000000">
@@ -46,8 +46,8 @@
   nav.light{background:rgba(255,255,255,.78); color:var(--ink); border-bottom-color:rgba(0,0,0,.08)}
   nav .wrap{display:flex; align-items:center; height:56px; gap:clamp(14px,3vw,30px)}
   .brand{display:flex; align-items:center; gap:10px; text-decoration:none; margin-right:auto}
-  .brand .mark{width:32px; height:32px; border-radius:9px; background:#fff; display:flex; align-items:center; justify-content:center; overflow:hidden; flex-shrink:0}
-  .brand .mark img{width:30px; height:30px; object-fit:contain}
+  .brand .mark{width:30px; height:32px; display:flex; flex-shrink:0}
+  .brand .mark img{width:100%; height:100%; object-fit:contain}
   .brand .wm{font-weight:700; font-size:16px; letter-spacing:-.02em; line-height:1.1}
   .brand .wm small{display:block; font-size:11px; font-weight:500; opacity:.6; letter-spacing:0}
   .links{display:flex; gap:clamp(16px,2.4vw,28px)}
@@ -71,8 +71,8 @@
   /* ---------- RATE HERO ---------- */
   .hero{background:var(--black); color:#F5F5F7; padding:calc(56px + clamp(56px,9vw,96px)) 0 clamp(64px,9vw,104px); position:relative; overflow:hidden}
   .hero .wrap{position:relative; text-align:center}
-  .monogram{width:clamp(64px,8vw,84px); height:clamp(64px,8vw,84px); margin:0 auto 26px; border-radius:22px; background:#fff; display:flex; align-items:center; justify-content:center; box-shadow:0 0 0 1px rgba(217,180,106,.35), 0 20px 60px rgba(217,180,106,.18)}
-  .monogram img{width:92%; height:92%; object-fit:contain}
+  .monogram{width:clamp(72px,9vw,96px); margin:0 auto 26px}
+  .monogram img{width:100%; height:auto; filter:drop-shadow(0 18px 40px rgba(217,180,106,.28))}
   .hero h1{font-size:clamp(38px,7.2vw,84px); font-weight:700; letter-spacing:-.04em; line-height:1.02}
   .hero h1 .g{background:linear-gradient(180deg,var(--gold-hi),var(--gold-lt) 55%,#B8893B); -webkit-background-clip:text; background-clip:text; color:transparent}
   .status{display:inline-flex; align-items:center; gap:8px; margin-top:18px; font-size:clamp(14px,1.6vw,17px); color:#A1A1A6}
@@ -84,10 +84,10 @@
      RatesInstallHint on its public rates screen: one tap next time instead
      of re-opening a link. Hidden by default; JS decides whether to show it
      (never in an already-installed/standalone session, never once
-     dismissed) and reveals it via .show rather than always rendering it,
+     dismissed) and reveals it via .visible rather than always rendering it,
      so there's no flash-of-hint before that decision runs. */
   .installhint{display:none; text-align:left; background:var(--char); border:1px solid #262628; border-radius:var(--r-md); padding:14px 16px; margin:18px auto 0; max-width:520px}
-  .installhint.show{display:block}
+  .installhint.visible{display:block}
   .ihHead{display:flex; align-items:center; gap:8px}
   .ihTitle{flex:1; color:#F5F5F7; font-size:13.5px; font-weight:800}
   .ihClose{background:none; border:none; color:#86868B; font-size:16px; line-height:1; cursor:pointer; padding:2px}
@@ -139,21 +139,30 @@
   .show{margin-top:clamp(36px,5vw,56px); position:relative; border-radius:var(--r-lg); overflow:hidden; background:var(--grey)}
   .show img{width:100%; aspect-ratio:16/8; object-fit:cover}
   .plate{position:absolute; left:clamp(14px,2.4vw,28px); bottom:clamp(14px,2.4vw,28px); display:flex; align-items:center; gap:12px; background:rgba(255,255,255,.82); backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px); padding:10px 16px 10px 10px; border-radius:16px}
-  .plate img{width:38px; height:38px; aspect-ratio:auto; object-fit:contain; border-radius:10px; background:#fff}
+  .plate img{width:36px; height:auto; aspect-ratio:auto; object-fit:contain}
   .plate b{font-size:15px; display:block; letter-spacing:-.01em} .plate span{font-size:13px; color:var(--ink2)}
 
-  /* collections: bento on desktop, swipe rail on mobile */
-  .bento{display:grid; grid-template-columns:repeat(6,1fr); grid-auto-rows:clamp(220px,26vw,300px); gap:16px; margin-top:clamp(36px,5vw,56px)}
-  .tile{position:relative; border-radius:var(--r-lg); overflow:hidden; text-decoration:none; color:#fff; background:#ccc; isolation:isolate}
-  .tile.a{grid-column:span 4; grid-row:span 2} .tile.b{grid-column:span 2} .tile.c{grid-column:span 2}
-  .tile.d{grid-column:span 3} .tile.e{grid-column:span 3}
-  .tile img{position:absolute; inset:0; width:100%; height:100%; object-fit:cover; transition:transform .7s cubic-bezier(.2,.8,.2,1); z-index:-2}
-  .tile:hover img{transform:scale(1.04)}
-  .tile::after{content:""; position:absolute; inset:0; background:linear-gradient(to top,rgba(0,0,0,.68),rgba(0,0,0,0) 58%); z-index:-1}
-  .tile .t{position:absolute; left:clamp(18px,2.4vw,28px); right:clamp(18px,2.4vw,28px); bottom:clamp(18px,2.4vw,26px)}
-  .tile h3{font-size:clamp(24px,3vw,36px); font-weight:700; letter-spacing:-.025em}
-  .tile p{font-size:15px; opacity:.88; margin-top:2px; max-width:34ch}
-  .tile .ask{display:inline-flex; margin-top:12px; font-size:14px; font-weight:600; background:rgba(255,255,255,.22); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); padding:8px 14px; border-radius:980px}
+  /* collections finder: metal tabs → (gold) style → piece, each piece a WhatsApp enquiry */
+  .finder{margin-top:clamp(36px,5vw,56px)}
+  .fmetals{display:flex; gap:8px; justify-content:center; flex-wrap:wrap}
+  .fmetals button{font:inherit; font-size:15px; font-weight:600; padding:10px 20px; min-height:44px; border-radius:980px; border:none; background:var(--white); color:var(--ink); cursor:pointer; box-shadow:inset 0 0 0 1px var(--grey2); transition:background .2s, color .2s}
+  .fmetals button[aria-selected="true"]{background:var(--ink); color:#fff; box-shadow:none}
+  .fpanel{display:grid; grid-template-columns:1fr 1.15fr; background:var(--white); border-radius:var(--r-lg); overflow:hidden; margin-top:20px; min-height:clamp(400px,40vw,500px)}
+  .fpic{position:relative; background:var(--grey2)}
+  .fpic img{position:absolute; inset:0; width:100%; height:100%; object-fit:cover}
+  .fbody{padding:clamp(24px,3.4vw,40px); display:flex; flex-direction:column}
+  .fbody h3{font-size:clamp(26px,3vw,34px); font-weight:700; letter-spacing:-.025em}
+  .fbody > p{color:var(--ink2); font-size:16px; margin-top:6px}
+  .fstep{margin-top:22px}
+  .flabel{display:block; font-size:12px; font-weight:700; color:var(--ink3); text-transform:uppercase; letter-spacing:.5px; margin-bottom:10px}
+  .chips{display:flex; flex-wrap:wrap; gap:8px}
+  .chip{font:inherit; font-size:14px; font-weight:500; padding:8px 14px; min-height:38px; display:inline-flex; align-items:center; border-radius:980px; border:none; background:var(--grey); color:var(--ink); cursor:pointer; text-decoration:none; transition:background .2s}
+  .chip:hover{background:var(--grey2)}
+  .chip.on{background:var(--gold-lt); color:#111}
+  a.chip::after{content:"›"; margin-left:6px; color:var(--gold); font-weight:700}
+  .fbody .btn{align-self:flex-start; margin-top:26px}
+  .fcustom{text-align:center; margin-top:22px; color:var(--ink2); font-size:15px}
+  .fcustom a{color:var(--gold); text-decoration:none; font-weight:600}
 
   /* counter strip */
   .railhead{display:flex; align-items:end; justify-content:space-between; gap:20px}
@@ -179,8 +188,8 @@
   /* about — brand led, no portraits */
   .brandband{background:var(--black); color:#F5F5F7; border-radius:var(--r-lg); overflow:hidden; display:grid; grid-template-columns:1.05fr 1fr; min-height:clamp(420px,46vw,540px)}
   .brandband .copy{padding:clamp(34px,5vw,64px); display:flex; flex-direction:column; justify-content:center}
-  .brandband .logo{width:72px; height:72px; border-radius:20px; background:#fff; display:flex; align-items:center; justify-content:center; margin-bottom:28px}
-  .brandband .logo img{width:92%; height:92%; object-fit:contain}
+  .brandband .logo{width:76px; margin-bottom:28px}
+  .brandband .logo img{width:100%; height:auto}
   .brandband h2{font-size:clamp(32px,4.4vw,50px); font-weight:700; letter-spacing:-.035em; line-height:1.06}
   .brandband p{font-size:clamp(16px,1.7vw,19px); color:#A1A1A6; margin-top:16px; line-height:1.55; max-width:46ch}
   .brandband .pic{position:relative}
@@ -202,7 +211,7 @@
   footer{background:var(--grey); border-top:1px solid var(--grey2); padding:36px 0 calc(36px + env(safe-area-inset-bottom)); font-size:12.5px; color:var(--ink3)}
   footer .top{display:flex; justify-content:space-between; align-items:center; gap:20px; flex-wrap:wrap; padding-bottom:20px; border-bottom:1px solid var(--grey2)}
   footer .fbrand{display:flex; align-items:center; gap:10px; color:var(--ink); font-weight:700; font-size:15px}
-  footer .fbrand img{width:30px; height:30px; object-fit:contain; background:#fff; border-radius:8px}
+  footer .fbrand img{width:28px; height:auto}
   footer .bottom{display:flex; justify-content:space-between; gap:14px; flex-wrap:wrap; padding-top:18px}
   footer a{text-decoration:none; color:var(--ink2)}
   footer .fl a{margin-left:16px}
@@ -222,9 +231,8 @@
   @media (max-width:820px){
     .links,.staff.desk,.navwa{display:none}
     .burger{display:block}
-    .bento{display:flex; overflow-x:auto; scroll-snap-type:x mandatory; scrollbar-width:none; margin-left:calc(var(--gut)*-1); margin-right:calc(var(--gut)*-1); padding:0 var(--gut) 8px; gap:12px}
-    .bento::-webkit-scrollbar{display:none}
-    .tile{flex:0 0 82%; height:430px; scroll-snap-align:center}
+    .fpanel{grid-template-columns:1fr}
+    .fpic{min-height:220px}
     .brandband{grid-template-columns:1fr}
     .brandband .pic{min-height:280px; order:-1}
     .visit{grid-template-columns:1fr}
@@ -249,8 +257,8 @@
 <nav id="nav">
   <div class="wrap">
     <a class="brand" href="#top" aria-label="Ram Murti Jewellers home">
-      <span class="mark"><img src="assets/images/logo-mark.png" alt=""></span>
-      <span class="wm">Ram Murti Jewellers<small>Field Ganj, Ludhiana</small></span>
+      <span class="mark"><img src="assets/images/logo-framed.png" alt=""></span>
+      <span class="wm">Ram Murti Jewellers<small>Ludhiana · Since 1932</small></span>
     </a>
     <div class="links">
       <a href="#top">Today's rate</a>
@@ -279,8 +287,8 @@
 <!-- 1. LIVE RATE -->
 <header class="hero" id="top">
   <div class="wrap">
-    <div class="monogram"><img src="assets/images/logo-mark.png" alt="Ram Murti Jewellers logo"></div>
-    <h1>Today's <span class="g">gold rate</span><br>from Field Ganj, Ludhiana.</h1>
+    <div class="monogram"><img src="assets/images/logo-framed.png" alt="Ram Murti Jewellers logo"></div>
+    <h1>Today's <span class="g">gold rate</span><br>in Ludhiana.</h1>
     <div class="status" id="status" aria-live="polite"><i></i><span id="statusText">Loading today's rates</span></div>
 
     <div class="installhint" id="installHint">
@@ -322,16 +330,30 @@
   </div>
 </header>
 
+<!-- 1b. FROM INSTAGRAM — hidden until the feed actually has posts (see
+     loadInstagram()): nothing to show before the shop connects Instagram in
+     Settings, and a stale/broken section looks worse than no section. -->
+<section id="instagram" class="grey" style="display:none">
+  <div class="wrap railhead">
+    <div class="head">
+      <h2>From Instagram.</h2>
+      <p id="igHandle">Our latest posts.</p>
+    </div>
+    <div class="railnav"><button aria-label="Previous posts" onclick="railScroll('igrail',-1)">‹</button><button aria-label="Next posts" onclick="railScroll('igrail',1)">›</button></div>
+  </div>
+  <div class="rail" id="igrail"></div>
+</section>
+
 <!-- 2. SHOWCASE -->
 <section>
   <div class="wrap">
     <div class="head">
       <h2>Three generations of craftsmanship.</h2>
-      <p>From everyday gold to wedding sets and one-of-a-kind pieces, everything still comes out of the same Field Ganj counter our family has run since 1932.</p>
+      <p>From everyday gold to wedding sets and one-of-a-kind pieces, everything still comes out of the same Ludhiana counter our family has run since 1932.</p>
     </div>
     <div class="show">
       <img src="https://assets.zyrosite.com/cdn-cgi/image/format=auto,w=1920,fit=crop/m2Wbv2leXaTxwqRD/dsc_0033-YBg891rw9PtK9XaM.JPG" alt="Gold jewellery at Ram Murti Jewellers">
-      <div class="plate"><img src="assets/images/logo-mark.png" alt=""><div><b>Ram Murti Jewellers</b><span>Family jewellers since 1932</span></div></div>
+      <div class="plate"><img src="assets/images/logo-framed.png" alt=""><div><b>Ram Murti Jewellers</b><span>Family jewellers since 1932</span></div></div>
     </div>
   </div>
 </section>
@@ -341,25 +363,22 @@
   <div class="wrap">
     <div class="head">
       <h2>Find your piece.</h2>
-      <p>Tap a collection and we'll show you what's on the counter right now, on WhatsApp.</p>
+      <p>Choose a collection and a piece, and we'll send you what's on the counter right now, on WhatsApp.</p>
     </div>
-    <div class="bento">
-      <a class="tile a" href="https://wa.me/919781800888?text=Hello%2C%20please%20share%20your%20bridal%20collection.">
-        <img loading="lazy" src="https://assets.zyrosite.com/cdn-cgi/image/format=auto,w=1200,fit=crop/m2Wbv2leXaTxwqRD/img_0516-YZ97zlBJvyIPpB4D.jpg" alt="Bridal jewellery set">
-        <div class="t"><h3>Bridal</h3><p>Wedding sets in gold and diamond, styled the way families in Field Ganj have trusted us for generations.</p><span class="ask">See the collection</span></div></a>
-      <a class="tile b" href="https://wa.me/919781800888?text=Hello%2C%20please%20share%20your%20gold%20collection.">
-        <img loading="lazy" src="https://assets.zyrosite.com/cdn-cgi/image/format=auto,w=700,fit=crop/m2Wbv2leXaTxwqRD/9-m5K2JDMlpjsyXlrp.jpg" alt="Gold jewellery">
-        <div class="t"><h3>Gold</h3><p>22K necklaces, bangles, rings and chains, handpicked at the counter.</p><span class="ask">See the collection</span></div></a>
-      <a class="tile c" href="https://wa.me/919781800888?text=Hello%2C%20please%20share%20your%20diamond%20collection.">
-        <img loading="lazy" src="https://assets.zyrosite.com/cdn-cgi/image/format=auto,w=700,fit=crop/m2Wbv2leXaTxwqRD/dsc_0031-m6LDQMw935H1Mopx.JPG" alt="Diamond jewellery">
-        <div class="t"><h3>Diamond</h3><p>Rings, earrings and pendants, set and certified in-house.</p><span class="ask">See the collection</span></div></a>
-      <a class="tile d" href="https://wa.me/919781800888?text=Hello%2C%20please%20share%20your%20silver%20collection.">
-        <img loading="lazy" src="https://assets.zyrosite.com/cdn-cgi/image/format=auto,w=900,fit=crop/m2Wbv2leXaTxwqRD/7-YKbaGv3PlOFBr657.jpg" alt="Silver jewellery">
-        <div class="t"><h3>Silver</h3><p>Jewellery, gifting pieces and everyday silver articles.</p><span class="ask">See the collection</span></div></a>
-      <a class="tile e" href="https://wa.me/919781800888?text=Hello%2C%20I%27d%20like%20to%20discuss%20a%20custom%20piece.">
-        <img loading="lazy" src="https://assets.zyrosite.com/cdn-cgi/image/format=auto,w=900,fit=crop/m2Wbv2leXaTxwqRD/ddesign-YBg8W59kgVSRKZZw.png" alt="Custom jewellery design">
-        <div class="t"><h3>Made to order</h3><p>Bring an idea, a photo or a family heirloom and our karigars will design it with you.</p><span class="ask">Start a design</span></div></a>
+    <div class="finder">
+      <div class="fmetals" role="tablist" aria-label="Collections" id="fMetals"></div>
+      <div class="fpanel">
+        <div class="fpic"><img id="fImg" loading="lazy" alt=""></div>
+        <div class="fbody">
+          <h3 id="fTitle"></h3>
+          <p id="fDesc"></p>
+          <div class="fstep" id="fStyleStep"><span class="flabel">Style</span><div class="chips" id="fStyles"></div></div>
+          <div class="fstep"><span class="flabel">Piece</span><div class="chips" id="fItems"></div></div>
+          <a class="btn wa" id="fAll" href="#">See the collection on WhatsApp</a>
+        </div>
+      </div>
     </div>
+    <p class="fcustom">Have something else in mind? <a href="https://wa.me/919781800888?text=Hello%2C%20I%27d%20like%20to%20discuss%20a%20custom%20piece.">Our karigars make it to order →</a></p>
   </div>
 </section>
 
@@ -383,26 +402,13 @@
   </div>
 </section>
 
-<!-- 4b. FROM INSTAGRAM — hidden until the feed actually has posts (see
-     loadInstagram()): nothing to show before the shop connects Instagram in
-     Settings, and a stale/broken section looks worse than no section. -->
-<section id="instagram" class="grey" style="display:none">
-  <div class="wrap railhead">
-    <div class="head">
-      <h2>From Instagram.</h2>
-      <p id="igHandle">Our latest posts.</p>
-    </div>
-    <div class="railnav"><button aria-label="Previous posts" onclick="railScroll('igrail',-1)">‹</button><button aria-label="Next posts" onclick="railScroll('igrail',1)">›</button></div>
-  </div>
-  <div class="rail" id="igrail"></div>
-</section>
 
 <!-- 5. ABOUT (brand led) -->
 <section class="grey" id="about">
   <div class="wrap">
     <div class="brandband">
       <div class="copy">
-        <div class="logo"><img src="assets/images/logo-mark.png" alt=""></div>
+        <div class="logo"><img src="assets/images/logo-framed.png" alt=""></div>
         <h2>Three generations, one family counter.</h2>
         <p>Ram Murti Jewellers was founded in 1932 by Sh. Ram Murti, whose name we still carry with pride. His son, Mr. Jugal Kishore Verma, carried the counter forward for decades, and today it's run by Mr. Vasu Verma — the same family, the same street, for over nine decades.</p>
         <p>Many of our customers bought their first piece here for their own wedding, and now bring their children. We keep it simple: rates you can check, hallmarked gold, and honest advice — from a family that has been jewellers in India for generations.</p>
@@ -422,7 +428,7 @@
     <div class="visit">
       <div class="panel">
         <h3>Ram Murti Jewellers</h3>
-        <p class="addr">Field Ganj main road,<br>Ludhiana, Punjab</p>
+        <p class="addr">Ludhiana, Punjab</p>
         <p class="hrs">Opening hours: add your days and times here</p>
         <div class="row">
           <a class="btn wa" href="https://wa.me/919781800888?text=Hello%2C%20I%27d%20like%20to%20visit%20the%20shop.">Plan a visit</a>
@@ -435,7 +441,7 @@
           <li>Phone <a href="tel:+919781800888">+91 97818 00888</a></li>
           <li>WhatsApp <a href="https://wa.me/919781800888">Message us</a></li>
           <li>Instagram <a href="https://www.instagram.com/rammurtijewellers">@rammurtijewellers</a></li>
-          <li>Pay online <a href="https://rmj.co.in/pay">Payment page</a></li>
+          <li>Pay online <a href="payment.html">Scan UPI QR</a></li>
           <li>Reviews <a href="https://g.page/r/CfadPxGgqe0WEBE/review">Review us on Google</a></li>
         </ul>
       </div>
@@ -446,7 +452,7 @@
 <footer>
   <div class="wrap">
     <div class="top">
-      <div class="fbrand"><img src="assets/images/logo-mark.png" alt="">Ram Murti Jewellers</div>
+      <div class="fbrand"><img src="assets/images/logo-framed.png" alt="">Ram Murti Jewellers</div>
       <div class="fl"><a href="https://www.instagram.com/rammurtijewellers">Instagram</a><a href="https://www.facebook.com/rmj.co.in">Facebook</a><a href="https://www.linkedin.com/company/rammurtijewellers/">LinkedIn</a></div>
     </div>
     <div class="bottom">
@@ -608,12 +614,56 @@ document.querySelectorAll('#sheet a').forEach(a=>a.addEventListener('click',()=>
     dismissHint();
   };
   function dismissHint(){
-    hint.classList.remove('show');
+    hint.classList.remove('visible');
     try { localStorage.setItem(INSTALL_DISMISSED_KEY,'1'); } catch(e){}
   }
   document.getElementById('ihClose').onclick=dismissHint;
-  hint.classList.add('show');
+  hint.classList.add('visible');
 })();
+
+/* Find your piece — metal tab → style (gold only) → piece; each piece chip
+   opens WhatsApp asking for exactly that collection. */
+const IMG='https://assets.zyrosite.com/cdn-cgi/image/format=auto,w=900,fit=crop/m2Wbv2leXaTxwqRD/';
+const PIECE_TYPES=['Rings','Earrings','Chains','Bracelets','Necklaces','Pendants','Pendant sets','Bangles'];
+const FINDER=[
+  {key:'gold', label:'Gold', noun:'gold', img:IMG+'9-m5K2JDMlpjsyXlrp.jpg',
+   desc:'Hallmarked gold in five styles, from heirloom Polki and Kundan to everyday yellow and rose gold.',
+   styles:['Polki','Kundan','Antique','Yellow gold','Rose gold'], items:PIECE_TYPES},
+  {key:'diamond', label:'Diamond', noun:'diamond', img:IMG+'dsc_0031-m6LDQMw935H1Mopx.JPG',
+   desc:'Natural diamond jewellery, for every day and every occasion.', items:PIECE_TYPES},
+  {key:'silver', label:'Silver', noun:'silver', img:IMG+'7-YKbaGv3PlOFBr657.jpg',
+   desc:'Everyday silver, traditional kadas and idols for the home mandir.',
+   items:['Anklets','Chains','Bangles','Kada','Rings','Idols']},
+  {key:'lab', label:'Lab grown', noun:'lab-grown diamond', img:IMG+'dsc_0020-mk3ygxz6kbheoowk.JPG',
+   desc:'Lab-grown diamond rings, bangles and earrings.', items:['Rings','Bangles','Earrings']},
+];
+const waAsk=t=>'https://wa.me/919781800888?text='+encodeURIComponent(`Hello, please share your ${t} collection.`);
+let fMetal=FINDER[0], fStyle=FINDER[0].styles[0];
+function renderFinder(){
+  const m=fMetal;
+  document.getElementById('fMetals').innerHTML=FINDER.map(x=>
+    `<button role="tab" aria-selected="${x===m}" data-k="${x.key}">${x.label}</button>`).join('');
+  const img=document.getElementById('fImg'); img.src=m.img; img.alt=`${m.label} jewellery`;
+  document.getElementById('fTitle').textContent=m.label;
+  document.getElementById('fDesc').textContent=m.desc;
+  document.getElementById('fStyleStep').style.display=m.styles?'':'none';
+  document.getElementById('fStyles').innerHTML=(m.styles||[]).map(s=>
+    `<button class="chip${s===fStyle?' on':''}" aria-pressed="${s===fStyle}" data-s="${s}">${s}</button>`).join('');
+  const prefix=m.styles?fStyle:m.label;
+  document.getElementById('fItems').innerHTML=m.items.map(i=>
+    `<a class="chip" href="${waAsk(`${prefix} ${i.toLowerCase()}`.replace(/^Lab grown/,'lab-grown diamond'))}">${i}</a>`).join('');
+  const all=document.getElementById('fAll');
+  all.href=waAsk(m.styles?`${fStyle} jewellery`:`${m.noun} jewellery`);
+  all.textContent=`See all ${m.styles?fStyle:m.label} pieces on WhatsApp`;
+}
+document.getElementById('fMetals').addEventListener('click',e=>{
+  const b=e.target.closest('button[data-k]'); if(!b) return;
+  fMetal=FINDER.find(x=>x.key===b.dataset.k); if(fMetal.styles) fStyle=fMetal.styles[0]; renderFinder();
+});
+document.getElementById('fStyles').addEventListener('click',e=>{
+  const b=e.target.closest('button[data-s]'); if(!b) return; fStyle=b.dataset.s; renderFinder();
+});
+renderFinder();
 
 /* new at the counter — your photos; rename to real pieces */
 const PIECES=[

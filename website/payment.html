@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Payment Options | Ram Murti Jewellers, Field Ganj, Ludhiana</title>
-<meta name="description" content="How to pay at Ram Murti Jewellers, Field Ganj, Ludhiana — cash, UPI, cards and bank transfer.">
+<title>Payment Options | Ram Murti Jewellers, Ludhiana</title>
+<meta name="description" content="How to pay at Ram Murti Jewellers, Ludhiana — cash, UPI, cards and bank transfer.">
 <meta name="theme-color" content="#000000">
 <link rel="icon" href="assets/images/logo-mark.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -33,8 +33,8 @@
       background:rgba(255,255,255,.78); backdrop-filter:saturate(180%) blur(20px); -webkit-backdrop-filter:saturate(180%) blur(20px); border-bottom:1px solid rgba(0,0,0,.08); color:var(--ink)}
   nav .wrap{display:flex; align-items:center; height:56px; gap:clamp(14px,3vw,30px)}
   .brand{display:flex; align-items:center; gap:10px; text-decoration:none; margin-right:auto}
-  .brand .mark{width:32px; height:32px; border-radius:9px; background:#fff; box-shadow:0 0 0 1px var(--grey2); display:flex; align-items:center; justify-content:center; overflow:hidden; flex-shrink:0}
-  .brand .mark img{width:28px; height:28px; object-fit:contain}
+  .brand .mark{width:30px; height:32px; display:flex; flex-shrink:0}
+  .brand .mark img{width:100%; height:100%; object-fit:contain}
   .brand .wm{font-weight:700; font-size:16px; letter-spacing:-.02em; line-height:1.1}
   .brand .wm small{display:block; font-size:11px; font-weight:500; opacity:.6; letter-spacing:0}
   .links{display:flex; gap:clamp(16px,2.4vw,28px)}
@@ -75,7 +75,21 @@
   .panel{background:var(--grey); border-radius:var(--r-lg); padding:clamp(24px,3.4vw,38px)}
   .panel h3{font-size:22px; font-weight:700; letter-spacing:-.02em}
   .panel p{font-size:16px; color:var(--ink2); margin-top:10px; line-height:1.5}
-  .qr{width:180px; height:180px; border-radius:var(--r-md); background:var(--white); box-shadow:inset 0 0 0 1px var(--grey2); display:flex; align-items:center; justify-content:center; color:var(--ink3); font-size:13px; text-align:center; margin-bottom:18px}
+  .grey{background:var(--grey)}
+  .paynow .visit{margin-top:0}
+  .paynow .panel{background:var(--white); box-shadow:inset 0 0 0 1px var(--grey2)}
+  .qrpanel{text-align:center}
+  .qr{width:min(260px,100%); aspect-ratio:1; margin:0 auto 18px; border-radius:var(--r-md); background:var(--white); box-shadow:inset 0 0 0 1px var(--grey2); display:flex; align-items:center; justify-content:center; overflow:hidden}
+  .qr img{width:100%; height:100%; object-fit:contain}
+  .qr span{display:none; color:var(--ink3); font-size:13px; padding:20px; line-height:1.45}
+  .qr.missing span{display:block}
+  .steps{margin:14px 0 0 20px; color:var(--ink2); font-size:16px; line-height:1.5}
+  .steps li{padding:4px 0}
+  .gst{font-size:13px !important; color:var(--ink3) !important; margin-top:18px !important; line-height:1.55 !important}
+  .upiid{font-size:14px !important; margin:0 0 14px !important}
+  .upiid span{font-weight:600; color:var(--ink); user-select:all; -webkit-user-select:all}
+  .help{text-align:center; margin-top:28px; color:var(--ink2); font-size:15px}
+  .help a{color:var(--gold); text-decoration:none; font-weight:600}
   .btn{display:inline-flex; align-items:center; justify-content:center; gap:8px; font-size:16px; font-weight:500; text-decoration:none; padding:13px 24px; border-radius:980px; margin-top:20px; min-height:48px}
   .btn.wa{background:var(--wa); color:#fff}
 
@@ -83,7 +97,7 @@
   footer{background:var(--grey); border-top:1px solid var(--grey2); padding:36px 0 calc(36px + env(safe-area-inset-bottom)); font-size:12.5px; color:var(--ink3)}
   footer .top{display:flex; justify-content:space-between; align-items:center; gap:20px; flex-wrap:wrap; padding-bottom:20px; border-bottom:1px solid var(--grey2)}
   footer .fbrand{display:flex; align-items:center; gap:10px; color:var(--ink); font-weight:700; font-size:15px}
-  footer .fbrand img{width:30px; height:30px; object-fit:contain; background:#fff; border-radius:8px}
+  footer .fbrand img{width:28px; height:auto}
   footer .bottom{display:flex; justify-content:space-between; gap:14px; flex-wrap:wrap; padding-top:18px}
   footer a{text-decoration:none; color:var(--ink2)}
   footer .fl a{margin-left:16px}
@@ -108,8 +122,8 @@
 <nav id="nav">
   <div class="wrap">
     <a class="brand" href="index.html" aria-label="Ram Murti Jewellers home">
-      <span class="mark"><img src="assets/images/logo-mark.png" alt=""></span>
-      <span class="wm">Ram Murti Jewellers<small>Field Ganj, Ludhiana</small></span>
+      <span class="mark"><img src="assets/images/logo-framed.png" alt=""></span>
+      <span class="wm">Ram Murti Jewellers<small>Ludhiana · Since 1932</small></span>
     </a>
     <div class="links">
       <a href="index.html">Today's rate</a>
@@ -142,7 +156,36 @@
   </div>
 </header>
 
-<section>
+<section class="paynow">
+  <div class="wrap">
+    <div class="visit">
+      <div class="panel qrpanel">
+        <!-- QR cropped from the shop's Paytm standee; decodes to
+             upi://pay?pa=paytmqr5idq69@ptys. Fallback text shows only if
+             the image ever fails to load. -->
+        <div class="qr" id="qrBox">
+          <img src="assets/images/upi-qr.png" alt="UPI QR code for Ram Murti Jewellers" onerror="document.getElementById('qrBox').classList.add('missing'); this.remove();">
+          <span>QR code coming soon. Message us on WhatsApp for UPI details.</span>
+        </div>
+        <p class="upiid">UPI ID: <span>paytmqr5idq69@ptys</span></p>
+        <h3>Scan and pay with any UPI app</h3>
+        <p>Google Pay, PhonePe, Paytm or your bank's app.</p>
+      </div>
+      <div class="panel">
+        <h3>Then share the screenshot.</h3>
+        <ol class="steps">
+          <li>Scan the QR code and enter the amount.</li>
+          <li>Take a screenshot of the payment confirmation.</li>
+          <li>Send the screenshot to us on WhatsApp so we can confirm it right away.</li>
+        </ol>
+        <a class="btn wa" href="https://wa.me/919781800888?text=Hello%2C%20I%27ve%20made%20a%20payment.%20Sharing%20the%20screenshot%20here.">Share screenshot on WhatsApp</a>
+        <p class="gst">Ram Murti Jewellers<br>1694/3 Field Ganj Main Road, Ludhiana 141008<br>GSTIN: 03ACFPK9166Q1Z0</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="grey">
   <div class="wrap">
     <div class="head">
       <h2>Every payment method you'd expect.</h2>
@@ -153,30 +196,14 @@
       <div class="method"><h3>Debit / credit card</h3><p>All major cards accepted in-store.</p></div>
       <div class="method"><h3>Bank transfer</h3><p>NEFT/RTGS for larger purchases — ask our staff for details.</p></div>
     </div>
-  </div>
-</section>
-
-<section class="grey">
-  <div class="wrap">
-    <div class="visit">
-      <div class="panel">
-        <div class="qr">[ UPI QR code ]</div>
-        <h3>Scan and pay</h3>
-        <p>Scan the QR code in-store with any UPI app to pay instantly. GSTIN: [GSTIN Number].</p>
-      </div>
-      <div class="panel">
-        <h3>Questions about a payment?</h3>
-        <p>Message us on WhatsApp or call the shop — we'll sort it out right away.</p>
-        <a class="btn wa" href="https://wa.me/919781800888?text=Hello%2C%20I%20have%20a%20question%20about%20a%20payment.">Message on WhatsApp</a>
-      </div>
-    </div>
+    <p class="help">Questions about a payment? <a href="https://wa.me/919781800888?text=Hello%2C%20I%20have%20a%20question%20about%20a%20payment.">Message us on WhatsApp</a> or <a href="tel:+919781800888">call the shop</a>.</p>
   </div>
 </section>
 
 <footer>
   <div class="wrap">
     <div class="top">
-      <div class="fbrand"><img src="assets/images/logo-mark.png" alt="">Ram Murti Jewellers</div>
+      <div class="fbrand"><img src="assets/images/logo-framed.png" alt="">Ram Murti Jewellers</div>
       <div class="fl"><a href="https://www.instagram.com/rammurtijewellers">Instagram</a><a href="https://www.facebook.com/rmj.co.in">Facebook</a><a href="https://www.linkedin.com/company/rammurtijewellers/">LinkedIn</a></div>
     </div>
     <div class="bottom">
