@@ -3,9 +3,9 @@ API) test line — separate from routers/whatsapp_bot.py, which handles
 OpenWA's inbound bot on the shop's live number. Handles Meta's one-time GET
 verification handshake and POST event deliveries.
 
-No auto-reply wired up here yet, since this number is a side-by-side test
-line while the app is evaluated, not a customer-facing channel. What this
-DOES do: match every delivery-status update (sent/delivered/read/failed)
+While Meta is the active provider (Settings > WhatsApp), inbound messages
+get the same RATE/STATUS chatbot replies as the OpenWA bot. It also matches
+every delivery-status update (sent/delivered/read/failed)
 against the whatsapp_messages doc server.py's log_whatsapp_message() wrote
 for that send (matched by wa_message_id), and fill in its real outcome —
 this is how Settings > WhatsApp Messages shows Meta sends' actual delivery
@@ -47,6 +47,35 @@ async def _apply_status_updates(payload: dict) -> None:
                     logger.warning(f'whatsapp-meta status update failed: {e}')
 
 
+async def _chatbot_replies(payload: dict) -> None:
+    """Same RATE/STATUS keyword bot as routers/whatsapp_bot.py, answering on
+    the Meta number instead — only while Meta is the active provider. A reply
+    to an inbound message is inside Meta's 24-hour window, so freeform works."""
+    from server import db, whatsapp_provider
+    from routers.whatsapp_bot import _rate_reply, _status_reply
+    import whatsapp_meta
+    wa = await db.settings.find_one({'id': 'whatsapp'}, {'_id': 0}) or {}
+    if not wa.get('enabled', True) or not wa.get('chatbot_enabled', False):
+        return
+    if await whatsapp_provider() != 'meta':
+        return
+    for entry in payload.get('entry') or []:
+        for change in entry.get('changes') or []:
+            for msg in (change.get('value') or {}).get('messages') or []:
+                sender = msg.get('from') or ''
+                body_text = ((msg.get('text') or {}).get('body') or '').strip().lower()
+                if msg.get('type') != 'text' or not sender or not body_text:
+                    continue
+                if 'rate' in body_text and wa.get('chatbot_rate_enabled', True):
+                    reply, flow = await _rate_reply(), 'chatbot_reply_rate'
+                elif 'status' in body_text and wa.get('chatbot_status_enabled', True):
+                    digits = ''.join(c for c in sender if c.isdigit())
+                    reply, flow = await _status_reply(digits[-10:]), 'chatbot_reply_status'
+                else:
+                    continue
+                await whatsapp_meta.send_text(sender, reply, flow=flow)
+
+
 @router.get('/webhooks/whatsapp-meta')
 async def verify(request: Request):
     """Meta's one-time handshake when you register the callback URL: it
@@ -72,4 +101,8 @@ async def receive(request: Request):
         return Response(status_code=400, content='{"error":"bad json"}', media_type='application/json')
     logger.info(f'whatsapp-meta webhook received: {payload}')
     await _apply_status_updates(payload)
+    try:
+        await _chatbot_replies(payload)
+    except Exception as e:
+        logger.warning(f'whatsapp-meta chatbot failed: {e}')
     return {'ok': True}

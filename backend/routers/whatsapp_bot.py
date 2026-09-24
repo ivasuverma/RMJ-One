@@ -26,7 +26,7 @@ import logging
 
 from fastapi import APIRouter, Request, Response
 
-from server import db, format_ist_date_time, WHATSAPP_WEBHOOK_SECRET, send_whatsapp_raw, resolve_whatsapp_phone
+from server import db, format_ist_date_time, WHATSAPP_WEBHOOK_SECRET, send_whatsapp_raw, resolve_whatsapp_phone, whatsapp_provider
 
 router = APIRouter()
 logger = logging.getLogger('whatsapp_bot')
@@ -128,6 +128,8 @@ async def whatsapp_webhook(request: Request):
     wa = await db.settings.find_one({'id': 'whatsapp'}, {'_id': 0}) or {}
     if not wa.get('enabled', True) or not wa.get('chatbot_enabled', False):
         return {'ok': True, 'skipped': 'chatbot disabled'}
+    if await whatsapp_provider() != 'openwa':
+        return {'ok': True, 'skipped': 'openwa is not the active provider'}
 
     chat_id = data.get('author') or data.get('from') or ''
     body_text = (data.get('body') or '').strip().lower()
