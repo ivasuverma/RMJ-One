@@ -97,7 +97,12 @@ export default function DocumentsScreen() {
     return role === 'owner' || (c?.can_record_roles || []).includes(role);
   };
   const canDelete = role === 'owner' || role === 'admin';
-  const fileUri = (id: string) => `${base}/api/documents/${id}/file`;
+  // Stable across renders (base never actually changes) — QuickView's own
+  // pinch-zoom state changes many times a second, and depending on a
+  // fileUri that's a fresh closure every render would keep invalidating
+  // its memoized image sources for no reason. See QuickView's fullSrc/
+  // thumbSrc below.
+  const fileUri = useCallback((id: string) => `${base}/api/documents/${id}/file`, [base]);
 
   // Open the full file (PDF or image) in a new tab. The file route needs a
   // bearer token, which window.open can't send — so fetch the blob first.
@@ -418,7 +423,25 @@ function QuickView({ doc, categoryLabel, token, fileUri, onClose, onRecord, canR
     if (pinch.current && t && t.length === 2) applyZoom(pinch.current.z0 * (touchDist(t) / pinch.current.d0));
   };
   const onTouchEnd = (e: any) => { if (!e.nativeEvent?.touches || e.nativeEvent.touches.length < 2) pinch.current = null; };
+  // Pinch-zoom fires onTouchMove (and so re-renders QuickView) many times a
+  // second. Inline `source={{ uri, headers }}` object literals are a new
+  // object on every one of those re-renders even when nothing about the
+  // image actually changed, and expo-image treats a new source object as a
+  // new image to load — repeatedly re-requesting/re-decoding the same photo
+  // mid-gesture, which is what showed as flickering and going black while
+  // zooming. Memoized so the reference is stable across those re-renders
+  // and only actually changes for a genuinely different photo.
+  const fullSrc = useMemo(
+    () => (doc ? { uri: `${fileUri(doc.id)}?full=1`, headers: { Authorization: `Bearer ${token}` } } : null),
+    [doc?.id, token, fileUri],
+  );
+  const thumbSrc = useMemo(
+    () => (doc ? { uri: `${fileUri(doc.id)}?thumb=1`, headers: { Authorization: `Bearer ${token}` } } : null),
+    [doc?.id, token, fileUri],
+  );
   // A merged multi-photo document: pull its photos out of the PDF and show them as a scrolling list.
+  // Same reasoning as fullSrc/thumbSrc — one stable source object per page,
+  // instead of a new `{ uri: u }` literal on every pinch-driven re-render.
   const [pagePics, setPagePics] = useState<string[] | null>(null);
   const multi = !!doc && (doc.pages || 0) > 1 && !!token;
   useEffect(() => {
@@ -435,6 +458,10 @@ function QuickView({ doc, categoryLabel, token, fileUri, onClose, onRecord, canR
     })();
     return () => { dead = true; urls.forEach((u) => URL.revokeObjectURL(u)); };
   }, [doc?.id, multi]);
+  const pageSources = useMemo(
+    () => Object.fromEntries((pagePics || []).map((u) => [u, { uri: u }])),
+    [pagePics],
+  );
   const idx = doc ? list.findIndex((x) => x.id === doc.id) : -1;
   const go = (dir: number) => {
     const n = idx + dir;
@@ -465,7 +492,7 @@ function QuickView({ doc, categoryLabel, token, fileUri, onClose, onRecord, canR
           {multi && pagePics && pagePics.length > 0
             ? <ScrollView horizontal={zoom > 1} style={StyleSheet.absoluteFill} contentContainerStyle={zoom > 1 ? { width: Math.max(box.w, 1) * zoom } : undefined} testID="qv-pages">
                 <ScrollView style={{ width: Math.max(box.w, 1) * zoom }} contentContainerStyle={{ padding: 8, gap: 8 }}>
-                  {pagePics.map((u) => <Image key={u} source={{ uri: u }} style={{ width: Math.max(box.w, 1) * zoom - 16, aspectRatio: 0.75 }} contentFit="contain" />)}
+                  {pagePics.map((u) => <Image key={u} source={pageSources[u]} style={{ width: Math.max(box.w, 1) * zoom - 16, aspectRatio: 0.75 }} contentFit="contain" />)}
                 </ScrollView>
               </ScrollView>
             : multi && !pagePics
@@ -497,8 +524,8 @@ function QuickView({ doc, categoryLabel, token, fileUri, onClose, onRecord, canR
                           props on the already-loaded image. */}
                       <Image
                         key={doc.id}
-                        source={{ uri: `${fileUri(doc.id)}?full=1`, headers: { Authorization: `Bearer ${token}` } }}
-                        placeholder={{ uri: `${fileUri(doc.id)}?thumb=1`, headers: { Authorization: `Bearer ${token}` } }}
+                        source={fullSrc}
+                        placeholder={thumbSrc}
                         placeholderContentFit="contain"
                         transition={150}
                         style={zoomed ? { width: box.w * zoom, height: box.h * zoom } : styles.qvImg}
@@ -511,7 +538,7 @@ function QuickView({ doc, categoryLabel, token, fileUri, onClose, onRecord, canR
               })()
             : <View style={{ alignItems: 'center', gap: 10 }}>
                 {!opening && !!doc.pages && token && (
-                  <Image key={doc.id} source={{ uri: `${fileUri(doc.id)}?thumb=1`, headers: { Authorization: `Bearer ${token}` } }} style={{ width: 220, height: 220 }} contentFit="contain" />
+                  <Image key={doc.id} source={thumbSrc} style={{ width: 220, height: 220 }} contentFit="contain" />
                 )}
                 {opening
                   ? <><ActivityIndicator color="#fff" size="large" /><Text style={{ color: '#fff', fontWeight: '700' }}>Opening…</Text></>
