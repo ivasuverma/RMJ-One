@@ -5,6 +5,22 @@ import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { AccessEditor, Rights } from '@/src/hooks/use-access-editor';
 
+// Attendance isn't a grantable access module (every employee has their own
+// attendance, nothing to permission), so it never appeared in availableModules
+// and its alerts were invisible here — even though the employee always gets
+// them. These five are sent by notify_user() unconditionally (see server.py's
+// _check_missed_attendance/_check_missed_checkout/_check_daily_absentee_summary
+// and routers/attendance.py's check-in/check-out) — never gated by the
+// Notification Settings module toggle, so they're shown read-only rather than
+// as switches that would do nothing if flipped.
+const ATTENDANCE_ALWAYS_ON = [
+  'Checked in',
+  'Checked out',
+  "Missed check-in reminder",
+  "Missed check-out reminder",
+  'Marked absent',
+];
+
 const MODULE_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
   repairs: 'construct-outline',
   samples: 'swap-horizontal-outline',
@@ -72,6 +88,34 @@ export function EmployeeAccessAlerts({ editor, onSave }: { editor: AccessEditor;
           </View>
           <Switch value={notifOn} onValueChange={setNotifOn} trackColor={{ true: colors.brandPrimary, false: colors.border }} thumbColor={colors.surface} testID="ea-notif-master" />
         </View>
+      </View>
+
+      <Text style={styles.groupLabel}>Attendance</Text>
+      <View style={styles.card}>
+        <Pressable
+          onPress={() => toggleExpanded('attendance')}
+          style={styles.cardHead}
+          testID="ea-attendance-head"
+        >
+          <View style={styles.modIcon}><Ionicons name="time-outline" size={16} color={colors.brandSecondary} /></View>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={styles.modTitle}>Attendance</Text>
+            <Text style={styles.modSub} numberOfLines={1}>Always on · {ATTENDANCE_ALWAYS_ON.length} alerts</Text>
+          </View>
+          <Ionicons name={expanded.has('attendance') ? 'chevron-down' : 'chevron-forward'} size={15} color={colors.mutedText} style={{ marginRight: 4 }} />
+        </Pressable>
+        {expanded.has('attendance') && (
+          <View style={styles.cardBody}>
+            <Text style={styles.levelNote}>Tells them about their own check-in, check-out and absences — always sent, can&apos;t be turned off.</Text>
+            {ATTENDANCE_ALWAYS_ON.map((label) => (
+              <View key={label} style={styles.alertRow}>
+                <Text style={styles.alertLabel}>{label}</Text>
+                <Ionicons name="notifications" size={13} color={colors.brandSecondary} />
+                <Ionicons name="logo-whatsapp" size={13} color={colors.brandSecondary} />
+              </View>
+            ))}
+          </View>
+        )}
       </View>
 
       <Text style={styles.groupLabel}>Modules · {onCount} of {availableModules.length} on</Text>
