@@ -1,11 +1,16 @@
 # rmj.co.in — public website
 
-Plain static HTML/CSS/JS, hand-coded (no build step, no framework) so it can
-be uploaded as-is to Hostinger's file hosting instead of using their
-drag-and-drop AI Builder. It is **not** part of the Expo/React Native app in
-`frontend/` and is **not** touched by `.github/workflows/deploy.yml` — it
-never goes near the shop's Windows box. It's kept in this repo purely for
-version control.
+Plain static HTML/CSS/JS, hand-coded (no build step, no framework). It is
+**not** part of the Expo/React Native app in `frontend/` and is **not**
+touched by `.github/workflows/deploy.yml` — it never goes near the shop's
+Windows box. It deploys on its own via `.github/workflows/deploy-website.yml`
+to Cloudflare Pages (see "Deploying" below) — not to Hostinger. Hostinger's
+"Website Builder" plan (as opposed to their regular shared hosting) has no
+file manager or FTP access at all, so the file-upload path this site was
+originally built for isn't available on that plan; Cloudflare Pages sidesteps
+it entirely, using the same Cloudflare account that already runs the
+app.rmj.co.in / api.rmj.co.in tunnel. Hostinger stays on only as the domain
+registrar.
 
 ## Pages
 
@@ -47,17 +52,29 @@ ALLOWED_ORIGINS=https://app.rmj.co.in,https://rmj.co.in,https://www.rmj.co.in
 
 Nothing else needs a backend change — everything else on this site is static.
 
-## Deploying to Hostinger
+## Deploying (Cloudflare Pages)
 
-1. In hPanel, open **Files → File Manager** (or connect via FTP) for the
-   `rmj.co.in` hosting plan.
-2. Upload the *contents* of this `website/` folder (not the folder itself)
-   into `public_html/` — `index.html` should end up directly at
-   `public_html/index.html`.
-3. If the AI Builder site is still attached to the domain, disable/unpublish
-   it first (hPanel → Websites) so it stops serving `public_html/` instead of
-   this one.
+Automatic: pushing to `main` with changes under `website/` runs
+`.github/workflows/deploy-website.yml`, which publishes this folder straight
+to Cloudflare Pages. Re-deploying after an edit is just committing and
+pushing — no manual upload step.
+
+One-time setup (see the comment at the top of that workflow file for the
+full version):
+
+1. In the Cloudflare dashboard — the same account already running the
+   `app.rmj.co.in` / `api.rmj.co.in` tunnel — create an API token with the
+   **Cloudflare Pages - Edit** permission, and note the account ID.
+2. Add `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` as this repo's
+   GitHub Actions secrets.
+3. Push once to let the workflow create the `rmj-website` Pages project,
+   then in that project's **Custom domains** tab add `rmj.co.in` and
+   `www.rmj.co.in` — Cloudflare wires up the DNS itself since the zone is
+   already on this account.
 4. Visit `https://rmj.co.in` and click through all four pages, on both
    desktop and mobile, to confirm rates load and nothing 404s.
 
-Re-deploying after an edit is the same: re-upload whichever files changed.
+If Hostinger's plan for this domain is ever upgraded to one with a file
+manager/FTP (their regular shared hosting, not Website Builder), this same
+static folder can still be uploaded to `public_html/` there instead — nothing
+about the site itself depends on Cloudflare Pages specifically.
