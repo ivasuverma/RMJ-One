@@ -34,14 +34,31 @@ jobs:
               s = p.read_text()
               names |= set(re.findall(base_re + '(' + name_re + ')', s))
               names |= set(re.findall(r"'(" + name_re + r")'", s))  # JS photo lists (IMG + '...', PIECES)
+          ua = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36',
+                'Accept': 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8', 'Referer': 'https://rmj.co.in/'}
+          failed = []
           for n in sorted(names):
               fmt = 'png' if n.lower().endswith('.png') else 'jpeg'
-              url = f'https://assets.zyrosite.com/cdn-cgi/image/format={fmt},w=1600,fit=scale-down/m2Wbv2leXaTxwqRD/{n}'
-              req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-              data = urllib.request.urlopen(req, timeout=60).read()
-              assert len(data) > 1000, f'{n}: suspiciously small download ({len(data)} bytes)'
-              (out / n).write_bytes(data)
-              print(f'{n}: {len(data) // 1024} KB')
+              urls = [f'https://assets.zyrosite.com/cdn-cgi/image/format={fmt},w=1600,fit=scale-down/m2Wbv2leXaTxwqRD/{n}',
+                      f'https://assets.zyrosite.com/cdn-cgi/image/format=auto,w=1600,fit=crop/m2Wbv2leXaTxwqRD/{n}',
+                      f'https://assets.zyrosite.com/m2Wbv2leXaTxwqRD/{n}']
+              errors = []
+              for url in urls:
+                  try:
+                      data = urllib.request.urlopen(urllib.request.Request(url, headers=ua), timeout=60).read()
+                      if len(data) > 1000:
+                          (out / n).write_bytes(data)
+                          print(f'{n}: {len(data) // 1024} KB from {url}')
+                          break
+                      errors.append(f'{url} -> only {len(data)} bytes')
+                  except Exception as e:
+                      errors.append(f'{url} -> {e}')
+              else:
+                  failed.append(n)
+                  # ::error:: lines show up as check-run annotations, readable without the raw log
+                  print(f'::error::{n}: ' + ' | '.join(errors))
+          if failed:
+              raise SystemExit(f'{len(failed)} photo(s) could not be downloaded')
           for p in pages:
               s = p.read_text()
               # og:image must stay absolute for WhatsApp/Facebook link previews
