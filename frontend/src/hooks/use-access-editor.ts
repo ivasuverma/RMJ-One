@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useFocusEffect } from 'expo-router';
 import { api } from '@/src/api/client';
 
@@ -44,8 +44,29 @@ export function useAccessEditor(accountId: string | undefined) {
   const [docRights, setDocRights] = useState<Record<string, DocRight>>({});
   const [seeDone, setSeeDone] = useState(true);
 
+  // useFocusEffect below re-fires load() on every focus event, which is
+  // meant to pick up changes made elsewhere (e.g. returning from the
+  // employee Edit form) — but it doesn't know whether the person is
+  // sitting mid-edit on THIS screen with toggles already flipped and not
+  // yet saved. Without this guard, any such refocus (including ones that
+  // don't involve leaving the screen at all, depending on the platform)
+  // silently re-seeds every field from the server and quietly discards
+  // those unsaved changes — which then looks exactly like "I turned things
+  // off, saved, and they came back on": the save that followed had nothing
+  // to persist because the toggle was already reset back to on before Save
+  // was ever pressed. Once the account has loaded once, no further load()
+  // is allowed to touch state until a save (or an explicit reload after an
+  // error, which only happens before any edit exists) clears it again.
+  const dirtyRef = useRef(false);
+  const hasLoadedRef = useRef(false);
+  const withDirty = useCallback(<T, >(setter: (v: T) => void) => (v: T) => {
+    dirtyRef.current = true;
+    setter(v);
+  }, []);
+
   const load = useCallback(async () => {
     if (!accountId) return;
+    if (dirtyRef.current && hasLoadedRef.current) return;
     setLoadError(false);
     try {
       const [accts, m, c, dc, nm] = await Promise.all([
@@ -78,6 +99,7 @@ export function useAccessEditor(accountId: string | undefined) {
         setDocRights({ ...(a.doc_category_rights || {}) });
         setSeeDone(a.doc_see_done !== false);
       }
+      hasLoadedRef.current = true;
     } catch {
       // A plain 403 here means "caller isn't owner" — the screens that mount
       // this editor already gate on that before rendering it, so anything
@@ -98,32 +120,47 @@ export function useAccessEditor(accountId: string | undefined) {
     [modules, isEmployee],
   );
 
-  const toggleMod = (k: string) => setMods((p) => {
-    const n = new Set(p);
-    if (n.has(k)) n.delete(k); else n.add(k);
-    return n;
-  });
-  const toggleCounter = (cid: string) => setCounterSel((p) => {
-    const n = new Set(p);
-    if (n.has(cid)) n.delete(cid); else n.add(cid);
-    return n;
-  });
-  const toggleRight = (k: string, which: 'edit' | 'delete') => setRights((p) => {
-    const r = { ...(p[k] || {}) };
-    r[which] = !r[which];
-    return { ...p, [k]: r };
-  });
+  const toggleMod = (k: string) => {
+    dirtyRef.current = true;
+    setMods((p) => {
+      const n = new Set(p);
+      if (n.has(k)) n.delete(k); else n.add(k);
+      return n;
+    });
+  };
+  const toggleCounter = (cid: string) => {
+    dirtyRef.current = true;
+    setCounterSel((p) => {
+      const n = new Set(p);
+      if (n.has(cid)) n.delete(cid); else n.add(cid);
+      return n;
+    });
+  };
+  const toggleRight = (k: string, which: 'edit' | 'delete') => {
+    dirtyRef.current = true;
+    setRights((p) => {
+      const r = { ...(p[k] || {}) };
+      r[which] = !r[which];
+      return { ...p, [k]: r };
+    });
+  };
   // Set both flags at once — used by the View/Edit/Full permission-level
   // picker (see EmployeeAccessAlerts) where a single choice needs to land
   // atomically, unlike toggleRight's one-flag-at-a-time flips.
-  const setModuleRights = (k: string, r: Rights) => setRights((p) => ({ ...p, [k]: r }));
-  const toggleDoc = (k: string, which: 'view' | 'record') => setDocRights((p) => {
-    const r = { ...(p[k] || {}) };
-    r[which] = !r[which];
-    if (which === 'record' && r.record) r.view = true;
-    if (which === 'view' && !r.view) r.record = false;
-    return { ...p, [k]: r };
-  });
+  const setModuleRights = (k: string, r: Rights) => {
+    dirtyRef.current = true;
+    setRights((p) => ({ ...p, [k]: r }));
+  };
+  const toggleDoc = (k: string, which: 'view' | 'record') => {
+    dirtyRef.current = true;
+    setDocRights((p) => {
+      const r = { ...(p[k] || {}) };
+      r[which] = !r[which];
+      if (which === 'record' && r.record) r.view = true;
+      if (which === 'view' && !r.view) r.record = false;
+      return { ...p, [k]: r };
+    });
+  };
 
   const save = useCallback(async (opts?: { newPassword?: string }): Promise<{ ok: true } | { ok: false; error: string }> => {
     if (!acc) return { ok: false, error: 'Nothing loaded yet' };
@@ -161,6 +198,7 @@ export function useAccessEditor(accountId: string | undefined) {
         payload.doc_see_done = seeDone;
       }
       await api.put(`/access/accounts/${acc.id}`, payload);
+      dirtyRef.current = false;
       return { ok: true };
     } catch (e: any) {
       return { ok: false, error: e?.detail || 'Please try again' };
@@ -173,10 +211,10 @@ export function useAccessEditor(accountId: string | undefined) {
     acc, loading, loadError, saving, isOwner, isEmployee,
     availableModules, notifModules, docCats, counters,
     mods, toggleMod, rights, toggleRight, setModuleRights, counterSel, toggleCounter,
-    mobile, setMobile,
-    notifOn, setNotifOn, notifPrefs, setNotifPrefs,
-    notifPrefsWhatsapp, setNotifPrefsWhatsapp,
-    docRights, toggleDoc, seeDone, setSeeDone,
+    mobile, setMobile: withDirty(setMobile),
+    notifOn, setNotifOn: withDirty(setNotifOn), notifPrefs, setNotifPrefs: withDirty(setNotifPrefs),
+    notifPrefsWhatsapp, setNotifPrefsWhatsapp: withDirty(setNotifPrefsWhatsapp),
+    docRights, toggleDoc, seeDone, setSeeDone: withDirty(setSeeDone),
     save, reload: load,
   };
 }
