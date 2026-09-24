@@ -71,13 +71,16 @@
   /* ---------- RATE HERO ---------- */
   .hero{background:var(--black); color:#F5F5F7; padding:calc(56px + clamp(56px,9vw,96px)) 0 clamp(64px,9vw,104px); position:relative; overflow:hidden}
   .hero .wrap{position:relative; text-align:center}
-  .monogram{width:clamp(72px,9vw,96px); margin:0 auto 26px}
-  .monogram img{width:100%; height:auto; filter:drop-shadow(0 18px 40px rgba(217,180,106,.28))}
   .hero h1{font-size:clamp(38px,7.2vw,84px); font-weight:700; letter-spacing:-.04em; line-height:1.02}
   .hero h1 .g{background:linear-gradient(180deg,var(--gold-hi),var(--gold-lt) 55%,#B8893B); -webkit-background-clip:text; background-clip:text; color:transparent}
   .status{display:inline-flex; align-items:center; gap:8px; margin-top:18px; font-size:clamp(14px,1.6vw,17px); color:#A1A1A6}
   .status i{width:8px; height:8px; border-radius:50%; background:var(--up); box-shadow:0 0 0 0 rgba(52,199,89,.6); animation:pulse 2.4s infinite}
   .status.stale i{background:#FF9F0A; animation:none}
+  .rfr{display:inline-flex; align-items:center; justify-content:center; width:34px; height:34px; margin-left:2px; border:none; border-radius:50%; background:rgba(255,255,255,.08); color:#F5F5F7; cursor:pointer}
+  .rfr:hover{background:rgba(255,255,255,.14)}
+  .rfr svg{width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round}
+  .rfr.spin svg{animation:spin .8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
   @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(52,199,89,.55)}70%{box-shadow:0 0 0 8px rgba(52,199,89,0)}100%{box-shadow:0 0 0 0 rgba(52,199,89,0)}}
 
   /* Dismissible "Add to Home Screen" nudge — same idea as the app's own
@@ -287,9 +290,8 @@
 <!-- 1. LIVE RATE -->
 <header class="hero" id="top">
   <div class="wrap">
-    <div class="monogram"><img src="assets/images/logo-framed.png" alt="Ram Murti Jewellers logo"></div>
     <h1>Today's <span class="g">gold rate</span><br>in Ludhiana.</h1>
-    <div class="status" id="status" aria-live="polite"><i></i><span id="statusText">Loading today's rates</span></div>
+    <div class="status" id="status" aria-live="polite"><i></i><span id="statusText">Loading today's rates</span><button class="rfr" id="rfrBtn" type="button" aria-label="Refresh rates"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg></button></div>
 
     <div class="installhint" id="installHint">
       <div class="ihHead">
@@ -562,6 +564,14 @@ async function load(){
 try{ const c=JSON.parse(localStorage.getItem('rmj_rates')); if(c){ paint(c,'cache'); } }catch(e){}
 load();
 setInterval(()=>{ if(!document.hidden) load(); }, CONFIG.REFRESH_MS);
+/* Manual refresh — same rates-only fetch as the 1-minute auto refresh; the page itself never reloads. */
+const rfrBtn=document.getElementById('rfrBtn');
+rfrBtn.onclick=async()=>{
+  if(rfrBtn.classList.contains('spin')) return;
+  rfrBtn.classList.add('spin');
+  await Promise.all([load(), new Promise(r=>setTimeout(r,700))]);
+  rfrBtn.classList.remove('spin');
+};
 document.addEventListener('visibilitychange',()=>{ if(!document.hidden) load(); });
 
 /* nav: dark over the hero, light after */
