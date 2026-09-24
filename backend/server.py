@@ -2135,13 +2135,29 @@ async def log_whatsapp_message(
         logger.warning(f'whatsapp message log failed: {e}')
 
 
+WHATSAPP_PROVIDERS = ('openwa', 'meta')
+
+
+async def whatsapp_provider() -> str:
+    """Which WhatsApp service is live — exactly one at a time (Settings >
+    WhatsApp). The other is fully off: no sends, no chatbot replies."""
+    doc = await db.settings.find_one({'id': 'whatsapp'}, {'_id': 0, 'provider': 1}) or {}
+    p = doc.get('provider')
+    return p if p in WHATSAPP_PROVIDERS else 'openwa'
+
+
 async def send_whatsapp(mobile: str, text: str, flow: str = '') -> bool:
-    """Best-effort WhatsApp send via the self-hosted OpenWA gateway. Never
+    """Best-effort WhatsApp send via whichever provider is active. Never
     raises — a WhatsApp failure (gateway down, session logged out, bad
     number) must not block or roll back whatever business action triggered
     it, same convention as the push-notification helpers above. Returns
     whether the send actually went out, so a caller that wants to know can
     check it without needing a try/except of its own."""
+    if await whatsapp_provider() == 'meta':
+        # Freeform text: only delivered inside Meta's 24-hour window — outside
+        # it the failure is logged with Meta's error (see whatsapp_meta.py).
+        import whatsapp_meta
+        return await whatsapp_meta.send_text(mobile, text, flow=flow)
     chat_id = _to_whatsapp_chat_id(mobile)
     if not chat_id:
         await log_whatsapp_message('openwa', mobile, 'text', text, False, flow, error='invalid or missing mobile number')
@@ -2156,6 +2172,10 @@ async def send_whatsapp_channel(channel_id: str, text: str, flow: str = '') -> b
     gold-rate broadcast channel). `channel_id` is the full `<id>@newsletter`
     id, not a phone number — no normalization needed."""
     if not channel_id:
+        return False
+    if await whatsapp_provider() == 'meta':
+        await log_whatsapp_message('meta', channel_id, 'channel', text, False, flow,
+                                   error='WhatsApp Channels are not supported by the official Meta API — switch to OpenWA to post here')
         return False
     ok = await _openwa_send_text(channel_id, text)
     await log_whatsapp_message('openwa', channel_id, 'channel', text, ok, flow)
@@ -2239,7 +2259,8 @@ async def _whatsapp_health_loop() -> None:
     while True:
         try:
             status = await get_whatsapp_status()
-            if status['configured']:
+            # An idle OpenWA gateway isn't an outage while Meta is the live provider.
+            if status['configured'] and await whatsapp_provider() == 'openwa':
                 state = await db.settings.find_one({'id': 'system_health_state'}) or {}
                 was_connected = state.get('whatsapp_was_connected')
                 if was_connected is None:

@@ -9,14 +9,15 @@ import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { useToast } from '@/src/components/ui';
 
+type Provider = 'openwa' | 'meta';
 type Form = {
-  enabled: boolean; repair_ready_notice: boolean; repair_ready_template: string;
+  enabled: boolean; provider: Provider; repair_ready_notice: boolean; repair_ready_template: string;
   repair_received_notice: boolean; repair_received_template: string;
   chatbot_enabled: boolean; chatbot_rate_template: string;
   chatbot_rate_enabled: boolean; chatbot_status_enabled: boolean;
 };
 const EMPTY: Form = {
-  enabled: true, repair_ready_notice: true, repair_ready_template: '',
+  enabled: true, provider: 'openwa', repair_ready_notice: true, repair_ready_template: '',
   repair_received_notice: true, repair_received_template: '',
   chatbot_enabled: false, chatbot_rate_template: '',
   chatbot_rate_enabled: true, chatbot_status_enabled: true,
@@ -64,7 +65,8 @@ export default function WhatsAppSettingsScreen() {
     try {
       const w = await api.get<any>('/settings/whatsapp');
       setForm({
-        enabled: w.enabled !== false, repair_ready_notice: w.repair_ready_notice !== false,
+        enabled: w.enabled !== false, provider: w.provider === 'meta' ? 'meta' : 'openwa',
+        repair_ready_notice: w.repair_ready_notice !== false,
         repair_ready_template: w.repair_ready_template || '',
         repair_received_notice: w.repair_received_notice !== false, repair_received_template: w.repair_received_template || '',
         chatbot_enabled: w.chatbot_enabled === true,
@@ -126,6 +128,45 @@ export default function WhatsAppSettingsScreen() {
               : status.connected ? `Connected — sending as ${status.phone}`
               : 'Gateway configured but not connected — scan the QR again in the WhatsApp dashboard.'}
           </Text>
+        </View>
+
+        {/* ---------------- Active service (exactly one on) ---------------- */}
+        <View style={styles.groupCard}>
+          <View style={styles.groupHeader}>
+            <View style={styles.groupHeaderIcon}><Ionicons name="swap-horizontal-outline" size={17} color={colors.brandSecondary} /></View>
+            <Text style={styles.groupHeaderTitle}>Active WhatsApp Service</Text>
+          </View>
+          <Text style={styles.hint}>Only one runs at a time — turning one on turns the other off. All notices and chatbot replies go through the active one.</Text>
+          {([
+            { key: 'openwa', label: 'WhatsApp Gateway (OpenWA)', sub: status?.connected ? `Shop number ${status.phone}` : 'Not connected' },
+            { key: 'meta', label: 'Official WhatsApp (Meta)', sub: metaStatus?.connected ? (metaStatus.display_name || metaStatus.phone || 'Connected') : 'Not connected' },
+          ] as { key: Provider; label: string; sub: string }[]).map((p) => {
+            const on = form.provider === p.key;
+            return (
+              <Pressable
+                key={p.key}
+                onPress={() => setForm((f) => ({ ...f, provider: f.provider === 'openwa' ? 'meta' : 'openwa' }))}
+                style={styles.toggleRow}
+                testID={`whatsapp-provider-${p.key}-toggle`}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.toggleLabel}>{p.label}</Text>
+                  <Text style={styles.toggleSub}>{p.sub}</Text>
+                </View>
+                <View style={[styles.switch, on && styles.switchOn]}>
+                  <View style={[styles.switchKnob, on && styles.switchKnobOn]} />
+                </View>
+              </Pressable>
+            );
+          })}
+          {form.provider === 'meta' && (
+            <View style={[styles.infoBox, styles.infoBoxWarn, { marginBottom: 0 }]} testID="whatsapp-provider-meta-warning">
+              <Ionicons name="alert-circle-outline" size={16} color={colors.onWarning} />
+              <Text style={[styles.infoText, { color: colors.onWarning }]}>
+                On Meta, repair notices and app alerts only reach a customer who messaged the Meta number in the last 24 hours (other sends fail and show in the Sent Messages Log). Gold rate posts to the WhatsApp Channel need OpenWA.
+              </Text>
+            </View>
+          )}
         </View>
 
         <Pressable onPress={() => router.push('/settings/whatsapp-templates' as any)} style={styles.navRow} testID="whatsapp-templates-link">
@@ -246,9 +287,9 @@ export default function WhatsAppSettingsScreen() {
         <View style={styles.groupCard}>
           <View style={styles.groupHeader}>
             <View style={styles.groupHeaderIcon}><Ionicons name="shield-checkmark-outline" size={17} color={colors.brandSecondary} /></View>
-            <Text style={styles.groupHeaderTitle}>Official WhatsApp (Meta) — Test Line</Text>
+            <Text style={styles.groupHeaderTitle}>Official WhatsApp (Meta)</Text>
           </View>
-          <Text style={styles.hint}>A separate number being set up on the official WhatsApp Business Platform, side by side with the gateway above, ahead of an eventual switch. Test only — nothing here is customer-facing yet.</Text>
+          <Text style={styles.hint}>A separate number on the official WhatsApp Business Platform. Make it the active service above to send through it; the test send below works either way.</Text>
           <View style={[styles.infoBox, metaStatus?.connected ? styles.infoBoxOk : styles.infoBoxWarn, { marginBottom: spacing.sm }]} testID="whatsapp-meta-status">
             <Ionicons name={metaStatus?.connected ? 'checkmark-circle-outline' : 'alert-circle-outline'} size={18} color={metaStatus?.connected ? colors.onSuccess : colors.onWarning} />
             <Text style={[styles.infoText, { color: metaStatus?.connected ? colors.onSuccess : colors.onWarning }]}>

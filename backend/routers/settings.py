@@ -5,7 +5,7 @@ infrastructure (db, auth deps, models, cross-domain helpers) stays in
 server.py and is imported from here — nothing about behavior changed,
 only where the code lives."""
 import re
-from typing import Optional
+from typing import Literal, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from server import (
@@ -100,6 +100,9 @@ async def update_security(body: SecuritySettingsIn, user: dict = Depends(require
 # own field here as they're added (only 'repair_ready_notice' exists today).
 class WhatsAppSettingsIn(BaseModel):
     enabled: bool = True
+    # Exactly one WhatsApp service is live at a time — see server.whatsapp_provider.
+    # None = leave unchanged, so screens that don't send it can't reset it.
+    provider: Optional[Literal['openwa', 'meta']] = None
     repair_ready_notice: bool = True
     repair_ready_template: Optional[str] = None   # None/blank = use the built-in default
     repair_received_notice: bool = True
@@ -123,6 +126,7 @@ async def get_whatsapp_settings(_: dict = Depends(get_current)):
     status = await get_whatsapp_status()
     return {
         'enabled': doc.get('enabled', True),
+        'provider': doc.get('provider') if doc.get('provider') in ('openwa', 'meta') else 'openwa',
         'repair_ready_notice': doc.get('repair_ready_notice', True),
         'repair_ready_template': doc.get('repair_ready_template') or DEFAULT_REPAIR_READY_TEMPLATE,
         'repair_received_notice': doc.get('repair_received_notice', True),
@@ -155,6 +159,8 @@ async def update_whatsapp_settings(body: WhatsAppSettingsIn, user: dict = Depend
         except Exception as e:
             raise HTTPException(status_code=400, detail=f'Template has an unknown placeholder: {e}')
     payload = body.model_dump()
+    if payload['provider'] is None:
+        del payload['provider']
     payload['id'] = 'whatsapp'
     payload['updated_at'] = now_utc().isoformat()
     await db.settings.update_one({'id': 'whatsapp'}, {'$set': payload}, upsert=True)
