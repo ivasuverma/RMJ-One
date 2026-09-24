@@ -126,6 +126,10 @@
   .sval{display:block; font-size:15px; font-weight:700; margin-top:3px; color:#F5F5F7; font-variant-numeric:tabular-nums}
   .sunit{display:block; font-size:10px; color:#86868B; margin-top:1px}
 
+  .unavail{max-width:560px; margin:clamp(32px,5vw,48px) auto 0; background:var(--char); border:1px solid #262628; border-radius:var(--r-lg); padding:26px 24px}
+  .unavail b{display:block; font-size:19px; color:#F5F5F7; letter-spacing:-.01em}
+  .unavail p{font-size:15px; color:#A1A1A6; margin-top:8px; line-height:1.5}
+  .hero.norates .metals, .hero.norates .spots, .hero.norates .fine{display:none}
   .fine{font-size:13px; color:#86868B; max-width:600px; margin:20px auto 0; line-height:1.55}
   .actions{display:flex; gap:12px; justify-content:center; margin-top:30px; flex-wrap:wrap}
   .btn{display:inline-flex; align-items:center; justify-content:center; gap:8px; font-size:17px; font-weight:500; text-decoration:none; padding:13px 24px; border-radius:980px; transition:transform .15s, background .2s; min-height:48px}
@@ -331,6 +335,10 @@
       <div class="spot"><span class="slabel">Silver (XAG)</span><span class="sval" id="xag">—</span><span class="sunit">per troy oz</span></div>
       <div class="spot"><span class="slabel">USD/INR</span><span class="sval" id="usdinr">—</span><span class="sunit">spot</span></div>
     </div>
+    <div class="unavail" id="unavail" hidden>
+      <b>Sorry for the inconvenience.</b>
+      <p>Live rates are temporarily unavailable. Please call or WhatsApp us for today's rate — this page will update by itself as soon as they're back.</p>
+    </div>
     <p class="fine">Rates are indicative and exclude making charges, wastage and GST — they can change through the day, and the rate applicable to any transaction is the one in effect at billing, not the rate shown here. Buyback is offered only on items purchased from us, subject to purity verification.</p>
     <div class="actions">
       <a class="btn wa" href="https://wa.me/919781800888?text=Hello%2C%20I%27d%20like%20a%20quote%20at%20today%27s%20gold%20rate.">Get a quote on WhatsApp</a>
@@ -502,14 +510,9 @@ const CONFIG = {
   STALE_AFTER_MS: 6 * 60 * 60 * 1000,                     // flag rates older than 6 hours
 };
 
-/* Fallback shown only until the first successful fetch (sample figures) —
-   same field names as GET /api/public/rates: store_name, fetched_at,
-   gold_sell, gold_buy, silver_sell, silver_buy, xau_usd, xag_usd, usd_inr. */
-const FALLBACK = {
-  store_name: 'Ram Murti Jewellers', fetched_at: null,
-  gold_sell: 110500, gold_buy: 106500, silver_sell: 128000, silver_buy: 122500,
-  xau_usd: null, xag_usd: null, usd_inr: null,
-};
+/* No sample or previously-saved rates are ever shown: if the rate server
+   can't be reached, the tiles are hidden behind an apology until it's back. */
+try{ localStorage.removeItem('rmj_rates'); }catch(e){}
 
 ['staffBtn','staffBtnM','staffBtnF'].forEach(id=>{ const a=document.getElementById(id); if(a){ a.href=CONFIG.LOGIN_URL; a.rel='nofollow'; }});
 
@@ -529,7 +532,17 @@ function setVal(id, val, fmt){
   shown[id]=val;
 }
 
-function paint(data, source){
+const rateHero=document.getElementById('top'), unavail=document.getElementById('unavail');
+function showUnavailable(){
+  rateHero.classList.add('norates'); unavail.hidden=false;
+  ['goldSell','goldBuy','silverSell','silverBuy','xau','xag','usdinr'].forEach(id=>{ document.getElementById(id).textContent='—'; });
+  document.getElementById('mbarRate').textContent='Rate';
+  statusText.textContent='Rates unavailable, retrying'; statusEl.classList.add('stale');
+  shown={}; firstPaint=true;
+}
+
+function paint(data){
+  rateHero.classList.remove('norates'); unavail.hidden=true;
   setVal('goldSell', data.gold_sell, inr);
   setVal('goldBuy', data.gold_buy, inr);
   setVal('silverSell', data.silver_sell, inr);
@@ -541,16 +554,14 @@ function paint(data, source){
   firstPaint=false;
 
   // status line
-  if(source==='live' && data.fetched_at){
+  if(data.fetched_at){
     const t=new Date(data.fetched_at), age=Date.now()-t;
     const when=t.toLocaleTimeString('en-IN',{hour:'numeric',minute:'2-digit'});
     const day=t.toDateString()===new Date().toDateString()?'today':t.toLocaleDateString('en-IN',{day:'numeric',month:'short'});
     statusText.textContent=`Live rate, updated ${day} at ${when}`;
     statusEl.classList.toggle('stale', age>CONFIG.STALE_AFTER_MS);
-  } else if(source==='cache'){
-    statusText.textContent='Showing the last rates we loaded. Reconnecting…'; statusEl.classList.add('stale');
   } else {
-    statusText.textContent='Sample rates. Connect RMJ One to show live rates.'; statusEl.classList.add('stale');
+    statusText.textContent='Live rate'; statusEl.classList.remove('stale');
   }
 }
 
@@ -560,15 +571,11 @@ async function load(){
     if(!res.ok) throw new Error(res.status);
     const data=await res.json();
     if(data.gold_sell==null && data.silver_sell==null) throw new Error('empty');
-    try{ localStorage.setItem('rmj_rates', JSON.stringify(data)); }catch(e){}
-    paint(data,'live');
+    paint(data);
   }catch(e){
-    let cached=null; try{ cached=JSON.parse(localStorage.getItem('rmj_rates')); }catch(_){}
-    if(cached) paint(cached,'cache'); else paint(FALLBACK,'sample');
+    showUnavailable();
   }
 }
-// paint instantly from cache, then fetch fresh
-try{ const c=JSON.parse(localStorage.getItem('rmj_rates')); if(c){ paint(c,'cache'); } }catch(e){}
 /* Rates-only refresh (the page itself never reloads): automatic every
    REFRESH_MS with a visible countdown on the button, on tap, and whenever
    the tab comes back into view. Every refresh restarts the countdown. */
