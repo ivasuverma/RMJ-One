@@ -10,6 +10,15 @@
 <meta property="og:image" content="https://assets.zyrosite.com/cdn-cgi/image/format=auto,w=1440,h=756,fit=crop,f=jpeg/m2Wbv2leXaTxwqRD/web-mnl6gE63eoFNxEJN.png">
 <meta name="theme-color" content="#000000">
 <link rel="icon" href="assets/images/logo-mark.png">
+<!-- Home-screen install support — the hint banner below (#installHint)
+     offers "Add to Home Screen" so a repeat visitor gets one-tap access to
+     this same live-rate page, standalone (no browser chrome), instead of
+     re-opening a link every time. -->
+<link rel="manifest" href="site.webmanifest">
+<link rel="apple-touch-icon" href="assets/images/logo-mark.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="RMJ Rate">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -70,6 +79,21 @@
   .status i{width:8px; height:8px; border-radius:50%; background:var(--up); box-shadow:0 0 0 0 rgba(52,199,89,.6); animation:pulse 2.4s infinite}
   .status.stale i{background:#FF9F0A; animation:none}
   @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(52,199,89,.55)}70%{box-shadow:0 0 0 8px rgba(52,199,89,0)}100%{box-shadow:0 0 0 0 rgba(52,199,89,0)}}
+
+  /* Dismissible "Add to Home Screen" nudge — same idea as the app's own
+     RatesInstallHint on its public rates screen: one tap next time instead
+     of re-opening a link. Hidden by default; JS decides whether to show it
+     (never in an already-installed/standalone session, never once
+     dismissed) and reveals it via .show rather than always rendering it,
+     so there's no flash-of-hint before that decision runs. */
+  .installhint{display:none; text-align:left; background:var(--char); border:1px solid #262628; border-radius:var(--r-md); padding:14px 16px; margin:18px auto 0; max-width:520px}
+  .installhint.show{display:block}
+  .ihHead{display:flex; align-items:center; gap:8px}
+  .ihTitle{flex:1; color:#F5F5F7; font-size:13.5px; font-weight:800}
+  .ihClose{background:none; border:none; color:#86868B; font-size:16px; line-height:1; cursor:pointer; padding:2px}
+  .ihBody{color:#A1A1A6; font-size:12px; line-height:1.5; margin-top:6px}
+  .ihBody b{color:#F5F5F7}
+  .ihBtn{display:flex; align-items:center; justify-content:center; gap:6px; width:100%; background:var(--gold-lt); color:#111; border:none; border-radius:var(--r-md); padding:9px; margin-top:8px; font-size:12.5px; font-weight:800; cursor:pointer}
 
   /* Same two numbers (Sell / Buyback) per metal, plus the three international
      spot tiles, as the app's own public rates screen (frontend/app/rates.tsx)
@@ -258,6 +282,15 @@
     <div class="monogram"><img src="assets/images/logo-mark.png" alt="Ram Murti Jewellers logo"></div>
     <h1>Today's <span class="g">gold rate</span><br>in Ludhiana.</h1>
     <div class="status" id="status" aria-live="polite"><i></i><span id="statusText">Loading today's rates</span></div>
+
+    <div class="installhint" id="installHint">
+      <div class="ihHead">
+        <span class="ihTitle">Add this page to your Home Screen</span>
+        <button class="ihClose" id="ihClose" aria-label="Dismiss">✕</button>
+      </div>
+      <p class="ihBody" id="ihBody">Open the browser menu and tap <b>Add to Home screen</b> — one tap next time to check today's rate.</p>
+      <button class="ihBtn" id="ihInstallBtn" style="display:none">Add to Home Screen</button>
+    </div>
     <div class="metals">
       <div class="metal">
         <div class="mhead">Gold<span>995 purity · 10 g</span></div>
@@ -532,6 +565,55 @@ new IntersectionObserver(([e])=>nav.classList.toggle('light',!e.isIntersecting),
 const burger=document.getElementById('burger');
 burger.onclick=()=>{ const o=nav.classList.toggle('open'); burger.setAttribute('aria-expanded',o); };
 document.querySelectorAll('#sheet a').forEach(a=>a.addEventListener('click',()=>{nav.classList.remove('open'); burger.setAttribute('aria-expanded',false);}));
+
+/* "Add to Home Screen" hint — same idea as the app's own public rates
+   screen (RatesInstallHint): a repeat visitor gets one tap next time
+   instead of re-opening a link. Never shown once already installed
+   (standalone display mode), and dismissing it sticks via localStorage
+   so a regular visitor isn't nagged on every visit. */
+(function(){
+  const INSTALL_DISMISSED_KEY='rmj_rate_install_dismissed';
+  const isStandalone = window.matchMedia && window.matchMedia('(display-mode: standalone)').matches
+    || window.navigator.standalone === true;
+  if (isStandalone) return;
+  let dismissed=false;
+  try { dismissed = localStorage.getItem(INSTALL_DISMISSED_KEY)==='1'; } catch(e){}
+  if (dismissed) return;
+
+  const hint=document.getElementById('installHint');
+  const body=document.getElementById('ihBody');
+  const installBtn=document.getElementById('ihInstallBtn');
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent||'')
+    || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1);
+
+  if (isIOS) {
+    body.innerHTML='Tap the Share button, then <b>Add to Home Screen</b> — one tap next time to check today\'s rate.';
+  }
+  // Android/Chrome: capture the native install prompt and show a real button
+  // instead of the generic "open the browser menu" fallback text.
+  let deferredPrompt=null;
+  window.addEventListener('beforeinstallprompt', e=>{
+    e.preventDefault();
+    deferredPrompt=e;
+    if (!isIOS) {
+      body.textContent='One tap next time to check today\'s rate — no need to reopen the link.';
+      installBtn.style.display='flex';
+    }
+  });
+  installBtn.onclick=async()=>{
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    try { await deferredPrompt.userChoice; } catch(e){}
+    deferredPrompt=null;
+    dismissHint();
+  };
+  function dismissHint(){
+    hint.classList.remove('show');
+    try { localStorage.setItem(INSTALL_DISMISSED_KEY,'1'); } catch(e){}
+  }
+  document.getElementById('ihClose').onclick=dismissHint;
+  hint.classList.add('show');
+})();
 
 /* new at the counter — your photos; rename to real pieces */
 const PIECES=[
