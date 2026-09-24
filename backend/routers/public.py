@@ -31,3 +31,18 @@ async def public_rates():
         'xag_usd': live.get('xag_usd'),
         'usd_inr': live.get('usd_inr'),
     }
+
+
+@router.get('/public/instagram')
+async def public_instagram():
+    """Backs the website's Instagram rail (website/index.html) — same
+    always-200 discipline as /public/rates: whatever's cached, even an
+    empty list before the shop ever connects Instagram or if the last
+    fetch failed (see instagram_service.py's _store_media, which never
+    wipes the last known-good posts on a transient failure)."""
+    cache = await db.settings.find_one({'id': 'instagram_media'}, {'_id': 0}) or {}
+    return {
+        'username': cache.get('username'),
+        'fetched_at': cache.get('fetched_at'),
+        'posts': cache.get('posts') or [],
+    }

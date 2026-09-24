@@ -337,7 +337,7 @@
       <h2>New at the counter.</h2>
       <p>Ask about any piece and we'll send more photos and the price.</p>
     </div>
-    <div class="railnav"><button aria-label="Previous pieces" onclick="rail(-1)">‹</button><button aria-label="Next pieces" onclick="rail(1)">›</button></div>
+    <div class="railnav"><button aria-label="Previous pieces" onclick="railScroll('rail',-1)">‹</button><button aria-label="Next pieces" onclick="railScroll('rail',1)">›</button></div>
   </div>
   <div class="rail" id="rail"></div>
   <div class="wrap">
@@ -348,6 +348,20 @@
       <div class="promise"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg><h3>Repairs and polish</h3><p>Resizing, clasps, stone setting and polishing, with a receipt for every piece.</p></div>
     </div>
   </div>
+</section>
+
+<!-- 4b. FROM INSTAGRAM — hidden until the feed actually has posts (see
+     loadInstagram()): nothing to show before the shop connects Instagram in
+     Settings, and a stale/broken section looks worse than no section. -->
+<section id="instagram" class="grey" style="display:none">
+  <div class="wrap railhead">
+    <div class="head">
+      <h2>From Instagram.</h2>
+      <p id="igHandle">Our latest posts.</p>
+    </div>
+    <div class="railnav"><button aria-label="Previous posts" onclick="railScroll('igrail',-1)">‹</button><button aria-label="Next posts" onclick="railScroll('igrail',1)">›</button></div>
+  </div>
+  <div class="rail" id="igrail"></div>
 </section>
 
 <!-- 5. ABOUT (brand led) -->
@@ -423,11 +437,15 @@
    own public rates screen (frontend/app/rates.tsx) reads — same
    response shape, same 60s refresh cadence, so this board is never a
    second source of truth or a different-looking rate elsewhere.
+   INSTAGRAM_URL: the shop's latest Instagram posts, kept fresh by
+   instagram_service.py's background loop once connected in Settings >
+   Instagram — see routers/public.py's GET /public/instagram.
    LOGIN_URL: where staff sign in to RMJ One.
    ================================================================ */
 const CONFIG = {
-  RATES_URL: 'https://app.rmj.co.in/api/public/rates',   // ← set to your RMJ One URL
-  LOGIN_URL: 'https://app.rmj.co.in',                     // ← set to your RMJ One URL
+  RATES_URL: 'https://app.rmj.co.in/api/public/rates',       // ← set to your RMJ One URL
+  INSTAGRAM_URL: 'https://app.rmj.co.in/api/public/instagram', // ← set to your RMJ One URL
+  LOGIN_URL: 'https://app.rmj.co.in',                         // ← set to your RMJ One URL
   REFRESH_MS: 60 * 1000,                                  // same cadence as the app's rates screen
   STALE_AFTER_MS: 6 * 60 * 60 * 1000,                     // flag rates older than 6 hours
 };
@@ -525,7 +543,31 @@ document.getElementById('rail').innerHTML=PIECES.map(([f,n,m])=>{
   const msg=encodeURIComponent(`Hello, I'd like to know more about this piece: ${n} (${m}).`);
   return `<a class="piece" href="https://wa.me/919781800888?text=${msg}"><div class="ph"><img loading="lazy" src="https://assets.zyrosite.com/cdn-cgi/image/format=auto,w=600,fit=crop/m2Wbv2leXaTxwqRD/${f}" alt="${n}, ${m}"></div><div class="pn">${n}</div><div class="pa">${m}, ask about this piece</div></a>`;
 }).join('');
-function rail(d){ document.getElementById('rail').scrollBy({left:d*306,behavior:reduce?'auto':'smooth'}); }
+function railScroll(id,d){ document.getElementById(id).scrollBy({left:d*306,behavior:reduce?'auto':'smooth'}); }
+
+/* From Instagram — left-to-right scroll rail, same markup/CSS as "New at
+   the counter" above (.rail/.piece), populated from the shop's own cached
+   feed (see instagram_service.py) instead of a hardcoded list. The whole
+   section stays hidden (see its inline style) until there's actually
+   something to show — no empty rail before Instagram is connected, and no
+   stale one if a fetch ever comes back empty. */
+async function loadInstagram(){
+  try{
+    const res=await fetch(CONFIG.INSTAGRAM_URL,{cache:'no-store'});
+    if(!res.ok) throw new Error(res.status);
+    const data=await res.json();
+    const posts=data.posts||[];
+    if(!posts.length) return;
+    if(data.username) document.getElementById('igHandle').textContent=`@${data.username}`;
+    document.getElementById('igrail').innerHTML=posts.map(p=>{
+      const caption=(p.caption||'').replace(/"/g,'&quot;');
+      return `<a class="piece" href="${p.permalink||'#'}" target="_blank" rel="noopener"><div class="ph"><img loading="lazy" src="${p.image}" alt="${caption||'Instagram post'}"></div></a>`;
+    }).join('');
+    document.getElementById('instagram').style.display='';
+  }catch(e){ /* section stays hidden — a broken feed is invisible, not broken-looking */ }
+}
+loadInstagram();
+
 document.getElementById('yr').textContent=new Date().getFullYear();
 </script>
 </body>
