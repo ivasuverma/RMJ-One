@@ -93,6 +93,7 @@
      so there's no flash-of-hint before that decision runs. */
   .installhint{display:none; text-align:left; background:var(--char); border:1px solid #262628; border-radius:var(--r-md); padding:14px 16px; margin:18px auto 0; max-width:520px}
   .installhint.visible{display:block}
+  .installhint.fading{opacity:0; transition:opacity .4s}
   .ihHead{display:flex; align-items:center; gap:8px}
   .ihTitle{flex:1; color:#F5F5F7; font-size:13.5px; font-weight:800}
   .ihClose{background:none; border:none; color:#86868B; font-size:16px; line-height:1; cursor:pointer; padding:2px}
@@ -646,6 +647,8 @@ document.querySelectorAll('#sheet a').forEach(a=>a.addEventListener('click',()=>
   }
   document.getElementById('ihClose').onclick=dismissHint;
   hint.classList.add('visible');
+  // Auto-hide for this visit only (not saved) so it doesn't sit over the rates; ✕ still dismisses for good.
+  setTimeout(()=>{ hint.classList.add('fading'); setTimeout(()=>hint.classList.remove('visible','fading'),400); }, 15000);
 })();
 
 /* Find your piece — metal tab → style (gold only) → piece; each piece chip
