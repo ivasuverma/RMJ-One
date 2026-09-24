@@ -320,6 +320,19 @@ async def _maybe_auto_send(doc: dict, gold_rate: int, silver_rate: int, cfg: dic
     if now_ist.hour * 60 + now_ist.minute < sh * 60 + sm:
         logger.info(f'gold rate auto-send waiting for {send_time} IST')
         return
+    # One attempt per day, recorded in its own doc BEFORE sending: a manual
+    # refetch rewrites gold_rate_today (clearing confirmed/sent_at), and a
+    # send the gateway delivered but reported as failed would otherwise be
+    # retried every cycle — both used to repost to the Channel on every fetch.
+    today = today_ist()
+    state = await db.settings.find_one({'id': 'gold_rate_auto_send'}, {'_id': 0}) or {}
+    if state.get('date') == today:
+        return
+    await db.settings.update_one(
+        {'id': 'gold_rate_auto_send'},
+        {'$set': {'id': 'gold_rate_auto_send', 'date': today, 'attempted_at': now_utc().isoformat()}},
+        upsert=True,
+    )
     sent = await send_whatsapp_channel(GOLD_RATE_CHANNEL_ID, doc['message'], flow='gold_rate_auto_send')
     if sent:
         doc['confirmed'] = True
@@ -328,7 +341,7 @@ async def _maybe_auto_send(doc: dict, gold_rate: int, silver_rate: int, cfg: dic
         from routers.led_board import push_after_confirm
         await push_after_confirm(gold_rate, silver_rate, 'auto_send')
     else:
-        logger.warning('gold rate auto-send failed — left unsent for manual review')
+        logger.warning('gold rate auto-send failed — not retried today; left unsent for manual review')
 
 
 async def run_fetch_and_store() -> dict:

@@ -546,26 +546,34 @@ async def create_document(
 async def _notify_record_holders(cat: dict, doc: dict, actor: dict) -> None:
     """Tell whoever can RECORD this category that a new document is waiting —
     resolved per person from their record rights (falling back to role). Skips
-    the person who captured it. Gated by each recipient's master notification
-    switch (handled inside notify_user)."""
-    from server import notify_user
+    the person who captured it. Gated per recipient and per channel by their
+    'document_new_pending' preference (Settings › People › Alerts)."""
+    from server import notify_user, _wants_script, _wants_script_whatsapp
     title = f'New {cat.get("label", "document")} to record'
     body = (doc.get('note') or (doc.get('file') or {}).get('orig_name') or 'A document was captured.')[:120]
     actor_id = actor.get('id')
-    proj = {'_id': 0, 'id': 1, 'role': 1, 'doc_category_rights': 1, 'status': 1, 'module_access': 1}
+    proj = {'_id': 0, 'id': 1, 'role': 1, 'doc_category_rights': 1, 'status': 1, 'module_access': 1,
+            'notifications_enabled': 1, 'notif_prefs': 1, 'notif_prefs_whatsapp': 1}
+
+    async def _send(acc: dict, role: str) -> None:
+        wants_push = _wants_script(acc, role, 'documents', 'document_new_pending')
+        wants_wa = _wants_script_whatsapp(acc, role, 'documents', 'document_new_pending')
+        if wants_push or wants_wa:
+            await notify_user(acc['id'], title, body, '/documents?tab=pending', push=wants_push, whatsapp=wants_wa)
+
     sent = set()
     try:
         async for u in db.users.find({}, proj):
             if u['id'] == actor_id:
                 continue
             if _can_record(cat, u.get('role', ''), u):
-                await notify_user(u['id'], title, body, '/documents?tab=pending')
+                await _send(u, u.get('role', ''))
                 sent.add(u['id'])
         async for e in db.employees.find({'status': {'$ne': 'inactive'}}, proj):
             if e['id'] == actor_id or e['id'] in sent:
                 continue
             if _can_record(cat, 'employee', e):
-                await notify_user(e['id'], title, body, '/documents?tab=pending')
+                await _send(e, 'employee')
     except Exception:
         pass
 

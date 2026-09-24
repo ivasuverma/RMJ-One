@@ -2095,7 +2095,7 @@ async def _openwa_send_text(chat_id: str, text: str) -> bool:
                 if not session_id:
                     return False
                 res = await client.post(f'{OPENWA_BASE_URL}/api/sessions/{session_id}/messages/send-text', headers=headers, json=payload)
-            if res.status_code == 201:
+            if 200 <= res.status_code < 300:
                 return True
             logger.warning(f'openwa send failed: {res.status_code} {res.text[:200]}')
             return False
@@ -2350,6 +2350,7 @@ NOTIFICATION_SCRIPTS = [
     {'key': 'cashbook_edit', 'module': 'cash_book', 'label': 'Employee edited a cash entry', 'admin_only': True},
     {'key': 'cashbook_over_limit', 'module': 'cash_book', 'label': 'Cash counter over ₹1,00,000 (owner/admin copy)', 'admin_only': True},
     {'key': 'cashbook_over_limit_employee', 'module': 'cash_book', 'label': 'Your assigned counter goes over ₹1,00,000 (on by default)', 'admin_only': False},
+    {'key': 'document_new_pending', 'module': 'documents', 'label': 'New document waiting to be recorded', 'admin_only': False},
     {'key': 'document_recorded', 'module': 'documents', 'label': 'Document recorded to Done', 'admin_only': True},
     {'key': 'document_pending_reminder', 'module': 'documents', 'label': 'Document pending more than 1 day (daily reminder)', 'admin_only': False},
     {'key': 'gold_loan_created', 'module': 'gold_loans', 'label': 'New gold loan created', 'admin_only': True},
