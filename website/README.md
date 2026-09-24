@@ -14,27 +14,34 @@ registrar.
 
 ## Pages
 
-- `index.html` — homepage, doubles as the live rates page.
-- `about.html`
-- `contact.html`
-- `payment.html`
-- `assets/css/style.css` — shared styles (brand-matched red/gold/cream theme).
-- `assets/js/nav.js` — mobile hamburger menu, shared by every page.
-- `assets/js/rates.js` — fetches live rates for the homepage.
+Apple-style single-page design (each page is fully self-contained — its own
+inline `<style>`/`<script>`, no shared CSS/JS files to keep in sync):
 
-## Before you upload: fill in the placeholders
+- `index.html` — the whole site: live rate board, showcase, collections,
+  new-at-the-counter rail, about and visit/contact, all on one page via
+  anchor links (`#collections`, `#about`, `#visit`, ...). Also the live rates
+  page.
+- `payment.html` — payment methods, built to match `index.html`'s look
+  (same nav/footer/colors), linked from the Visit section as "Pay online".
+- `assets/images/logo-mark.png` — the real logo (from `RMJ_Logos.zip`), used
+  for the favicon and every logo slot on both pages.
 
-Every page has `[Shop Address Line 1]`, `[Phone Number]`, `[GSTIN Number]`,
-etc. — search for `[` across `website/` and replace them with the real
-details. Also swap the `[ Store Photograph ]` / `[ UPI QR Code ]` boxes in
-`index.html`, `about.html` and `payment.html` for real `<img>` tags once you
-have photos (drop images in `assets/images/` and reference them with a
-relative path, e.g. `assets/images/storefront.jpg`).
+There's no `about.html` or `contact.html` anymore — that content now lives in
+`index.html`'s About and Visit sections instead of separate pages.
 
-The map on `contact.html` searches for "Ram Murti Jewellers" by name — once
-the address is real and the listing is on Google Maps, replace the iframe's
-`src` with the exact embed link Google Maps gives you for this store
-(Share → Embed a map), so it points at the right pin.
+## Still using placeholder text
+
+- `index.html`'s Visit panel: `<p class="hrs">Opening hours: add your days
+  and times here</p>` — replace with the real hours.
+- `payment.html`'s QR panel: `[ UPI QR code ]` box and `[GSTIN Number]` —
+  swap the box for a real `<img>` (drop the QR image in
+  `assets/images/` and reference it with a relative path) and fill in the
+  GSTIN.
+
+Everything else (phone number, WhatsApp links, address, social links,
+product photos) is already real content pulled from the live Hostinger
+Website Builder site — search for `[` across `website/` if anything else
+still needs filling in.
 
 ## One-time backend change this site depends on
 
@@ -71,8 +78,8 @@ full version):
    then in that project's **Custom domains** tab add `rmj.co.in` and
    `www.rmj.co.in` — Cloudflare wires up the DNS itself since the zone is
    already on this account.
-4. Visit `https://rmj.co.in` and click through all four pages, on both
-   desktop and mobile, to confirm rates load and nothing 404s.
+4. Visit `https://rmj.co.in`, and `https://rmj.co.in/pay`, on both desktop
+   and mobile, to confirm rates load and nothing 404s.
 
 If Hostinger's plan for this domain is ever upgraded to one with a file
 manager/FTP (their regular shared hosting, not Website Builder), this same

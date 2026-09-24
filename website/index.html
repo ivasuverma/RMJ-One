@@ -1,172 +1,502 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Ram Murti Jewellers — Live Gold &amp; Silver Rates</title>
-<meta name="description" content="Ram Murti Jewellers: live gold and silver rates, updated throughout the day. Certified purity, transparent pricing.">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Source+Sans+3:wght@400;600;700&display=swap">
-<link rel="stylesheet" href="assets/css/style.css">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ram Murti Jewellers, Field Ganj, Ludhiana | Today's Gold Rate</title>
+<meta name="description" content="Ram Murti Jewellers, Field Ganj main road, Ludhiana. Live gold and silver rates, hallmarked gold, diamond and silver jewellery, custom orders and repairs. Call or WhatsApp 97818 00888.">
+<meta property="og:title" content="Ram Murti Jewellers, Field Ganj, Ludhiana">
+<meta property="og:description" content="Live gold rate, gold, diamond and silver jewellery, custom orders and repairs.">
+<meta property="og:image" content="https://assets.zyrosite.com/cdn-cgi/image/format=auto,w=1440,h=756,fit=crop,f=jpeg/m2Wbv2leXaTxwqRD/web-mnl6gE63eoFNxEJN.png">
+<meta name="theme-color" content="#000000">
+<link rel="icon" href="assets/images/logo-mark.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --white:#FFFFFF; --grey:#F5F5F7; --grey2:#E8E8ED; --black:#000000; --char:#141414;
+    --ink:#1D1D1F; --ink2:#6E6E73; --ink3:#86868B;
+    --gold:#A97B2B; --gold-lt:#D9B46A; --gold-hi:#F0D9A4;
+    --up:#34C759; --down:#FF6961; --wa:#1FA855;
+    --font:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","Inter","Helvetica Neue",Arial,sans-serif;
+    --wrap:1120px; --gut:clamp(18px,4vw,28px);
+    --r-lg:clamp(18px,2.4vw,28px); --r-md:18px;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{scroll-behavior:smooth; scroll-padding-top:60px; -webkit-text-size-adjust:100%}
+  body{font-family:var(--font); color:var(--ink); background:var(--white); -webkit-font-smoothing:antialiased; line-height:1.47; overflow-x:hidden}
+  img{display:block; max-width:100%}
+  a{color:inherit}
+  :focus-visible{outline:2px solid var(--gold-lt); outline-offset:3px; border-radius:8px}
+  .wrap{max-width:var(--wrap); margin:0 auto; padding:0 var(--gut)}
+
+  /* ---------- NAV ---------- */
+  nav{position:fixed; top:0; left:0; right:0; z-index:80; height:56px; transition:background .3s, border-color .3s;
+      background:rgba(0,0,0,.72); backdrop-filter:saturate(180%) blur(20px); -webkit-backdrop-filter:saturate(180%) blur(20px); border-bottom:1px solid rgba(255,255,255,.08); color:#F5F5F7}
+  nav.light{background:rgba(255,255,255,.78); color:var(--ink); border-bottom-color:rgba(0,0,0,.08)}
+  nav .wrap{display:flex; align-items:center; height:56px; gap:clamp(14px,3vw,30px)}
+  .brand{display:flex; align-items:center; gap:10px; text-decoration:none; margin-right:auto}
+  .brand .mark{width:32px; height:32px; border-radius:9px; background:#fff; display:flex; align-items:center; justify-content:center; overflow:hidden; flex-shrink:0}
+  .brand .mark img{width:28px; height:28px; object-fit:contain}
+  .brand .wm{font-weight:700; font-size:16px; letter-spacing:-.02em; line-height:1.1}
+  .brand .wm small{display:block; font-size:11px; font-weight:500; opacity:.6; letter-spacing:0}
+  .links{display:flex; gap:clamp(16px,2.4vw,28px)}
+  .links a{text-decoration:none; font-size:13px; opacity:.82}
+  .links a:hover{opacity:1}
+  .navright{display:flex; align-items:center; gap:10px}
+  .staff{display:inline-flex; align-items:center; gap:6px; font-size:13px; text-decoration:none; opacity:.82; padding:6px 10px; border-radius:980px; border:1px solid currentColor; border-color:rgba(127,127,127,.4)}
+  .staff:hover{opacity:1}
+  .staff svg{width:13px; height:13px; fill:none; stroke:currentColor; stroke-width:2}
+  .navwa{font-size:13px; font-weight:600; text-decoration:none; background:var(--gold-lt); color:#111; padding:7px 14px; border-radius:980px}
+  .burger{display:none; width:38px; height:38px; border:none; background:none; color:inherit; cursor:pointer}
+  .burger span{display:block; width:18px; height:1.5px; background:currentColor; margin:5px auto; transition:.25s}
+  nav.open .burger span:nth-child(1){transform:translateY(3.25px) rotate(45deg)}
+  nav.open .burger span:nth-child(2){transform:translateY(-3.25px) rotate(-45deg)}
+  .sheet{position:fixed; top:56px; left:0; right:0; background:rgba(0,0,0,.94); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px);
+         color:#F5F5F7; padding:10px var(--gut) 28px; transform:translateY(-8px); opacity:0; pointer-events:none; transition:.25s; z-index:79}
+  nav.open + .sheet{transform:none; opacity:1; pointer-events:auto}
+  .sheet a{display:block; font-size:24px; font-weight:600; letter-spacing:-.02em; padding:12px 0; text-decoration:none; border-bottom:1px solid rgba(255,255,255,.08)}
+  .sheet a.sm{font-size:16px; font-weight:500; color:#A1A1A6; border:none; padding-top:18px}
+
+  /* ---------- RATE HERO ---------- */
+  .hero{background:var(--black); color:#F5F5F7; padding:calc(56px + clamp(56px,9vw,96px)) 0 clamp(64px,9vw,104px); position:relative; overflow:hidden}
+  .hero .wrap{position:relative; text-align:center}
+  .monogram{width:clamp(64px,8vw,84px); height:clamp(64px,8vw,84px); margin:0 auto 26px; border-radius:22px; background:#fff; display:flex; align-items:center; justify-content:center; box-shadow:0 0 0 1px rgba(217,180,106,.35), 0 20px 60px rgba(217,180,106,.18)}
+  .monogram img{width:78%; height:78%; object-fit:contain}
+  .hero h1{font-size:clamp(38px,7.2vw,84px); font-weight:700; letter-spacing:-.04em; line-height:1.02}
+  .hero h1 .g{background:linear-gradient(180deg,var(--gold-hi),var(--gold-lt) 55%,#B8893B); -webkit-background-clip:text; background-clip:text; color:transparent}
+  .status{display:inline-flex; align-items:center; gap:8px; margin-top:18px; font-size:clamp(14px,1.6vw,17px); color:#A1A1A6}
+  .status i{width:8px; height:8px; border-radius:50%; background:var(--up); box-shadow:0 0 0 0 rgba(52,199,89,.6); animation:pulse 2.4s infinite}
+  .status.stale i{background:#FF9F0A; animation:none}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(52,199,89,.55)}70%{box-shadow:0 0 0 8px rgba(52,199,89,0)}100%{box-shadow:0 0 0 0 rgba(52,199,89,0)}}
+
+  .board{display:grid; grid-template-columns:repeat(4,1fr); gap:clamp(10px,1.4vw,16px); margin:clamp(40px,6vw,60px) auto 0; max-width:1000px}
+  .rate{background:var(--char); border:1px solid #262628; border-radius:var(--r-lg); padding:clamp(18px,2.4vw,26px) clamp(14px,2vw,22px); text-align:left; position:relative}
+  .rate.hl{border-color:rgba(217,180,106,.45); background:linear-gradient(180deg,#1b170f,#141414)}
+  .rate .k{font-size:14px; color:var(--gold-lt); font-weight:600}
+  .rate .v{font-size:clamp(28px,3.8vw,44px); font-weight:700; letter-spacing:-.035em; margin-top:10px; font-variant-numeric:tabular-nums; white-space:nowrap}
+  .rate .v small{font-size:.52em; font-weight:500; margin-right:2px; vertical-align:.32em; color:#A1A1A6}
+  .rate .u{font-size:13px; color:#86868B; margin-top:2px; display:flex; justify-content:space-between; gap:6px; flex-wrap:wrap}
+  .rate .chg{font-weight:600}
+  .rate .chg.up{color:var(--up)} .rate .chg.dn{color:var(--down)}
+  .rate .v.flash{animation:flash 1s ease}
+  @keyframes flash{0%{color:var(--gold-hi)}100%{color:inherit}}
+  .fine{font-size:13px; color:#86868B; max-width:600px; margin:28px auto 0; line-height:1.55}
+  .actions{display:flex; gap:12px; justify-content:center; margin-top:30px; flex-wrap:wrap}
+  .btn{display:inline-flex; align-items:center; justify-content:center; gap:8px; font-size:17px; font-weight:500; text-decoration:none; padding:13px 24px; border-radius:980px; transition:transform .15s, background .2s; min-height:48px}
+  .btn:active{transform:scale(.97)}
+  .btn.wa{background:var(--wa); color:#fff} .btn.wa:hover{background:#1a9149}
+  .btn.ghost{color:inherit; box-shadow:inset 0 0 0 1px rgba(127,127,127,.5)}
+  .btn.dark{background:var(--ink); color:#fff}
+
+  /* ---------- SECTIONS ---------- */
+  section{padding:clamp(72px,10vw,120px) 0}
+  .grey{background:var(--grey)}
+  .head{text-align:center; max-width:780px; margin:0 auto}
+  .head h2{font-size:clamp(34px,5.6vw,60px); font-weight:700; letter-spacing:-.035em; line-height:1.05}
+  .head p{font-size:clamp(18px,2.2vw,23px); color:var(--ink2); margin-top:14px; letter-spacing:-.01em; line-height:1.38}
+
+  /* showcase: image with brand plate */
+  .show{margin-top:clamp(36px,5vw,56px); position:relative; border-radius:var(--r-lg); overflow:hidden; background:var(--grey)}
+  .show img{width:100%; aspect-ratio:16/8; object-fit:cover}
+  .plate{position:absolute; left:clamp(14px,2.4vw,28px); bottom:clamp(14px,2.4vw,28px); display:flex; align-items:center; gap:12px; background:rgba(255,255,255,.82); backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px); padding:10px 16px 10px 10px; border-radius:16px}
+  .plate img{width:38px; height:38px; aspect-ratio:auto; object-fit:contain; border-radius:10px; background:#fff}
+  .plate b{font-size:15px; display:block; letter-spacing:-.01em} .plate span{font-size:13px; color:var(--ink2)}
+
+  /* collections: bento on desktop, swipe rail on mobile */
+  .bento{display:grid; grid-template-columns:repeat(6,1fr); grid-auto-rows:clamp(220px,26vw,300px); gap:16px; margin-top:clamp(36px,5vw,56px)}
+  .tile{position:relative; border-radius:var(--r-lg); overflow:hidden; text-decoration:none; color:#fff; background:#ccc; isolation:isolate}
+  .tile.a{grid-column:span 4; grid-row:span 2} .tile.b{grid-column:span 2} .tile.c{grid-column:span 2}
+  .tile.d{grid-column:span 3} .tile.e{grid-column:span 3}
+  .tile img{position:absolute; inset:0; width:100%; height:100%; object-fit:cover; transition:transform .7s cubic-bezier(.2,.8,.2,1); z-index:-2}
+  .tile:hover img{transform:scale(1.04)}
+  .tile::after{content:""; position:absolute; inset:0; background:linear-gradient(to top,rgba(0,0,0,.68),rgba(0,0,0,0) 58%); z-index:-1}
+  .tile .t{position:absolute; left:clamp(18px,2.4vw,28px); right:clamp(18px,2.4vw,28px); bottom:clamp(18px,2.4vw,26px)}
+  .tile h3{font-size:clamp(24px,3vw,36px); font-weight:700; letter-spacing:-.025em}
+  .tile p{font-size:15px; opacity:.88; margin-top:2px; max-width:34ch}
+  .tile .ask{display:inline-flex; margin-top:12px; font-size:14px; font-weight:600; background:rgba(255,255,255,.22); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); padding:8px 14px; border-radius:980px}
+
+  /* counter strip */
+  .railhead{display:flex; align-items:end; justify-content:space-between; gap:20px}
+  .railhead .head{text-align:left; margin:0}
+  .railnav{display:flex; gap:10px; flex-shrink:0}
+  .railnav button{width:40px; height:40px; border-radius:50%; border:none; background:var(--grey2); font-size:20px; cursor:pointer; color:var(--ink)}
+  .rail{display:flex; gap:16px; overflow-x:auto; scroll-snap-type:x mandatory; scrollbar-width:none; margin-top:36px;
+        padding:4px max(var(--gut), calc((100vw - var(--wrap))/2 + var(--gut))) 16px; scroll-padding-left:max(var(--gut), calc((100vw - var(--wrap))/2 + var(--gut)))}
+  .rail::-webkit-scrollbar{display:none}
+  .piece{flex:0 0 clamp(220px,26vw,290px); scroll-snap-align:start; text-decoration:none}
+  .piece .ph{border-radius:var(--r-md); overflow:hidden; background:var(--grey); aspect-ratio:4/5}
+  .piece img{width:100%; height:100%; object-fit:cover; transition:transform .6s}
+  .piece:hover img{transform:scale(1.04)}
+  .piece .pn{font-size:17px; font-weight:600; margin-top:12px; letter-spacing:-.01em}
+  .piece .pa{font-size:14px; color:var(--gold); margin-top:2px}
+
+  /* promises */
+  .promises{display:grid; grid-template-columns:repeat(4,1fr); gap:clamp(20px,3vw,36px); margin-top:clamp(48px,6vw,72px); padding-top:clamp(32px,4vw,48px); border-top:1px solid var(--grey2)}
+  .promise svg{width:28px; height:28px; stroke:var(--gold); fill:none; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round}
+  .promise h3{font-size:19px; font-weight:700; letter-spacing:-.015em; margin-top:12px}
+  .promise p{font-size:15px; color:var(--ink2); margin-top:6px}
+
+  /* about — brand led, no portraits */
+  .brandband{background:var(--black); color:#F5F5F7; border-radius:var(--r-lg); overflow:hidden; display:grid; grid-template-columns:1.05fr 1fr; min-height:clamp(420px,46vw,540px)}
+  .brandband .copy{padding:clamp(34px,5vw,64px); display:flex; flex-direction:column; justify-content:center}
+  .brandband .logo{width:72px; height:72px; border-radius:20px; background:#fff; display:flex; align-items:center; justify-content:center; margin-bottom:28px}
+  .brandband .logo img{width:80%; height:80%; object-fit:contain}
+  .brandband h2{font-size:clamp(32px,4.4vw,50px); font-weight:700; letter-spacing:-.035em; line-height:1.06}
+  .brandband p{font-size:clamp(16px,1.7vw,19px); color:#A1A1A6; margin-top:16px; line-height:1.55; max-width:46ch}
+  .brandband .pic{position:relative}
+  .brandband .pic img{position:absolute; inset:0; width:100%; height:100%; object-fit:cover}
+
+  /* visit */
+  .visit{display:grid; grid-template-columns:1.1fr 1fr; gap:16px; margin-top:clamp(36px,5vw,56px)}
+  .panel{background:var(--grey); border-radius:var(--r-lg); padding:clamp(24px,3.4vw,38px)}
+  .panel h3{font-size:24px; font-weight:700; letter-spacing:-.02em}
+  .panel .addr{font-size:19px; margin-top:10px; line-height:1.4}
+  .panel .hrs{font-size:15px; color:#C2410C; margin-top:10px}
+  .panel .row{display:flex; gap:10px; flex-wrap:wrap; margin-top:24px}
+  .clist{list-style:none; margin-top:10px}
+  .clist li{display:flex; justify-content:space-between; align-items:center; gap:12px; padding:14px 0; border-bottom:1px solid var(--grey2); font-size:16px}
+  .clist li:last-child{border-bottom:none}
+  .clist a{color:var(--gold); text-decoration:none; text-align:right}
+
+  /* footer */
+  footer{background:var(--grey); border-top:1px solid var(--grey2); padding:36px 0 calc(36px + env(safe-area-inset-bottom)); font-size:12.5px; color:var(--ink3)}
+  footer .top{display:flex; justify-content:space-between; align-items:center; gap:20px; flex-wrap:wrap; padding-bottom:20px; border-bottom:1px solid var(--grey2)}
+  footer .fbrand{display:flex; align-items:center; gap:10px; color:var(--ink); font-weight:700; font-size:15px}
+  footer .fbrand img{width:30px; height:30px; object-fit:contain; background:#fff; border-radius:8px}
+  footer .bottom{display:flex; justify-content:space-between; gap:14px; flex-wrap:wrap; padding-top:18px}
+  footer a{text-decoration:none; color:var(--ink2)}
+  footer .fl a{margin-left:16px}
+
+  /* mobile action bar */
+  .mbar{display:none; position:fixed; left:12px; right:12px; bottom:calc(12px + env(safe-area-inset-bottom)); z-index:70;
+        background:rgba(20,20,20,.86); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px); border-radius:20px; padding:6px; gap:6px; box-shadow:0 12px 40px rgba(0,0,0,.28)}
+  .mbar a{flex:1; display:flex; flex-direction:column; align-items:center; gap:2px; padding:9px 4px; border-radius:14px; text-decoration:none; color:#F5F5F7; font-size:11.5px; font-weight:600}
+  .mbar a.wa{background:var(--wa)}
+  .mbar svg{width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round}
+  .mbar .rt{font-variant-numeric:tabular-nums}
+
+  /* ---------- RESPONSIVE ---------- */
+  @media (max-width:980px){
+    .board{grid-template-columns:repeat(2,1fr)}
+    .promises{grid-template-columns:repeat(2,1fr)}
+  }
+  @media (max-width:820px){
+    .links,.staff.desk,.navwa{display:none}
+    .burger{display:block}
+    .bento{display:flex; overflow-x:auto; scroll-snap-type:x mandatory; scrollbar-width:none; margin-left:calc(var(--gut)*-1); margin-right:calc(var(--gut)*-1); padding:0 var(--gut) 8px; gap:12px}
+    .bento::-webkit-scrollbar{display:none}
+    .tile{flex:0 0 82%; height:430px; scroll-snap-align:center}
+    .brandband{grid-template-columns:1fr}
+    .brandband .pic{min-height:280px; order:-1}
+    .visit{grid-template-columns:1fr}
+    .show img{aspect-ratio:4/5}
+    .railnav{display:none}
+    .mbar{display:flex}
+    footer{padding-bottom:calc(110px + env(safe-area-inset-bottom))}
+  }
+  @media (max-width:420px){
+    .rate .v{font-size:27px}
+    .hero h1{font-size:36px}
+    .brand .wm small{display:none}
+  }
+  @media (prefers-reduced-motion:reduce){
+    html{scroll-behavior:auto} *{animation:none!important; transition:none!important}
+  }
+</style>
 </head>
 <body>
 
-<header class="site-header">
+<nav id="nav">
   <div class="wrap">
-    <a href="index.html" class="brand">
-      <span class="brand-mark">R</span>
-      <span class="brand-name">
-        <span class="l1">RAM MURTI</span>
-        <span class="l2">JEWELLERS</span>
-      </span>
+    <a class="brand" href="#top" aria-label="Ram Murti Jewellers home">
+      <span class="mark"><img src="assets/images/logo-mark.png" alt=""></span>
+      <span class="wm">Ram Murti Jewellers<small>Field Ganj, Ludhiana</small></span>
     </a>
-    <nav id="nav-links" class="nav-links">
-      <a href="index.html" class="active">Home</a>
-      <a href="index.html#rates">Rates</a>
-      <a href="about.html">About</a>
-      <a href="payment.html">Payment</a>
-      <a href="contact.html">Contact</a>
-    </nav>
-    <button id="nav-toggle" class="nav-toggle" aria-label="Toggle menu" aria-expanded="false" aria-controls="nav-links">
-      <span></span>
-    </button>
+    <div class="links">
+      <a href="#top">Today's rate</a>
+      <a href="#collections">Collections</a>
+      <a href="#counter">New pieces</a>
+      <a href="#about">About</a>
+      <a href="#visit">Visit</a>
+    </div>
+    <div class="navright">
+      <a class="staff desk" id="staffBtn" href="#" aria-label="Staff login">
+        <svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>Staff login</a>
+      <a class="navwa" href="https://wa.me/919781800888?text=Hello%20Ram%20Murti%20Jewellers%2C%20I%20have%20an%20enquiry.">WhatsApp</a>
+      <button class="burger" id="burger" aria-label="Open menu" aria-expanded="false"><span></span><span></span></button>
+    </div>
+  </div>
+</nav>
+<div class="sheet" id="sheet">
+  <a href="#top">Today's rate</a>
+  <a href="#collections">Collections</a>
+  <a href="#counter">New pieces</a>
+  <a href="#about">About</a>
+  <a href="#visit">Visit</a>
+  <a class="sm" id="staffBtnM" href="#">Staff login</a>
+</div>
+
+<!-- 1. LIVE RATE -->
+<header class="hero" id="top">
+  <div class="wrap">
+    <div class="monogram"><img src="assets/images/logo-mark.png" alt="Ram Murti Jewellers logo"></div>
+    <h1>Today's <span class="g">gold rate</span><br>in Ludhiana.</h1>
+    <div class="status" id="status" aria-live="polite"><i></i><span id="statusText">Loading today's rates</span></div>
+    <div class="board" id="board"></div>
+    <p class="fine">Gold per 10 grams, silver per kilogram. Rates update through the day. Your final price adds making charges and 3% GST. Ask us for an exact quote on any piece.</p>
+    <div class="actions">
+      <a class="btn wa" href="https://wa.me/919781800888?text=Hello%2C%20I%27d%20like%20a%20quote%20at%20today%27s%20gold%20rate.">Get a quote on WhatsApp</a>
+      <a class="btn ghost" href="tel:+919781800888">Call the shop</a>
+    </div>
   </div>
 </header>
 
-<section class="hero">
-  <span class="hero-eyebrow">EST. FAMILY JEWELLERS</span>
-  <h1>Timeless Gold &amp; Silver, Crafted With Trust</h1>
-  <p>Certified purity. Fair, transparent rates updated throughout the day.</p>
-  <div class="hero-actions">
-    <a href="#rates" class="btn btn-primary">View Live Rates</a>
-    <a href="contact.html" class="btn btn-ghost">Get Directions</a>
-  </div>
-</section>
-
-<section id="rates" class="rates-section">
-  <h2 class="section-title red">Today's Rates</h2>
-  <p class="section-sub" id="rate-updated">Loading rates&hellip;</p>
-
-  <div class="rate-cards">
-    <div class="rate-card">
-      <div class="label">GOLD &middot; 995 Purity / 10g</div>
-      <div class="buy-sell-row">
-        <div class="buy-sell-col">
-          <div class="k">Sell</div>
-          <div class="v sell" id="rate-gold-sell">&mdash;</div>
-        </div>
-        <div class="buy-sell-col">
-          <div class="k">Buyback</div>
-          <div class="v" id="rate-gold-buy">&mdash;</div>
-        </div>
-      </div>
-    </div>
-    <div class="rate-card">
-      <div class="label">SILVER &middot; 999 Purity / 1kg</div>
-      <div class="buy-sell-row">
-        <div class="buy-sell-col">
-          <div class="k">Sell</div>
-          <div class="v sell" id="rate-silver-sell">&mdash;</div>
-        </div>
-        <div class="buy-sell-col">
-          <div class="k">Buyback</div>
-          <div class="v" id="rate-silver-buy">&mdash;</div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div class="spot-tiles">
-    <div class="spot-tile">
-      <div class="k">GOLD (XAU)</div>
-      <div class="v" id="rate-xau">&mdash;</div>
-      <div class="u">per troy oz</div>
-    </div>
-    <div class="spot-tile">
-      <div class="k">SILVER (XAG)</div>
-      <div class="v" id="rate-xag">&mdash;</div>
-      <div class="u">per troy oz</div>
-    </div>
-    <div class="spot-tile">
-      <div class="k">USD/INR</div>
-      <div class="v" id="rate-usdinr">&mdash;</div>
-      <div class="u">spot</div>
-    </div>
-  </div>
-  <p class="spot-disclaimer">XAU/XAG are international spot benchmarks in USD &mdash; informational only, not the local &#8377; rate above.</p>
-
-  <div class="rates-status">
-    <span id="rate-error" class="rates-error"></span>
-    <button id="rates-refresh-btn" type="button">Refresh</button>
-  </div>
-
-  <div class="contact-row">
-    <a href="tel:+919781800888" class="contact-btn">
-      <svg class="contact-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/>
-      </svg>
-      Call Us
-    </a>
-    <a href="https://wa.me/919781800888?text=RATE" class="contact-btn" target="_blank" rel="noopener">
-      <svg class="contact-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-      </svg>
-      WhatsApp
-    </a>
-    <a href="https://whatsapp.com/channel/0029VbBHBNPEKyZB1820vR3n" class="contact-btn" target="_blank" rel="noopener">
-      <svg class="contact-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M3 11l18-5v12L3 14v-3z"/>
-        <path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/>
-      </svg>
-      Daily Rate Channel
-    </a>
-  </div>
-
-  <p class="disclaimer">
-    Rates shown are indicative and for reference only, and may change without notice through the day. They exclude
-    making charges, wastage and GST, and do not constitute a firm offer to buy or sell. The rate applicable to any
-    transaction is the one in effect at Ram Murti Jewellers at the time of billing, not the rate last shown here.
-    Buyback is offered only on items purchased from Ram Murti Jewellers, subject to purity verification and our
-    buyback policy at the time. Please confirm the final rate and terms with us before any transaction.
-  </p>
-</section>
-
-<section class="split-section">
+<!-- 2. SHOWCASE -->
+<section>
   <div class="wrap">
-    <div class="split-media">[ Store Photograph ]</div>
-    <div class="split-copy">
-      <span class="eyebrow">OUR STORY</span>
-      <h2>A Family Legacy Since Generations</h2>
-      <p>Four generations of craftsmanship, trust, and honest pricing &mdash; serving families across the city with
-        certified gold and silver jewellery.</p>
-      <a href="about.html">Our Story &rarr;</a>
+    <div class="head">
+      <h2>Gold, diamond and silver, made in Field Ganj.</h2>
+      <p>Everyday pieces, wedding sets and custom orders, from one family counter on Field Ganj main road.</p>
+    </div>
+    <div class="show">
+      <img src="https://assets.zyrosite.com/cdn-cgi/image/format=auto,w=1920,fit=crop/m2Wbv2leXaTxwqRD/dsc_0033-YBg891rw9PtK9XaM.JPG" alt="Gold jewellery at Ram Murti Jewellers">
+      <div class="plate"><img src="assets/images/logo-mark.png" alt=""><div><b>Ram Murti Jewellers</b><span>Gold, silver and diamond</span></div></div>
     </div>
   </div>
 </section>
 
-<footer class="site-footer">
+<!-- 3. COLLECTIONS -->
+<section class="grey" id="collections">
   <div class="wrap">
-    <div class="footer-cols">
-      <div class="footer-col">
-        <span class="h">VISIT US</span>
-        <span>[Shop Address Line 1]<br>[City, State &ndash; PIN]</span>
+    <div class="head">
+      <h2>Explore the collections.</h2>
+      <p>Tap a collection to see what's in the shop right now on WhatsApp.</p>
+    </div>
+    <div class="bento">
+      <a class="tile a" href="https://wa.me/919781800888?text=Hello%2C%20please%20share%20your%20bridal%20collection.">
+        <img loading="lazy" src="https://assets.zyrosite.com/cdn-cgi/image/format=auto,w=1200,fit=crop/m2Wbv2leXaTxwqRD/img_0516-YZ97zlBJvyIPpB4D.jpg" alt="Bridal jewellery set">
+        <div class="t"><h3>Bridal</h3><p>Complete wedding sets in gold and diamond.</p><span class="ask">See the collection</span></div></a>
+      <a class="tile b" href="https://wa.me/919781800888?text=Hello%2C%20please%20share%20your%20gold%20collection.">
+        <img loading="lazy" src="https://assets.zyrosite.com/cdn-cgi/image/format=auto,w=700,fit=crop/m2Wbv2leXaTxwqRD/9-m5K2JDMlpjsyXlrp.jpg" alt="Gold jewellery">
+        <div class="t"><h3>Gold</h3><p>22K necklaces, bangles, rings and chains.</p><span class="ask">See the collection</span></div></a>
+      <a class="tile c" href="https://wa.me/919781800888?text=Hello%2C%20please%20share%20your%20diamond%20collection.">
+        <img loading="lazy" src="https://assets.zyrosite.com/cdn-cgi/image/format=auto,w=700,fit=crop/m2Wbv2leXaTxwqRD/dsc_0031-m6LDQMw935H1Mopx.JPG" alt="Diamond jewellery">
+        <div class="t"><h3>Diamond</h3><p>Rings, earrings and pendants.</p><span class="ask">See the collection</span></div></a>
+      <a class="tile d" href="https://wa.me/919781800888?text=Hello%2C%20please%20share%20your%20silver%20collection.">
+        <img loading="lazy" src="https://assets.zyrosite.com/cdn-cgi/image/format=auto,w=900,fit=crop/m2Wbv2leXaTxwqRD/7-YKbaGv3PlOFBr657.jpg" alt="Silver jewellery">
+        <div class="t"><h3>Silver</h3><p>Jewellery, gifts and articles.</p><span class="ask">See the collection</span></div></a>
+      <a class="tile e" href="https://wa.me/919781800888?text=Hello%2C%20I%27d%20like%20to%20discuss%20a%20custom%20piece.">
+        <img loading="lazy" src="https://assets.zyrosite.com/cdn-cgi/image/format=auto,w=900,fit=crop/m2Wbv2leXaTxwqRD/ddesign-YBg8W59kgVSRKZZw.png" alt="Custom jewellery design">
+        <div class="t"><h3>Made to order</h3><p>Bring an idea or a photo and we'll design it with you.</p><span class="ask">Start a design</span></div></a>
+    </div>
+  </div>
+</section>
+
+<!-- 4. NEW AT THE COUNTER -->
+<section id="counter">
+  <div class="wrap railhead">
+    <div class="head">
+      <h2>New at the counter.</h2>
+      <p>Ask about any piece and we'll send more photos and the price.</p>
+    </div>
+    <div class="railnav"><button aria-label="Previous pieces" onclick="rail(-1)">‹</button><button aria-label="Next pieces" onclick="rail(1)">›</button></div>
+  </div>
+  <div class="rail" id="rail"></div>
+  <div class="wrap">
+    <div class="promises">
+      <div class="promise"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4.5-3 8.3-7 10-4-1.7-7-5.5-7-10V6l7-3z"/><path d="M9 12l2 2 4-4"/></svg><h3>Hallmarked gold</h3><p>Every gold piece carries a BIS hallmark and HUID you can verify.</p></div>
+      <div class="promise"><svg viewBox="0 0 24 24"><path d="M4 7h13l-3-3M20 17H7l3 3"/></svg><h3>Old gold exchange</h3><p>We test your old jewellery in front of you and value it at today's rate.</p></div>
+      <div class="promise"><svg viewBox="0 0 24 24"><path d="M12 20l8-8-4-4-8 8v4h4z"/><path d="M14 6l4 4"/></svg><h3>Custom orders</h3><p>Designed with you and made by our own karigars.</p></div>
+      <div class="promise"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg><h3>Repairs and polish</h3><p>Resizing, clasps, stone setting and polishing, with a receipt for every piece.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 5. ABOUT (brand led) -->
+<section class="grey" id="about">
+  <div class="wrap">
+    <div class="brandband">
+      <div class="copy">
+        <div class="logo"><img src="assets/images/logo-mark.png" alt=""></div>
+        <h2>A family counter in Field Ganj.</h2>
+        <p>Ram Murti Jewellers is run by the Verma family. Many of our customers bought their first piece from us for their own wedding, and now bring their children.</p>
+        <p>We keep it simple: rates you can check, hallmarked gold, and honest advice whether you're buying, exchanging or repairing.</p>
       </div>
-      <div class="footer-col">
-        <span class="h">CONNECT</span>
-        <a href="tel:+910000000000">[Phone Number]</a>
-        <span>Instagram &middot; Facebook</span>
+      <div class="pic"><img loading="lazy" src="https://assets.zyrosite.com/cdn-cgi/image/format=auto,w=1100,fit=crop/m2Wbv2leXaTxwqRD/dsc_0021-m5K2JDwG4zs2MZbz.JPG" alt="Jewellery at the Ram Murti Jewellers counter"></div>
+    </div>
+  </div>
+</section>
+
+<!-- 6. VISIT -->
+<section id="visit">
+  <div class="wrap">
+    <div class="head">
+      <h2>Come and see it in person.</h2>
+      <p>Walk in any time, or message us first and we'll keep pieces ready for you.</p>
+    </div>
+    <div class="visit">
+      <div class="panel">
+        <h3>Ram Murti Jewellers</h3>
+        <p class="addr">Field Ganj main road,<br>Ludhiana, Punjab</p>
+        <p class="hrs">Opening hours: add your days and times here</p>
+        <div class="row">
+          <a class="btn wa" href="https://wa.me/919781800888?text=Hello%2C%20I%27d%20like%20to%20visit%20the%20shop.">Plan a visit</a>
+          <a class="btn dark" href="https://maps.google.com/?q=Ram+Murti+Jewellers+Field+Ganj+Ludhiana">Get directions</a>
+        </div>
       </div>
-      <div class="footer-col">
-        <span class="h">HOURS</span>
-        <span>Mon&ndash;Sat: 10:00 AM &ndash; 8:00 PM<br>Sunday: Closed</span>
+      <div class="panel">
+        <h3>Contact</h3>
+        <ul class="clist">
+          <li>Phone <a href="tel:+919781800888">+91 97818 00888</a></li>
+          <li>WhatsApp <a href="https://wa.me/919781800888">Message us</a></li>
+          <li>Instagram <a href="https://www.instagram.com/rammurtijewellers">@rammurtijewellers</a></li>
+          <li>Pay online <a href="https://rmj.co.in/pay">Payment page</a></li>
+          <li>Reviews <a href="https://g.page/r/CfadPxGgqe0WEBE/review">Review us on Google</a></li>
+        </ul>
       </div>
     </div>
-    <div class="footer-bottom">
-      Rates shown are for reference only and are subject to change without notice. &copy; Ram Murti Jewellers.
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="top">
+      <div class="fbrand"><img src="assets/images/logo-mark.png" alt="">Ram Murti Jewellers</div>
+      <div class="fl"><a href="https://www.instagram.com/rammurtijewellers">Instagram</a><a href="https://www.facebook.com/rmj.co.in">Facebook</a><a href="https://www.linkedin.com/company/rammurtijewellers/">LinkedIn</a></div>
+    </div>
+    <div class="bottom">
+      <span>Copyright © <span id="yr"></span> Ram Murti Jewellers. All rights reserved.</span>
+      <a id="staffBtnF" href="#">Staff login</a>
     </div>
   </div>
 </footer>
 
-<script src="assets/js/nav.js"></script>
-<script src="assets/js/rates.js"></script>
+<div class="mbar" aria-label="Quick actions">
+  <a href="#top"><svg viewBox="0 0 24 24"><path d="M4 18l5-6 4 3 7-9"/></svg><span class="rt" id="mbarRate">Rate</span></a>
+  <a href="tel:+919781800888"><svg viewBox="0 0 24 24"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/></svg>Call</a>
+  <a href="https://maps.google.com/?q=Ram+Murti+Jewellers+Field+Ganj+Ludhiana"><svg viewBox="0 0 24 24"><path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>Directions</a>
+  <a class="wa" href="https://wa.me/919781800888?text=Hello%20Ram%20Murti%20Jewellers%2C%20I%20have%20an%20enquiry."><svg viewBox="0 0 24 24"><path d="M4 20l1.3-4A8 8 0 1 1 8 18.7L4 20z"/></svg>WhatsApp</a>
+</div>
+
+<script>
+/* ================================================================
+   CONFIG — connect to RMJ One
+   RATES_URL: public, read-only endpoint on RMJ One returning the
+   latest rates (see the Cowork brief for the exact JSON contract).
+   LOGIN_URL: where staff sign in to RMJ One.
+   ================================================================ */
+const CONFIG = {
+  RATES_URL: 'https://app.rmj.co.in/api/public/rates',   // ← set to your RMJ One URL
+  LOGIN_URL: 'https://app.rmj.co.in',                     // ← set to your RMJ One URL
+  REFRESH_MS: 5 * 60 * 1000,                              // refresh every 5 minutes
+  STALE_AFTER_MS: 6 * 60 * 60 * 1000,                     // flag rates older than 6 hours
+};
+
+/* Fallback shown only until the first successful fetch (sample figures). */
+const FALLBACK = { updated_at:null, rates:[
+  {key:'24k', label:'24K fine gold', value:110500, unit:'per 10 g', change:null},
+  {key:'22k', label:'22K jewellery', value:101300, unit:'per 10 g', change:null},
+  {key:'18k', label:'18K jewellery', value:82900,  unit:'per 10 g', change:null},
+  {key:'silver', label:'Silver',     value:128000, unit:'per kg',   change:null},
+]};
+
+['staffBtn','staffBtnM','staffBtnF'].forEach(id=>{ const a=document.getElementById(id); if(a){ a.href=CONFIG.LOGIN_URL; a.rel='nofollow'; }});
+
+const board=document.getElementById('board'), statusEl=document.getElementById('status'), statusText=document.getElementById('statusText');
+const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+const inr=v=>Math.round(v).toLocaleString('en-IN');
+let shown={}, firstPaint=true;
+
+function paint(data, source){
+  const rates=data.rates||[];
+  if(!board.children.length || board.children.length!==rates.length){
+    board.innerHTML=rates.map((r,i)=>`
+      <div class="rate ${i===1?'hl':''}" data-key="${r.key}">
+        <div class="k">${r.label}</div>
+        <div class="v"><small>₹</small><span>0</span></div>
+        <div class="u"><span>${r.unit}</span><span class="chg"></span></div>
+      </div>`).join('');
+  }
+  rates.forEach(r=>{
+    const card=board.querySelector(`[data-key="${r.key}"]`); if(!card) return;
+    const span=card.querySelector('.v span'), from=shown[r.key]??0, to=r.value;
+    const chg=card.querySelector('.chg');
+    if(typeof r.change==='number' && r.change!==0){
+      chg.textContent=(r.change>0?'▲ ₹':'▼ ₹')+inr(Math.abs(r.change));
+      chg.className='chg '+(r.change>0?'up':'dn');
+    } else { chg.textContent=''; chg.className='chg'; }
+    if(from===to){ span.textContent=inr(to); return; }
+    if(reduce || (!firstPaint && Math.abs(to-from)<1)){ span.textContent=inr(to); }
+    else{
+      const t0=performance.now(), dur=firstPaint?1100:600;
+      const step=t=>{const p=Math.min((t-t0)/dur,1), e=1-Math.pow(1-p,3); span.textContent=inr(from+(to-from)*e); if(p<1) requestAnimationFrame(step);};
+      requestAnimationFrame(step);
+      if(!firstPaint){ const v=card.querySelector('.v'); v.classList.remove('flash'); void v.offsetWidth; v.classList.add('flash'); }
+    }
+    shown[r.key]=to;
+  });
+  const r22=rates.find(r=>r.key==='22k'); if(r22) document.getElementById('mbarRate').textContent='₹'+inr(r22.value);
+  firstPaint=false;
+
+  // status line
+  if(source==='live' && data.updated_at){
+    const t=new Date(data.updated_at), age=Date.now()-t;
+    const when=t.toLocaleTimeString('en-IN',{hour:'numeric',minute:'2-digit'});
+    const day=t.toDateString()===new Date().toDateString()?'today':t.toLocaleDateString('en-IN',{day:'numeric',month:'short'});
+    statusText.textContent=`Live rate, updated ${day} at ${when}`;
+    statusEl.classList.toggle('stale', age>CONFIG.STALE_AFTER_MS);
+  } else if(source==='cache'){
+    statusText.textContent='Showing the last rates we loaded. Reconnecting…'; statusEl.classList.add('stale');
+  } else {
+    statusText.textContent='Sample rates. Connect RMJ One to show live rates.'; statusEl.classList.add('stale');
+  }
+}
+
+async function load(){
+  try{
+    const res=await fetch(CONFIG.RATES_URL,{cache:'no-store'});
+    if(!res.ok) throw new Error(res.status);
+    const data=await res.json();
+    if(!Array.isArray(data.rates) || !data.rates.length) throw new Error('empty');
+    try{ localStorage.setItem('rmj_rates', JSON.stringify(data)); }catch(e){}
+    paint(data,'live');
+  }catch(e){
+    let cached=null; try{ cached=JSON.parse(localStorage.getItem('rmj_rates')); }catch(_){}
+    if(cached && cached.rates) paint(cached,'cache'); else paint(FALLBACK,'sample');
+  }
+}
+// paint instantly from cache, then fetch fresh
+try{ const c=JSON.parse(localStorage.getItem('rmj_rates')); if(c&&c.rates){ paint(c,'cache'); } }catch(e){}
+load();
+setInterval(()=>{ if(!document.hidden) load(); }, CONFIG.REFRESH_MS);
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden) load(); });
+
+/* nav: dark over the hero, light after */
+const nav=document.getElementById('nav'), hero=document.getElementById('top');
+new IntersectionObserver(([e])=>nav.classList.toggle('light',!e.isIntersecting),{rootMargin:'-56px 0px 0px 0px'}).observe(hero);
+/* mobile menu */
+const burger=document.getElementById('burger');
+burger.onclick=()=>{ const o=nav.classList.toggle('open'); burger.setAttribute('aria-expanded',o); };
+document.querySelectorAll('#sheet a').forEach(a=>a.addEventListener('click',()=>{nav.classList.remove('open'); burger.setAttribute('aria-expanded',false);}));
+
+/* new at the counter — your photos; rename to real pieces */
+const PIECES=[
+  ['212121-mP47Beljvjibw9B8.jpg','Piece name','22K gold'],
+  ['3-mxBlo5ZOrKhpwZGG.jpg','Piece name','22K gold'],
+  ['4-mnl6gEv8nxs3G91e.jpg','Piece name','22K gold'],
+  ['1-Yg2a6XjL2EiQ1Z8w.jpg','Piece name','22K gold'],
+  ['6-meP1qXx1WJcLweo3.jpg','Piece name','Silver'],
+  ['dsc_0020-mk3ygxz6kbheoowk.JPG','Piece name','Diamond'],
+  ['2-YX4XeLl1Wot1nnWz.jpg','Piece name','22K gold'],
+];
+document.getElementById('rail').innerHTML=PIECES.map(([f,n,m])=>{
+  const msg=encodeURIComponent(`Hello, I'd like to know more about this piece: ${n} (${m}).`);
+  return `<a class="piece" href="https://wa.me/919781800888?text=${msg}"><div class="ph"><img loading="lazy" src="https://assets.zyrosite.com/cdn-cgi/image/format=auto,w=600,fit=crop/m2Wbv2leXaTxwqRD/${f}" alt="${n}, ${m}"></div><div class="pn">${n}</div><div class="pa">${m}, ask about this piece</div></a>`;
+}).join('');
+function rail(d){ document.getElementById('rail').scrollBy({left:d*306,behavior:reduce?'auto':'smooth'}); }
+document.getElementById('yr').textContent=new Date().getFullYear();
+</script>
 </body>
 </html>
