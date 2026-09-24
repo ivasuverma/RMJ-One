@@ -33,7 +33,7 @@ def accountant_token():
 @pytest.fixture(scope='session')
 def emp_token():
     # RMJ005 Neha (active) — used for employee ACL checks
-    r = requests.post(f"{API}/auth/employee-login", json={"employee_code": "RMJ005", "pin": "0005"}, timeout=15)
+    r = requests.post(f"{API}/auth/employee-login", json={"username": "rmj005", "password": "5678"}, timeout=15)
     assert r.status_code == 200, r.text
     return r.json()['access_token']
 

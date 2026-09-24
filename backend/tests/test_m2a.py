@@ -29,8 +29,9 @@ def owner_headers():
     return {"Authorization": f"Bearer {r.json()['access_token']}", "Content-Type": "application/json"}
 
 
-def _login_emp(code: str, pin: str):
-    r = requests.post(f"{API}/auth/employee-login", json={"employee_code": code, "pin": pin}, timeout=30)
+def _login_emp(code: str, password: str):
+    # Employees sign in with username (their code, lower-cased) + password.
+    r = requests.post(f"{API}/auth/employee-login", json={"username": code.lower(), "password": password}, timeout=30)
     return r
 
 
@@ -61,10 +62,10 @@ class TestStoreSettings:
         assert r2['radius_m'] == 150
 
 
-# ------- Employee PIN login -------
+# ------- Employee login -------
 class TestEmployeeLogin:
     def test_login_ok(self):
-        r = _login_emp('RMJ001', '0001')
+        r = _login_emp('RMJ001', '1234')
         assert r.status_code == 200, r.text
         u = r.json()
         assert u['user']['role'] == 'employee'
@@ -80,29 +81,6 @@ class TestEmployeeLogin:
         assert r.status_code == 401
 
 
-# ------- Owner sets PIN -------
-class TestSetPin:
-    def test_set_pin_ok_and_login(self, owner_headers):
-        # find RMJ005
-        emps = requests.get(f"{API}/employees", headers=owner_headers, timeout=30).json()
-        target = next(e for e in emps if e['employee_code'] == 'RMJ005')
-        r = requests.post(f"{API}/employees/{target['id']}/set-pin", headers=owner_headers, json={"pin": "4321"}, timeout=30)
-        assert r.status_code == 200
-        # login with new pin
-        r2 = _login_emp('RMJ005', '4321')
-        assert r2.status_code == 200
-        # restore back to 0005 for other tests
-        r3 = requests.post(f"{API}/employees/{target['id']}/set-pin", headers=owner_headers, json={"pin": "0005"}, timeout=30)
-        assert r3.status_code == 200
-
-    def test_set_pin_bad_length(self, owner_headers):
-        emps = requests.get(f"{API}/employees", headers=owner_headers, timeout=30).json()
-        target = emps[0]
-        r = requests.post(f"{API}/employees/{target['id']}/set-pin", headers=owner_headers, json={"pin": "12"}, timeout=30)
-        assert r.status_code == 400
-        r2 = requests.post(f"{API}/employees/{target['id']}/set-pin", headers=owner_headers, json={"pin": "abcd"}, timeout=30)
-        assert r2.status_code == 400
-
 
 # ------- Attendance flows -------
 def _emp_headers(code, pin):
@@ -112,21 +90,21 @@ def _emp_headers(code, pin):
 
 class TestAttendance:
     def test_me_today_default_empty_or_obj(self):
-        h = _emp_headers('RMJ003', '0003')
+        h = _emp_headers('RMJ003', '3456')
         r = requests.get(f"{API}/attendance/me/today", headers=h, timeout=30)
         assert r.status_code == 200
         # It's an object (may be empty {} or an attendance doc if this ran earlier today)
         assert isinstance(r.json(), dict)
 
     def test_check_in_missing_selfie(self):
-        h = _emp_headers('RMJ003', '0003')
+        h = _emp_headers('RMJ003', '3456')
         r = requests.post(f"{API}/attendance/check-in", headers=h, json={
             'latitude': STORE_LAT, 'longitude': STORE_LNG, 'selfie': ''
         }, timeout=30)
         assert r.status_code == 400
 
     def test_check_in_outside_geofence(self):
-        h = _emp_headers('RMJ003', '0003')
+        h = _emp_headers('RMJ003', '3456')
         r = requests.post(f"{API}/attendance/check-in", headers=h, json={
             'latitude': 19.0760, 'longitude': 72.8777, 'selfie': _big_selfie()
         }, timeout=30)
@@ -135,7 +113,7 @@ class TestAttendance:
 
     def test_full_check_in_and_check_out(self, owner_headers):
         # Use RMJ002 for full flow; may already have data today — handle both.
-        h = _emp_headers('RMJ002', '0002')
+        h = _emp_headers('RMJ002', '2345')
         payload = {'latitude': STORE_LAT, 'longitude': STORE_LNG, 'selfie': _big_selfie()}
         r = requests.post(f"{API}/attendance/check-in", headers=h, json=payload, timeout=30)
         if r.status_code == 400 and 'Already' in r.json().get('detail', ''):
@@ -165,7 +143,7 @@ class TestAttendance:
 
     def test_check_out_without_check_in_fails(self):
         # Use RMJ005 fresh — if this fails intermittently because someone checked-in earlier, it's still valid
-        h = _emp_headers('RMJ005', '0005')
+        h = _emp_headers('RMJ005', '5678')
         # first ensure NO check-in for me today by peeking
         me = requests.get(f"{API}/attendance/me/today", headers=h, timeout=30).json()
         if me.get('check_in'):
@@ -179,7 +157,7 @@ class TestAttendance:
 # ------- Corrections -------
 class TestCorrections:
     def test_create_list_decide(self, owner_headers):
-        h = _emp_headers('RMJ003', '0003')
+        h = _emp_headers('RMJ003', '3456')
         # create
         r = requests.post(f"{API}/attendance/corrections", headers=h, json={
             'reason_type': 'forgot_check_in', 'note': 'TEST correction'
@@ -211,7 +189,7 @@ class TestCorrections:
 # ------- Leaves -------
 class TestLeaves:
     def test_create_and_approve(self, owner_headers):
-        h = _emp_headers('RMJ003', '0003')
+        h = _emp_headers('RMJ003', '3456')
         r = requests.post(f"{API}/leaves", headers=h, json={
             'from_date': '2026-02-01', 'to_date': '2026-02-02',
             'leave_type': 'casual', 'reason': 'TEST leave'
