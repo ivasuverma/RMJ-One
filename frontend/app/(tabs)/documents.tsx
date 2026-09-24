@@ -471,13 +471,44 @@ function QuickView({ doc, categoryLabel, token, fileUri, onClose, onRecord, canR
             : multi && !pagePics
             ? <ActivityIndicator color="#fff" size="large" />
             : isImage && token
-            ? (zoom > 1 && box.w > 0
-              ? <ScrollView horizontal style={StyleSheet.absoluteFill} contentContainerStyle={{ width: box.w * zoom }} showsHorizontalScrollIndicator={false} testID="qv-zoomed">
-                  <ScrollView style={{ width: box.w * zoom }} contentContainerStyle={{ height: box.h * zoom }} showsVerticalScrollIndicator={false}>
-                    <Image key={doc.id} source={{ uri: `${fileUri(doc.id)}?full=1`, headers: { Authorization: `Bearer ${token}` } }} style={{ width: box.w * zoom, height: box.h * zoom }} contentFit="contain" />
+            ? (() => {
+                const zoomed = zoom > 1 && box.w > 0;
+                return (
+                  <ScrollView
+                    horizontal={zoomed}
+                    scrollEnabled={zoomed}
+                    style={StyleSheet.absoluteFill}
+                    contentContainerStyle={zoomed ? { width: box.w * zoom } : { flex: 1 }}
+                    showsHorizontalScrollIndicator={false}
+                    testID={zoomed ? 'qv-zoomed' : undefined}
+                  >
+                    <ScrollView
+                      scrollEnabled={zoomed}
+                      style={zoomed ? { width: box.w * zoom } : { flex: 1 }}
+                      contentContainerStyle={zoomed ? { height: box.h * zoom } : { flex: 1 }}
+                      showsVerticalScrollIndicator={false}
+                    >
+                      {/* Same Image instance at every zoom level — swapping to a
+                          differently-shaped tree on zoom used to unmount and
+                          re-fetch it from scratch with no placeholder, which
+                          showed the black qvRoot background underneath until
+                          it reloaded. Only its size (and the ScrollViews'
+                          scroll behavior) changes now, so React just updates
+                          props on the already-loaded image. */}
+                      <Image
+                        key={doc.id}
+                        source={{ uri: `${fileUri(doc.id)}?full=1`, headers: { Authorization: `Bearer ${token}` } }}
+                        placeholder={{ uri: `${fileUri(doc.id)}?thumb=1`, headers: { Authorization: `Bearer ${token}` } }}
+                        placeholderContentFit="contain"
+                        transition={150}
+                        style={zoomed ? { width: box.w * zoom, height: box.h * zoom } : styles.qvImg}
+                        contentFit="contain"
+                        onLoadEnd={() => setImgLoaded(true)}
+                      />
+                    </ScrollView>
                   </ScrollView>
-                </ScrollView>
-              : <Image key={doc.id} source={{ uri: `${fileUri(doc.id)}?full=1`, headers: { Authorization: `Bearer ${token}` } }} placeholder={{ uri: `${fileUri(doc.id)}?thumb=1`, headers: { Authorization: `Bearer ${token}` } }} placeholderContentFit="contain" transition={150} style={styles.qvImg} contentFit="contain" onLoadEnd={() => setImgLoaded(true)} />)
+                );
+              })()
             : <View style={{ alignItems: 'center', gap: 10 }}>
                 {!opening && !!doc.pages && token && (
                   <Image key={doc.id} source={{ uri: `${fileUri(doc.id)}?thumb=1`, headers: { Authorization: `Bearer ${token}` } }} style={{ width: 220, height: 220 }} contentFit="contain" />
