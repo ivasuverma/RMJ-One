@@ -1,72 +1,53 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, ActivityIndicator, Pressable, Platform, RefreshControl, Share, Modal,
+  View, Text, StyleSheet, ScrollView, ActivityIndicator, Pressable, Platform, RefreshControl, Share, Modal, Linking,
 } from 'react-native';
 import { notify } from '@/src/utils/notify';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { api } from '@/src/api/client';
+import { api, TOKEN_KEY } from '@/src/api/client';
+import { storage } from '@/src/utils/storage';
 import { useAuth } from '@/src/auth/AuthContext';
 import { confirmAction } from '@/src/utils/confirm';
 import { displayDateOnly, todayIST } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
-import { RecordPhotos } from '@/src/components/RecordPhotos';
+import { Sheet } from '@/src/components/ui';
 import { SegmentedControl } from '@/src/components/ui/SegmentedControl';
 import { DateField } from '@/src/components/DateField';
+import { PhotoCaptureModal } from '@/src/components/PhotoCaptureModal';
 import { useAccessEditor } from '@/src/hooks/use-access-editor';
-import { NotificationsSection, AccessSection } from '@/src/components/AccessEditorSections';
+import { EmployeeAccessAlerts } from '@/src/components/EmployeeAccessAlerts';
 
-type IdProof = { id: string; name: string; uploaded_at: string };
-type Location = { id: string; name: string };
+const BASE = process.env.EXPO_PUBLIC_BACKEND_URL || '';
+
+type IdDoc = { id: string; created_at: string; file: { mime: string } };
 
 type Emp = {
   id: string; name: string; employee_code: string; department: string; location_id?: string | null;
   designation: string; shift: string; salary: number; joining_date?: string; biometric_id?: string;
-  mobile: string; address: string; gender?: string | null; guardian_name?: string;
+  mobile: string; address: string; gender?: string | null; guardian_name?: string; date_of_birth?: string;
   aadhaar: string; pan: string;
   bank_account: string; bank_ifsc: string; bank_name: string;
   status: 'active' | 'inactive' | 'on_leave'; notes: string; photo?: string;
-  id_proofs?: IdProof[];
   auto_advance_amount?: number | null; auto_advance_day?: number | null;
   left_date?: string | null;
 };
+type Location = { id: string; name: string };
 
-type Tab = 'profile' | 'legal' | 'notifications' | 'access';
-const TABS: { key: Tab; label: string }[] = [
-  { key: 'profile', label: 'Profile' }, { key: 'legal', label: 'Legal' },
-];
-const OWNER_TABS: { key: Tab; label: string }[] = [
-  ...TABS, { key: 'notifications', label: 'Alerts' }, { key: 'access', label: 'Access' },
-];
+const STATUS_LABEL: Record<Emp['status'], string> = { active: 'Active', on_leave: 'On Leave', inactive: 'Inactive' };
 
-function pickIdProofFile(): Promise<{ name: string; dataUri: string } | null> {
-  return new Promise((resolve) => {
-    if (Platform.OS !== 'web' || typeof document === 'undefined') { resolve(null); return; }
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'image/*,application/pdf';
-    input.onchange = () => {
-      const file = input.files && input.files[0];
-      if (!file) { resolve(null); return; }
-      if (file.size > 8 * 1024 * 1024) {
-        notify('Too large', 'Please choose a file under 8 MB.');
-        resolve(null);
-        return;
-      }
-      const reader = new FileReader();
-      reader.onload = () => resolve({ name: file.name, dataUri: String(reader.result || '') });
-      reader.onerror = () => resolve(null);
-      reader.readAsDataURL(file);
-    };
-    input.click();
-  });
+function maskAadhaar(v?: string): string {
+  const digits = (v || '').replace(/\D/g, '');
+  if (!digits) return 'Not added';
+  const last4 = digits.slice(-4);
+  const masked = 'X'.repeat(Math.max(0, digits.length - 4)).match(/.{1,4}/g) || [];
+  return [...masked, last4].join(' ');
 }
 
-const fmtJoinDate = (ds?: string) => (ds ? displayDateOnly(ds) : '—');
-const fmtGender = (g?: string | null) => (g ? g.charAt(0).toUpperCase() + g.slice(1) : '—');
+const digitsOnly = (v: string) => v.replace(/\D/g, '');
 
 export default function EmployeeProfile() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -79,14 +60,22 @@ export default function EmployeeProfile() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [sharingCreds, setSharingCreds] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   const [locations, setLocations] = useState<Location[]>([]);
-  const [tab, setTab] = useState<Tab>('profile');
+  const [tab, setTab] = useState<'details' | 'access'>('details');
+  const [menuOpen, setMenuOpen] = useState(false);
   const [leftFlowOpen, setLeftFlowOpen] = useState(false);
   const [leftDate, setLeftDate] = useState(todayIST());
   const [markingLeft, setMarkingLeft] = useState(false);
+  const [addressOpen, setAddressOpen] = useState(false);
+  const [balance, setBalance] = useState<number | null>(null);
+  const [idDocs, setIdDocs] = useState<IdDoc[]>([]);
+  const [idToken, setIdToken] = useState('');
+  const [captureOpen, setCaptureOpen] = useState(false);
+  const [uploadingProof, setUploadingProof] = useState(false);
 
-  // Notifications/Access/Documents editor — shared with Settings > Users'
-  // per-person editor (settings/person/[id].tsx) so the two never drift.
+  // Access & Alerts editor — shared with Settings > Users' per-person editor
+  // (settings/person/[id].tsx) so the two never drift on the underlying data.
   const editor = useAccessEditor(isOwner ? id : undefined);
 
   const load = useCallback(async () => {
@@ -101,21 +90,37 @@ export default function EmployeeProfile() {
     }
   }, [id]);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  const loadIdDocs = useCallback(async () => {
+    if (!id) return;
+    try {
+      const res = await api.get<{ items: IdDoc[] }>(`/documents?category=ids&status=done&linked_ref_type=employee&linked_ref_id=${id}`);
+      setIdDocs(res.items || []);
+    } catch { setIdDocs([]); }
+  }, [id]);
+
+  const loadBalance = useCallback(async () => {
+    if (!id) return;
+    try { setBalance((await api.get<{ closing_balance?: number }>(`/ledger/${id}`)).closing_balance ?? 0); }
+    catch { setBalance(null); }
+  }, [id]);
+
+  useFocusEffect(useCallback(() => { load(); loadIdDocs(); loadBalance(); }, [load, loadIdDocs, loadBalance]));
   useEffect(() => { api.get<Location[]>('/locations').then(setLocations).catch(() => setLocations([])); }, []);
+  useEffect(() => { storage.secureGet<string>(TOKEN_KEY, '').then((t) => setIdToken(t || '')); }, []);
 
   const saveAccess = async () => {
     const res = await editor.save();
-    if (res.ok) notify('Saved', 'Access & notification settings updated.');
+    if (res.ok) notify('Saved', 'Access & alert settings updated.');
     else notify('Failed', res.error);
   };
 
-  // Active employee: primary action is "Mark as Left" (opens the sheet
-  // below), not delete — a real employee's history must never be
-  // destroyable. Already-inactive employee: the button becomes a real
-  // delete, which the backend only allows when there's no attendance/
+  // Active employee: primary action is "Deactivate" (opens the Mark as Left
+  // sheet below), not delete — a real employee's history must never be
+  // destroyable. Already-inactive employee: the same menu item becomes a
+  // real delete, which the backend only allows when there's no attendance/
   // payroll/ledger history to lose (a same-day mistake, essentially).
-  const onDeletePress = () => {
+  const onDeactivatePress = () => {
+    setMenuOpen(false);
     if (emp?.status === 'active') { setLeftDate(todayIST()); setLeftFlowOpen(true); return; }
     confirmAction('Delete employee', 'This cannot be undone.', 'Delete', async () => {
       try { await api.del(`/employees/${id}`); router.replace('/(tabs)/employees'); }
@@ -138,11 +143,9 @@ export default function EmployeeProfile() {
     }
   };
 
-  // Actually share credentials: generate a fresh temporary password and open
-  // the share sheet with the login details — this is the working flow (the
-  // button used to just open the set-password form and do nothing).
   const onShareCredentials = () => {
     if (!emp) return;
+    setMenuOpen(false);
     const name = emp.name;
     confirmAction(
       'Share login credentials',
@@ -162,6 +165,57 @@ export default function EmployeeProfile() {
         }
       },
     );
+  };
+
+  const onResetPassword = () => {
+    setMenuOpen(false);
+    router.push(`/employee/set-credentials/${id}` as any);
+  };
+
+  const onSignOutAll = () => {
+    if (!emp) return;
+    setMenuOpen(false);
+    confirmAction(
+      'Sign out all devices',
+      `${emp.name} will be signed out everywhere and need to log in again — their password stays the same.`,
+      'Sign Out',
+      async () => {
+        setSigningOut(true);
+        try { await api.post(`/employees/${id}/sign-out`, {}); notify('Done', 'Signed out on every device.'); }
+        catch (e: any) { notify('Failed', e?.detail || 'Please try again.'); }
+        finally { setSigningOut(false); }
+      },
+    );
+  };
+
+  const addIdProof = async (dataUri: string) => {
+    setCaptureOpen(false);
+    if (!emp) return;
+    setUploadingProof(true);
+    try {
+      const blob = await (await fetch(dataUri)).blob();
+      const form = new FormData();
+      form.append('file', blob as any, `id-${Date.now()}.jpg`);
+      form.append('category_key', 'ids');
+      const doc = await api.upload<{ id: string }>('/documents', form);
+      await api.patch(`/documents/${doc.id}/record`, {
+        linked_ref_type: 'employee', linked_ref_id: emp.id, linked_ref_label: emp.name,
+      });
+      await loadIdDocs();
+    } catch (e: any) {
+      notify('Failed', e?.detail || 'Could not add this document');
+    } finally {
+      setUploadingProof(false);
+    }
+  };
+
+  const docFileUri = (docId: string, thumb = false) => `${BASE}/api/documents/${docId}/file${thumb ? '?thumb=1' : '?full=1'}`;
+  const openIdDoc = async (docId: string) => {
+    try {
+      const res = await fetch(docFileUri(docId), { headers: { Authorization: `Bearer ${idToken}` } });
+      if (!res.ok) throw new Error();
+      if (Platform.OS === 'web') window.open(URL.createObjectURL(await res.blob()), '_blank');
+    } catch { /* ignore */ }
   };
 
   if (loading) {
@@ -193,139 +247,126 @@ export default function EmployeeProfile() {
 
   const initials = emp.name.trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() || '').join('');
   const locationName = locations.find((l) => l.id === emp.location_id)?.name || '—';
-  const tabsList = isOwner ? OWNER_TABS : TABS;
+  const statusDotColor = emp.status === 'active' ? colors.onSuccess : emp.status === 'on_leave' ? colors.brandPrimary : colors.mutedText;
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="employee-profile">
-      {/* Clean top bar — no gradient/textured cover */}
       <View style={styles.headerBar}>
         <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
         <View style={{ flex: 1 }} />
-        <Pressable onPress={() => router.push(`/employee/set-credentials/${emp.id}`)} style={styles.iconBtn} testID="pin-btn" hitSlop={12}>
-          <Ionicons name="key-outline" size={20} color={colors.onSurface} />
+        <Pressable onPress={() => router.push(`/employee/edit/${emp.id}`)} style={styles.editLink} testID="edit-btn" hitSlop={12}>
+          <Text style={styles.editLinkText}>Edit</Text>
         </Pressable>
-        <Pressable onPress={() => router.push(`/employee/edit/${emp.id}`)} style={[styles.iconBtn, { marginLeft: spacing.sm }]} testID="edit-btn" hitSlop={12}>
-          <Ionicons name="create-outline" size={20} color={colors.onSurface} />
-        </Pressable>
-        <Pressable onPress={onDeletePress} style={[styles.iconBtn, { marginLeft: spacing.sm }]} testID="delete-btn" hitSlop={12}>
-          {emp.status === 'active'
-            ? <Ionicons name="log-out-outline" size={20} color={colors.onWarning} />
-            : <Ionicons name="trash-outline" size={20} color={colors.onError} />}
+        <Pressable onPress={() => setMenuOpen(true)} style={[styles.iconBtn, { marginLeft: spacing.sm }]} testID="menu-btn" hitSlop={12}>
+          <Ionicons name="ellipsis-horizontal" size={20} color={colors.onSurface} />
         </Pressable>
       </View>
 
       <ScrollView
         contentContainerStyle={{ paddingBottom: spacing.xxxl }}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); editor.reload(); }} tintColor={colors.brandPrimary} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); loadIdDocs(); loadBalance(); editor.reload(); }} tintColor={colors.brandPrimary} />}
         showsVerticalScrollIndicator={false}
       >
-        {/* Identity block — photo, name, status. Actions live in the tabs below. */}
         <View style={styles.identity}>
           {emp.photo ? (
             <Image source={{ uri: emp.photo }} style={styles.bigAvatarPhoto} />
           ) : (
             <View style={styles.bigAvatar}><Text style={styles.bigAvatarText}>{initials}</Text></View>
           )}
-          <Text style={styles.salaryTag}>₹{Math.round(emp.salary || 0).toLocaleString('en-IN')}/mo</Text>
           <Text style={styles.name} numberOfLines={2}>{emp.name}</Text>
           <Text style={styles.designation}>{emp.designation || '—'} · {emp.department || '—'}</Text>
-
-          <Pressable onPress={onShareCredentials} disabled={sharingCreds} style={styles.shareCredsLink} testID="share-credentials-btn">
-            {sharingCreds ? <ActivityIndicator size="small" color={colors.brandSecondary} /> : <Ionicons name="key-outline" size={16} color={colors.brandSecondary} />}
-            <Text style={styles.shareCredsLinkText}>Share Credentials</Text>
-          </Pressable>
-
           <View style={styles.metaRow}>
             <Text style={styles.metaChip}>{emp.employee_code}</Text>
-            <StatusChip status={emp.status} />
+            <Text style={styles.statusLine}>
+              <Text style={{ color: statusDotColor }}>● </Text>
+              {STATUS_LABEL[emp.status]}
+            </Text>
           </View>
         </View>
 
-        <View style={{ paddingHorizontal: spacing.lg, marginTop: spacing.md }}>
-          <SegmentedControl options={tabsList.map((t) => ({ key: t.key, label: t.label }))} value={tab} onChange={(k) => setTab(k as Tab)} testID="profile-tabs" />
+        <View style={styles.actionsRow}>
+          <QuickAction icon="call-outline" label="Call" disabled={!emp.mobile} onPress={() => Linking.openURL(`tel:${emp.mobile}`)} testID="act-call" />
+          <QuickAction icon="logo-whatsapp" label="WhatsApp" disabled={!emp.mobile} onPress={() => Linking.openURL(`https://wa.me/91${digitsOnly(emp.mobile)}`)} testID="act-whatsapp" />
+          <QuickAction icon="key-outline" label="Share login" loading={sharingCreds} onPress={onShareCredentials} testID="act-share-login" />
+          <QuickAction icon="calendar-outline" label="Attendance" onPress={() => router.push(`/attendance/calendar/${emp.id}` as any)} testID="act-attendance" />
         </View>
+
+        {isOwner && (
+          <View style={{ paddingHorizontal: spacing.lg, marginTop: spacing.lg }}>
+            <SegmentedControl
+              options={[{ key: 'details', label: 'Details' }, { key: 'access', label: 'Access & Alerts' }]}
+              value={tab} onChange={(k) => setTab(k as any)} testID="profile-tabs"
+            />
+          </View>
+        )}
 
         <View style={{ paddingHorizontal: spacing.lg, marginTop: spacing.lg }}>
-          <View style={styles.detailCard}>
-            {tab === 'profile' && (
-              <>
-                <SectionTitle text="Basic" />
-                <DetailRow label="Mobile" value={emp.mobile || '—'} />
-                <DetailRow label="Address" value={emp.address || '—'} />
-                <DetailRow label="Gender" value={fmtGender(emp.gender)} />
-                <DetailRow label="Guardian's Name" value={emp.guardian_name || '—'} />
-                {!!emp.notes && (
-                  <>
-                    <SectionTitle text="Notes" />
-                    <Text style={styles.notes}>{emp.notes}</Text>
-                  </>
-                )}
+          {(tab === 'details' || !isOwner) && (
+            <>
+              <GroupTitle text="Pay" />
+              <Group>
+                <Row label="Salary" value={`₹${Math.round(emp.salary || 0).toLocaleString('en-IN')} / month`} valueColor={colors.onSuccess} />
+                <Row label="Advances & ledger" value={balance == null ? '…' : `₹${Math.round(balance).toLocaleString('en-IN')}`} chevron onPress={() => router.push(`/ledger/${emp.id}` as any)} testID="open-ledger-row" />
+              </Group>
 
-                <SectionTitle text="Work" />
-                <DetailRow label="Department" value={emp.department || '—'} />
-                <DetailRow label="Location / Branch" value={locationName} />
-                <DetailRow label="Designation" value={emp.designation || '—'} />
-                <DetailRow label="Shift" value={emp.shift || '—'} />
-                <DetailRow label="Joined" value={fmtJoinDate(emp.joining_date)} />
-                {!!emp.left_date && <DetailRow label="Left" value={fmtJoinDate(emp.left_date)} />}
-                <DetailRow label="Biometric ID" value={emp.biometric_id || '—'} />
+              <GroupTitle text="Contact" />
+              <Group>
+                <Row label="Mobile" value={emp.mobile || '—'} />
+                <Row label="Address" value={emp.address || '—'} valueLines={addressOpen ? undefined : 1} chevron onPress={() => setAddressOpen((v) => !v)} testID="address-row" />
+              </Group>
 
-                <SectionTitle text="Salary" />
-                <DetailRow label="Base Salary" value={`₹${Math.round(emp.salary || 0).toLocaleString('en-IN')}/mo`} />
-                <DetailRow label="Auto Advance" value={emp.auto_advance_amount ? `₹${Math.round(emp.auto_advance_amount).toLocaleString('en-IN')} on day ${emp.auto_advance_day}` : 'Off'} />
-                <Pressable onPress={() => router.push(`/ledger/${emp.id}`)} style={styles.ledgerLink} testID="open-ledger-btn">
-                  <Ionicons name="book-outline" size={16} color={colors.onBrandPrimary} />
-                  <Text style={styles.ledgerLinkText}>Open Ledger</Text>
-                  <Ionicons name="chevron-forward" size={16} color={colors.onBrandPrimary} />
-                </Pressable>
-              </>
-            )}
-            {tab === 'legal' && (
-              <>
-                <SectionTitle text="Legal" />
-                <DetailRow label="Aadhaar" value={emp.aadhaar || '—'} />
-                <DetailRow label="PAN" value={emp.pan || '—'} />
-                <SectionTitle text="ID Proofs" />
-                <IdProofsSection empId={emp.id} proofs={emp.id_proofs || []} onChange={load} />
-                <RecordPhotos refType="employee" refId={emp.id} label="Photos" />
+              <GroupTitle text="Personal" />
+              <Group>
+                <Row label="Gender" value={emp.gender ? emp.gender.charAt(0).toUpperCase() + emp.gender.slice(1) : '—'} />
+                <Row label="Guardian" value={emp.guardian_name || '—'} />
+                <Row label="Date of birth" value={emp.date_of_birth ? displayDateOnly(emp.date_of_birth) : 'Not added'} />
+              </Group>
 
-                <SectionTitle text="Bank" />
-                <DetailRow label="Bank" value={emp.bank_name || '—'} />
-                <DetailRow label="Account" value={emp.bank_account || '—'} />
-                <DetailRow label="IFSC" value={emp.bank_ifsc || '—'} />
-              </>
-            )}
-            {tab === 'notifications' && isOwner && (
-              editor.loading ? <ActivityIndicator color={colors.brandPrimary} style={{ marginVertical: spacing.lg }} /> : editor.loadError ? (
-                <ErrorNote onRetry={editor.reload} />
-              ) : (
-                <>
-                  <SectionTitle text="Notifications" />
-                  <NotificationsSection editor={editor} testIdPrefix="emp" />
-                  <Pressable onPress={saveAccess} disabled={editor.saving} style={[styles.saveAccessBtn, editor.saving && { opacity: 0.6 }]} testID="emp-save-notifications">
-                    {editor.saving ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.saveAccessText}>Save notifications</Text>}
-                  </Pressable>
-                </>
-              )
-            )}
-            {tab === 'access' && isOwner && (
-              editor.loading ? <ActivityIndicator color={colors.brandPrimary} style={{ marginVertical: spacing.lg }} /> : editor.loadError ? (
-                <ErrorNote onRetry={editor.reload} />
-              ) : (
-                <>
-                  <SectionTitle text="Access" />
-                  <AccessSection editor={editor} testIdPrefix="emp" />
-                  <Pressable onPress={saveAccess} disabled={editor.saving} style={[styles.saveAccessBtn, editor.saving && { opacity: 0.6 }]} testID="emp-save-access">
-                    {editor.saving ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.saveAccessText}>Save access</Text>}
-                  </Pressable>
-                </>
-              )
-            )}
-          </View>
+              <GroupTitle text="Work" />
+              <Group>
+                <Row label="Department" value={emp.department || '—'} />
+                <Row label="Location" value={locationName} />
+                <Row label="Shift" value={emp.shift || '—'} />
+              </Group>
+
+              <GroupTitle text="Identity" />
+              <Group>
+                <Row label="Aadhaar" value={maskAadhaar(emp.aadhaar)} />
+                <Row label="PAN" value={emp.pan || 'Not added'} />
+                <Row label="＋ Add ID proof or photo" value="" labelColor={colors.brandPrimary} chevron onPress={() => setCaptureOpen(true)} testID="add-id-proof-row" />
+              </Group>
+              {uploadingProof && <ActivityIndicator color={colors.brandPrimary} style={{ marginTop: spacing.sm }} />}
+              {idDocs.length > 0 && (
+                <View style={styles.docGrid}>
+                  {idDocs.map((d) => (
+                    <Pressable key={d.id} onPress={() => openIdDoc(d.id)} style={styles.docTile} testID={`id-doc-${d.id}`}>
+                      {idToken ? <Image source={{ uri: docFileUri(d.id, true), headers: { Authorization: `Bearer ${idToken}` } }} style={styles.docImg} contentFit="cover" /> : null}
+                    </Pressable>
+                  ))}
+                </View>
+              )}
+              <Text style={styles.foot}>ID proofs are stored in Documents and backed up to Google Drive.</Text>
+            </>
+          )}
+
+          {tab === 'access' && isOwner && (
+            editor.loading ? <ActivityIndicator color={colors.brandPrimary} style={{ marginVertical: spacing.lg }} /> : editor.loadError ? (
+              <ErrorNote onRetry={editor.reload} />
+            ) : (
+              <EmployeeAccessAlerts editor={editor} onSave={saveAccess} />
+            )
+          )}
         </View>
       </ScrollView>
+
+      <Sheet visible={menuOpen} onClose={() => setMenuOpen(false)} title={emp.name} testID="employee-menu-sheet">
+        <MenuRow icon="key-outline" label="Share login details" onPress={onShareCredentials} />
+        <MenuRow icon="refresh-outline" label="Reset password" onPress={onResetPassword} />
+        <MenuRow icon="log-out-outline" label="Sign out all devices" onPress={onSignOutAll} loading={signingOut} />
+        <MenuRow icon={emp.status === 'active' ? 'remove-circle-outline' : 'trash-outline'} label={emp.status === 'active' ? 'Deactivate employee' : 'Delete employee'} onPress={onDeactivatePress} danger />
+      </Sheet>
 
       <Modal visible={leftFlowOpen} animationType="slide" transparent onRequestClose={() => setLeftFlowOpen(false)}>
         <View style={styles.modalBackdrop}>
@@ -352,6 +393,8 @@ export default function EmployeeProfile() {
           </View>
         </View>
       </Modal>
+
+      <PhotoCaptureModal visible={captureOpen} title="ID proof or photo" onClose={() => setCaptureOpen(false)} onCapture={addIdProof} highRes />
     </SafeAreaView>
   );
 }
@@ -369,120 +412,56 @@ function ErrorNote({ onRetry }: { onRetry: () => void }) {
   );
 }
 
-function StatusChip({ status }: { status: Emp['status'] }) {
+function QuickAction({ icon, label, onPress, disabled, loading, testID }: {
+  icon: keyof typeof Ionicons.glyphMap; label: string; onPress: () => void; disabled?: boolean; loading?: boolean; testID?: string;
+}) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
-  const map = {
-    active: { bg: colors.success, bd: colors.onSuccess, fg: colors.onSuccess, label: 'Active' },
-    on_leave: { bg: colors.warning, bd: colors.onWarning, fg: colors.onWarning, label: 'On Leave' },
-    inactive: { bg: colors.error, bd: colors.onError, fg: colors.onError, label: 'Inactive' },
-  } as const;
-  const s = map[status] || map.active;
   return (
-    <View style={[styles.statusChip, { backgroundColor: s.bg, borderColor: s.bd }]}>
-      <Text style={[styles.statusChipText, { color: s.fg }]}>{s.label}</Text>
-    </View>
+    <Pressable onPress={onPress} disabled={disabled || loading} style={[styles.actTile, disabled && { opacity: 0.4 }]} testID={testID}>
+      {loading ? <ActivityIndicator size="small" color={colors.brandSecondary} /> : <Ionicons name={icon} size={19} color={colors.brandSecondary} />}
+      <Text style={styles.actLabel} numberOfLines={1}>{label}</Text>
+    </Pressable>
   );
 }
 
-function IdProofsSection({ empId, proofs, onChange }: { empId: string; proofs: IdProof[]; onChange: () => void }) {
+function MenuRow({ icon, label, onPress, danger, loading }: {
+  icon: keyof typeof Ionicons.glyphMap; label: string; onPress: () => void; danger?: boolean; loading?: boolean;
+}) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
-  const [uploading, setUploading] = useState(false);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [openingId, setOpeningId] = useState<string | null>(null);
-
-  const upload = async () => {
-    const file = await pickIdProofFile();
-    if (!file) return;
-    setUploading(true);
-    try {
-      await api.post(`/employees/${empId}/id-proofs`, { name: file.name, data_uri: file.dataUri });
-      onChange();
-    } catch (e: any) {
-      notify('Upload failed', e?.detail || 'Please try again');
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const remove = (p: IdProof) => {
-    confirmAction('Delete document', `Remove "${p.name}"?`, 'Delete', async () => {
-      setDeletingId(p.id);
-      try {
-        await api.del(`/employees/${empId}/id-proofs/${p.id}`);
-        onChange();
-      } catch (e: any) {
-        notify('Failed', e?.detail || 'Could not delete this document');
-      } finally {
-        setDeletingId(null);
-      }
-    });
-  };
-
-  // The proof's base64 is no longer in the profile payload (kept out to speed
-  // the page up) — fetch it on demand, then open it.
-  const view = async (p: IdProof) => {
-    setOpeningId(p.id);
-    try {
-      const res = await api.get<{ data_uri: string }>(`/employees/${empId}/id-proofs/${p.id}`);
-      if (res.data_uri && Platform.OS === 'web' && typeof window !== 'undefined') window.open(res.data_uri, '_blank');
-    } catch (e: any) {
-      notify('Failed', e?.detail || 'Could not open this document');
-    } finally {
-      setOpeningId(null);
-    }
-  };
-
   return (
-    <View>
-      {proofs.length === 0 && (
-        <Text style={[styles.notes, { marginBottom: spacing.sm }]}>No ID proofs uploaded yet — Aadhaar, PAN, or any other document.</Text>
-      )}
-      {proofs.map((p) => (
-        <Pressable key={p.id} onPress={() => view(p)} style={styles.proofRow} testID={`id-proof-${p.id}`}>
-          {openingId === p.id
-            ? <ActivityIndicator size="small" color={colors.brandSecondary} />
-            : <Ionicons name="document-attach-outline" size={18} color={colors.brandSecondary} />}
-          <Text style={styles.proofName} numberOfLines={1}>{p.name}</Text>
-          <Pressable
-            onPress={() => remove(p)}
-            hitSlop={10}
-            disabled={deletingId === p.id}
-            style={styles.proofDelBtn}
-            testID={`del-id-proof-${p.id}`}
-          >
-            {deletingId === p.id
-              ? <ActivityIndicator size="small" color={colors.onError} />
-              : <Ionicons name="trash-outline" size={16} color={colors.onError} />}
-          </Pressable>
-        </Pressable>
-      ))}
-      <Pressable style={[styles.uploadBtn, uploading && { opacity: 0.6 }]} onPress={upload} disabled={uploading} testID="upload-id-proof-btn">
-        {uploading ? <ActivityIndicator size="small" color={colors.brandPrimary} /> : (
-          <>
-            <Ionicons name="add-circle-outline" size={18} color={colors.brandPrimary} />
-            <Text style={styles.uploadBtnText}>Add ID Proof</Text>
-          </>
-        )}
-      </Pressable>
-    </View>
+    <Pressable onPress={onPress} disabled={loading} style={styles.menuRow} testID={`menu-${label.toLowerCase().replace(/\s+/g, '-')}`}>
+      {loading ? <ActivityIndicator size="small" color={colors.mutedText} /> : <Ionicons name={icon} size={19} color={danger ? colors.onError : colors.onSurface} />}
+      <Text style={[styles.menuRowText, danger && { color: colors.onError }]}>{label}</Text>
+    </Pressable>
   );
 }
 
-function SectionTitle({ text }: { text: string }) {
+function GroupTitle({ text }: { text: string }) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
-  return <Text style={styles.detailSection}>{text}</Text>;
+  return <Text style={styles.groupTitle}>{text}</Text>;
 }
-function DetailRow({ label, value }: { label: string; value: string }) {
+
+function Group({ children }: { children: React.ReactNode }) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+  return <View style={styles.group}>{children}</View>;
+}
+
+function Row({ label, value, chevron, onPress, valueColor, labelColor, valueLines, testID }: {
+  label: string; value: string; chevron?: boolean; onPress?: () => void; valueColor?: string; labelColor?: string; valueLines?: number; testID?: string;
+}) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+  const Wrap = onPress ? Pressable : View;
   return (
-    <View style={styles.detailRow}>
-      <Text style={styles.detailLabel}>{label}</Text>
-      <Text style={styles.detailValue} numberOfLines={2}>{value}</Text>
-    </View>
+    <Wrap onPress={onPress} style={styles.row} testID={testID}>
+      <Text style={[styles.rowLabel, labelColor && { color: labelColor }]}>{label}</Text>
+      {!!value && <Text style={[styles.rowValue, valueColor && { color: valueColor }]} numberOfLines={valueLines}>{value}</Text>}
+      {chevron && <Ionicons name="chevron-forward" size={16} color={colors.mutedText} />}
+    </Wrap>
   );
 }
 
@@ -500,6 +479,8 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     backgroundColor: colors.surfaceSecondary, alignItems: 'center', justifyContent: 'center',
     borderWidth: 1, borderColor: colors.border,
   },
+  editLink: { paddingHorizontal: spacing.sm, height: 40, alignItems: 'center', justifyContent: 'center' },
+  editLinkText: { color: colors.brandSecondary, fontSize: 16, fontWeight: '600' },
 
   identity: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.md, alignItems: 'center' },
   bigAvatar: {
@@ -509,65 +490,49 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   bigAvatarText: { color: colors.onBrandPrimary, fontWeight: '800', fontSize: 32 },
   bigAvatarPhoto: { width: 88, height: 88, borderRadius: 44, backgroundColor: colors.surfaceTertiary },
 
-  salaryTag: {
-    color: colors.onSuccess, fontSize: 13, fontWeight: '700', marginTop: spacing.sm,
-    backgroundColor: colors.success, paddingHorizontal: 12, paddingVertical: 5, borderRadius: radius.pill,
-  },
   name: {
-    color: colors.onSurface, fontSize: 28, fontWeight: '600',
-    fontFamily: fonts.display, marginTop: spacing.md, letterSpacing: -0.5, textAlign: 'center',
+    color: colors.onSurface, fontSize: 26, fontWeight: '600',
+    fontFamily: fonts.display, marginTop: spacing.md, letterSpacing: -0.4, textAlign: 'center',
   },
-  designation: { color: colors.onSurfaceTertiary, fontSize: 14, marginTop: 4, textAlign: 'center' },
-  metaRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md, alignItems: 'center' },
-  ledgerLink: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm,
-    backgroundColor: colors.brandPrimary, paddingVertical: 12, paddingHorizontal: spacing.md,
-    borderRadius: radius.md, marginTop: spacing.sm,
-  },
-  ledgerLinkText: { color: colors.onBrandPrimary, fontWeight: '700', fontSize: 13 },
-  shareCredsLink: {
-    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
-    backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.brand,
-    paddingVertical: 10, paddingHorizontal: spacing.md, borderRadius: radius.md, marginTop: spacing.md,
-  },
-  shareCredsLinkText: { color: colors.brandSecondary, fontWeight: '700', fontSize: 13 },
+  designation: { color: colors.onSurfaceTertiary, fontSize: 15, marginTop: 4, textAlign: 'center' },
+  metaRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm, alignItems: 'center' },
   metaChip: {
     color: colors.brandSecondary, fontSize: 12, fontWeight: '600',
     backgroundColor: colors.brandTertiary, paddingHorizontal: 10, paddingVertical: 4, borderRadius: radius.pill,
   },
-  statusChip: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: radius.pill, borderWidth: 1 },
-  statusChipText: { fontSize: 11, fontWeight: '700' },
+  statusLine: { color: colors.mutedText, fontSize: 13 },
 
-  detailCard: {
-    backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg,
-    borderWidth: 1, borderColor: colors.border, padding: spacing.lg,
+  actionsRow: {
+    flexDirection: 'row', gap: spacing.sm, paddingHorizontal: spacing.lg, marginTop: spacing.md,
   },
-  detailSection: {
+  actTile: {
+    flex: 1, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    paddingVertical: 12, alignItems: 'center', gap: 5,
+  },
+  actLabel: { color: colors.brandSecondary, fontSize: 11, fontWeight: '700' },
+
+  groupTitle: {
     color: colors.brandSecondary, fontSize: 11, letterSpacing: 1, textTransform: 'uppercase',
-    marginTop: spacing.md, marginBottom: spacing.sm,
+    marginTop: spacing.lg, marginBottom: spacing.sm,
   },
-  detailRow: { flexDirection: 'row', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: colors.divider, gap: spacing.md },
-  detailLabel: { color: colors.mutedText, fontSize: 13, width: 120 },
-  detailValue: { color: colors.onSurface, fontSize: 13, flex: 1, textAlign: 'right' },
-  notes: { color: colors.onSurfaceSecondary, fontSize: 13, marginTop: 4 },
+  group: {
+    backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg,
+    borderWidth: 1, borderColor: colors.border, overflow: 'hidden',
+  },
+  row: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.lg, paddingVertical: 12,
+    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.divider,
+  },
+  rowLabel: { color: colors.onSurfaceSecondary, fontSize: 14.5, flex: 1 },
+  rowValue: { color: colors.onSurface, fontSize: 14.5, textAlign: 'right', flexShrink: 1 },
+  foot: { color: colors.mutedText, fontSize: 11.5, marginTop: spacing.sm, lineHeight: 16 },
 
-  proofRow: {
-    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
-    backgroundColor: colors.surfaceTertiary, borderRadius: radius.md,
-    borderWidth: 1, borderColor: colors.border, paddingVertical: 10, paddingHorizontal: spacing.md,
-    marginBottom: spacing.sm,
-  },
-  proofName: { flex: 1, color: colors.onSurface, fontSize: 13 },
-  proofDelBtn: {
-    width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: colors.error, borderColor: colors.onError, borderWidth: 1,
-  },
-  uploadBtn: {
-    flexDirection: 'row', gap: spacing.sm, alignItems: 'center', justifyContent: 'center',
-    borderRadius: radius.md, borderWidth: 1, borderColor: colors.brandPrimary, borderStyle: 'dashed',
-    paddingVertical: 12, marginTop: spacing.xs,
-  },
-  uploadBtnText: { color: colors.brandPrimary, fontWeight: '700', fontSize: 13 },
+  docGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.sm },
+  docTile: { width: 76, height: 76, borderRadius: radius.md, overflow: 'hidden', backgroundColor: colors.surfaceTertiary },
+  docImg: { width: '100%', height: '100%' },
+
+  menuRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: 14 },
+  menuRowText: { color: colors.onSurface, fontSize: 16, fontWeight: '500' },
 
   saveAccessBtn: { backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: 14, alignItems: 'center', marginTop: spacing.lg },
   saveAccessText: { color: colors.onBrandPrimary, fontSize: 14, fontWeight: '700' },

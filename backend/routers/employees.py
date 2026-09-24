@@ -1,4 +1,4 @@
-"""Employees: CRUD, ID proofs, credentials
+"""Employees: CRUD, credentials
 
 Extracted from the former monolithic server.py (§2.1 router split). Shared
 infrastructure (db, auth deps, models, cross-domain helpers) stays in
@@ -22,7 +22,6 @@ from server import (
     resolve_modules,
     SetEmployeeCredentialsIn,
     EmployeeIn,
-    IdProofIn,
     log_audit,
     _ledger_sign,
     _make_photo_thumb,
@@ -199,32 +198,16 @@ async def list_employees(
 async def get_employee(emp_id: str, user: dict = Depends(get_current)):
     if not _can_see_team_data(user):
         raise HTTPException(status_code=403, detail='No access to employee records')
-    # Exclude the heavy bits from the default profile payload: each ID proof's
-    # base64 data_uri (fetched on demand when viewed — see the endpoint below)
-    # and the timeline (the profile screen no longer shows it). This keeps the
-    # profile page snappy even for employees with several multi-MB documents.
+    # id_proofs excluded: legacy field, superseded by 'ids'-category Documents
+    # linked to this employee (see migrate_employee_id_proofs) — left in the
+    # database untouched but never read by the app anymore. Timeline excluded
+    # too (the profile screen no longer shows it), keeping this payload light.
     doc = await db.employees.find_one(
         {'id': emp_id},
-        {'_id': 0, 'password_hash': 0, 'id_proofs.data_uri': 0},
+        {'_id': 0, 'password_hash': 0, 'id_proofs': 0},
     )
     if not doc: raise HTTPException(status_code=404, detail='Employee not found')
     return {'employee': doc, 'timeline': []}
-
-
-@router.get('/employees/{emp_id}/id-proofs/{proof_id}')
-async def get_id_proof(emp_id: str, proof_id: str, user: dict = Depends(get_current)):
-    """Fetch one ID proof's base64 data on demand — kept out of the main
-    profile payload so the page loads fast."""
-    if not _can_see_team_data(user):
-        raise HTTPException(status_code=403, detail='No access to employee records')
-    doc = await db.employees.find_one(
-        {'id': emp_id, 'id_proofs.id': proof_id},
-        {'_id': 0, 'id_proofs.$': 1},
-    )
-    proofs = (doc or {}).get('id_proofs') or []
-    if not proofs:
-        raise HTTPException(status_code=404, detail='ID proof not found')
-    return {'id': proof_id, 'data_uri': proofs[0].get('data_uri', '')}
 
 
 @router.post('/employees')
@@ -319,26 +302,6 @@ async def delete_employee(emp_id: str, user: dict = Depends(require_owner), _mod
     return {'ok': True}
 
 
-@router.post('/employees/{emp_id}/id-proofs')
-async def add_id_proof(emp_id: str, body: IdProofIn, user=Depends(require_admin), _mod=Depends(require_module('team'))):
-    existing = await db.employees.find_one({'id': emp_id}, {'_id': 0})
-    if not existing: raise HTTPException(status_code=404, detail='Employee not found')
-    proof = {
-        'id': str(uuid.uuid4()), 'name': (body.name or 'Document').strip()[:200],
-        'data_uri': body.data_uri, 'uploaded_at': now_utc().isoformat(),
-    }
-    await db.employees.update_one({'id': emp_id}, {'$push': {'id_proofs': proof}})
-    await log_audit(user, 'employee.id_proof.add', 'employee', emp_id, existing.get('employee_code', ''), {'name': proof['name']})
-    return proof
-
-
-@router.delete('/employees/{emp_id}/id-proofs/{proof_id}')
-async def delete_id_proof(emp_id: str, proof_id: str, user=Depends(require_admin), _mod=Depends(require_module('team'))):
-    await db.employees.update_one({'id': emp_id}, {'$pull': {'id_proofs': {'id': proof_id}}})
-    await log_audit(user, 'employee.id_proof.delete', 'employee', emp_id, '', {'proof_id': proof_id})
-    return {'ok': True}
-
-
 @router.post('/employees/{emp_id}/set-credentials')
 async def set_employee_credentials(emp_id: str, body: SetEmployeeCredentialsIn, user=Depends(require_admin), _mod=Depends(require_module('team'))):
     uname = body.username.strip().lower()
@@ -388,3 +351,16 @@ async def reset_employee_credentials(emp_id: str, user=Depends(require_admin), _
     )
     await log_audit(user, 'employee.credentials.reset', 'employee', emp_id, emp.get('name', ''), {})
     return {'username': username, 'password': password}
+
+
+@router.post('/employees/{emp_id}/sign-out')
+async def sign_out_employee(emp_id: str, user=Depends(require_admin), _mod=Depends(require_module('team'))):
+    """Revoke every token issued before now for this employee (see
+    tokens_valid_from in get_current) — every device they're logged into
+    needs to sign in again. Unlike set/reset-credentials, this doesn't touch
+    their password at all."""
+    emp = await db.employees.find_one({'id': emp_id}, {'_id': 0})
+    if not emp: raise HTTPException(status_code=404, detail='Employee not found')
+    await db.employees.update_one({'id': emp_id}, {'$set': {'tokens_valid_from': now_utc().isoformat()}})
+    await log_audit(user, 'employee.sign_out_all', 'employee', emp_id, emp.get('name', ''), {})
+    return {'ok': True}
