@@ -8,6 +8,42 @@
 <meta property="og:title" content="Ram Murti Jewellers, Ludhiana — Since 1932">
 <meta property="og:description" content="Three generations of the Verma family, jewellers in Ludhiana since 1932. Live gold rate, gold, diamond and silver jewellery, custom orders and repairs.">
 <meta property="og:image" content="https://assets.zyrosite.com/cdn-cgi/image/format=auto,w=1440,h=756,fit=crop,f=jpeg/m2Wbv2leXaTxwqRD/web-mnl6gE63eoFNxEJN.png">
+<link rel="canonical" href="https://rmj.co.in/">
+<meta property="og:url" content="https://rmj.co.in/">
+<meta property="og:type" content="website">
+<script type="application/ld+json">
+{
+ "@context": "https://schema.org",
+ "@type": "JewelryStore",
+ "name": "Ram Murti Jewellers",
+ "url": "https://rmj.co.in/",
+ "logo": "https://rmj.co.in/assets/images/logo-mark.png",
+ "image": "https://rmj.co.in/assets/images/logo-mark.png",
+ "description": "Family jewellers in Ludhiana since 1932 — hallmarked gold, diamond and silver jewellery, custom orders, old gold exchange and repairs.",
+ "foundingDate": "1932",
+ "founder": {
+  "@type": "Person",
+  "name": "Sh. Ram Murti"
+ },
+ "telephone": "+91-97818-00888",
+ "address": {
+  "@type": "PostalAddress",
+  "streetAddress": "1694/3 Field Ganj Main Road",
+  "addressLocality": "Ludhiana",
+  "addressRegion": "Punjab",
+  "postalCode": "141008",
+  "addressCountry": "IN"
+ },
+ "taxID": "03ACFPK9166Q1Z0",
+ "paymentAccepted": "Cash, UPI, Credit Card, Debit Card, Bank Transfer",
+ "currenciesAccepted": "INR",
+ "sameAs": [
+  "https://www.instagram.com/rammurtijewellers",
+  "https://www.facebook.com/rmj.co.in",
+  "https://www.linkedin.com/company/rammurtijewellers/"
+ ]
+}
+</script>
 <meta name="theme-color" content="#000000">
 <link rel="icon" href="assets/images/logo-mark.png">
 <!-- Home-screen install support — the hint banner below (#installHint)
@@ -210,7 +246,7 @@
   .panel{background:var(--grey); border-radius:var(--r-lg); padding:clamp(24px,3.4vw,38px)}
   .panel h3{font-size:24px; font-weight:700; letter-spacing:-.02em}
   .panel .addr{font-size:19px; margin-top:10px; line-height:1.4}
-  .panel .hrs{font-size:15px; color:#C2410C; margin-top:10px}
+  .panel .hrs{font-size:15px; color:var(--ink2); margin-top:10px}
   .panel .row{display:flex; gap:10px; flex-wrap:wrap; margin-top:24px}
   .clist{list-style:none; margin-top:10px}
   .clist li{display:flex; justify-content:space-between; align-items:center; gap:12px; padding:14px 0; border-bottom:1px solid var(--grey2); font-size:16px}
@@ -282,8 +318,6 @@
       <a href="#visit">Visit</a>
     </div>
     <div class="navright">
-      <a class="staff desk" id="staffBtn" href="#" aria-label="Staff login">
-        <svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>Staff login</a>
       <a class="navwa" href="https://wa.me/919781800888?text=Hello%20Ram%20Murti%20Jewellers%2C%20I%20have%20an%20enquiry.">WhatsApp</a>
       <button class="burger" id="burger" aria-label="Open menu" aria-expanded="false"><span></span><span></span></button>
     </div>
@@ -295,7 +329,6 @@
   <a href="#counter">New pieces</a>
   <a href="#about">About</a>
   <a href="#visit">Visit</a>
-  <a class="sm" id="staffBtnM" href="#">Staff login</a>
 </div>
 
 <!-- 1. LIVE RATE -->
@@ -446,7 +479,6 @@
       <div class="panel">
         <h3>Ram Murti Jewellers</h3>
         <p class="addr">Ludhiana, Punjab</p>
-        <p class="hrs">Opening hours: add your days and times here</p>
         <div class="row">
           <a class="btn wa" href="https://wa.me/919781800888?text=Hello%2C%20I%27d%20like%20to%20visit%20the%20shop.">Plan a visit</a>
           <a class="btn dark" href="https://maps.google.com/?q=Ram+Murti+Jewellers+Field+Ganj+Ludhiana">Get directions</a>
@@ -702,19 +734,25 @@ document.getElementById('fStyles').addEventListener('click',e=>{
 });
 renderFinder();
 
-/* new at the counter — your photos; rename to real pieces */
+/* Fresh at the counter — [photo, name, metal]. Leave the name '' until a
+   piece has a real one: the card then shows just the metal, never a
+   placeholder. The WhatsApp enquiry carries the photo link so the shop can
+   see exactly which piece was asked about. */
 const PIECES=[
-  ['212121-mP47Beljvjibw9B8.jpg','Piece name','22K gold'],
-  ['3-mxBlo5ZOrKhpwZGG.jpg','Piece name','22K gold'],
-  ['4-mnl6gEv8nxs3G91e.jpg','Piece name','22K gold'],
-  ['1-Yg2a6XjL2EiQ1Z8w.jpg','Piece name','22K gold'],
-  ['6-meP1qXx1WJcLweo3.jpg','Piece name','Silver'],
-  ['dsc_0020-mk3ygxz6kbheoowk.JPG','Piece name','Diamond'],
-  ['2-YX4XeLl1Wot1nnWz.jpg','Piece name','22K gold'],
+  ['212121-mP47Beljvjibw9B8.jpg','','22K gold'],
+  ['3-mxBlo5ZOrKhpwZGG.jpg','','22K gold'],
+  ['4-mnl6gEv8nxs3G91e.jpg','','22K gold'],
+  ['1-Yg2a6XjL2EiQ1Z8w.jpg','','22K gold'],
+  ['6-meP1qXx1WJcLweo3.jpg','','Silver'],
+  ['dsc_0020-mk3ygxz6kbheoowk.JPG','','Diamond'],
+  ['2-YX4XeLl1Wot1nnWz.jpg','','22K gold'],
 ];
+const RAIL_IMG='https://assets.zyrosite.com/cdn-cgi/image/format=auto,w=600,fit=crop/m2Wbv2leXaTxwqRD/';
 document.getElementById('rail').innerHTML=PIECES.map(([f,n,m])=>{
-  const msg=encodeURIComponent(`Hello, I'd like to know more about this piece: ${n} (${m}).`);
-  return `<a class="piece" href="https://wa.me/919781800888?text=${msg}"><div class="ph"><img loading="lazy" src="https://assets.zyrosite.com/cdn-cgi/image/format=auto,w=600,fit=crop/m2Wbv2leXaTxwqRD/${f}" alt="${n}, ${m}"></div><div class="pn">${n}</div><div class="pa">${m}, ask about this piece</div></a>`;
+  const src=RAIL_IMG+f, abs=new URL(src,location.href).href;
+  const what=n?`${n} (${m})`:`${m} piece`;
+  const msg=encodeURIComponent(`Hello, I'd like to know more about this ${what}: ${abs}`);
+  return `<a class="piece" href="https://wa.me/919781800888?text=${msg}"><div class="ph"><img loading="lazy" src="${src}" alt="${n?n+', ':''}${m}"></div><div class="pn">${n||m}</div><div class="pa">Ask about this piece</div></a>`;
 }).join('');
 function railScroll(id,d){ document.getElementById(id).scrollBy({left:d*306,behavior:reduce?'auto':'smooth'}); }
 

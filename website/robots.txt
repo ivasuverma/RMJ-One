@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://rmj.co.in/sitemap.xml

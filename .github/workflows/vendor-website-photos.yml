@@ -1,0 +1,62 @@
+name: Copy website photos off Hostinger (one-time)
+
+# The website's product photos are hotlinked from assets.zyrosite.com — the
+# image CDN of the old Hostinger Website Builder site. If that plan lapses,
+# every photo on rmj.co.in disappears. Run this once (Actions tab -> this
+# workflow -> Run workflow): it downloads every photo the website uses into
+# website/assets/photos/, points the pages at those copies, and pushes the
+# result to the `vendor-website-photos` branch to open as a PR. Nothing is
+# deployed until that PR is merged.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  vendor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download photos and rewrite links
+        run: |
+          python3 - <<'EOF'
+          import re, pathlib, urllib.request
+          site = pathlib.Path('website')
+          out = site / 'assets' / 'photos'
+          out.mkdir(parents=True, exist_ok=True)
+          base_re = r'https://assets\.zyrosite\.com/cdn-cgi/image/[^/]+/m2Wbv2leXaTxwqRD/'
+          name_re = r'[\w\-]+\.(?:jpe?g|JPE?G|png|PNG)'
+          pages = [site / 'index.html', site / 'payment.html']
+          names = set()
+          for p in pages:
+              s = p.read_text()
+              names |= set(re.findall(base_re + '(' + name_re + ')', s))
+              names |= set(re.findall(r"'(" + name_re + r")'", s))  # JS photo lists (IMG + '...', PIECES)
+          for n in sorted(names):
+              fmt = 'png' if n.lower().endswith('.png') else 'jpeg'
+              url = f'https://assets.zyrosite.com/cdn-cgi/image/format={fmt},w=1600,fit=scale-down/m2Wbv2leXaTxwqRD/{n}'
+              req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+              data = urllib.request.urlopen(req, timeout=60).read()
+              assert len(data) > 1000, f'{n}: suspiciously small download ({len(data)} bytes)'
+              (out / n).write_bytes(data)
+              print(f'{n}: {len(data) // 1024} KB')
+          for p in pages:
+              s = p.read_text()
+              # og:image must stay absolute for WhatsApp/Facebook link previews
+              s = re.sub(r'(og:image" content=")' + base_re, r'\1https://rmj.co.in/assets/photos/', s)
+              s = re.sub(base_re, 'assets/photos/', s)
+              assert 'zyrosite' not in s, f'{p}: zyrosite link left behind'
+              p.write_text(s)
+          print(f'{len(names)} photos copied')
+          EOF
+
+      - name: Push to vendor-website-photos branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b vendor-website-photos
+          git add website
+          git commit -m "Website: serve photos from the site itself instead of Hostinger's CDN"
+          git push --force origin vendor-website-photos
