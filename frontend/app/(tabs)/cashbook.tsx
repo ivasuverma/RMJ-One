@@ -306,13 +306,13 @@ export default function CashBookScreen() {
   return (
     <SafeAreaView style={[styles.root, pageTone && { backgroundColor: pageTone.pageBg }]} edges={['top']} testID="cashbook-screen">
       <View style={styles.header}>
-        <Pressable onPress={onBack} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
+        <Pressable onPress={onBack} style={styles.iconBtn} testID="back-btn" hitSlop={12} accessibilityRole="button" accessibilityLabel="Back">
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
         <View style={styles.titleInline}>
           <Text style={styles.title}>{headerTitle}</Text>
           {mode === 'view' && (
-            <Pressable onPress={() => { setRefreshing(true); load(date, counterId); }} disabled={refreshing} testID="cashbook-refresh-btn" hitSlop={10}>
+            <Pressable onPress={() => { setRefreshing(true); load(date, counterId); }} disabled={refreshing} testID="cashbook-refresh-btn" accessibilityRole="button" accessibilityLabel="Refresh" hitSlop={10}>
               {refreshing ? <ActivityIndicator size="small" color={colors.onSurface} /> : <Ionicons name="refresh" size={15} color={colors.onSurface} />}
             </Pressable>
           )}
@@ -685,7 +685,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     borderWidth: 1, borderColor: 'transparent',
   },
   counterChipText: { fontSize: 12.5, fontWeight: '700', textAlign: 'center' },
-  counterChipBalance: { fontSize: 10, fontWeight: '600', textAlign: 'center', opacity: 0.75, marginTop: 1 },
+  counterChipBalance: { fontSize: 11, fontWeight: '600', textAlign: 'center', opacity: 0.75, marginTop: 1 },
   counterChipTextActive: { fontWeight: '800' },
 
   dayNav: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.lg, paddingTop: spacing.md },
@@ -720,8 +720,8 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     paddingHorizontal: spacing.sm, paddingVertical: 9, marginBottom: 6,
   },
   entryName: { color: colors.onSurface, fontSize: 12.5, fontWeight: '700' },
-  entryCategory: { color: colors.brandSecondary, fontSize: 10.5, fontWeight: '600', marginTop: 1 },
-  entryNote: { color: colors.mutedText, fontSize: 10.5, marginTop: 2 },
+  entryCategory: { color: colors.brandSecondary, fontSize: 11, fontWeight: '600', marginTop: 1 },
+  entryNote: { color: colors.mutedText, fontSize: 11, marginTop: 2 },
   entryAmount: { fontSize: 12.5, fontWeight: '800' },
   colTotalRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',

@@ -380,7 +380,7 @@ export default function RepairBillScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="repair-bill-screen">
       <View style={styles.header}>
-        <Pressable onPress={onBack} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
+        <Pressable onPress={onBack} style={styles.iconBtn} testID="back-btn" hitSlop={12} accessibilityRole="button" accessibilityLabel="Back">
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
         <Text style={styles.title}>{headerTitle}</Text>
@@ -713,7 +713,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   filterText: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '700' },
   filterTextActive: { color: colors.onBrandPrimary },
   statusBadgeSm: { borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1 },
-  statusTextSm: { fontSize: 9, fontWeight: '700', textTransform: 'uppercase' },
+  statusTextSm: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase' },
 
   hint: { color: colors.mutedText, fontSize: 12, marginBottom: spacing.md },
 

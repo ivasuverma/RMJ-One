@@ -97,7 +97,7 @@ export default function EmployeesScreen() {
       <View style={styles.header}>
         <View style={styles.headerTop}>
           {(router.canGoBack() || from === 'transactions') && (
-            <Pressable onPress={goBack} style={styles.backBtn} testID="back-btn" hitSlop={12}>
+            <Pressable onPress={goBack} style={styles.backBtn} testID="back-btn" hitSlop={12} accessibilityRole="button" accessibilityLabel="Back">
               <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
             </Pressable>
           )}

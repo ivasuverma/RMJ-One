@@ -58,12 +58,12 @@ export default function GoldLoansScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="gold-loans-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
+        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
         <View style={styles.titleInline}>
           <Text style={styles.title}>Gold Loans</Text>
-          <Pressable onPress={() => { setRefreshing(true); load(); }} disabled={refreshing} testID="loans-refresh-btn" hitSlop={10}>
+          <Pressable onPress={() => { setRefreshing(true); load(); }} disabled={refreshing} testID="loans-refresh-btn" accessibilityRole="button" accessibilityLabel="Refresh" hitSlop={10}>
             {refreshing ? <ActivityIndicator size="small" color={colors.onSurface} /> : <Ionicons name="refresh" size={15} color={colors.onSurface} />}
           </Pressable>
         </View>
@@ -195,7 +195,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   stage: { flex: 1, alignItems: 'center' },
   stageBar: { height: 5, borderRadius: 3, backgroundColor: colors.surfaceTertiary, alignSelf: 'stretch', overflow: 'hidden', marginBottom: 9 },
   stageNum: { color: colors.onSurface, fontSize: 19, fontWeight: '700', letterSpacing: -0.4 },
-  stageLbl: { color: colors.mutedText, fontSize: 10.5, textAlign: 'center', marginTop: 2, lineHeight: 13 },
+  stageLbl: { color: colors.mutedText, fontSize: 11, textAlign: 'center', marginTop: 2, lineHeight: 13 },
   outstandingText: { color: colors.mutedText, fontSize: 11, marginTop: spacing.sm, textAlign: 'center' },
 
   input: {
@@ -221,7 +221,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   badgeActive: { backgroundColor: colors.brandTertiary },
   badgeClosed: { backgroundColor: colors.success },
   badgeOverdue: { backgroundColor: colors.error },
-  badgeText: { fontSize: 10, fontWeight: '700' },
+  badgeText: { fontSize: 11, fontWeight: '700' },
   badgeTextActive: { color: colors.brandSecondary },
   badgeTextClosed: { color: colors.onSuccess },
   badgeTextOverdue: { color: colors.onError },
@@ -230,7 +230,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     marginTop: spacing.sm, paddingTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border,
   },
-  overdueLabel: { color: colors.mutedText, fontSize: 10 },
+  overdueLabel: { color: colors.mutedText, fontSize: 11 },
   overdueAmount: { color: colors.onError, fontSize: 14, fontWeight: '800', marginTop: 1 },
   recordBtn: {
     flexDirection: 'row', gap: 5, alignItems: 'center', backgroundColor: colors.brandPrimary,

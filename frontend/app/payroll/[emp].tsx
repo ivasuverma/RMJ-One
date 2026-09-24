@@ -394,7 +394,7 @@ const makeStylesOv = (colors: ThemeColors) => StyleSheet.create({
     backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, alignItems: 'center',
   },
   modeActive: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
-  modeText: { color: colors.onSurfaceTertiary, fontWeight: '700', fontSize: 10 },
+  modeText: { color: colors.onSurfaceTertiary, fontWeight: '700', fontSize: 11 },
   noteInput: {
     minHeight: 60, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md,
     borderWidth: 1, borderColor: colors.border, padding: spacing.md, color: colors.onSurface,
@@ -422,7 +422,7 @@ function Header({ title, onBack }: { title: string; onBack: () => void }) {
   const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <View style={styles.header}>
-      <Pressable onPress={onBack} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
+      <Pressable onPress={onBack} style={styles.iconBtn} testID="back-btn" hitSlop={12} accessibilityRole="button" accessibilityLabel="Back">
         <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
       </Pressable>
       <Text style={styles.title}>{title}</Text>

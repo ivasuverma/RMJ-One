@@ -1,4 +1,5 @@
 import { Alert, Platform } from 'react-native';
+import { showDialog } from '@/src/components/ui/Dialog';
 
 /**
  * Cross-platform destructive-action confirmation. React Native's `Alert.alert`
@@ -15,6 +16,10 @@ export function confirmAction(
   onConfirm: () => void,
 ) {
   if (Platform.OS === 'web') {
+    if (showDialog({ title, message, buttons: [
+      { label: 'Cancel', style: 'cancel' },
+      { label: confirmLabel, style: 'destructive', onPress: onConfirm },
+    ] })) return;
     // eslint-disable-next-line no-alert
     if (typeof window !== 'undefined' && window.confirm(`${title}\n\n${message}`)) {
       onConfirm();

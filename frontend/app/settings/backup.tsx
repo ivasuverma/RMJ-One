@@ -74,7 +74,7 @@ export default function BackupScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="backup-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} hitSlop={12} testID="back-btn"><Ionicons name="chevron-back" size={22} color={colors.onSurface} /></Pressable>
+        <Pressable onPress={() => router.back()} style={styles.iconBtn} hitSlop={12} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back"><Ionicons name="chevron-back" size={22} color={colors.onSurface} /></Pressable>
         <Text style={styles.title}>Backup</Text>
         <Pressable onPress={load} style={styles.iconBtn} hitSlop={12}><Ionicons name="refresh" size={19} color={colors.onSurface} /></Pressable>
       </View>
@@ -115,7 +115,7 @@ export default function BackupScreen() {
                 <Text style={styles.switchTitle}>Automatic daily backup</Text>
                 <Text style={styles.switchSub}>Runs in the background each day</Text>
               </View>
-              <Switch value={status.auto_enabled} onValueChange={toggleAuto} trackColor={{ true: colors.brandPrimary, false: colors.border }} thumbColor={colors.surface} testID="backup-auto" />
+              <Switch value={status.auto_enabled} onValueChange={toggleAuto} trackColor={{ true: colors.brandPrimary, false: colors.border }} thumbColor={colors.surface} {...({ activeThumbColor: colors.surface } as object)} testID="backup-auto" />
             </View>
 
             {status.recent.length > 0 && (

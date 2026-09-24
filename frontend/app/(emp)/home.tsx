@@ -396,7 +396,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   avatarText: { color: colors.onBrandPrimary, fontWeight: '800', fontSize: 22 },
   avatarPhoto: { width: 56, height: 56, borderRadius: 28, backgroundColor: colors.surfaceTertiary },
-  heroLabel: { color: colors.brandSecondary, fontSize: 10, letterSpacing: 1 },
+  heroLabel: { color: colors.brandSecondary, fontSize: 11, letterSpacing: 1 },
   heroName: {
     color: colors.onSurface, fontSize: 22, fontWeight: '700',
     fontFamily: fonts.display,
@@ -446,7 +446,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     backgroundColor: colors.warning, borderColor: colors.onWarning, borderWidth: 1,
     paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.pill,
   },
-  lateText: { color: colors.onWarning, fontSize: 10.5, fontWeight: '700' },
+  lateText: { color: colors.onWarning, fontSize: 11, fontWeight: '700' },
   hoursText: { color: colors.onSurfaceTertiary, fontSize: 11.5 },
 
   punchBtn: {

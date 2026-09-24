@@ -196,7 +196,7 @@ export default function ReceiveFromKarigarScreen() {
     return (
       <SafeAreaView style={styles.root} edges={['top']}>
         <View style={styles.header}>
-          <Pressable onPress={onBack} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
+          <Pressable onPress={onBack} style={styles.iconBtn} testID="back-btn" hitSlop={12} accessibilityRole="button" accessibilityLabel="Back">
             <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
           </Pressable>
           <View style={{ flex: 1 }} />
@@ -251,7 +251,7 @@ export default function ReceiveFromKarigarScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="receive-screen">
       <View style={styles.header}>
-        <Pressable onPress={onBack} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
+        <Pressable onPress={onBack} style={styles.iconBtn} testID="back-btn" hitSlop={12} accessibilityRole="button" accessibilityLabel="Back">
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
         <Text style={styles.title}>{headerTitle}</Text>

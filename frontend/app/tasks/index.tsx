@@ -99,7 +99,7 @@ export default function TasksListScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="tasks-list-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
+        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
         <Text style={styles.title}>Tasks</Text>
@@ -224,7 +224,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   cardTitle: { color: colors.onSurface, fontWeight: '700', fontSize: 14 },
   cardMeta: { color: colors.mutedText, fontSize: 11, marginTop: 2 },
   overdueBadge: { backgroundColor: colors.error, borderColor: colors.onError, borderWidth: 1, borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 3 },
-  overdueText: { color: colors.onError, fontSize: 10, fontWeight: '700' },
+  overdueText: { color: colors.onError, fontSize: 11, fontWeight: '700' },
   pointsBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 3,
     backgroundColor: colors.warning, borderColor: colors.onWarning, borderWidth: 1,

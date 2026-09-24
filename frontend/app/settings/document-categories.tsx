@@ -40,7 +40,7 @@ export default function DocumentCategoriesScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="doc-categories-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} hitSlop={12} testID="back-btn"><Ionicons name="chevron-back" size={22} color={colors.onSurface} /></Pressable>
+        <Pressable onPress={() => router.back()} style={styles.iconBtn} hitSlop={12} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back"><Ionicons name="chevron-back" size={22} color={colors.onSurface} /></Pressable>
         <Text style={styles.title}>Document Categories</Text>
         <Pressable onPress={openNew} style={styles.iconBtn} hitSlop={12} testID="doc-cat-add"><Ionicons name="add" size={22} color={colors.onSurface} /></Pressable>
       </View>

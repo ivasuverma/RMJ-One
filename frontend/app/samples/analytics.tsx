@@ -89,7 +89,7 @@ export default function SamplesAnalyticsScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="samples-analytics-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
+        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
         <Text style={styles.title}>Stock In/Out Analytics</Text>
@@ -322,7 +322,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   barCol: { alignItems: 'center', gap: 6, width: 30 },
   barPair: { flexDirection: 'row', alignItems: 'flex-end', gap: 3, height: 90 },
   bar: { width: 8, borderRadius: 3 },
-  barLabel: { color: colors.mutedText, fontSize: 9.5 },
+  barLabel: { color: colors.mutedText, fontSize: 11 },
 
   breakdownCard: {
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border,

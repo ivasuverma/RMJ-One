@@ -152,7 +152,7 @@ export default function PublicRatesScreen() {
             <View style={styles.statusRow}>
               {!!error && <Text style={styles.errorText}>{error}</Text>}
               {!!updatedLabel && !error && <Text style={styles.updatedText}>{updatedLabel}</Text>}
-              <Pressable onPress={load} style={styles.refreshBtn} testID="rates-refresh-btn" hitSlop={10}>
+              <Pressable onPress={load} style={styles.refreshBtn} testID="rates-refresh-btn" hitSlop={10} accessibilityRole="button" accessibilityLabel="Refresh">
                 <Ionicons name="refresh" size={14} color={colors.onSurfaceSecondary} />
                 <Text style={styles.refreshText}>Refresh</Text>
               </Pressable>
@@ -250,10 +250,10 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     flex: 1, backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
     paddingVertical: spacing.md, paddingHorizontal: spacing.sm, alignItems: 'center',
   },
-  spotLabel: { color: colors.onSurfaceTertiary, fontSize: 10, fontWeight: '700', letterSpacing: 0.4 },
+  spotLabel: { color: colors.onSurfaceTertiary, fontSize: 11, fontWeight: '700', letterSpacing: 0.4 },
   spotValue: { color: colors.onSurface, fontFamily: fonts.display, fontSize: 16, fontWeight: '700', marginTop: 4 },
-  spotUnit: { color: colors.mutedText, fontSize: 10, marginTop: 2 },
-  spotDisclaimer: { color: colors.mutedText, fontSize: 10.5, textAlign: 'center', marginBottom: spacing.lg, lineHeight: 14 },
+  spotUnit: { color: colors.mutedText, fontSize: 11, marginTop: 2 },
+  spotDisclaimer: { color: colors.mutedText, fontSize: 11, textAlign: 'center', marginBottom: spacing.lg, lineHeight: 14 },
 
   statusRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, marginBottom: spacing.xl },
   updatedText: { color: colors.mutedText, fontSize: typography.caption.fontSize },

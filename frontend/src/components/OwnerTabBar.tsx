@@ -94,7 +94,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     borderTopWidth: 0, paddingTop: 6,
   },
   tabBtn: { flex: 1, alignItems: 'center', justifyContent: 'flex-start', gap: 2 },
-  tabLabel: { fontSize: 10.5, fontWeight: '600', letterSpacing: 0.3 },
+  tabLabel: { fontSize: 11, fontWeight: '600', letterSpacing: 0.3 },
   centerSlot: { flex: 1, alignItems: 'center' },
   centerBtn: {
     width: 64, height: 64, borderRadius: 32, backgroundColor: colors.brandPrimary,

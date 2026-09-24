@@ -11,6 +11,7 @@ import { notify } from '@/src/utils/notify';
 import { confirmAction } from '@/src/utils/confirm';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { ToggleSwitch } from '@/src/components/ui/ToggleSwitch';
 
 // Was "Store Settings" — renamed since almost everything on this page (fence,
 // shift hours, app check-in toggle, payroll rules) is attendance/payroll
@@ -107,7 +108,7 @@ export default function AttendanceSettings() {
     return (
       <SafeAreaView style={styles.root} edges={['top']}>
         <View style={styles.header}>
-          <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
+          <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
             <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
           </Pressable>
           <View style={{ flex: 1 }} />
@@ -121,7 +122,7 @@ export default function AttendanceSettings() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="attendance-settings-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
+        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
         <Text style={styles.title}>Attendance Settings</Text>
@@ -168,9 +169,7 @@ export default function AttendanceSettings() {
               <Text style={styles.toggleLabel}>Allow check-in/check-out from the app</Text>
               <Text style={styles.toggleSub}>Turn off if attendance is tracked only via a biometric device — employees' Check In/Check Out buttons will be disabled</Text>
             </View>
-            <View style={[styles.switch, form.app_checkin_enabled && styles.switchOn]}>
-              <View style={[styles.switchKnob, form.app_checkin_enabled && styles.switchKnobOn]} />
-            </View>
+            <ToggleSwitch value={!!(form.app_checkin_enabled)} />
           </Pressable>
 
           <SectionTitle text="Payroll" />
@@ -183,9 +182,7 @@ export default function AttendanceSettings() {
               <Text style={styles.toggleLabel}>Round final pay to nearest ₹10</Text>
               <Text style={styles.toggleSub}>e.g. ₹18,247 becomes ₹18,250</Text>
             </View>
-            <View style={[styles.switch, form.round_net_salary && styles.switchOn]}>
-              <View style={[styles.switchKnob, form.round_net_salary && styles.switchKnobOn]} />
-            </View>
+            <ToggleSwitch value={!!(form.round_net_salary)} />
           </Pressable>
 
           <Pressable
@@ -197,9 +194,7 @@ export default function AttendanceSettings() {
               <Text style={styles.toggleLabel}>Unpaid Sunday after an absent week</Text>
               <Text style={styles.toggleSub}>If an employee is absent every scheduled day Mon–Sat, that week's Sunday isn't auto-paid as a weekly-off either</Text>
             </View>
-            <View style={[styles.switch, form.unpaid_sunday_after_absent_week && styles.switchOn]}>
-              <View style={[styles.switchKnob, form.unpaid_sunday_after_absent_week && styles.switchKnobOn]} />
-            </View>
+            <ToggleSwitch value={!!(form.unpaid_sunday_after_absent_week)} />
           </Pressable>
 
           <View style={styles.infoBox}>
@@ -274,14 +269,6 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   toggleLabel: { color: colors.onSurface, fontSize: 14, fontWeight: '600' },
   toggleSub: { color: colors.mutedText, fontSize: 11, marginTop: 2 },
-  switch: {
-    width: 44, height: 26, borderRadius: 13, backgroundColor: colors.surfaceTertiary,
-    borderWidth: 1, borderColor: colors.border, padding: 2, justifyContent: 'center',
-  },
-  switchOn: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
-  switchKnob: {
-    width: 20, height: 20, borderRadius: 10, backgroundColor: colors.onSurfaceTertiary,
-  },
   switchKnobOn: { backgroundColor: colors.onBrandPrimary, transform: [{ translateX: 18 }] },
   infoBox: {
     flexDirection: 'row', gap: spacing.sm, alignItems: 'center', backgroundColor: colors.surfaceTertiary,

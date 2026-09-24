@@ -99,7 +99,7 @@ export default function WhatsAppTemplatesScreen() {
     return (
       <SafeAreaView style={styles.root} edges={['top']}>
         <View style={styles.header}>
-          <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
+          <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
             <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
           </Pressable>
           <View style={{ flex: 1 }} />
@@ -113,11 +113,11 @@ export default function WhatsAppTemplatesScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="whatsapp-templates-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
+        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
         <Text style={styles.title}>Message Templates</Text>
-        <Pressable onPress={load} style={styles.iconBtn} testID="templates-refresh-btn" hitSlop={12}>
+        <Pressable onPress={load} style={styles.iconBtn} testID="templates-refresh-btn" hitSlop={12} accessibilityRole="button" accessibilityLabel="Refresh">
           <Ionicons name="refresh" size={18} color={colors.onSurface} />
         </Pressable>
       </View>

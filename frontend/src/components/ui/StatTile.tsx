@@ -76,5 +76,5 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', marginBottom: spacing.xs,
   },
   value: { fontSize: 15, fontWeight: '700', fontFamily: fonts.display },
-  label: { fontSize: 10, marginTop: 1, opacity: 0.85 },
+  label: { fontSize: 11, marginTop: 1, opacity: 0.85 },
 });

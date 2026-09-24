@@ -265,7 +265,7 @@ export default function RepairItemDetailScreen() {
     return (
       <SafeAreaView style={styles.root} edges={['top']}>
         <View style={styles.header}>
-          <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
+          <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
             <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
           </Pressable>
           <View style={{ flex: 1 }} />
@@ -281,7 +281,7 @@ export default function RepairItemDetailScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="repair-item-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
+        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
         <Text style={styles.title} numberOfLines={1}>{item.item_code}</Text>
@@ -590,12 +590,12 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   metaCell: { flexBasis: '50%', flexGrow: 0, paddingHorizontal: spacing.xs, paddingVertical: 7, minWidth: 0 },
   metaCellWide: { flexBasis: '100%' },
   metaCellHeader: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 2 },
-  metaLabel: { color: colors.mutedText, fontSize: 10.5, textTransform: 'uppercase', letterSpacing: 0.3 },
+  metaLabel: { color: colors.mutedText, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.3 },
   metaValue: { color: colors.onSurface, fontSize: 13, fontWeight: '600' },
 
   photosRow: { flexDirection: 'row', gap: spacing.lg, marginBottom: spacing.lg },
   photoLarge: { width: 96, height: 96, borderRadius: radius.lg, backgroundColor: colors.surfaceTertiary },
-  photoCaption: { color: colors.mutedText, fontSize: 10, marginTop: 4, textTransform: 'uppercase', letterSpacing: 0.5 },
+  photoCaption: { color: colors.mutedText, fontSize: 11, marginTop: 4, textTransform: 'uppercase', letterSpacing: 0.5 },
   photoBtn: {
     flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center',
     backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, paddingVertical: 12, marginTop: 4,
@@ -685,7 +685,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   cName: { color: colors.onSurface, fontWeight: '700', fontSize: 13 },
   cMeta: { color: colors.mutedText, fontSize: 11, marginTop: 2 },
   statusBadge: { borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1 },
-  statusText: { fontSize: 9, fontWeight: '700', textTransform: 'uppercase' },
+  statusText: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase' },
   smallIconBtn: {
     width: 28, height: 28, borderRadius: 14, backgroundColor: colors.surfaceTertiary,
     alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border,

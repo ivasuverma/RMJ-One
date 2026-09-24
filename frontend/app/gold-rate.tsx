@@ -191,7 +191,7 @@ export default function RateUpdaterScreen() {
     return (
       <SafeAreaView style={styles.root} edges={['top']}>
         <View style={styles.header}>
-          <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}><Ionicons name="chevron-back" size={22} color={colors.onSurface} /></Pressable>
+          <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}><Ionicons name="chevron-back" size={22} color={colors.onSurface} /></Pressable>
           <View style={{ flex: 1 }} /><View style={{ width: 40 }} />
         </View>
         <View style={styles.centered}><ActivityIndicator color={colors.brandPrimary} size="large" /></View>
@@ -209,9 +209,9 @@ export default function RateUpdaterScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="gold-rate-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}><Ionicons name="chevron-back" size={22} color={colors.onSurface} /></Pressable>
+        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}><Ionicons name="chevron-back" size={22} color={colors.onSurface} /></Pressable>
         <Text style={styles.title}>Rate Updater</Text>
-        <Pressable onPress={load} style={styles.iconBtn} testID="gold-rate-refresh-btn" hitSlop={12}><Ionicons name="refresh" size={18} color={colors.onSurface} /></Pressable>
+        <Pressable onPress={load} style={styles.iconBtn} testID="gold-rate-refresh-btn" hitSlop={12} accessibilityRole="button" accessibilityLabel="Refresh"><Ionicons name="refresh" size={18} color={colors.onSurface} /></Pressable>
       </View>
 
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 80 }} keyboardShouldPersistTaps="handled"
@@ -260,7 +260,7 @@ export default function RateUpdaterScreen() {
               <Text style={styles.destTitle}>WhatsApp Channel</Text>
               <Text style={styles.sub}>{channelConnected ? 'Connected' : 'Not connected — check Settings › WhatsApp'}</Text>
             </View>
-            <Switch value={toWhatsapp} onValueChange={setToWhatsapp} disabled={!channelConnected} trackColor={{ true: colors.brandPrimary, false: colors.border }} thumbColor={colors.surface} testID="ru-to-whatsapp" />
+            <Switch value={toWhatsapp} onValueChange={setToWhatsapp} disabled={!channelConnected} trackColor={{ true: colors.brandPrimary, false: colors.border }} thumbColor={colors.surface} {...({ activeThumbColor: colors.surface } as object)} testID="ru-to-whatsapp" />
           </View>
           {toWhatsapp ? (
             <View style={styles.destBody}>
@@ -280,7 +280,7 @@ export default function RateUpdaterScreen() {
                   : led.status.last_push_at ? (led.status.last_ok ? `Last updated ${istTime(led.status.last_push_at)}` : `Last update failed: ${led.status.last_error}`) : 'Not updated yet'}
               </Text>
             </View>
-            <Switch value={toLed && !!led?.config.enabled} onValueChange={setToLed} disabled={!led?.config.enabled} trackColor={{ true: colors.brandPrimary, false: colors.border }} thumbColor={colors.surface} testID="ru-to-led" />
+            <Switch value={toLed && !!led?.config.enabled} onValueChange={setToLed} disabled={!led?.config.enabled} trackColor={{ true: colors.brandPrimary, false: colors.border }} thumbColor={colors.surface} {...({ activeThumbColor: colors.surface } as object)} testID="ru-to-led" />
           </View>
           {toLed && led?.config.enabled && ledPreview ? <Text style={styles.destBody}>Board shows: <Text style={{ fontWeight: '800', color: colors.onSurface }}>{ledPreview}</Text></Text> : null}
 

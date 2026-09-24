@@ -79,12 +79,12 @@ export default function SamplesScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="samples-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
+        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
         <View style={styles.titleInline}>
           <Text style={styles.title}>Stock In/Out</Text>
-          <Pressable onPress={() => { setRefreshing(true); load(); }} disabled={refreshing} testID="samples-refresh-btn" hitSlop={10}>
+          <Pressable onPress={() => { setRefreshing(true); load(); }} disabled={refreshing} testID="samples-refresh-btn" accessibilityRole="button" accessibilityLabel="Refresh" hitSlop={10}>
             {refreshing ? <ActivityIndicator size="small" color={colors.onSurface} /> : <Ionicons name="refresh" size={15} color={colors.onSurface} />}
           </Pressable>
         </View>
@@ -211,7 +211,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   stage: { flex: 1, alignItems: 'center' },
   stageBar: { height: 5, borderRadius: 3, backgroundColor: colors.surfaceTertiary, alignSelf: 'stretch', overflow: 'hidden', marginBottom: 9 },
   stageNum: { color: colors.onSurface, fontSize: 19, fontWeight: '700', letterSpacing: -0.4 },
-  stageLbl: { color: colors.mutedText, fontSize: 10.5, textAlign: 'center', marginTop: 2, lineHeight: 13 },
+  stageLbl: { color: colors.mutedText, fontSize: 11, textAlign: 'center', marginTop: 2, lineHeight: 13 },
 
   empty: { alignItems: 'center', paddingVertical: 40, gap: spacing.sm },
   emptyText: { color: colors.onSurfaceTertiary },
@@ -238,7 +238,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   badgeOut: { backgroundColor: colors.brandTertiary },
   badgeReceived: { backgroundColor: colors.success },
   badgeOverdue: { backgroundColor: colors.error },
-  badgeText: { fontSize: 10, fontWeight: '700' },
+  badgeText: { fontSize: 11, fontWeight: '700' },
   badgeTextOut: { color: colors.brandSecondary },
   badgeTextReceived: { color: colors.onSuccess },
   badgeTextOverdue: { color: colors.onError },

@@ -51,7 +51,7 @@ export function NotificationsSection({ editor, testIdPrefix }: { editor: AccessE
           <Text style={styles.switchTitle}>Allow notifications</Text>
           <Text style={styles.switchSub}>Push, in-app &amp; WhatsApp alerts for this person</Text>
         </View>
-        <Switch value={notifOn} onValueChange={setNotifOn} trackColor={{ true: colors.brandPrimary, false: colors.border }} thumbColor={colors.surface} testID={`${testIdPrefix}-notif-master`} />
+        <Switch value={notifOn} onValueChange={setNotifOn} trackColor={{ true: colors.brandPrimary, false: colors.border }} thumbColor={colors.surface} {...({ activeThumbColor: colors.surface } as object)} testID={`${testIdPrefix}-notif-master`} />
       </View>
       {notifOn && !acc?.mobile && (
         <Text style={styles.mobileHint}>No mobile number saved for this person — the WhatsApp switches below won&apos;t deliver anything until one is added.</Text>
@@ -102,7 +102,7 @@ export function NotificationsSection({ editor, testIdPrefix }: { editor: AccessE
                       value={on}
                       onValueChange={(v) => setNotifPrefs((p) => ({ ...p, [nm.key]: v }))}
                       trackColor={{ true: colors.brandPrimary, false: colors.border }}
-                      thumbColor={colors.surface}
+                      thumbColor={colors.surface} {...({ activeThumbColor: colors.surface } as object)}
                       style={styles.channelSwitch}
                       testID={`${testIdPrefix}-notif-${nm.key}`}
                     />
@@ -110,7 +110,7 @@ export function NotificationsSection({ editor, testIdPrefix }: { editor: AccessE
                       value={onWa}
                       onValueChange={(v) => setNotifPrefsWhatsapp((p) => ({ ...p, [nm.key]: v }))}
                       trackColor={{ true: colors.brandPrimary, false: colors.border }}
-                      thumbColor={colors.surface}
+                      thumbColor={colors.surface} {...({ activeThumbColor: colors.surface } as object)}
                       style={styles.channelSwitch}
                       testID={`${testIdPrefix}-notif-wa-${nm.key}`}
                     />
@@ -131,7 +131,7 @@ export function NotificationsSection({ editor, testIdPrefix }: { editor: AccessE
                               value={evOn}
                               onValueChange={(v) => setNotifPrefs((p) => ({ ...p, [ev.key]: v }))}
                               trackColor={{ true: colors.brandPrimary, false: colors.border }}
-                              thumbColor={colors.surface}
+                              thumbColor={colors.surface} {...({ activeThumbColor: colors.surface } as object)}
                               style={styles.eventSwitch}
                               testID={`${testIdPrefix}-notif-${ev.key}`}
                             />
@@ -139,7 +139,7 @@ export function NotificationsSection({ editor, testIdPrefix }: { editor: AccessE
                               value={evOnWa}
                               onValueChange={(v) => setNotifPrefsWhatsapp((p) => ({ ...p, [ev.key]: v }))}
                               trackColor={{ true: colors.brandPrimary, false: colors.border }}
-                              thumbColor={colors.surface}
+                              thumbColor={colors.surface} {...({ activeThumbColor: colors.surface } as object)}
                               style={styles.eventSwitch}
                               testID={`${testIdPrefix}-notif-wa-${ev.key}`}
                             />
@@ -238,7 +238,7 @@ export function AccessSection({ editor, testIdPrefix }: { editor: AccessEditor; 
               <Text style={styles.switchTitle}>See &quot;Done&quot; folder</Text>
               <Text style={styles.switchSub}>Browse filed documents</Text>
             </View>
-            <Switch value={seeDone} onValueChange={setSeeDone} trackColor={{ true: colors.brandPrimary, false: colors.border }} thumbColor={colors.surface} testID={`${testIdPrefix}-seedone`} />
+            <Switch value={seeDone} onValueChange={setSeeDone} trackColor={{ true: colors.brandPrimary, false: colors.border }} thumbColor={colors.surface} {...({ activeThumbColor: colors.surface } as object)} testID={`${testIdPrefix}-seedone`} />
           </View>
           <Text style={styles.docHint}>Leave every category unchecked to fall back to this person&apos;s role defaults.</Text>
         </View>
@@ -283,13 +283,13 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   chipText: { color: colors.mutedText, fontSize: 11, fontWeight: '600' },
   chipTextOn: { color: colors.onBrandPrimary },
   countersBox: { paddingLeft: 28, paddingBottom: 6 },
-  countersLabel: { color: colors.mutedText, fontSize: 10.5, fontWeight: '600', marginBottom: 6 },
+  countersLabel: { color: colors.mutedText, fontSize: 11, fontWeight: '600', marginBottom: 6 },
 
   docBlock: { marginTop: spacing.md, paddingTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.divider },
   docBlockTitle: { color: colors.brandSecondary, fontSize: 11, letterSpacing: 0.8, textTransform: 'uppercase', fontWeight: '800', marginBottom: spacing.sm },
   docRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: 6 },
   docLabel: { flex: 1, color: colors.onSurfaceSecondary, fontSize: 14 },
-  docHint: { color: colors.mutedText, fontSize: 10.5, marginTop: 6, lineHeight: 15 },
+  docHint: { color: colors.mutedText, fontSize: 11, marginTop: 6, lineHeight: 15 },
 
   ownerNote: { color: colors.mutedText, fontSize: 13, lineHeight: 19 },
 });

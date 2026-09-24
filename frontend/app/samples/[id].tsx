@@ -94,7 +94,7 @@ export default function SampleDetailScreen() {
     return (
       <SafeAreaView style={styles.root} edges={['top']}>
         <View style={styles.header}>
-          <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
+          <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
             <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
           </Pressable>
           <View style={{ flex: 1 }} />
@@ -114,7 +114,7 @@ export default function SampleDetailScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="sample-detail-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
+        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
         <Text style={styles.title} numberOfLines={1}>{sample.sample_code}</Text>
@@ -219,7 +219,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   badge: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: radius.sm, marginBottom: spacing.md },
   badgeOut: { backgroundColor: colors.brandTertiary },
   badgeReceived: { backgroundColor: colors.success },
-  badgeText: { fontSize: 10, fontWeight: '700' },
+  badgeText: { fontSize: 11, fontWeight: '700' },
   badgeTextOut: { color: colors.brandSecondary },
   badgeTextReceived: { color: colors.onSuccess },
 

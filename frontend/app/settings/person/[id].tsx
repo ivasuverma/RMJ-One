@@ -89,7 +89,7 @@ export default function PersonScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID={`person-${acc.id}`}>
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} hitSlop={12} testID="back-btn"><Ionicons name="chevron-back" size={22} color={colors.onSurface} /></Pressable>
+        <Pressable onPress={() => router.back()} style={styles.iconBtn} hitSlop={12} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back"><Ionicons name="chevron-back" size={22} color={colors.onSurface} /></Pressable>
         <Text style={styles.title} numberOfLines={1}>{acc.name}</Text>
         {canDelete ? (
           <Pressable onPress={onDelete} disabled={deleting} style={styles.iconBtn} hitSlop={12} testID="delete-user-btn">

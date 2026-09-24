@@ -113,7 +113,7 @@ export default function ReceiveSampleScreen() {
     return (
       <SafeAreaView style={styles.root} edges={['top']}>
         <View style={styles.header}>
-          <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
+          <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
             <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
           </Pressable>
           <View style={{ flex: 1 }} />
@@ -129,7 +129,7 @@ export default function ReceiveSampleScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="receive-sample-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
+        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
         <Text style={styles.title}>{isEdit ? 'Edit Receive' : 'Receive Sample'}</Text>
@@ -281,7 +281,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
 
   settleRow: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.md },
   fieldColFlex: { flex: 1 },
-  settleHint: { color: colors.mutedText, fontSize: 10.5, marginTop: 4 },
+  settleHint: { color: colors.mutedText, fontSize: 11, marginTop: 4 },
 
   saveBtn: { backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: 14, alignItems: 'center', marginTop: spacing.xl },
   saveBtnText: { color: colors.onBrandPrimary, fontWeight: '800', fontSize: 14 },

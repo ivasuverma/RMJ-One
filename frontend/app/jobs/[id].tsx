@@ -47,7 +47,7 @@ export default function JobStatementScreen() {
 
   const header = (
     <View style={styles.header}>
-      <Pressable onPress={() => router.back()} style={styles.iconBtn} hitSlop={12} testID="back-btn"><Ionicons name="chevron-back" size={22} color={colors.onSurface} /></Pressable>
+      <Pressable onPress={() => router.back()} style={styles.iconBtn} hitSlop={12} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back"><Ionicons name="chevron-back" size={22} color={colors.onSurface} /></Pressable>
       <Text style={styles.title} numberOfLines={1}>{data ? `${data.job.code} · Job statement` : 'Job statement'}</Text>
       <View style={{ width: 40 }} />
     </View>
@@ -175,5 +175,5 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   entryTitle: { color: colors.onSurface, fontSize: 13.5, fontWeight: '700' },
   entryMeta: { color: colors.mutedText, fontSize: 11.5, marginTop: 2 },
   entryVal: { color: colors.onSurface, fontSize: 13, fontWeight: '700' },
-  entryRun: { color: colors.mutedText, fontSize: 10.5, marginTop: 2 },
+  entryRun: { color: colors.mutedText, fontSize: 11, marginTop: 2 },
 });

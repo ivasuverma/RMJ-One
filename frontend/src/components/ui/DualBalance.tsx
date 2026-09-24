@@ -91,5 +91,5 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   value: { fontSize: 15, fontWeight: '800' },
   valueSm: { fontSize: 13 },
   direction: { color: colors.mutedText, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.3 },
-  directionSm: { fontSize: 9.5 },
+  directionSm: { fontSize: 11 },
 });

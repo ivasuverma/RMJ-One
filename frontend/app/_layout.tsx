@@ -12,6 +12,7 @@ import { AuthProvider, useAuth } from '@/src/auth/AuthContext';
 import { ThemeProvider, useTheme } from '@/src/theme/ThemeContext';
 import { ErrorBoundary } from '@/src/components/ErrorBoundary';
 import { ToastProvider } from '@/src/components/ui/Toast';
+import { DialogHost } from '@/src/components/ui/Dialog';
 import { OfflineBanner } from '@/src/components/OfflineBanner';
 import { LockScreen } from '@/src/components/LockScreen';
 import { startUploadQueue } from '@/src/utils/uploadQueue';
@@ -112,6 +113,7 @@ function AppShell() {
           <OfflineBanner />
           {locked && <LockScreen />}
         </View>
+        <DialogHost />
       </ToastProvider>
     </GestureHandlerRootView>
   );

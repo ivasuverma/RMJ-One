@@ -71,7 +71,7 @@ export default function GoldValueCalculatorScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="gold-calculator-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" hitSlop={12}>
+        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
         </Pressable>
         <Text style={styles.title}>Gold Value Calculator</Text>
@@ -219,5 +219,5 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   resultLabel: { color: colors.onSurface, fontSize: 14, fontWeight: '700' },
   resultValue: { color: colors.brandSecondary, fontSize: 17, fontWeight: '800' },
   balanceTag: { fontSize: 12, fontWeight: '700', marginTop: 4, textAlign: 'right' },
-  formula: { color: colors.mutedText, fontSize: 10.5, marginTop: 4 },
+  formula: { color: colors.mutedText, fontSize: 11, marginTop: 4 },
 });

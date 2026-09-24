@@ -74,7 +74,7 @@ export default function DayBookScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="day-book-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} hitSlop={12} testID="back-btn"><Ionicons name="chevron-back" size={22} color={colors.onSurface} /></Pressable>
+        <Pressable onPress={() => router.back()} style={styles.iconBtn} hitSlop={12} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back"><Ionicons name="chevron-back" size={22} color={colors.onSurface} /></Pressable>
         <Text style={styles.title}>Day Book</Text>
         <View style={{ width: 40 }} />
       </View>

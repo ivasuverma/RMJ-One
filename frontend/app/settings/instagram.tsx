@@ -49,9 +49,9 @@ export default function InstagramScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="instagram-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} hitSlop={12} testID="back-btn"><Ionicons name="chevron-back" size={22} color={colors.onSurface} /></Pressable>
+        <Pressable onPress={() => router.back()} style={styles.iconBtn} hitSlop={12} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back"><Ionicons name="chevron-back" size={22} color={colors.onSurface} /></Pressable>
         <Text style={styles.title}>Instagram</Text>
-        <Pressable onPress={load} style={styles.iconBtn} hitSlop={12} testID="instagram-refresh"><Ionicons name="refresh" size={19} color={colors.onSurface} /></Pressable>
+        <Pressable onPress={load} style={styles.iconBtn} hitSlop={12} testID="instagram-refresh" accessibilityRole="button" accessibilityLabel="Refresh"><Ionicons name="refresh" size={19} color={colors.onSurface} /></Pressable>
       </View>
 
       <ScrollView contentContainerStyle={{ padding: spacing.lg }}>
