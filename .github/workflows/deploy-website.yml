@@ -7,6 +7,15 @@ name: Deploy website to Cloudflare Pages
 # straight to Cloudflare Pages, so it's safe to run automatically on every
 # push, unlike deploy.yml's manual-only trigger.
 #
+# Uses cloudflare/wrangler-action (running `wrangler pages deploy`), NOT
+# cloudflare/pages-action - that was Cloudflare's original, simpler Pages
+# action, but it was fully retired and removed from GitHub (archived October
+# 2024). The first two real runs of this workflow failed at "Set up job"
+# with "Unable to resolve action `cloudflare/pages-action`, not found" -
+# nothing to do with secrets or permissions, the action just doesn't exist
+# on GitHub anymore. wrangler-action is Cloudflare's current, supported
+# replacement for both Workers and Pages deploys.
+#
 # One-time setup before this can run:
 #   1. In the Cloudflare dashboard (the same account already used for the
 #      app.rmj.co.in / api.rmj.co.in tunnel), create an API token with the
@@ -35,18 +44,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # No `permissions:` block and no gitHubToken passed to the action below
-      # — both are only needed if you want this to also post a GitHub
-      # Deployment status, which this repo's default Actions permissions
-      # don't allow (that's a `deployments: write` escalation, and a repo/org
-      # set to read-only-by-default rejects the whole job at "Set up job"
-      # before any step even runs if a workflow asks for it — that's what an
-      # early failed run here actually was). The Cloudflare publish itself
-      # only needs the two secrets below, nothing from GitHub's token.
+      # No gitHubToken input, and no `permissions:` block — both are only
+      # needed to also post a GitHub Deployment status alongside the
+      # Cloudflare publish, which isn't required for the publish itself to
+      # work and needs a `deployments: write` permission this repo's default
+      # Actions permissions may not grant.
       - name: Publish to Cloudflare Pages
-        uses: cloudflare/pages-action@v1
+        uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          projectName: rmj-website
-          directory: website
+          command: pages deploy website --project-name=rmj-website
