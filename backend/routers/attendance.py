@@ -68,8 +68,10 @@ async def check_in(body: PunchIn, user=Depends(require_employee)):
     # Personal confirmation to the employee themselves — always sent, same as
     # the missed-check-in/check-out reminders, not gated by the owner's
     # Notification Settings toggle (that toggle below is the separate
-    # owner/admin broadcast copy).
-    await notify_user(user['id'], 'Checked in', f"You checked in at {time_label}", '/')
+    # owner/admin broadcast copy). Push + in-app only: a WhatsApp message on
+    # every punch, twice a day per employee, is the bulk of automated volume
+    # on the shop number for very little value.
+    await notify_user(user['id'], 'Checked in', f"You checked in at {time_label}", '/', whatsapp=False)
     await _notify_module('attendance', f"{user['name']} checked in", time_label, '/(tabs)/attendance',
                           script='attendance_checkin', admin_only=True)
 
@@ -99,7 +101,7 @@ async def check_out(body: PunchIn, user=Depends(require_employee)):
     hours = result['working_hours']
     detail = f"Worked {hours}h today" + (' · Half day' if result['status'] == 'half_day' else '')
     # Personal confirmation, same rationale as check-in above.
-    await notify_user(user['id'], 'Checked out', f"You checked out — {detail}", '/')
+    await notify_user(user['id'], 'Checked out', f"You checked out — {detail}", '/', whatsapp=False)
     await _notify_module('attendance', f"{user['name']} checked out", detail, '/(tabs)/attendance',
                           script='attendance_checkout', admin_only=True)
     return {'ok': True, 'working_hours': hours, 'timestamp': result['timestamp']}

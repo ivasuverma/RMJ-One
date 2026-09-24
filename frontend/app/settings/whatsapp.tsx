@@ -33,6 +33,7 @@ export default function WhatsAppSettingsScreen() {
   const toast = useToast();
   const [form, setForm] = useState<Form>(EMPTY);
   const [status, setStatus] = useState<WhatsAppStatus | null>(null);
+  const [metaAlertTemplate, setMetaAlertTemplate] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const submittingRef = useRef(false);
@@ -75,6 +76,7 @@ export default function WhatsAppSettingsScreen() {
         chatbot_rate_enabled: w.chatbot_rate_enabled !== false, chatbot_status_enabled: w.chatbot_status_enabled !== false,
       });
       setStatus({ configured: !!w.configured, connected: !!w.connected, phone: w.phone || null });
+      setMetaAlertTemplate(w.meta_alert_template === true);
     } catch (_e) { /* ignore — form stays at defaults */ }
     finally { setLoading(false); }
   };
@@ -162,7 +164,10 @@ export default function WhatsAppSettingsScreen() {
             <View style={[styles.infoBox, styles.infoBoxWarn, { marginBottom: 0 }]} testID="whatsapp-provider-meta-warning">
               <Ionicons name="alert-circle-outline" size={16} color={colors.onWarning} />
               <Text style={[styles.infoText, { color: colors.onWarning }]}>
-                On Meta, repair notices and app alerts only reach a customer who messaged the Meta number in the last 24 hours (other sends fail and show in the Sent Messages Log). Gold rate posts to the WhatsApp Channel need OpenWA.
+                {metaAlertTemplate
+                  ? 'Staff alerts go through your approved Meta template. '
+                  : 'Staff alerts need an approved Meta template (META_WA_ALERT_TEMPLATE in backend/.env) — without it they only reach staff who messaged the Meta number in the last 24 hours. '}
+                Repair notices to customers have the same 24-hour limit, and gold rate posts to the WhatsApp Channel need OpenWA. Failed sends show in the Sent Messages Log.
               </Text>
             </View>
           )}
