@@ -1,100 +1,199 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Payment Options — Ram Murti Jewellers</title>
-<meta name="description" content="Accepted payment methods at Ram Murti Jewellers.">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Source+Sans+3:wght@400;600;700&display=swap">
-<link rel="stylesheet" href="assets/css/style.css">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Payment Options | Ram Murti Jewellers, Field Ganj, Ludhiana</title>
+<meta name="description" content="How to pay at Ram Murti Jewellers, Field Ganj, Ludhiana — cash, UPI, cards and bank transfer.">
+<meta name="theme-color" content="#000000">
+<link rel="icon" href="assets/images/logo-mark.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --white:#FFFFFF; --grey:#F5F5F7; --grey2:#E8E8ED; --black:#000000; --char:#141414;
+    --ink:#1D1D1F; --ink2:#6E6E73; --ink3:#86868B;
+    --gold:#A97B2B; --gold-lt:#D9B46A; --gold-hi:#F0D9A4;
+    --wa:#1FA855;
+    --font:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","Inter","Helvetica Neue",Arial,sans-serif;
+    --wrap:1120px; --gut:clamp(18px,4vw,28px);
+    --r-lg:clamp(18px,2.4vw,28px); --r-md:18px;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{scroll-behavior:smooth; -webkit-text-size-adjust:100%}
+  body{font-family:var(--font); color:var(--ink); background:var(--white); -webkit-font-smoothing:antialiased; line-height:1.47; overflow-x:hidden}
+  img{display:block; max-width:100%}
+  a{color:inherit}
+  :focus-visible{outline:2px solid var(--gold-lt); outline-offset:3px; border-radius:8px}
+  .wrap{max-width:var(--wrap); margin:0 auto; padding:0 var(--gut)}
+
+  /* ---------- NAV (matches index.html) ---------- */
+  nav{position:fixed; top:0; left:0; right:0; z-index:80; height:56px;
+      background:rgba(255,255,255,.78); backdrop-filter:saturate(180%) blur(20px); -webkit-backdrop-filter:saturate(180%) blur(20px); border-bottom:1px solid rgba(0,0,0,.08); color:var(--ink)}
+  nav .wrap{display:flex; align-items:center; height:56px; gap:clamp(14px,3vw,30px)}
+  .brand{display:flex; align-items:center; gap:10px; text-decoration:none; margin-right:auto}
+  .brand .mark{width:32px; height:32px; border-radius:9px; background:#fff; box-shadow:0 0 0 1px var(--grey2); display:flex; align-items:center; justify-content:center; overflow:hidden; flex-shrink:0}
+  .brand .mark img{width:28px; height:28px; object-fit:contain}
+  .brand .wm{font-weight:700; font-size:16px; letter-spacing:-.02em; line-height:1.1}
+  .brand .wm small{display:block; font-size:11px; font-weight:500; opacity:.6; letter-spacing:0}
+  .links{display:flex; gap:clamp(16px,2.4vw,28px)}
+  .links a{text-decoration:none; font-size:13px; opacity:.82}
+  .links a:hover{opacity:1}
+  .navright{display:flex; align-items:center; gap:10px}
+  .staff{display:inline-flex; align-items:center; gap:6px; font-size:13px; text-decoration:none; opacity:.82; padding:6px 10px; border-radius:980px; border:1px solid currentColor; border-color:rgba(127,127,127,.4)}
+  .staff:hover{opacity:1}
+  .staff svg{width:13px; height:13px; fill:none; stroke:currentColor; stroke-width:2}
+  .navwa{font-size:13px; font-weight:600; text-decoration:none; background:var(--gold-lt); color:#111; padding:7px 14px; border-radius:980px}
+  .burger{display:none; width:38px; height:38px; border:none; background:none; color:inherit; cursor:pointer}
+  .burger span{display:block; width:18px; height:1.5px; background:currentColor; margin:5px auto; transition:.25s}
+  nav.open .burger span:nth-child(1){transform:translateY(3.25px) rotate(45deg)}
+  nav.open .burger span:nth-child(2){transform:translateY(-3.25px) rotate(-45deg)}
+  .sheet{position:fixed; top:56px; left:0; right:0; background:rgba(0,0,0,.94); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px);
+         color:#F5F5F7; padding:10px var(--gut) 28px; transform:translateY(-8px); opacity:0; pointer-events:none; transition:.25s; z-index:79}
+  nav.open + .sheet{transform:none; opacity:1; pointer-events:auto}
+  .sheet a{display:block; font-size:24px; font-weight:600; letter-spacing:-.02em; padding:12px 0; text-decoration:none; border-bottom:1px solid rgba(255,255,255,.08)}
+  .sheet a.sm{font-size:16px; font-weight:500; color:#A1A1A6; border:none; padding-top:18px}
+
+  /* ---------- PAGE HERO ---------- */
+  .pagehero{padding:calc(56px + clamp(48px,7vw,72px)) 0 clamp(40px,5vw,56px); text-align:center; background:var(--grey)}
+  .pagehero h1{font-size:clamp(32px,5.6vw,54px); font-weight:700; letter-spacing:-.035em}
+  .pagehero p{font-size:clamp(16px,1.8vw,19px); color:var(--ink2); margin-top:12px}
+
+  /* ---------- SECTIONS ---------- */
+  section{padding:clamp(56px,8vw,88px) 0}
+  .head{text-align:center; max-width:780px; margin:0 auto}
+  .head h2{font-size:clamp(28px,4.4vw,42px); font-weight:700; letter-spacing:-.03em; line-height:1.08}
+  .head p{font-size:clamp(16px,1.8vw,19px); color:var(--ink2); margin-top:12px; letter-spacing:-.01em}
+
+  .methods{display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-top:clamp(32px,4.4vw,48px)}
+  .method{background:var(--grey); border-radius:var(--r-md); padding:24px 20px}
+  .method h3{font-size:18px; font-weight:700; letter-spacing:-.01em}
+  .method p{font-size:14.5px; color:var(--ink2); margin-top:6px; line-height:1.45}
+
+  .visit{display:grid; grid-template-columns:1.1fr 1fr; gap:16px; margin-top:clamp(32px,4.4vw,48px)}
+  .panel{background:var(--grey); border-radius:var(--r-lg); padding:clamp(24px,3.4vw,38px)}
+  .panel h3{font-size:22px; font-weight:700; letter-spacing:-.02em}
+  .panel p{font-size:16px; color:var(--ink2); margin-top:10px; line-height:1.5}
+  .qr{width:180px; height:180px; border-radius:var(--r-md); background:var(--white); box-shadow:inset 0 0 0 1px var(--grey2); display:flex; align-items:center; justify-content:center; color:var(--ink3); font-size:13px; text-align:center; margin-bottom:18px}
+  .btn{display:inline-flex; align-items:center; justify-content:center; gap:8px; font-size:16px; font-weight:500; text-decoration:none; padding:13px 24px; border-radius:980px; margin-top:20px; min-height:48px}
+  .btn.wa{background:var(--wa); color:#fff}
+
+  /* ---------- FOOTER (matches index.html) ---------- */
+  footer{background:var(--grey); border-top:1px solid var(--grey2); padding:36px 0 calc(36px + env(safe-area-inset-bottom)); font-size:12.5px; color:var(--ink3)}
+  footer .top{display:flex; justify-content:space-between; align-items:center; gap:20px; flex-wrap:wrap; padding-bottom:20px; border-bottom:1px solid var(--grey2)}
+  footer .fbrand{display:flex; align-items:center; gap:10px; color:var(--ink); font-weight:700; font-size:15px}
+  footer .fbrand img{width:30px; height:30px; object-fit:contain; background:#fff; border-radius:8px}
+  footer .bottom{display:flex; justify-content:space-between; gap:14px; flex-wrap:wrap; padding-top:18px}
+  footer a{text-decoration:none; color:var(--ink2)}
+  footer .fl a{margin-left:16px}
+
+  /* ---------- RESPONSIVE ---------- */
+  @media (max-width:820px){
+    .links,.staff.desk,.navwa{display:none}
+    .burger{display:block}
+    .methods{grid-template-columns:repeat(2,1fr)}
+    .visit{grid-template-columns:1fr}
+  }
+  @media (max-width:420px){
+    .methods{grid-template-columns:1fr}
+  }
+  @media (prefers-reduced-motion:reduce){
+    html{scroll-behavior:auto}
+  }
+</style>
 </head>
 <body>
 
-<header class="site-header">
+<nav id="nav">
   <div class="wrap">
-    <a href="index.html" class="brand">
-      <span class="brand-mark">R</span>
-      <span class="brand-name">
-        <span class="l1">RAM MURTI</span>
-        <span class="l2">JEWELLERS</span>
-      </span>
+    <a class="brand" href="index.html" aria-label="Ram Murti Jewellers home">
+      <span class="mark"><img src="assets/images/logo-mark.png" alt=""></span>
+      <span class="wm">Ram Murti Jewellers<small>Field Ganj, Ludhiana</small></span>
     </a>
-    <nav id="nav-links" class="nav-links">
-      <a href="index.html">Home</a>
-      <a href="index.html#rates">Rates</a>
-      <a href="about.html">About</a>
-      <a href="payment.html" class="active">Payment</a>
-      <a href="contact.html">Contact</a>
-    </nav>
-    <button id="nav-toggle" class="nav-toggle" aria-label="Toggle menu" aria-expanded="false" aria-controls="nav-links">
-      <span></span>
-    </button>
+    <div class="links">
+      <a href="index.html">Today's rate</a>
+      <a href="index.html#collections">Collections</a>
+      <a href="index.html#counter">New pieces</a>
+      <a href="index.html#about">About</a>
+      <a href="index.html#visit">Visit</a>
+    </div>
+    <div class="navright">
+      <a class="staff desk" id="staffBtn" href="#" aria-label="Staff login">
+        <svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>Staff login</a>
+      <a class="navwa" href="https://wa.me/919781800888?text=Hello%20Ram%20Murti%20Jewellers%2C%20I%20have%20an%20enquiry.">WhatsApp</a>
+      <button class="burger" id="burger" aria-label="Open menu" aria-expanded="false"><span></span><span></span></button>
+    </div>
+  </div>
+</nav>
+<div class="sheet" id="sheet">
+  <a href="index.html">Today's rate</a>
+  <a href="index.html#collections">Collections</a>
+  <a href="index.html#counter">New pieces</a>
+  <a href="index.html#about">About</a>
+  <a href="index.html#visit">Visit</a>
+  <a class="sm" id="staffBtnM" href="#">Staff login</a>
+</div>
+
+<header class="pagehero">
+  <div class="wrap">
+    <h1>How to pay.</h1>
+    <p>Cash, UPI, cards or bank transfer — whatever's easiest for you.</p>
   </div>
 </header>
 
-<section class="page-hero">
-  <span class="hero-eyebrow">HOW TO PAY</span>
-  <h1>Payment Options</h1>
+<section>
+  <div class="wrap">
+    <div class="head">
+      <h2>We accept</h2>
+    </div>
+    <div class="methods">
+      <div class="method"><h3>Cash</h3><p>Accepted at the counter for any purchase.</p></div>
+      <div class="method"><h3>UPI</h3><p>Scan and pay instantly with any UPI app.</p></div>
+      <div class="method"><h3>Debit / credit card</h3><p>All major cards accepted in-store.</p></div>
+      <div class="method"><h3>Bank transfer</h3><p>NEFT/RTGS for larger purchases — ask our staff for details.</p></div>
+    </div>
+  </div>
 </section>
 
-<section class="content-section">
+<section class="grey">
   <div class="wrap">
-    <h2>We Accept</h2>
-    <div class="card-grid">
-      <div class="info-card">
-        <h3>Cash</h3>
-        <p>Accepted at the counter for any purchase.</p>
+    <div class="visit">
+      <div class="panel">
+        <div class="qr">[ UPI QR code ]</div>
+        <h3>Scan and pay</h3>
+        <p>Scan the QR code in-store with any UPI app to pay instantly. GSTIN: [GSTIN Number].</p>
       </div>
-      <div class="info-card">
-        <h3>UPI</h3>
-        <p>Scan &amp; pay instantly via any UPI app.</p>
-      </div>
-      <div class="info-card">
-        <h3>Debit / Credit Card</h3>
-        <p>All major cards accepted in-store.</p>
-      </div>
-      <div class="info-card">
-        <h3>Bank Transfer</h3>
-        <p>NEFT/RTGS for larger purchases &mdash; ask our staff for details.</p>
+      <div class="panel">
+        <h3>Questions about a payment?</h3>
+        <p>Message us on WhatsApp or call the shop and we'll help right away.</p>
+        <a class="btn wa" href="https://wa.me/919781800888?text=Hello%2C%20I%20have%20a%20question%20about%20a%20payment.">Message on WhatsApp</a>
       </div>
     </div>
   </div>
 </section>
 
-<section class="split-section">
+<footer>
   <div class="wrap">
-    <div class="split-media">[ UPI QR Code ]</div>
-    <div class="split-copy">
-      <span class="eyebrow">SCAN &amp; PAY</span>
-      <h2>Quick UPI Payment</h2>
-      <p>Scan the QR code in-store with any UPI app to pay instantly. GSTIN: [GSTIN Number].</p>
+    <div class="top">
+      <div class="fbrand"><img src="assets/images/logo-mark.png" alt="">Ram Murti Jewellers</div>
+      <div class="fl"><a href="https://www.instagram.com/rammurtijewellers">Instagram</a><a href="https://www.facebook.com/rmj.co.in">Facebook</a><a href="https://www.linkedin.com/company/rammurtijewellers/">LinkedIn</a></div>
     </div>
-  </div>
-</section>
-
-<footer class="site-footer">
-  <div class="wrap">
-    <div class="footer-cols">
-      <div class="footer-col">
-        <span class="h">VISIT US</span>
-        <span>[Shop Address Line 1]<br>[City, State &ndash; PIN]</span>
-      </div>
-      <div class="footer-col">
-        <span class="h">CONNECT</span>
-        <a href="tel:+910000000000">[Phone Number]</a>
-        <span>Instagram &middot; Facebook</span>
-      </div>
-      <div class="footer-col">
-        <span class="h">HOURS</span>
-        <span>Mon&ndash;Sat: 10:00 AM &ndash; 8:00 PM<br>Sunday: Closed</span>
-      </div>
-    </div>
-    <div class="footer-bottom">
-      Rates shown are for reference only and are subject to change without notice. &copy; Ram Murti Jewellers.
+    <div class="bottom">
+      <span>Copyright © <span id="yr"></span> Ram Murti Jewellers. All rights reserved.</span>
+      <a id="staffBtnF" href="#">Staff login</a>
     </div>
   </div>
 </footer>
 
-<script src="assets/js/nav.js"></script>
+<script>
+const LOGIN_URL = 'https://app.rmj.co.in';
+['staffBtn','staffBtnM','staffBtnF'].forEach(id=>{ const a=document.getElementById(id); if(a){ a.href=LOGIN_URL; a.rel='nofollow'; }});
+const nav=document.getElementById('nav');
+const burger=document.getElementById('burger');
+burger.onclick=()=>{ const o=nav.classList.toggle('open'); burger.setAttribute('aria-expanded',o); };
+document.querySelectorAll('#sheet a').forEach(a=>a.addEventListener('click',()=>{nav.classList.remove('open'); burger.setAttribute('aria-expanded',false);}));
+document.getElementById('yr').textContent=new Date().getFullYear();
+</script>
 </body>
 </html>

@@ -1,0 +1,48 @@
+name: Deploy website to Cloudflare Pages
+
+# The public rmj.co.in marketing site (plain static HTML/CSS/JS in website/,
+# see website/README.md) - completely separate from the shop app in
+# frontend/ and backend/, and from deploy.yml, which only ever touches the
+# self-hosted Windows box. This one runs on GitHub's own runner and pushes
+# straight to Cloudflare Pages, so it's safe to run automatically on every
+# push, unlike deploy.yml's manual-only trigger.
+#
+# One-time setup before this can run:
+#   1. In the Cloudflare dashboard (the same account already used for the
+#      app.rmj.co.in / api.rmj.co.in tunnel), create an API token with the
+#      "Cloudflare Pages - Edit" permission (My Profile -> API Tokens ->
+#      Create Token), and note the Account ID (right sidebar of any zone's
+#      Overview page).
+#   2. In this repo's Settings -> Secrets and variables -> Actions, add:
+#        CLOUDFLARE_API_TOKEN   = the token from step 1
+#        CLOUDFLARE_ACCOUNT_ID  = the account ID from step 1
+#   3. First run creates the Cloudflare Pages project named below
+#      automatically if it doesn't already exist. After the first
+#      successful run, in the Pages project's Custom domains tab, add
+#      rmj.co.in and www.rmj.co.in - Cloudflare wires up the DNS records
+#      itself since the zone is already on this account.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'website/**'
+      - '.github/workflows/deploy-website.yml'
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Publish to Cloudflare Pages
+        uses: cloudflare/pages-action@v1
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          projectName: rmj-website
+          directory: website
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}

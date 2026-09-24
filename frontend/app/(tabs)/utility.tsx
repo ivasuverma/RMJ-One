@@ -68,6 +68,7 @@ const GROUPS: GroupDef[] = [
     title: 'Messaging', ownerOnly: true,
     rows: [
       { key: 'whatsapp', label: 'WhatsApp', sub: 'Connection status, notice toggles & message text', icon: 'logo-whatsapp', route: '/settings/whatsapp' },
+      { key: 'instagram', label: 'Instagram', sub: 'Connect your account to show the feed on the website', icon: 'logo-instagram', route: '/settings/instagram' },
     ],
   },
   {
