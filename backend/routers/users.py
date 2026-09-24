@@ -209,6 +209,50 @@ async def list_access_accounts(_: dict = Depends(require_owner), _mod=Depends(re
     return out
 
 
+def _build_access_update(body: 'ModuleAccessUpdateIn', existing: dict) -> dict:
+    """Fields that apply the same way to staff and employees (and even to the
+    owner): the master notification switch and the per-category document
+    permissions. Only include what was actually provided so a partial save
+    (e.g. just toggling notifications) doesn't wipe the rest.
+
+    notif_prefs / notif_prefs_whatsapp / doc_category_rights are MERGED onto
+    the account's existing stored dict, not replaced wholesale — the client
+    only ever knows about the modules/categories it managed to load (an
+    owner mid-edit when a new module ships, a stale tab, a transient fetch
+    failure on /access/notification-modules) and a plain overwrite would
+    silently erase every other module's saved preference the moment any one
+    of those happened. A dict $set in Mongo replaces the whole field, so the
+    merge has to happen here, before that $set."""
+    extra: dict = {}
+    if body.notifications_enabled is not None:
+        extra['notifications_enabled'] = bool(body.notifications_enabled)
+    if body.notif_prefs is not None:
+        # Keys are either a whole module's on/off or one individual script's
+        # override within it — both namespaces are valid here (see
+        # _wants_script in server.py for how the two are resolved together).
+        allowed_notif_keys = NOTIFICATION_MODULE_KEYS | NOTIFICATION_SCRIPT_KEYS
+        merged = dict(existing.get('notif_prefs') or {})
+        merged.update({k: bool(v) for k, v in (body.notif_prefs or {}).items() if k in allowed_notif_keys})
+        extra['notif_prefs'] = merged
+    if body.notif_prefs_whatsapp is not None:
+        # WhatsApp's own copy of the above, independent of it — see
+        # _wants_script_whatsapp in server.py.
+        allowed_notif_keys = NOTIFICATION_MODULE_KEYS | NOTIFICATION_SCRIPT_KEYS
+        merged_wa = dict(existing.get('notif_prefs_whatsapp') or {})
+        merged_wa.update({k: bool(v) for k, v in (body.notif_prefs_whatsapp or {}).items() if k in allowed_notif_keys})
+        extra['notif_prefs_whatsapp'] = merged_wa
+    if body.doc_category_rights is not None:
+        merged_doc = dict(existing.get('doc_category_rights') or {})
+        merged_doc.update({
+            k: {'view': bool((v or {}).get('view')), 'record': bool((v or {}).get('record'))}
+            for k, v in (body.doc_category_rights or {}).items()
+        })
+        extra['doc_category_rights'] = merged_doc
+    if body.doc_see_done is not None:
+        extra['doc_see_done'] = bool(body.doc_see_done)
+    return extra
+
+
 @router.put('/access/accounts/{account_id}')
 async def update_access(account_id: str, body: ModuleAccessUpdateIn, user=Depends(require_owner), _mod=Depends(require_module('user_roles'))):
     bad = set(body.module_access or []) - MODULE_KEYS
@@ -218,38 +262,13 @@ async def update_access(account_id: str, body: ModuleAccessUpdateIn, user=Depend
     if bad_rights:
         raise HTTPException(status_code=400, detail=f'Not an employee-assignable module: {", ".join(sorted(bad_rights))}')
 
-    # Fields that apply the same way to staff and employees (and even to the
-    # owner): the master notification switch and the per-category document
-    # permissions. Only include what was actually provided so a partial save
-    # (e.g. just toggling notifications) doesn't wipe the rest.
-    extra: dict = {}
-    if body.notifications_enabled is not None:
-        extra['notifications_enabled'] = bool(body.notifications_enabled)
-    if body.notif_prefs is not None:
-        # Keys are either a whole module's on/off or one individual script's
-        # override within it — both namespaces are valid here (see
-        # _wants_script in server.py for how the two are resolved together).
-        allowed_notif_keys = NOTIFICATION_MODULE_KEYS | NOTIFICATION_SCRIPT_KEYS
-        extra['notif_prefs'] = {k: bool(v) for k, v in (body.notif_prefs or {}).items() if k in allowed_notif_keys}
-    if body.notif_prefs_whatsapp is not None:
-        # WhatsApp's own copy of the above, independent of it — see
-        # _wants_script_whatsapp in server.py.
-        allowed_notif_keys = NOTIFICATION_MODULE_KEYS | NOTIFICATION_SCRIPT_KEYS
-        extra['notif_prefs_whatsapp'] = {k: bool(v) for k, v in (body.notif_prefs_whatsapp or {}).items() if k in allowed_notif_keys}
-    if body.doc_category_rights is not None:
-        extra['doc_category_rights'] = {
-            k: {'view': bool((v or {}).get('view')), 'record': bool((v or {}).get('record'))}
-            for k, v in (body.doc_category_rights or {}).items()
-        }
-    if body.doc_see_done is not None:
-        extra['doc_see_done'] = bool(body.doc_see_done)
     # module_access is only meaningfully "provided" when the caller sends the
     # access editor; a notifications-only save omits it (leaves it as-is).
     touches_modules = 'module_access' in body.model_fields_set
 
     u = await db.users.find_one({'id': account_id}, {'_id': 0})
     if u:
-        upd = dict(extra)
+        upd = _build_access_update(body, u)
         if touches_modules:
             if u.get('role') == 'owner':
                 raise HTTPException(status_code=400, detail='Owner always has full access')
@@ -260,7 +279,7 @@ async def update_access(account_id: str, body: ModuleAccessUpdateIn, user=Depend
         return {'ok': True}
     e = await db.employees.find_one({'id': account_id}, {'_id': 0})
     if e:
-        upd = dict(extra)
+        upd = _build_access_update(body, e)
         if touches_modules:
             # Employees can only ever be granted the employee-assignable subset —
             # enforced here too (not just hidden in the UI), so this can't be
