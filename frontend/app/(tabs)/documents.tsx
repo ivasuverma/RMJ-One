@@ -514,7 +514,7 @@ function QuickView({ doc, categoryLabel, token, fileUri, onClose, onRecord, canR
                 ? <Pressable onPress={() => onRecord(doc)} style={[styles.qvBtn, styles.qvBtnPrimary]} testID="qv-record"><Ionicons name="checkmark-done-outline" size={19} color={colors.onBrandPrimary} /><Text style={[styles.qvBtnText, { color: colors.onBrandPrimary }]} numberOfLines={1}>Done</Text></Pressable>
                 : <Pressable onPress={() => onRecord(doc)} style={styles.qvBtn} testID="qv-edit-remark"><Ionicons name="create-outline" size={19} color={colors.onSurface} /><Text style={styles.qvBtnText} numberOfLines={1}>Edit</Text></Pressable>
             )}
-            {canRecord && doc.status === 'done' && (
+            {canRecord && (
               <Pressable onPress={() => onChangeCategory(doc)} style={styles.qvBtn} testID="qv-recat"><Ionicons name="swap-horizontal-outline" size={19} color={colors.onSurface} /><Text style={styles.qvBtnText} numberOfLines={1}>Category</Text></Pressable>
             )}
             {canRecord && doc.status === 'done' && (
@@ -536,14 +536,17 @@ function RecordSheet({ doc, categoryLabel, onClose, onDone }: { doc: Doc | null;
   const [busy, setBusy] = useState(false);
   useEffect(() => { setNote(doc?.note || ''); }, [doc?.id]);
 
+  const empty = !note.trim();
+
   const submit = async () => {
     if (!doc || busy) return;
+    const n = note.trim();
+    if (!n) { toast.error('Add a remark before marking as done'); return; }
     setBusy(true);
     try {
       // Store the remark as both note and linked label so it's searchable and
       // shows on the Done row (name + phone in one box for easy lookup).
-      const n = note.trim();
-      await api.patch(`/documents/${doc.id}/record`, { note: n, linked_ref_label: n || undefined });
+      await api.patch(`/documents/${doc.id}/record`, { note: n, linked_ref_label: n });
       setBusy(false); onDone();
     } catch (e: any) { toast.error(e?.detail || 'Could not save'); setBusy(false); }
   };
@@ -551,10 +554,10 @@ function RecordSheet({ doc, categoryLabel, onClose, onDone }: { doc: Doc | null;
   const isDone = doc?.status === 'done';
   return (
     <Sheet visible={!!doc} onClose={onClose} title={isDone ? 'Edit remark' : 'Move to Done'} testID="doc-record-sheet">
-      <Text style={styles.recHint}>{categoryLabel} · add a remark so it&apos;s easy to find later — name, phone, invoice no.</Text>
+      <Text style={styles.recHint}>{categoryLabel} · a remark is required so it&apos;s easy to find later — name, phone, invoice no.</Text>
       <TextInput value={note} onChangeText={setNote} placeholder="e.g. Anita Sharma · 98xxxxxxxx" placeholderTextColor={colors.mutedText} style={styles.noteInput} autoFocus testID="rec-note" />
       <View style={{ height: spacing.md }} />
-      <Pressable onPress={submit} disabled={busy} style={[styles.recPrimary, busy && { opacity: 0.5 }]} testID="rec-confirm">
+      <Pressable onPress={submit} disabled={busy || empty} style={[styles.recPrimary, (busy || empty) && { opacity: 0.5 }]} testID="rec-confirm">
         {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.recPrimaryText}>{isDone ? 'Save' : 'Done'}</Text>}
       </Pressable>
     </Sheet>

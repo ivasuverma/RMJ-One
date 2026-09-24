@@ -758,6 +758,8 @@ async def record_document(doc_id: str, body: RecordIn, user=Depends(get_current)
         raise HTTPException(status_code=403, detail='No access to this document')
     if not _can_record(cat, _role(user), rights):
         raise HTTPException(status_code=403, detail='You do not have permission to record this category')
+    if not (body.note or '').strip():
+        raise HTTPException(status_code=400, detail='A remark is required to mark this document as done')
     upd = {
         'status': 'done', 'recorded_at': now_utc().isoformat(), 'recorded_by': user['id'], 'recorded_by_name': user['name'],
         'linked_ref': ({'type': body.linked_ref_type, 'id': body.linked_ref_id, 'label': body.linked_ref_label}
