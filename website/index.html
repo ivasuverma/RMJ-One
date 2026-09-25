@@ -193,6 +193,7 @@
   .plate{position:absolute; left:clamp(14px,2.4vw,28px); bottom:clamp(14px,2.4vw,28px); display:flex; align-items:center; gap:12px; background:rgba(255,255,255,.82); backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px); padding:10px 16px 10px 10px; border-radius:16px}
   .plate img{width:40px; height:auto; aspect-ratio:auto; object-fit:contain; border-radius:8px}
   .plate b{font-size:15px; display:block; letter-spacing:-.01em} .plate span{font-size:13px; color:var(--ink2)}
+  .plate .lockup span{color:var(--ink)}
 
   /* collections finder: metal tabs → (gold) style → piece, each piece a WhatsApp enquiry */
   .finder{margin-top:clamp(36px,5vw,56px)}
@@ -307,6 +308,13 @@
   @media (prefers-reduced-motion:reduce){
     html{scroll-behavior:auto} *{animation:none!important; transition:none!important}
   }
+
+  /* brand lockup: RAMMURTI in Telegrafico (the logo's wordmark font; freeware, S. Nicolosi) over spaced JEWELLERS */
+  @font-face{font-family:'Telegrafico'; src:url(assets/fonts/telegrafico.woff2) format('woff2'), url(assets/fonts/telegrafico.ttf) format('truetype'); font-display:swap}
+  .lockup{display:inline-flex; flex-direction:column; align-items:center; line-height:1; text-transform:uppercase; white-space:nowrap}
+  .lockup .lk1{font-family:'Telegrafico',var(--font); font-weight:400; font-size:17px; letter-spacing:.14em; margin-right:-.14em}
+  .lockup .lk2{font-family:var(--font); font-weight:500; font-size:7.6px; letter-spacing:.6em; margin-right:-.6em; margin-top:5px}
+  .lockup.sm .lk1{font-size:14px} .lockup.sm .lk2{font-size:6.4px; margin-top:4px}
 </style>
 </head>
 <body>
@@ -315,7 +323,7 @@
   <div class="wrap">
     <a class="brand" href="#top" aria-label="Ram Murti Jewellers home">
       <span class="mark"><img src="assets/images/logo-tile.png" alt=""></span>
-      <span class="wm">Ram Murti Jewellers<small>Ludhiana · Since 1932</small></span>
+      <span class="lockup" aria-label="Rammurti Jewellers"><span class="lk1">Rammurti</span><span class="lk2">Jewellers</span></span>
     </a>
     <div class="links">
       <a href="#top">Today's rate</a>
@@ -415,7 +423,7 @@
     </div>
     <div class="show">
       <img data-cms-img="showcase_photo" src="assets/photos/dsc_0033-YBg891rw9PtK9XaM.JPG" alt="Gold jewellery at Ram Murti Jewellers">
-      <div class="plate"><img src="assets/images/logo-tile.png" alt=""><div><b>Ram Murti Jewellers</b><span>Family jewellers since 1932</span></div></div>
+      <div class="plate"><img src="assets/images/logo-tile.png" alt=""><div><span class="lockup sm" aria-label="Rammurti Jewellers"><span class="lk1">Rammurti</span><span class="lk2">Jewellers</span></span><span style="display:block; margin-top:6px">Family jewellers since 1932</span></div></div>
     </div>
   </div>
 </section>
@@ -516,7 +524,7 @@
 <footer>
   <div class="wrap">
     <div class="top">
-      <div class="fbrand"><img src="assets/images/logo-tile.png" alt="">Ram Murti Jewellers</div>
+      <div class="fbrand"><img src="assets/images/logo-tile.png" alt=""><span class="lockup sm" aria-label="Rammurti Jewellers"><span class="lk1">Rammurti</span><span class="lk2">Jewellers</span></span></div>
       <div class="fl"><a href="https://www.instagram.com/rammurtijewellers">Instagram</a><a href="https://www.facebook.com/rmj.co.in">Facebook</a><a href="https://www.linkedin.com/company/rammurtijewellers/">LinkedIn</a></div>
     </div>
     <div class="bottom">

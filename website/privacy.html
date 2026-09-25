@@ -31,11 +31,18 @@
   .box{background:var(--grey); border-radius:14px; padding:16px 18px; margin-top:12px}
   footer{border-top:1px solid var(--line); padding:22px 0 40px; color:var(--ink2); font-size:14px}
   footer a{margin-right:16px}
+
+  /* brand lockup: RAMMURTI in Telegrafico (the logo's wordmark font; freeware, S. Nicolosi) over spaced JEWELLERS */
+  @font-face{font-family:'Telegrafico'; src:url(assets/fonts/telegrafico.woff2) format('woff2'), url(assets/fonts/telegrafico.ttf) format('truetype'); font-display:swap}
+  .lockup{display:inline-flex; flex-direction:column; align-items:center; line-height:1; text-transform:uppercase; white-space:nowrap}
+  .lockup .lk1{font-family:'Telegrafico',var(--font); font-weight:400; font-size:17px; letter-spacing:.14em; margin-right:-.14em}
+  .lockup .lk2{font-family:var(--font); font-weight:500; font-size:7.6px; letter-spacing:.6em; margin-right:-.6em; margin-top:5px}
+  .lockup.sm .lk1{font-size:14px} .lockup.sm .lk2{font-size:6.4px; margin-top:4px}
 </style>
 </head>
 <body>
 <nav><div class="wrap">
-  <a class="brand" href="/"><img src="assets/images/logo-tile.png" alt="">Ram Murti Jewellers</a>
+  <a class="brand" href="/"><img src="assets/images/logo-tile.png" alt=""><span class="lockup sm" aria-label="Rammurti Jewellers"><span class="lk1">Rammurti</span><span class="lk2">Jewellers</span></span></a>
   <a class="back" href="/">rmj.co.in</a>
 </div></nav>
 <header><div class="wrap"><h1>Privacy policy</h1><p class="meta">Last updated: 25 September 2026</p></div></header>
