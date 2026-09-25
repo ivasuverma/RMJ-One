@@ -53,7 +53,9 @@ GRAPH_API_VERSION = os.environ.get('META_GRAPH_API_VERSION', 'v21.0')
 PHONE_NUMBER_ID = os.environ.get('META_WA_PHONE_NUMBER_ID', '')
 WABA_ID = os.environ.get('META_WA_WABA_ID', '')
 ACCESS_TOKEN = os.environ.get('META_WA_ACCESS_TOKEN', '')
-APP_SECRET = os.environ.get('META_WA_APP_SECRET', '')
+# Webhook signatures use the Meta app's secret. WhatsApp and Instagram usually
+# live in the same Meta app, so fall back to META_APP_SECRET (Instagram's).
+APP_SECRET = os.environ.get('META_WA_APP_SECRET', '') or os.environ.get('META_APP_SECRET', '')
 WEBHOOK_VERIFY_TOKEN = os.environ.get('META_WA_WEBHOOK_VERIFY_TOKEN', '')
 
 GRAPH_BASE = f'https://graph.facebook.com/{GRAPH_API_VERSION}'
@@ -246,6 +248,43 @@ async def create_template(name: str, category: str, body_text: str, example: lis
         if res.status_code == 200:
             return {'ok': True, 'status': res.json().get('status'), 'error': None}
         logger.warning(f'meta template create failed: {res.status_code} {res.text[:300]}')
+        return {'ok': False, 'error': res.text[:300]}
+    except Exception as e:
+        return {'ok': False, 'error': str(e)}
+
+
+async def app_subscription() -> dict:
+    """Is the WhatsApp Business Account subscribed to our Meta app? Without it
+    Meta sends NO webhooks for incoming messages, however the webhook itself is
+    configured. {'subscribed': bool|None, 'apps': [names], 'error': str|None}"""
+    err = _template_ready()
+    if err:
+        return {'subscribed': None, 'apps': [], 'error': err}
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            res = await client.get(f'{GRAPH_BASE}/{WABA_ID}/subscribed_apps',
+                                   headers={'Authorization': f'Bearer {ACCESS_TOKEN}'})
+        if res.status_code != 200:
+            return {'subscribed': None, 'apps': [], 'error': res.text[:300]}
+        rows = res.json().get('data') or []
+        names = [((r.get('whatsapp_business_api_data') or {}).get('name') or (r.get('whatsapp_business_api_data') or {}).get('id') or '?') for r in rows]
+        return {'subscribed': bool(rows), 'apps': names, 'error': None}
+    except Exception as e:
+        return {'subscribed': None, 'apps': [], 'error': str(e)}
+
+
+async def subscribe_app() -> dict:
+    """Subscribe the WhatsApp Business Account to this Meta app (the one the
+    access token belongs to) so incoming messages reach our webhook."""
+    err = _template_ready()
+    if err:
+        return {'ok': False, 'error': err}
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            res = await client.post(f'{GRAPH_BASE}/{WABA_ID}/subscribed_apps',
+                                    headers={'Authorization': f'Bearer {ACCESS_TOKEN}'})
+        if res.status_code == 200 and res.json().get('success'):
+            return {'ok': True, 'error': None}
         return {'ok': False, 'error': res.text[:300]}
     except Exception as e:
         return {'ok': False, 'error': str(e)}
