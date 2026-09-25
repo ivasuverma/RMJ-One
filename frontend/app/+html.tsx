@@ -70,6 +70,17 @@ export default function Root({ children }: { children: React.ReactNode }) {
         ` }} />
 
         <ScrollViewStyleReset />
+        {/* Home Screen app (iOS standalone + black-translucent status bar): the
+            page is drawn under the status bar, but WebKit still sizes 100% to
+            the screen MINUS the status bar — leaving a status-bar-high dark strip
+            at the bottom and the bottom bar floating above it. Grow the page by
+            the top inset there. Must come after ScrollViewStyleReset (which sets
+            height:100%). */}
+        <style dangerouslySetInnerHTML={{ __html: `
+          @media all and (display-mode: standalone) {
+            html { height: calc(100% + env(safe-area-inset-top)); min-height: 100lvh; }
+          }
+        ` }} />
       </head>
       <body>{children}</body>
     </html>
