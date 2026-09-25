@@ -8,6 +8,11 @@ import { useTheme } from '@/src/theme/ThemeContext';
 import { useToast } from '@/src/components/ui';
 import { Header, makeStyles, MetaStatus } from './_shared';
 
+type Diag = {
+  app_secret_set: boolean; verify_token_set: boolean;
+  subscription: { subscribed: boolean | null; apps: string[]; error: string | null };
+  hits: { at: string; kind: 'verify' | 'event'; ok: boolean; note: string }[];
+};
 const WEBHOOK_URL = 'https://api.rmj.co.in/api/webhooks/whatsapp-meta';
 const ENV_KEYS = ['META_WA_PHONE_NUMBER_ID', 'META_WA_WABA_ID', 'META_WA_ACCESS_TOKEN', 'META_WA_APP_SECRET', 'META_WA_WEBHOOK_VERIFY_TOKEN', 'META_WA_APP_ID (only if WhatsApp is a different Meta app from Instagram)'];
 
@@ -24,6 +29,8 @@ export default function BroadcastNumberScreen() {
   const [mobile, setMobile] = useState('');
   const [text, setText] = useState('Test message from Ram Murti Jewellers');
   const [sending, setSending] = useState(false);
+  const [diag, setDiag] = useState<Diag | null>(null);
+  const [linking, setLinking] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -32,6 +39,7 @@ export default function BroadcastNumberScreen() {
         api.get<{ url: string | null }>('/public/rate-broadcast/subscribe').catch(() => ({ url: null })),
       ]);
       setMeta(m); setLink(l.url);
+      api.get<Diag>('/rate-broadcast/diagnostics').then(setDiag).catch(() => setDiag(null));
     } catch (e: any) { toast.error(e?.detail || 'Could not load'); }
     finally { setLoaded(true); setRefreshing(false); }
   }, [toast]);
@@ -44,6 +52,13 @@ export default function BroadcastNumberScreen() {
       toast.success('Test message sent');
     } catch (e: any) { toast.error(e?.detail || 'Send failed'); }
     finally { setSending(false); }
+  };
+
+  const linkApp = async () => {
+    setLinking(true);
+    try { setDiag(await api.post<Diag>('/rate-broadcast/diagnostics/subscribe-app', {})); toast.success('Linked — send START again to test'); }
+    catch (e: any) { toast.error(e?.detail || 'Could not link'); }
+    finally { setLinking(false); }
   };
 
   const copy = async (text: string) => {
@@ -103,6 +118,43 @@ export default function BroadcastNumberScreen() {
               <Ionicons name="copy-outline" size={16} color={colors.brandSecondary} />
             </Pressable>
           </View>
+
+          {diag && (
+            <View style={styles.card} testID="broadcast-diagnostics">
+              <Text style={styles.cardTitle}>Diagnostics — are START messages arriving?</Text>
+              {[
+                { ok: diag.subscription.subscribed === true, label: 'Number linked to the Meta app',
+                  bad: diag.subscription.subscribed === false ? 'Not linked — Meta sends no incoming messages until it is.' : `Couldn’t check${diag.subscription.error ? `: ${diag.subscription.error}` : ''}` },
+                { ok: diag.app_secret_set, label: 'App secret on the server', bad: 'Missing — add META_WA_APP_SECRET (the App secret from App settings › Basic) and restart.' },
+                { ok: diag.verify_token_set, label: 'Verify token on the server', bad: 'Missing — add META_WA_WEBHOOK_VERIFY_TOKEN and restart.' },
+              ].map((c) => (
+                <View key={c.label} style={[styles.row, { alignItems: 'flex-start' }]}>
+                  <Ionicons name={c.ok ? 'checkmark-circle' : 'close-circle'} size={18} color={c.ok ? colors.onSuccess : colors.onError} />
+                  <View style={styles.flex1}>
+                    <Text style={styles.label}>{c.label}</Text>
+                    {!c.ok && <Text style={styles.hint}>{c.bad}</Text>}
+                  </View>
+                </View>
+              ))}
+              {diag.subscription.subscribed === false && (
+                <Pressable onPress={linkApp} disabled={linking} style={styles.primary} accessibilityRole="button" testID="broadcast-link-app">
+                  {linking ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.primaryText}>Link number to the app</Text>}
+                </Pressable>
+              )}
+              <View style={styles.divider} />
+              <Text style={styles.label}>Last messages from Meta</Text>
+              {diag.hits.length === 0 ? (
+                <Text style={styles.hint}>Nothing received from Meta yet. If you’ve sent START, Meta isn’t delivering — fix any red item above.</Text>
+              ) : diag.hits.map((h, i) => (
+                <View key={i} style={[styles.row, { alignItems: 'flex-start' }]}>
+                  <Ionicons name={h.ok ? 'arrow-down-circle-outline' : 'alert-circle-outline'} size={16} color={h.ok ? colors.onSuccess : colors.onError} />
+                  <Text style={[styles.listMeta, styles.flex1]}>
+                    {new Date(h.at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })} · {h.note}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          )}
 
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Subscribe link</Text>

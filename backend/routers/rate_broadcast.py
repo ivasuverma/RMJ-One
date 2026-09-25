@@ -611,6 +611,29 @@ async def send_now(body: SendIn = SendIn(), user: dict = Depends(require_broadca
     return job
 
 
+@router.get('/rate-broadcast/diagnostics')
+async def diagnostics(_: dict = Depends(require_broadcast)):
+    """Why aren't START messages arriving? Answers the three usual causes."""
+    import whatsapp_meta
+    hits = await db.meta_webhook_log.find({}, {'_id': 0}).sort('at', -1).to_list(15)
+    return {
+        'app_secret_set': bool(whatsapp_meta.APP_SECRET),
+        'verify_token_set': bool(whatsapp_meta.WEBHOOK_VERIFY_TOKEN),
+        'subscription': await whatsapp_meta.app_subscription(),
+        'hits': hits,
+    }
+
+
+@router.post('/rate-broadcast/diagnostics/subscribe-app')
+async def diagnostics_subscribe_app(user: dict = Depends(require_broadcast)):
+    import whatsapp_meta
+    res = await whatsapp_meta.subscribe_app()
+    if not res['ok']:
+        raise HTTPException(status_code=502, detail=f"Meta refused: {res['error']}")
+    await log_audit(user, 'rate_broadcast.subscribe_app', 'settings', 'whatsapp_meta', 'waba subscribed to app')
+    return await diagnostics(user)
+
+
 @router.post('/rate-broadcast/{bid}/stop')
 async def stop_broadcast(bid: str, user: dict = Depends(require_broadcast)):
     n = await _stop_job(bid)

@@ -155,3 +155,12 @@ def test_rate_broadcast_can_be_granted_to_an_employee(owner):
         assert requests.get(f"{API}/settings/whatsapp-meta", headers=h, timeout=30).status_code == 200
     finally:
         requests.put(f"{API}/access/accounts/{emp['id']}", headers=owner, json={'module_access': before}, timeout=30)
+
+
+def test_diagnostics_show_rejected_webhook(owner):
+    # A delivery that isn't signed with the app secret is refused — and shows up in Diagnostics.
+    r = requests.post(f"{API}/webhooks/whatsapp-meta", json={'entry': []}, headers={'x-hub-signature-256': 'sha256=bad'}, timeout=30)
+    assert r.status_code == 401
+    d = requests.get(f"{API}/rate-broadcast/diagnostics", headers=owner, timeout=30).json()
+    assert {'app_secret_set', 'verify_token_set', 'subscription', 'hits'} <= set(d)
+    assert d['hits'] and d['hits'][0]['ok'] is False and 'signature' in d['hits'][0]['note']
