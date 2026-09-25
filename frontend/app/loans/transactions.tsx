@@ -45,12 +45,13 @@ export default function GoldLoanTransactionsScreen() {
   const [refreshing, setRefreshing] = useState(false);
 
   const loadFirstPage = useCallback(async () => {
+    if (!id) { router.replace('/loans' as any); return; }   // opened without a loan
     try {
       const page = await api.get<Page>(`/gold-loans/${id}/transactions?skip=0&limit=${PAGE_SIZE}`);
       setTxns(page.items); setTotal(page.total);
     } catch (_e) { /* keep whatever was already loaded */ }
     finally { setLoading(false); setRefreshing(false); }
-  }, [id]);
+  }, [id, router]);
   useFocusEffect(useCallback(() => { loadFirstPage(); }, [loadFirstPage]));
 
   const loadMore = async () => {

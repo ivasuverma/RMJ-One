@@ -9,6 +9,7 @@ import { useTheme } from '@/src/theme/ThemeContext';
 import { useAuth } from '@/src/auth/AuthContext';
 import { useRouter } from 'expo-router';
 import { RatesInstallHint } from '@/src/components/RatesInstallHint';
+import { StickyHeader, useScrolled } from '@/src/components/ui/StickyHeader';
 
 type PublicRates = {
   store_name: string;
@@ -37,6 +38,7 @@ const fmtUSD = (n: number | null) => (n == null ? '—' : `$${n.toLocaleString('
 // source of truth. Buy = sell minus the owner's own configured spread
 // (Settings > WhatsApp), independent of anything the source page shows.
 export default function PublicRatesScreen() {
+  const { scrolled, onScroll } = useScrolled();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const { user } = useAuth();
@@ -92,10 +94,10 @@ export default function PublicRatesScreen() {
 
   return (
     <SafeAreaView style={styles.root} edges={['top', 'bottom']} testID="public-rates-screen">
-      <ScrollView contentContainerStyle={styles.scroll}>
-        {internal ? (
-          // Staff inside the app: a compact bar instead of the customer-facing masthead.
-          <View style={styles.compactHeader}>
+      {internal && (
+        // Staff inside the app: a compact bar, pinned, instead of the customer-facing masthead.
+        <StickyHeader scrolled={scrolled} style={{ paddingHorizontal: spacing.xl }}>
+          <View style={[styles.compactHeader, { marginBottom: 0, maxWidth: 560, width: '100%', alignSelf: 'center' }]}>
             {router.canGoBack() ? (
               <Pressable onPress={() => router.back()} style={styles.backBtn} testID="rates-back-btn" hitSlop={12} accessibilityRole="button" accessibilityLabel="Back">
                 <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
@@ -104,7 +106,10 @@ export default function PublicRatesScreen() {
             <Text style={styles.compactTitle}>Live Rates</Text>
             <View style={{ width: 40 }} />
           </View>
-        ) : (
+        </StickyHeader>
+      )}
+      <ScrollView contentContainerStyle={[styles.scroll, internal && { paddingTop: spacing.md }]} onScroll={onScroll} scrollEventThrottle={16}>
+        {!internal && (
           <>
             <View style={styles.header}>
               <Image source={images.logo} style={styles.logo} />

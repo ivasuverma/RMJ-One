@@ -62,6 +62,8 @@ export default function GoldLoanTransactScreen() {
   const [selected, setSelected] = useState<string[]>(periodsParam ? periodsParam.split(',').filter(Boolean) : []);
 
   useEffect(() => {
+    // Only reachable from a loan; opened on its own (a stale link), go to the loan list.
+    if (!id) { router.replace('/loans' as any); return; }
     api.get<Loan>(`/gold-loans/${id}`).then((loan) => {
       const pending = loan.interest_months.filter((m) => !m.paid);
       setPendingMonths(pending);
@@ -167,7 +169,7 @@ export default function GoldLoanTransactScreen() {
           {type === 'topup' && (
             <Text style={styles.helperText}>
               Extra cash paid out to the customer against this same pledge — raises the outstanding principal, and
-              next month's interest is charged on the higher balance.
+              next month’s interest is charged on the higher balance.
             </Text>
           )}
 
