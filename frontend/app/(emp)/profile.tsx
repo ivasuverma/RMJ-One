@@ -13,6 +13,7 @@ import { isPushSupported, isSubscribed, subscribeToPush, unsubscribeFromPush } f
 import { QuickUnlockCard } from '@/src/components/QuickUnlockCard';
 import { TabBarSpacer } from '@/src/components/GlassTabBar';
 import { GlassSettings } from '@/src/components/GlassSettings';
+import { StickyHeader, useScrolled } from '@/src/components/ui/StickyHeader';
 
 // Employee settings — same language as the admin Settings screen: an
 // Apple-ID-style profile card at the top (all personal/contact/bank details
@@ -21,6 +22,7 @@ import { GlassSettings } from '@/src/components/GlassSettings';
 const THEME_LABEL: Record<ThemePreference, string> = { system: 'System', light: 'Light', dark: 'Dark' };
 
 export default function EmployeeProfile() {
+  const { scrolled, onScroll } = useScrolled();
   const { user, logout } = useAuth();
   const { colors, preference, setPreference } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
@@ -58,8 +60,10 @@ export default function EmployeeProfile() {
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="emp-profile-screen">
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <StickyHeader scrolled={scrolled}>
         <Text style={styles.title}>Settings</Text>
+      </StickyHeader>
+      <ScrollView onScroll={onScroll} scrollEventThrottle={16} contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
 
         {/* Apple-ID-style profile card — tap to edit all details */}
         <Pressable testID="emp-profile-card" onPress={() => router.push('/(emp)/edit-profile' as any)} style={({ pressed }) => [styles.profileCard, pressed && { opacity: 0.85 }]}>
@@ -149,8 +153,8 @@ function Row({ icon, label, sub, value, valueTone, trailing, onPress, testID }: 
 
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
-  scroll: { padding: spacing.lg, paddingBottom: spacing.xxxl },
-  title: { color: colors.onSurface, fontSize: 28, fontWeight: '600', fontFamily: fonts.display, marginBottom: spacing.lg },
+  scroll: { padding: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.xxxl },
+  title: { color: colors.onSurface, fontSize: 28, fontWeight: '600', fontFamily: fonts.display },
 
   profileCard: {
     flexDirection: 'row', alignItems: 'center', gap: spacing.md,

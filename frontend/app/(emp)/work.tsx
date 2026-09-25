@@ -11,6 +11,7 @@ import { useTheme } from '@/src/theme/ThemeContext';
 import { UploadQueueBadge } from '@/src/components/UploadQueueBadge';
 import { AppSetupBanner } from '@/src/components/AppSetupBanner';
 import { TabBarSpacer } from '@/src/components/GlassTabBar';
+import { StickyHeader, useScrolled } from '@/src/components/ui/StickyHeader';
 
 // Employee Work hub — same card language as the admin Work board: an
 // "In progress" list of process rows (each showing its live state before you
@@ -25,6 +26,7 @@ type Seg = { text: string; tone?: 'hot' | 'bad' | 'strong' };
 type Row = { key: string; title: string; icon: keyof typeof Ionicons.glyphMap; segs: Seg[]; badge?: number; route: string };
 
 export default function EmployeeWorkScreen() {
+  const { scrolled, onScroll } = useScrolled();
   const router = useRouter();
   const { colors } = useTheme();
   const { hasModule } = useAuth();
@@ -123,11 +125,7 @@ export default function EmployeeWorkScreen() {
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="emp-work-screen">
-      <ScrollView
-        contentContainerStyle={styles.scroll}
-        showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}
-      >
+      <StickyHeader scrolled={scrolled}>
         <View style={styles.titleRow}>
           <View style={{ flex: 1 }}>
             <Text style={styles.h1}>Work</Text>
@@ -135,6 +133,12 @@ export default function EmployeeWorkScreen() {
           </View>
           <UploadQueueBadge />
         </View>
+      </StickyHeader>
+      <ScrollView onScroll={onScroll} scrollEventThrottle={16}
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}
+      >
 
         <AppSetupBanner />
 
@@ -150,7 +154,7 @@ export default function EmployeeWorkScreen() {
 
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
-  scroll: { padding: spacing.lg, paddingBottom: spacing.xxxl },
+  scroll: { padding: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.xxxl },
   h1: { color: colors.onSurface, fontSize: 30, fontWeight: '700', fontFamily: fonts.display, letterSpacing: -0.5 },
   sub: { color: colors.onSurfaceSecondary, fontSize: 15, marginTop: 6 },
   titleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },

@@ -9,6 +9,7 @@ import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { ErrorState } from '@/src/components/ui';
 import { TabBarSpacer } from '@/src/components/GlassTabBar';
+import { StickyHeader, useScrolled } from '@/src/components/ui/StickyHeader';
 
 // Employee Ledger tab — the counterpart to the owner/admin Ledger tab, same
 // row style. Each row only appears when the owner has enabled that module for
@@ -18,6 +19,7 @@ import { TabBarSpacer } from '@/src/components/GlassTabBar';
 type Row = { key: string; label: string; icon: keyof typeof Ionicons.glyphMap; route: string; summary: string };
 
 export default function EmployeeLedgerScreen() {
+  const { scrolled, onScroll } = useScrolled();
   const router = useRouter();
   const { colors } = useTheme();
   const { user, hasModule } = useAuth();
@@ -62,13 +64,15 @@ export default function EmployeeLedgerScreen() {
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="emp-ledger-screen">
-      <ScrollView
+      <StickyHeader scrolled={scrolled}>
+        <Text style={styles.h1}>Ledger</Text>
+        <Text style={styles.sub}>Your account and the ledgers you have access to.</Text>
+      </StickyHeader>
+      <ScrollView onScroll={onScroll} scrollEventThrottle={16}
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}
       >
-        <Text style={styles.h1}>Ledger</Text>
-        <Text style={styles.sub}>Your account and the ledgers you have access to.</Text>
 
         {failed && (
           <View style={{ marginTop: spacing.lg }}>
@@ -104,7 +108,7 @@ export default function EmployeeLedgerScreen() {
 
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
-  scroll: { padding: spacing.lg, paddingBottom: spacing.xxxl },
+  scroll: { padding: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.xxxl },
   h1: { color: colors.onSurface, fontSize: 30, fontWeight: '700', fontFamily: fonts.display, letterSpacing: -0.5 },
   sub: { color: colors.onSurfaceSecondary, fontSize: 15, marginTop: 6 },
   sectionLabel: {

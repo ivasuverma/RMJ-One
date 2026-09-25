@@ -8,6 +8,7 @@ import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { ErrorState } from '@/src/components/ui';
 import { TabBarSpacer } from '@/src/components/GlassTabBar';
+import { StickyHeader, useScrolled } from '@/src/components/ui/StickyHeader';
 
 // Ledger tab (owner/admin/accountant). The books, grouped by what they are about:
 //   People — the customer, karigar and employee ledgers (each party's own account)
@@ -24,6 +25,7 @@ const HIDDEN_KEY = 'rmj.ledger_hidden';
 const inr = (n: number) => `₹${Math.abs(Math.round(n)).toLocaleString('en-IN')}`;
 
 export default function LedgerScreen() {
+  const { scrolled, onScroll } = useScrolled();
   const router = useRouter();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
@@ -103,18 +105,20 @@ export default function LedgerScreen() {
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="ledger-screen">
-      <ScrollView
-        contentContainerStyle={styles.scroll}
-        showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}
-      >
+      <StickyHeader scrolled={scrolled}>
         <View style={styles.titleRow}>
           <Text style={styles.h1}>Ledger</Text>
           <Pressable onPress={() => setEditOrder((v) => !v)} hitSlop={8} testID="ledger-edit-order">
             <Text style={styles.editOrderText}>{editOrder ? 'Done' : 'Edit'}</Text>
           </Pressable>
         </View>
-        <Text style={styles.sub}>Customer, karigar and employee accounts, the Day Book, and the shop's gold. Cash is in the Cash Book (Work tab).</Text>
+        <Text style={styles.sub}>Customer, karigar and employee accounts, the Day Book, and the shop’s gold. Cash is in the Cash Book (Work tab).</Text>
+      </StickyHeader>
+      <ScrollView onScroll={onScroll} scrollEventThrottle={16}
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}
+      >
 
         {failed && (
           <View style={{ marginTop: spacing.lg }}>
@@ -168,7 +172,7 @@ export default function LedgerScreen() {
 
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
-  scroll: { padding: spacing.lg, paddingBottom: spacing.xxxl },
+  scroll: { padding: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.xxxl },
   titleRow: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' },
   h1: { color: colors.onSurface, fontSize: 30, fontWeight: '700', fontFamily: fonts.display, letterSpacing: -0.5 },
   sub: { color: colors.onSurfaceSecondary, fontSize: 15, marginTop: 6 },
