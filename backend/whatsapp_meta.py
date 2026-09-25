@@ -270,6 +270,63 @@ async def create_template(name: str, category: str, body_text: str, example: lis
         return {'ok': False, 'error': str(e)}
 
 
+async def create_template_components(name: str, components: list, category: str = 'MARKETING', language: str = 'en') -> dict:
+    """Submit a template built from ready-made Graph components (the in-app
+    template builder, routers/broadcasts.py). {'ok', 'id', 'status', 'error'}"""
+    err = _template_ready()
+    if err:
+        return {'ok': False, 'error': err}
+    body = {'name': name, 'language': language, 'category': category, 'components': components}
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            res = await client.post(f'{GRAPH_BASE}/{WABA_ID}/message_templates', json=body,
+                                    headers={'Authorization': f'Bearer {ACCESS_TOKEN}'})
+        if res.status_code == 200:
+            d = res.json()
+            return {'ok': True, 'id': d.get('id'), 'status': d.get('status'), 'error': None}
+        logger.warning(f'meta template create failed: {res.status_code} {res.text[:400]}')
+        try:
+            e = res.json().get('error') or {}
+            msg = e.get('error_user_msg') or e.get('error_user_title') or e.get('message') or res.text[:300]
+        except Exception:
+            msg = res.text[:300]
+        return {'ok': False, 'error': msg}
+    except Exception as e:
+        return {'ok': False, 'error': str(e)}
+
+
+async def delete_template(name: str) -> dict:
+    err = _template_ready()
+    if err:
+        return {'ok': False, 'error': err}
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            res = await client.delete(f'{GRAPH_BASE}/{WABA_ID}/message_templates', params={'name': name},
+                                      headers={'Authorization': f'Bearer {ACCESS_TOKEN}'})
+        if res.status_code == 200:
+            return {'ok': True, 'error': None}
+        return {'ok': False, 'error': res.text[:300]}
+    except Exception as e:
+        return {'ok': False, 'error': str(e)}
+
+
+async def send_template_components(mobile: str, template_name: str, components: list, language_code: str = 'en',
+                                   flow: str = '') -> bool:
+    """Send an approved template with fully-built send components (header
+    media, body params, carousel cards, button payloads)."""
+    from server import log_whatsapp_message
+    to = _to_e164_digits(mobile)
+    if not to:
+        await log_whatsapp_message('meta', mobile, 'template', template_name, False, flow, error='invalid or missing mobile number')
+        return False
+    template: dict = {'name': template_name, 'language': {'code': language_code}}
+    if components:
+        template['components'] = components
+    ok, msg_id, error = await _send({'messaging_product': 'whatsapp', 'to': to, 'type': 'template', 'template': template})
+    await log_whatsapp_message('meta', to, 'template', template_name, ok, flow, error=error, wa_message_id=msg_id)
+    return ok
+
+
 async def number_account() -> dict:
     """Which WhatsApp Business Account does our phone number actually belong
     to? Sending only needs the phone number id, so a wrong META_WA_WABA_ID goes

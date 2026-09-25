@@ -207,7 +207,12 @@ async def photo_url() -> str:
 
 def _plan_query(plan: str) -> dict:
     # Subscribers imported before plans existed have no 'plan' — they're the weekly list.
-    return {'plan': 'daily'} if plan == 'daily' else {'plan': {'$ne': 'daily'}}
+    # 'none' = only on a custom list (routers/broadcasts.py), not getting the rate.
+    if plan == 'daily':
+        return {'plan': 'daily'}
+    if plan == 'weekly':
+        return {'plan': {'$nin': ['daily', 'none']}}
+    return {'plan': {'$ne': 'none'}}
 
 
 def _ist_day_start_utc_iso() -> str:
@@ -227,33 +232,56 @@ async def _stop_job(bid: str, status: str = 'stopped') -> int:
     return res.modified_count
 
 
-async def start_broadcast(trigger: str, actor: str, audience: str) -> dict:
-    """audience: 'daily' | 'weekly' | 'all'."""
-    rates = await current_rates()
-    if not rates:
-        raise HTTPException(status_code=400, detail="No rate available yet today — fetch or confirm today's rate first.")
-    running = await db.rate_broadcasts.find_one({'status': 'sending', 'audience': {'$in': [audience, 'all']}}, {'_id': 0, 'id': 1})
+async def start_broadcast(trigger: str, actor: str, audience: str, list_id: Optional[str] = None,
+                          template: Optional[dict] = None) -> dict:
+    """audience: 'daily' | 'weekly' | 'all' (rate subscribers) | 'list' (a
+    custom list, list_id). template: one of the owner's approved templates
+    (routers/broadcasts.py) instead of the rate update."""
+    rates = None
+    if not template:
+        rates = await current_rates()
+        if not rates:
+            raise HTTPException(status_code=400, detail="No rate available yet today — fetch or confirm today's rate first.")
+    list_name = None
+    if audience == 'list':
+        lst = await db.broadcast_lists.find_one({'id': list_id}, {'_id': 0}) if list_id else None
+        if not lst:
+            raise HTTPException(status_code=404, detail='List not found')
+        list_name = lst['name']
+        running = await db.rate_broadcasts.find_one({'status': 'sending', 'list_id': list_id}, {'_id': 0, 'id': 1})
+    else:
+        running = await db.rate_broadcasts.find_one(
+            {'status': 'sending', 'audience': {'$in': [audience, 'all']}, 'template_id': template['id'] if template else None},
+            {'_id': 0, 'id': 1})
     if running:
         if trigger != 'schedule':
             raise HTTPException(status_code=400, detail='A send to this list is still going — stop it first or wait for it to finish.')
         await _stop_job(running['id'], 'replaced')  # never deliver last week's rate after this week's
     q: dict = {'status': 'active'}
-    if audience in PLANS:
+    if audience == 'list':
+        q['lists'] = list_id
+    else:
         q.update(_plan_query(audience))
     subs = await db.rate_subscribers.find(q, {'_id': 0, 'id': 1, 'name': 1, 'mobile': 1}).to_list(50000)
     if not subs:
         raise HTTPException(status_code=400, detail='Nobody on this list yet.')
     bid = str(uuid.uuid4())
     now = now_utc().isoformat()
-    await db.rate_broadcasts.insert_one({
-        'id': bid, 'created_at': now, 'created_by': actor, 'trigger': trigger, 'audience': audience, 'status': 'sending',
-        'gold': rates['gold'], 'silver': rates['silver'], 'photo_url': await photo_url(), 'total': len(subs),
-    })
+    job = {'id': bid, 'created_at': now, 'created_by': actor, 'trigger': trigger, 'audience': audience, 'status': 'sending',
+           'list_id': list_id, 'list_name': list_name, 'total': len(subs), 'template': None, 'template_id': None}
+    if template:
+        job.update({'template': template, 'template_id': template['id']})
+    else:
+        job.update({'gold': rates['gold'], 'silver': rates['silver'], 'photo_url': await photo_url()})
+    await db.rate_broadcasts.insert_one(job)
     await db.rate_broadcast_recipients.insert_many([
         {'id': str(uuid.uuid4()), 'broadcast_id': bid, 'subscriber_id': s['id'], 'name': s.get('name') or '',
          'mobile': s['mobile'], 'state': 'pending', 'created_at': now} for s in subs
     ])
-    return {'id': bid, 'total': len(subs), 'gold': rates['gold'], 'silver': rates['silver'], 'audience': audience}
+    out = {'id': bid, 'total': len(subs), 'audience': audience, 'list_name': list_name}
+    if rates:
+        out.update({'gold': rates['gold'], 'silver': rates['silver']})
+    return out
 
 
 async def _drain_once() -> None:
@@ -271,17 +299,26 @@ async def _drain_once() -> None:
     if not batch:
         await db.rate_broadcasts.update_one({'id': job['id']}, {'$set': {'status': 'done', 'finished_at': now_utc().isoformat()}})
         return
-    gold, silver = inr(job['gold']), inr(job['silver'])
+    tpl = job.get('template')
+    if tpl:
+        from routers.broadcasts import send_components
+    else:
+        gold, silver = inr(job['gold']), inr(job['silver'])
     for r in batch:
         sub = await db.rate_subscribers.find_one({'id': r['subscriber_id']}, {'_id': 0, 'status': 1})
         if not sub or sub.get('status') != 'active':
             await db.rate_broadcast_recipients.update_one({'id': r['id']}, {'$set': {'state': 'skipped'}})
             continue
-        ok = await whatsapp_meta.send_template(
-            r['mobile'], TEMPLATE_NAME, TEMPLATE_LANG,
-            body_params=[r.get('name') or DEFAULT_NAME, gold, silver], flow=f"rate_broadcast:{job['id']}",
-            header_image_link=job.get('photo_url') or DEFAULT_PHOTO_URL,
-        )
+        if tpl:
+            ok = await whatsapp_meta.send_template_components(
+                r['mobile'], tpl['name'], send_components(tpl, r.get('name') or DEFAULT_NAME),
+                flow=f"rate_broadcast:{job['id']}")
+        else:
+            ok = await whatsapp_meta.send_template(
+                r['mobile'], TEMPLATE_NAME, TEMPLATE_LANG,
+                body_params=[r.get('name') or DEFAULT_NAME, gold, silver], flow=f"rate_broadcast:{job['id']}",
+                header_image_link=job.get('photo_url') or DEFAULT_PHOTO_URL,
+            )
         await db.rate_broadcast_recipients.update_one(
             {'id': r['id']}, {'$set': {'state': 'sent' if ok else 'failed', 'sent_at': now_utc().isoformat()}})
         await asyncio.sleep(SEND_GAP_SEC)
@@ -443,6 +480,8 @@ async def overview(_: dict = Depends(require_broadcast)):
         'meta_configured': whatsapp_meta.is_configured(),
         'sending': await db.rate_broadcasts.find({'status': 'sending'}, {'_id': 0}).to_list(5),
         'sent_today': await _sent_today(),
+        'my_lists': await db.broadcast_lists.count_documents({}),
+        'my_templates': await db.broadcast_templates.count_documents({}),
     }
 
 
@@ -524,12 +563,17 @@ async def save_settings(body: SettingsIn, user: dict = Depends(require_broadcast
 
 @router.get('/rate-broadcast/subscribers')
 async def list_subscribers(q: Optional[str] = None, status: Optional[str] = None, plan: Optional[str] = None,
-                           _: dict = Depends(require_broadcast)):
+                           list_id: Optional[str] = None, _: dict = Depends(require_broadcast)):
     query: dict = {}
     if status in ('active', 'opted_out'):
         query['status'] = status
-    if plan in PLANS:
+    if list_id:
+        query['lists'] = list_id
+    elif plan in PLANS:
         query.update(_plan_query(plan))
+    else:
+        # the rate lists; people only on a custom list show under that list (but STOPs show everywhere)
+        query['$nor'] = [{'plan': 'none', 'status': 'active'}]
     if q:
         qe = re.escape(q.strip())
         query['$or'] = [{'name': {'$regex': qe, '$options': 'i'}}, {'mobile': {'$regex': qe}}]
@@ -547,7 +591,7 @@ async def import_subscribers(file: UploadFile = File(...), user: dict = Depends(
         rows = parse_contacts(file.filename or '', raw)
     except Exception:
         raise HTTPException(status_code=400, detail="Couldn't read that file — upload an Excel (.xlsx) or CSV list with name and mobile columns.")
-    existing = {s['mobile']: s async for s in db.rate_subscribers.find({}, {'_id': 0, 'id': 1, 'mobile': 1, 'name': 1, 'status': 1})}
+    existing = {s['mobile']: s async for s in db.rate_subscribers.find({}, {'_id': 0, 'id': 1, 'mobile': 1, 'name': 1, 'status': 1, 'plan': 1})}
     added = updated = invalid = duplicate = kept_out = 0
     seen = set()
     now = now_utc().isoformat()
@@ -567,6 +611,9 @@ async def import_subscribers(file: UploadFile = File(...), user: dict = Depends(
                              'plan': 'weekly', 'source': 'import', 'added_at': now})
         elif ex.get('status') == 'opted_out':
             kept_out += 1  # they said STOP — an import must never re-subscribe them
+        elif ex.get('plan') == 'none':  # was only on a custom list — now on the rate list too
+            await db.rate_subscribers.update_one({'id': ex['id']}, {'$set': {'plan': 'weekly', **({'name': r['name']} if r['name'] and not ex.get('name') else {})}})
+            updated += 1
         elif r['name'] and not ex.get('name'):
             await db.rate_subscribers.update_one({'id': ex['id']}, {'$set': {'name': r['name']}})
             updated += 1
@@ -592,6 +639,10 @@ async def add_subscriber(body: SubscriberIn, user: dict = Depends(require_broadc
     if not m:
         raise HTTPException(status_code=400, detail='Enter a valid 10-digit mobile number')
     existing = await db.rate_subscribers.find_one({'mobile': m}, {'_id': 0})
+    if existing and existing.get('plan') == 'none' and existing.get('status') == 'active':
+        upd = {'plan': body.plan, **({'name': body.name.strip()[:60]} if body.name.strip() and not existing.get('name') else {})}
+        await db.rate_subscribers.update_one({'id': existing['id']}, {'$set': upd})
+        return {**existing, **upd}
     if existing:
         raise HTTPException(status_code=400, detail='Already on the list' + (' (they opted out with STOP)' if existing.get('status') == 'opted_out' else ''))
     doc = {'id': str(uuid.uuid4()), 'name': body.name.strip()[:60], 'mobile': m, 'status': 'active',
@@ -615,7 +666,9 @@ async def remove_subscriber(sid: str, user: dict = Depends(require_broadcast)):
 
 
 class SendIn(BaseModel):
-    audience: Literal['daily', 'weekly', 'all'] = 'weekly'
+    audience: Literal['daily', 'weekly', 'all', 'list'] = 'weekly'
+    list_id: Optional[str] = None
+    template_id: Optional[str] = None   # one of your own templates instead of the rate
 
 
 @router.post('/rate-broadcast/send')
@@ -623,11 +676,18 @@ async def send_now(body: SendIn = SendIn(), user: dict = Depends(require_broadca
     import whatsapp_meta
     if not whatsapp_meta.is_configured():
         raise HTTPException(status_code=400, detail='The official WhatsApp (Meta) line is not configured.')
-    st = await whatsapp_meta.template_status(TEMPLATE_NAME)
-    if st.get('status') != 'APPROVED':
-        raise HTTPException(status_code=400, detail='The rate template is not approved by Meta yet.')
-    job = await start_broadcast('manual', user.get('name') or 'Owner', body.audience)
-    await log_audit(user, 'rate_broadcast.send', 'rate_broadcast', job['id'], f"{body.audience}: {job['total']} recipients")
+    tpl = None
+    if body.template_id:
+        from routers.broadcasts import approved_template
+        tpl = await approved_template(body.template_id)
+    else:
+        st = await whatsapp_meta.template_status(TEMPLATE_NAME)
+        if st.get('status') != 'APPROVED':
+            raise HTTPException(status_code=400, detail='The rate template is not approved by Meta yet.')
+    job = await start_broadcast('manual', user.get('name') or 'Owner', body.audience, body.list_id, tpl)
+    what = tpl['label'] if tpl else 'rate'
+    await log_audit(user, 'rate_broadcast.send', 'rate_broadcast', job['id'],
+                    f"{what} → {job.get('list_name') or body.audience}: {job['total']} recipients")
     return job
 
 
@@ -715,6 +775,7 @@ async def stop_broadcast(bid: str, user: dict = Depends(require_broadcast)):
 
 @router.get('/rate-broadcast/history')
 async def history(_: dict = Depends(require_broadcast)):
+    from routers.broadcasts import response_counts
     jobs = await db.rate_broadcasts.find({}, {'_id': 0}).sort('created_at', -1).to_list(12)
     for j in jobs:
         states = {}
@@ -726,4 +787,8 @@ async def history(_: dict = Depends(require_broadcast)):
             delivery[k] = delivery.get(k, 0) + 1
         j['states'] = states
         j['delivery'] = delivery  # sent / delivered / read / failed, from Meta's status webhooks
+        j['taps'] = await response_counts(j['id'])  # quick-reply button taps, per button
+        if j.get('template'):
+            j['template_label'] = j['template'].get('label')
+            j.pop('template')
     return jobs
