@@ -22,6 +22,7 @@ import { employeeTabAccess } from '@/src/components/EmployeeTabBar';
 import { haptics } from '@/src/utils/haptics';
 import { useToast } from '@/src/components/ui';
 import { TabBarSpacer } from '@/src/components/GlassTabBar';
+import { StickyHeader, useScrolled } from '@/src/components/ui/StickyHeader';
 
 // Modules a tile can be shown for on this dashboard — icon/label/route match
 // the same module rows on the Work tab ((emp)/work.tsx) so a module looks
@@ -53,6 +54,7 @@ const fmtTime = (iso?: string) => {
 };
 
 export default function EmployeeHome() {
+  const { scrolled, onScroll } = useScrolled();
   const { user, hasModule } = useAuth();
   // Work-from-home staff don't record attendance — hide the punch card and
   // the check-in/out reminders for them.
@@ -121,11 +123,7 @@ export default function EmployeeHome() {
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="emp-home-screen">
-      <ScrollView
-        contentContainerStyle={{ paddingBottom: spacing.xxxl }}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}
-        showsVerticalScrollIndicator={false}
-      >
+      <StickyHeader scrolled={scrolled} style={{ paddingHorizontal: 0, paddingTop: 0, paddingBottom: 0 }}>
         {/* Flat header — same clean language as the admin dashboard. */}
         <View style={styles.header}>
           {user?.photo ? (
@@ -145,6 +143,12 @@ export default function EmployeeHome() {
             {unread > 0 && <View style={styles.bellDot} />}
           </Pressable>
         </View>
+      </StickyHeader>
+      <ScrollView onScroll={onScroll} scrollEventThrottle={16}
+        contentContainerStyle={{ paddingBottom: spacing.xxxl }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}
+        showsVerticalScrollIndicator={false}
+      >
 
         {loading ? (
           <View style={{ paddingVertical: 80, alignItems: 'center' }}>
@@ -390,7 +394,7 @@ function ActionCard({ icon, label, onPress, testID }: { icon: any; label: string
 
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
-  header: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.lg },
+  header: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.md },
   hero: { height: 180, position: 'relative' },
   heroInner: { flex: 1, paddingHorizontal: spacing.lg, paddingTop: spacing.md, gap: spacing.md, justifyContent: 'space-between', paddingBottom: spacing.lg },
   heroTopRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },

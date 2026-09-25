@@ -11,6 +11,7 @@ import { isPushSupported, isSubscribed, subscribeToPush, unsubscribeFromPush } f
 import { NotificationSetupHint } from '@/src/components/NotificationSetupHint';
 import { TabBarSpacer } from '@/src/components/GlassTabBar';
 import { GlassSettings } from '@/src/components/GlassSettings';
+import { StickyHeader, useScrolled } from '@/src/components/ui/StickyHeader';
 
 // Settings, rethought (v2 Phase 6): grouped iOS-style inset list — a profile
 // card at the top, then quiet section headers over full-width rows (icon +
@@ -85,6 +86,7 @@ const GROUPS: GroupDef[] = [
 ];
 
 export default function UtilityScreen() {
+  const { scrolled, onScroll } = useScrolled();
   const router = useRouter();
   const { user, logout, hasModule } = useAuth();
   const { colors, preference, setPreference } = useTheme();
@@ -117,8 +119,10 @@ export default function UtilityScreen() {
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="utility-screen">
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <StickyHeader scrolled={scrolled}>
         <Text style={styles.title}>Settings</Text>
+      </StickyHeader>
+      <ScrollView onScroll={onScroll} scrollEventThrottle={16} contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
 
         {/* Apple-ID-style profile card */}
         <Pressable testID="utility-account-card" onPress={() => router.push('/settings/account' as any)} style={({ pressed }) => [styles.profileCard, pressed && { opacity: 0.85 }]}>
@@ -217,8 +221,8 @@ function Row({ icon, label, sub, value, valueTone, trailing, onPress, testID }: 
 
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
-  scroll: { padding: spacing.lg, paddingBottom: spacing.xxxl },
-  title: { color: colors.onSurface, fontSize: 28, fontWeight: '600', fontFamily: fonts.display, marginBottom: spacing.lg },
+  scroll: { padding: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.xxxl },
+  title: { color: colors.onSurface, fontSize: 28, fontWeight: '600', fontFamily: fonts.display },
 
   profileCard: {
     flexDirection: 'row', alignItems: 'center', gap: spacing.md,

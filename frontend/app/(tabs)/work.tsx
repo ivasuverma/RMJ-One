@@ -13,6 +13,7 @@ import { ErrorState } from '@/src/components/ui';
 import { UploadQueueBadge } from '@/src/components/UploadQueueBadge';
 import { LiveRateButton } from '@/src/components/LiveRateButton';
 import { TabBarSpacer } from '@/src/components/GlassTabBar';
+import { StickyHeader, useScrolled } from '@/src/components/ui/StickyHeader';
 
 // Work — the operational hub, laid out to the v2 design comp: a search bar,
 // an "In progress" list of process rows (each showing its live state before
@@ -52,6 +53,7 @@ function renderSegs(segs: Seg[], colors: ThemeColors) {
 }
 
 export default function WorkScreen() {
+  const { scrolled, onScroll } = useScrolled();
   const router = useRouter();
   const { colors } = useTheme();
   const { hasModule, user } = useAuth();
@@ -244,11 +246,7 @@ export default function WorkScreen() {
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="work-screen">
-      <ScrollView
-        contentContainerStyle={styles.scroll}
-        showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}
-      >
+      <StickyHeader scrolled={scrolled}>
         <View style={styles.titleRow}>
           <View style={{ flex: 1 }}>
             <Text style={styles.h1}>Work</Text>
@@ -257,6 +255,12 @@ export default function WorkScreen() {
           {hasModule('documents') && <UploadQueueBadge />}
           <LiveRateButton testID="work-rate-btn" />
         </View>
+      </StickyHeader>
+      <ScrollView onScroll={onScroll} scrollEventThrottle={16}
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}
+      >
 
         <Pressable onPress={() => go('/repairs/search')} style={styles.search} testID="work-search">
           <Ionicons name="search-outline" size={17} color={colors.mutedText} />
@@ -319,7 +323,7 @@ export default function WorkScreen() {
 
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
-  scroll: { padding: spacing.lg, paddingBottom: spacing.xxxl },
+  scroll: { padding: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.xxxl },
   titleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
   progressHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   editOrderText: { color: colors.brandSecondary, fontSize: 13, fontWeight: '700', marginTop: spacing.xl, marginBottom: spacing.md },

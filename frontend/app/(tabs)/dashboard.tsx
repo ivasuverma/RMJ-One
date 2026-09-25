@@ -233,27 +233,27 @@ export default function DashboardScreen() {
       onRefresh={onRefresh}
       contentContainerStyle={isWide ? styles.scrollWide : undefined}
       testID="dashboard-screen"
-    >
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.dateText}>{nowISTLongLabel()}</Text>
-          <Text style={styles.owner} numberOfLines={1}>{user?.name || 'Owner'}</Text>
-          <View style={styles.livePill} testID="dashboard-live-pill">
-            <View style={[styles.liveDot, !connected && styles.liveDotOff]} />
-            <Text style={styles.liveText}>
-              {connected ? 'Live' : 'Updated'} · {timeAgo(lastUpdated) || 'just now'}
-            </Text>
+      header={(
+        <View style={styles.header}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.dateText}>{nowISTLongLabel()}</Text>
+            <Text style={styles.owner} numberOfLines={1}>{user?.name || 'Owner'}</Text>
+            <View style={styles.livePill} testID="dashboard-live-pill">
+              <View style={[styles.liveDot, !connected && styles.liveDotOff]} />
+              <Text style={styles.liveText}>
+                {connected ? 'Live' : 'Updated'} · {timeAgo(lastUpdated) || 'just now'}
+              </Text>
+            </View>
           </View>
+          {hasModule('documents') && <UploadQueueBadge />}
+          <LiveRateButton testID="dashboard-rate-btn" />
+          <Pressable onPress={() => router.push('/notifications' as any)} style={styles.iconBtn} testID="notifications-btn" hitSlop={10}>
+            <Ionicons name="notifications-outline" size={19} color={colors.onSurface} />
+            {unread > 0 && <View style={styles.bellDot} />}
+          </Pressable>
         </View>
-        {hasModule('documents') && <UploadQueueBadge />}
-        <LiveRateButton testID="dashboard-rate-btn" />
-        <Pressable onPress={() => router.push('/notifications' as any)} style={styles.iconBtn} testID="notifications-btn" hitSlop={10}>
-          <Ionicons name="notifications-outline" size={19} color={colors.onSurface} />
-          {unread > 0 && <View style={styles.bellDot} />}
-        </Pressable>
-      </View>
-
+      )}
+    >
       {loading ? (
         <DashboardSkeleton />
       ) : error && !data ? (
@@ -726,7 +726,7 @@ const TONE_COLORS = (colors: ThemeColors): Record<Tone, { bg: string; fg: string
 
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   scrollWide: { maxWidth: 1200, width: '100%', alignSelf: 'center' },
-  header: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginBottom: spacing.lg },
+  header: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   dateText: { color: colors.brandSecondary, fontSize: 12, letterSpacing: 0.6, textTransform: 'uppercase' },
   owner: { color: colors.onSurface, fontSize: 26, fontWeight: '600', fontFamily: fonts.display, marginTop: 2 },
   livePill: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 6 },
