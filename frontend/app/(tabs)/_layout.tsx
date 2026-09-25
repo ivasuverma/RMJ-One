@@ -6,7 +6,6 @@ import { useTheme } from '@/src/theme/ThemeContext';
 import { useAuth } from '@/src/auth/AuthContext';
 import { OwnerTabBar } from '@/src/components/OwnerTabBar';
 import { EmployeeTabBar } from '@/src/components/EmployeeTabBar';
-import { useTabBarSpace } from '@/src/components/GlassTabBar';
 
 // Module landing pages that employees can be granted (see
 // EMPLOYEE_ASSIGNABLE_MODULES in the backend) and that live in this group so
@@ -14,9 +13,6 @@ import { useTabBarSpace } from '@/src/components/GlassTabBar';
 // ((emp)), so everything else in here bounces them home — but these four are
 // linked to from the employee Home/Work/Transactions screens, so they must
 // stay reachable, just without the owner tab bar.
-// Screens that hide the bar get no bottom padding for it.
-const NO_BAR = { paddingBottom: 0 };
-
 const EMPLOYEE_SHARED_SCREENS = ['cashbook', 'documents', 'samples', 'repairs'];
 
 export default function OwnerTabsLayout() {
@@ -24,7 +20,6 @@ export default function OwnerTabsLayout() {
   const { colors } = useTheme();
   const router = useRouter();
   const isEmployee = user?.role === 'employee';
-  const tabSpace = useTabBarSpace();
 
   useEffect(() => {
     if (loading) return;
@@ -61,9 +56,9 @@ export default function OwnerTabsLayout() {
       // instead follows the real visit order, so leaving a module this way
       // returns to Work (or Dashboard) — whichever you pushed it from.
       backBehavior="history"
-      // The glass bar floats over the screen; pad each scene so its content
-      // ends just above it (see GlassTabBar / useTabBarSpace).
-      screenOptions={{ headerShown: false, sceneStyle: { paddingBottom: tabSpace, backgroundColor: colors.surface } }}
+      // The glass bar floats over the screen and pages run on underneath it;
+      // each tab screen ends its scroll with <TabBarSpacer /> (GlassTabBar).
+      screenOptions={{ headerShown: false, sceneStyle: { backgroundColor: colors.surface } }}
       // Employees may only land on the shared module screens; anything else in
       // this group is owner-only and sends them home. This runs off the
       // navigator's own focus event, which names the screen actually being
@@ -116,10 +111,10 @@ export default function OwnerTabsLayout() {
           tab bar is hidden while it's active (href: null alone only drops
           the tappable icon, not the bar itself) — it would otherwise sit
           redundantly under a screen that already has its own way back. */}
-      <Tabs.Screen name="transactions" options={{ href: null, tabBarStyle: { display: 'none' }, sceneStyle: NO_BAR }} />
-      <Tabs.Screen name="employees" options={{ href: null, tabBarStyle: { display: 'none' }, sceneStyle: NO_BAR }} />
-      <Tabs.Screen name="payroll" options={{ href: null, tabBarStyle: { display: 'none' }, sceneStyle: NO_BAR }} />
-      <Tabs.Screen name="settings" options={{ href: null, tabBarStyle: { display: 'none' }, sceneStyle: NO_BAR }} />
+      <Tabs.Screen name="transactions" options={{ href: null, tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="employees" options={{ href: null, tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="payroll" options={{ href: null, tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="settings" options={{ href: null, tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="masters" options={{ href: null }} />
       {/* Each module's landing/list screen lives here (no tabBarStyle
           override, so — like masters above — the bar stays visible) so it

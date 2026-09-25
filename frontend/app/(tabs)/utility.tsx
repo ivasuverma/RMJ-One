@@ -9,6 +9,7 @@ import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme, ThemePreference } from '@/src/theme/ThemeContext';
 import { isPushSupported, isSubscribed, subscribeToPush, unsubscribeFromPush } from '@/src/utils/push';
 import { NotificationSetupHint } from '@/src/components/NotificationSetupHint';
+import { TabBarSpacer } from '@/src/components/GlassTabBar';
 
 // Settings, rethought (v2 Phase 6): grouped iOS-style inset list — a profile
 // card at the top, then quiet section headers over full-width rows (icon +
@@ -185,6 +186,7 @@ export default function UtilityScreen() {
         </Pressable>
 
         <Text style={styles.footer}>RMJ One · One system for the entire business</Text>
+        <TabBarSpacer />
       </ScrollView>
     </SafeAreaView>
   );

@@ -16,7 +16,7 @@ import { Sheet, useToast } from '@/src/components/ui';
 import { QuickDocCapture } from '@/src/components/QuickDocCapture';
 import { extractPdfJpegs } from '@/src/utils/imagesToPdf';
 import { UploadQueueBadge } from '@/src/components/UploadQueueBadge';
-import { TAB_OVERLAP } from '@/src/components/GlassTabBar';
+import { TabBarSpacer } from '@/src/components/GlassTabBar';
 
 type Doc = {
   id: string; category_key: string; status: 'pending' | 'done'; upload_state: string;
@@ -368,6 +368,7 @@ export default function DocumentsScreen() {
         )}
 
         <View style={{ height: spacing.xxxl }} />
+        <TabBarSpacer />
       </ScrollView>
 
       <QuickDocCapture visible={captureOpen} onClose={() => setCaptureOpen(false)} onSaved={load} />
@@ -748,7 +749,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
 
   empty: { alignItems: 'center', paddingVertical: 40, gap: spacing.sm },
   emptyText: { color: colors.onSurfaceTertiary },
-  fab: { position: 'absolute', right: spacing.lg, bottom: spacing.lg + TAB_OVERLAP, width: 56, height: 56, borderRadius: 28, backgroundColor: colors.brandPrimary, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 4 },
+  fab: { position: 'absolute', right: spacing.lg, bottom: spacing.lg, width: 56, height: 56, borderRadius: 28, backgroundColor: colors.brandPrimary, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 4 },
 
   // Quick view
   qvRoot: { flex: 1, backgroundColor: '#000' },

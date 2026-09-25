@@ -7,6 +7,7 @@ import { api } from '@/src/api/client';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { ErrorState } from '@/src/components/ui';
+import { TabBarSpacer } from '@/src/components/GlassTabBar';
 
 // Ledger tab (owner/admin/accountant). The books, grouped by what they are about:
 //   People — the customer, karigar and employee ledgers (each party's own account)
@@ -159,6 +160,7 @@ export default function LedgerScreen() {
             </View>
           );
         })}
+        <TabBarSpacer />
       </ScrollView>
     </SafeAreaView>
   );

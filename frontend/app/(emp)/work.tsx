@@ -10,6 +10,7 @@ import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { UploadQueueBadge } from '@/src/components/UploadQueueBadge';
 import { AppSetupBanner } from '@/src/components/AppSetupBanner';
+import { TabBarSpacer } from '@/src/components/GlassTabBar';
 
 // Employee Work hub — same card language as the admin Work board: an
 // "In progress" list of process rows (each showing its live state before you
@@ -141,6 +142,7 @@ export default function EmployeeWorkScreen() {
         {rows.map(renderRow)}
 
         <View style={{ height: spacing.xxl }} />
+        <TabBarSpacer />
       </ScrollView>
     </SafeAreaView>
   );

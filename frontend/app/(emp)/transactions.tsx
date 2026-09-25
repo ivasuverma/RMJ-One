@@ -7,6 +7,7 @@ import { api } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthContext';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { TabBarSpacer } from '@/src/components/GlassTabBar';
 
 type TileDef = { key: string; label: string; icon: keyof typeof Ionicons.glyphMap; route: string; module: string };
 
@@ -206,6 +207,7 @@ export default function EmployeeTransactionsScreen() {
             </View>
           </View>
         ))}
+        <TabBarSpacer />
       </ScrollView>
     </SafeAreaView>
   );

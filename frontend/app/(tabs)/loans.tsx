@@ -7,6 +7,7 @@ import { api } from '@/src/api/client';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { ErrorState } from '@/src/components/ui';
+import { TabBarSpacer } from '@/src/components/GlassTabBar';
 
 type Loan = {
   id: string; loan_no: string; customer_name: string; customer_mobile: string;
@@ -164,6 +165,7 @@ export default function GoldLoansScreen() {
             )}
           </Pressable>
         ))}
+        <TabBarSpacer />
       </ScrollView>
     </SafeAreaView>
   );

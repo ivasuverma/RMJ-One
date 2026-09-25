@@ -9,6 +9,7 @@ import { todayIST, istDateTime } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { ErrorState } from '@/src/components/ui';
+import { TabBarSpacer } from '@/src/components/GlassTabBar';
 
 type Item = {
   id: string; item_code: string; customer_name: string; description: string;
@@ -195,6 +196,7 @@ export default function RepairOrdersScreen() {
           );
         })}
         <View style={{ height: spacing.xxl }} />
+        <TabBarSpacer />
       </ScrollView>
     </SafeAreaView>
   );

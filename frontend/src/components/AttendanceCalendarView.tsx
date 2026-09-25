@@ -53,8 +53,9 @@ type Shift = { id: string; name: string; start: string; end: string; grace_min: 
  * (`app/(emp)/calendar.tsx`). Pass `onBack` to render a back/close header —
  * omit it when embedding inline in a tab (no navigation chrome needed).
  */
-export default function AttendanceCalendarView({ empId, onBack, title = 'Calendar' }: {
+export default function AttendanceCalendarView({ empId, onBack, title = 'Calendar', footer }: {
   empId: string; onBack?: () => void; title?: string;
+  footer?: React.ReactNode;   // e.g. <TabBarSpacer /> when shown above the tab bar
 }) {
   const { user } = useAuth();
   const { colors, scheme } = useTheme();
@@ -195,6 +196,7 @@ export default function AttendanceCalendarView({ empId, onBack, title = 'Calenda
               </View>
             ))}
           </View>
+          {footer}
         </ScrollView>
       )}
 
