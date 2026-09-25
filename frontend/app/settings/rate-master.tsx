@@ -14,11 +14,13 @@ type Daily = {
   gold_buy_margin: string; silver_buy_margin: string;
   skip_weekend_fetch: boolean; auto_send_enabled: boolean; auto_send_time: string;
   refresh_enabled: boolean; refresh_interval_min: string; refresh_start: string; refresh_end: string;
+  status_enabled: boolean;
 };
 const DAILY_DEFAULT: Daily = {
   gold_margin: '0', silver_margin: '0', gold_buy_margin: '0', silver_buy_margin: '0',
   skip_weekend_fetch: true, auto_send_enabled: false, auto_send_time: '12:30',
   refresh_enabled: true, refresh_interval_min: '120', refresh_start: '12:30', refresh_end: '19:00',
+  status_enabled: true,
 };
 type LiveDebug = {
   fetched_at: string | null; error: string | null;
@@ -59,6 +61,7 @@ export default function RateMasterScreen() {
         auto_send_time: g.auto_send_time || '12:30',
         refresh_enabled: g.refresh_enabled !== false, refresh_interval_min: String(g.refresh_interval_min ?? 120),
         refresh_start: g.refresh_start || '12:30', refresh_end: g.refresh_end || '19:00',
+        status_enabled: g.status_enabled !== false,
       });
       setDailyDirty(false);
       setLive(g.live || null);
@@ -78,6 +81,7 @@ export default function RateMasterScreen() {
         auto_send_enabled: daily.auto_send_enabled, auto_send_time: daily.auto_send_time,
         refresh_enabled: daily.refresh_enabled, refresh_interval_min: parseInt(daily.refresh_interval_min, 10) || 120,
         refresh_start: daily.refresh_start, refresh_end: daily.refresh_end,
+        status_enabled: daily.status_enabled,
       });
       toast.success('Daily rate settings saved'); setDailyDirty(false);
     } catch (e: any) { toast.error(e?.detail || 'Could not save'); }
@@ -158,6 +162,11 @@ export default function RateMasterScreen() {
               <TextInput value={daily.auto_send_time} onChangeText={(v) => setD({ auto_send_time: v })} editable={isOwner} placeholder="12:30" placeholderTextColor={colors.mutedText} style={styles.input} testID="gold-rate-auto-send-time" />
             </View>
           )}
+
+          <View style={styles.switchRow}>
+            <View style={{ flex: 1 }}><Text style={styles.label}>Also post to WhatsApp Status</Text><Text style={styles.hint}>When the rate goes to the WhatsApp Channel, the same rate is posted as a Status from the shop number — once a day. Seen by people who have the shop number saved.</Text></View>
+            <Switch value={daily.status_enabled} onValueChange={(v) => setD({ status_enabled: v })} disabled={!isOwner} trackColor={{ true: colors.brandPrimary, false: colors.border }} thumbColor={colors.surface} {...({ activeThumbColor: colors.surface } as object)} testID="gold-rate-status-toggle" />
+          </View>
 
           {isOwner ? (
             <Pressable onPress={saveDaily} disabled={dailySaving || !dailyDirty} style={[styles.primaryBtn, (dailySaving || !dailyDirty) && { opacity: 0.5 }]} testID="gold-rate-save-config">
