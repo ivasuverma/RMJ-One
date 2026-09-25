@@ -75,7 +75,7 @@ const GROUPS: GroupDef[] = [
   {
     title: 'Website', ownerOnly: true,
     rows: [
-      { key: 'website', label: 'Fresh at the Counter', sub: 'Photos of new pieces shown on rmj.co.in', icon: 'globe-outline', route: '/settings/website' },
+      { key: 'website', label: 'Website', sub: 'Edit rmj.co.in — words, photos, sections and new pieces', icon: 'globe-outline', route: '/website' },
     ],
   },
   {
