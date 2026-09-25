@@ -10,6 +10,7 @@ import { useAuth } from '@/src/auth/AuthContext';
 import { PhotoCaptureModal } from '@/src/components/PhotoCaptureModal';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { TAB_OVERLAP } from '@/src/components/GlassTabBar';
 
 type Emp = {
   name?: string; mobile?: string; address?: string; aadhaar?: string; pan?: string;
@@ -129,7 +130,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   input: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, color: colors.onSurface, paddingHorizontal: spacing.md, paddingVertical: 12, fontSize: 15 },
   accountRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.xl, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: spacing.md },
   accountText: { flex: 1, color: colors.onSurface, fontSize: 15, fontWeight: '600' },
-  footer: { position: 'absolute', left: 0, right: 0, bottom: 0, padding: spacing.lg, paddingTop: spacing.md, backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.divider },
+  footer: { position: 'absolute', left: 0, right: 0, bottom: 0, padding: spacing.lg, paddingBottom: spacing.lg + TAB_OVERLAP, paddingTop: spacing.md, backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.divider },
   saveBtn: { backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: 15, alignItems: 'center' },
   saveText: { color: colors.onBrandPrimary, fontSize: 15, fontWeight: '700' },
 });

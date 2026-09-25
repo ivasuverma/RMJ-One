@@ -18,6 +18,7 @@ import { counterColorOptions, counterToneFor } from '@/src/theme/palettes';
 import { useAuth } from '@/src/auth/AuthContext';
 import { ErrorState } from '@/src/components/ui';
 import { ToggleSwitch } from '@/src/components/ui/ToggleSwitch';
+import { TAB_OVERLAP } from '@/src/components/GlassTabBar';
 
 // Same rule as the backend's counter_limit_alert: storage places don't alert by default.
 const defaultLimitAlert = (name: string) => !/drawer|locker|safe|bank|vault|tijori|almirah/i.test(name || '');
@@ -760,7 +761,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   counterBalValue: { color: colors.onSurface, fontSize: 17, fontWeight: '800' },
 
   fabRow: {
-    position: 'absolute', left: spacing.lg, right: spacing.lg, bottom: spacing.lg,
+    position: 'absolute', left: spacing.lg, right: spacing.lg, bottom: spacing.lg + TAB_OVERLAP,
     flexDirection: 'row', gap: spacing.sm,
   },
   fab: {
