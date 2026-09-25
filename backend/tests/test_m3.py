@@ -152,6 +152,13 @@ class TestPayroll:
 
     def test_opening_balance_from_prior_month(self, owner_h, acc_h, emp_id_by_code):
         eid = emp_id_by_code['RMJ003']
+
+        def feb_row():
+            r = requests.post(f'{BASE_URL}/api/payroll/compute', json={'year': 2026, 'month': 2}, headers=acc_h)
+            return next(x for x in r.json()['rows'] if x['employee_id'] == eid)
+        # Other suites may already have posted Jan salary for RMJ003, so compare
+        # against the balance before this test's entries rather than an absolute.
+        before = feb_row()
         # Add ledger entry in prior month (Jan 2026)
         r = requests.post(f'{BASE_URL}/api/ledger/entries', json={
             'employee_id': eid, 'entry_type': 'advance', 'amount': 1000,
@@ -164,13 +171,11 @@ class TestPayroll:
             'date': '2026-02-10T10:00:00', 'note': 'in-month advance'
         }, headers=owner_h)
         assert r.status_code == 200
-        # Compute payroll for Feb 2026
-        r = requests.post(f'{BASE_URL}/api/payroll/compute', json={'year': 2026, 'month': 2}, headers=acc_h)
-        row = next(x for x in r.json()['rows'] if x['employee_id'] == eid)
-        # opening includes prior-month advance (negative)
-        assert row['opening_balance'] <= -1000  # at least -1000 (advance)
-        # in-month advance shows up in row['advance']
-        assert row['advance'] >= 500
+        row = feb_row()
+        # the prior-month advance lowers the opening balance by exactly 1000
+        assert abs((row['opening_balance'] - before['opening_balance']) + 1000) < 0.01
+        # the in-month advance shows up in row['advance'], not the opening balance
+        assert abs((row['advance'] - before['advance']) - 500) < 0.01
 
     def test_save_and_update_entry(self, acc_h, owner_h, emp_id_by_code):
         # Unlock in case previously locked
@@ -183,13 +188,15 @@ class TestPayroll:
         entry_id = rows[0]['id']
         TestPayroll.entry_id = entry_id
         # Update with overrides
+        # payment_mode isn't settable here any more — it's derived from the
+        # payments actually recorded (POST /payroll/entry/{id}/payments).
         upd = {'bonus_override': 500, 'fine_override': 100, 'manual_deduction_override': 50,
                'note': 'override test', 'payment_mode': 'upi'}
         r = requests.put(f'{BASE_URL}/api/payroll/entry/{entry_id}', json=upd, headers=acc_h)
         assert r.status_code == 200, r.text
         updated = r.json()
         assert updated['bonus'] == 500 and updated['fine'] == 100
-        assert updated['payment_mode'] == 'upi' and updated['note'] == 'override test'
+        assert updated.get('payment_mode') != 'upi' and updated['note'] == 'override test'
         # net_salary should have been recomputed
         assert 'net_salary' in updated
 
@@ -265,7 +272,7 @@ class TestAudit:
     def test_owner_can_view_audit(self, owner_h):
         r = requests.get(f'{BASE_URL}/api/audit/logs', headers=owner_h)
         assert r.status_code == 200
-        logs = r.json()
+        logs = r.json()['items']  # paginated: {'items': [...], 'next_cursor': ...}
         assert isinstance(logs, list)
         # After previous tests we should have audit entries
         actions = [l.get('action') for l in logs]

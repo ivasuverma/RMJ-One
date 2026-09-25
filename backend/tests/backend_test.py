@@ -55,13 +55,15 @@ class TestDashboard:
         r = requests.get(f"{API}/dashboard", headers=auth_headers, timeout=30)
         assert r.status_code == 200
         d = r.json()
-        for k in ['todays_attendance', 'pending_approvals', 'payroll_summary']:
+        # Payroll moved off the dashboard; it now summarises each business module.
+        for k in ['todays_attendance', 'pending_approvals', 'repairs_summary', 'tasks_summary',
+                  'samples_summary', 'cashbook_summary', 'business_summary', 'recent_activity', 'documents_pending']:
             assert k in d
         att = d['todays_attendance']
         for f in ['present', 'absent', 'late', 'half_day', 'missing_punch', 'leave', 'working']:
             assert f in att and isinstance(att[f], (int, float))
-        for f in ['current_month_payroll', 'pending_salary', 'advances_outstanding', 'loans_outstanding', 'bonuses']:
-            assert f in d['payroll_summary']
+        for f in ['attendance_corrections', 'leave_requests']:
+            assert f in d['pending_approvals']
 
 
 # ---- Employees ----
@@ -71,7 +73,7 @@ class TestEmployees:
         assert r.status_code == 200
         arr = r.json()
         assert isinstance(arr, list) and len(arr) >= 5
-        assert '_id' not in str(arr)
+        assert all('_id' not in e and 'password_hash' not in e for e in arr)
 
     def test_list_search(self, auth_headers):
         r = requests.get(f"{API}/employees?q=Rahul", headers=auth_headers, timeout=30)
@@ -108,19 +110,19 @@ class TestEmployees:
         assert emp['employee_code'].startswith('RMJ')
         eid = emp['id']
 
-        # GET verifies persistence + joined timeline
+        # GET verifies persistence (the profile no longer returns a timeline)
         r2 = requests.get(f"{API}/employees/{eid}", headers=auth_headers, timeout=30)
         assert r2.status_code == 200
-        assert any(t['type'] == 'joined' for t in r2.json()['timeline'])
+        assert r2.json()['employee']['name'] == payload['name']
 
-        # Update salary -> salary_revised event
+        # Update salary
         upd = {**payload, "salary": 25000}
         r3 = requests.put(f"{API}/employees/{eid}", headers=auth_headers, json=upd, timeout=30)
         assert r3.status_code == 200
         assert float(r3.json()['salary']) == 25000
 
         r4 = requests.get(f"{API}/employees/{eid}", headers=auth_headers, timeout=30)
-        assert any(t['type'] == 'salary_revised' for t in r4.json()['timeline'])
+        assert float(r4.json()['employee']['salary']) == 25000
 
         # Delete
         r5 = requests.delete(f"{API}/employees/{eid}", headers=auth_headers, timeout=30)
@@ -128,6 +130,13 @@ class TestEmployees:
 
         r6 = requests.get(f"{API}/employees/{eid}", headers=auth_headers, timeout=30)
         assert r6.status_code == 404
+
+    def test_delete_blocked_with_history(self, auth_headers):
+        # Seeded RMJ001 has a bonus on its timeline — real history, so delete must refuse.
+        emps = requests.get(f"{API}/employees", headers=auth_headers, timeout=30).json()
+        rmj001 = next(e for e in emps if e['employee_code'] == 'RMJ001')
+        r = requests.delete(f"{API}/employees/{rmj001['id']}", headers=auth_headers, timeout=30)
+        assert r.status_code == 400
 
     def test_create_requires_owner(self, auth_headers):
         # sanity: owner token succeeds

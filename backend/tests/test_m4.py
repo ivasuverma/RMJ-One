@@ -74,8 +74,9 @@ class TestBiometricDevices:
                           json={"serial": self.serial, "label": "dup", "secret": "x"}, timeout=10)
         assert r.status_code == 400, r.text
 
-    def test_list_devices_hides_secret(self, admin_token):
-        r = requests.get(f"{API}/biometric/devices", headers=hdr(admin_token), timeout=10)
+    def test_list_devices_hides_secret(self, owner_token):
+        # Listing needs the 'biometric' module; the owner always has it.
+        r = requests.get(f"{API}/biometric/devices", headers=hdr(owner_token), timeout=10)
         assert r.status_code == 200
         devs = r.json()
         assert isinstance(devs, list) and len(devs) >= 1
@@ -125,26 +126,25 @@ class TestBiometricPush:
             assert body.get('action') == 'check_in'
 
     def test_second_push_creates_checkout(self, owner_token):
+        # An immediate second scan is a double-tap, not a check-out: pushes
+        # within PUNCH_COOLDOWN_MIN of the last one are ignored.
         r = requests.post(f"{API}/biometric/push", json={
             "serial": self.serial, "secret": self.secret, "user_id": self.emp_code, "event_type": "auto"
         }, timeout=15)
         assert r.status_code == 200, r.text
         body = r.json()
         assert body.get('ok') is True
-        assert body.get('action') == 'check_out' or body.get('reason') in ('already_checked_out',)
+        assert body.get('skipped') is True and body.get('reason') == 'duplicate_punch_cooldown'
 
     def test_attendance_today_reflects_push(self, owner_token):
         r = requests.get(f"{API}/attendance/today", headers=hdr(owner_token), timeout=10)
         assert r.status_code == 200
         rows = r.json()
-        row = next((x for x in rows if (x.get('employee') or {}).get('employee_code') == self.emp_code), None)
+        row = next((x for x in rows if x.get('employee_code') == self.emp_code), None)
         assert row is not None, "RMJ005 not in today's attendance"
-        att = row.get('attendance') or row
-        # employee_code was matched, now check nested attendance
-        # Response shape may vary; check either 'attendance' subobj or flat
-        node = row.get('attendance') if isinstance(row.get('attendance'), dict) else row
-        assert node.get('check_in') is not None, f"check_in missing for {self.emp_code}: {row}"
-        assert node.get('check_out') is not None, f"check_out missing for {self.emp_code}: {row}"
+        assert row.get('check_in') is not None, f"check_in missing for {self.emp_code}: {row}"
+        # the double-tap above was ignored, so no check-out yet
+        assert row.get('check_out') is None, f"unexpected check_out for {self.emp_code}: {row}"
 
     def test_device_last_seen_updated(self, owner_token):
         r = requests.get(f"{API}/biometric/devices", headers=hdr(owner_token), timeout=10)
