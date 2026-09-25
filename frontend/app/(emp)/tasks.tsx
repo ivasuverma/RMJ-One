@@ -7,6 +7,7 @@ import { api } from '@/src/api/client';
 import { todayIST } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { TabBarSpacer } from '@/src/components/GlassTabBar';
 
 type Task = {
   id: string; title: string; description: string; priority: 'low' | 'normal' | 'urgent';
@@ -115,6 +116,7 @@ export default function EmployeeTasksScreen() {
               ))}
             </>
           )}
+          <TabBarSpacer />
         </ScrollView>
       )}
     </SafeAreaView>

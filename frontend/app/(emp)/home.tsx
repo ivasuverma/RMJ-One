@@ -21,6 +21,7 @@ import { AppSetupBanner } from '@/src/components/AppSetupBanner';
 import { employeeTabAccess } from '@/src/components/EmployeeTabBar';
 import { haptics } from '@/src/utils/haptics';
 import { useToast } from '@/src/components/ui';
+import { TabBarSpacer } from '@/src/components/GlassTabBar';
 
 // Modules a tile can be shown for on this dashboard — icon/label/route match
 // the same module rows on the Work tab ((emp)/work.tsx) so a module looks
@@ -283,6 +284,7 @@ export default function EmployeeHome() {
             </View>
           </View>
         )}
+        <TabBarSpacer />
       </ScrollView>
 
       {showPunch && (

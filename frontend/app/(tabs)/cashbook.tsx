@@ -18,7 +18,7 @@ import { counterColorOptions, counterToneFor } from '@/src/theme/palettes';
 import { useAuth } from '@/src/auth/AuthContext';
 import { ErrorState } from '@/src/components/ui';
 import { ToggleSwitch } from '@/src/components/ui/ToggleSwitch';
-import { TAB_OVERLAP } from '@/src/components/GlassTabBar';
+import { TabBarSpacer, useTabBarInset } from '@/src/components/GlassTabBar';
 
 // Same rule as the backend's counter_limit_alert: storage places don't alert by default.
 const defaultLimitAlert = (name: string) => !/drawer|locker|safe|bank|vault|tijori|almirah/i.test(name || '');
@@ -50,6 +50,7 @@ type Mode = 'view' | 'form' | 'settings';
 const fmtINR = (n: number) => `₹${Math.round(n || 0).toLocaleString('en-IN')}`;
 
 export default function CashBookScreen() {
+  const tabInset = useTabBarInset();
   const router = useRouter();
   const { manage } = useLocalSearchParams<{ manage?: string }>();
   const { colors, scheme } = useTheme();
@@ -446,11 +447,14 @@ export default function CashBookScreen() {
                 <Text style={styles.counterBalLabel}>Counter Bal (Closing)</Text>
                 <Text style={styles.counterBalValue}>{fmtINR(day?.closing_balance || 0)}</Text>
               </View>
+              {/* room for the Received / Paid buttons above the bar */}
+              <View style={{ height: 64 }} />
+              <TabBarSpacer />
             </ScrollView>
           )}
 
           {counters.length > 0 && (
-            <View style={styles.fabRow}>
+            <View style={[styles.fabRow, { bottom: spacing.lg + tabInset }]}>
               <Pressable onPress={() => openAdd('received')} style={[styles.fab, { backgroundColor: colors.brandPrimary }]} testID="cashbook-add-received">
                 <Ionicons name="add" size={18} color={colors.onBrandPrimary} />
                 <Text style={styles.fabText}>Received</Text>
@@ -591,6 +595,7 @@ export default function CashBookScreen() {
                 )}
               </Pressable>
             )}
+            <TabBarSpacer />
           </ScrollView>
         </KeyboardAvoidingView>
       )}
@@ -681,6 +686,7 @@ export default function CashBookScreen() {
               </Pressable>
             </>
           )}
+          <TabBarSpacer />
         </ScrollView>
       )}
     </SafeAreaView>
@@ -761,7 +767,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   counterBalValue: { color: colors.onSurface, fontSize: 17, fontWeight: '800' },
 
   fabRow: {
-    position: 'absolute', left: spacing.lg, right: spacing.lg, bottom: spacing.lg + TAB_OVERLAP,
+    position: 'absolute', left: spacing.lg, right: spacing.lg, bottom: spacing.lg,
     flexDirection: 'row', gap: spacing.sm,
   },
   fab: {

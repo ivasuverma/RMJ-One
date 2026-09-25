@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { useAuth } from '@/src/auth/AuthContext';
 import { useTheme } from '@/src/theme/ThemeContext';
 import AttendanceCalendarView from '@/src/components/AttendanceCalendarView';
+import { TabBarSpacer } from '@/src/components/GlassTabBar';
 
 export default function EmployeeCalendarTab() {
   const { user } = useAuth();
@@ -22,7 +23,7 @@ export default function EmployeeCalendarTab() {
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }} edges={['top']} testID="emp-calendar-screen">
       {/* No longer a tab — it's reached by tapping the Calendar tile on Home,
           so it needs its own back header now. */}
-      <AttendanceCalendarView empId={user.id} title="My Calendar" onBack={() => router.back()} />
+      <AttendanceCalendarView empId={user.id} title="My Calendar" onBack={() => router.back()} footer={<TabBarSpacer />} />
     </SafeAreaView>
   );
 }

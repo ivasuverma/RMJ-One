@@ -9,6 +9,7 @@ import { api } from '@/src/api/client';
 import { displayDateOnly } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { TabBarSpacer } from '@/src/components/GlassTabBar';
 
 type Leave = {
   id: string; from_date: string; to_date: string; leave_type: string;
@@ -75,6 +76,7 @@ export default function EmployeeLeaves() {
             </View>
           ))
         )}
+        <TabBarSpacer />
       </ScrollView>
     </SafeAreaView>
   );

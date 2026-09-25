@@ -8,6 +8,7 @@ import { api } from '@/src/api/client';
 import { istDateTime, todayIST } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { TabBarSpacer } from '@/src/components/GlassTabBar';
 
 type Sample = {
   id: string; sample_code: string; description: string; tag_number: string;
@@ -175,6 +176,7 @@ export default function SamplesScreen() {
             </Pressable>
           );
         })}
+        <TabBarSpacer />
       </ScrollView>
     </SafeAreaView>
   );

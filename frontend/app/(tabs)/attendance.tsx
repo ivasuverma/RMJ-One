@@ -11,6 +11,7 @@ import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { haptics } from '@/src/utils/haptics';
 import { FilterChips, useToast } from '@/src/components/ui';
+import { TabBarSpacer } from '@/src/components/GlassTabBar';
 
 // Attendance & Payroll — one screen inside Work, three segments (matches the
 // v2 design comp): Today (daily in/out), Calendar (pick a person, edit any
@@ -359,6 +360,7 @@ export default function OwnerAttendance() {
           </>
         )}
         <View style={{ height: spacing.xxxl }} />
+        <TabBarSpacer />
       </ScrollView>
     </SafeAreaView>
   );

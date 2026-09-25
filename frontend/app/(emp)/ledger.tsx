@@ -8,6 +8,7 @@ import { useAuth } from '@/src/auth/AuthContext';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { ErrorState } from '@/src/components/ui';
+import { TabBarSpacer } from '@/src/components/GlassTabBar';
 
 // Employee Ledger tab — the counterpart to the owner/admin Ledger tab, same
 // row style. Each row only appears when the owner has enabled that module for
@@ -95,6 +96,7 @@ export default function EmployeeLedgerScreen() {
             <Ionicons name="chevron-forward" size={18} color={colors.mutedText} />
           </Pressable>
         ))}
+        <TabBarSpacer />
       </ScrollView>
     </SafeAreaView>
   );

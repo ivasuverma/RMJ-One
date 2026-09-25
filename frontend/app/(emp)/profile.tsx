@@ -11,6 +11,7 @@ import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme, ThemePreference } from '@/src/theme/ThemeContext';
 import { isPushSupported, isSubscribed, subscribeToPush, unsubscribeFromPush } from '@/src/utils/push';
 import { QuickUnlockCard } from '@/src/components/QuickUnlockCard';
+import { TabBarSpacer } from '@/src/components/GlassTabBar';
 
 // Employee settings — same language as the admin Settings screen: an
 // Apple-ID-style profile card at the top (all personal/contact/bank details
@@ -117,6 +118,7 @@ export default function EmployeeProfile() {
         </Pressable>
 
         <Text style={styles.footer}>RMJ One · One system for the entire business</Text>
+        <TabBarSpacer />
       </ScrollView>
     </SafeAreaView>
   );

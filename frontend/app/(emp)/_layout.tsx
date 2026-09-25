@@ -4,13 +4,11 @@ import { useEffect } from 'react';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { useAuth } from '@/src/auth/AuthContext';
 import { EmployeeTabBar } from '@/src/components/EmployeeTabBar';
-import { useTabBarSpace } from '@/src/components/GlassTabBar';
 
 export default function EmployeeTabsLayout() {
   const { user, loading } = useAuth();
   const { colors } = useTheme();
   const router = useRouter();
-  const tabSpace = useTabBarSpace();
 
   useEffect(() => {
     if (loading) return;
@@ -36,7 +34,7 @@ export default function EmployeeTabsLayout() {
     // screens that live in the (tabs) group.
     <Tabs
       tabBar={() => <EmployeeTabBar />}
-      screenOptions={{ headerShown: false, sceneStyle: { paddingBottom: tabSpace, backgroundColor: colors.surface } }}
+      screenOptions={{ headerShown: false, sceneStyle: { backgroundColor: colors.surface } }}
     >
       <Tabs.Screen name="home" options={{ title: 'Home' }} />
       <Tabs.Screen name="work" options={{ title: 'Work' }} />

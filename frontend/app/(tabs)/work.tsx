@@ -12,6 +12,7 @@ import { istTime } from '@/src/utils/datetime';
 import { ErrorState } from '@/src/components/ui';
 import { UploadQueueBadge } from '@/src/components/UploadQueueBadge';
 import { LiveRateButton } from '@/src/components/LiveRateButton';
+import { TabBarSpacer } from '@/src/components/GlassTabBar';
 
 // Work — the operational hub, laid out to the v2 design comp: a search bar,
 // an "In progress" list of process rows (each showing its live state before
@@ -310,6 +311,7 @@ export default function WorkScreen() {
         })}
 
         <View style={{ height: spacing.xxl }} />
+        <TabBarSpacer />
       </ScrollView>
     </SafeAreaView>
   );
