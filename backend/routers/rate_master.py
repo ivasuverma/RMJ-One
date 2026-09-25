@@ -10,6 +10,10 @@ There is deliberately no margin or rounding setting here: the margin (₹ added/
 already applied to the base rate itself in Settings › WhatsApp, and the result is rounded the same
 way that base rate is — gold to the nearest ₹50, silver to the nearest ₹100.
 
+Gold purities below 24K (22K / 18K / 14K) can also carry a BUYBACK percentage — the buyback
+rate as a % of the same live 24K rate (e.g. 22K buyback = 89% of 24K). Left blank, buyback
+falls back to the 24K buyback rate × the sell percentage.
+
 The LED board uses the results through placeholders such as {gold_22k} (see
 routers/led_board.py); `fields_for()` is the one place other features call to get them.
 """
@@ -33,6 +37,7 @@ DEFAULTS = [
 ]
 ROUND_STEP = {'gold': 50, 'silver': 100}   # the same fixed steps the base rates use (gold_rate.py)
 KEYS = [d['key'] for d in DEFAULTS]
+BUY_KEYS = ('gold_22k', 'gold_18k', 'gold_14k')   # purities that take a buyback percentage
 _BASE_OF = {d['key']: d['base'] for d in DEFAULTS}
 
 
@@ -56,6 +61,11 @@ def _num(v, default):
         return default
 
 
+def _buy_pct(v) -> Optional[float]:
+    f = _num(v, None)
+    return f if f is not None and 0 < f <= 200 else None
+
+
 async def get_items() -> list:
     doc = await db.settings.find_one({'id': 'rate_master'}, {'_id': 0}) or {}
     saved = {i.get('key'): i for i in (doc.get('items') or [])}
@@ -67,6 +77,7 @@ async def get_items() -> list:
             'label': (s.get('label') or d['label']).strip()[:40],
             'percent': _num(s.get('percent'), d['percent']),
             'enabled': bool(s.get('enabled', d['enabled'])),
+            'buy_percent': _buy_pct(s.get('buy_percent')) if d['key'] in BUY_KEYS else None,
         })
     return out
 
@@ -76,10 +87,13 @@ def compute(items: list, gold: int, silver: int) -> list:
     for it in items:
         base_val = gold if it['base'] == 'gold' else silver
         rate = round_value(base_val * it['percent'] / 100.0, ROUND_STEP[it['base']], 'nearest')
+        bp = it.get('buy_percent')
+        buy_rate = round_value(base_val * bp / 100.0, ROUND_STEP[it['base']], 'nearest') if bp else None
         res.append({
             'key': it['key'], 'label': it['label'], 'base': it['base'], 'base_value': base_val,
             'percent': it['percent'], 'enabled': it['enabled'],
             'rate': rate if rate > 0 else None,
+            'buy_percent': bp, 'buy_rate': buy_rate if buy_rate and buy_rate > 0 else None,
             'error': None if rate > 0 else 'The rate comes out as zero or less',
         })
     return res
@@ -103,6 +117,7 @@ class RateItemIn(BaseModel):
     label: Optional[str] = None
     percent: float
     enabled: bool = True
+    buy_percent: Optional[float] = None   # 22K / 18K / 14K only; None = fall back (see module doc)
 
 
 class RateMasterIn(BaseModel):
@@ -121,8 +136,12 @@ def _validate(items: list[RateItemIn]) -> list:
         seen.add(it.key)
         if not math.isfinite(it.percent) or not (0 < it.percent <= 200):
             raise HTTPException(status_code=400, detail=f'{name}: percentage must be more than 0 and at most 200')
+        bp = it.buy_percent if it.key in BUY_KEYS else None
+        if bp is not None and (not math.isfinite(bp) or not (0 < bp <= 200)):
+            raise HTTPException(status_code=400, detail=f'{name}: buyback percentage must be more than 0 and at most 200')
         out.append({'key': it.key, 'label': (it.label or '').strip()[:40] or next(d['label'] for d in DEFAULTS if d['key'] == it.key),
-                    'percent': round(it.percent, 3), 'enabled': it.enabled})
+                    'percent': round(it.percent, 3), 'enabled': it.enabled,
+                    'buy_percent': round(bp, 3) if bp is not None else None})
     order = {k: i for i, k in enumerate(KEYS)}
     return sorted(out, key=lambda i: order[i['key']])
 
@@ -148,10 +167,13 @@ async def rate_master_live(_: dict = Depends(get_current)):
     items = [i for i in await get_items() if i['base'] == 'gold' and i['key'] != 'gold_24k' and i['enabled']]
     if not sell:
         return {'items': []}
-    sells = {r['key']: r['rate'] for r in compute(items, int(sell), 0)}
-    buys = {r['key']: r['rate'] for r in compute(items, int(buy), 0)} if buy else {}
-    return {'items': [{'key': i['key'], 'label': i['label'], 'percent': i['percent'],
-                       'sell': sells.get(i['key']), 'buy': buys.get(i['key'])} for i in items]}
+    at_sell = {r['key']: r for r in compute(items, int(sell), 0)}
+    # Buyback: the purity's own buyback % of the live 24K rate when set, else the
+    # 24K buyback rate x the sell percentage.
+    fallback = {r['key']: r['rate'] for r in compute(items, int(buy), 0)} if buy else {}
+    return {'items': [{'key': i['key'], 'label': i['label'], 'percent': i['percent'], 'buy_percent': i['buy_percent'],
+                       'sell': at_sell[i['key']]['rate'],
+                       'buy': at_sell[i['key']]['buy_rate'] if i['buy_percent'] else fallback.get(i['key'])} for i in items]}
 
 
 @router.post('/rate-master/preview')
@@ -165,7 +187,8 @@ async def rate_master_preview(body: RateMasterIn, _: dict = Depends(require_staf
     if not body.items:      # nothing typed: use the saved percentages
         return {'computed': compute(await get_items(), int(gold), int(silver)), 'base': {'gold': int(gold), 'silver': int(silver)}}
     items = [{'key': i.key, 'label': i.label or i.key, 'base': _BASE_OF[i.key],
-              'percent': i.percent if math.isfinite(i.percent) else 0, 'enabled': i.enabled} for i in body.items if i.key in KEYS]
+              'percent': i.percent if math.isfinite(i.percent) else 0, 'enabled': i.enabled,
+              'buy_percent': _buy_pct(i.buy_percent) if i.key in BUY_KEYS else None} for i in body.items if i.key in KEYS]
     return {'computed': compute(items, int(gold), int(silver)), 'base': {'gold': int(gold), 'silver': int(silver)}}
 
 

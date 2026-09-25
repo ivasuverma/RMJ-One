@@ -10,15 +10,23 @@ import { useTheme } from '@/src/theme/ThemeContext';
 import { useToast } from '@/src/components/ui';
 
 // Server shape
-type ServerItem = { key: string; label: string; base: 'gold' | 'silver'; percent: number; enabled: boolean };
+type ServerItem = { key: string; label: string; base: 'gold' | 'silver'; percent: number; enabled: boolean; buy_percent?: number | null };
 // Editing shape: the percentage is kept as text while typing so "91." doesn't get mangled.
-type Item = { key: string; label: string; base: 'gold' | 'silver'; percent: string; enabled: boolean };
-type Computed = { key: string; rate: number | null; error: string | null; base_value: number };
+type Item = { key: string; label: string; base: 'gold' | 'silver'; percent: string; enabled: boolean; buyPercent: string };
+type Computed = { key: string; rate: number | null; error: string | null; base_value: number; buy_rate?: number | null };
+// Purities that take their own buyback percentage (see backend routers/rate_master.py).
+const BUY_KEYS = ['gold_22k', 'gold_18k', 'gold_14k'];
 type State = { items: ServerItem[]; base: { gold: number; silver: number; date: string } | null; defaults: ServerItem[]; computed: Computed[] };
 
 const inr = (n: number) => n.toLocaleString('en-IN');
-const toEdit = (i: ServerItem): Item => ({ key: i.key, label: i.label, base: i.base, percent: String(i.percent), enabled: i.enabled });
-const toServer = (i: Item) => ({ key: i.key, label: i.label, percent: parseFloat(i.percent) || 0, enabled: i.enabled });
+const toEdit = (i: ServerItem): Item => ({
+  key: i.key, label: i.label, base: i.base, percent: String(i.percent), enabled: i.enabled,
+  buyPercent: i.buy_percent != null ? String(i.buy_percent) : '',
+});
+const toServer = (i: Item) => ({
+  key: i.key, label: i.label, percent: parseFloat(i.percent) || 0, enabled: i.enabled,
+  buy_percent: BUY_KEYS.includes(i.key) && parseFloat(i.buyPercent) > 0 ? parseFloat(i.buyPercent) : null,
+});
 
 export default function RateFormulasScreen() {
   const router = useRouter();
@@ -66,7 +74,7 @@ export default function RateFormulasScreen() {
   }, [items, tryGold, trySilver, loading]);
 
   const patch = (key: string, p: Partial<Item>) => { setItems((cur) => cur.map((i) => (i.key === key ? { ...i, ...p } : i))); setDirty(true); };
-  const resetOne = (key: string) => { const d = defaults.find((x) => x.key === key); if (d) patch(key, toEdit(d)); };
+  const resetOne = (key: string) => { const d = defaults.find((x) => x.key === key); if (d) patch(key, { percent: String(d.percent) }); };
   const save = async () => {
     setSaving(true);
     try { await api.put('/rate-master', { items: items.map(toServer) }); toast.success('Formulas saved'); await load(); }
@@ -74,7 +82,8 @@ export default function RateFormulasScreen() {
     finally { setSaving(false); }
   };
 
-  if (loading) return <SafeAreaView style={styles.centered}><ActivityIndicator color={colors.brandPrimary} /></SafeAreaView>;
+  // Same root container as the loaded screen — swapping roots left the dark theme background behind on web.
+  if (loading) return <SafeAreaView style={styles.root} edges={['top']}><View style={styles.centered}><ActivityIndicator color={colors.brandPrimary} /></View></SafeAreaView>;
   const byKey = Object.fromEntries(computed.map((c) => [c.key, c]));
   const changedBase = !!base && (String(base.gold) !== tryGold || String(base.silver) !== trySilver);
 
@@ -91,7 +100,7 @@ export default function RateFormulasScreen() {
 
         <View style={styles.infoBox}>
           <Ionicons name="calculator-outline" size={16} color={colors.brandSecondary} />
-          <Text style={styles.infoText}>Each rate is a percentage of the rate you confirm every day — for example 18K = 75% of the 24K rate. Gold purities use the 24K rate, silver uses the silver rate. The margin (₹ added or subtracted) is set on the Rate Master page, with the daily rate. Results here are rounded the same way as the base rate (gold to ₹50, silver to ₹100).</Text>
+          <Text style={styles.infoText}>Each rate is a percentage of the rate you confirm every day — for example 18K = 75% of the 24K rate. Gold purities use the 24K rate, silver uses the silver rate. For 22K, 18K and 14K you can also set a buyback percentage of the same 24K rate; left blank, their buyback is the 24K buyback rate times the sell percentage. The margin (₹ added or subtracted) is set on the Rate Master page, with the daily rate. Results here are rounded the same way as the base rate (gold to ₹50, silver to ₹100).</Text>
         </View>
 
         <View style={styles.card}>
@@ -125,6 +134,17 @@ export default function RateFormulasScreen() {
                 style={[styles.input, c?.error ? styles.inputBad : null]} placeholder="e.g. 75" placeholderTextColor={colors.mutedText} testID={`rm-percent-${it.key}`} />
               {c?.error ? <Text style={styles.err}>{c.error}</Text> : null}
 
+              {BUY_KEYS.includes(it.key) ? (
+                <>
+                  <View style={[styles.rowHead, { marginTop: spacing.sm }]}>
+                    <Text style={styles.label}>Buyback: % of the 24K rate</Text>
+                    <Text style={styles.buyResult}>{c?.buy_rate ? `₹${inr(c.buy_rate)}` : ''}</Text>
+                  </View>
+                  <TextInput value={it.buyPercent} onChangeText={(v) => patch(it.key, { buyPercent: v.replace(/[^0-9.]/g, '') })} editable={isOwner} keyboardType="decimal-pad"
+                    style={styles.input} placeholder="e.g. 89 (optional)" placeholderTextColor={colors.mutedText} testID={`rm-buy-percent-${it.key}`} />
+                </>
+              ) : null}
+
               <View style={styles.switchRow}>
                 <Text style={[styles.hint, { flex: 1 }]}>Show this rate (LED board placeholder: <Text style={styles.code}>{`{${it.key}}`}</Text>)</Text>
                 <Switch value={it.enabled} onValueChange={(v) => patch(it.key, { enabled: v })} disabled={!isOwner} trackColor={{ true: colors.brandPrimary, false: colors.border }} thumbColor={colors.surface} {...({ activeThumbColor: colors.surface } as object)} />
@@ -157,10 +177,12 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   cardTitle: { color: colors.onSurface, fontSize: 15, fontWeight: '800' },
   rowHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   result: { color: colors.onSurface, fontSize: 20, fontWeight: '800' },
+  buyResult: { color: colors.onSurfaceSecondary, fontSize: 15, fontWeight: '800', marginTop: spacing.sm },
   hint: { color: colors.mutedText, fontSize: 12 },
   label: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '600', marginTop: spacing.sm, marginBottom: 4 },
   row2: { flexDirection: 'row', gap: spacing.sm },
-  input: { backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, color: colors.onSurface, paddingHorizontal: spacing.md, paddingVertical: 11, fontSize: 14 },
+  // minWidth/width: a web <input> otherwise keeps an intrinsic width that can push the page wider than a phone.
+  input: { minWidth: 0, width: '100%', backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, color: colors.onSurface, paddingHorizontal: spacing.md, paddingVertical: 11, fontSize: 14 },
   inputBad: { borderColor: colors.onError },
   err: { color: colors.onError, fontSize: 12, marginTop: 2 },
   switchRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.sm },
