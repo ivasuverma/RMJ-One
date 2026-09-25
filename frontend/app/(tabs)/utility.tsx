@@ -72,6 +72,12 @@ const GROUPS: GroupDef[] = [
     ],
   },
   {
+    title: 'Website', ownerOnly: true,
+    rows: [
+      { key: 'website', label: 'Fresh at the Counter', sub: 'Photos of new pieces shown on rmj.co.in', icon: 'globe-outline', route: '/settings/website' },
+    ],
+  },
+  {
     title: 'System & Security', ownerOnly: true,
     rows: [
       { key: 'security', label: 'Security', sub: 'Auto sign-out after inactivity', icon: 'lock-closed-outline', route: '/settings/security' },

@@ -537,6 +537,8 @@ const CONFIG = {
   // 404s and silently falls back to sample data.
   RATES_URL: 'https://api.rmj.co.in/api/public/rates',        // ← set to your RMJ One URL
   INSTAGRAM_URL: 'https://api.rmj.co.in/api/public/instagram', // ← set to your RMJ One URL
+  PIECES_URL: 'https://api.rmj.co.in/api/public/website/pieces', // Fresh at the counter, managed in RMJ-One
+  API_ORIGIN: 'https://api.rmj.co.in',
   LOGIN_URL: 'https://app.rmj.co.in',                         // ← set to your RMJ One URL
   REFRESH_MS: 60 * 1000,                                  // same cadence as the app's rates screen
   STALE_AFTER_MS: 6 * 60 * 60 * 1000,                     // flag rates older than 6 hours
@@ -748,12 +750,26 @@ const PIECES=[
   ['2-YX4XeLl1Wot1nnWz.jpg','','22K gold'],
 ];
 const RAIL_IMG='assets/photos/';
-document.getElementById('rail').innerHTML=PIECES.map(([f,n,m])=>{
-  const src=RAIL_IMG+f, abs=new URL(src,location.href).href;
-  const what=n?`${n} (${m})`:`${m} piece`;
-  const msg=encodeURIComponent(`Hello, I'd like to know more about this ${what}: ${abs}`);
-  return `<a class="piece" href="https://wa.me/919781800888?text=${msg}"><div class="ph"><img loading="lazy" src="${src}" alt="${n?n+', ':''}${m}"></div><div class="pn">${n||m}</div><div class="pa">Ask about this piece</div></a>`;
-}).join('');
+const esc=v=>String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function renderRail(items){ // items: [{src, name, metal}]
+  document.getElementById('rail').innerHTML=items.map(({src,name:n,metal:m})=>{
+    const abs=new URL(src,location.href).href;
+    const what=n?`${n} (${m})`:`${m} piece`;
+    const msg=encodeURIComponent(`Hello, I'd like to know more about this ${what}: ${abs}`);
+    return `<a class="piece" href="https://wa.me/919781800888?text=${msg}"><div class="ph"><img loading="lazy" src="${esc(src)}" alt="${esc(n?n+', '+m:m)}"></div><div class="pn">${esc(n||m)}</div><div class="pa">Ask about this piece</div></a>`;
+  }).join('');
+}
+// Built-in set first, so the row is never empty; replaced by the pieces
+// managed in RMJ-One (Settings › Fresh at the Counter) once any exist.
+renderRail(PIECES.map(([f,n,m])=>({src:RAIL_IMG+f, name:n, metal:m})));
+(async()=>{
+  try{
+    const res=await fetch(CONFIG.PIECES_URL,{cache:'no-store'});
+    if(!res.ok) return;
+    const {pieces=[]}=await res.json();
+    if(pieces.length) renderRail(pieces.map(p=>({src:CONFIG.API_ORIGIN+p.image_url, name:p.name, metal:p.metal})));
+  }catch(e){ /* keep the built-in set */ }
+})();
 function railScroll(id,d){ document.getElementById(id).scrollBy({left:d*306,behavior:reduce?'auto':'smooth'}); }
 
 /* From Instagram — left-to-right scroll rail, same markup/CSS as "New at
