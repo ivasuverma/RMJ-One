@@ -47,6 +47,21 @@ export default function WhatsAppSettingsScreen() {
   const [metaTestMobile, setMetaTestMobile] = useState('');
   const [metaTestText, setMetaTestText] = useState('RMJ-One test message via the official WhatsApp API');
   const [metaTestSending, setMetaTestSending] = useState(false);
+  type AlertTpl = { exists: boolean; status: string | null; reason: string | null; error: string | null; body: string; env_override: string | null };
+  const [alertTpl, setAlertTpl] = useState<AlertTpl | null>(null);
+  const [tplBusy, setTplBusy] = useState(false);
+  const loadAlertTpl = async () => {
+    try { setAlertTpl(await api.get<AlertTpl>('/settings/whatsapp-meta/alert-template')); } catch { setAlertTpl(null); }
+  };
+  const createAlertTpl = async () => {
+    setTplBusy(true);
+    try {
+      setAlertTpl(await api.post<AlertTpl>('/settings/whatsapp-meta/alert-template', {}));
+      setMetaAlertTemplate(true);
+      toast.success('Template sent to Meta for approval');
+    } catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
+    finally { setTplBusy(false); }
+  };
 
   const loadMetaStatus = async () => {
     try { setMetaStatus(await api.get<MetaStatus>('/settings/whatsapp-meta')); }
@@ -80,7 +95,7 @@ export default function WhatsAppSettingsScreen() {
     } catch (_e) { /* ignore — form stays at defaults */ }
     finally { setLoading(false); }
   };
-  useEffect(() => { load(); loadMetaStatus(); }, []);
+  useEffect(() => { load(); loadMetaStatus(); loadAlertTpl(); }, []);
 
   const save = async () => {
     if (submittingRef.current) return;
@@ -295,6 +310,36 @@ export default function WhatsAppSettingsScreen() {
             <Ionicons name="refresh" size={14} color={colors.brandSecondary} />
             <Text style={styles.altBtnText}>Refresh Status</Text>
           </Pressable>
+
+          <View style={styles.groupDivider} />
+          <Text style={styles.fieldLabel}>Staff alert template</Text>
+          <Text style={styles.hint}>
+            Meta only delivers messages you start through an approved template. This one carries every staff alert
+            (title + detail) while Meta is the active service.
+          </Text>
+          {alertTpl && (
+            <View style={[styles.infoBox, alertTpl.status === 'APPROVED' ? styles.infoBoxOk : styles.infoBoxWarn, { marginBottom: spacing.sm }]} testID="whatsapp-meta-alert-template-status">
+              <Ionicons name={alertTpl.status === 'APPROVED' ? 'checkmark-circle-outline' : 'time-outline'} size={18} color={alertTpl.status === 'APPROVED' ? colors.onSuccess : colors.onWarning} />
+              <Text style={[styles.infoText, { color: alertTpl.status === 'APPROVED' ? colors.onSuccess : colors.onWarning }]}>
+                {alertTpl.env_override ? `Using "${alertTpl.env_override}" from backend/.env.`
+                  : alertTpl.error ? alertTpl.error
+                  : !alertTpl.exists ? 'Not created yet.'
+                  : alertTpl.status === 'APPROVED' ? 'Approved — staff alerts will use it.'
+                  : alertTpl.status === 'REJECTED' ? `Rejected by Meta${alertTpl.reason ? `: ${alertTpl.reason}` : ''}.`
+                  : `Waiting for Meta's review (${(alertTpl.status || 'pending').toLowerCase()}). Usually a few minutes.`}
+              </Text>
+            </View>
+          )}
+          {alertTpl && !alertTpl.exists && !alertTpl.env_override ? (
+            <Pressable onPress={createAlertTpl} disabled={tplBusy} style={[styles.altBtn, tplBusy && { opacity: 0.6 }]} testID="whatsapp-meta-create-alert-template">
+              {tplBusy ? <ActivityIndicator color={colors.brandSecondary} size="small" /> : <Text style={styles.altBtnText}>Create template</Text>}
+            </Pressable>
+          ) : (
+            <Pressable onPress={loadAlertTpl} style={styles.altBtn} testID="whatsapp-meta-check-alert-template" accessibilityRole="button">
+              <Ionicons name="refresh" size={14} color={colors.brandSecondary} />
+              <Text style={styles.altBtnText}>Check status</Text>
+            </Pressable>
+          )}
 
           <View style={styles.groupDivider} />
           <Text style={styles.fieldLabel}>Send a test message</Text>
