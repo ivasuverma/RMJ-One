@@ -656,17 +656,23 @@ async def diagnostics_subscribe_app(body: RelinkIn = RelinkIn(), user: dict = De
     callback URL the WABA-level override and clear any phone-number override,
     so wherever the number was pointed before, its messages come here."""
     import whatsapp_meta
+    notes = []
     if body.point_here:
         cleared = await whatsapp_meta.clear_number_override()
         if not cleared['ok']:
-            logger.info(f"clear number override: {cleared['error']}")
+            notes.append(f"Clearing the number's own override: {cleared['error']}")
         res = await whatsapp_meta.subscribe_app(WEBHOOK_CALLBACK)
+        if not res['ok']:
+            # Meta can refuse the override (permissions, or it couldn't verify the
+            # URL) — still refresh the plain subscription, which alone often fixes it.
+            notes.append(f"Setting RMJ-One as the override: {res['error']}")
+            res = await whatsapp_meta.subscribe_app()
     else:
         res = await whatsapp_meta.subscribe_app()
     if not res['ok']:
-        raise HTTPException(status_code=502, detail=f"Meta refused: {res['error']}")
+        raise HTTPException(status_code=502, detail=' | '.join(notes + [f"Re-linking: {res['error']}"]))
     await log_audit(user, 'rate_broadcast.subscribe_app', 'settings', 'whatsapp_meta', 'waba subscribed to app')
-    return await diagnostics(user)
+    return {**(await diagnostics(user)), 'relink_notes': notes}
 
 
 @router.post('/rate-broadcast/{bid}/stop')

@@ -34,6 +34,7 @@ export default function BroadcastNumberScreen() {
   const [sending, setSending] = useState(false);
   const [diag, setDiag] = useState<Diag | null>(null);
   const [linking, setLinking] = useState(false);
+  const [relinkMsg, setRelinkMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [pin, setPin] = useState('');
   const [registering, setRegistering] = useState(false);
 
@@ -59,11 +60,19 @@ export default function BroadcastNumberScreen() {
     finally { setSending(false); }
   };
 
+  // Result stays on screen (not just a toast) so Meta's exact words can be read and screenshotted.
   const linkApp = async (pointHere = false) => {
-    setLinking(true);
-    try { setDiag(await api.post<Diag>('/rate-broadcast/diagnostics/subscribe-app', { point_here: pointHere })); toast.success(pointHere ? 'Messages now come to RMJ-One — send START again to test' : 'Re-linked — send START again to test'); }
-    catch (e: any) { toast.error(e?.detail || 'Could not link'); }
-    finally { setLinking(false); }
+    setLinking(true); setRelinkMsg(null);
+    try {
+      const d = await api.post<Diag & { relink_notes?: string[] }>('/rate-broadcast/diagnostics/subscribe-app', { point_here: pointHere });
+      setDiag(d);
+      const notes = d.relink_notes || [];
+      setRelinkMsg({ ok: true, text: notes.length
+        ? `Re-linked to RMJ-One, but Meta wouldn’t change the address: ${notes.join(' | ')}. Send START again to test.`
+        : 'Done — this number’s messages now come to RMJ-One. Send START again to test.' });
+    } catch (e: any) {
+      setRelinkMsg({ ok: false, text: `Meta refused: ${e?.detail || e?.message || 'no details returned'}` });
+    } finally { setLinking(false); }
   };
 
   const register = async () => {
@@ -182,6 +191,9 @@ export default function BroadcastNumberScreen() {
               <Pressable onPress={() => linkApp(true)} disabled={linking} style={styles.btn} accessibilityRole="button" testID="broadcast-point-here">
                 {linking ? <ActivityIndicator color={colors.brandSecondary} /> : <Text style={styles.btnText}>Re-link and send this number’s messages to RMJ-One</Text>}
               </Pressable>
+              {relinkMsg && (
+                <Text selectable style={[styles.hint, { color: relinkMsg.ok ? colors.onSuccess : colors.onError }]} testID="broadcast-relink-msg">{relinkMsg.text}</Text>
+              )}
               {diag.subscription.apps.length > 0 && (
                 <Text style={styles.hint}>Linked apps: {diag.subscription.apps.join(', ')}</Text>
               )}
