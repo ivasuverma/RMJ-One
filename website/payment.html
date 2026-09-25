@@ -119,11 +119,11 @@
 
 
   /* brand lockup — the gold-on-red logo + RAMMURTI / JEWELLERS wordmark. --h = the logo's height;
-     the wordmark keeps the artwork's letter proportions, set larger (x1.35) so it reads at small sizes.
+     the wordmark keeps the artwork's letter proportions, set larger than the logo so it reads at small sizes, with a little space after the logo.
      The wordmark is a mask, so it takes the text colour (white on the dark bar, black on light). */
   .lockup{display:inline-flex; align-items:center; flex-shrink:0; color:inherit}
   .lockup .lt{height:var(--h); width:auto; flex-shrink:0; border-radius:0; box-shadow:none}
-  .lockup .lw{display:block; width:calc(var(--h) * 3.5); height:calc(var(--h) * .772); margin-left:calc(var(--h) * .13);
+  .lockup .lw{display:block; width:calc(var(--h) * 4.12); height:calc(var(--h) * .908); margin-left:calc(var(--h) * .36);
               background:currentColor; -webkit-mask:url(assets/images/wordmark.png) center / 100% 100% no-repeat; mask:url(assets/images/wordmark.png) center / 100% 100% no-repeat}
 </style>
 </head>
@@ -132,7 +132,7 @@
 <nav id="nav">
   <div class="wrap">
     <a class="brand" href="index.html" aria-label="Ram Murti Jewellers home">
-      <span class="lockup hdr" style="--h:40px" role="img" aria-label="Ram Murti Jewellers"><img class="lt" src="assets/images/logo-tile.webp" alt=""><span class="lw"></span></span>
+      <span class="lockup hdr" style="--h:34px" role="img" aria-label="Ram Murti Jewellers"><img class="lt" src="assets/images/logo-tile.webp" alt=""><span class="lw"></span></span>
     </a>
     <div class="links">
       <a href="index.html">Today's rate</a>
@@ -209,7 +209,7 @@
 <footer>
   <div class="wrap">
     <div class="top">
-      <div class="fbrand"><span class="lockup" style="--h:34px" role="img" aria-label="Ram Murti Jewellers"><img class="lt" src="assets/images/logo-tile.webp" alt=""><span class="lw"></span></span></div>
+      <div class="fbrand"><span class="lockup" style="--h:29px" role="img" aria-label="Ram Murti Jewellers"><img class="lt" src="assets/images/logo-tile.webp" alt=""><span class="lw"></span></span></div>
       <div class="fl"><a href="https://www.instagram.com/rammurtijewellers">Instagram</a><a href="https://www.facebook.com/rmj.co.in">Facebook</a><a href="https://www.linkedin.com/company/rammurtijewellers/">LinkedIn</a></div>
     </div>
     <div class="bottom">
