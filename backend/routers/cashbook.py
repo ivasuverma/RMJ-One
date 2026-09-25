@@ -58,6 +58,17 @@ COUNTER_COLOR_KEYS = {'gold', 'blue', 'green', 'red', 'purple', 'teal', 'pink', 
 # whoever's handling it (plus owners/admins) to move it to the locker/bank
 # once a single counter crosses this. Not (yet) configurable per shop.
 CASH_LIMIT_THRESHOLD = 100000.0
+# The over-limit alert is about cash piling up at the counter where customers
+# pay — a drawer, locker or safe is exactly where that cash is SUPPOSED to go,
+# so they don't alert unless the owner switches it on for that counter.
+_STORAGE_NAME = re.compile(r'drawer|locker|safe|bank|vault|tijori|almirah', re.I)
+
+
+def counter_limit_alert(counter: dict) -> bool:
+    v = counter.get('limit_alert')
+    if isinstance(v, bool):
+        return v
+    return not _STORAGE_NAME.search(counter.get('name') or '')
 
 
 async def _get_counter(counter_id: str) -> dict:
@@ -170,6 +181,8 @@ async def _notify_counter_over_limit(counter: dict, balance: float) -> None:
     FYI — but each channel is still independently toggleable per employee,
     like everything else. Owners/admins get the same alert through the
     usual module broadcast (cashbook_over_limit)."""
+    if not counter_limit_alert(counter):
+        return
     amt = f"₹{balance:,.0f}"
     body = f"{counter['name']} has {amt} in cash — transfer it out immediately."
     async for e in db.employees.find(
@@ -203,6 +216,7 @@ async def list_cashbook_counters(user: dict = Depends(require_staff_or_module('c
     balances = await _counters_closing_balances([c['id'] for c in counters])
     for c in counters:
         c['closing_balance'] = balances.get(c['id'], 0)
+        c['limit_alert'] = counter_limit_alert(c)
     return counters
 
 
@@ -224,6 +238,7 @@ async def create_cashbook_counter(body: CashBookCounterIn, user=Depends(require_
     counter = {
         'id': counter_id, 'name': body.name.strip(), 'opening_balance': body.opening_balance or 0,
         'color': body.color if body.color in COUNTER_COLOR_KEYS else None,
+        'limit_alert': body.limit_alert if body.limit_alert is not None else not _STORAGE_NAME.search(body.name),
         'active': True, 'created_at': now_utc().isoformat(), 'created_by': user['name'],
     }
     await db.cashbook_counters.insert_one(dict(counter))
@@ -241,6 +256,8 @@ async def update_cashbook_counter(counter_id: str, body: CashBookCounterUpdateIn
         upd['name'] = body.name.strip()
     if body.opening_balance is not None:
         upd['opening_balance'] = body.opening_balance
+    if body.limit_alert is not None:
+        upd['limit_alert'] = body.limit_alert
     if body.active is False:
         # A drawer/counter can only be closed at zero — whatever's still
         # sitting in it has to be transferred out (or reconciled via

@@ -17,6 +17,10 @@ import { useTheme } from '@/src/theme/ThemeContext';
 import { counterColorOptions, counterToneFor } from '@/src/theme/palettes';
 import { useAuth } from '@/src/auth/AuthContext';
 import { ErrorState } from '@/src/components/ui';
+import { ToggleSwitch } from '@/src/components/ui/ToggleSwitch';
+
+// Same rule as the backend's counter_limit_alert: storage places don't alert by default.
+const defaultLimitAlert = (name: string) => !/drawer|locker|safe|bank|vault|tijori|almirah/i.test(name || '');
 
 type EntryType = 'received' | 'paid';
 type Entry = {
@@ -31,7 +35,7 @@ type DayData = {
 };
 type Counter = {
   id: string; name: string; opening_balance: number; closing_balance: number;
-  color?: string | null; active: boolean; created_at: string; created_by?: string;
+  color?: string | null; active: boolean; created_at: string; created_by?: string; limit_alert?: boolean;
 };
 // Id+name only, for every active counter regardless of this employee's own
 // assigned counters — used solely to pick a transfer partner (see
@@ -71,7 +75,7 @@ export default function CashBookScreen() {
   const [counterId, setCounterId] = useState('');
   const [countersLoading, setCountersLoading] = useState(true);
   // null = counter list view (inside Manage mode); non-null = add/edit form for one counter
-  const [counterForm, setCounterForm] = useState<{ id: string | null; name: string; opening_balance: string; color: string } | null>(null);
+  const [counterForm, setCounterForm] = useState<{ id: string | null; name: string; opening_balance: string; color: string; limit_alert: boolean | null } | null>(null);
   // Unrestricted list of every active counter (id+name), for the transfer
   // picker — deliberately separate from `counters` above, which is
   // filtered down to whatever this employee is assigned to.
@@ -236,10 +240,12 @@ export default function CashBookScreen() {
       if (counterForm.id) {
         await api.put(`/cashbook/counters/${counterForm.id}`, {
           name: counterForm.name.trim(), opening_balance: parseFloat(counterForm.opening_balance) || 0, color: counterForm.color,
+          limit_alert: counterForm.limit_alert ?? defaultLimitAlert(counterForm.name),
         });
       } else {
         const created = await api.post<Counter>('/cashbook/counters', {
           name: counterForm.name.trim(), opening_balance: parseFloat(counterForm.opening_balance) || 0, color: counterForm.color,
+          limit_alert: counterForm.limit_alert ?? defaultLimitAlert(counterForm.name),
         });
         selectId = created.id;
       }
@@ -389,7 +395,7 @@ export default function CashBookScreen() {
                 {isOwner ? 'No Cash Book counters yet — add one to start recording entries.' : 'No Cash Book counters have been set up yet.'}
               </Text>
               {isOwner && (
-                <Pressable onPress={() => { setMode('settings'); setCounterForm({ id: null, name: '', opening_balance: '0', color: '' }); }} style={styles.addCounterBtn} testID="cashbook-add-first-counter">
+                <Pressable onPress={() => { setMode('settings'); setCounterForm({ id: null, name: '', opening_balance: '0', color: '', limit_alert: null }); }} style={styles.addCounterBtn} testID="cashbook-add-first-counter">
                   <Ionicons name="add" size={16} color={colors.onBrandPrimary} />
                   <Text style={styles.addCounterBtnText}>Add Counter</Text>
                 </Pressable>
@@ -625,6 +631,20 @@ export default function CashBookScreen() {
               </View>
               <Text style={styles.hint}>Tints this counter's chip, and the whole Cash Book page while it's selected. Leave the first (grey) swatch to use the app's default.</Text>
 
+              {(() => {
+                const on = counterForm.limit_alert ?? defaultLimitAlert(counterForm.name);
+                return (
+                  <Pressable onPress={() => setCounterForm((f) => (f ? { ...f, limit_alert: !on } : f))} style={styles.limitRow}
+                    accessibilityRole="switch" accessibilityState={{ checked: on }} testID="counter-limit-alert">
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.limitTitle}>Cash limit alert</Text>
+                      <Text style={styles.hint}>Alert when this counter holds over ₹1,00,000. Keep it on for the cash counter; off for a drawer, locker or safe, where the cash is meant to go.</Text>
+                    </View>
+                    <ToggleSwitch value={on} />
+                  </Pressable>
+                );
+              })()}
+
               <Pressable onPress={saveCounter} disabled={busy} style={[styles.saveBtn, busy && { opacity: 0.6 }]} testID="counter-form-save">
                 {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.saveBtnText}>{counterForm.id ? 'Save Changes' : 'Add Counter'}</Text>}
               </Pressable>
@@ -646,7 +666,7 @@ export default function CashBookScreen() {
             <>
               <Text style={styles.hint}>Each counter keeps its own entries and its own running balance — use this for separate cash registers or tills.</Text>
               {counters.map((c) => (
-                <Pressable key={c.id} onPress={() => setCounterForm({ id: c.id, name: c.name, opening_balance: String(c.opening_balance), color: c.color || '' })} style={styles.counterManageRow} testID={`counter-manage-${c.id}`}>
+                <Pressable key={c.id} onPress={() => setCounterForm({ id: c.id, name: c.name, opening_balance: String(c.opening_balance), color: c.color || '', limit_alert: c.limit_alert ?? null })} style={styles.counterManageRow} testID={`counter-manage-${c.id}`}>
                   <View style={{ flex: 1, minWidth: 0 }}>
                     <Text style={styles.entryName}>{c.name}</Text>
                     <Text style={styles.entryNote}>Opening balance {fmtINR(c.opening_balance)}</Text>
@@ -654,7 +674,7 @@ export default function CashBookScreen() {
                   <Ionicons name="chevron-forward" size={16} color={colors.mutedText} />
                 </Pressable>
               ))}
-              <Pressable onPress={() => setCounterForm({ id: null, name: '', opening_balance: '0', color: '' })} style={styles.addCounterBtn} testID="add-counter-btn">
+              <Pressable onPress={() => setCounterForm({ id: null, name: '', opening_balance: '0', color: '', limit_alert: null })} style={styles.addCounterBtn} testID="add-counter-btn">
                 <Ionicons name="add" size={16} color={colors.onBrandPrimary} />
                 <Text style={styles.addCounterBtnText}>Add Counter</Text>
               </Pressable>
@@ -667,6 +687,8 @@ export default function CashBookScreen() {
 }
 
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
+  limitRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.md, padding: spacing.md, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceSecondary },
+  limitTitle: { color: colors.onSurface, fontSize: 14, fontWeight: '700' },
   root: { flex: 1, backgroundColor: colors.surface },
   header: {
     flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg,
