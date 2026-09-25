@@ -111,3 +111,14 @@ def test_employee_with_website_module_can_edit():
         assert requests.get(f"{API}/website/pieces", headers=h, timeout=30).status_code == 200
     finally:
         requests.put(f"{API}/access/accounts/{emp['id']}", headers=owner, json={'module_access': before}, timeout=30)
+
+
+def test_logo_and_name_size_settings(admin):
+    h = admin
+    c = requests.get(f"{API}/website/content", headers=h, timeout=30).json()
+    assert c['brand'] == {'logo': 100, 'name': 85} and c['brand_range'] == [60, 140]
+    assert requests.put(f"{API}/website/content/brand", headers=h, json={'logo': 200, 'name': 90}, timeout=30).status_code == 400
+    r = requests.put(f"{API}/website/content/brand", headers=h, json={'logo': 120, 'name': 70}, timeout=30)
+    assert r.status_code == 200 and r.json()['brand'] == {'logo': 120, 'name': 70}
+    assert requests.get(f"{API}/public/website/content", timeout=30).json()['brand'] == {'logo': 120, 'name': 70}
+    requests.put(f"{API}/website/content/brand", headers=h, json={'logo': 100, 'name': 85}, timeout=30)

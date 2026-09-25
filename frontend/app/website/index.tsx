@@ -85,6 +85,15 @@ export default function WebsiteScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}>
         <Text style={styles.hint}>rmj.co.in from top to bottom. Tap a part to change its words or photos, or add your own section. Changes show on the site straight away.</Text>
 
+        <Pressable onPress={() => router.push('/website/brand' as any)} style={w.row} testID="website-brand" accessibilityRole="button" accessibilityLabel="Logo and name size">
+          <View style={w.icon}><Ionicons name="resize-outline" size={18} color={colors.brandSecondary} /></View>
+          <View style={styles.flex1}>
+            <Text style={w.rowTitle}>Logo & name size</Text>
+            <Text style={w.rowSub}>Logo {c.brand?.logo ?? 100}% · Name {c.brand?.name ?? 85}%</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.mutedText} />
+        </Pressable>
+
         {before.map(builtinRow)}
 
         <Text style={w.groupLabel}>Your sections</Text>

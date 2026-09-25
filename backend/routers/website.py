@@ -226,7 +226,15 @@ _HIDEABLE = {s['key'] for s in PAGE if s['hideable']}
 
 async def _content_doc() -> dict:
     d = await db.settings.find_one({'id': 'website_content'}, {'_id': 0}) or {}
-    return {'texts': d.get('texts') or {}, 'images': d.get('images') or {}, 'hidden': d.get('hidden') or []}
+    return {'texts': d.get('texts') or {}, 'images': d.get('images') or {}, 'hidden': d.get('hidden') or [],
+            'brand': {**BRAND_DEFAULT, **(d.get('brand') or {})}}
+
+
+# Size of the logo and the RAMMURTI JEWELLERS name in the site's header (and,
+# in proportion, the footer and other places they appear), as % of the
+# built-in size. The site applies them as CSS scale variables.
+BRAND_DEFAULT = {'logo': 100, 'name': 85}
+BRAND_RANGE = (60, 140)
 
 
 def _image_url(image_id: str) -> str:
@@ -272,7 +280,24 @@ async def get_content(_: dict = Depends(require_website)):
                         'edited': i['key'] in c['images']} for i in s['images']],
         })
     return {'page': page, 'sections': [_section_out(s, True) for s in sections],
-            'pieces': await db.website_pieces.count_documents({'visible': True})}
+            'pieces': await db.website_pieces.count_documents({'visible': True}),
+            'brand': c['brand'], 'brand_default': BRAND_DEFAULT, 'brand_range': list(BRAND_RANGE)}
+
+
+class BrandIn(BaseModel):
+    logo: int
+    name: int
+
+
+@router.put('/website/content/brand')
+async def save_brand(body: BrandIn, user: dict = Depends(require_website)):
+    lo, hi = BRAND_RANGE
+    if not (lo <= body.logo <= hi and lo <= body.name <= hi):
+        raise HTTPException(status_code=400, detail=f'Sizes go from {lo}% to {hi}%')
+    brand = {'logo': body.logo, 'name': body.name}
+    await db.settings.update_one({'id': 'website_content'}, {'$set': {'id': 'website_content', 'brand': brand}}, upsert=True)
+    await log_audit(user, 'website.brand', 'settings', 'website_content', f"logo {body.logo}%, name {body.name}%")
+    return await get_content(user)
 
 
 class TextsIn(BaseModel):
@@ -466,6 +491,7 @@ async def public_content():
         'images': {k: _image_url(v) for k, v in c['images'].items() if k in _IMAGES},
         'hidden': [h for h in c['hidden'] if h in _HIDEABLE],
         'sections': [_section_out(s, False) for s in sections],
+        'brand': c['brand'],
     }
 
 
