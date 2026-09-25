@@ -30,6 +30,7 @@ const MODULE_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
   karigar_ledger: 'hammer-outline',
   gold_rate: 'trending-up-outline',
   website: 'globe-outline',
+  rate_broadcast: 'megaphone-outline',
 };
 
 type Level = 'view' | 'edit' | 'full';

@@ -36,9 +36,16 @@ from xml.etree import ElementTree
 from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
 from pydantic import BaseModel
 
-from server import IST, db, log_audit, now_utc, require_owner
+from server import IST, db, get_current, log_audit, now_utc, resolve_modules
 
 router = APIRouter()
+
+
+def require_broadcast(user=Depends(get_current)):
+    """Owner, or anyone the owner gave the Rate Broadcast module (Settings › Users)."""
+    if user.get('role') == 'owner' or 'rate_broadcast' in resolve_modules(user):
+        return user
+    raise HTTPException(status_code=403, detail='No access to "Rate Broadcast"')
 logger = logging.getLogger('rate_broadcast')
 
 TEMPLATE_NAME = 'rmj_rate_update'
@@ -402,7 +409,7 @@ async def _counts() -> dict:
 
 
 @router.get('/rate-broadcast/overview')
-async def overview(_: dict = Depends(require_owner)):
+async def overview(_: dict = Depends(require_broadcast)):
     import whatsapp_meta
     rates = await current_rates()
     return {
@@ -420,7 +427,7 @@ async def overview(_: dict = Depends(require_owner)):
 
 
 @router.post('/rate-broadcast/template')
-async def create_rate_template(user: dict = Depends(require_owner)):
+async def create_rate_template(user: dict = Depends(require_broadcast)):
     import whatsapp_meta
     sample = None
     p = await db.settings.find_one({'id': 'rate_broadcast_photo'}, {'_id': 0, 'image': 1})
@@ -442,7 +449,7 @@ async def create_rate_template(user: dict = Depends(require_owner)):
 
 
 @router.post('/rate-broadcast/photo')
-async def upload_photo(file: UploadFile = File(...), user: dict = Depends(require_owner)):
+async def upload_photo(file: UploadFile = File(...), user: dict = Depends(require_broadcast)):
     from routers.documents import _make_view_sync
     raw = await file.read()
     if not raw or len(raw) > 15 * 1024 * 1024:
@@ -461,7 +468,7 @@ async def upload_photo(file: UploadFile = File(...), user: dict = Depends(requir
 
 
 @router.delete('/rate-broadcast/photo')
-async def reset_photo(user: dict = Depends(require_owner)):
+async def reset_photo(user: dict = Depends(require_broadcast)):
     await db.settings.delete_one({'id': 'rate_broadcast_photo'})
     await log_audit(user, 'rate_broadcast.photo', 'settings', 'rate_broadcast', 'default')
     return {'photo_url': DEFAULT_PHOTO_URL, 'photo_custom': False}
@@ -481,7 +488,7 @@ _HHMM = re.compile(r'([01]\d|2[0-3]):[0-5]\d')
 
 
 @router.put('/rate-broadcast/settings')
-async def save_settings(body: SettingsIn, user: dict = Depends(require_owner)):
+async def save_settings(body: SettingsIn, user: dict = Depends(require_broadcast)):
     if not 0 <= body.weekday <= 6:
         raise HTTPException(status_code=400, detail='Pick a day of the week')
     if not (_HHMM.fullmatch(body.time.strip()) and _HHMM.fullmatch(body.daily_time.strip())):
@@ -497,7 +504,7 @@ async def save_settings(body: SettingsIn, user: dict = Depends(require_owner)):
 
 @router.get('/rate-broadcast/subscribers')
 async def list_subscribers(q: Optional[str] = None, status: Optional[str] = None, plan: Optional[str] = None,
-                           _: dict = Depends(require_owner)):
+                           _: dict = Depends(require_broadcast)):
     query: dict = {}
     if status in ('active', 'opted_out'):
         query['status'] = status
@@ -510,7 +517,7 @@ async def list_subscribers(q: Optional[str] = None, status: Optional[str] = None
 
 
 @router.post('/rate-broadcast/subscribers/import')
-async def import_subscribers(file: UploadFile = File(...), user: dict = Depends(require_owner)):
+async def import_subscribers(file: UploadFile = File(...), user: dict = Depends(require_broadcast)):
     raw = await file.read()
     if not raw:
         raise HTTPException(status_code=400, detail='Empty file')
@@ -560,7 +567,7 @@ class SubscriberIn(BaseModel):
 
 
 @router.post('/rate-broadcast/subscribers')
-async def add_subscriber(body: SubscriberIn, user: dict = Depends(require_owner)):
+async def add_subscriber(body: SubscriberIn, user: dict = Depends(require_broadcast)):
     m = norm_mobile(body.mobile)
     if not m:
         raise HTTPException(status_code=400, detail='Enter a valid 10-digit mobile number')
@@ -575,7 +582,7 @@ async def add_subscriber(body: SubscriberIn, user: dict = Depends(require_owner)
 
 
 @router.delete('/rate-broadcast/subscribers/{sid}')
-async def remove_subscriber(sid: str, user: dict = Depends(require_owner)):
+async def remove_subscriber(sid: str, user: dict = Depends(require_broadcast)):
     s = await db.rate_subscribers.find_one({'id': sid}, {'_id': 0})
     if not s:
         raise HTTPException(status_code=404, detail='Not found')
@@ -592,7 +599,7 @@ class SendIn(BaseModel):
 
 
 @router.post('/rate-broadcast/send')
-async def send_now(body: SendIn = SendIn(), user: dict = Depends(require_owner)):
+async def send_now(body: SendIn = SendIn(), user: dict = Depends(require_broadcast)):
     import whatsapp_meta
     if not whatsapp_meta.is_configured():
         raise HTTPException(status_code=400, detail='The official WhatsApp (Meta) line is not configured.')
@@ -605,14 +612,14 @@ async def send_now(body: SendIn = SendIn(), user: dict = Depends(require_owner))
 
 
 @router.post('/rate-broadcast/{bid}/stop')
-async def stop_broadcast(bid: str, user: dict = Depends(require_owner)):
+async def stop_broadcast(bid: str, user: dict = Depends(require_broadcast)):
     n = await _stop_job(bid)
     await log_audit(user, 'rate_broadcast.stop', 'rate_broadcast', bid, f'{n} cancelled')
     return {'ok': True, 'cancelled': n}
 
 
 @router.get('/rate-broadcast/history')
-async def history(_: dict = Depends(require_owner)):
+async def history(_: dict = Depends(require_broadcast)):
     jobs = await db.rate_broadcasts.find({}, {'_id': 0}).sort('created_at', -1).to_list(12)
     for j in jobs:
         states = {}
