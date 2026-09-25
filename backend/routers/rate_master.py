@@ -19,7 +19,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from server import db, now_utc, log_audit, require_owner, require_staff_or_module
+from server import db, now_utc, log_audit, require_owner, require_staff_or_module, get_current
 
 router = APIRouter()
 
@@ -135,6 +135,23 @@ async def rate_master_get(_: dict = Depends(require_staff_or_module('gold_rate')
         'items': items, 'base': base, 'defaults': DEFAULTS,
         'computed': compute(items, base['gold'], base['silver']) if base else [],
     }
+
+
+@router.get('/rate-master/live')
+async def rate_master_live(_: dict = Depends(get_current)):
+    """Lower-purity gold rates (22K / 18K / 14K ...) worked out from the LIVE 24K rate — the
+    same gold_rate_live numbers /public/rates shows — for the in-app live rate screen. Any
+    signed-in user may read it (it's the shop counter rate, not a setting); the public page
+    never calls it, so strangers still see only 24K and silver."""
+    live = await db.settings.find_one({'id': 'gold_rate_live'}, {'_id': 0}) or {}
+    sell, buy = live.get('gold_rate'), live.get('gold_buy_rate')
+    items = [i for i in await get_items() if i['base'] == 'gold' and i['key'] != 'gold_24k' and i['enabled']]
+    if not sell:
+        return {'items': []}
+    sells = {r['key']: r['rate'] for r in compute(items, int(sell), 0)}
+    buys = {r['key']: r['rate'] for r in compute(items, int(buy), 0)} if buy else {}
+    return {'items': [{'key': i['key'], 'label': i['label'], 'percent': i['percent'],
+                       'sell': sells.get(i['key']), 'buy': buys.get(i['key'])} for i in items]}
 
 
 @router.post('/rate-master/preview')

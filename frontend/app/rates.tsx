@@ -7,6 +7,7 @@ import { istTime } from '@/src/utils/datetime';
 import { spacing, radius, fonts, typography, images, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { useAuth } from '@/src/auth/AuthContext';
+import { useRouter } from 'expo-router';
 import { RatesInstallHint } from '@/src/components/RatesInstallHint';
 
 type PublicRates = {
@@ -20,6 +21,7 @@ type PublicRates = {
   xag_usd: number | null;
   usd_inr: number | null;
 };
+type Purity = { key: string; label: string; percent: number; sell: number | null; buy: number | null };
 
 const REFRESH_MS = 60000;
 const STORE_PHONE = '+919781800888';
@@ -38,12 +40,14 @@ export default function PublicRatesScreen() {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const { user } = useAuth();
+  const router = useRouter();
   const isAdmin = user?.role === 'owner' || user?.role === 'admin';
 
   const [data, setData] = useState<PublicRates | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [fetchingNew, setFetchingNew] = useState(false);
+  const [purities, setPurities] = useState<Purity[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const load = useCallback(async () => {
@@ -51,12 +55,15 @@ export default function PublicRatesScreen() {
       const res = await api.get<PublicRates>('/public/rates');
       setData(res);
       setError('');
+      // Signed-in staff also see 22K / 18K / 14K (Rate Master percentages of
+      // the same live rate); the public page stays 24K + silver only.
+      if (user) api.get<{ items: Purity[] }>('/rate-master/live').then((r) => setPurities(r.items)).catch(() => {});
     } catch (e: any) {
       setError(e?.detail || 'Could not load rates right now');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     load();
@@ -84,6 +91,11 @@ export default function PublicRatesScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top', 'bottom']} testID="public-rates-screen">
       <ScrollView contentContainerStyle={styles.scroll}>
+        {!!user && router.canGoBack() && (
+          <Pressable onPress={() => router.back()} style={styles.backBtn} testID="rates-back-btn" hitSlop={12} accessibilityRole="button" accessibilityLabel="Back">
+            <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
+          </Pressable>
+        )}
         <View style={styles.header}>
           <Image source={images.logo} style={styles.logo} />
           <Text style={styles.storeName}>{data?.store_name || 'Ram Murti Jewellers'}</Text>
@@ -111,6 +123,27 @@ export default function PublicRatesScreen() {
                   </View>
                 </View>
               </View>
+
+              {purities.some((p) => p.sell) && (
+                <View style={styles.metalCard} testID="rate-purities">
+                  <Text style={styles.metalLabel}>GOLD PURITIES <Text style={styles.metalSub}>· per 10g</Text></Text>
+                  <View style={styles.purityHead}>
+                    <Text style={[styles.buySellLabel, { flex: 1.2, textAlign: 'left' }]}>Purity</Text>
+                    <Text style={[styles.buySellLabel, styles.purityCol]}>Sell</Text>
+                    <Text style={[styles.buySellLabel, styles.purityCol]}>Buyback</Text>
+                  </View>
+                  {purities.filter((p) => p.sell).map((p) => (
+                    <View key={p.key} style={styles.purityRow} testID={`rate-${p.key}`}>
+                      <View style={{ flex: 1.2 }}>
+                        <Text style={styles.purityName}>{p.label.replace(/^Gold\s+/i, '')}</Text>
+                        <Text style={styles.purityPct}>{p.percent}%</Text>
+                      </View>
+                      <Text style={[styles.purityVal, styles.purityCol, styles.sellValue]}>{fmtINR(p.sell)}</Text>
+                      <Text style={[styles.purityVal, styles.purityCol]}>{fmtINR(p.buy)}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
 
               <View style={styles.metalCard} testID="rate-silver">
                 <Text style={styles.metalLabel}>SILVER <Text style={styles.metalSub}>· 999 Purity / 1kg</Text></Text>
@@ -244,6 +277,16 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     color: colors.onSurface, fontFamily: fonts.display, fontSize: 24, fontWeight: '800', letterSpacing: -0.4,
   },
   sellValue: { color: colors.brandPrimary },
+  purityHead: { flexDirection: 'row', alignItems: 'center', paddingBottom: 6, borderBottomWidth: 1, borderBottomColor: colors.divider },
+  purityRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.divider },
+  purityCol: { flex: 1, textAlign: 'center' },
+  purityName: { color: colors.onSurface, fontSize: 16, fontWeight: '800' },
+  purityPct: { color: colors.mutedText, fontSize: 11, marginTop: 1 },
+  purityVal: { color: colors.onSurface, fontFamily: fonts.display, fontSize: 18, fontWeight: '800', letterSpacing: -0.3 },
+  backBtn: {
+    width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border,
+    alignItems: 'center', justifyContent: 'center', marginBottom: spacing.sm,
+  },
 
   spotRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.lg },
   spotTile: {
