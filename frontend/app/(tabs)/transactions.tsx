@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { StickyHeader, useScrolled } from '@/src/components/ui/StickyHeader';
 
 type TileDef = {
   key: string; label: string; icon: keyof typeof Ionicons.glyphMap;
@@ -44,15 +45,18 @@ const SECTIONS: { title: string; tiles: TileDef[] }[] = [
 ];
 
 export default function TransactionsScreen() {
+  const { scrolled, onScroll } = useScrolled();
   const router = useRouter();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="transactions-screen">
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <StickyHeader scrolled={scrolled}>
         <Text style={styles.title}>Transactions</Text>
         <Text style={styles.subtitle}>Where you record something happening.</Text>
+      </StickyHeader>
+      <ScrollView onScroll={onScroll} scrollEventThrottle={16} contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
 
         {SECTIONS.map((section) => (
           <View key={section.title}>

@@ -10,6 +10,7 @@ import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { ErrorState } from '@/src/components/ui';
 import { TabBarSpacer } from '@/src/components/GlassTabBar';
+import { StickyHeader, useScrolled } from '@/src/components/ui/StickyHeader';
 
 type Item = {
   id: string; item_code: string; customer_name: string; description: string;
@@ -36,6 +37,7 @@ const STAGES: { key: FilterKey; label: string; tone: StageTone; countKey: keyof 
 ];
 
 export default function RepairOrdersScreen() {
+  const { scrolled, onScroll } = useScrolled();
   const router = useRouter();
   const { filter: routeFilter } = useLocalSearchParams<{ filter?: string }>();
   const { colors } = useTheme();
@@ -81,10 +83,7 @@ export default function RepairOrdersScreen() {
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="repairs-screen">
-      <ScrollView
-        contentContainerStyle={styles.scroll}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(filter); }} tintColor={colors.brandPrimary} />}
-      >
+      <StickyHeader scrolled={scrolled}>
         <Pressable onPress={() => router.back()} style={styles.backRow} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={8}>
           <Ionicons name="chevron-back" size={18} color={colors.brandPrimary} />
           <Text style={styles.backText}>Work</Text>
@@ -103,6 +102,11 @@ export default function RepairOrdersScreen() {
             <Ionicons name="add" size={22} color={colors.onBrandPrimary} />
           </Pressable>
         </View>
+      </StickyHeader>
+      <ScrollView onScroll={onScroll} scrollEventThrottle={16}
+        contentContainerStyle={styles.scroll}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(filter); }} tintColor={colors.brandPrimary} />}
+      >
 
         {/* Pipeline bar */}
         <View style={styles.pipe}>

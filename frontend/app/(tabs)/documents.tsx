@@ -17,6 +17,7 @@ import { QuickDocCapture } from '@/src/components/QuickDocCapture';
 import { extractPdfJpegs } from '@/src/utils/imagesToPdf';
 import { UploadQueueBadge } from '@/src/components/UploadQueueBadge';
 import { TabBarSpacer } from '@/src/components/GlassTabBar';
+import { StickyHeader, useScrolled } from '@/src/components/ui/StickyHeader';
 
 type Doc = {
   id: string; category_key: string; status: 'pending' | 'done'; upload_state: string;
@@ -52,6 +53,7 @@ function docTitle(d: Doc, catLabel?: string): string {
 type Summary = { pending_count: number; done_count: number; uploading_count: number; drive_connected?: boolean; can_see_done?: boolean; by_category: Record<string, { pending: number; done: number }> };
 
 export default function DocumentsScreen() {
+  const { scrolled, onScroll } = useScrolled();
   const router = useRouter();
   const { capture, tab: tabParam } = useLocalSearchParams<{ capture?: string; tab?: string }>();
   const { colors } = useTheme();
@@ -301,8 +303,7 @@ export default function DocumentsScreen() {
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="documents-screen">
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled"
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}>
+      <StickyHeader scrolled={scrolled}>
         <Pressable onPress={() => (doneCat ? setDoneCat(null) : router.back())} style={styles.backRow} hitSlop={8} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back">
           <Ionicons name="chevron-back" size={18} color={colors.brandPrimary} />
           <Text style={styles.backText}>{doneCat ? 'Folders' : 'Work'}</Text>
@@ -326,6 +327,9 @@ export default function DocumentsScreen() {
                 : <><Ionicons name="phone-portrait-outline" size={13} color={colors.mutedText} /><Text style={[styles.drivePillText, { color: colors.mutedText }]}>Local</Text></>}
           </View>
         </View>
+      </StickyHeader>
+      <ScrollView onScroll={onScroll} scrollEventThrottle={16} contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled"
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}>
 
         {/* The Done tab only appears for people allowed to browse the Done
             folder (Settings › People). Pending is always the default. When

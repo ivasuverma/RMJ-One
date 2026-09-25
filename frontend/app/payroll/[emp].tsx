@@ -18,7 +18,9 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 
 export default function PayrollDetail() {
   const { emp, year, month } = useLocalSearchParams<{ emp: string; year: string; month: string }>();
-  const y = parseInt(year || '0', 10), m = parseInt(month || '0', 10);
+  // Opened without a month (e.g. a bookmarked link): show the current one rather than asking the server for month 0.
+  const now = new Date();
+  const y = parseInt(year || '', 10) || now.getFullYear(), m = parseInt(month || '', 10) || now.getMonth() + 1;
   const router = useRouter();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);

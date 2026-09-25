@@ -12,6 +12,7 @@ import { useTheme } from '@/src/theme/ThemeContext';
 import { haptics } from '@/src/utils/haptics';
 import { FilterChips, useToast } from '@/src/components/ui';
 import { TabBarSpacer } from '@/src/components/GlassTabBar';
+import { StickyHeader, useScrolled } from '@/src/components/ui/StickyHeader';
 
 // Attendance & Payroll — one screen inside Work, three segments (matches the
 // v2 design comp): Today (daily in/out), Calendar (pick a person, edit any
@@ -64,6 +65,7 @@ function pillFor(r: Row) {
 }
 
 export default function OwnerAttendance() {
+  const { scrolled, onScroll } = useScrolled();
   const router = useRouter();
   const { from, seg: segParam } = useLocalSearchParams<{ from?: string; seg?: string }>();
   const { colors } = useTheme();
@@ -168,11 +170,7 @@ export default function OwnerAttendance() {
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="attendance-screen">
-      <ScrollView
-        contentContainerStyle={styles.scroll}
-        showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); if (seg === 'pay') loadPay(); if (seg === 'live') loadLive(); }} tintColor={colors.brandPrimary} />}
-      >
+      <StickyHeader scrolled={scrolled}>
         <Pressable onPress={goBack} style={styles.backRow} hitSlop={8} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back">
           <Ionicons name="chevron-back" size={18} color={colors.brandPrimary} />
           <Text style={styles.backText}>Work</Text>
@@ -200,6 +198,12 @@ export default function OwnerAttendance() {
             {pendingApprovals > 0 && <View style={styles.apprBadge}><Text style={styles.apprBadgeText}>{pendingApprovals}</Text></View>}
           </Pressable>
         </View>
+      </StickyHeader>
+      <ScrollView onScroll={onScroll} scrollEventThrottle={16}
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); if (seg === 'pay') loadPay(); if (seg === 'live') loadLive(); }} tintColor={colors.brandPrimary} />}
+      >
 
         {/* Segmented control — Live moved next to Approvals in the header. */}
         <View style={styles.seg}>

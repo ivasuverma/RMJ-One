@@ -8,6 +8,7 @@ import { useAuth } from '@/src/auth/AuthContext';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { TabBarSpacer } from '@/src/components/GlassTabBar';
+import { StickyHeader, useScrolled } from '@/src/components/ui/StickyHeader';
 
 type TileDef = { key: string; label: string; icon: keyof typeof Ionicons.glyphMap; route: string; module: string };
 
@@ -126,6 +127,7 @@ function DashCard({
 }
 
 export default function EmployeeTransactionsScreen() {
+  const { scrolled, onScroll } = useScrolled();
   const router = useRouter();
   const { colors } = useTheme();
   const { hasModule } = useAuth();
@@ -161,13 +163,15 @@ export default function EmployeeTransactionsScreen() {
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="emp-transactions-screen">
-      <ScrollView
+      <StickyHeader scrolled={scrolled}>
+        <Text style={styles.title}>Transactions</Text>
+        <Text style={styles.subtitle}>Where you record something happening.</Text>
+      </StickyHeader>
+      <ScrollView onScroll={onScroll} scrollEventThrottle={16}
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadDash(); }} tintColor={colors.brandPrimary} />}
       >
-        <Text style={styles.title}>Transactions</Text>
-        <Text style={styles.subtitle}>Where you record something happening.</Text>
 
         {showRepairDash && repairDash && (
           <DashCard
