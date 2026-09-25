@@ -32,17 +32,20 @@
   footer{border-top:1px solid var(--line); padding:22px 0 40px; color:var(--ink2); font-size:14px}
   footer a{margin-right:16px}
 
-  /* brand lockup: RAMMURTI in Telegrafico (the logo's wordmark font; freeware, S. Nicolosi) over spaced JEWELLERS */
-  @font-face{font-family:'Telegrafico'; src:url(assets/fonts/telegrafico.woff2) format('woff2'), url(assets/fonts/telegrafico.ttf) format('truetype'); font-display:swap}
-  .lockup{display:inline-flex; flex-direction:column; align-items:center; line-height:1; text-transform:uppercase; white-space:nowrap}
-  .lockup .lk1{font-family:'Telegrafico',var(--font); font-weight:400; font-size:17px; letter-spacing:.14em; margin-right:-.14em}
-  .lockup .lk2{font-family:var(--font); font-weight:500; font-size:7.6px; letter-spacing:.6em; margin-right:-.6em; margin-top:5px}
-  .lockup.sm .lk1{font-size:14px} .lockup.sm .lk2{font-size:6.4px; margin-top:4px}
+
+  /* brand lockup — the tile logo + RAMMURTI / JEWELLERS wordmark, in the exact proportions of the
+     supplied lockup artwork. --h = height of the logo's frame; everything else is a multiple of it.
+     The wordmark (Telegrafico + spaced JEWELLERS) is a mask, so it takes the text colour (white on
+     the dark bar, black on light). */
+  .lockup{display:inline-flex; align-items:flex-start; flex-shrink:0; color:inherit}
+  .lockup .lt{height:calc(var(--h) * 1.1737); width:auto; flex-shrink:0; border-radius:calc(var(--h) * .19); box-shadow:0 0 0 1px rgba(0,0,0,.06)}
+  .lockup .lw{display:block; width:calc(var(--h) * 2.593); height:calc(var(--h) * .572); margin-left:calc(var(--h) * .048); margin-top:calc(var(--h) * .343);
+              background:currentColor; -webkit-mask:url(assets/images/wordmark.png) center / 100% 100% no-repeat; mask:url(assets/images/wordmark.png) center / 100% 100% no-repeat}
 </style>
 </head>
 <body>
 <nav><div class="wrap">
-  <a class="brand" href="/"><img src="assets/images/logo-tile.png" alt=""><span class="lockup sm" aria-label="Rammurti Jewellers"><span class="lk1">Rammurti</span><span class="lk2">Jewellers</span></span></a>
+  <a class="brand" href="/"><span class="lockup" style="--h:30px" role="img" aria-label="Ram Murti Jewellers"><img class="lt" src="assets/images/logo-tile.png" alt=""><span class="lw"></span></span></a>
   <a class="back" href="/">rmj.co.in</a>
 </div></nav>
 <header><div class="wrap"><h1>Terms of service</h1><p class="meta">Last updated: 25 September 2026</p></div></header>

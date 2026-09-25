@@ -193,7 +193,7 @@
   .plate{position:absolute; left:clamp(14px,2.4vw,28px); bottom:clamp(14px,2.4vw,28px); display:flex; align-items:center; gap:12px; background:rgba(255,255,255,.82); backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px); padding:10px 16px 10px 10px; border-radius:16px}
   .plate img{width:40px; height:auto; aspect-ratio:auto; object-fit:contain; border-radius:8px}
   .plate b{font-size:15px; display:block; letter-spacing:-.01em} .plate span{font-size:13px; color:var(--ink2)}
-  .plate .lockup span{color:var(--ink)}
+  .plate .lockup, .plate .lockup .lw{color:var(--ink)} .plate .lockup{display:flex}
 
   /* collections finder: metal tabs → (gold) style → piece, each piece a WhatsApp enquiry */
   .finder{margin-top:clamp(36px,5vw,56px)}
@@ -309,12 +309,15 @@
     html{scroll-behavior:auto} *{animation:none!important; transition:none!important}
   }
 
-  /* brand lockup: RAMMURTI in Telegrafico (the logo's wordmark font; freeware, S. Nicolosi) over spaced JEWELLERS */
-  @font-face{font-family:'Telegrafico'; src:url(assets/fonts/telegrafico.woff2) format('woff2'), url(assets/fonts/telegrafico.ttf) format('truetype'); font-display:swap}
-  .lockup{display:inline-flex; flex-direction:column; align-items:center; line-height:1; text-transform:uppercase; white-space:nowrap}
-  .lockup .lk1{font-family:'Telegrafico',var(--font); font-weight:400; font-size:17px; letter-spacing:.14em; margin-right:-.14em}
-  .lockup .lk2{font-family:var(--font); font-weight:500; font-size:7.6px; letter-spacing:.6em; margin-right:-.6em; margin-top:5px}
-  .lockup.sm .lk1{font-size:14px} .lockup.sm .lk2{font-size:6.4px; margin-top:4px}
+
+  /* brand lockup — the tile logo + RAMMURTI / JEWELLERS wordmark, in the exact proportions of the
+     supplied lockup artwork. --h = height of the logo's frame; everything else is a multiple of it.
+     The wordmark (Telegrafico + spaced JEWELLERS) is a mask, so it takes the text colour (white on
+     the dark bar, black on light). */
+  .lockup{display:inline-flex; align-items:flex-start; flex-shrink:0; color:inherit}
+  .lockup .lt{height:calc(var(--h) * 1.1737); width:auto; flex-shrink:0; border-radius:calc(var(--h) * .19); box-shadow:0 0 0 1px rgba(0,0,0,.06)}
+  .lockup .lw{display:block; width:calc(var(--h) * 2.593); height:calc(var(--h) * .572); margin-left:calc(var(--h) * .048); margin-top:calc(var(--h) * .343);
+              background:currentColor; -webkit-mask:url(assets/images/wordmark.png) center / 100% 100% no-repeat; mask:url(assets/images/wordmark.png) center / 100% 100% no-repeat}
 </style>
 </head>
 <body>
@@ -322,8 +325,7 @@
 <nav id="nav">
   <div class="wrap">
     <a class="brand" href="#top" aria-label="Ram Murti Jewellers home">
-      <span class="mark"><img src="assets/images/logo-tile.png" alt=""></span>
-      <span class="lockup" aria-label="Rammurti Jewellers"><span class="lk1">Rammurti</span><span class="lk2">Jewellers</span></span>
+      <span class="lockup hdr" style="--h:34px" role="img" aria-label="Ram Murti Jewellers"><img class="lt" src="assets/images/logo-tile.png" alt=""><span class="lw"></span></span>
     </a>
     <div class="links">
       <a href="#top">Today's rate</a>
@@ -423,7 +425,7 @@
     </div>
     <div class="show">
       <img data-cms-img="showcase_photo" src="assets/photos/dsc_0033-YBg891rw9PtK9XaM.JPG" alt="Gold jewellery at Ram Murti Jewellers">
-      <div class="plate"><img src="assets/images/logo-tile.png" alt=""><div><span class="lockup sm" aria-label="Rammurti Jewellers"><span class="lk1">Rammurti</span><span class="lk2">Jewellers</span></span><span style="display:block; margin-top:6px">Family jewellers since 1932</span></div></div>
+      <div class="plate"><div><span class="lockup" style="--h:36px" role="img" aria-label="Ram Murti Jewellers"><img class="lt" src="assets/images/logo-tile.png" alt=""><span class="lw"></span></span><span style="display:block; margin-top:8px">Family jewellers since 1932</span></div></div>
     </div>
   </div>
 </section>
@@ -524,7 +526,7 @@
 <footer>
   <div class="wrap">
     <div class="top">
-      <div class="fbrand"><img src="assets/images/logo-tile.png" alt=""><span class="lockup sm" aria-label="Rammurti Jewellers"><span class="lk1">Rammurti</span><span class="lk2">Jewellers</span></span></div>
+      <div class="fbrand"><span class="lockup" style="--h:30px" role="img" aria-label="Ram Murti Jewellers"><img class="lt" src="assets/images/logo-tile.png" alt=""><span class="lw"></span></span></div>
       <div class="fl"><a href="https://www.instagram.com/rammurtijewellers">Instagram</a><a href="https://www.facebook.com/rmj.co.in">Facebook</a><a href="https://www.linkedin.com/company/rammurtijewellers/">LinkedIn</a></div>
     </div>
     <div class="bottom">
