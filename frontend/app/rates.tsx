@@ -41,6 +41,8 @@ export default function PublicRatesScreen() {
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const { user } = useAuth();
   const router = useRouter();
+  // Signed in (staff/owner opening it from the dashboard) vs. a customer on the public link.
+  const internal = !!user;
   const isAdmin = user?.role === 'owner' || user?.role === 'admin';
 
   const [data, setData] = useState<PublicRates | null>(null);
@@ -91,18 +93,27 @@ export default function PublicRatesScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top', 'bottom']} testID="public-rates-screen">
       <ScrollView contentContainerStyle={styles.scroll}>
-        {!!user && router.canGoBack() && (
-          <Pressable onPress={() => router.back()} style={styles.backBtn} testID="rates-back-btn" hitSlop={12} accessibilityRole="button" accessibilityLabel="Back">
-            <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-          </Pressable>
+        {internal ? (
+          // Staff inside the app: a compact bar instead of the customer-facing masthead.
+          <View style={styles.compactHeader}>
+            {router.canGoBack() ? (
+              <Pressable onPress={() => router.back()} style={styles.backBtn} testID="rates-back-btn" hitSlop={12} accessibilityRole="button" accessibilityLabel="Back">
+                <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
+              </Pressable>
+            ) : <View style={{ width: 40 }} />}
+            <Text style={styles.compactTitle}>Live Rates</Text>
+            <View style={{ width: 40 }} />
+          </View>
+        ) : (
+          <>
+            <View style={styles.header}>
+              <Image source={images.logo} style={styles.logo} />
+              <Text style={styles.storeName}>{data?.store_name || 'Ram Murti Jewellers'}</Text>
+              <Text style={styles.tagline}>Live Gold &amp; Silver Rates</Text>
+            </View>
+            <RatesInstallHint />
+          </>
         )}
-        <View style={styles.header}>
-          <Image source={images.logo} style={styles.logo} />
-          <Text style={styles.storeName}>{data?.store_name || 'Ram Murti Jewellers'}</Text>
-          <Text style={styles.tagline}>Live Gold &amp; Silver Rates</Text>
-        </View>
-
-        <RatesInstallHint />
 
         {loading ? (
           <View style={styles.loaderBox}><ActivityIndicator color={colors.brandPrimary} size="large" /></View>
@@ -203,6 +214,8 @@ export default function PublicRatesScreen() {
           </>
         )}
 
+        {/* Customer-facing contact buttons and fine print — not shown to staff in the app. */}
+        {!internal && (<>
         <View style={styles.contactRow}>
           <Pressable
             onPress={() => Linking.openURL(`tel:${STORE_PHONE}`)}
@@ -240,6 +253,7 @@ export default function PublicRatesScreen() {
             the time. Please confirm the final rate and terms with us before any transaction.
           </Text>
         </View>
+        </>)}
       </ScrollView>
     </SafeAreaView>
   );
@@ -285,8 +299,10 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   purityVal: { color: colors.onSurface, fontFamily: fonts.display, fontSize: 18, fontWeight: '800', letterSpacing: -0.3 },
   backBtn: {
     width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border,
-    alignItems: 'center', justifyContent: 'center', marginBottom: spacing.sm,
+    alignItems: 'center', justifyContent: 'center',
   },
+  compactHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: spacing.lg },
+  compactTitle: { flex: 1, textAlign: 'center', color: colors.onSurface, fontFamily: fonts.display, fontSize: 20, fontWeight: '700' },
 
   spotRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.lg },
   spotTile: {
