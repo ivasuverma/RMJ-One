@@ -2031,20 +2031,6 @@ async def _notify_whatsapp(account_id: str, title: str, body: str) -> None:
         mobile = (e or {}).get('mobile')
     if not mobile:
         return
-    template = META_WA_ALERT_TEMPLATE
-    if not template:
-        wa = await db.settings.find_one({'id': 'whatsapp'}, {'_id': 0, 'meta_alert_template': 1}) or {}
-        template = wa.get('meta_alert_template') or ''
-    if template and await whatsapp_provider() == 'meta':
-        # Meta rejects business-initiated freeform text outside the 24-hour
-        # window, which is almost every staff alert — send them through an
-        # approved template with the title/body as its {{1}}/{{2}} instead.
-        # Template parameters may not contain newlines or tabs.
-        import whatsapp_meta
-        params = [' '.join(str(v or '').split())[:900] or '-' for v in (title, body)]
-        await whatsapp_meta.send_template(mobile, template, META_WA_ALERT_TEMPLATE_LANG,
-                                          body_params=params, flow='app_notification')
-        return
     text = f'{title}\n{body}' if body else title
     await send_whatsapp(mobile, text, flow='app_notification')
 
@@ -2155,34 +2141,21 @@ async def log_whatsapp_message(
         logger.warning(f'whatsapp message log failed: {e}')
 
 
-WHATSAPP_PROVIDERS = ('openwa', 'meta')
-# Approved Meta template for staff alerts while Meta is the active provider:
-# body "{{1}}\n{{2}}" (title, then detail). Unset = alerts go as plain text,
-# which Meta only delivers inside the 24-hour window.
-META_WA_ALERT_TEMPLATE = os.environ.get('META_WA_ALERT_TEMPLATE', '').strip()
-META_WA_ALERT_TEMPLATE_LANG = os.environ.get('META_WA_ALERT_TEMPLATE_LANG', 'en').strip() or 'en'
-
-
 async def whatsapp_provider() -> str:
-    """Which WhatsApp service is live — exactly one at a time (Settings >
-    WhatsApp). The other is fully off: no sends, no chatbot replies."""
-    doc = await db.settings.find_one({'id': 'whatsapp'}, {'_id': 0, 'provider': 1}) or {}
-    p = doc.get('provider')
-    return p if p in WHATSAPP_PROVIDERS else 'openwa'
+    """The service for every notice, alert, channel post and chatbot reply:
+    always OpenWA (the shop's own number). The official Meta number is used
+    only for Rate Broadcast (routers/rate_broadcast.py), which calls
+    whatsapp_meta directly — the old "active provider" switch is gone."""
+    return 'openwa'
 
 
 async def send_whatsapp(mobile: str, text: str, flow: str = '') -> bool:
-    """Best-effort WhatsApp send via whichever provider is active. Never
+    """Best-effort WhatsApp send via OpenWA (the shop's number). Never
     raises — a WhatsApp failure (gateway down, session logged out, bad
     number) must not block or roll back whatever business action triggered
     it, same convention as the push-notification helpers above. Returns
     whether the send actually went out, so a caller that wants to know can
     check it without needing a try/except of its own."""
-    if await whatsapp_provider() == 'meta':
-        # Freeform text: only delivered inside Meta's 24-hour window — outside
-        # it the failure is logged with Meta's error (see whatsapp_meta.py).
-        import whatsapp_meta
-        return await whatsapp_meta.send_text(mobile, text, flow=flow)
     chat_id = _to_whatsapp_chat_id(mobile)
     if not chat_id:
         await log_whatsapp_message('openwa', mobile, 'text', text, False, flow, error='invalid or missing mobile number')
@@ -2197,10 +2170,6 @@ async def send_whatsapp_channel(channel_id: str, text: str, flow: str = '') -> b
     gold-rate broadcast channel). `channel_id` is the full `<id>@newsletter`
     id, not a phone number — no normalization needed."""
     if not channel_id:
-        return False
-    if await whatsapp_provider() == 'meta':
-        await log_whatsapp_message('meta', channel_id, 'channel', text, False, flow,
-                                   error='WhatsApp Channels are not supported by the official Meta API — switch to OpenWA to post here')
         return False
     ok = await _openwa_send_text(channel_id, text)
     await log_whatsapp_message('openwa', channel_id, 'channel', text, ok, flow)

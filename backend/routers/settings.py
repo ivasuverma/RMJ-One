@@ -9,7 +9,6 @@ from typing import Literal, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from server import (
-    META_WA_ALERT_TEMPLATE,
     db,
     now_utc,
     get_current,
@@ -101,8 +100,8 @@ async def update_security(body: SecuritySettingsIn, user: dict = Depends(require
 # own field here as they're added (only 'repair_ready_notice' exists today).
 class WhatsAppSettingsIn(BaseModel):
     enabled: bool = True
-    # Exactly one WhatsApp service is live at a time — see server.whatsapp_provider.
-    # None = leave unchanged, so screens that don't send it can't reset it.
+    # Ignored: OpenWA always carries notices now (see server.whatsapp_provider);
+    # still accepted so an older app build sending it doesn't get a 422.
     provider: Optional[Literal['openwa', 'meta']] = None
     repair_ready_notice: bool = True
     repair_ready_template: Optional[str] = None   # None/blank = use the built-in default
@@ -127,8 +126,7 @@ async def get_whatsapp_settings(_: dict = Depends(get_current)):
     status = await get_whatsapp_status()
     return {
         'enabled': doc.get('enabled', True),
-        'provider': doc.get('provider') if doc.get('provider') in ('openwa', 'meta') else 'openwa',
-        'meta_alert_template': bool(META_WA_ALERT_TEMPLATE or doc.get('meta_alert_template')),
+        'provider': 'openwa',
         'repair_ready_notice': doc.get('repair_ready_notice', True),
         'repair_ready_template': doc.get('repair_ready_template') or DEFAULT_REPAIR_READY_TEMPLATE,
         'repair_received_notice': doc.get('repair_received_notice', True),
@@ -161,8 +159,7 @@ async def update_whatsapp_settings(body: WhatsAppSettingsIn, user: dict = Depend
         except Exception as e:
             raise HTTPException(status_code=400, detail=f'Template has an unknown placeholder: {e}')
     payload = body.model_dump()
-    if payload['provider'] is None:
-        del payload['provider']
+    payload['provider'] = 'openwa'
     payload['id'] = 'whatsapp'
     payload['updated_at'] = now_utc().isoformat()
     await db.settings.update_one({'id': 'whatsapp'}, {'$set': payload}, upsert=True)
@@ -172,13 +169,10 @@ async def update_whatsapp_settings(body: WhatsAppSettingsIn, user: dict = Depend
     return {**doc, **status}
 
 
-# ---------------- Official WhatsApp (Meta Cloud API) — test line ----------------
-# A second, independent WhatsApp send path (whatsapp_meta.py) being set up
-# on a spare number ahead of an eventual migration off OpenWA — see that
-# module's docstring for the .env credentials it needs and why a business-
-# initiated send needs an approved template, not the freeform test-send
-# below. Owner-only: this exists to verify the pipeline works, not for
-# day-to-day use by staff.
+# ---------------- Official WhatsApp (Meta Cloud API) ----------------
+# The official number used only for Rate Broadcast (routers/rate_broadcast.py;
+# app: Settings › Rate Broadcast › Official number). See whatsapp_meta.py for
+# the .env credentials it needs. Owner-only.
 class WhatsAppMetaTestSendIn(BaseModel):
     mobile: str
     text: str
@@ -188,27 +182,6 @@ class WhatsAppMetaTestSendIn(BaseModel):
 async def get_whatsapp_meta_status(_: dict = Depends(require_owner)):
     import whatsapp_meta
     return await whatsapp_meta.get_status()
-
-
-@router.get('/settings/whatsapp-meta/alert-template')
-async def get_meta_alert_template(_: dict = Depends(require_owner)):
-    import whatsapp_meta
-    st = await whatsapp_meta.alert_template_status()
-    if st['exists']:
-        await db.settings.update_one({'id': 'whatsapp'}, {'$set': {'meta_alert_template': whatsapp_meta.ALERT_TEMPLATE_NAME}}, upsert=True)
-    return {**st, 'name': whatsapp_meta.ALERT_TEMPLATE_NAME, 'body': whatsapp_meta.ALERT_TEMPLATE_BODY,
-            'env_override': META_WA_ALERT_TEMPLATE or None}
-
-
-@router.post('/settings/whatsapp-meta/alert-template')
-async def create_meta_alert_template(user: dict = Depends(require_owner)):
-    import whatsapp_meta
-    res = await whatsapp_meta.create_alert_template()
-    if not res['ok']:
-        raise HTTPException(status_code=502, detail=f"Meta didn't accept the template: {res['error']}")
-    await db.settings.update_one({'id': 'whatsapp'}, {'$set': {'meta_alert_template': whatsapp_meta.ALERT_TEMPLATE_NAME}}, upsert=True)
-    await log_audit(user, 'settings.whatsapp_meta.alert_template', 'settings', 'whatsapp_meta', whatsapp_meta.ALERT_TEMPLATE_NAME)
-    return await get_meta_alert_template(user)
 
 
 @router.post('/settings/whatsapp-meta/test-send')

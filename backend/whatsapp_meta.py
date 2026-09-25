@@ -1,21 +1,20 @@
-"""Official WhatsApp Business Platform (Meta Cloud API) — a second,
-independent send path built alongside the OpenWA gateway (see server.py's
-send_whatsapp/send_whatsapp_channel), ahead of an eventual migration off
-OpenWA (2026-09-09: "we will switch to it some day"). Deliberately uses a
-different phone number while the two are evaluated side by side — OpenWA
-keeps running unchanged on the shop's existing number
-(919781800888) and nothing here touches it.
+"""Official WhatsApp Business Platform (Meta Cloud API) — used only for
+Rate Broadcast (routers/rate_broadcast.py): marketing templates to the
+customer list and daily subscribers, from a separate official number so a
+bulk send can never get the shop's own number banned. Everything else —
+notices, staff alerts, channel posts, the chatbot — goes through OpenWA on
+the shop's number (919781800888); see server.py's send_whatsapp.
 
 Credentials live in backend/.env (not committed), same convention as
-OPENWA_API_KEY/WHATSAPP_WEBHOOK_SECRET — see Settings > WhatsApp's "Official
-WhatsApp (Meta)" panel for a live configured/connected check once these are
+OPENWA_API_KEY/WHATSAPP_WEBHOOK_SECRET — see Settings > Rate Broadcast >
+Official number for a live configured/connected check once these are
 filled in:
 
   META_WA_PHONE_NUMBER_ID      - the Cloud API phone number's numeric id
                                   (Meta for Developers > your app > WhatsApp
                                   > API Setup)
   META_WA_WABA_ID              - the WhatsApp Business Account id (needed
-                                  later for template management, not sends)
+                                  for creating and checking templates)
   META_WA_ACCESS_TOKEN         - a permanent token from a System User in
                                   Business Settings (Business Manager >
                                   Users > System Users), NOT the 24-hour
@@ -173,14 +172,6 @@ async def send_template(mobile: str, template_name: str, language_code: str = 'e
     return ok
 
 
-# Staff-alert template, created from Settings > WhatsApp so the owner doesn't
-# have to build it by hand in WhatsApp Manager. Meta won't accept a body that
-# starts or ends with a variable, hence the fixed text around {{1}}/{{2}}.
-ALERT_TEMPLATE_NAME = 'rmj_staff_alert'
-ALERT_TEMPLATE_LANG = 'en'
-ALERT_TEMPLATE_BODY = 'RMJ One alert: {{1}}\nDetails: {{2}}\n\n- Ram Murti Jewellers'
-
-
 def _template_ready() -> Optional[str]:
     if not (WABA_ID and ACCESS_TOKEN):
         return 'Add META_WA_WABA_ID and META_WA_ACCESS_TOKEN to backend/.env first.'
@@ -258,15 +249,6 @@ async def create_template(name: str, category: str, body_text: str, example: lis
         return {'ok': False, 'error': res.text[:300]}
     except Exception as e:
         return {'ok': False, 'error': str(e)}
-
-
-async def alert_template_status() -> dict:
-    return await template_status(ALERT_TEMPLATE_NAME)
-
-
-async def create_alert_template() -> dict:
-    return await create_template(ALERT_TEMPLATE_NAME, 'UTILITY', ALERT_TEMPLATE_BODY,
-                                 ['New task assigned', 'Polish the bridal set by 5 pm'], ALERT_TEMPLATE_LANG)
 
 
 def verify_webhook_signature(raw_body: bytes, signature_header: str) -> bool:
