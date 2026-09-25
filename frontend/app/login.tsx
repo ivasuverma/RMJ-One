@@ -4,21 +4,21 @@ import {
   Platform, ActivityIndicator, ScrollView, Keyboard,
 } from 'react-native';
 import { Image } from 'expo-image';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/src/auth/AuthContext';
 import { spacing, radius, images, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
+const LOGIN_BG_DARK = require('../assets/images/login-bg-dark.jpg');
+const LOGIN_BG_LIGHT = require('../assets/images/login-bg-light.jpg');
+
 export default function LoginScreen() {
   const { colors, scheme } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
-  // Dark, translucent scrim over the hero photo in dark mode; a light ivory
-  // scrim in light mode so the card still reads as "Ivory boutique".
-  const gradientColors = scheme === 'light'
-    ? ['rgba(247,241,230,0.15)', 'rgba(247,241,230,0.75)', 'rgba(247,241,230,0.98)'] as const
-    : ['rgba(13,13,13,0.15)', 'rgba(13,13,13,0.7)', 'rgba(13,13,13,0.98)'] as const;
+  // Brand background: black with a soft gold glow behind the logo (ivory in
+  // light mode) — replaces the stock jewellery photo.
+  const bg = scheme === 'light' ? LOGIN_BG_LIGHT : LOGIN_BG_DARK;
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [remember, setRemember] = useState(true);
@@ -52,12 +52,7 @@ export default function LoginScreen() {
 
   return (
     <View style={styles.root} testID="login-screen">
-      <Image source={images.loginHero} style={StyleSheet.absoluteFill} contentFit="cover" transition={400} />
-      <LinearGradient
-        colors={gradientColors}
-        locations={[0, 0.45, 0.9]}
-        style={StyleSheet.absoluteFill}
-      />
+      <Image source={bg} style={StyleSheet.absoluteFill} contentFit="cover" />
 
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
@@ -116,7 +111,7 @@ export default function LoginScreen() {
               {loading ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.ctaText}>Sign in</Text>}
             </Pressable>
 
-            <Text style={styles.hint}>Contact your admin if you've lost access.</Text>
+            <Text style={styles.hint}>Contact your admin if you’ve lost access.</Text>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -127,12 +122,11 @@ export default function LoginScreen() {
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   scroll: { flexGrow: 1, justifyContent: 'space-between', padding: spacing.xl, paddingTop: 60, paddingBottom: 40 },
-  brand: { alignItems: 'flex-start' },
-  brandLogo: {
-    width: 56, height: 56, borderRadius: radius.md, marginBottom: spacing.md,
-  },
-  brandTitle: { color: colors.onSurface, fontSize: 44, fontFamily: fonts.display, letterSpacing: 0.5 },
-  brandTag: { color: colors.brandSecondary, marginTop: spacing.xs, fontSize: 14, letterSpacing: 0.3 },
+  brand: { alignItems: 'center', paddingTop: spacing.lg },
+  // the gold logo is ~0.934 wide:tall
+  brandLogo: { width: 118, height: 126, marginBottom: spacing.lg },
+  brandTitle: { color: colors.onSurface, fontSize: 40, fontFamily: fonts.display, letterSpacing: 0.5, textAlign: 'center' },
+  brandTag: { color: colors.brandSecondary, marginTop: spacing.xs, fontSize: 14, letterSpacing: 0.3, textAlign: 'center' },
 
   formCard: {
     backgroundColor: colors.surfaceSecondary, borderColor: colors.border, borderWidth: 1,
