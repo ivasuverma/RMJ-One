@@ -16,6 +16,7 @@ import { useTheme } from '@/src/theme/ThemeContext';
 import { Screen, Section, StatTile, Skeleton, ErrorState, DualBalance, Tone, Sheet } from '@/src/components/ui';
 import { LiveRateButton } from '@/src/components/LiveRateButton';
 import { UploadQueueBadge } from '@/src/components/UploadQueueBadge';
+import { TAB_OVERLAP } from '@/src/components/GlassTabBar';
 
 type DashboardData = {
   todays_attendance: {
@@ -829,7 +830,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
 
   // FAB
   fab: {
-    position: 'absolute', right: spacing.lg, bottom: spacing.lg,
+    position: 'absolute', right: spacing.lg, bottom: spacing.lg + TAB_OVERLAP,
     width: 56, height: 56, borderRadius: 28, backgroundColor: colors.brandPrimary,
     alignItems: 'center', justifyContent: 'center',
     shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 4,
