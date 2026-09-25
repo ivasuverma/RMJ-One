@@ -3125,7 +3125,7 @@ from routers import (
     users, payroll, notifications, biometric, reports, assistant, samples,
     cashbook, ledger, documents, backup, record_photos, gold_loans, whatsapp_bot,
     whatsapp_meta_bot, print_settings, system_health, led_board, rate_master, statements, ledger_home, public,
-    instagram, website, rate_broadcast,
+    instagram, website, rate_broadcast, broadcasts,
 )
 
 # ---------------- Mount ----------------
@@ -3160,6 +3160,7 @@ api.include_router(public.router)
 api.include_router(instagram.router)
 api.include_router(website.router)
 api.include_router(rate_broadcast.router)
+api.include_router(broadcasts.router)
 
 app.include_router(api)
 # Meta webhook also answers without the /api prefix — the callback URL was once

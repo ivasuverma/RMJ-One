@@ -10,7 +10,7 @@ import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 // official number itself: whatsapp_meta.py via /settings/whatsapp-meta.
 
 export type Plan = 'daily' | 'weekly';
-export type Audience = Plan | 'all';
+export type Audience = Plan | 'all' | 'list';
 export type Tpl = { exists: boolean; status: string | null; reason: string | null; error: string | null };
 export type Settings = {
   weekly_enabled: boolean; weekday: number; time: string;
@@ -19,18 +19,39 @@ export type Settings = {
 export type Job = {
   id: string; created_at: string; trigger: string; audience?: Audience; status: string; total: number;
   states?: Record<string, number>; delivery?: Record<string, number>;
+  list_id?: string | null; list_name?: string | null; template_id?: string | null; template_label?: string | null;
+  taps?: Record<string, number>;   // quick-reply button taps, per button
 };
+// Custom lists and the owner's own templates — routers/broadcasts.py.
+export type BList = { id: string; name: string; count: number };
+export type BtnType = 'quick_reply' | 'url' | 'phone';
+export type BButton = { type: BtnType; text: string; url?: string; phone?: string };
+export type BCard = { media_id: string; media_url?: string; body: string; button: BButton };
+export type TplKind = 'text' | 'image' | 'carousel';
+export type MyTpl = {
+  id: string; label: string; name: string; kind: TplKind; body: string; media_id?: string | null; media_url?: string;
+  buttons: BButton[]; cards: BCard[]; ack_text: string; status: string | null; reason?: string | null; created_at: string;
+};
+export const KIND_LABEL: Record<TplKind, string> = { text: 'Text', image: 'Photo', carousel: 'Scrollable photos' };
 export type Overview = {
   settings: Settings; weekdays: string[]; counts: { daily: number; weekly: number; opted_out: number };
   rates: { gold: number; silver: number } | null; preview: string; buttons: string[];
   photo_url: string; photo_custom: boolean; subscribe_link: string | null;
   template: Tpl; meta_configured: boolean; sending: Job[]; sent_today: number;
+  my_lists?: number; my_templates?: number;
 };
 export type MetaStatus = { configured: boolean; connected: boolean; phone: string | null; display_name: string | null };
-export type Sub = { id: string; name: string; mobile: string; status: 'active' | 'opted_out'; plan?: Plan; source?: string };
+export type Sub = { id: string; name: string; mobile: string; status: 'active' | 'opted_out'; plan?: Plan | 'none'; source?: string; lists?: string[] };
 
 export const SHORT_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-export const AUDIENCE_LABEL: Record<Audience, string> = { daily: 'Daily subscribers', weekly: 'Customer list', all: 'Everyone' };
+export const AUDIENCE_LABEL: Record<Audience, string> = { daily: 'Daily subscribers', weekly: 'Customer list', all: 'Everyone', list: 'A list' };
+export const jobAudience = (j: Job) => (j.audience === 'list' ? j.list_name || 'A list' : AUDIENCE_LABEL[j.audience || 'weekly']);
+export function statusLabel(status: string | null | undefined): string {
+  if (status === 'APPROVED') return 'Approved';
+  if (status === 'REJECTED') return 'Rejected';
+  if (status === 'PAUSED' || status === 'DISABLED') return 'Paused by Meta';
+  return 'In review';
+}
 export const when = (iso: string) => new Date(iso).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
 export const num = (n: number) => n.toLocaleString('en-IN');
 

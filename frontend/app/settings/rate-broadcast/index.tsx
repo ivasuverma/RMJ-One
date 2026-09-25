@@ -59,12 +59,12 @@ export default function RateBroadcastHub() {
     },
     {
       key: 'templates', n: 2, title: 'Templates', icon: 'document-text-outline', route: '/settings/rate-broadcast/templates',
-      ok: ov.template.status === 'APPROVED', sub: `Rate update · ${templateLine(ov)}`,
+      ok: ov.template.status === 'APPROVED', sub: `Rate update · ${templateLine(ov)}${ov.my_templates ? ` · ${num(ov.my_templates)} of your own` : ''}`,
     },
     {
       key: 'people', n: 3, title: 'People', icon: 'people-outline', route: '/settings/rate-broadcast/people',
       ok: ov.counts.weekly + ov.counts.daily > 0,
-      sub: `${num(ov.counts.weekly)} customers · ${num(ov.counts.daily)} daily · ${num(ov.counts.opted_out)} stopped`,
+      sub: `${num(ov.counts.weekly)} customers · ${num(ov.counts.daily)} daily · ${num(ov.counts.opted_out)} stopped${ov.my_lists ? ` · ${num(ov.my_lists)} lists` : ''}`,
     },
     {
       key: 'send', n: 4, title: 'Send & schedule', icon: 'paper-plane-outline', route: '/settings/rate-broadcast/send',

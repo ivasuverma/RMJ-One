@@ -86,6 +86,7 @@ async def _stop_start_replies(payload: dict) -> None:
     Always honoured, whatever the chatbot or active-provider settings — an
     opt-out must never be ignored."""
     from routers.rate_broadcast import handle_subscribe_reply, subscribe_buttons
+    from routers.broadcasts import record_tap
     import whatsapp_meta
     for entry in payload.get('entry') or []:
         for change in entry.get('changes') or []:
@@ -98,7 +99,15 @@ async def _stop_start_replies(payload: dict) -> None:
                     text = ((msg.get('interactive') or {}).get('button_reply') or {}).get('id') or ''
                 else:
                     continue
+                ack = None
+                if msg.get('type') == 'button':  # counted against the send it came from
+                    try:
+                        ack = await record_tap(msg)
+                    except Exception:
+                        logger.exception('record_tap failed')
                 reply = await handle_subscribe_reply(msg.get('from') or '', text)
+                if not reply and ack:  # the template's own automatic reply (👍 → "Thank you!")
+                    await whatsapp_meta.send_text(msg['from'], ack, flow='broadcast_ack')
                 if reply:
                     buttons = subscribe_buttons(text)
                     sent = buttons and await whatsapp_meta.send_buttons(msg['from'], reply, buttons, flow='rate_broadcast_optin')

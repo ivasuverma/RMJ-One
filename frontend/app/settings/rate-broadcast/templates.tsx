@@ -3,13 +3,15 @@ import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Refre
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
 import { pickWebFile } from '@/src/components/DocumentCaptureSheet';
 import { ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { useToast } from '@/src/components/ui';
-import { Header, makeStyles, Overview, Tpl, templateLine } from './_shared';
+import { confirmAction } from '@/src/utils/confirm';
+import { Header, KIND_LABEL, makeStyles, MyTpl, Overview, statusLabel, Tpl, templateLine } from './_shared';
+import { TplPreview } from './_preview';
 
 const BUTTON_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
   'See live rates': 'open-outline', 'Call the shop': 'call-outline', 'Weekly only': 'calendar-outline', 'Stop updates': 'arrow-undo-outline',
@@ -23,13 +25,18 @@ export default function BroadcastTemplatesScreen() {
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const t = useMemo(() => tplStyles(colors), [colors]);
   const toast = useToast();
+  const router = useRouter();
   const [ov, setOv] = useState<Overview | null>(null);
+  const [mine, setMine] = useState<MyTpl[] | null>(null);
+  const [open, setOpen] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
-    try { setOv(await api.get<Overview>('/rate-broadcast/overview')); }
-    catch (e: any) { toast.error(e?.detail || 'Could not load'); }
+    try {
+      const [o, m] = await Promise.all([api.get<Overview>('/rate-broadcast/overview'), api.get<MyTpl[]>('/broadcasts/templates')]);
+      setOv(o); setMine(m);
+    } catch (e: any) { toast.error(e?.detail || 'Could not load'); }
     finally { setRefreshing(false); }
   }, [toast]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
@@ -59,6 +66,16 @@ export default function BroadcastTemplatesScreen() {
     const r = await api.del<{ photo_url: string; photo_custom: boolean }>('/rate-broadcast/photo');
     setOv((o) => (o ? { ...o, ...r } : o));
   });
+
+  const refreshOne = (m: MyTpl) => run(`r-${m.id}`, async () => {
+    const t = await api.post<MyTpl>(`/broadcasts/templates/${m.id}/refresh`, {});
+    setMine((l) => l && l.map((x) => (x.id === t.id ? t : x)));
+  });
+  const removeOne = (m: MyTpl) => confirmAction('Delete this template?', `“${m.label}” is removed here and from Meta.`, 'Delete',
+    () => run(`d-${m.id}`, async () => {
+      await api.del(`/broadcasts/templates/${m.id}`);
+      setMine((l) => l && l.filter((x) => x.id !== m.id));
+    }));
 
   if (!ov) {
     return (
@@ -123,6 +140,60 @@ export default function BroadcastTemplatesScreen() {
           ) : !approved && ov.meta_configured ? (
             <Pressable onPress={load} style={styles.btn} accessibilityRole="button"><Text style={styles.btnText}>Check status</Text></Pressable>
           ) : null}
+        </View>
+
+        <View style={styles.card} testID="broadcast-my-templates">
+          <View style={styles.row}>
+            <Text style={[styles.cardTitle, styles.flex1]}>Your templates</Text>
+            <Pressable onPress={() => router.push('/settings/rate-broadcast/new-template')} disabled={!ov.meta_configured}
+              style={[styles.btn, { paddingVertical: 8 }, !ov.meta_configured && { opacity: 0.5 }]} testID="broadcast-new-template" accessibilityRole="button">
+              <Ionicons name="add" size={16} color={colors.brandSecondary} /><Text style={styles.btnText}>New template</Text>
+            </Pressable>
+          </View>
+          <Text style={styles.listMeta}>Offers, new designs, festival greetings — text, a photo, or scrollable photos, with buttons like 👍 / 👎. Send them to any list once Meta approves.</Text>
+          {mine === null ? <ActivityIndicator color={colors.brandPrimary} /> : mine.length === 0 ? (
+            <Text style={styles.hint}>None yet.</Text>
+          ) : mine.map((m) => {
+            const ok = m.status === 'APPROVED';
+            const bad = m.status === 'REJECTED' || m.status === 'PAUSED' || m.status === 'DISABLED';
+            return (
+              <View key={m.id} style={styles.listRow}>
+                <View style={[styles.flex1, { gap: 6 }]}>
+                  <Pressable onPress={() => setOpen(open === m.id ? null : m.id)} style={styles.row} accessibilityRole="button" testID={`broadcast-tpl-${m.id}`}>
+                    <View style={styles.flex1}>
+                      <Text style={styles.listName} numberOfLines={1}>{m.label}</Text>
+                      <Text style={styles.listMeta} numberOfLines={1}>{KIND_LABEL[m.kind]}{m.kind === 'carousel' ? ` · ${m.cards.length} cards` : ''} · {m.body.replace(/\{\{1\}\}/g, 'Rahul')}</Text>
+                    </View>
+                    <View style={[t.badge, ok ? styles.ok : bad ? { backgroundColor: colors.error } : styles.warn]}>
+                      <Text style={[t.badgeText, { color: ok ? colors.onSuccess : bad ? colors.onError : colors.onWarning }]}>{statusLabel(m.status)}</Text>
+                    </View>
+                  </Pressable>
+                  {open === m.id && (
+                    <>
+                      <TplPreview kind={m.kind} body={m.body} mediaUrl={m.media_url} buttons={m.buttons} cards={m.cards} colors={colors} />
+                      {m.reason && bad ? <Text style={[styles.hint, { color: colors.onError }]}>Meta: {m.reason}</Text> : null}
+                      {m.ack_text ? <Text style={styles.hint}>Automatic reply to a button tap: “{m.ack_text}”</Text> : null}
+                      <View style={styles.row}>
+                        {!ok && (
+                          <Pressable onPress={() => refreshOne(m)} style={[styles.btn, styles.flex1]} accessibilityRole="button">
+                            {busy === `r-${m.id}` ? <ActivityIndicator color={colors.brandSecondary} /> : <Text style={styles.btnText}>Check status</Text>}
+                          </Pressable>
+                        )}
+                        {ok && (
+                          <Pressable onPress={() => router.push({ pathname: '/settings/rate-broadcast/send', params: { template: m.id } })} style={[styles.btn, styles.flex1]} accessibilityRole="button">
+                            <Ionicons name="paper-plane-outline" size={16} color={colors.brandSecondary} /><Text style={styles.btnText}>Send</Text>
+                          </Pressable>
+                        )}
+                        <Pressable onPress={() => removeOne(m)} style={[styles.btn, styles.flex1]} accessibilityRole="button" testID={`broadcast-tpl-delete-${m.id}`}>
+                          {busy === `d-${m.id}` ? <ActivityIndicator color={colors.brandSecondary} /> : <Text style={[styles.btnText, { color: colors.onError }]}>Delete</Text>}
+                        </Pressable>
+                      </View>
+                    </>
+                  )}
+                </View>
+              </View>
+            );
+          })}
         </View>
       </ScrollView>
     </SafeAreaView>
