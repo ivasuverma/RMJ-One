@@ -11,6 +11,7 @@ import { fmtCompactINR } from '@/src/utils/money';
 import { istTime } from '@/src/utils/datetime';
 import { ErrorState } from '@/src/components/ui';
 import { UploadQueueBadge } from '@/src/components/UploadQueueBadge';
+import { LiveRateButton } from '@/src/components/LiveRateButton';
 
 // Work — the operational hub, laid out to the v2 design comp: a search bar,
 // an "In progress" list of process rows (each showing its live state before
@@ -52,7 +53,8 @@ function renderSegs(segs: Seg[], colors: ThemeColors) {
 export default function WorkScreen() {
   const router = useRouter();
   const { colors } = useTheme();
-  const { hasModule } = useAuth();
+  const { hasModule, user } = useAuth();
+  const canEditWebsite = user?.role === 'owner' || user?.role === 'admin';
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [data, setData] = useState<DashboardData | null>(null);
   const [docSummary, setDocSummary] = useState<{ pending_count: number } | null>(null);
@@ -79,6 +81,7 @@ export default function WorkScreen() {
   const toggleHidden = (key: string) => persistHidden(hidden.includes(key) ? hidden.filter((k) => k !== key) : [...hidden, key]);
 
   const [loanSummary, setLoanSummary] = useState<{ active: number; overdue: number; total_outstanding: number; total_interest_pending: number } | null>(null);
+  const [siteSummary, setSiteSummary] = useState<{ sections: number; hidden: number; pieces: number; edited: number } | null>(null);
   const [goldRateSummary, setGoldRateSummary] = useState<{ gold_rate: number | null; silver_rate: number | null; sent: boolean; sent_at: string | null; error: boolean } | null>(null);
   const load = useCallback(async () => {
     try { setError(''); setData(await api.get<DashboardData>('/dashboard')); }
@@ -86,11 +89,17 @@ export default function WorkScreen() {
     finally { setLoading(false); setRefreshing(false); }
     if (hasModule('documents')) api.get<{ pending_count: number }>('/documents/summary').then(setDocSummary).catch(() => {});
     if (hasModule('gold_loans')) api.get<{ active: number; overdue: number; total_outstanding: number; total_interest_pending: number }>('/gold-loans/dashboard').then(setLoanSummary).catch(() => {});
+    if (canEditWebsite) api.get<any>('/website/content').then((c) => setSiteSummary({
+      sections: c.sections.filter((x: any) => x.visible).length,
+      hidden: c.page.filter((x: any) => !x.visible).length,
+      pieces: c.pieces,
+      edited: c.page.reduce((n: number, x: any) => n + x.fields.filter((f: any) => f.edited).length + x.images.filter((i: any) => i.edited).length, 0),
+    })).catch(() => {});
     if (hasModule('gold_rate')) api.get<any>('/settings/gold-rate').then((g) => setGoldRateSummary({
       gold_rate: g.today?.gold_rate ?? null, silver_rate: g.today?.silver_rate ?? null,
       sent: !!g.today?.sent_at, sent_at: g.today?.sent_at ?? null, error: !!g.today?.error,
     })).catch(() => {});
-  }, [hasModule]);
+  }, [hasModule, canEditWebsite]);
   useFocusEffect(useCallback(() => { setLoading(true); load(); }, [load]));
 
   const go = (route: string) => router.push(route as any);
@@ -187,6 +196,19 @@ export default function WorkScreen() {
     ) : placeholder,
   });
 
+  if (canEditWebsite) rows.push({
+    key: 'website', title: 'Website', icon: 'globe-outline', route: '/website',
+    segs: siteSummary ? [
+      { text: `${siteSummary.pieces} pieces on the counter` }, { text: ' · ' },
+      { text: `${siteSummary.sections} own section${siteSummary.sections === 1 ? '' : 's'}` },
+    ] : placeholder,
+    segs2: siteSummary ? [
+      { text: 'rmj.co.in' },
+      ...(siteSummary.edited ? [{ text: ` · ${siteSummary.edited} change${siteSummary.edited === 1 ? '' : 's'} live` }] : []),
+      ...(siteSummary.hidden ? [{ text: ` · ${siteSummary.hidden} part${siteSummary.hidden === 1 ? '' : 's'} hidden`, tone: 'hot' as const }] : []),
+    ] : placeholder,
+  });
+
   // Apply the user's saved order; unknown/new rows fall to the end.
   const idx = (k: string) => { const i = order.indexOf(k); return i === -1 ? 999 : i; };
   const sortedRows = [...rows].sort((a, b) => idx(a.key) - idx(b.key));
@@ -215,6 +237,7 @@ export default function WorkScreen() {
             <Text style={styles.sub}>What&apos;s in progress — and what to do next.</Text>
           </View>
           {hasModule('documents') && <UploadQueueBadge />}
+          <LiveRateButton testID="work-rate-btn" />
         </View>
 
         <Pressable onPress={() => go('/repairs/search')} style={styles.search} testID="work-search">

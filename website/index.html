@@ -303,6 +303,7 @@
     .hero h1{font-size:36px}
     .brand .wm small{display:none}
   }
+  .cmstext{white-space:pre-line}
   @media (prefers-reduced-motion:reduce){
     html{scroll-behavior:auto} *{animation:none!important; transition:none!important}
   }
@@ -378,7 +379,7 @@
       <b>Sorry for the inconvenience.</b>
       <p>Live rates are temporarily unavailable. Please call or WhatsApp us for today's rate — this page will update by itself as soon as they're back.</p>
     </div>
-    <p class="fine">Rates are indicative and exclude making charges, wastage and GST — they can change through the day, and the rate applicable to any transaction is the one in effect at billing, not the rate shown here. Buyback is offered only on items purchased from us, subject to purity verification.</p>
+    <p class="fine" data-cms="hero_fine">Rates are indicative and exclude making charges, wastage and GST — they can change through the day, and the rate applicable to any transaction is the one in effect at billing, not the rate shown here. Buyback is offered only on items purchased from us, subject to purity verification.</p>
     <div class="actions">
       <a class="btn wa" href="https://wa.me/919781800888?text=Hello%2C%20I%27d%20like%20a%20quote%20at%20today%27s%20gold%20rate.">Get a quote on WhatsApp</a>
       <a class="btn ghost" href="tel:+919781800888">Call the shop</a>
@@ -406,25 +407,25 @@
 </section>
 
 <!-- 2. SHOWCASE -->
-<section>
+<section id="showcase" data-cms-section="showcase">
   <div class="wrap">
     <div class="head">
-      <h2>Three generations of craftsmanship.</h2>
-      <p>From everyday gold to wedding sets and one-of-a-kind pieces, everything still comes out of the same Ludhiana counter our family has run since 1932.</p>
+      <h2 data-cms="showcase_title">Three generations of craftsmanship.</h2>
+      <p data-cms="showcase_text">From everyday gold to wedding sets and one-of-a-kind pieces, everything still comes out of the same Ludhiana counter our family has run since 1932.</p>
     </div>
     <div class="show">
-      <img src="assets/photos/dsc_0033-YBg891rw9PtK9XaM.JPG" alt="Gold jewellery at Ram Murti Jewellers">
+      <img data-cms-img="showcase_photo" src="assets/photos/dsc_0033-YBg891rw9PtK9XaM.JPG" alt="Gold jewellery at Ram Murti Jewellers">
       <div class="plate"><img src="assets/images/logo-framed.png" alt=""><div><b>Ram Murti Jewellers</b><span>Family jewellers since 1932</span></div></div>
     </div>
   </div>
 </section>
 
 <!-- 3. COLLECTIONS -->
-<section class="grey" id="collections">
+<section class="grey" id="collections" data-cms-section="collections">
   <div class="wrap">
     <div class="head">
-      <h2>Find your piece.</h2>
-      <p>Choose a collection and a piece, and we'll send you what's on the counter right now, on WhatsApp.</p>
+      <h2 data-cms="collections_title">Find your piece.</h2>
+      <p data-cms="collections_text">Choose a collection and a piece, and we'll send you what's on the counter right now, on WhatsApp.</p>
     </div>
     <div class="finder">
       <div class="fmetals" role="tablist" aria-label="Collections" id="fMetals"></div>
@@ -444,52 +445,55 @@
 </section>
 
 <!-- 4. NEW AT THE COUNTER -->
-<section id="counter">
+<section id="counter" data-cms-section="counter">
   <div class="wrap railhead">
     <div class="head">
-      <h2>Fresh at the counter.</h2>
-      <p>Ask about any piece and we'll send more photos and the price, right on WhatsApp.</p>
+      <h2 data-cms="counter_title">Fresh at the counter.</h2>
+      <p data-cms="counter_text">Ask about any piece and we'll send more photos and the price, right on WhatsApp.</p>
     </div>
     <div class="railnav"><button aria-label="Previous pieces" onclick="railScroll('rail',-1)">‹</button><button aria-label="Next pieces" onclick="railScroll('rail',1)">›</button></div>
   </div>
   <div class="rail" id="rail"></div>
   <div class="wrap">
     <div class="promises">
-      <div class="promise"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4.5-3 8.3-7 10-4-1.7-7-5.5-7-10V6l7-3z"/><path d="M9 12l2 2 4-4"/></svg><h3>Hallmarked gold</h3><p>Every piece we sell carries a BIS hallmark and HUID number you can verify yourself.</p></div>
-      <div class="promise"><svg viewBox="0 0 24 24"><path d="M4 7h13l-3-3M20 17H7l3 3"/></svg><h3>Old gold exchange</h3><p>We test your old jewellery in front of you and value it fairly at today's rate.</p></div>
-      <div class="promise"><svg viewBox="0 0 24 24"><path d="M12 20l8-8-4-4-8 8v4h4z"/><path d="M14 6l4 4"/></svg><h3>Custom orders</h3><p>Designed with you and crafted right here by our own karigars.</p></div>
-      <div class="promise"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg><h3>Repairs and polish</h3><p>Resizing, clasps, stone setting and polishing, with a receipt for every piece.</p></div>
+      <div class="promise"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4.5-3 8.3-7 10-4-1.7-7-5.5-7-10V6l7-3z"/><path d="M9 12l2 2 4-4"/></svg><h3 data-cms="promise1_title">Hallmarked gold</h3><p data-cms="promise1_text">Every piece we sell carries a BIS hallmark and HUID number you can verify yourself.</p></div>
+      <div class="promise"><svg viewBox="0 0 24 24"><path d="M4 7h13l-3-3M20 17H7l3 3"/></svg><h3 data-cms="promise2_title">Old gold exchange</h3><p data-cms="promise2_text">We test your old jewellery in front of you and value it fairly at today's rate.</p></div>
+      <div class="promise"><svg viewBox="0 0 24 24"><path d="M12 20l8-8-4-4-8 8v4h4z"/><path d="M14 6l4 4"/></svg><h3 data-cms="promise3_title">Custom orders</h3><p data-cms="promise3_text">Designed with you and crafted right here by our own karigars.</p></div>
+      <div class="promise"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg><h3 data-cms="promise4_title">Repairs and polish</h3><p data-cms="promise4_text">Resizing, clasps, stone setting and polishing, with a receipt for every piece.</p></div>
     </div>
   </div>
 </section>
 
 
 <!-- 5. ABOUT (brand led) -->
-<section class="grey" id="about">
+<section class="grey" id="about" data-cms-section="about">
   <div class="wrap">
     <div class="brandband">
       <div class="copy">
         <div class="logo"><img src="assets/images/logo-framed.png" alt=""></div>
-        <h2>Three generations, one family counter.</h2>
-        <p>Ram Murti Jewellers was founded in 1932 by Sh. Ram Murti, whose name we still carry with pride. His son, Mr. Jugal Kishore Verma, carried the counter forward for decades, and today it's run by Mr. Vasu Verma — the same family, the same street, for over nine decades.</p>
-        <p>Many of our customers bought their first piece here for their own wedding, and now bring their children. We keep it simple: rates you can check, hallmarked gold, and honest advice — from a family that has been jewellers in India for generations.</p>
+        <h2 data-cms="about_title">Three generations, one family counter.</h2>
+        <p data-cms="about_p1">Ram Murti Jewellers was founded in 1932 by Sh. Ram Murti, whose name we still carry with pride. His son, Mr. Jugal Kishore Verma, carried the counter forward for decades, and today it's run by Mr. Vasu Verma — the same family, the same street, for over nine decades.</p>
+        <p data-cms="about_p2">Many of our customers bought their first piece here for their own wedding, and now bring their children. We keep it simple: rates you can check, hallmarked gold, and honest advice — from a family that has been jewellers in India for generations.</p>
       </div>
-      <div class="pic"><img loading="lazy" src="assets/photos/dsc_0021-m5K2JDwG4zs2MZbz.JPG" alt="Jewellery at the Ram Murti Jewellers counter"></div>
+      <div class="pic"><img loading="lazy" data-cms-img="about_photo" src="assets/photos/dsc_0021-m5K2JDwG4zs2MZbz.JPG" alt="Jewellery at the Ram Murti Jewellers counter"></div>
     </div>
   </div>
 </section>
+
+<!-- 5b. THE SHOP'S OWN SECTIONS — added in RMJ-One (Work › Website), filled in by loadContent(). -->
+<div id="cmsSections"></div>
 
 <!-- 6. VISIT -->
 <section id="visit">
   <div class="wrap">
     <div class="head">
-      <h2>Visit our counter.</h2>
-      <p>Walk in any time, or message us ahead and we'll keep pieces ready for you.</p>
+      <h2 data-cms="visit_title">Visit our counter.</h2>
+      <p data-cms="visit_text">Walk in any time, or message us ahead and we'll keep pieces ready for you.</p>
     </div>
     <div class="visit">
       <div class="panel">
         <h3>Ram Murti Jewellers</h3>
-        <p class="addr">Ludhiana, Punjab</p>
+        <p class="addr" data-cms="visit_address">Ludhiana, Punjab</p>
         <div class="row">
           <a class="btn wa" href="https://wa.me/919781800888?text=Hello%2C%20I%27d%20like%20to%20visit%20the%20shop.">Plan a visit</a>
           <a class="btn dark" href="https://maps.google.com/?q=Ram+Murti+Jewellers+Field+Ganj+Ludhiana">Get directions</a>
@@ -550,6 +554,7 @@ const CONFIG = {
   INSTAGRAM_URL: 'https://api.rmj.co.in/api/public/instagram', // ← set to your RMJ One URL
   PIECES_URL: 'https://api.rmj.co.in/api/public/website/pieces', // Fresh at the counter, managed in RMJ-One
   SUBSCRIBE_URL: 'https://api.rmj.co.in/api/public/rate-broadcast/subscribe', // wa.me link with START pre-filled
+  CONTENT_URL: 'https://api.rmj.co.in/api/public/website/content', // text/photo edits + extra sections from RMJ-One
   API_ORIGIN: 'https://api.rmj.co.in',
   LOGIN_URL: 'https://app.rmj.co.in',                         // ← set to your RMJ One URL
   REFRESH_MS: 60 * 1000,                                  // same cadence as the app's rates screen
@@ -819,6 +824,44 @@ loadInstagram();
     a.href=url; a.hidden=false;
   }catch(e){ /* button stays hidden */ }
 })();
+
+/* Page editor (RMJ-One › Work › Website): the text and photos above are the
+   defaults; this swaps in whatever the shop has edited, hides sections it
+   switched off, and adds its own sections before "Visit". Everything goes in
+   as text (textContent / attributes), never as HTML. If the call fails the
+   page simply keeps its built-in content. */
+async function loadContent(){
+  try{
+    const res=await fetch(CONFIG.CONTENT_URL,{cache:'no-store'});
+    if(!res.ok) return;
+    const c=await res.json();
+    const texts=c.texts||{}, imgs=c.images||{};
+    document.querySelectorAll('[data-cms]').forEach(el=>{ const v=texts[el.dataset.cms]; if(v){ el.textContent=v; el.classList.add('cmstext'); } });
+    document.querySelectorAll('[data-cms-img]').forEach(el=>{ const v=imgs[el.dataset.cmsImg]; if(v) el.src=CONFIG.API_ORIGIN+v; });
+    FINDER.forEach(x=>{
+      if(texts['finder_'+x.key+'_desc']) x.desc=texts['finder_'+x.key+'_desc'];
+      if(imgs['finder_'+x.key]) x.img=CONFIG.API_ORIGIN+imgs['finder_'+x.key];
+    });
+    renderFinder();
+    (c.hidden||[]).forEach(k=>{
+      const sec=document.querySelector(`[data-cms-section="${k}"]`); if(!sec) return;
+      sec.style.display='none';
+      if(sec.id) document.querySelectorAll(`a[href="#${sec.id}"]`).forEach(a=>a.style.display='none');
+    });
+    const host=document.getElementById('cmsSections');
+    host.innerHTML=(c.sections||[]).map((s,i)=>{
+      const rid='cmsrail'+i;
+      const photos=(s.photos||[]).map(p=>{
+        const src=CONFIG.API_ORIGIN+p.url;
+        const msg=encodeURIComponent(`Hello, I'd like to know more about this${p.caption?' '+p.caption:' piece'}: ${src}`);
+        return `<a class="piece" href="https://wa.me/919781800888?text=${msg}"><div class="ph"><img loading="lazy" src="${esc(src)}" alt="${esc(p.caption||s.title)}"></div>${p.caption?`<div class="pn">${esc(p.caption)}</div>`:''}<div class="pa">Ask about this</div></a>`;
+      }).join('');
+      const nav=(s.photos||[]).length>1?`<div class="railnav"><button aria-label="Previous" onclick="railScroll('${rid}',-1)">‹</button><button aria-label="Next" onclick="railScroll('${rid}',1)">›</button></div>`:'';
+      return `<section class="${i%2?'grey':''}"><div class="wrap${photos?' railhead':''}"><div class="head"><h2>${esc(s.title)}</h2>${s.text?`<p class="cmstext">${esc(s.text)}</p>`:''}</div>${nav}</div>${photos?`<div class="rail" id="${rid}">${photos}</div>`:''}</section>`;
+    }).join('');
+  }catch(e){ /* keep the built-in page */ }
+}
+loadContent();
 
 document.getElementById('yr').textContent=new Date().getFullYear();
 </script>
