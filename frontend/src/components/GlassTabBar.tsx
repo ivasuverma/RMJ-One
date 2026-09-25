@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { useGlass } from '@/src/theme/glass';
 
 // The bottom bar, iOS-26 style: a floating frosted-glass pill with the tabs,
 // a gold highlight that slides to the selected tab (outline icon → filled),
@@ -61,14 +62,17 @@ export function GlassTabBar({ tabs, onCapture, captureTestID }: {
   const dark = scheme === 'dark';
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => makeStyles(colors, dark), [colors, dark]);
+  const { blur, tint } = useGlass();   // Settings › Glass bar
+  const tintBg = dark ? `rgba(30,30,34,${tint / 100})` : `rgba(255,255,255,${tint / 100})`;
 
   // react-native-web drops backdrop-filter from styles, so set it on the element itself.
   const webGlassRef = useRef<View>(null);
   useEffect(() => {
     const el = webGlassRef.current as unknown as HTMLElement | null;
     if (Platform.OS !== 'web' || !el?.style) return;
-    el.style.setProperty('backdrop-filter', 'blur(22px) saturate(180%)');
-    el.style.setProperty('-webkit-backdrop-filter', 'blur(22px) saturate(180%)');
+    const f = blur > 0 ? `blur(${blur}px) saturate(180%)` : 'none';
+    el.style.setProperty('backdrop-filter', f);
+    el.style.setProperty('-webkit-backdrop-filter', f);
   });
 
   // Sliding highlight: measure each tab, spring the pill to the focused one.
@@ -105,7 +109,12 @@ export function GlassTabBar({ tabs, onCapture, captureTestID }: {
   const glass = Platform.OS === 'web'
     ? null   // drawn at page level instead — see the portal below
     : Platform.OS === 'ios'
-      ? <BlurView intensity={85} tint={dark ? 'systemUltraThinMaterialDark' : 'systemUltraThinMaterialLight'} style={[StyleSheet.absoluteFill, styles.round, { overflow: 'hidden' }]} />
+      ? (
+        <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.round, { overflow: 'hidden' }]}>
+          {blur > 0 && <BlurView intensity={Math.min(100, blur * 2.5)} tint={dark ? 'systemUltraThinMaterialDark' : 'systemUltraThinMaterialLight'} style={StyleSheet.absoluteFill} />}
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: tintBg }]} />
+        </View>
+      )
       : <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.round, styles.solid]} />;
 
   const bar = (
@@ -162,7 +171,7 @@ export function GlassTabBar({ tabs, onCapture, captureTestID }: {
     return createPortal(
       <>
         <View ref={webGlassRef} pointerEvents="none"
-          style={[styles.webGlass, styles.round, { left: 14, right: onCapture ? 14 + PILL_H + 10 : 14, bottom: gap, height: PILL_H }]} />
+          style={[styles.webGlass, styles.round, { backgroundColor: tintBg, left: 14, right: onCapture ? 14 + PILL_H + 10 : 14, bottom: gap, height: PILL_H }]} />
         <View pointerEvents="box-none" style={styles.webLayer}>{bar}</View>
       </>,
       document.body,
@@ -183,7 +192,7 @@ const makeStyles = (colors: ThemeColors, dark: boolean) => StyleSheet.create({
   shadow: {
     shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: dark ? 0.35 : 0.12, shadowRadius: 20, elevation: 10,
   },
-  webGlass: { position: 'fixed' as any, zIndex: 49, backgroundColor: dark ? 'rgba(30,30,34,0.34)' : 'rgba(255,255,255,0.42)' },
+  webGlass: { position: 'fixed' as any, zIndex: 49 },
   // a faint top highlight, like light catching the edge of glass
   sheen: { borderTopWidth: 1, borderTopColor: dark ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.7)', borderRadius: PILL_H / 2 },
   solid: { backgroundColor: dark ? 'rgba(28,28,32,0.96)' : 'rgba(252,251,248,0.97)' },

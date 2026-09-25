@@ -43,7 +43,8 @@ export default function Root({ children }: { children: React.ReactNode }) {
         <meta name="theme-color" content="#161615" media="(prefers-color-scheme: dark)" />
         <meta name="theme-color" content="#FAFAF9" media="(prefers-color-scheme: light)" />
         <link rel="manifest" href="/manifest.json?v=2" />
-        <link rel="icon" href="/favicon.ico?v=2" sizes="any" />
+        <link rel="icon" href="/favicon.ico?v=3" sizes="any" />
+        <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png?v=3" />
         <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png?v=2" />
 
         {/* Inter — this is the actual production path for custom type. The
@@ -61,6 +62,11 @@ export default function Root({ children }: { children: React.ReactNode }) {
           /* Dark canvas from first paint — matches the app's default dark
              theme so there's no white flash before React mounts. */
           html, body { background:#0B0B0C; }
+          /* Telegrafico — the logo's wordmark font (freeware, S. Nicolosi), used
+             for the RMJ-One title on the login screen. A hyphen glyph was added
+             (the original has letters only). Native loads assets/fonts/Telegrafico.ttf. */
+          @font-face { font-family: 'Telegrafico'; font-display: swap;
+            src: url('/fonts/telegrafico.woff2') format('woff2'), url('/fonts/telegrafico.ttf') format('truetype'); }
         ` }} />
 
         <ScrollViewStyleReset />

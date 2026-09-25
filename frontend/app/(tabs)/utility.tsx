@@ -10,6 +10,7 @@ import { useTheme, ThemePreference } from '@/src/theme/ThemeContext';
 import { isPushSupported, isSubscribed, subscribeToPush, unsubscribeFromPush } from '@/src/utils/push';
 import { NotificationSetupHint } from '@/src/components/NotificationSetupHint';
 import { TabBarSpacer } from '@/src/components/GlassTabBar';
+import { GlassSettings } from '@/src/components/GlassSettings';
 
 // Settings, rethought (v2 Phase 6): grouped iOS-style inset list — a profile
 // card at the top, then quiet section headers over full-width rows (icon +
@@ -179,6 +180,7 @@ export default function UtilityScreen() {
             ))}
           </View>
         )}
+        <GlassSettings testID="glass-settings" />
 
         <Pressable testID="logout-btn" style={styles.logout} onPress={onLogout}>
           <Ionicons name="log-out-outline" size={20} color={colors.onError} />
