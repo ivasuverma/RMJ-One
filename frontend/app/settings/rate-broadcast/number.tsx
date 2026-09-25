@@ -11,6 +11,7 @@ import { Header, makeStyles, MetaStatus } from './_shared';
 type Diag = {
   app_secret_set: boolean; verify_token_set: boolean;
   subscription: { subscribed: boolean | null; apps: string[]; error: string | null };
+  number?: { ok: boolean | null; error: string | null; status?: string; platform_type?: string; account_mode?: string; quality_rating?: string; messaging_limit_tier?: string };
   hits: { at: string; kind: 'verify' | 'event'; ok: boolean; note: string }[];
 };
 const WEBHOOK_URL = 'https://api.rmj.co.in/api/webhooks/whatsapp-meta';
@@ -31,6 +32,8 @@ export default function BroadcastNumberScreen() {
   const [sending, setSending] = useState(false);
   const [diag, setDiag] = useState<Diag | null>(null);
   const [linking, setLinking] = useState(false);
+  const [pin, setPin] = useState('');
+  const [registering, setRegistering] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -59,6 +62,13 @@ export default function BroadcastNumberScreen() {
     try { setDiag(await api.post<Diag>('/rate-broadcast/diagnostics/subscribe-app', {})); toast.success('Linked — send START again to test'); }
     catch (e: any) { toast.error(e?.detail || 'Could not link'); }
     finally { setLinking(false); }
+  };
+
+  const register = async () => {
+    setRegistering(true);
+    try { setDiag(await api.post<Diag>('/rate-broadcast/diagnostics/register-number', { pin })); setPin(''); toast.success('Number registered — send START again to test'); }
+    catch (e: any) { toast.error(e?.detail || 'Could not register'); }
+    finally { setRegistering(false); }
   };
 
   const copy = async (text: string) => {
@@ -123,7 +133,11 @@ export default function BroadcastNumberScreen() {
             <View style={styles.card} testID="broadcast-diagnostics">
               <Text style={styles.cardTitle}>Diagnostics — are START messages arriving?</Text>
               {[
-                { ok: diag.subscription.subscribed === true, label: 'Number linked to the Meta app',
+                { ok: diag.number?.ok === true, label: 'Number registered for the WhatsApp API',
+                  bad: diag.number?.ok === false
+                    ? `Meta says: ${[diag.number.platform_type && `platform ${diag.number.platform_type}`, diag.number.status && `status ${diag.number.status}`].filter(Boolean).join(', ') || 'not registered'}. Messages sent to the number don’t reach the API until it’s registered.`
+                    : `Couldn’t check${diag.number?.error ? `: ${diag.number.error}` : ''}` },
+                { ok: diag.subscription.subscribed === true, label: 'Number linked to this Meta app',
                   bad: diag.subscription.subscribed === false ? 'Not linked — Meta sends no incoming messages until it is.' : `Couldn’t check${diag.subscription.error ? `: ${diag.subscription.error}` : ''}` },
                 { ok: diag.app_secret_set, label: 'App secret on the server', bad: 'Missing — add META_WA_APP_SECRET (the App secret from App settings › Basic) and restart.' },
                 { ok: diag.verify_token_set, label: 'Verify token on the server', bad: 'Missing — add META_WA_WEBHOOK_VERIFY_TOKEN and restart.' },
@@ -136,6 +150,23 @@ export default function BroadcastNumberScreen() {
                   </View>
                 </View>
               ))}
+              {diag.number?.ok === false && (
+                <View style={{ gap: 6 }}>
+                  <Text style={styles.hint}>Enter the number’s 6-digit two-step verification PIN (WhatsApp Manager › Phone numbers › Two-step verification). If none was ever set, choose any 6 digits — it becomes the PIN.</Text>
+                  <View style={styles.row}>
+                    <TextInput value={pin} onChangeText={(v) => setPin(v.replace(/\D/g, '').slice(0, 6))} keyboardType="number-pad" placeholder="6-digit PIN" placeholderTextColor={colors.mutedText} style={[styles.input, styles.flex1]} testID="broadcast-register-pin" />
+                    <Pressable onPress={register} disabled={registering || pin.length !== 6} style={[styles.primary, { paddingHorizontal: 18 }, pin.length !== 6 && { opacity: 0.5 }]} accessibilityRole="button" testID="broadcast-register">
+                      {registering ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.primaryText}>Register</Text>}
+                    </Pressable>
+                  </View>
+                </View>
+              )}
+              {diag.subscription.apps.length > 0 && (
+                <Text style={styles.hint}>Linked apps: {diag.subscription.apps.join(', ')}</Text>
+              )}
+              {diag.number && (diag.number.quality_rating || diag.number.messaging_limit_tier) ? (
+                <Text style={styles.hint}>Quality: {diag.number.quality_rating || '—'} · Limit: {diag.number.messaging_limit_tier || '—'}{diag.number.account_mode ? ` · ${diag.number.account_mode}` : ''}</Text>
+              ) : null}
               {diag.subscription.subscribed === false && (
                 <Pressable onPress={linkApp} disabled={linking} style={styles.primary} accessibilityRole="button" testID="broadcast-link-app">
                   {linking ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.primaryText}>Link number to the app</Text>}

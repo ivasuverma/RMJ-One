@@ -267,10 +267,55 @@ async def app_subscription() -> dict:
         if res.status_code != 200:
             return {'subscribed': None, 'apps': [], 'error': res.text[:300]}
         rows = res.json().get('data') or []
-        names = [((r.get('whatsapp_business_api_data') or {}).get('name') or (r.get('whatsapp_business_api_data') or {}).get('id') or '?') for r in rows]
-        return {'subscribed': bool(rows), 'apps': names, 'error': None}
+        apps = [r.get('whatsapp_business_api_data') or {} for r in rows]
+        names = [a.get('name') or a.get('id') or '?' for a in apps]
+        # Subscribed to SOME app isn't enough — incoming messages go to the apps
+        # listed here, so it must include ours (same app as the token/secret).
+        app_id = os.environ.get('META_WA_APP_ID') or os.environ.get('META_APP_ID') or ''
+        ours = (app_id in [str(a.get('id')) for a in apps]) if app_id else bool(rows)
+        return {'subscribed': ours, 'apps': names, 'error': None}
     except Exception as e:
         return {'subscribed': None, 'apps': [], 'error': str(e)}
+
+
+async def number_health() -> dict:
+    """Is the phone number actually live on the Cloud API? A number that was
+    added but never registered (or is still on the WhatsApp Business app)
+    shows 'connected' for lookups yet never receives messages through the API."""
+    if not is_configured():
+        return {'ok': None, 'error': 'Not configured'}
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            res = await client.get(
+                f'{GRAPH_BASE}/{PHONE_NUMBER_ID}',
+                params={'fields': 'status,platform_type,code_verification_status,name_status,quality_rating,messaging_limit_tier,account_mode'},
+                headers={'Authorization': f'Bearer {ACCESS_TOKEN}'},
+            )
+        if res.status_code != 200:
+            return {'ok': None, 'error': res.text[:300]}
+        d = res.json()
+        ok = d.get('platform_type') == 'CLOUD_API' and d.get('status') in ('CONNECTED', None)
+        return {'ok': ok, 'error': None, **{k: d.get(k) for k in ('status', 'platform_type', 'code_verification_status',
+                                                                   'name_status', 'quality_rating', 'messaging_limit_tier', 'account_mode')}}
+    except Exception as e:
+        return {'ok': None, 'error': str(e)}
+
+
+async def register_number(pin: str) -> dict:
+    """Register the phone number on the Cloud API (sets/uses its 6-digit
+    two-step verification PIN). Needed once before it can receive messages."""
+    if not is_configured():
+        return {'ok': False, 'error': 'Not configured'}
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            res = await client.post(f'{GRAPH_BASE}/{PHONE_NUMBER_ID}/register',
+                                    json={'messaging_product': 'whatsapp', 'pin': pin},
+                                    headers={'Authorization': f'Bearer {ACCESS_TOKEN}'})
+        if res.status_code == 200 and res.json().get('success'):
+            return {'ok': True, 'error': None}
+        return {'ok': False, 'error': res.text[:300]}
+    except Exception as e:
+        return {'ok': False, 'error': str(e)}
 
 
 async def subscribe_app() -> dict:
