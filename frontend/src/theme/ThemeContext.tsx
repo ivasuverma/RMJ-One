@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { useColorScheme } from 'react-native';
+import { Platform, useColorScheme } from 'react-native';
 import { storage } from '@/src/utils/storage';
 import { darkColors, lightColors, ThemeColors } from './palettes';
 
@@ -48,6 +48,15 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const colors = scheme === 'light' ? lightColors : darkColors;
 
   const value = useMemo(() => ({ colors, scheme, preference, setPreference }), [colors, scheme, preference, setPreference]);
+
+  // Web: the page canvas starts dark (app/+html.tsx) to avoid a white flash;
+  // once the theme is known, match it — otherwise any sliver not covered by a
+  // screen (overscroll, the Home Screen app's bottom edge) shows as a black band in light mode.
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof document === 'undefined') return;
+    document.documentElement.style.backgroundColor = colors.surface;
+    document.body.style.backgroundColor = colors.surface;
+  }, [colors.surface]);
 
   return <ThemeCtx.Provider value={value}>{children}</ThemeCtx.Provider>;
 }
