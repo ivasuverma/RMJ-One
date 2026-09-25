@@ -85,7 +85,7 @@ async def _stop_start_replies(payload: dict) -> None:
     WEEKLY, STOP, and the template's "Stop updates" quick-reply button.
     Always honoured, whatever the chatbot or active-provider settings — an
     opt-out must never be ignored."""
-    from routers.rate_broadcast import handle_subscribe_reply
+    from routers.rate_broadcast import handle_subscribe_reply, subscribe_buttons
     import whatsapp_meta
     for entry in payload.get('entry') or []:
         for change in entry.get('changes') or []:
@@ -94,11 +94,16 @@ async def _stop_start_replies(payload: dict) -> None:
                     text = (msg.get('text') or {}).get('body') or ''
                 elif msg.get('type') == 'button':  # quick-reply tap on a template
                     text = (msg.get('button') or {}).get('text') or ''
+                elif msg.get('type') == 'interactive':  # tap on a reply button we sent
+                    text = ((msg.get('interactive') or {}).get('button_reply') or {}).get('id') or ''
                 else:
                     continue
                 reply = await handle_subscribe_reply(msg.get('from') or '', text)
                 if reply:
-                    await whatsapp_meta.send_text(msg['from'], reply, flow='rate_broadcast_optin')
+                    buttons = subscribe_buttons(text)
+                    sent = buttons and await whatsapp_meta.send_buttons(msg['from'], reply, buttons, flow='rate_broadcast_optin')
+                    if not sent:
+                        await whatsapp_meta.send_text(msg['from'], reply, flow='rate_broadcast_optin')
 
 
 @router.get('/webhooks/whatsapp-meta')

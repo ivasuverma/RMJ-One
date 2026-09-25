@@ -23,6 +23,7 @@ jobs:
       DB_NAME: rmj_ci
       EXPO_PUBLIC_BACKEND_URL: http://127.0.0.1:8001
       WHATSAPP_WEBHOOK_SECRET: ci-webhook-secret   # test-only; lets tests sign OpenWA webhook calls
+      META_WA_APP_SECRET: ci-meta-secret           # test-only; lets tests sign Meta webhook calls
     steps:
       - uses: actions/checkout@v4
 

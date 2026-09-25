@@ -73,7 +73,7 @@ class TestRateBroadcast:
         ov = requests.get(f"{API}/rate-broadcast/overview", headers=owner, timeout=30).json()
         assert ov['counts']['weekly'] >= 2  # imported customers are the weekly list
         assert 'https://rmj.co.in' in ov['preview']
-        assert ov['buttons'] == ['See live rates', 'Call the shop', 'Stop updates']
+        assert ov['buttons'] == ['See live rates', 'Call the shop', 'Weekly only', 'Stop updates']
         assert ov['photo_custom'] is False and ov['photo_url'].startswith('https://rmj.co.in/')
         # CI has no Meta line configured, so a send must be refused, not attempted.
         assert requests.post(f"{API}/rate-broadcast/send", headers=owner, json={'audience': 'weekly'}, timeout=30).status_code == 400
@@ -180,3 +180,30 @@ def test_diagnostics_relink_needs_meta(owner):
     # No Meta line in CI: re-linking must fail cleanly, not crash.
     r = requests.post(f"{API}/rate-broadcast/diagnostics/subscribe-app", headers=owner, json={'point_here': True}, timeout=30)
     assert r.status_code == 502
+
+
+def _meta_post(msg: dict):
+    import hashlib
+    import hmac
+    import json
+    secret = os.environ.get('META_WA_APP_SECRET')
+    if not secret:
+        pytest.skip('META_WA_APP_SECRET not set for this run')
+    raw = json.dumps({'entry': [{'changes': [{'value': {'messages': [msg]}}]}]}).encode()
+    sig = 'sha256=' + hmac.new(secret.encode(), raw, hashlib.sha256).hexdigest()
+    return requests.post(f"{API}/webhooks/whatsapp-meta", data=raw, headers={'x-hub-signature-256': sig, 'content-type': 'application/json'}, timeout=30)
+
+
+def test_buttons_change_plan_on_official_number(owner):
+    frm = '919812300088'
+    q = lambda: requests.get(f"{API}/rate-broadcast/subscribers?q=9812300088", headers=owner, timeout=30).json()
+    assert _meta_post({'from': frm, 'type': 'text', 'text': {'body': 'START'}}).status_code == 200
+    assert q()[0]['plan'] == 'daily'
+    # tap on the "Weekly instead" reply button we send with the confirmation
+    _meta_post({'from': frm, 'type': 'interactive', 'interactive': {'type': 'button_reply', 'button_reply': {'id': 'WEEKLY', 'title': 'Weekly instead'}}})
+    assert q()[0]['plan'] == 'weekly'
+    # tap on the rate template's quick replies
+    _meta_post({'from': frm, 'type': 'button', 'button': {'text': 'Stop updates'}})
+    assert q()[0]['status'] == 'opted_out'
+    _meta_post({'from': frm, 'type': 'button', 'button': {'text': 'Weekly only'}})
+    assert q()[0]['status'] == 'active' and q()[0]['plan'] == 'weekly'

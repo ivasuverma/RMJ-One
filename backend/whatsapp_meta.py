@@ -151,6 +151,23 @@ async def send_text(mobile: str, text: str, flow: str = '') -> bool:
     return ok
 
 
+async def send_buttons(mobile: str, text: str, buttons: list, flow: str = '') -> bool:
+    """Freeform message with up to 3 tappable reply buttons [(id, title), ...].
+    Same 24-hour window rule as send_text — used to answer a customer who just
+    messaged in."""
+    from server import log_whatsapp_message
+    to = _to_e164_digits(mobile)
+    if not to:
+        return False
+    payload = {'messaging_product': 'whatsapp', 'to': to, 'type': 'interactive', 'interactive': {
+        'type': 'button', 'body': {'text': text[:1024]},
+        'action': {'buttons': [{'type': 'reply', 'reply': {'id': i[:256], 'title': t[:20]}} for i, t in buttons[:3]]},
+    }}
+    ok, msg_id, error = await _send(payload)
+    await log_whatsapp_message('meta', to, 'interactive', text, ok, flow, error=error, wa_message_id=msg_id)
+    return ok
+
+
 async def send_template(mobile: str, template_name: str, language_code: str = 'en', body_params: Optional[list] = None, flow: str = '',
                         header_image_link: Optional[str] = None) -> bool:
     """Sends an already-approved message template — the only way to reach a
