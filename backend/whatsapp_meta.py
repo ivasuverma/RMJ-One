@@ -253,6 +253,40 @@ async def create_template(name: str, category: str, body_text: str, example: lis
         return {'ok': False, 'error': str(e)}
 
 
+async def number_account() -> dict:
+    """Which WhatsApp Business Account does our phone number actually belong
+    to? Sending only needs the phone number id, so a wrong META_WA_WABA_ID goes
+    unnoticed — but incoming messages are delivered to the apps subscribed to
+    the number's REAL account, so linking the configured one does nothing.
+    Finds it from the WABAs the access token can see (debug_token scopes)."""
+    if not (ACCESS_TOKEN and PHONE_NUMBER_ID):
+        return {'actual': None, 'configured': WABA_ID or None, 'matches': None, 'error': 'Not configured'}
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            auth = {'Authorization': f'Bearer {ACCESS_TOKEN}'}
+            dbg = await client.get(f'{GRAPH_BASE}/debug_token', params={'input_token': ACCESS_TOKEN}, headers=auth)
+            wabas = []
+            if dbg.status_code == 200:
+                for sc in (dbg.json().get('data') or {}).get('granular_scopes') or []:
+                    if sc.get('scope') in ('whatsapp_business_messaging', 'whatsapp_business_management'):
+                        wabas += [str(t) for t in sc.get('target_ids') or []]
+            if WABA_ID:
+                wabas.append(str(WABA_ID))
+            seen = []
+            for w in dict.fromkeys(wabas):
+                r = await client.get(f'{GRAPH_BASE}/{w}/phone_numbers', params={'fields': 'id,display_phone_number'}, headers=auth)
+                if r.status_code != 200:
+                    continue
+                ids = [str(p.get('id')) for p in (r.json().get('data') or [])]
+                seen.append(w)
+                if str(PHONE_NUMBER_ID) in ids:
+                    return {'actual': w, 'configured': WABA_ID or None, 'matches': str(w) == str(WABA_ID), 'checked': seen, 'error': None}
+            return {'actual': None, 'configured': WABA_ID or None, 'matches': None, 'checked': seen,
+                    'error': "Couldn't find the number in any WhatsApp Business Account this access token can see."}
+    except Exception as e:
+        return {'actual': None, 'configured': WABA_ID or None, 'matches': None, 'error': str(e)}
+
+
 async def app_subscription() -> dict:
     """Is the WhatsApp Business Account subscribed to our Meta app? Without it
     Meta sends NO webhooks for incoming messages, however the webhook itself is
@@ -339,7 +373,7 @@ async def register_number(pin: str) -> dict:
         return {'ok': False, 'error': str(e)}
 
 
-async def subscribe_app(callback_url: Optional[str] = None, verify_token: Optional[str] = None) -> dict:
+async def subscribe_app(callback_url: Optional[str] = None, verify_token: Optional[str] = None, waba_id: Optional[str] = None) -> dict:
     """Subscribe the WhatsApp Business Account to this Meta app (the one the
     access token belongs to) so incoming messages reach our webhook. With a
     callback_url it also sets the WABA-level override to it, replacing any
@@ -352,7 +386,7 @@ async def subscribe_app(callback_url: Optional[str] = None, verify_token: Option
         body = {'override_callback_uri': callback_url, 'verify_token': verify_token or WEBHOOK_VERIFY_TOKEN}
     try:
         async with httpx.AsyncClient(timeout=15) as client:
-            res = await client.post(f'{GRAPH_BASE}/{WABA_ID}/subscribed_apps', json=body or None,
+            res = await client.post(f'{GRAPH_BASE}/{waba_id or WABA_ID}/subscribed_apps', json=body or None,
                                     headers={'Authorization': f'Bearer {ACCESS_TOKEN}'})
         if res.status_code == 200 and res.json().get('success'):
             return {'ok': True, 'error': None}
