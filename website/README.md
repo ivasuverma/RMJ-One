@@ -23,7 +23,7 @@ inline `<style>`/`<script>`, no shared CSS/JS files to keep in sync):
   page.
 - `payment.html` — payment methods, built to match `index.html`'s look
   (same nav/footer/colors), linked from the Visit section as "Pay online".
-- `assets/images/logo-square.png` — the real logo (from `RMJ_Logos.zip`), used
+- `assets/images/icon-512.png` — the real logo (from `RMJ_Logos.zip`), used
   for the favicon and every logo slot on both pages.
 
 There's no `about.html` or `contact.html` anymore — that content now lives in
