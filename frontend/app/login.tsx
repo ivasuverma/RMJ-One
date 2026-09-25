@@ -4,10 +4,11 @@ import {
   Platform, ActivityIndicator, ScrollView, Keyboard,
 } from 'react-native';
 import { Image } from 'expo-image';
+import { useFonts } from 'expo-font';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/src/auth/AuthContext';
-import { spacing, radius, images, fonts, ThemeColors } from '@/src/theme';
+import { spacing, radius, images, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
 const LOGIN_BG_DARK = require('../assets/images/login-bg-dark.jpg');
@@ -15,6 +16,8 @@ const LOGIN_BG_LIGHT = require('../assets/images/login-bg-light.jpg');
 
 export default function LoginScreen() {
   const { colors, scheme } = useTheme();
+  // Web gets Telegrafico from the @font-face in app/+html.tsx; this loads it on native.
+  useFonts({ Telegrafico: require('../assets/fonts/Telegrafico.ttf') });
   const styles = useMemo(() => makeStyles(colors), [colors]);
   // Brand background: black with a soft gold glow behind the logo (ivory in
   // light mode) — replaces the stock jewellery photo.
@@ -125,7 +128,8 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   brand: { alignItems: 'center', paddingTop: spacing.lg },
   // the gold logo is ~0.934 wide:tall
   brandLogo: { width: 118, height: 126, marginBottom: spacing.lg },
-  brandTitle: { color: colors.onSurface, fontSize: 40, fontFamily: fonts.display, letterSpacing: 0.5, textAlign: 'center' },
+  // Telegrafico, the logo's wordmark font (all capitals), in the logo's gold
+  brandTitle: { color: colors.brandPrimary, fontSize: 36, fontFamily: 'Telegrafico', letterSpacing: 6, marginRight: -6, textAlign: 'center' },
   brandTag: { color: colors.brandSecondary, marginTop: spacing.xs, fontSize: 14, letterSpacing: 0.3, textAlign: 'center' },
 
   formCard: {

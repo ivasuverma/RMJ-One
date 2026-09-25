@@ -12,6 +12,7 @@ import { useTheme, ThemePreference } from '@/src/theme/ThemeContext';
 import { isPushSupported, isSubscribed, subscribeToPush, unsubscribeFromPush } from '@/src/utils/push';
 import { QuickUnlockCard } from '@/src/components/QuickUnlockCard';
 import { TabBarSpacer } from '@/src/components/GlassTabBar';
+import { GlassSettings } from '@/src/components/GlassSettings';
 
 // Employee settings — same language as the admin Settings screen: an
 // Apple-ID-style profile card at the top (all personal/contact/bank details
@@ -107,6 +108,7 @@ export default function EmployeeProfile() {
             ))}
           </View>
         )}
+        <GlassSettings testID="emp-glass-settings" />
 
         {/* Sign in */}
         <Text style={styles.groupTitle}>Sign in</Text>
