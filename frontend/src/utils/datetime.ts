@@ -39,7 +39,16 @@ export function istDate(iso?: string | null): string {
 }
 
 /** 'HH:mm' (24h) in IST, from a UTC ISO timestamp. */
+/** '7:13 PM' in IST — how every time is shown in the app. */
 export function istTime(iso?: string | null): string {
+  const d = shiftToIST(iso);
+  if (!d) return '';
+  const h = d.getUTCHours();
+  return `${h % 12 || 12}:${pad(d.getUTCMinutes())} ${h < 12 ? 'AM' : 'PM'}`;
+}
+
+/** 'HH:mm' (24-hour) in IST — only for pre-filling editable time fields that expect it. */
+export function istTime24(iso?: string | null): string {
   const d = shiftToIST(iso);
   if (!d) return '';
   return `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;

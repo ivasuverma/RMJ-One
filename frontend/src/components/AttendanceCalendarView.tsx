@@ -8,7 +8,7 @@ import { useFocusEffect } from 'expo-router';
 import { api } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthContext';
 import { confirmAction } from '@/src/utils/confirm';
-import { istTime, displayDateOnly, displayDateOnlyWithWeekday } from '@/src/utils/datetime';
+import { displayDateOnly, displayDateOnlyWithWeekday, istTime24 } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
@@ -226,8 +226,8 @@ function DayDetail({ day, empId, canEdit, shifts, onClose, onSaved }: {
 }) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
-  const [inTime, setInTime] = useState(day.check_in ? istTime(day.check_in) : '');
-  const [outTime, setOutTime] = useState(day.check_out ? istTime(day.check_out) : '');
+  const [inTime, setInTime] = useState(day.check_in ? istTime24(day.check_in) : '');
+  const [outTime, setOutTime] = useState(day.check_out ? istTime24(day.check_out) : '');
   const initialOff = OFF_STATUSES.includes(day.status as any) ? (day.status as typeof OFF_STATUSES[number]) : null;
   const [offStatus, setOffStatus] = useState<typeof OFF_STATUSES[number] | null>(initialOff);
   const [selectedShift, setSelectedShift] = useState<Shift | null>(null);

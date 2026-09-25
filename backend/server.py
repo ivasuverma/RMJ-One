@@ -3123,6 +3123,9 @@ api.include_router(website.router)
 api.include_router(rate_broadcast.router)
 
 app.include_router(api)
+# Meta webhook also answers without the /api prefix — the callback URL was once
+# given out as https://api.rmj.co.in/webhooks/whatsapp-meta; both forms work.
+app.include_router(whatsapp_meta_bot.router)
 app.include_router(biometric.iclock_router)  # /iclock/* — real device protocol, no /api prefix
 
 app.add_middleware(

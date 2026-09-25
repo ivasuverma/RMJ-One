@@ -128,7 +128,9 @@ class TestAttendance:
         rows = rt.json()
         row = next(x for x in rows if x['employee_code'] == 'RMJ002')
         assert 'status' in row and 'is_late' in row and 'working_hours' in row
-        assert row['status'] in ('present', 'half_day')
+        # After the workday ends, checked-in-but-not-out is correctly 'missing_punch' —
+        # this test must pass whatever time of day CI runs it.
+        assert row['status'] in ('present', 'half_day', 'missing_punch')
 
         # Check-out
         rc = requests.post(f"{API}/attendance/check-out", headers=h, json=payload, timeout=30)
