@@ -219,7 +219,7 @@ export default function EmployeeTransactionsScreen() {
 
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
-  scroll: { padding: spacing.lg, paddingBottom: spacing.xxxl },
+  scroll: { padding: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.xxxl },
   title: { color: colors.onSurface, fontSize: 28, fontWeight: '600', fontFamily: fonts.display, marginBottom: 4 },
   subtitle: { color: colors.mutedText, fontSize: 12, marginBottom: spacing.xl },
   empty: { paddingVertical: 60, alignItems: 'center' },

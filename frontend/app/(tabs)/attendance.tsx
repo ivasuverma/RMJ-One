@@ -391,7 +391,7 @@ function SumChip({ n, label, tone, colors, active, onPress }: { n: number; label
 
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
-  scroll: { padding: spacing.lg, paddingBottom: spacing.xxxl },
+  scroll: { padding: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.xxxl },
   backRow: { flexDirection: 'row', alignItems: 'center', gap: 2, marginBottom: 6 },
   backText: { color: colors.brandPrimary, fontSize: 16, fontWeight: '500' },
   titleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
