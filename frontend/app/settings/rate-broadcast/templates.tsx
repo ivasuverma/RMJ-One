@@ -12,7 +12,7 @@ import { useToast } from '@/src/components/ui';
 import { Header, makeStyles, Overview, Tpl, templateLine } from './_shared';
 
 const BUTTON_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
-  'See live rates': 'open-outline', 'Call the shop': 'call-outline', 'Stop updates': 'arrow-undo-outline',
+  'See live rates': 'open-outline', 'Call the shop': 'call-outline', 'Weekly only': 'calendar-outline', 'Stop updates': 'arrow-undo-outline',
 };
 
 // Step 2 — message templates. Meta delivers a business-started message only

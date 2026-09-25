@@ -61,9 +61,11 @@ TEMPLATE_BODY = (
 TEMPLATE_EXAMPLE = ['Rahul', '1,50,850', '2,35,500']
 SHOP_PHONE = '+919781800888'
 STOP_BUTTON = 'Stop updates'
+WEEKLY_BUTTON = 'Weekly only'
 TEMPLATE_BUTTONS = [
     {'type': 'URL', 'text': 'See live rates', 'url': 'https://rmj.co.in'},
     {'type': 'PHONE_NUMBER', 'text': 'Call the shop', 'phone_number': SHOP_PHONE},
+    {'type': 'QUICK_REPLY', 'text': WEEKLY_BUTTON},
     {'type': 'QUICK_REPLY', 'text': STOP_BUTTON},
 ]
 DEFAULT_NAME = 'valued customer'
@@ -325,7 +327,25 @@ async def broadcast_loop() -> None:
 
 
 _STOP_WORDS = ('STOP', 'UNSUBSCRIBE', 'STOP ALL', STOP_BUTTON.upper())
-_JOIN_WORDS = {'START': 'daily', 'DAILY': 'daily', 'SUBSCRIBE': 'daily', 'WEEKLY': 'weekly'}
+_JOIN_WORDS = {'START': 'daily', 'DAILY': 'daily', 'SUBSCRIBE': 'daily', 'WEEKLY': 'weekly',
+               # button labels (template quick replies and the reply buttons below)
+               WEEKLY_BUTTON.upper(): 'weekly', 'WEEKLY INSTEAD': 'weekly', 'DAILY INSTEAD': 'daily', 'START AGAIN': 'daily'}
+# Tappable choices sent with each confirmation on the official number, so a
+# customer changes frequency or stops without typing. (id is what comes back
+# when tapped; title max 20 characters.)
+_REPLY_BUTTONS = {
+    'stop': [('START', 'Start again')],
+    'daily': [('WEEKLY', 'Weekly instead'), ('STOP', 'Stop updates')],
+    'weekly': [('DAILY', 'Daily instead'), ('STOP', 'Stop updates')],
+}
+
+
+def subscribe_buttons(text: str) -> list:
+    """Buttons to offer after this keyword was handled — the other choices."""
+    w = _keyword(text)
+    if w in _STOP_WORDS:
+        return _REPLY_BUTTONS['stop']
+    return _REPLY_BUTTONS.get(_JOIN_WORDS.get(w, ''), [])
 
 
 def _keyword(text: str) -> str:
