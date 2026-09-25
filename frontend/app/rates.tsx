@@ -119,6 +119,26 @@ export default function PublicRatesScreen() {
           <View style={styles.loaderBox}><ActivityIndicator color={colors.brandPrimary} size="large" /></View>
         ) : (
           <>
+            {/* When the rate was fetched, up top and bold — the first thing to check before quoting it. */}
+            <View style={styles.statusRow}>
+              {!!error && <Text style={styles.errorText}>{error}</Text>}
+              {!!updatedLabel && !error && <Text style={styles.updatedText}>{updatedLabel}</Text>}
+              <Pressable onPress={load} style={styles.refreshBtn} testID="rates-refresh-btn" hitSlop={10} accessibilityRole="button" accessibilityLabel="Refresh">
+                <Ionicons name="refresh" size={14} color={colors.onSurfaceSecondary} />
+                <Text style={styles.refreshText}>Refresh</Text>
+              </Pressable>
+              {isAdmin && (
+                <Pressable onPress={fetchNewRate} disabled={fetchingNew} style={styles.refreshBtn} testID="rates-fetch-new-btn" hitSlop={10}>
+                  {fetchingNew ? (
+                    <ActivityIndicator size="small" color={colors.brandSecondary} />
+                  ) : (
+                    <Ionicons name="cloud-download-outline" size={14} color={colors.brandSecondary} />
+                  )}
+                  <Text style={[styles.refreshText, { color: colors.brandSecondary }]}>Fetch New Rate</Text>
+                </Pressable>
+              )}
+            </View>
+
             <View style={styles.metalRow}>
               <View style={styles.metalCard} testID="rate-gold">
                 <Text style={styles.metalLabel}>GOLD <Text style={styles.metalSub}>· 995 Purity / 10g</Text></Text>
@@ -193,24 +213,6 @@ export default function PublicRatesScreen() {
               XAU/XAG are international spot benchmarks in USD — informational only, not the local ₹ rate above.
             </Text>
 
-            <View style={styles.statusRow}>
-              {!!error && <Text style={styles.errorText}>{error}</Text>}
-              {!!updatedLabel && !error && <Text style={styles.updatedText}>{updatedLabel}</Text>}
-              <Pressable onPress={load} style={styles.refreshBtn} testID="rates-refresh-btn" hitSlop={10} accessibilityRole="button" accessibilityLabel="Refresh">
-                <Ionicons name="refresh" size={14} color={colors.onSurfaceSecondary} />
-                <Text style={styles.refreshText}>Refresh</Text>
-              </Pressable>
-              {isAdmin && (
-                <Pressable onPress={fetchNewRate} disabled={fetchingNew} style={styles.refreshBtn} testID="rates-fetch-new-btn" hitSlop={10}>
-                  {fetchingNew ? (
-                    <ActivityIndicator size="small" color={colors.brandSecondary} />
-                  ) : (
-                    <Ionicons name="cloud-download-outline" size={14} color={colors.brandSecondary} />
-                  )}
-                  <Text style={[styles.refreshText, { color: colors.brandSecondary }]}>Fetch New Rate</Text>
-                </Pressable>
-              )}
-            </View>
           </>
         )}
 
@@ -314,8 +316,8 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   spotUnit: { color: colors.mutedText, fontSize: 11, marginTop: 2 },
   spotDisclaimer: { color: colors.mutedText, fontSize: 11, textAlign: 'center', marginBottom: spacing.lg, lineHeight: 14 },
 
-  statusRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, marginBottom: spacing.xl },
-  updatedText: { color: colors.mutedText, fontSize: typography.caption.fontSize },
+  statusRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', columnGap: spacing.md, rowGap: 6, marginBottom: spacing.md },
+  updatedText: { color: colors.onSurface, fontSize: 14, fontWeight: '800' },
   errorText: { color: colors.onError, fontSize: typography.caption.fontSize },
   refreshBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   refreshText: { color: colors.onSurfaceSecondary, fontSize: typography.caption.fontSize, fontWeight: '600' },
