@@ -14,7 +14,11 @@ export type PageSection = {
 };
 export type Photo = { id: string; caption: string; url: string };
 export type OwnSection = { id: string; title: string; text: string; visible: boolean; photos: Photo[] };
-export type Content = { page: PageSection[]; sections: OwnSection[]; pieces: number };
+export type Brand = { logo: number; name: number };   // % of the built-in size
+export type Content = {
+  page: PageSection[]; sections: OwnSection[]; pieces: number;
+  brand: Brand; brand_default: Brand; brand_range: [number, number];
+};
 
 export const SITE_URL = 'https://rmj.co.in';
 const API_BASE = process.env.EXPO_PUBLIC_BACKEND_URL || '';

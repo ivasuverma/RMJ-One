@@ -30,9 +30,9 @@
   .wrap{max-width:var(--wrap); margin:0 auto; padding:0 var(--gut)}
 
   /* ---------- NAV (matches index.html) ---------- */
-  nav{position:fixed; top:0; left:0; right:0; z-index:80; height:56px;
+  nav{position:fixed; top:0; left:0; right:0; z-index:80; height:72px;
       background:rgba(255,255,255,.78); backdrop-filter:saturate(180%) blur(20px); -webkit-backdrop-filter:saturate(180%) blur(20px); border-bottom:1px solid rgba(0,0,0,.08); color:var(--ink)}
-  nav .wrap{display:flex; align-items:center; height:56px; gap:clamp(14px,3vw,30px)}
+  nav .wrap{display:flex; align-items:center; height:72px; gap:clamp(14px,3vw,30px)}
   .brand{display:flex; align-items:center; gap:10px; text-decoration:none; margin-right:auto}
   .brand .mark{width:34px; height:36px; display:flex; flex-shrink:0}
   .brand .mark img{width:100%; height:100%; object-fit:contain; border-radius:7px}
@@ -50,14 +50,14 @@
   .burger span{display:block; width:18px; height:1.5px; background:currentColor; margin:5px auto; transition:.25s}
   nav.open .burger span:nth-child(1){transform:translateY(3.25px) rotate(45deg)}
   nav.open .burger span:nth-child(2){transform:translateY(-3.25px) rotate(-45deg)}
-  .sheet{position:fixed; top:56px; left:0; right:0; background:rgba(0,0,0,.94); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px);
+  .sheet{position:fixed; top:72px; left:0; right:0; background:rgba(0,0,0,.94); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px);
          color:#F5F5F7; padding:10px var(--gut) 28px; transform:translateY(-8px); opacity:0; pointer-events:none; transition:.25s; z-index:79}
   nav.open + .sheet{transform:none; opacity:1; pointer-events:auto}
   .sheet a{display:block; font-size:24px; font-weight:600; letter-spacing:-.02em; padding:12px 0; text-decoration:none; border-bottom:1px solid rgba(255,255,255,.08)}
   .sheet a.sm{font-size:16px; font-weight:500; color:#A1A1A6; border:none; padding-top:18px}
 
   /* ---------- PAGE HERO ---------- */
-  .pagehero{padding:calc(56px + clamp(48px,7vw,72px)) 0 clamp(40px,5vw,56px); text-align:center; background:var(--grey)}
+  .pagehero{padding:calc(72px + clamp(48px,7vw,72px)) 0 clamp(40px,5vw,56px); text-align:center; background:var(--grey)}
   .pagehero h1{font-size:clamp(32px,5.6vw,54px); font-weight:700; letter-spacing:-.035em}
   .pagehero p{font-size:clamp(16px,1.8vw,19px); color:var(--ink2); margin-top:12px}
 
@@ -122,17 +122,22 @@
      the wordmark keeps the artwork's letter proportions, set larger than the logo so it reads at small sizes, with a little space after the logo.
      The wordmark is a mask filled with the logo's gold. */
   .lockup{display:inline-flex; align-items:center; flex-shrink:0; color:inherit}
-  .lockup .lt{height:var(--h); width:auto; flex-shrink:0; border-radius:0; box-shadow:none}
-  .lockup .lw{display:block; width:calc(var(--h) * 4.12); height:calc(var(--h) * .908); margin-left:calc(var(--h) * .36);
+  /* Logo and name sizes are set in RMJ-One › Work › Website (as %), applied as these two scales. */
+  :root{--logo-scale:1; --name-scale:.85}
+  .lockup .lt{height:calc(var(--h) * var(--logo-scale)); width:auto; flex-shrink:0; border-radius:0; box-shadow:none}
+  .lockup .lw{display:block; width:calc(var(--h) * 4.12 * var(--name-scale)); height:calc(var(--h) * .908 * var(--name-scale)); margin-left:calc(var(--h) * .36 * var(--logo-scale));
               background:linear-gradient(180deg, #EBCB85 0%, #C99A45 52%, #9E7128 100%); -webkit-mask:url(assets/images/wordmark.png) center / 100% 100% no-repeat; mask:url(assets/images/wordmark.png) center / 100% 100% no-repeat}
+  /* On phones, shrink the header lockup if the chosen sizes wouldn't fit beside the menu button. */
+  @media (max-width:520px){ .lockup.hdr{--h:min(46px, calc((100vw - 96px) / (1.36 * var(--logo-scale) + 4.12 * var(--name-scale)))) !important} }
 </style>
+<script>try{var b=JSON.parse(localStorage.getItem('rmj.brand')||'null');if(b){var r=document.documentElement.style;r.setProperty('--logo-scale',b.logo/100);r.setProperty('--name-scale',b.name/100);}}catch(e){}</script>
 </head>
 <body>
 
 <nav id="nav">
   <div class="wrap">
     <a class="brand" href="index.html" aria-label="Ram Murti Jewellers home">
-      <span class="lockup hdr" style="--h:34px" role="img" aria-label="Ram Murti Jewellers"><img class="lt" src="assets/images/logo-tile.webp" alt=""><span class="lw"></span></span>
+      <span class="lockup hdr" style="--h:46px" role="img" aria-label="Ram Murti Jewellers"><img class="lt" src="assets/images/logo-tile.webp" alt=""><span class="lw"></span></span>
     </a>
     <div class="links">
       <a href="index.html">Today's rate</a>
