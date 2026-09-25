@@ -166,6 +166,12 @@
   .unavail b{display:block; font-size:19px; color:#F5F5F7; letter-spacing:-.01em}
   .unavail p{font-size:15px; color:#A1A1A6; margin-top:8px; line-height:1.5}
   .hero.norates .metals, .hero.norates .spots, .hero.norates .fine{display:none}
+  .subscribe{display:flex; align-items:center; gap:12px; max-width:420px; margin:18px auto 0; padding:14px 18px; border-radius:var(--r-md); background:rgba(31,168,85,.12); border:1px solid rgba(31,168,85,.35); color:#F5F5F7; text-decoration:none; text-align:left}
+  .subscribe[hidden]{display:none}
+  .subscribe:hover{background:rgba(31,168,85,.18)}
+  .subscribe svg{width:22px; height:22px; flex-shrink:0; fill:none; stroke:#5BD68A; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round}
+  .subscribe b{display:block; font-size:15px; font-weight:600}
+  .subscribe small{display:block; font-size:12.5px; color:#A1A1A6; margin-top:2px}
   .fine{font-size:13px; color:#86868B; max-width:600px; margin:20px auto 0; line-height:1.55}
   .actions{display:flex; gap:12px; justify-content:center; margin-top:30px; flex-wrap:wrap}
   .btn{display:inline-flex; align-items:center; justify-content:center; gap:8px; font-size:17px; font-weight:500; text-decoration:none; padding:13px 24px; border-radius:980px; transition:transform .15s, background .2s; min-height:48px}
@@ -377,6 +383,11 @@
       <a class="btn wa" href="https://wa.me/919781800888?text=Hello%2C%20I%27d%20like%20a%20quote%20at%20today%27s%20gold%20rate.">Get a quote on WhatsApp</a>
       <a class="btn ghost" href="tel:+919781800888">Call the shop</a>
     </div>
+    <!-- Shown only once RMJ-One returns the official number's subscribe link. -->
+    <a class="subscribe" id="subscribeBtn" href="#" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+      <span><b>Get the daily rate on WhatsApp</b><small>Free · one message a day · reply STOP anytime</small></span>
+    </a>
   </div>
 </header>
 
@@ -538,6 +549,7 @@ const CONFIG = {
   RATES_URL: 'https://api.rmj.co.in/api/public/rates',        // ← set to your RMJ One URL
   INSTAGRAM_URL: 'https://api.rmj.co.in/api/public/instagram', // ← set to your RMJ One URL
   PIECES_URL: 'https://api.rmj.co.in/api/public/website/pieces', // Fresh at the counter, managed in RMJ-One
+  SUBSCRIBE_URL: 'https://api.rmj.co.in/api/public/rate-broadcast/subscribe', // wa.me link with START pre-filled
   API_ORIGIN: 'https://api.rmj.co.in',
   LOGIN_URL: 'https://app.rmj.co.in',                         // ← set to your RMJ One URL
   REFRESH_MS: 60 * 1000,                                  // same cadence as the app's rates screen
@@ -794,6 +806,19 @@ async function loadInstagram(){
   }catch(e){ /* section stays hidden — a broken feed is invisible, not broken-looking */ }
 }
 loadInstagram();
+
+/* "Get the daily rate on WhatsApp" — opens the official number with START
+   typed in; sending it puts them on the daily rate list in RMJ-One. */
+(async()=>{
+  try{
+    const res=await fetch(CONFIG.SUBSCRIBE_URL,{cache:'no-store'});
+    if(!res.ok) return;
+    const {url}=await res.json();
+    if(!url) return;
+    const a=document.getElementById('subscribeBtn');
+    a.href=url; a.hidden=false;
+  }catch(e){ /* button stays hidden */ }
+})();
 
 document.getElementById('yr').textContent=new Date().getFullYear();
 </script>
