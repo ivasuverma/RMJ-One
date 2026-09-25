@@ -33,19 +33,18 @@
   footer a{margin-right:16px}
 
 
-  /* brand lockup — the tile logo + RAMMURTI / JEWELLERS wordmark, in the exact proportions of the
-     supplied lockup artwork. --h = height of the logo's frame; everything else is a multiple of it.
-     The wordmark (Telegrafico + spaced JEWELLERS) is a mask, so it takes the text colour (white on
-     the dark bar, black on light). */
-  .lockup{display:inline-flex; align-items:flex-start; flex-shrink:0; color:inherit}
-  .lockup .lt{height:calc(var(--h) * 1.1737); width:auto; flex-shrink:0; border-radius:calc(var(--h) * .19); box-shadow:0 0 0 1px rgba(0,0,0,.06)}
-  .lockup .lw{display:block; width:calc(var(--h) * 2.593); height:calc(var(--h) * .572); margin-left:calc(var(--h) * .048); margin-top:calc(var(--h) * .343);
+  /* brand lockup — the gold-on-red logo + RAMMURTI / JEWELLERS wordmark. --h = the logo's height;
+     the wordmark keeps the artwork's letter proportions, set larger (x1.35) so it reads at small sizes.
+     The wordmark is a mask, so it takes the text colour (white on the dark bar, black on light). */
+  .lockup{display:inline-flex; align-items:center; flex-shrink:0; color:inherit}
+  .lockup .lt{height:var(--h); width:auto; flex-shrink:0; border-radius:0; box-shadow:none}
+  .lockup .lw{display:block; width:calc(var(--h) * 3.5); height:calc(var(--h) * .772); margin-left:calc(var(--h) * .13);
               background:currentColor; -webkit-mask:url(assets/images/wordmark.png) center / 100% 100% no-repeat; mask:url(assets/images/wordmark.png) center / 100% 100% no-repeat}
 </style>
 </head>
 <body>
 <nav><div class="wrap">
-  <a class="brand" href="/"><span class="lockup" style="--h:30px" role="img" aria-label="Ram Murti Jewellers"><img class="lt" src="assets/images/logo-tile.png" alt=""><span class="lw"></span></span></a>
+  <a class="brand" href="/"><span class="lockup" style="--h:34px" role="img" aria-label="Ram Murti Jewellers"><img class="lt" src="assets/images/logo-tile.webp" alt=""><span class="lw"></span></span></a>
   <a class="back" href="/">rmj.co.in</a>
 </div></nav>
 <header><div class="wrap"><h1>Terms of service</h1><p class="meta">Last updated: 25 September 2026</p></div></header>

@@ -242,7 +242,7 @@
   .brandband{background:var(--black); color:#F5F5F7; border-radius:var(--r-lg); overflow:hidden; display:grid; grid-template-columns:1.05fr 1fr; min-height:clamp(420px,46vw,540px)}
   .brandband .copy{padding:clamp(34px,5vw,64px); display:flex; flex-direction:column; justify-content:center}
   .brandband .logo{width:88px; margin-bottom:28px}
-  .brandband .logo img{width:100%; height:auto; border-radius:16px}
+  .brandband .logo img{width:100%; height:auto}
   .brandband h2{font-size:clamp(32px,4.4vw,50px); font-weight:700; letter-spacing:-.035em; line-height:1.06}
   .brandband p{font-size:clamp(16px,1.7vw,19px); color:#A1A1A6; margin-top:16px; line-height:1.55; max-width:46ch}
   .brandband .pic{position:relative}
@@ -310,13 +310,12 @@
   }
 
 
-  /* brand lockup — the tile logo + RAMMURTI / JEWELLERS wordmark, in the exact proportions of the
-     supplied lockup artwork. --h = height of the logo's frame; everything else is a multiple of it.
-     The wordmark (Telegrafico + spaced JEWELLERS) is a mask, so it takes the text colour (white on
-     the dark bar, black on light). */
-  .lockup{display:inline-flex; align-items:flex-start; flex-shrink:0; color:inherit}
-  .lockup .lt{height:calc(var(--h) * 1.1737); width:auto; flex-shrink:0; border-radius:calc(var(--h) * .19); box-shadow:0 0 0 1px rgba(0,0,0,.06)}
-  .lockup .lw{display:block; width:calc(var(--h) * 2.593); height:calc(var(--h) * .572); margin-left:calc(var(--h) * .048); margin-top:calc(var(--h) * .343);
+  /* brand lockup — the gold-on-red logo + RAMMURTI / JEWELLERS wordmark. --h = the logo's height;
+     the wordmark keeps the artwork's letter proportions, set larger (x1.35) so it reads at small sizes.
+     The wordmark is a mask, so it takes the text colour (white on the dark bar, black on light). */
+  .lockup{display:inline-flex; align-items:center; flex-shrink:0; color:inherit}
+  .lockup .lt{height:var(--h); width:auto; flex-shrink:0; border-radius:0; box-shadow:none}
+  .lockup .lw{display:block; width:calc(var(--h) * 3.5); height:calc(var(--h) * .772); margin-left:calc(var(--h) * .13);
               background:currentColor; -webkit-mask:url(assets/images/wordmark.png) center / 100% 100% no-repeat; mask:url(assets/images/wordmark.png) center / 100% 100% no-repeat}
 </style>
 </head>
@@ -325,7 +324,7 @@
 <nav id="nav">
   <div class="wrap">
     <a class="brand" href="#top" aria-label="Ram Murti Jewellers home">
-      <span class="lockup hdr" style="--h:34px" role="img" aria-label="Ram Murti Jewellers"><img class="lt" src="assets/images/logo-tile.png" alt=""><span class="lw"></span></span>
+      <span class="lockup hdr" style="--h:40px" role="img" aria-label="Ram Murti Jewellers"><img class="lt" src="assets/images/logo-tile.webp" alt=""><span class="lw"></span></span>
     </a>
     <div class="links">
       <a href="#top">Today's rate</a>
@@ -425,7 +424,7 @@
     </div>
     <div class="show">
       <img data-cms-img="showcase_photo" src="assets/photos/dsc_0033-YBg891rw9PtK9XaM.JPG" alt="Gold jewellery at Ram Murti Jewellers">
-      <div class="plate"><div><span class="lockup" style="--h:36px" role="img" aria-label="Ram Murti Jewellers"><img class="lt" src="assets/images/logo-tile.png" alt=""><span class="lw"></span></span><span style="display:block; margin-top:8px">Family jewellers since 1932</span></div></div>
+      <div class="plate"><div><span class="lockup" style="--h:42px" role="img" aria-label="Ram Murti Jewellers"><img class="lt" src="assets/images/logo-tile.webp" alt=""><span class="lw"></span></span><span style="display:block; margin-top:8px">Family jewellers since 1932</span></div></div>
     </div>
   </div>
 </section>
@@ -480,7 +479,7 @@
   <div class="wrap">
     <div class="brandband">
       <div class="copy">
-        <div class="logo"><img src="assets/images/logo-tile.png" alt=""></div>
+        <div class="logo"><img src="assets/images/logo-tile.webp" alt=""></div>
         <h2 data-cms="about_title">Three generations, one family counter.</h2>
         <p data-cms="about_p1">Ram Murti Jewellers was founded in 1932 by Sh. Ram Murti, whose name we still carry with pride. His son, Mr. Jugal Kishore Verma, carried the counter forward for decades, and today it's run by Mr. Vasu Verma — the same family, the same street, for over nine decades.</p>
         <p data-cms="about_p2">Many of our customers bought their first piece here for their own wedding, and now bring their children. We keep it simple: rates you can check, hallmarked gold, and honest advice — from a family that has been jewellers in India for generations.</p>
@@ -526,7 +525,7 @@
 <footer>
   <div class="wrap">
     <div class="top">
-      <div class="fbrand"><span class="lockup" style="--h:30px" role="img" aria-label="Ram Murti Jewellers"><img class="lt" src="assets/images/logo-tile.png" alt=""><span class="lw"></span></span></div>
+      <div class="fbrand"><span class="lockup" style="--h:34px" role="img" aria-label="Ram Murti Jewellers"><img class="lt" src="assets/images/logo-tile.webp" alt=""><span class="lw"></span></span></div>
       <div class="fl"><a href="https://www.instagram.com/rammurtijewellers">Instagram</a><a href="https://www.facebook.com/rmj.co.in">Facebook</a><a href="https://www.linkedin.com/company/rammurtijewellers/">LinkedIn</a></div>
     </div>
     <div class="bottom">
