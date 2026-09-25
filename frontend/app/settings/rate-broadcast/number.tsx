@@ -8,7 +8,8 @@ import { useTheme } from '@/src/theme/ThemeContext';
 import { useToast } from '@/src/components/ui';
 import { Header, makeStyles, MetaStatus } from './_shared';
 
-const ENV_KEYS = ['META_WA_PHONE_NUMBER_ID', 'META_WA_WABA_ID', 'META_WA_ACCESS_TOKEN', 'META_WA_APP_ID', 'META_WA_APP_SECRET', 'META_WA_WEBHOOK_VERIFY_TOKEN'];
+const WEBHOOK_URL = 'https://api.rmj.co.in/api/webhooks/whatsapp-meta';
+const ENV_KEYS = ['META_WA_PHONE_NUMBER_ID', 'META_WA_WABA_ID', 'META_WA_ACCESS_TOKEN', 'META_WA_APP_SECRET', 'META_WA_WEBHOOK_VERIFY_TOKEN', 'META_WA_APP_ID (only if WhatsApp is a different Meta app from Instagram)'];
 
 // Step 1 — the official WhatsApp (Meta) number, used only for Rate Broadcast.
 // Connection status, the customer subscribe link, and a test message.
@@ -45,17 +46,17 @@ export default function BroadcastNumberScreen() {
     finally { setSending(false); }
   };
 
-  const copyLink = async () => {
-    if (!link) return;
+  const copy = async (text: string) => {
     try {
       if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard) {
-        await navigator.clipboard.writeText(link);
-        toast.success('Link copied');
+        await navigator.clipboard.writeText(text);
+        toast.success('Copied');
       } else {
-        Linking.openURL(link);
+        Linking.openURL(text);
       }
     } catch { toast.error('Could not copy'); }
   };
+  const copyLink = () => { if (link) copy(link); };
 
   const ok = !!meta?.connected;
   return (
@@ -85,9 +86,22 @@ export default function BroadcastNumberScreen() {
               <>
                 <Text style={styles.body}>These go in backend/.env on the server (then restart the backend):</Text>
                 {ENV_KEYS.map((k) => <Text key={k} style={[styles.listMeta, { fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' }]}>{k}</Text>)}
-                <Text style={styles.hint}>Also register the webhook in Meta (callback URL + verify token) so STOP and START replies reach the app.</Text>
+
               </>
             )}
+          </View>
+
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Webhook (for START / STOP replies)</Text>
+            <Text style={styles.body}>
+              In Meta for Developers › WhatsApp › Configuration › Webhook, set the callback URL below and the same verify
+              token as META_WA_WEBHOOK_VERIFY_TOKEN, then subscribe to the “messages” field. Without it, people who send
+              START to this number are never added.
+            </Text>
+            <Pressable onPress={() => copy(WEBHOOK_URL)} style={styles.linkBox} accessibilityRole="button" accessibilityLabel="Copy webhook URL" testID="broadcast-webhook-url">
+              <Text style={[styles.linkText, styles.flex1]} numberOfLines={1}>{WEBHOOK_URL}</Text>
+              <Ionicons name="copy-outline" size={16} color={colors.brandSecondary} />
+            </Pressable>
           </View>
 
           <View style={styles.card}>

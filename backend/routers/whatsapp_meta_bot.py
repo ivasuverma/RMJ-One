@@ -11,7 +11,8 @@ against the whatsapp_messages doc server.py's log_whatsapp_message() wrote
 for that send (matched by wa_message_id), and fill in its real outcome —
 this is how Settings > WhatsApp Messages shows Meta sends' actual delivery
 status, not just "the API call succeeded." Register the callback URL (this
-box's public address + /webhooks/whatsapp-meta) and
+box's public address + /api/webhooks/whatsapp-meta, e.g.
+https://api.rmj.co.in/api/webhooks/whatsapp-meta; the un-prefixed path works too) and
 META_WA_WEBHOOK_VERIFY_TOKEN in Meta Business Manager > WhatsApp >
 Configuration > Webhooks once the test number is set up."""
 import logging

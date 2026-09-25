@@ -133,3 +133,9 @@ def test_start_and_stop_on_shop_number(owner):
     assert subs[0]['status'] == 'opted_out'
     # an ordinary message is not a subscription keyword
     assert _openwa_post(msg('please start my repair')).json().get('handled') != 'rate_subscription'
+
+
+def test_meta_webhook_reachable_with_and_without_api_prefix():
+    for path in ('/api/webhooks/whatsapp-meta', '/webhooks/whatsapp-meta'):
+        r = requests.get(f"{BASE_URL}{path}", params={'hub.mode': 'subscribe', 'hub.verify_token': 'wrong', 'hub.challenge': 'x'}, timeout=30)
+        assert r.status_code == 403, (path, r.status_code)  # routed to the handshake, which refuses a wrong token
