@@ -54,7 +54,7 @@ export default function WorkScreen() {
   const router = useRouter();
   const { colors } = useTheme();
   const { hasModule, user } = useAuth();
-  const canEditWebsite = user?.role === 'owner' || user?.role === 'admin';
+  const canEditWebsite = user?.role === 'owner' || user?.role === 'admin' || hasModule('website');
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [data, setData] = useState<DashboardData | null>(null);
   const [docSummary, setDocSummary] = useState<{ pending_count: number } | null>(null);

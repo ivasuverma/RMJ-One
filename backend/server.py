@@ -290,6 +290,9 @@ MODULE_DEFS = [
     # regardless (enforced directly with require_owner, not this module) —
     # it's pricing policy, not a task.
     {'key': 'gold_rate', 'label': 'Rate Updater', 'default_roles': ['owner', 'admin'], 'employee_assignable': True},
+    # Editing rmj.co.in (Work › Website): words, photos, sections, counter
+    # pieces. Owner/admin always; grant it to an employee who runs the site.
+    {'key': 'website', 'label': 'Website', 'default_roles': ['owner', 'admin'], 'employee_assignable': True},
 ]
 MODULE_KEYS = {m['key'] for m in MODULE_DEFS}
 MODULE_DEFAULT_ROLES = {m['key']: set(m['default_roles']) for m in MODULE_DEFS}

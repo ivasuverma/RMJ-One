@@ -105,3 +105,31 @@ def test_whatsapp_provider_is_always_openwa(owner):
     assert r.status_code == 200, r.text
     assert requests.get(f"{API}/settings/whatsapp", headers=owner, timeout=30).json()['provider'] == 'openwa'
     assert requests.get(f"{API}/settings/whatsapp-meta/alert-template", headers=owner, timeout=30).status_code in (404, 405)
+
+
+def _openwa_post(body: dict):
+    import hashlib
+    import hmac
+    import json
+    secret = os.environ.get('WHATSAPP_WEBHOOK_SECRET')
+    if not secret:
+        pytest.skip('WHATSAPP_WEBHOOK_SECRET not set for this run')
+    raw = json.dumps(body).encode()
+    sig = 'sha256=' + hmac.new(secret.encode(), raw, hashlib.sha256).hexdigest()
+    return requests.post(f"{API}/webhooks/whatsapp", data=raw, headers={'x-openwa-signature': sig, 'content-type': 'application/json'}, timeout=30)
+
+
+def test_start_and_stop_on_shop_number(owner):
+    """Customers message the number they know — START/STOP on the OpenWA shop number
+    manage the rate lists too, even with the chatbot switched off."""
+    msg = lambda text: {'event': 'message.received', 'data': {'from': '919812300077@c.us', 'type': 'text', 'body': text,
+                                                               'isGroup': False, 'fromMe': False}}
+    r = _openwa_post(msg('START'))
+    assert r.status_code == 200 and r.json().get('handled') == 'rate_subscription', r.text
+    subs = requests.get(f"{API}/rate-broadcast/subscribers?q=9812300077", headers=owner, timeout=30).json()
+    assert subs and subs[0]['plan'] == 'daily' and subs[0]['status'] == 'active' and subs[0]['source'] == 'shop_whatsapp'
+    _openwa_post(msg('stop'))
+    subs = requests.get(f"{API}/rate-broadcast/subscribers?q=9812300077", headers=owner, timeout=30).json()
+    assert subs[0]['status'] == 'opted_out'
+    # an ordinary message is not a subscription keyword
+    assert _openwa_post(msg('please start my repair')).json().get('handled') != 'rate_subscription'

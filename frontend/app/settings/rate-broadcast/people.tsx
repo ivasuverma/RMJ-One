@@ -24,7 +24,7 @@ export default function BroadcastPeopleScreen() {
   const toast = useToast();
   const [counts, setCounts] = useState<Overview['counts'] | null>(null);
   const [subs, setSubs] = useState<Sub[] | null>(null);
-  const [filter, setFilter] = useState<Filter>('weekly');
+  const [filter, setFilter] = useState<Filter>('all');
   const [q, setQ] = useState('');
   const [newSub, setNewSub] = useState<{ name: string; mobile: string; plan: Plan }>({ name: '', mobile: '', plan: 'weekly' });
   const [busy, setBusy] = useState<string | null>(null);
@@ -84,10 +84,10 @@ export default function BroadcastPeopleScreen() {
     () => run(`del-${s.id}`, async () => { await api.del(`/rate-broadcast/subscribers/${s.id}`); reload(); }));
 
   const FILTERS: { key: Filter; label: string; n?: number }[] = [
-    { key: 'weekly', label: 'Customer list', n: counts?.weekly },
-    { key: 'daily', label: 'Daily', n: counts?.daily },
-    { key: 'stopped', label: 'Replied STOP', n: counts?.opted_out },
     { key: 'all', label: 'All' },
+    { key: 'daily', label: 'Daily', n: counts?.daily },
+    { key: 'weekly', label: 'Customer list', n: counts?.weekly },
+    { key: 'stopped', label: 'Replied STOP', n: counts?.opted_out },
   ];
 
   return (
@@ -96,8 +96,8 @@ export default function BroadcastPeopleScreen() {
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled"
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); reload(); }} tintColor={colors.brandPrimary} />}>
         <Text style={styles.hint}>
-          The customer list gets the weekly send; daily subscribers joined themselves by sending START. Anyone who replies
-          STOP or taps “Stop updates” is taken off automatically.
+          The customer list gets the weekly send; daily subscribers joined themselves by sending START to the shop’s number
+          or the official one. Anyone who replies STOP or taps “Stop updates” is taken off automatically.
         </Text>
 
         <View style={styles.card}>
@@ -142,7 +142,7 @@ export default function BroadcastPeopleScreen() {
             <View key={s.id} style={styles.listRow}>
               <View style={styles.flex1}>
                 <Text style={styles.listName} numberOfLines={1}>{s.name || '—'}</Text>
-                <Text style={styles.listMeta}>{s.mobile} · {s.status === 'opted_out' ? 'replied STOP' : s.plan === 'daily' ? 'daily' : 'customer list'}</Text>
+                <Text style={styles.listMeta}>{s.mobile} · {s.status === 'opted_out' ? 'replied STOP' : s.plan === 'daily' ? 'daily' : 'customer list'}{s.source === 'whatsapp' || s.source === 'shop_whatsapp' ? ' · joined on WhatsApp' : ''}</Text>
               </View>
               {s.status === 'active' && (
                 <Pressable onPress={() => remove(s)} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Remove ${s.name || s.mobile}`}>
