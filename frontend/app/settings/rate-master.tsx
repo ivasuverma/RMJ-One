@@ -116,12 +116,12 @@ export default function RateMasterScreen() {
           </Text>
           <View style={styles.switchRow}>
             <View style={{ flex: 1 }}><Text style={styles.label}>Auto-fetch enabled</Text></View>
-            <Switch value={daily.refresh_enabled} onValueChange={(v) => setD({ refresh_enabled: v })} disabled={!isOwner} trackColor={{ true: colors.brandPrimary, false: colors.border }} thumbColor={colors.surface} {...({ activeThumbColor: colors.surface } as object)} testID="gold-rate-refresh-enabled-toggle" accessibilityRole="button" accessibilityLabel="Refresh" />
+            <Switch value={daily.refresh_enabled} onValueChange={(v) => setD({ refresh_enabled: v })} disabled={!isOwner} trackColor={{ true: colors.brandPrimary, false: colors.border }} thumbColor={colors.surface} {...({ activeThumbColor: colors.surface } as object)} testID="gold-rate-refresh-enabled-toggle" />
           </View>
           <View style={[styles.row2, !daily.refresh_enabled && { opacity: 0.5 }]}>
-            <View style={{ flex: 1 }}><Text style={styles.label}>Every (minutes)</Text><TextInput value={daily.refresh_interval_min} onChangeText={(v) => setD({ refresh_interval_min: v.replace(/\D/g, '') })} editable={isOwner && daily.refresh_enabled} keyboardType="numeric" style={styles.input} testID="gold-rate-refresh-interval" accessibilityRole="button" accessibilityLabel="Refresh" /></View>
-            <View style={{ flex: 1 }}><Text style={styles.label}>From</Text><TextInput value={daily.refresh_start} onChangeText={(v) => setD({ refresh_start: v })} editable={isOwner && daily.refresh_enabled} placeholder="12:30" placeholderTextColor={colors.mutedText} style={styles.input} testID="gold-rate-refresh-start" accessibilityRole="button" accessibilityLabel="Refresh" /></View>
-            <View style={{ flex: 1 }}><Text style={styles.label}>To</Text><TextInput value={daily.refresh_end} onChangeText={(v) => setD({ refresh_end: v })} editable={isOwner && daily.refresh_enabled} placeholder="19:00" placeholderTextColor={colors.mutedText} style={styles.input} testID="gold-rate-refresh-end" accessibilityRole="button" accessibilityLabel="Refresh" /></View>
+            <View style={{ flex: 1 }}><Text style={styles.label}>Every (minutes)</Text><TextInput value={daily.refresh_interval_min} onChangeText={(v) => setD({ refresh_interval_min: v.replace(/\D/g, '') })} editable={isOwner && daily.refresh_enabled} keyboardType="numeric" style={styles.input} testID="gold-rate-refresh-interval" /></View>
+            <View style={{ flex: 1 }}><Text style={styles.label}>From</Text><TextInput value={daily.refresh_start} onChangeText={(v) => setD({ refresh_start: v })} editable={isOwner && daily.refresh_enabled} placeholder="12:30" placeholderTextColor={colors.mutedText} style={styles.input} testID="gold-rate-refresh-start" /></View>
+            <View style={{ flex: 1 }}><Text style={styles.label}>To</Text><TextInput value={daily.refresh_end} onChangeText={(v) => setD({ refresh_end: v })} editable={isOwner && daily.refresh_enabled} placeholder="19:00" placeholderTextColor={colors.mutedText} style={styles.input} testID="gold-rate-refresh-end" /></View>
           </View>
           <View style={styles.row2}>
             <View style={{ flex: 1 }}>
