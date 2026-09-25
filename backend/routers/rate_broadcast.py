@@ -317,30 +317,46 @@ async def broadcast_loop() -> None:
         await asyncio.sleep(TICK_SEC)
 
 
-async def handle_subscribe_reply(mobile: str, text: str) -> Optional[str]:
-    """Every inbound message on the Meta line comes through here. STOP / the
-    Stop updates button opt out; START / DAILY subscribe to the daily rate;
-    WEEKLY to the weekly one (always the customer's own choice). Returns a
-    reply to send, or None when the message isn't one of these."""
-    word = re.sub(r'[^A-Z ]', '', (text or '').strip().upper()).strip()
+_STOP_WORDS = ('STOP', 'UNSUBSCRIBE', 'STOP ALL', STOP_BUTTON.upper())
+_JOIN_WORDS = {'START': 'daily', 'DAILY': 'daily', 'SUBSCRIBE': 'daily', 'WEEKLY': 'weekly'}
+
+
+def _keyword(text: str) -> str:
+    return re.sub(r'[^A-Z ]', '', (text or '').strip().upper()).strip()
+
+
+def is_subscribe_word(text: str) -> bool:
+    """Whole message is one of the subscription keywords (not merely contains one)."""
+    w = _keyword(text)
+    return w in _STOP_WORDS or w in _JOIN_WORDS
+
+
+async def handle_subscribe_reply(mobile: str, text: str, source: str = 'whatsapp') -> Optional[str]:
+    """Inbound messages on either number come through here — the official Meta
+    line (routers/whatsapp_meta_bot.py) and the shop's OpenWA number
+    (routers/whatsapp_bot.py; source='shop_whatsapp'). STOP / the Stop
+    updates button opt out; START / DAILY subscribe to the daily rate; WEEKLY
+    to the weekly one (always the customer's own choice). Returns a reply to
+    send, or None when the message isn't one of these."""
+    word = _keyword(text)
     m = norm_mobile(mobile)
     if not m:
         return None
     now = now_utc().isoformat()
-    if word in ('STOP', 'UNSUBSCRIBE', 'STOP ALL', STOP_BUTTON.upper()):
+    if word in _STOP_WORDS:
         res = await db.rate_subscribers.update_one({'mobile': m}, {'$set': {'status': 'opted_out', 'opted_out_at': now}})
         if not res.matched_count:  # remember the choice even if they were never on a list
             await db.rate_subscribers.insert_one({'id': str(uuid.uuid4()), 'name': '', 'mobile': m, 'status': 'opted_out',
-                                                  'plan': 'weekly', 'source': 'whatsapp', 'added_at': now, 'opted_out_at': now})
+                                                  'plan': 'weekly', 'source': source, 'added_at': now, 'opted_out_at': now})
         return "You won't receive rate updates from Ram Murti Jewellers anymore. Reply START to subscribe again."
-    plan = {'START': 'daily', 'DAILY': 'daily', 'SUBSCRIBE': 'daily', 'WEEKLY': 'weekly'}.get(word)
+    plan = _JOIN_WORDS.get(word)
     if not plan:
         return None
     res = await db.rate_subscribers.update_one(
         {'mobile': m}, {'$set': {'status': 'active', 'plan': plan}, '$unset': {'opted_out_at': ''}})
     if not res.matched_count:
         await db.rate_subscribers.insert_one({'id': str(uuid.uuid4()), 'name': '', 'mobile': m, 'status': 'active',
-                                              'plan': plan, 'source': 'whatsapp', 'added_at': now})
+                                              'plan': plan, 'source': source, 'added_at': now})
     if plan == 'daily':
         return ("You're subscribed to the daily gold & silver rate from Ram Murti Jewellers. "
                 "Reply WEEKLY for once a week instead, or STOP anytime to stop.")

@@ -27,7 +27,7 @@ export type Overview = {
   template: Tpl; meta_configured: boolean; sending: Job[]; sent_today: number;
 };
 export type MetaStatus = { configured: boolean; connected: boolean; phone: string | null; display_name: string | null };
-export type Sub = { id: string; name: string; mobile: string; status: 'active' | 'opted_out'; plan?: Plan };
+export type Sub = { id: string; name: string; mobile: string; status: 'active' | 'opted_out'; plan?: Plan; source?: string };
 
 export const SHORT_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 export const AUDIENCE_LABEL: Record<Audience, string> = { daily: 'Daily subscribers', weekly: 'Customer list', all: 'Everyone' };

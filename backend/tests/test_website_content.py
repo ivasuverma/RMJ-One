@@ -94,3 +94,20 @@ def test_staff_cannot_edit():
         pytest.skip('employee login not available')
     h = {"Authorization": f"Bearer {r.json()['access_token']}"}
     assert requests.get(f"{API}/website/content", headers=h, timeout=30).status_code == 403
+
+
+def test_employee_with_website_module_can_edit():
+    owner = {"Authorization": "Bearer " + requests.post(f"{API}/auth/login", json={"username": "owner", "password": "Owner@123"}, timeout=30).json()['access_token']}
+    accounts = requests.get(f"{API}/access/accounts", headers=owner, timeout=30).json()
+    emp = next(a for a in accounts if a.get('username') == 'rmj002')
+    before = emp.get('module_access')
+    r = requests.put(f"{API}/access/accounts/{emp['id']}", headers=owner,
+                     json={'module_access': sorted(set(emp['resolved_modules']) | {'website'})}, timeout=30)
+    assert r.status_code == 200, r.text
+    try:
+        tok = requests.post(f"{API}/auth/employee-login", json={"username": "rmj002", "password": "2345"}, timeout=30).json()['access_token']
+        h = {"Authorization": f"Bearer {tok}"}
+        assert requests.get(f"{API}/website/content", headers=h, timeout=30).status_code == 200
+        assert requests.get(f"{API}/website/pieces", headers=h, timeout=30).status_code == 200
+    finally:
+        requests.put(f"{API}/access/accounts/{emp['id']}", headers=owner, json={'module_access': before}, timeout=30)

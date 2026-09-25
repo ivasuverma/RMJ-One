@@ -87,6 +87,9 @@ export default function EmployeeWorkScreen() {
         ...(tasksOverdue > 0 ? [{ text: ' · ' }, { text: `${tasksOverdue} overdue`, tone: 'bad' as const }] : []),
       ],
   });
+  if (hasModule('website')) {
+    rows.push({ key: 'website', title: 'Website', icon: 'globe-outline', route: '/website', segs: [{ text: 'Edit rmj.co.in — words, photos, sections' }] });
+  }
   if (hasModule('cash_book')) {
     rows.push({ key: 'cash', title: 'Cash Book', icon: 'wallet-outline', route: '/cashbook', segs: [{ text: 'Record cash in / out' }] });
   }

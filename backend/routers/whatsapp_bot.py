@@ -125,6 +125,24 @@ async def whatsapp_webhook(request: Request):
     if data.get('isGroup') or data.get('fromMe') or data.get('type') != 'text':
         return {'ok': True, 'skipped': 'not a plain 1:1 text message'}
 
+    # Rate-update subscriptions (START / DAILY / WEEKLY / STOP) work on the
+    # shop's number too — customers naturally message the number they know.
+    # Always honoured, whatever the chatbot switches say: an opt-out must
+    # never be ignored. The updates themselves go out from the official
+    # number (routers/rate_broadcast.py).
+    from routers.rate_broadcast import handle_subscribe_reply, is_subscribe_word
+    if is_subscribe_word(data.get('body') or ''):
+        sender = data.get('author') or data.get('from') or ''
+        phone = await resolve_whatsapp_phone(sender)
+        if not phone and sender.endswith('@c.us'):
+            phone = sender.split('@', 1)[0]
+        reply = await handle_subscribe_reply(phone or '', data.get('body') or '', source='shop_whatsapp') if phone else None
+        if reply:
+            await send_whatsapp_raw(sender, reply, flow='rate_broadcast_optin')
+        else:
+            logger.warning(f'whatsapp bot: subscription keyword from {sender} but no usable phone number')
+        return {'ok': True, 'handled': 'rate_subscription'}
+
     wa = await db.settings.find_one({'id': 'whatsapp'}, {'_id': 0}) or {}
     if not wa.get('enabled', True) or not wa.get('chatbot_enabled', False):
         return {'ok': True, 'skipped': 'chatbot disabled'}

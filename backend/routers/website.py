@@ -13,9 +13,17 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from pydantic import BaseModel
 
-from server import db, log_audit, now_utc, require_admin
+from server import db, get_current, log_audit, now_utc, resolve_modules
 
 router = APIRouter()
+
+
+def require_website(user=Depends(get_current)):
+    """Owner and admin always (as before); anyone else — an employee the owner
+    trusts with the site — needs the Website module (Settings › Users)."""
+    if user.get('role') in ('owner', 'admin') or 'website' in resolve_modules(user):
+        return user
+    raise HTTPException(status_code=403, detail='No access to "Website"')
 
 _MAX_UPLOAD = 15 * 1024 * 1024
 _MAX_PIECES = 40
@@ -46,7 +54,7 @@ def _public(p: dict) -> dict:
 
 
 @router.get('/website/pieces')
-async def list_pieces(_: dict = Depends(require_admin)):
+async def list_pieces(_: dict = Depends(require_website)):
     items = await db.website_pieces.find({}, _ADMIN_PROJ).sort('sort', 1).to_list(_MAX_PIECES)
     # Thumbnail inline: hidden pieces' photos aren't served publicly.
     return [{**{k: v for k, v in p.items() if k != 'thumb'}, 'image_url': _public(p)['image_url'],
@@ -56,7 +64,7 @@ async def list_pieces(_: dict = Depends(require_admin)):
 @router.post('/website/pieces')
 async def add_piece(
     file: UploadFile = File(...), name: str = Form(default=''), metal: str = Form(default=''),
-    user: dict = Depends(require_admin),
+    user: dict = Depends(require_website),
 ):
     if await db.website_pieces.count_documents({}) >= _MAX_PIECES:
         raise HTTPException(status_code=400, detail=f'Up to {_MAX_PIECES} pieces — remove an old one first.')
@@ -92,7 +100,7 @@ class PieceIn(BaseModel):
 
 
 @router.patch('/website/pieces/{piece_id}')
-async def update_piece(piece_id: str, body: PieceIn, user: dict = Depends(require_admin)):
+async def update_piece(piece_id: str, body: PieceIn, user: dict = Depends(require_website)):
     changes = {k: (v.strip()[:60] if isinstance(v, str) else v) for k, v in body.model_dump().items() if v is not None}
     if not changes:
         raise HTTPException(status_code=400, detail='Nothing to change')
@@ -109,7 +117,7 @@ class OrderIn(BaseModel):
 
 
 @router.put('/website/pieces/order')
-async def reorder_pieces(body: OrderIn, user: dict = Depends(require_admin)):
+async def reorder_pieces(body: OrderIn, user: dict = Depends(require_website)):
     for i, pid in enumerate(body.ids):
         await db.website_pieces.update_one({'id': pid}, {'$set': {'sort': i}})
     await log_audit(user, 'website.piece.reorder', 'website_piece', '', str(len(body.ids)))
@@ -117,7 +125,7 @@ async def reorder_pieces(body: OrderIn, user: dict = Depends(require_admin)):
 
 
 @router.delete('/website/pieces/{piece_id}')
-async def delete_piece(piece_id: str, user: dict = Depends(require_admin)):
+async def delete_piece(piece_id: str, user: dict = Depends(require_website)):
     res = await db.website_pieces.delete_one({'id': piece_id})
     if not res.deleted_count:
         raise HTTPException(status_code=404, detail='Piece not found')
@@ -251,7 +259,7 @@ def _section_out(s: dict, admin: bool) -> dict:
 
 
 @router.get('/website/content')
-async def get_content(_: dict = Depends(require_admin)):
+async def get_content(_: dict = Depends(require_website)):
     c = await _content_doc()
     sections = await db.website_sections.find({}, {'_id': 0}).sort('sort', 1).to_list(_MAX_SECTIONS)
     page = []
@@ -272,7 +280,7 @@ class TextsIn(BaseModel):
 
 
 @router.put('/website/content/texts')
-async def save_texts(body: TextsIn, user: dict = Depends(require_admin)):
+async def save_texts(body: TextsIn, user: dict = Depends(require_website)):
     c = await _content_doc()
     texts = dict(c['texts'])
     for k, v in body.texts.items():
@@ -297,7 +305,7 @@ class VisibleIn(BaseModel):
 
 
 @router.put('/website/content/sections/{key}/visible')
-async def set_builtin_visible(key: str, body: VisibleIn, user: dict = Depends(require_admin)):
+async def set_builtin_visible(key: str, body: VisibleIn, user: dict = Depends(require_website)):
     if key not in _HIDEABLE:
         raise HTTPException(status_code=400, detail='This part of the page is always shown')
     c = await _content_doc()
@@ -308,7 +316,7 @@ async def set_builtin_visible(key: str, body: VisibleIn, user: dict = Depends(re
 
 
 @router.post('/website/content/images/{key}')
-async def set_page_image(key: str, file: UploadFile = File(...), user: dict = Depends(require_admin)):
+async def set_page_image(key: str, file: UploadFile = File(...), user: dict = Depends(require_website)):
     if key not in _IMAGES:
         raise HTTPException(status_code=404, detail='Unknown photo')
     iid = await _store_image(await file.read())
@@ -322,7 +330,7 @@ async def set_page_image(key: str, file: UploadFile = File(...), user: dict = De
 
 
 @router.delete('/website/content/images/{key}')
-async def reset_page_image(key: str, user: dict = Depends(require_admin)):
+async def reset_page_image(key: str, user: dict = Depends(require_website)):
     if key not in _IMAGES:
         raise HTTPException(status_code=404, detail='Unknown photo')
     c = await _content_doc()
@@ -366,7 +374,7 @@ async def _get_section(sid: str) -> dict:
 
 
 @router.post('/website/sections')
-async def add_section(body: SectionIn, user: dict = Depends(require_admin)):
+async def add_section(body: SectionIn, user: dict = Depends(require_website)):
     data = _clean_section(body)
     if not data.get('title'):
         raise HTTPException(status_code=400, detail='Give the section a heading')
@@ -382,7 +390,7 @@ async def add_section(body: SectionIn, user: dict = Depends(require_admin)):
 
 
 @router.patch('/website/sections/{sid}')
-async def update_section(sid: str, body: SectionIn, user: dict = Depends(require_admin)):
+async def update_section(sid: str, body: SectionIn, user: dict = Depends(require_website)):
     await _get_section(sid)
     data = _clean_section(body)
     if 'title' in data and not data['title']:
@@ -395,7 +403,7 @@ async def update_section(sid: str, body: SectionIn, user: dict = Depends(require
 
 
 @router.put('/website/sections/order')
-async def reorder_sections(body: OrderIn, user: dict = Depends(require_admin)):
+async def reorder_sections(body: OrderIn, user: dict = Depends(require_website)):
     for i, sid in enumerate(body.ids):
         await db.website_sections.update_one({'id': sid}, {'$set': {'sort': i}})
     await log_audit(user, 'website.section.reorder', 'website_section', '', str(len(body.ids)))
@@ -403,7 +411,7 @@ async def reorder_sections(body: OrderIn, user: dict = Depends(require_admin)):
 
 
 @router.delete('/website/sections/{sid}')
-async def delete_section(sid: str, user: dict = Depends(require_admin)):
+async def delete_section(sid: str, user: dict = Depends(require_website)):
     s = await _get_section(sid)
     ids = [p['id'] for p in s.get('photos') or []]
     if ids:
@@ -415,7 +423,7 @@ async def delete_section(sid: str, user: dict = Depends(require_admin)):
 
 @router.post('/website/sections/{sid}/photos')
 async def add_section_photo(sid: str, file: UploadFile = File(...), caption: str = Form(default=''),
-                            user: dict = Depends(require_admin)):
+                            user: dict = Depends(require_website)):
     s = await _get_section(sid)
     if len(s.get('photos') or []) >= _MAX_SECTION_PHOTOS:
         raise HTTPException(status_code=400, detail=f'Up to {_MAX_SECTION_PHOTOS} photos in a section.')
@@ -431,7 +439,7 @@ class CaptionIn(BaseModel):
 
 
 @router.patch('/website/sections/{sid}/photos/{pid}')
-async def caption_section_photo(sid: str, pid: str, body: CaptionIn, user: dict = Depends(require_admin)):
+async def caption_section_photo(sid: str, pid: str, body: CaptionIn, user: dict = Depends(require_website)):
     res = await db.website_sections.update_one({'id': sid, 'photos.id': pid}, {'$set': {'photos.$.caption': body.caption.strip()[:80]}})
     if not res.matched_count:
         raise HTTPException(status_code=404, detail='Photo not found')
@@ -439,7 +447,7 @@ async def caption_section_photo(sid: str, pid: str, body: CaptionIn, user: dict 
 
 
 @router.delete('/website/sections/{sid}/photos/{pid}')
-async def delete_section_photo(sid: str, pid: str, user: dict = Depends(require_admin)):
+async def delete_section_photo(sid: str, pid: str, user: dict = Depends(require_website)):
     res = await db.website_sections.update_one({'id': sid}, {'$pull': {'photos': {'id': pid}}})
     if not res.matched_count:
         raise HTTPException(status_code=404, detail='Section not found')
