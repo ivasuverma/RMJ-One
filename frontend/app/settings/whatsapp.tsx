@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, TextInput } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -7,82 +7,38 @@ import { api } from '@/src/api/client';
 import { notify } from '@/src/utils/notify';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
-import { useToast } from '@/src/components/ui';
 import { ToggleSwitch } from '@/src/components/ui/ToggleSwitch';
 
-type Provider = 'openwa' | 'meta';
 type Form = {
-  enabled: boolean; provider: Provider; repair_ready_notice: boolean; repair_ready_template: string;
+  enabled: boolean; repair_ready_notice: boolean; repair_ready_template: string;
   repair_received_notice: boolean; repair_received_template: string;
   chatbot_enabled: boolean; chatbot_rate_template: string;
   chatbot_rate_enabled: boolean; chatbot_status_enabled: boolean;
 };
 const EMPTY: Form = {
-  enabled: true, provider: 'openwa', repair_ready_notice: true, repair_ready_template: '',
+  enabled: true, repair_ready_notice: true, repair_ready_template: '',
   repair_received_notice: true, repair_received_template: '',
   chatbot_enabled: false, chatbot_rate_template: '',
   chatbot_rate_enabled: true, chatbot_status_enabled: true,
 };
 type WhatsAppStatus = { configured: boolean; connected: boolean; phone: string | null };
-type MetaStatus = { configured: boolean; connected: boolean; phone: string | null; display_name: string | null };
 
 export default function WhatsAppSettingsScreen() {
   const router = useRouter();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
-  const toast = useToast();
   const [form, setForm] = useState<Form>(EMPTY);
   const [status, setStatus] = useState<WhatsAppStatus | null>(null);
-  const [metaAlertTemplate, setMetaAlertTemplate] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const submittingRef = useRef(false);
 
 
-  // Official WhatsApp (Meta Cloud API) — a second, independent send path
-  // being set up on a spare number ahead of an eventual migration off
-  // OpenWA (see backend/whatsapp_meta.py). Test-only: it exists to verify
-  // the pipeline works, not for day-to-day use.
-  const [metaStatus, setMetaStatus] = useState<MetaStatus | null>(null);
-  const [metaTestMobile, setMetaTestMobile] = useState('');
-  const [metaTestText, setMetaTestText] = useState('RMJ-One test message via the official WhatsApp API');
-  const [metaTestSending, setMetaTestSending] = useState(false);
-  type AlertTpl = { exists: boolean; status: string | null; reason: string | null; error: string | null; body: string; env_override: string | null };
-  const [alertTpl, setAlertTpl] = useState<AlertTpl | null>(null);
-  const [tplBusy, setTplBusy] = useState(false);
-  const loadAlertTpl = async () => {
-    try { setAlertTpl(await api.get<AlertTpl>('/settings/whatsapp-meta/alert-template')); } catch { setAlertTpl(null); }
-  };
-  const createAlertTpl = async () => {
-    setTplBusy(true);
-    try {
-      setAlertTpl(await api.post<AlertTpl>('/settings/whatsapp-meta/alert-template', {}));
-      setMetaAlertTemplate(true);
-      toast.success('Template sent to Meta for approval');
-    } catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
-    finally { setTplBusy(false); }
-  };
-
-  const loadMetaStatus = async () => {
-    try { setMetaStatus(await api.get<MetaStatus>('/settings/whatsapp-meta')); }
-    catch { setMetaStatus(null); }
-  };
-
-  const sendMetaTest = async () => {
-    if (!metaTestMobile.trim() || !metaTestText.trim()) { notify('Missing', 'Enter a mobile number and message'); return; }
-    setMetaTestSending(true);
-    try {
-      await api.post('/settings/whatsapp-meta/test-send', { mobile: metaTestMobile.trim(), text: metaTestText.trim() });
-      toast.success('Test message sent');
-    } catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
-    finally { setMetaTestSending(false); }
-  };
-
   const load = async () => {
     try {
       const w = await api.get<any>('/settings/whatsapp');
       setForm({
-        enabled: w.enabled !== false, provider: w.provider === 'meta' ? 'meta' : 'openwa',
+        enabled: w.enabled !== false,
         repair_ready_notice: w.repair_ready_notice !== false,
         repair_ready_template: w.repair_ready_template || '',
         repair_received_notice: w.repair_received_notice !== false, repair_received_template: w.repair_received_template || '',
@@ -91,11 +47,10 @@ export default function WhatsAppSettingsScreen() {
         chatbot_rate_enabled: w.chatbot_rate_enabled !== false, chatbot_status_enabled: w.chatbot_status_enabled !== false,
       });
       setStatus({ configured: !!w.configured, connected: !!w.connected, phone: w.phone || null });
-      setMetaAlertTemplate(w.meta_alert_template === true);
     } catch (_e) { /* ignore — form stays at defaults */ }
     finally { setLoading(false); }
   };
-  useEffect(() => { load(); loadMetaStatus(); loadAlertTpl(); }, []);
+  useEffect(() => { load(); }, []);
 
   const save = async () => {
     if (submittingRef.current) return;
@@ -148,46 +103,6 @@ export default function WhatsAppSettingsScreen() {
           </Text>
         </View>
 
-        {/* ---------------- Active service (exactly one on) ---------------- */}
-        <View style={styles.groupCard}>
-          <View style={styles.groupHeader}>
-            <View style={styles.groupHeaderIcon}><Ionicons name="swap-horizontal-outline" size={17} color={colors.brandSecondary} /></View>
-            <Text style={styles.groupHeaderTitle}>Active WhatsApp Service</Text>
-          </View>
-          <Text style={styles.hint}>Only one runs at a time — turning one on turns the other off. All notices and chatbot replies go through the active one.</Text>
-          {([
-            { key: 'openwa', label: 'WhatsApp Gateway (OpenWA)', sub: status?.connected ? `Shop number ${status.phone}` : 'Not connected' },
-            { key: 'meta', label: 'Official WhatsApp (Meta)', sub: metaStatus?.connected ? (metaStatus.display_name || metaStatus.phone || 'Connected') : 'Not connected' },
-          ] as { key: Provider; label: string; sub: string }[]).map((p) => {
-            const on = form.provider === p.key;
-            return (
-              <Pressable
-                key={p.key}
-                onPress={() => setForm((f) => ({ ...f, provider: f.provider === 'openwa' ? 'meta' : 'openwa' }))}
-                style={styles.toggleRow}
-                testID={`whatsapp-provider-${p.key}-toggle`}
-              >
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.toggleLabel}>{p.label}</Text>
-                  <Text style={styles.toggleSub}>{p.sub}</Text>
-                </View>
-                <ToggleSwitch value={!!(on)} />
-              </Pressable>
-            );
-          })}
-          {form.provider === 'meta' && (
-            <View style={[styles.infoBox, styles.infoBoxWarn, { marginBottom: 0 }]} testID="whatsapp-provider-meta-warning">
-              <Ionicons name="alert-circle-outline" size={16} color={colors.onWarning} />
-              <Text style={[styles.infoText, { color: colors.onWarning }]}>
-                {metaAlertTemplate
-                  ? 'Staff alerts go through your approved Meta template. '
-                  : 'Staff alerts need an approved Meta template (META_WA_ALERT_TEMPLATE in backend/.env) — without it they only reach staff who messaged the Meta number in the last 24 hours. '}
-                Repair notices to customers have the same 24-hour limit, and gold rate posts to the WhatsApp Channel need OpenWA. Failed sends show in the Sent Messages Log.
-              </Text>
-            </View>
-          )}
-        </View>
-
         <Pressable onPress={() => router.push('/settings/whatsapp-templates' as any)} style={styles.navRow} testID="whatsapp-templates-link">
           <View style={styles.navIcon}><Ionicons name="document-text-outline" size={20} color={colors.brandSecondary} /></View>
           <View style={{ flex: 1 }}>
@@ -201,7 +116,7 @@ export default function WhatsAppSettingsScreen() {
           <View style={styles.navIcon}><Ionicons name="list-outline" size={20} color={colors.brandSecondary} /></View>
           <View style={{ flex: 1 }}>
             <Text style={styles.toggleLabel}>Sent Messages Log</Text>
-            <Text style={styles.toggleSub}>Every WhatsApp send from either provider, with real delivery status</Text>
+            <Text style={styles.toggleSub}>Every WhatsApp send — shop number and broadcasts — with real delivery status</Text>
           </View>
           <Ionicons name="chevron-forward" size={18} color={colors.mutedText} />
         </Pressable>
@@ -290,66 +205,15 @@ export default function WhatsAppSettingsScreen() {
           </View>
         </View>
 
-        {/* ---------------- Official WhatsApp (Meta) — test line ---------------- */}
-        <View style={styles.groupCard}>
-          <View style={styles.groupHeader}>
-            <View style={styles.groupHeaderIcon}><Ionicons name="shield-checkmark-outline" size={17} color={colors.brandSecondary} /></View>
-            <Text style={styles.groupHeaderTitle}>Official WhatsApp (Meta)</Text>
+        {/* The official Meta number now lives in Rate Broadcast — it sends nothing else. */}
+        <Pressable onPress={() => router.push('/settings/rate-broadcast/number' as any)} style={styles.navRow} testID="whatsapp-meta-link">
+          <View style={styles.navIcon}><Ionicons name="megaphone-outline" size={20} color={colors.brandSecondary} /></View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.toggleLabel}>Official WhatsApp (Meta)</Text>
+            <Text style={styles.toggleSub}>Used only for Rate Broadcast — rates and offers to customers. Set up in Rate Broadcast › Official number.</Text>
           </View>
-          <Text style={styles.hint}>A separate number on the official WhatsApp Business Platform. Make it the active service above to send through it; the test send below works either way.</Text>
-          <View style={[styles.infoBox, metaStatus?.connected ? styles.infoBoxOk : styles.infoBoxWarn, { marginBottom: spacing.sm }]} testID="whatsapp-meta-status">
-            <Ionicons name={metaStatus?.connected ? 'checkmark-circle-outline' : 'alert-circle-outline'} size={18} color={metaStatus?.connected ? colors.onSuccess : colors.onWarning} />
-            <Text style={[styles.infoText, { color: metaStatus?.connected ? colors.onSuccess : colors.onWarning }]}>
-              {metaStatus === null ? 'Checking…'
-                : !metaStatus.configured ? 'Not configured — add META_WA_PHONE_NUMBER_ID and META_WA_ACCESS_TOKEN to backend/.env'
-                : metaStatus.connected ? `Connected — ${metaStatus.display_name || metaStatus.phone}`
-                : 'Configured but the Graph API call failed — check the token and phone number id'}
-            </Text>
-          </View>
-          <Pressable onPress={loadMetaStatus} style={styles.altBtn} testID="whatsapp-meta-refresh-btn" accessibilityRole="button" accessibilityLabel="Refresh">
-            <Ionicons name="refresh" size={14} color={colors.brandSecondary} />
-            <Text style={styles.altBtnText}>Refresh Status</Text>
-          </Pressable>
-
-          <View style={styles.groupDivider} />
-          <Text style={styles.fieldLabel}>Staff alert template</Text>
-          <Text style={styles.hint}>
-            Meta only delivers messages you start through an approved template. This one carries every staff alert
-            (title + detail) while Meta is the active service.
-          </Text>
-          {alertTpl && (
-            <View style={[styles.infoBox, alertTpl.status === 'APPROVED' ? styles.infoBoxOk : styles.infoBoxWarn, { marginBottom: spacing.sm }]} testID="whatsapp-meta-alert-template-status">
-              <Ionicons name={alertTpl.status === 'APPROVED' ? 'checkmark-circle-outline' : 'time-outline'} size={18} color={alertTpl.status === 'APPROVED' ? colors.onSuccess : colors.onWarning} />
-              <Text style={[styles.infoText, { color: alertTpl.status === 'APPROVED' ? colors.onSuccess : colors.onWarning }]}>
-                {alertTpl.env_override ? `Using "${alertTpl.env_override}" from backend/.env.`
-                  : alertTpl.error ? alertTpl.error
-                  : !alertTpl.exists ? 'Not created yet.'
-                  : alertTpl.status === 'APPROVED' ? 'Approved — staff alerts will use it.'
-                  : alertTpl.status === 'REJECTED' ? `Rejected by Meta${alertTpl.reason ? `: ${alertTpl.reason}` : ''}.`
-                  : `Waiting for Meta's review (${(alertTpl.status || 'pending').toLowerCase()}). Usually a few minutes.`}
-              </Text>
-            </View>
-          )}
-          {alertTpl && !alertTpl.exists && !alertTpl.env_override ? (
-            <Pressable onPress={createAlertTpl} disabled={tplBusy} style={[styles.altBtn, tplBusy && { opacity: 0.6 }]} testID="whatsapp-meta-create-alert-template">
-              {tplBusy ? <ActivityIndicator color={colors.brandSecondary} size="small" /> : <Text style={styles.altBtnText}>Create template</Text>}
-            </Pressable>
-          ) : (
-            <Pressable onPress={loadAlertTpl} style={styles.altBtn} testID="whatsapp-meta-check-alert-template" accessibilityRole="button">
-              <Ionicons name="refresh" size={14} color={colors.brandSecondary} />
-              <Text style={styles.altBtnText}>Check status</Text>
-            </Pressable>
-          )}
-
-          <View style={styles.groupDivider} />
-          <Text style={styles.fieldLabel}>Send a test message</Text>
-          <Text style={styles.hint}>Freeform text only works within 24 hours of that number messaging the test line first — message it from that phone, then send here.</Text>
-          <TextInput value={metaTestMobile} onChangeText={setMetaTestMobile} keyboardType="phone-pad" placeholder="10-digit mobile" placeholderTextColor={colors.mutedText} style={styles.input} testID="whatsapp-meta-test-mobile" />
-          <TextInput value={metaTestText} onChangeText={setMetaTestText} multiline placeholder="Message" placeholderTextColor={colors.mutedText} style={[styles.input, { minHeight: 60 }]} testID="whatsapp-meta-test-text" />
-          <Pressable onPress={sendMetaTest} disabled={metaTestSending} style={[styles.altBtn, metaTestSending && { opacity: 0.6 }]} testID="whatsapp-meta-test-send-btn">
-            {metaTestSending ? <ActivityIndicator color={colors.brandSecondary} size="small" /> : <Text style={styles.altBtnText}>Send Test Message</Text>}
-          </Pressable>
-        </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.mutedText} />
+        </Pressable>
 
         <View style={styles.infoBox}>
           <Ionicons name="information-circle-outline" size={16} color={colors.brandSecondary} />

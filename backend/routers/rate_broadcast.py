@@ -1,8 +1,8 @@
 """Rate broadcast — today's gold/silver rate sent on WhatsApp as an approved
 Meta MARKETING template: a photo on top, the rate, a link to rmj.co.in, and
-buttons (See live rates / Call the shop / Stop updates). Always goes out on
-the official Meta line (never OpenWA, whose shop number a bulk send could
-get banned), regardless of which provider is active for everything else.
+buttons (See live rates / Call the shop / Stop updates). Goes out on the
+official Meta number, which is used for nothing else — every other WhatsApp
+message stays on OpenWA, whose shop number a bulk send could get banned.
 
 Two lists, one Rate Subscribers collection (kept apart from the repair
 Customers, which each mirror into the ledger), split by `plan`:

@@ -94,3 +94,14 @@ class TestRateBroadcast:
     def test_public_subscribe_link(self):
         r = requests.get(f"{BASE_URL}/api/public/rate-broadcast/subscribe", timeout=30)
         assert r.status_code == 200 and r.json()['url'] is None  # no Meta line in CI
+
+
+def test_whatsapp_provider_is_always_openwa(owner):
+    """Meta is for broadcasts only — the old provider switch can't move notices onto it."""
+    cur = requests.get(f"{API}/settings/whatsapp", headers=owner, timeout=30).json()
+    keep = {k: cur[k] for k in ('enabled', 'repair_ready_notice', 'repair_received_notice', 'chatbot_enabled',
+                                'chatbot_rate_enabled', 'chatbot_status_enabled')}
+    r = requests.put(f"{API}/settings/whatsapp", headers=owner, json={**keep, 'provider': 'meta'}, timeout=30)
+    assert r.status_code == 200, r.text
+    assert requests.get(f"{API}/settings/whatsapp", headers=owner, timeout=30).json()['provider'] == 'openwa'
+    assert requests.get(f"{API}/settings/whatsapp-meta/alert-template", headers=owner, timeout=30).status_code in (404, 405)
