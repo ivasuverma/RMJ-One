@@ -139,3 +139,19 @@ def test_meta_webhook_reachable_with_and_without_api_prefix():
     for path in ('/api/webhooks/whatsapp-meta', '/webhooks/whatsapp-meta'):
         r = requests.get(f"{BASE_URL}{path}", params={'hub.mode': 'subscribe', 'hub.verify_token': 'wrong', 'hub.challenge': 'x'}, timeout=30)
         assert r.status_code == 403, (path, r.status_code)  # routed to the handshake, which refuses a wrong token
+
+def test_rate_broadcast_can_be_granted_to_an_employee(owner):
+    accounts = requests.get(f"{API}/access/accounts", headers=owner, timeout=30).json()
+    emp = next(a for a in accounts if a.get('username') == 'rmj003')
+    tok = lambda: requests.post(f"{API}/auth/employee-login", json={"username": "rmj003", "password": "3456"}, timeout=30).json()['access_token']
+    assert requests.get(f"{API}/rate-broadcast/overview", headers={"Authorization": f"Bearer {tok()}"}, timeout=30).status_code == 403
+    before = emp.get('module_access')
+    r = requests.put(f"{API}/access/accounts/{emp['id']}", headers=owner,
+                     json={'module_access': sorted(set(emp['resolved_modules']) | {'rate_broadcast'})}, timeout=30)
+    assert r.status_code == 200, r.text
+    try:
+        h = {"Authorization": f"Bearer {tok()}"}
+        assert requests.get(f"{API}/rate-broadcast/overview", headers=h, timeout=30).status_code == 200
+        assert requests.get(f"{API}/settings/whatsapp-meta", headers=h, timeout=30).status_code == 200
+    finally:
+        requests.put(f"{API}/access/accounts/{emp['id']}", headers=owner, json={'module_access': before}, timeout=30)

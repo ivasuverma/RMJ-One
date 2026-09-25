@@ -293,6 +293,10 @@ MODULE_DEFS = [
     # Editing rmj.co.in (Work › Website): words, photos, sections, counter
     # pieces. Owner/admin always; grant it to an employee who runs the site.
     {'key': 'website', 'label': 'Website', 'default_roles': ['owner', 'admin'], 'employee_assignable': True},
+    # WhatsApp rate/offer broadcasts to customers from the official number
+    # (routers/rate_broadcast.py). Sends cost money and reach thousands of
+    # people, so owner-only by default; grant it deliberately in Settings › Users.
+    {'key': 'rate_broadcast', 'label': 'Rate Broadcast', 'default_roles': ['owner'], 'employee_assignable': True},
 ]
 MODULE_KEYS = {m['key'] for m in MODULE_DEFS}
 MODULE_DEFAULT_ROLES = {m['key']: set(m['default_roles']) for m in MODULE_DEFS}

@@ -173,19 +173,26 @@ async def update_whatsapp_settings(body: WhatsAppSettingsIn, user: dict = Depend
 # The official number used only for Rate Broadcast (routers/rate_broadcast.py;
 # app: Settings › Rate Broadcast › Official number). See whatsapp_meta.py for
 # the .env credentials it needs. Owner-only.
+def require_broadcast_access(user: dict = Depends(get_current)):
+    # Same rule as routers/rate_broadcast.require_broadcast — the official
+    # number's status/test screens live inside Rate Broadcast.
+    from routers.rate_broadcast import require_broadcast
+    return require_broadcast(user)
+
+
 class WhatsAppMetaTestSendIn(BaseModel):
     mobile: str
     text: str
 
 
 @router.get('/settings/whatsapp-meta')
-async def get_whatsapp_meta_status(_: dict = Depends(require_owner)):
+async def get_whatsapp_meta_status(_: dict = Depends(require_broadcast_access)):
     import whatsapp_meta
     return await whatsapp_meta.get_status()
 
 
 @router.post('/settings/whatsapp-meta/test-send')
-async def send_whatsapp_meta_test(body: WhatsAppMetaTestSendIn, user: dict = Depends(require_owner)):
+async def send_whatsapp_meta_test(body: WhatsAppMetaTestSendIn, user: dict = Depends(require_broadcast_access)):
     import whatsapp_meta
     if not whatsapp_meta.is_configured():
         raise HTTPException(status_code=400, detail='Add META_WA_PHONE_NUMBER_ID and META_WA_ACCESS_TOKEN to backend/.env first.')
