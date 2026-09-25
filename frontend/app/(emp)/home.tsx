@@ -16,6 +16,7 @@ import { spacing, radius, images, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { PunchCaptureModal, PunchResult } from '@/src/components/PunchCaptureModal';
 import { UploadQueueBadge } from '@/src/components/UploadQueueBadge';
+import { LiveRateButton } from '@/src/components/LiveRateButton';
 import { AppSetupBanner } from '@/src/components/AppSetupBanner';
 import { employeeTabAccess } from '@/src/components/EmployeeTabBar';
 import { haptics } from '@/src/utils/haptics';
@@ -137,6 +138,7 @@ export default function EmployeeHome() {
             <Text style={styles.heroCode}>{user?.employee_code} · {user?.designation || '—'}</Text>
           </View>
           <UploadQueueBadge />
+          <LiveRateButton testID="emp-rate-btn" />
           <Pressable onPress={() => router.push('/notifications' as any)} style={styles.iconBtn} testID="emp-notifications-btn" hitSlop={12}>
             <Ionicons name="notifications-outline" size={20} color={colors.onSurface} />
             {unread > 0 && <View style={styles.bellDot} />}

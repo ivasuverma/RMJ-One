@@ -14,6 +14,7 @@ import { useDashboardStream } from '@/src/hooks/use-dashboard-stream';
 import { spacing, radius, images, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { Screen, Section, StatTile, Skeleton, ErrorState, DualBalance, Tone, Sheet } from '@/src/components/ui';
+import { LiveRateButton } from '@/src/components/LiveRateButton';
 import { UploadQueueBadge } from '@/src/components/UploadQueueBadge';
 
 type DashboardData = {
@@ -123,7 +124,6 @@ export default function DashboardScreen() {
   const [foldedTiles, setFoldedTiles] = useState<Set<TileKey>>(new Set());
   const [reorderOpen, setReorderOpen] = useState(false);
   const [loanSummary, setLoanSummary] = useState<{ active: number; overdue: number; total_outstanding: number; total_interest_pending: number } | null>(null);
-  const [rates, setRates] = useState<{ gold_sell: number | null; silver_sell: number | null } | null>(null);
 
   const isWide = width >= 900;
 
@@ -140,20 +140,6 @@ export default function DashboardScreen() {
         .then(setLoanSummary).catch(() => {});
     }
   }, [hasModule]));
-
-  // Same public /public/rates endpoint the standalone rates page uses (see
-  // app/rates.tsx) - refreshed every 60s while this screen is focused, so
-  // the tile stays current without a full-screen reload.
-  useFocusEffect(useCallback(() => {
-    let alive = true;
-    const loadRates = () => {
-      api.get<{ gold_sell: number | null; silver_sell: number | null }>('/public/rates')
-        .then((r) => { if (alive) setRates(r); }).catch(() => {});
-    };
-    loadRates();
-    const t = setInterval(loadRates, 60000);
-    return () => { alive = false; clearInterval(t); };
-  }, []));
 
   useFocusEffect(useCallback(() => {
     Promise.all([
@@ -260,27 +246,12 @@ export default function DashboardScreen() {
           </View>
         </View>
         {hasModule('documents') && <UploadQueueBadge />}
+        <LiveRateButton testID="dashboard-rate-btn" />
         <Pressable onPress={() => router.push('/notifications' as any)} style={styles.iconBtn} testID="notifications-btn" hitSlop={10}>
           <Ionicons name="notifications-outline" size={19} color={colors.onSurface} />
           {unread > 0 && <View style={styles.bellDot} />}
         </Pressable>
       </View>
-
-      {/* Live rate tile - same public data as app/rates.tsx, one tap away */}
-      {!!rates && (rates.gold_sell != null || rates.silver_sell != null) && (
-        <Pressable onPress={() => router.push('/rates')} style={styles.rateTile} testID="dashboard-rate-tile">
-          <View style={styles.rateTileIcon}><Ionicons name="trending-up-outline" size={16} color={colors.brandSecondary} /></View>
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <Text style={styles.rateTileLabel}>Today's Rates</Text>
-            <Text style={styles.rateTileValue} numberOfLines={1}>
-              {rates.gold_sell != null ? `Gold ${fmtINR(rates.gold_sell)}` : ''}
-              {rates.gold_sell != null && rates.silver_sell != null ? '  ·  ' : ''}
-              {rates.silver_sell != null ? `Silver ${fmtINR(rates.silver_sell)}` : ''}
-            </Text>
-          </View>
-          <Ionicons name="chevron-forward" size={16} color={colors.mutedText} />
-        </Pressable>
-      )}
 
       {loading ? (
         <DashboardSkeleton />
@@ -770,14 +741,6 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     position: 'absolute', top: 8, right: 9, width: 8, height: 8, borderRadius: 4,
     backgroundColor: colors.error, borderWidth: 1, borderColor: colors.surface,
   },
-  rateTile: {
-    flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.md,
-    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
-    paddingHorizontal: spacing.md, paddingVertical: 12,
-  },
-  rateTileIcon: { width: 34, height: 34, borderRadius: 10, backgroundColor: colors.surfaceTertiary, alignItems: 'center', justifyContent: 'center' },
-  rateTileLabel: { color: colors.mutedText, fontSize: 11, fontWeight: '700', letterSpacing: 0.4, textTransform: 'uppercase' },
-  rateTileValue: { color: colors.onSurface, fontSize: 14.5, fontWeight: '700', marginTop: 2 },
 
   // Needs-attention "brief" card — warm dark gradient (set inline), hairline
   // border, a plain-language lead, then tappable rows separated by top rules.
