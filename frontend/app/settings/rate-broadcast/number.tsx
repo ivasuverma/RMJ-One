@@ -11,6 +11,7 @@ import { Header, makeStyles, MetaStatus } from './_shared';
 type Diag = {
   app_secret_set: boolean; verify_token_set: boolean;
   callback_url?: string;
+  account?: { actual: string | null; configured: string | null; matches: boolean | null; error: string | null };
   subscription: { subscribed: boolean | null; apps: string[]; overrides?: string[]; error: string | null };
   number?: { ok: boolean | null; error: string | null; status?: string; platform_type?: string; account_mode?: string; quality_rating?: string; messaging_limit_tier?: string;
     webhook_configuration?: { phone_number?: string; whatsapp_business_account?: string; application?: string } };
@@ -61,10 +62,10 @@ export default function BroadcastNumberScreen() {
   };
 
   // Result stays on screen (not just a toast) so Meta's exact words can be read and screenshotted.
-  const linkApp = async (pointHere = false) => {
+  const linkApp = async (pointHere = false, numberAccount = false) => {
     setLinking(true); setRelinkMsg(null);
     try {
-      const d = await api.post<Diag & { relink_notes?: string[] }>('/rate-broadcast/diagnostics/subscribe-app', { point_here: pointHere });
+      const d = await api.post<Diag & { relink_notes?: string[] }>('/rate-broadcast/diagnostics/subscribe-app', { point_here: pointHere, number_account: numberAccount });
       setDiag(d);
       const notes = d.relink_notes || [];
       setRelinkMsg({ ok: true, text: notes.length
@@ -143,6 +144,24 @@ export default function BroadcastNumberScreen() {
           {diag && (
             <View style={styles.card} testID="broadcast-diagnostics">
               <Text style={styles.cardTitle}>Diagnostics — are START messages arriving?</Text>
+              {diag.account && diag.account.matches === false && (
+                <View style={{ gap: 6 }} testID="broadcast-account-mismatch">
+                  <View style={[styles.row, { alignItems: 'flex-start' }]}>
+                    <Ionicons name="close-circle" size={18} color={colors.onError} />
+                    <View style={styles.flex1}>
+                      <Text style={styles.label}>Number is in a different WhatsApp Business Account</Text>
+                      <Text selectable style={styles.hint}>
+                        The number belongs to account {diag.account.actual}, but the server is set to {diag.account.configured}. Incoming messages go to
+                        apps linked to {diag.account.actual} — that’s why START never arrives. Tap below to link RMJ-One to it, then set
+                        META_WA_WABA_ID={diag.account.actual} in backend/.env and restart (templates must be in the number’s account too).
+                      </Text>
+                    </View>
+                  </View>
+                  <Pressable onPress={() => linkApp(false, true)} disabled={linking} style={styles.primary} accessibilityRole="button" testID="broadcast-link-account">
+                    {linking ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.primaryText}>Link RMJ-One to the number’s account</Text>}
+                  </Pressable>
+                </View>
+              )}
               {[
                 { ok: diag.number?.ok === true, label: 'Number registered for the WhatsApp API',
                   bad: diag.number?.ok === false
@@ -194,6 +213,8 @@ export default function BroadcastNumberScreen() {
               {relinkMsg && (
                 <Text selectable style={[styles.hint, { color: relinkMsg.ok ? colors.onSuccess : colors.onError }]} testID="broadcast-relink-msg">{relinkMsg.text}</Text>
               )}
+              {diag.account?.matches === true && <Text style={styles.hint}>WhatsApp Business Account: {diag.account.actual} (matches the server)</Text>}
+              {diag.account?.error && diag.account.matches == null && <Text selectable style={styles.hint}>Account check: {diag.account.error}</Text>}
               {diag.subscription.apps.length > 0 && (
                 <Text style={styles.hint}>Linked apps: {diag.subscription.apps.join(', ')}</Text>
               )}

@@ -622,6 +622,7 @@ async def diagnostics(_: dict = Depends(require_broadcast)):
         'verify_token_set': bool(whatsapp_meta.WEBHOOK_VERIFY_TOKEN),
         'subscription': await whatsapp_meta.app_subscription(),
         'number': await whatsapp_meta.number_health(),
+        'account': await whatsapp_meta.number_account(),
         'hits': hits,
     }
 
@@ -648,6 +649,7 @@ WEBHOOK_CALLBACK = f'{PUBLIC_API}/api/webhooks/whatsapp-meta'
 
 class RelinkIn(BaseModel):
     point_here: bool = False   # also force this number's messages to our callback URL
+    number_account: bool = False   # link the account the number REALLY belongs to (see number_account)
 
 
 @router.post('/rate-broadcast/diagnostics/subscribe-app')
@@ -657,6 +659,15 @@ async def diagnostics_subscribe_app(body: RelinkIn = RelinkIn(), user: dict = De
     so wherever the number was pointed before, its messages come here."""
     import whatsapp_meta
     notes = []
+    if body.number_account:
+        acct = await whatsapp_meta.number_account()
+        if not acct.get('actual'):
+            raise HTTPException(status_code=502, detail=acct.get('error') or "Couldn't find the number's account")
+        res = await whatsapp_meta.subscribe_app(waba_id=acct['actual'])
+        if not res['ok']:
+            raise HTTPException(status_code=502, detail=f"Linking account {acct['actual']}: {res['error']}")
+        await log_audit(user, 'rate_broadcast.subscribe_app', 'settings', 'whatsapp_meta', f"waba {acct['actual']}")
+        return {**(await diagnostics(user)), 'relink_notes': []}
     if body.point_here:
         cleared = await whatsapp_meta.clear_number_override()
         if not cleared['ok']:
