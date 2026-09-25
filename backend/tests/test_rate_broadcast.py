@@ -164,3 +164,9 @@ def test_diagnostics_show_rejected_webhook(owner):
     d = requests.get(f"{API}/rate-broadcast/diagnostics", headers=owner, timeout=30).json()
     assert {'app_secret_set', 'verify_token_set', 'subscription', 'hits'} <= set(d)
     assert d['hits'] and d['hits'][0]['ok'] is False and 'signature' in d['hits'][0]['note']
+
+
+def test_diagnostics_number_check_and_register_validation(owner):
+    d = requests.get(f"{API}/rate-broadcast/diagnostics", headers=owner, timeout=30).json()
+    assert 'number' in d and 'ok' in d['number']
+    assert requests.post(f"{API}/rate-broadcast/diagnostics/register-number", headers=owner, json={'pin': '12ab'}, timeout=30).status_code == 400

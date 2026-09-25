@@ -620,8 +620,26 @@ async def diagnostics(_: dict = Depends(require_broadcast)):
         'app_secret_set': bool(whatsapp_meta.APP_SECRET),
         'verify_token_set': bool(whatsapp_meta.WEBHOOK_VERIFY_TOKEN),
         'subscription': await whatsapp_meta.app_subscription(),
+        'number': await whatsapp_meta.number_health(),
         'hits': hits,
     }
+
+
+class RegisterIn(BaseModel):
+    pin: str
+
+
+@router.post('/rate-broadcast/diagnostics/register-number')
+async def diagnostics_register_number(body: RegisterIn, user: dict = Depends(require_broadcast)):
+    import whatsapp_meta
+    pin = (body.pin or '').strip()
+    if not re.fullmatch(r'\d{6}', pin):
+        raise HTTPException(status_code=400, detail='The PIN is 6 digits')
+    res = await whatsapp_meta.register_number(pin)
+    if not res['ok']:
+        raise HTTPException(status_code=502, detail=f"Meta refused: {res['error']}")
+    await log_audit(user, 'rate_broadcast.register_number', 'settings', 'whatsapp_meta', 'registered')
+    return await diagnostics(user)
 
 
 @router.post('/rate-broadcast/diagnostics/subscribe-app')
