@@ -170,3 +170,11 @@ def test_diagnostics_number_check_and_register_validation(owner):
     d = requests.get(f"{API}/rate-broadcast/diagnostics", headers=owner, timeout=30).json()
     assert 'number' in d and 'ok' in d['number']
     assert requests.post(f"{API}/rate-broadcast/diagnostics/register-number", headers=owner, json={'pin': '12ab'}, timeout=30).status_code == 400
+
+
+def test_diagnostics_relink_needs_meta(owner):
+    d = requests.get(f"{API}/rate-broadcast/diagnostics", headers=owner, timeout=30).json()
+    assert d['callback_url'].endswith('/api/webhooks/whatsapp-meta')
+    # No Meta line in CI: re-linking must fail cleanly, not crash.
+    r = requests.post(f"{API}/rate-broadcast/diagnostics/subscribe-app", headers=owner, json={'point_here': True}, timeout=30)
+    assert r.status_code == 502

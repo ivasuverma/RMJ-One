@@ -10,8 +10,10 @@ import { Header, makeStyles, MetaStatus } from './_shared';
 
 type Diag = {
   app_secret_set: boolean; verify_token_set: boolean;
-  subscription: { subscribed: boolean | null; apps: string[]; error: string | null };
-  number?: { ok: boolean | null; error: string | null; status?: string; platform_type?: string; account_mode?: string; quality_rating?: string; messaging_limit_tier?: string };
+  callback_url?: string;
+  subscription: { subscribed: boolean | null; apps: string[]; overrides?: string[]; error: string | null };
+  number?: { ok: boolean | null; error: string | null; status?: string; platform_type?: string; account_mode?: string; quality_rating?: string; messaging_limit_tier?: string;
+    webhook_configuration?: { phone_number?: string; whatsapp_business_account?: string; application?: string } };
   hits: { at: string; kind: 'verify' | 'event'; ok: boolean; note: string }[];
 };
 const WEBHOOK_URL = 'https://api.rmj.co.in/api/webhooks/whatsapp-meta';
@@ -57,9 +59,9 @@ export default function BroadcastNumberScreen() {
     finally { setSending(false); }
   };
 
-  const linkApp = async () => {
+  const linkApp = async (pointHere = false) => {
     setLinking(true);
-    try { setDiag(await api.post<Diag>('/rate-broadcast/diagnostics/subscribe-app', {})); toast.success('Linked — send START again to test'); }
+    try { setDiag(await api.post<Diag>('/rate-broadcast/diagnostics/subscribe-app', { point_here: pointHere })); toast.success(pointHere ? 'Messages now come to RMJ-One — send START again to test' : 'Re-linked — send START again to test'); }
     catch (e: any) { toast.error(e?.detail || 'Could not link'); }
     finally { setLinking(false); }
   };
@@ -161,6 +163,25 @@ export default function BroadcastNumberScreen() {
                   </View>
                 </View>
               )}
+              {(() => {
+                const wc = diag.number?.webhook_configuration || {};
+                const route = wc.phone_number || (diag.subscription.overrides || [])[0] || wc.whatsapp_business_account || wc.application;
+                if (!route) return null;
+                const here = !!diag.callback_url && route.replace(/\/$/, '') === diag.callback_url.replace(/\/$/, '');
+                return (
+                  <View style={[styles.row, { alignItems: 'flex-start' }]} testID="broadcast-route">
+                    <Ionicons name={here ? 'checkmark-circle' : 'close-circle'} size={18} color={here ? colors.onSuccess : colors.onError} />
+                    <View style={styles.flex1}>
+                      <Text style={styles.label}>Where Meta sends this number’s messages</Text>
+                      <Text style={styles.hint} numberOfLines={2}>{route}</Text>
+                      {!here && <Text style={styles.hint}>That isn’t RMJ-One, so START never reaches the app. Tap below to send them here.</Text>}
+                    </View>
+                  </View>
+                );
+              })()}
+              <Pressable onPress={() => linkApp(true)} disabled={linking} style={styles.btn} accessibilityRole="button" testID="broadcast-point-here">
+                {linking ? <ActivityIndicator color={colors.brandSecondary} /> : <Text style={styles.btnText}>Re-link and send this number’s messages to RMJ-One</Text>}
+              </Pressable>
               {diag.subscription.apps.length > 0 && (
                 <Text style={styles.hint}>Linked apps: {diag.subscription.apps.join(', ')}</Text>
               )}
@@ -168,7 +189,7 @@ export default function BroadcastNumberScreen() {
                 <Text style={styles.hint}>Quality: {diag.number.quality_rating || '—'} · Limit: {diag.number.messaging_limit_tier || '—'}{diag.number.account_mode ? ` · ${diag.number.account_mode}` : ''}</Text>
               ) : null}
               {diag.subscription.subscribed === false && (
-                <Pressable onPress={linkApp} disabled={linking} style={styles.primary} accessibilityRole="button" testID="broadcast-link-app">
+                <Pressable onPress={() => linkApp(false)} disabled={linking} style={styles.primary} accessibilityRole="button" testID="broadcast-link-app">
                   {linking ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.primaryText}>Link number to the app</Text>}
                 </Pressable>
               )}

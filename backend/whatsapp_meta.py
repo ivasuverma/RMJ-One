@@ -268,12 +268,13 @@ async def app_subscription() -> dict:
             return {'subscribed': None, 'apps': [], 'error': res.text[:300]}
         rows = res.json().get('data') or []
         apps = [r.get('whatsapp_business_api_data') or {} for r in rows]
+        overrides = [r.get('override_callback_uri') for r in rows if r.get('override_callback_uri')]
         names = [a.get('name') or a.get('id') or '?' for a in apps]
         # Subscribed to SOME app isn't enough — incoming messages go to the apps
         # listed here, so it must include ours (same app as the token/secret).
         app_id = os.environ.get('META_WA_APP_ID') or os.environ.get('META_APP_ID') or ''
         ours = (app_id in [str(a.get('id')) for a in apps]) if app_id else bool(rows)
-        return {'subscribed': ours, 'apps': names, 'error': None}
+        return {'subscribed': ours, 'apps': names, 'overrides': overrides, 'error': None}
     except Exception as e:
         return {'subscribed': None, 'apps': [], 'error': str(e)}
 
@@ -288,17 +289,37 @@ async def number_health() -> dict:
         async with httpx.AsyncClient(timeout=15) as client:
             res = await client.get(
                 f'{GRAPH_BASE}/{PHONE_NUMBER_ID}',
-                params={'fields': 'status,platform_type,code_verification_status,name_status,quality_rating,messaging_limit_tier,account_mode'},
+                params={'fields': 'status,platform_type,code_verification_status,name_status,quality_rating,messaging_limit_tier,account_mode,webhook_configuration'},
                 headers={'Authorization': f'Bearer {ACCESS_TOKEN}'},
             )
         if res.status_code != 200:
             return {'ok': None, 'error': res.text[:300]}
         d = res.json()
         ok = d.get('platform_type') == 'CLOUD_API' and d.get('status') in ('CONNECTED', None)
+        # Where Meta actually sends this number's webhooks: a phone-number or
+        # WABA-level override wins over the app's callback URL.
         return {'ok': ok, 'error': None, **{k: d.get(k) for k in ('status', 'platform_type', 'code_verification_status',
-                                                                   'name_status', 'quality_rating', 'messaging_limit_tier', 'account_mode')}}
+                                                                   'name_status', 'quality_rating', 'messaging_limit_tier', 'account_mode',
+                                                                   'webhook_configuration')}}
     except Exception as e:
         return {'ok': None, 'error': str(e)}
+
+
+async def clear_number_override() -> dict:
+    """Remove a phone-number-level webhook override so the number's messages
+    follow the WABA/app callback again."""
+    if not is_configured():
+        return {'ok': False, 'error': 'Not configured'}
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            res = await client.post(f'{GRAPH_BASE}/{PHONE_NUMBER_ID}',
+                                    json={'webhook_configuration': {'override_callback_uri': ''}},
+                                    headers={'Authorization': f'Bearer {ACCESS_TOKEN}'})
+        if res.status_code == 200:
+            return {'ok': True, 'error': None}
+        return {'ok': False, 'error': res.text[:300]}
+    except Exception as e:
+        return {'ok': False, 'error': str(e)}
 
 
 async def register_number(pin: str) -> dict:
@@ -318,15 +339,20 @@ async def register_number(pin: str) -> dict:
         return {'ok': False, 'error': str(e)}
 
 
-async def subscribe_app() -> dict:
+async def subscribe_app(callback_url: Optional[str] = None, verify_token: Optional[str] = None) -> dict:
     """Subscribe the WhatsApp Business Account to this Meta app (the one the
-    access token belongs to) so incoming messages reach our webhook."""
+    access token belongs to) so incoming messages reach our webhook. With a
+    callback_url it also sets the WABA-level override to it, replacing any
+    override that points somewhere else."""
     err = _template_ready()
     if err:
         return {'ok': False, 'error': err}
+    body = {}
+    if callback_url:
+        body = {'override_callback_uri': callback_url, 'verify_token': verify_token or WEBHOOK_VERIFY_TOKEN}
     try:
         async with httpx.AsyncClient(timeout=15) as client:
-            res = await client.post(f'{GRAPH_BASE}/{WABA_ID}/subscribed_apps',
+            res = await client.post(f'{GRAPH_BASE}/{WABA_ID}/subscribed_apps', json=body or None,
                                     headers={'Authorization': f'Bearer {ACCESS_TOKEN}'})
         if res.status_code == 200 and res.json().get('success'):
             return {'ok': True, 'error': None}

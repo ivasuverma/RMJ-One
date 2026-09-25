@@ -617,6 +617,7 @@ async def diagnostics(_: dict = Depends(require_broadcast)):
     import whatsapp_meta
     hits = await db.meta_webhook_log.find({}, {'_id': 0}).sort('at', -1).to_list(15)
     return {
+        'callback_url': WEBHOOK_CALLBACK,
         'app_secret_set': bool(whatsapp_meta.APP_SECRET),
         'verify_token_set': bool(whatsapp_meta.WEBHOOK_VERIFY_TOKEN),
         'subscription': await whatsapp_meta.app_subscription(),
@@ -642,10 +643,26 @@ async def diagnostics_register_number(body: RegisterIn, user: dict = Depends(req
     return await diagnostics(user)
 
 
+WEBHOOK_CALLBACK = f'{PUBLIC_API}/api/webhooks/whatsapp-meta'
+
+
+class RelinkIn(BaseModel):
+    point_here: bool = False   # also force this number's messages to our callback URL
+
+
 @router.post('/rate-broadcast/diagnostics/subscribe-app')
-async def diagnostics_subscribe_app(user: dict = Depends(require_broadcast)):
+async def diagnostics_subscribe_app(body: RelinkIn = RelinkIn(), user: dict = Depends(require_broadcast)):
+    """(Re)subscribe the WABA to our app. With point_here, also make our
+    callback URL the WABA-level override and clear any phone-number override,
+    so wherever the number was pointed before, its messages come here."""
     import whatsapp_meta
-    res = await whatsapp_meta.subscribe_app()
+    if body.point_here:
+        cleared = await whatsapp_meta.clear_number_override()
+        if not cleared['ok']:
+            logger.info(f"clear number override: {cleared['error']}")
+        res = await whatsapp_meta.subscribe_app(WEBHOOK_CALLBACK)
+    else:
+        res = await whatsapp_meta.subscribe_app()
     if not res['ok']:
         raise HTTPException(status_code=502, detail=f"Meta refused: {res['error']}")
     await log_audit(user, 'rate_broadcast.subscribe_app', 'settings', 'whatsapp_meta', 'waba subscribed to app')
