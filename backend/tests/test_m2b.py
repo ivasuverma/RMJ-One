@@ -285,22 +285,26 @@ class TestPayroll:
         assert rg2['locked'] is False
 
     def test_mark_paid_and_timeline(self, owner_tok, accountant_tok, period):
+        # Salary is paid through /payments (supports split cash/bank/UPI); the
+        # entry flips to paid once the recorded total reaches the net salary.
         y, m = period['year'], period['month']
+        requests.post(f"{API}/payroll/save", headers=_hdr(accountant_tok), json=period, timeout=60)
         rg = requests.get(f"{API}/payroll/{y}/{m}", headers=_hdr(accountant_tok), timeout=30).json()
-        # pick an unpaid entry
-        unpaid = [r for r in rg['rows'] if not r.get('paid')]
+        assert rg['saved'] is True
+        unpaid = [r for r in rg['rows'] if not r.get('paid') and float(r.get('net_salary') or 0) > 0]
         assert unpaid, 'no unpaid entries to test with'
         entry = unpaid[0]
-        eid = entry['id']
-        emp_id = entry['employee_id']
 
-        rp = requests.post(f"{API}/payroll/entry/{eid}/pay", headers=_hdr(accountant_tok), timeout=30)
-        assert rp.status_code == 200
-        assert rp.json().get('paid') is True
+        rp = requests.post(f"{API}/payroll/entry/{entry['id']}/payments", headers=_hdr(accountant_tok),
+                           json={'payment_mode': 'upi', 'amount': float(entry['net_salary'])}, timeout=30)
+        assert rp.status_code == 200, rp.text
+        assert rp.json()['fully_paid'] is True
 
-        # timeline event added
-        prof = requests.get(f"{API}/employees/{emp_id}", headers=_hdr(owner_tok), timeout=30).json()
-        assert any(t['type'] == 'salary' for t in prof['timeline'])
+        after = requests.get(f"{API}/payroll/{y}/{m}", headers=_hdr(accountant_tok), timeout=30).json()
+        row = next(r for r in after['rows'] if r['id'] == entry['id'])
+        assert row['paid'] is True and row['payment_mode'] == 'upi'
+        pays = requests.get(f"{API}/payroll/entry/{entry['id']}/payments", headers=_hdr(accountant_tok), timeout=30).json()
+        assert len(pays) == 1 and pays[0]['amount'] == float(entry['net_salary'])
 
     def test_pdf_returned(self, accountant_tok, period):
         y, m = period['year'], period['month']

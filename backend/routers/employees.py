@@ -291,13 +291,18 @@ async def delete_employee(emp_id: str, user: dict = Depends(require_owner), _mod
     # Delete is only for a same-day mistake — a real employee's attendance,
     # payroll, and ledger history must never be destroyable. Mark them
     # inactive (Left) instead once there's any history to preserve.
-    has_timeline = await db.timeline.find_one({'employee_id': emp_id}, {'_id': 1})
+    # 'joined' (written on create) and 'salary_revised' (written on edit) are
+    # automatic bookkeeping, not history — counting them made delete fail for
+    # every employee, even one created by mistake a minute earlier.
+    auto_events = ['joined', 'salary_revised']
+    has_timeline = await db.timeline.find_one({'employee_id': emp_id, 'type': {'$nin': auto_events}}, {'_id': 1})
     has_attendance = await db.attendance.find_one({'employee_id': emp_id}, {'_id': 1})
     has_payroll = await db.payroll_entries.find_one({'employee_id': emp_id}, {'_id': 1})
     if has_timeline or has_attendance or has_payroll:
         raise HTTPException(status_code=400, detail='This employee has attendance, payroll, or ledger history — mark them as Left instead of deleting.')
     r = await db.employees.delete_one({'id': emp_id})
     if r.deleted_count == 0: raise HTTPException(status_code=404, detail='Employee not found')
+    await db.timeline.delete_many({'employee_id': emp_id, 'type': {'$in': auto_events}})
     await log_audit(user, 'employee.delete', 'employee', emp_id, (existing or {}).get('employee_code', ''), {'name': (existing or {}).get('name')})
     return {'ok': True}
 

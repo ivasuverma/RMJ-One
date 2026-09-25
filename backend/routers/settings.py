@@ -128,7 +128,7 @@ async def get_whatsapp_settings(_: dict = Depends(get_current)):
     return {
         'enabled': doc.get('enabled', True),
         'provider': doc.get('provider') if doc.get('provider') in ('openwa', 'meta') else 'openwa',
-        'meta_alert_template': bool(META_WA_ALERT_TEMPLATE),
+        'meta_alert_template': bool(META_WA_ALERT_TEMPLATE or doc.get('meta_alert_template')),
         'repair_ready_notice': doc.get('repair_ready_notice', True),
         'repair_ready_template': doc.get('repair_ready_template') or DEFAULT_REPAIR_READY_TEMPLATE,
         'repair_received_notice': doc.get('repair_received_notice', True),
@@ -188,6 +188,27 @@ class WhatsAppMetaTestSendIn(BaseModel):
 async def get_whatsapp_meta_status(_: dict = Depends(require_owner)):
     import whatsapp_meta
     return await whatsapp_meta.get_status()
+
+
+@router.get('/settings/whatsapp-meta/alert-template')
+async def get_meta_alert_template(_: dict = Depends(require_owner)):
+    import whatsapp_meta
+    st = await whatsapp_meta.alert_template_status()
+    if st['exists']:
+        await db.settings.update_one({'id': 'whatsapp'}, {'$set': {'meta_alert_template': whatsapp_meta.ALERT_TEMPLATE_NAME}}, upsert=True)
+    return {**st, 'name': whatsapp_meta.ALERT_TEMPLATE_NAME, 'body': whatsapp_meta.ALERT_TEMPLATE_BODY,
+            'env_override': META_WA_ALERT_TEMPLATE or None}
+
+
+@router.post('/settings/whatsapp-meta/alert-template')
+async def create_meta_alert_template(user: dict = Depends(require_owner)):
+    import whatsapp_meta
+    res = await whatsapp_meta.create_alert_template()
+    if not res['ok']:
+        raise HTTPException(status_code=502, detail=f"Meta didn't accept the template: {res['error']}")
+    await db.settings.update_one({'id': 'whatsapp'}, {'$set': {'meta_alert_template': whatsapp_meta.ALERT_TEMPLATE_NAME}}, upsert=True)
+    await log_audit(user, 'settings.whatsapp_meta.alert_template', 'settings', 'whatsapp_meta', whatsapp_meta.ALERT_TEMPLATE_NAME)
+    return await get_meta_alert_template(user)
 
 
 @router.post('/settings/whatsapp-meta/test-send')

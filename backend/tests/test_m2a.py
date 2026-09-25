@@ -203,11 +203,9 @@ class TestLeaves:
         rd = requests.post(f"{API}/leaves/{lid}/decide", headers=owner_headers, json={'action': 'approve'}, timeout=30)
         assert rd.status_code == 200 and rd.json()['status'] == 'approved'
 
-        # Timeline event added on employee
-        emps = requests.get(f"{API}/employees", headers=owner_headers, timeout=30).json()
-        eid = next(e for e in emps if e['employee_code'] == 'RMJ003')['id']
-        prof = requests.get(f"{API}/employees/{eid}", headers=owner_headers, timeout=30).json()
-        assert any(t['type'] == 'leave' for t in prof['timeline'])
+        # Approval is visible to the employee (the profile no longer returns a timeline)
+        mine = requests.get(f"{API}/leaves", headers=h, timeout=30).json()
+        assert next(x for x in mine if x['id'] == lid)['status'] == 'approved'
 
 
 # ------- Dashboard reflects live -------

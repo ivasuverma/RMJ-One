@@ -2029,14 +2029,18 @@ async def _notify_whatsapp(account_id: str, title: str, body: str) -> None:
         mobile = (e or {}).get('mobile')
     if not mobile:
         return
-    if META_WA_ALERT_TEMPLATE and await whatsapp_provider() == 'meta':
+    template = META_WA_ALERT_TEMPLATE
+    if not template:
+        wa = await db.settings.find_one({'id': 'whatsapp'}, {'_id': 0, 'meta_alert_template': 1}) or {}
+        template = wa.get('meta_alert_template') or ''
+    if template and await whatsapp_provider() == 'meta':
         # Meta rejects business-initiated freeform text outside the 24-hour
         # window, which is almost every staff alert — send them through an
         # approved template with the title/body as its {{1}}/{{2}} instead.
         # Template parameters may not contain newlines or tabs.
         import whatsapp_meta
         params = [' '.join(str(v or '').split())[:900] or '-' for v in (title, body)]
-        await whatsapp_meta.send_template(mobile, META_WA_ALERT_TEMPLATE, META_WA_ALERT_TEMPLATE_LANG,
+        await whatsapp_meta.send_template(mobile, template, META_WA_ALERT_TEMPLATE_LANG,
                                           body_params=params, flow='app_notification')
         return
     text = f'{title}\n{body}' if body else title
@@ -3108,7 +3112,7 @@ from routers import (
     users, payroll, notifications, biometric, reports, assistant, samples,
     cashbook, ledger, documents, backup, record_photos, gold_loans, whatsapp_bot,
     whatsapp_meta_bot, print_settings, system_health, led_board, rate_master, statements, ledger_home, public,
-    instagram,
+    instagram, website,
 )
 
 # ---------------- Mount ----------------
@@ -3141,6 +3145,7 @@ api.include_router(statements.router)
 api.include_router(ledger_home.router)
 api.include_router(public.router)
 api.include_router(instagram.router)
+api.include_router(website.router)
 
 app.include_router(api)
 app.include_router(biometric.iclock_router)  # /iclock/* — real device protocol, no /api prefix

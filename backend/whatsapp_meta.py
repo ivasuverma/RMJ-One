@@ -170,6 +170,69 @@ async def send_template(mobile: str, template_name: str, language_code: str = 'e
     return ok
 
 
+# Staff-alert template, created from Settings > WhatsApp so the owner doesn't
+# have to build it by hand in WhatsApp Manager. Meta won't accept a body that
+# starts or ends with a variable, hence the fixed text around {{1}}/{{2}}.
+ALERT_TEMPLATE_NAME = 'rmj_staff_alert'
+ALERT_TEMPLATE_LANG = 'en'
+ALERT_TEMPLATE_BODY = 'RMJ One alert: {{1}}\nDetails: {{2}}\n\n- Ram Murti Jewellers'
+
+
+def _template_ready() -> Optional[str]:
+    if not (WABA_ID and ACCESS_TOKEN):
+        return 'Add META_WA_WABA_ID and META_WA_ACCESS_TOKEN to backend/.env first.'
+    return None
+
+
+async def alert_template_status() -> dict:
+    """{'exists': bool, 'status': 'APPROVED'|'PENDING'|'REJECTED'|..., 'reason': str|None, 'error': str|None}"""
+    err = _template_ready()
+    if err:
+        return {'exists': False, 'status': None, 'reason': None, 'error': err}
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            res = await client.get(
+                f'{GRAPH_BASE}/{WABA_ID}/message_templates',
+                params={'name': ALERT_TEMPLATE_NAME, 'fields': 'name,status,language,rejected_reason'},
+                headers={'Authorization': f'Bearer {ACCESS_TOKEN}'},
+            )
+        if res.status_code != 200:
+            return {'exists': False, 'status': None, 'reason': None, 'error': res.text[:300]}
+        rows = [t for t in (res.json().get('data') or []) if t.get('name') == ALERT_TEMPLATE_NAME]
+        if not rows:
+            return {'exists': False, 'status': None, 'reason': None, 'error': None}
+        t = rows[0]
+        reason = t.get('rejected_reason')
+        return {'exists': True, 'status': t.get('status'), 'reason': None if reason in (None, 'NONE') else reason, 'error': None}
+    except Exception as e:
+        return {'exists': False, 'status': None, 'reason': None, 'error': str(e)}
+
+
+async def create_alert_template() -> dict:
+    """Submits the staff-alert template for Meta's review (category UTILITY).
+    Approval usually takes minutes; alert_template_status() reports it."""
+    err = _template_ready()
+    if err:
+        return {'ok': False, 'error': err}
+    body = {
+        'name': ALERT_TEMPLATE_NAME, 'language': ALERT_TEMPLATE_LANG, 'category': 'UTILITY',
+        'components': [{
+            'type': 'BODY', 'text': ALERT_TEMPLATE_BODY,
+            'example': {'body_text': [['New task assigned', 'Polish the bridal set by 5 pm']]},
+        }],
+    }
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            res = await client.post(f'{GRAPH_BASE}/{WABA_ID}/message_templates', json=body,
+                                    headers={'Authorization': f'Bearer {ACCESS_TOKEN}'})
+        if res.status_code == 200:
+            return {'ok': True, 'status': res.json().get('status'), 'error': None}
+        logger.warning(f'meta template create failed: {res.status_code} {res.text[:300]}')
+        return {'ok': False, 'error': res.text[:300]}
+    except Exception as e:
+        return {'ok': False, 'error': str(e)}
+
+
 def verify_webhook_signature(raw_body: bytes, signature_header: str) -> bool:
     """Meta signs webhook deliveries with the APP SECRET (not a token you
     invent, unlike WHATSAPP_WEBHOOK_SECRET on the OpenWA side) —
