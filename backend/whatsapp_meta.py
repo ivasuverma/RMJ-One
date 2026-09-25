@@ -150,7 +150,8 @@ async def send_text(mobile: str, text: str, flow: str = '') -> bool:
     return ok
 
 
-async def send_template(mobile: str, template_name: str, language_code: str = 'en', body_params: Optional[list] = None, flow: str = '') -> bool:
+async def send_template(mobile: str, template_name: str, language_code: str = 'en', body_params: Optional[list] = None, flow: str = '',
+                        header_image_link: Optional[str] = None) -> bool:
     """Sends an already-approved message template — the only way to reach a
     customer outside the 24-hour window. body_params, if given, fill the
     template's {{1}}, {{2}}... placeholders in order, as plain text."""
@@ -160,11 +161,13 @@ async def send_template(mobile: str, template_name: str, language_code: str = 'e
         await log_whatsapp_message('meta', mobile, 'template', template_name, False, flow, error='invalid or missing mobile number')
         return False
     template: dict = {'name': template_name, 'language': {'code': language_code}}
+    components = []
+    if header_image_link:
+        components.append({'type': 'header', 'parameters': [{'type': 'image', 'image': {'link': header_image_link}}]})
     if body_params:
-        template['components'] = [{
-            'type': 'body',
-            'parameters': [{'type': 'text', 'text': str(p)} for p in body_params],
-        }]
+        components.append({'type': 'body', 'parameters': [{'type': 'text', 'text': str(p)} for p in body_params]})
+    if components:
+        template['components'] = components
     ok, msg_id, error = await _send({'messaging_product': 'whatsapp', 'to': to, 'type': 'template', 'template': template})
     await log_whatsapp_message('meta', to, 'template', template_name, ok, flow, error=error, wa_message_id=msg_id)
     return ok
@@ -184,7 +187,7 @@ def _template_ready() -> Optional[str]:
     return None
 
 
-async def alert_template_status() -> dict:
+async def template_status(name: str) -> dict:
     """{'exists': bool, 'status': 'APPROVED'|'PENDING'|'REJECTED'|..., 'reason': str|None, 'error': str|None}"""
     err = _template_ready()
     if err:
@@ -193,12 +196,12 @@ async def alert_template_status() -> dict:
         async with httpx.AsyncClient(timeout=15) as client:
             res = await client.get(
                 f'{GRAPH_BASE}/{WABA_ID}/message_templates',
-                params={'name': ALERT_TEMPLATE_NAME, 'fields': 'name,status,language,rejected_reason'},
+                params={'name': name, 'fields': 'name,status,language,rejected_reason'},
                 headers={'Authorization': f'Bearer {ACCESS_TOKEN}'},
             )
         if res.status_code != 200:
             return {'exists': False, 'status': None, 'reason': None, 'error': res.text[:300]}
-        rows = [t for t in (res.json().get('data') or []) if t.get('name') == ALERT_TEMPLATE_NAME]
+        rows = [t for t in (res.json().get('data') or []) if t.get('name') == name]
         if not rows:
             return {'exists': False, 'status': None, 'reason': None, 'error': None}
         t = rows[0]
@@ -208,19 +211,43 @@ async def alert_template_status() -> dict:
         return {'exists': False, 'status': None, 'reason': None, 'error': str(e)}
 
 
-async def create_alert_template() -> dict:
-    """Submits the staff-alert template for Meta's review (category UTILITY).
-    Approval usually takes minutes; alert_template_status() reports it."""
+async def upload_example_media(raw: bytes, mime: str = 'image/jpeg') -> dict:
+    """Meta needs a sample of a template's image header at review time, as an
+    upload handle from the Resumable Upload API (tied to the Meta app, so it
+    needs the app id). Returns {'ok', 'handle'|'error'}."""
+    app_id = os.environ.get('META_WA_APP_ID') or os.environ.get('META_APP_ID')
+    if not app_id:
+        return {'ok': False, 'error': 'Add META_WA_APP_ID (the Meta app id of the WhatsApp app) to backend/.env first.'}
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            r1 = await client.post(f'{GRAPH_BASE}/{app_id}/uploads',
+                                   params={'file_length': len(raw), 'file_type': mime, 'access_token': ACCESS_TOKEN})
+            if r1.status_code != 200:
+                return {'ok': False, 'error': r1.text[:300]}
+            r2 = await client.post(f"{GRAPH_BASE}/{r1.json()['id']}", content=raw,
+                                   headers={'Authorization': f'OAuth {ACCESS_TOKEN}', 'file_offset': '0'})
+            if r2.status_code != 200 or not r2.json().get('h'):
+                return {'ok': False, 'error': r2.text[:300]}
+            return {'ok': True, 'handle': r2.json()['h']}
+    except Exception as e:
+        return {'ok': False, 'error': str(e)}
+
+
+async def create_template(name: str, category: str, body_text: str, example: list, language: str = 'en',
+                          header_image_handle: Optional[str] = None, buttons: Optional[list] = None) -> dict:
+    """Submits a template for Meta's review: body text, plus optionally an
+    image header (sample given as an upload handle) and buttons. Approval
+    usually takes minutes; template_status() reports it."""
     err = _template_ready()
     if err:
         return {'ok': False, 'error': err}
-    body = {
-        'name': ALERT_TEMPLATE_NAME, 'language': ALERT_TEMPLATE_LANG, 'category': 'UTILITY',
-        'components': [{
-            'type': 'BODY', 'text': ALERT_TEMPLATE_BODY,
-            'example': {'body_text': [['New task assigned', 'Polish the bridal set by 5 pm']]},
-        }],
-    }
+    components: list = []
+    if header_image_handle:
+        components.append({'type': 'HEADER', 'format': 'IMAGE', 'example': {'header_handle': [header_image_handle]}})
+    components.append({'type': 'BODY', 'text': body_text, 'example': {'body_text': [example]}})
+    if buttons:
+        components.append({'type': 'BUTTONS', 'buttons': buttons})
+    body = {'name': name, 'language': language, 'category': category, 'components': components}
     try:
         async with httpx.AsyncClient(timeout=20) as client:
             res = await client.post(f'{GRAPH_BASE}/{WABA_ID}/message_templates', json=body,
@@ -231,6 +258,15 @@ async def create_alert_template() -> dict:
         return {'ok': False, 'error': res.text[:300]}
     except Exception as e:
         return {'ok': False, 'error': str(e)}
+
+
+async def alert_template_status() -> dict:
+    return await template_status(ALERT_TEMPLATE_NAME)
+
+
+async def create_alert_template() -> dict:
+    return await create_template(ALERT_TEMPLATE_NAME, 'UTILITY', ALERT_TEMPLATE_BODY,
+                                 ['New task assigned', 'Polish the bridal set by 5 pm'], ALERT_TEMPLATE_LANG)
 
 
 def verify_webhook_signature(raw_body: bytes, signature_header: str) -> bool:

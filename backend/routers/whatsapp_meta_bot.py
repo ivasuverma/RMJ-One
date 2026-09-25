@@ -47,6 +47,27 @@ async def _apply_status_updates(payload: dict) -> None:
                     logger.warning(f'whatsapp-meta status update failed: {e}')
 
 
+async def _stop_start_replies(payload: dict) -> None:
+    """Rate-update subscriptions (routers/rate_broadcast.py): START/DAILY,
+    WEEKLY, STOP, and the template's "Stop updates" quick-reply button.
+    Always honoured, whatever the chatbot or active-provider settings — an
+    opt-out must never be ignored."""
+    from routers.rate_broadcast import handle_subscribe_reply
+    import whatsapp_meta
+    for entry in payload.get('entry') or []:
+        for change in entry.get('changes') or []:
+            for msg in (change.get('value') or {}).get('messages') or []:
+                if msg.get('type') == 'text':
+                    text = (msg.get('text') or {}).get('body') or ''
+                elif msg.get('type') == 'button':  # quick-reply tap on a template
+                    text = (msg.get('button') or {}).get('text') or ''
+                else:
+                    continue
+                reply = await handle_subscribe_reply(msg.get('from') or '', text)
+                if reply:
+                    await whatsapp_meta.send_text(msg['from'], reply, flow='rate_broadcast_optin')
+
+
 async def _chatbot_replies(payload: dict) -> None:
     """Same RATE/STATUS keyword bot as routers/whatsapp_bot.py, answering on
     the Meta number instead — only while Meta is the active provider. A reply
@@ -101,6 +122,10 @@ async def receive(request: Request):
         return Response(status_code=400, content='{"error":"bad json"}', media_type='application/json')
     logger.info(f'whatsapp-meta webhook received: {payload}')
     await _apply_status_updates(payload)
+    try:
+        await _stop_start_replies(payload)
+    except Exception as e:
+        logger.warning(f'whatsapp-meta STOP/START handling failed: {e}')
     try:
         await _chatbot_replies(payload)
     except Exception as e:

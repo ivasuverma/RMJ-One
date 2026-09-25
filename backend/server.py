@@ -1484,6 +1484,8 @@ async def on_startup():
     asyncio.create_task(gold_rate_loop())
     from instagram_service import instagram_loop  # keeps the website's Instagram rail cache fresh
     asyncio.create_task(instagram_loop())
+    from routers.rate_broadcast import broadcast_loop
+    asyncio.create_task(broadcast_loop())
     from routers.led_board import led_board_auto_loop  # LED board: fetch + push at a time / at intervals
     asyncio.create_task(led_board_auto_loop())
     asyncio.create_task(_whatsapp_health_loop())
@@ -3112,7 +3114,7 @@ from routers import (
     users, payroll, notifications, biometric, reports, assistant, samples,
     cashbook, ledger, documents, backup, record_photos, gold_loans, whatsapp_bot,
     whatsapp_meta_bot, print_settings, system_health, led_board, rate_master, statements, ledger_home, public,
-    instagram, website,
+    instagram, website, rate_broadcast,
 )
 
 # ---------------- Mount ----------------
@@ -3146,6 +3148,7 @@ api.include_router(ledger_home.router)
 api.include_router(public.router)
 api.include_router(instagram.router)
 api.include_router(website.router)
+api.include_router(rate_broadcast.router)
 
 app.include_router(api)
 app.include_router(biometric.iclock_router)  # /iclock/* — real device protocol, no /api prefix
