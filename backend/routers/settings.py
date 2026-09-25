@@ -255,6 +255,8 @@ class GoldRateConfigIn(BaseModel):
     # and the unconfirmed draft fresh.
     auto_send_enabled: bool = False
     auto_send_time: str = '12:30'
+    # Also post the rate to the shop number's WhatsApp Status when it goes to the channel.
+    status_enabled: Optional[bool] = None
     # Commodity market is closed Sunday — on by default (see gold_rate.py's
     # DEFAULT_SKIP_WEEKEND_FETCH docstring; the name predates it meaning
     # just Sunday).
@@ -314,6 +316,7 @@ async def update_gold_rate_config(body: GoldRateConfigIn, user: dict = Depends(r
         'refresh_interval_min': max(15, body.refresh_interval_min),
         'refresh_start': body.refresh_start, 'refresh_end': body.refresh_end,
         'auto_send_enabled': body.auto_send_enabled,
+        **({'status_enabled': body.status_enabled} if body.status_enabled is not None else {}),
         'auto_send_time': body.auto_send_time,
         'skip_weekend_fetch': body.skip_weekend_fetch,
         'updated_at': now_utc().isoformat(),
@@ -380,8 +383,11 @@ async def send_gold_rate(body: GoldRateSendIn, user: dict = Depends(require_admi
     await log_audit(user, 'settings.gold_rate.send', 'settings', 'gold_rate_today',
                     f"{'whatsapp ' if body.whatsapp else ''}{'led' if body.led is not False else ''} {message[:50]}".strip())
     # LED board: never fails the send; the outcome is reported back so the screen can say what happened.
+    status = None
+    if body.whatsapp:
+        status = await _gr.post_rate_status_once(message, 'gold_rate_manual_status')
     led = None
     if body.led is not False:
         from routers.led_board import push_after_confirm
         led = await push_after_confirm(body.gold_rate, body.silver_rate, force=body.led is True)
-    return {'ok': True, 'whatsapp': body.whatsapp, 'led': led}
+    return {'ok': True, 'whatsapp': body.whatsapp, 'led': led, 'status': status}

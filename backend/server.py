@@ -2188,6 +2188,36 @@ async def send_whatsapp_channel(channel_id: str, text: str, flow: str = '') -> b
     return ok
 
 
+async def post_whatsapp_status(text: str, flow: str = '', background: str = '#A97B2B', font: int = 1) -> bool:
+    """Post a text Status from the shop's OpenWA number (seen by contacts who
+    have it saved). Best-effort like every other send — never raises. Needs an
+    OpenWA version with the Status API (POST /status/send-text)."""
+    ok = False
+    if OPENWA_BASE_URL and OPENWA_API_KEY:
+        try:
+            async with _httpx.AsyncClient(timeout=20) as client:
+                headers = {'Authorization': f'Bearer {OPENWA_API_KEY}'}
+                payload = {'text': text[:700], 'backgroundColor': background, 'font': font}
+                for attempt in range(2):
+                    session_id = await _resolve_openwa_session_id(client)
+                    if not session_id:
+                        break
+                    res = await client.post(f'{OPENWA_BASE_URL}/api/sessions/{session_id}/status/send-text', headers=headers, json=payload)
+                    if 200 <= res.status_code < 300:
+                        ok = True
+                        break
+                    if res.status_code in (400, 404) and attempt == 0:
+                        global _openwa_session_id_cache
+                        _openwa_session_id_cache = None  # stale session id — refresh once and retry
+                        continue
+                    logger.warning(f'openwa status post failed: {res.status_code} {res.text[:200]}')
+                    break
+        except Exception as e:
+            logger.warning(f'openwa status post failed: {e}')
+    await log_whatsapp_message('openwa', 'status@broadcast', 'status', text, ok, flow)
+    return ok
+
+
 async def send_whatsapp_raw(chat_id: str, text: str, flow: str = '') -> bool:
     """Reply to an already-known OpenWA chat id verbatim (e.g. a `@c.us` id
     lifted straight from an inbound webhook's `data.from`) — no phone-number

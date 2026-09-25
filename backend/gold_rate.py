@@ -178,7 +178,36 @@ async def get_config() -> dict:
         'auto_send_enabled': doc.get('auto_send_enabled', DEFAULT_AUTO_SEND_ENABLED),
         'auto_send_time': doc.get('auto_send_time') or DEFAULT_AUTO_SEND_TIME,
         'skip_weekend_fetch': doc.get('skip_weekend_fetch', DEFAULT_SKIP_WEEKEND_FETCH),
+        'status_enabled': doc.get('status_enabled', True),
     }
+
+
+def _status_text(message: str) -> str:
+    """The channel message minus lines that only make sense in a channel
+    (e.g. 'Click bell icon above for notification')."""
+    lines = [l for l in (message or '').splitlines() if 'bell' not in l.lower() and 'follow' not in l.lower()]
+    return '\n'.join(lines).strip()
+
+
+async def post_rate_status_once(message: str, flow: str) -> "bool | None":
+    """Post today's rate to the shop number's WhatsApp Status alongside the
+    channel post — at most once a day (a re-send or a second confirm doesn't
+    repost). Returns None when switched off or already posted today."""
+    from server import post_whatsapp_status
+    cfg = await get_config()
+    if not cfg.get('status_enabled', True):
+        return None
+    today = today_ist()
+    state = await db.settings.find_one({'id': 'gold_rate_status'}, {'_id': 0}) or {}
+    if state.get('date') == today and state.get('ok'):
+        return None
+    text = _status_text(message)
+    if not text:
+        return None
+    ok = await post_whatsapp_status(text, flow=flow)
+    await db.settings.update_one({'id': 'gold_rate_status'}, {'$set': {
+        'id': 'gold_rate_status', 'date': today, 'ok': ok, 'at': now_utc().isoformat()}}, upsert=True)
+    return ok
 
 
 async def default_message(gold_rate: int, silver_rate: int, fetched_at: str = None) -> str:
@@ -338,6 +367,7 @@ async def _maybe_auto_send(doc: dict, gold_rate: int, silver_rate: int, cfg: dic
         doc['confirmed'] = True
         doc['sent_at'] = now_utc().isoformat()
         logger.info('gold rate auto-sent to channel')
+        await post_rate_status_once(doc['message'], 'gold_rate_auto_status')
         from routers.led_board import push_after_confirm
         await push_after_confirm(gold_rate, silver_rate, 'auto_send')
     else:
