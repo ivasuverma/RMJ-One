@@ -81,6 +81,8 @@ export default function WorkScreen() {
   const toggleHidden = (key: string) => persistHidden(hidden.includes(key) ? hidden.filter((k) => k !== key) : [...hidden, key]);
 
   const [loanSummary, setLoanSummary] = useState<{ active: number; overdue: number; total_outstanding: number; total_interest_pending: number } | null>(null);
+  const isOwner = user?.role === 'owner';
+  const [broadcast, setBroadcast] = useState<{ customers: number; daily: number; sending: boolean; approved: boolean; weekly: boolean; dailyOn: boolean } | null>(null);
   const [siteSummary, setSiteSummary] = useState<{ sections: number; hidden: number; pieces: number; edited: number } | null>(null);
   const [goldRateSummary, setGoldRateSummary] = useState<{ gold_rate: number | null; silver_rate: number | null; sent: boolean; sent_at: string | null; error: boolean } | null>(null);
   const load = useCallback(async () => {
@@ -89,6 +91,10 @@ export default function WorkScreen() {
     finally { setLoading(false); setRefreshing(false); }
     if (hasModule('documents')) api.get<{ pending_count: number }>('/documents/summary').then(setDocSummary).catch(() => {});
     if (hasModule('gold_loans')) api.get<{ active: number; overdue: number; total_outstanding: number; total_interest_pending: number }>('/gold-loans/dashboard').then(setLoanSummary).catch(() => {});
+    if (isOwner) api.get<any>('/rate-broadcast/overview').then((o) => setBroadcast({
+      customers: o.counts.weekly, daily: o.counts.daily, sending: o.sending.length > 0,
+      approved: o.template?.status === 'APPROVED', weekly: !!o.settings.weekly_enabled, dailyOn: !!o.settings.daily_enabled,
+    })).catch(() => {});
     if (canEditWebsite) api.get<any>('/website/content').then((c) => setSiteSummary({
       sections: c.sections.filter((x: any) => x.visible).length,
       hidden: c.page.filter((x: any) => !x.visible).length,
@@ -99,7 +105,7 @@ export default function WorkScreen() {
       gold_rate: g.today?.gold_rate ?? null, silver_rate: g.today?.silver_rate ?? null,
       sent: !!g.today?.sent_at, sent_at: g.today?.sent_at ?? null, error: !!g.today?.error,
     })).catch(() => {});
-  }, [hasModule, canEditWebsite]);
+  }, [hasModule, canEditWebsite, isOwner]);
   useFocusEffect(useCallback(() => { setLoading(true); load(); }, [load]));
 
   const go = (route: string) => router.push(route as any);
@@ -196,6 +202,17 @@ export default function WorkScreen() {
     ) : placeholder,
   });
 
+  if (isOwner) rows.push({
+    key: 'rate_broadcast', title: 'Rate Broadcast', icon: 'megaphone-outline', route: '/settings/rate-broadcast',
+    segs: broadcast ? [
+      { text: `${broadcast.customers.toLocaleString('en-IN')} customers` }, { text: ' · ' },
+      { text: `${broadcast.daily.toLocaleString('en-IN')} daily subscribers` },
+    ] : placeholder,
+    segs2: !broadcast ? placeholder
+      : broadcast.sending ? [{ text: 'Sending now', tone: 'good' }]
+      : !broadcast.approved ? [{ text: 'Template not approved yet', tone: 'hot' }]
+      : [{ text: [broadcast.weekly && 'Weekly on', broadcast.dailyOn && 'Daily on'].filter(Boolean).join(' · ') || 'Schedule off' }],
+  });
   if (canEditWebsite) rows.push({
     key: 'website', title: 'Website', icon: 'globe-outline', route: '/website',
     segs: siteSummary ? [
