@@ -1,0 +1,31 @@
+name: Site check (from outside)
+# One-off reachability check of the public addresses, from GitHub's servers
+# (i.e. how a customer on the internet sees them). One step per address so the
+# failing one shows by name.
+on:
+  push:
+    branches: [site-check]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: rmj.co.in (website)
+        if: always()
+        run: curl -sS -o /dev/null -w '%{http_code} %{time_total}s\n' --max-time 20 -f https://rmj.co.in/
+      - name: app.rmj.co.in (RMJ One app)
+        if: always()
+        run: curl -sS -o /dev/null -w '%{http_code} %{time_total}s\n' --max-time 20 -f https://app.rmj.co.in/
+      - name: api.rmj.co.in/api/ (server health)
+        if: always()
+        run: curl -sS --max-time 20 -f https://api.rmj.co.in/api/
+      - name: api public rates (website rate box)
+        if: always()
+        run: curl -sS --max-time 20 -f https://api.rmj.co.in/api/public/rates | head -c 300
+      - name: api public website content
+        if: always()
+        run: curl -sS -o /dev/null -w '%{http_code}\n' --max-time 20 -f https://api.rmj.co.in/api/public/website/content
+      - name: website pieces + instagram
+        if: always()
+        run: |
+          curl -sS -o /dev/null -w 'pieces %{http_code}\n' --max-time 20 -f https://api.rmj.co.in/api/public/website/pieces
+          curl -sS -o /dev/null -w 'instagram %{http_code}\n' --max-time 20 https://api.rmj.co.in/api/public/instagram
