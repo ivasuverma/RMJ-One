@@ -218,6 +218,7 @@ async def system_health(user=Depends(require_owner), _mod=Depends(require_module
     # call writes to — a rough "when did this last actually break" signal.
     health_state = await db.settings.find_one({'id': 'system_health_state'}, {'_id': 0}) or {}
     sys_backup = await db.settings.find_one({'id': 'system_backup'}, {'_id': 0}) or {}
+    atlas = await db.settings.find_one({'id': 'atlas_mirror'}, {'_id': 0}) or {}
     led_cfg = await db.settings.find_one({'id': 'led_board'}, {'_id': 0}) or {}
     led_st = await db.settings.find_one({'id': 'led_board_status'}, {'_id': 0}) or {}
 
@@ -255,6 +256,7 @@ async def system_health(user=Depends(require_owner), _mod=Depends(require_module
             **local_backups,
             'drive_last_sent_at': sys_backup.get('last_sent_at'), 'drive_last_sent': sys_backup.get('last_sent'),
             'drive_last_check_at': sys_backup.get('last_check_at'), 'drive_error': sys_backup.get('last_error'),
+            'atlas_last_at': atlas.get('last_at'), 'atlas_error': atlas.get('last_error'),
         },
         'led_board': {
             'enabled': bool(led_cfg.get('enabled')), 'driver': led_cfg.get('driver') or 'simulator', 'host': led_cfg.get('host') or None,
