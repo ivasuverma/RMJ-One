@@ -26,6 +26,14 @@ the local copy is deleted after 1 day (the "Kept locally" count above is only th
 fallback for when Drive is not reachable). Log:
 `D:\RMJ-One\mongodb\logackup.log`. Code lives on GitHub.
 
+**Online copy (MongoDB Atlas).** Every night after 3 AM the backend
+(`backend/atlas_mirror.py`) copies the whole database to the free Atlas cluster
+(Cluster0, Mumbai), replacing the previous night's copy — one ready-to-run copy,
+not a history. Turned on by `ATLAS_MIRROR_URL=mongodb+srv://…` in `backend/.env`;
+status and "Copy online now" are in Settings › Backup. If the server is lost:
+point `MONGO_URL` at the Atlas address (same database name) on any PC and start
+the backend.
+
 **Restore:** stop the backend, download the `.gz` from Drive (or use the local file), then
 `restore-nightly.ps1 -Archive <file>`. Documents/photos need no restore step — they are
 already in Drive and the app fetches them on demand.

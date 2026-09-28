@@ -4,6 +4,8 @@ from pydantic import BaseModel
 from typing import Optional
 import gzip
 import json
+import asyncio
+import atlas_mirror
 import backup_service
 import drive_service
 from server import db, now_utc, require_owner, log_audit
@@ -33,7 +35,42 @@ async def backup_status(_: dict = Depends(require_owner)):
         'last_error': cfg.get('last_error'),
         'retention': backup_service.RETENTION,
         'recent': recent,
+        'atlas_mirror': await _atlas_status(),
     }
+
+
+async def _atlas_status() -> dict:
+    st = await db.settings.find_one({'id': 'atlas_mirror'}, {'_id': 0}) or {}
+    return {
+        'configured': bool(atlas_mirror.MIRROR_URL),
+        'running': _atlas_running[0],
+        'last_at': st.get('last_at'), 'last_documents': st.get('last_documents'),
+        'last_bytes': st.get('last_bytes'), 'last_error': st.get('last_error'),
+        'last_attempt_at': st.get('last_attempt_at'),
+    }
+
+
+_atlas_running = [False]
+
+
+@router.post('/backup/atlas-mirror/run')
+async def atlas_mirror_run(user: dict = Depends(require_owner)):
+    """Copy the database to MongoDB Atlas now (normally runs by itself each night).
+    Runs in the background — it can take a few minutes on the free cluster."""
+    if not atlas_mirror.MIRROR_URL:
+        raise HTTPException(status_code=400, detail='The online copy is not set up yet (ATLAS_MIRROR_URL in backend/.env)')
+    if _atlas_running[0]:
+        return {'started': False, 'running': True}
+
+    async def _go():
+        _atlas_running[0] = True
+        try:
+            await atlas_mirror.mirror_and_record()
+        finally:
+            _atlas_running[0] = False
+    asyncio.create_task(_go())
+    await log_audit(user, 'backup.atlas_mirror.run', 'backup', 'atlas', '')
+    return {'started': True, 'running': True}
 
 
 @router.post('/backup/run')

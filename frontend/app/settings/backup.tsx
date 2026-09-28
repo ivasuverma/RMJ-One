@@ -14,6 +14,7 @@ type BackupFile = { id: string; name: string; size: number; created: string };
 type Status = {
   auto_enabled: boolean; drive_connected: boolean; last_at?: string | null; last_file?: string | null;
   last_size?: number | null; last_total?: number | null; last_error?: string | null; retention: number; recent: BackupFile[];
+  atlas_mirror?: { configured: boolean; running: boolean; last_at?: string | null; last_documents?: number | null; last_bytes?: number | null; last_error?: string | null };
 };
 
 const fmtSize = (b?: number | null) => {
@@ -30,6 +31,14 @@ export default function BackupScreen() {
   const [status, setStatus] = useState<Status | null>(null);
   const [busy, setBusy] = useState(false);
   const [restoringId, setRestoringId] = useState<string | null>(null);
+  // Online copy in MongoDB Atlas (backend/atlas_mirror.py) — runs by itself each night.
+  const copyOnline = async () => {
+    try {
+      await api.post('/backup/atlas-mirror/run', {});
+      toast.success('Copying to the online database — this takes a few minutes');
+      setTimeout(() => { load(); }, 1500);
+    } catch (e: any) { toast.error(e?.detail || 'Could not start the copy'); }
+  };
 
   const load = useCallback(async () => {
     try { setStatus(await api.get<Status>('/backup/status')); } catch { /* owner-only */ }
@@ -117,6 +126,34 @@ export default function BackupScreen() {
               </View>
               <Switch value={status.auto_enabled} onValueChange={toggleAuto} trackColor={{ true: colors.brandPrimary, false: colors.border }} thumbColor={colors.surface} {...({ activeThumbColor: colors.surface } as object)} testID="backup-auto" />
             </View>
+
+            {status.atlas_mirror && (
+              <>
+                <Text style={styles.sectionLabel}>Online database copy (MongoDB Atlas)</Text>
+                <View style={styles.card} testID="backup-atlas">
+                  <View style={[styles.dot, { backgroundColor: status.atlas_mirror.last_error ? colors.onError : status.atlas_mirror.last_at ? colors.onSuccess : colors.mutedText }]} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.cardTitle}>
+                      {!status.atlas_mirror.configured ? 'Not set up' : status.atlas_mirror.running ? 'Copying now…' : status.atlas_mirror.last_at ? 'Last copied' : 'Not copied yet'}
+                    </Text>
+                    <Text style={styles.cardSub}>
+                      {!status.atlas_mirror.configured
+                        ? 'Add ATLAS_MIRROR_URL to backend/.env on the server to turn it on.'
+                        : status.atlas_mirror.last_at
+                          ? `${istDisplayDateTime(status.atlas_mirror.last_at)} · ${status.atlas_mirror.last_documents ?? '—'} records · ${fmtSize(status.atlas_mirror.last_bytes ?? 0)}`
+                          : 'Runs by itself every night after 3 AM.'}
+                    </Text>
+                    <Text style={styles.cardSub}>{"A complete copy of last night's data, replaced each night. The dated backups in Drive stay the history."}</Text>
+                    {status.atlas_mirror.last_error ? <Text style={styles.err}>Last error: {status.atlas_mirror.last_error}</Text> : null}
+                  </View>
+                </View>
+                {status.atlas_mirror.configured && (
+                  <Pressable onPress={copyOnline} disabled={status.atlas_mirror.running} style={[styles.runBtn, status.atlas_mirror.running && { opacity: 0.5 }]} testID="backup-atlas-run">
+                    <Ionicons name="server-outline" size={18} color={colors.onBrandPrimary} /><Text style={styles.runText}>Copy online now</Text>
+                  </Pressable>
+                )}
+              </>
+            )}
 
             {status.recent.length > 0 && (
               <>
