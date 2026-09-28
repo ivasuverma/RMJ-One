@@ -32,17 +32,25 @@ const STORE_PHONE = '+919781800888';
 const WHATSAPP_CHANNEL_URL = 'https://whatsapp.com/channel/0029VbBHBNPEKyZB1820vR3n';
 const SOURCE_URL = 'https://ayodhyabullion.com';
 // Ayodhya Bullion's own app, which the rates come from. A web page can't start an
-// app that hasn't published a link for itself, so: iPhone → its App Store page
-// (tap Open there); Android → ask Android to open the app by package, falling back
+// app that hasn't published a link for itself, and this one (com.aybullion.com, by
+// Innovative X) hasn't — no universal link on ayodhyabullion.com, no known URL
+// scheme. So: iPhone → a Shortcut the phone's owner sets up once ("Open App →
+// Ayodhya Bullion", named AYODHYA_SHORTCUT), which the button runs — the setup steps
+// show on first tap; Android → ask Android to open the app by package, falling back
 // to its Play Store page; a computer → the website.
 const AYODHYA_IOS = 'https://apps.apple.com/app/id6777993751';
+const AYODHYA_SHORTCUT = 'Ayodhya';
+const AYODHYA_SHORTCUT_KEY = 'rmj.rates.ayodhya_shortcut';
+const runAyodhyaShortcut = () => Linking.openURL(`shortcuts://run-shortcut?name=${encodeURIComponent(AYODHYA_SHORTCUT)}`);
+function isIOS() {
+  const ua = typeof navigator !== 'undefined' ? navigator.userAgent || '' : '';
+  return Platform.OS === 'ios' || /iPhone|iPad|iPod/i.test(ua) || (/Macintosh/i.test(ua) && typeof document !== 'undefined' && 'ontouchend' in document);
+}
 const AYODHYA_ANDROID_PKG = 'com.aybullion.com';
 const AYODHYA_PLAY = `https://play.google.com/store/apps/details?id=${AYODHYA_ANDROID_PKG}`;
 function openAyodhyaApp() {
   const ua = typeof navigator !== 'undefined' ? navigator.userAgent || '' : '';
-  const ios = Platform.OS === 'ios' || /iPhone|iPad|iPod/i.test(ua) || (/Macintosh/i.test(ua) && typeof document !== 'undefined' && 'ontouchend' in document);
   const android = Platform.OS === 'android' || /Android/i.test(ua);
-  if (ios) return Linking.openURL(AYODHYA_IOS);
   if (android) {
     if (Platform.OS === 'web') {
       window.location.href = `intent:#Intent;action=android.intent.action.MAIN;category=android.intent.category.LAUNCHER;package=${AYODHYA_ANDROID_PKG};S.browser_fallback_url=${encodeURIComponent(AYODHYA_PLAY)};end`;
@@ -94,6 +102,18 @@ export default function PublicRatesScreen() {
   const toast = useToast();
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [editing, setEditing] = useState<Contact[] | null>(null);
+  // iPhone: open the Ayodhya app through the one-time Shortcut (see AYODHYA_SHORTCUT).
+  const [shortcutSetup, setShortcutSetup] = useState(false);
+  const onAyodhya = async () => {
+    if (!isIOS()) return openAyodhyaApp();
+    if (await storage.getItem<boolean>(AYODHYA_SHORTCUT_KEY, false)) return runAyodhyaShortcut();
+    setShortcutSetup(true);
+  };
+  const shortcutReady = () => {
+    storage.setItem(AYODHYA_SHORTCUT_KEY, true);
+    setShortcutSetup(false);
+    runAyodhyaShortcut();
+  };
   const [savingContacts, setSavingContacts] = useState(false);
   useEffect(() => {
     if (user) api.get<{ items: Contact[] }>('/rate-master/contacts').then((r) => setContacts(r.items)).catch(() => {});
@@ -167,7 +187,7 @@ export default function PublicRatesScreen() {
             ) : <View style={{ width: 40 }} />}
             <Text style={styles.compactTitle}>Live Rates</Text>
             {/* Opens the Ayodhya Bullion app (the source of these rates) — see openAyodhyaApp. */}
-            <Pressable onPress={openAyodhyaApp} style={styles.backBtn} testID="rates-source-btn" hitSlop={12}
+            <Pressable onPress={onAyodhya} onLongPress={() => setShortcutSetup(true)} style={styles.backBtn} testID="rates-source-btn" hitSlop={12}
               accessibilityRole="link" accessibilityLabel="Open the Ayodhya Bullion app">
               <Ionicons name="open-outline" size={19} color={colors.onSurface} />
             </Pressable>
@@ -398,6 +418,30 @@ export default function PublicRatesScreen() {
         </>)}
       </ScrollView>
 
+      <Sheet visible={shortcutSetup} onClose={() => setShortcutSetup(false)} title="Open the Ayodhya app" testID="rates-shortcut-sheet">
+        <Text style={styles.sheetHint}>
+          iPhone only lets a website open another app through a Shortcut. Set it up once on this phone:
+        </Text>
+        {[
+          'Open the Shortcuts app and tap + (top right).',
+          'Tap Add Action, search for "Open App" and choose it.',
+          'Tap "App" and pick Ayodhya Bullion.',
+          `Tap the name at the top, rename it to ${AYODHYA_SHORTCUT} (exactly), then tap Done.`,
+        ].map((t, i) => (
+          <View key={i} style={styles.stepRow}>
+            <Text style={styles.stepNum}>{i + 1}</Text>
+            <Text style={styles.stepText}>{t}</Text>
+          </View>
+        ))}
+        <Text style={[styles.sheetHint, { marginTop: spacing.sm }]}>
+          After that this button opens the app straight away. The first time, iPhone asks to allow it — tap Allow / Always Allow. Press and hold the button to see these steps again.
+        </Text>
+        <View style={{ gap: spacing.sm, marginTop: spacing.sm }}>
+          <Button label="Done — open the app" onPress={shortcutReady} testID="rates-shortcut-ready" />
+          <Button label="Open in App Store instead" variant="secondary" onPress={() => { setShortcutSetup(false); Linking.openURL(AYODHYA_IOS); }} testID="rates-shortcut-store" />
+        </View>
+      </Sheet>
+
       <Sheet visible={!!editing} onClose={() => setEditing(null)} title="Quick call buttons" testID="rates-call-sheet">
         <Text style={styles.sheetHint}>Up to three people staff can call in one tap from Live Rates. Leave a row empty to hide its button.</Text>
         {editing?.map((c, i) => (
@@ -510,6 +554,12 @@ const makeStyles = (colors: ThemeColors, compact: boolean) => {
   callBtnText: { color: colors.onBrandPrimary, fontSize: 12, fontWeight: '800', flexShrink: 1, textAlign: 'center' },
   callEmpty: { borderStyle: 'dashed' },
   sheetHint: { color: colors.onSurfaceSecondary, fontSize: 13, lineHeight: 18, marginBottom: spacing.md },
+  stepRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: 8, alignItems: 'flex-start' },
+  stepNum: {
+    width: 22, height: 22, borderRadius: 11, overflow: 'hidden', textAlign: 'center', lineHeight: 22,
+    backgroundColor: colors.brandPrimary, color: colors.onBrandPrimary, fontSize: 12, fontWeight: '800',
+  },
+  stepText: { flex: 1, color: colors.onSurface, fontSize: 14, lineHeight: 20 },
   sheetRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.sm },
   disclaimerBox: { paddingTop: spacing.lg, borderTopWidth: 1, borderTopColor: colors.divider },
   disclaimerText: { color: colors.mutedText, fontSize: 11, lineHeight: 16, textAlign: 'center' },
