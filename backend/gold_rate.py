@@ -131,6 +131,8 @@ async def fetch_rates_raw() -> dict:
         'GOLD_RATE_XAU_LABEL': GOLD_RATE_XAU_LABEL,
         'GOLD_RATE_XAG_LABEL': GOLD_RATE_XAG_LABEL,
         'GOLD_RATE_USDINR_LABEL': GOLD_RATE_USDINR_LABEL,
+        'GOLD_RATE_GOLD_GST_LABEL': os.environ.get('GOLD_RATE_GOLD_GST_LABEL', 'GOLD WITH GST'),
+        'GOLD_RATE_SILVER_GST_LABEL': os.environ.get('GOLD_RATE_SILVER_GST_LABEL', 'SILVER WITH GST'),
     }
     try:
         proc = await asyncio.create_subprocess_exec(
@@ -247,6 +249,9 @@ def _extract_extra(result: dict) -> dict:
         return row.get('row_text') if row else None
     return {
         'xau_usd': rate_of('xau'), 'xag_usd': rate_of('xag'), 'usd_inr': rate_of('usd_inr'),
+        # The source's own GST-inclusive rows, as shown there (no margin) — staff reference only.
+        'gold_gst_rate': rate_of('gold_gst'), 'silver_gst_rate': rate_of('silver_gst'),
+        'gold_gst_row_text': text_of('gold_gst'), 'silver_gst_row_text': text_of('silver_gst'),
         'gold_row_text': text_of('gold'), 'silver_row_text': text_of('silver'),
         'xau_row_text': text_of('xau'), 'xag_row_text': text_of('xag'),
     }

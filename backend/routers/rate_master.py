@@ -23,7 +23,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from server import db, now_utc, log_audit, require_owner, require_staff_or_module, get_current
+from server import db, now_utc, log_audit, require_owner, require_admin, require_staff_or_module, get_current
 
 router = APIRouter()
 
@@ -165,15 +165,19 @@ async def rate_master_live(_: dict = Depends(get_current)):
     live = await db.settings.find_one({'id': 'gold_rate_live'}, {'_id': 0}) or {}
     sell, buy = live.get('gold_rate'), live.get('gold_buy_rate')
     items = [i for i in await get_items() if i['base'] == 'gold' and i['key'] != 'gold_24k' and i['enabled']]
+    # The source's GST-inclusive bullion rows (see fetch_gold_rate.js) — shown to staff only.
+    gst = {'gold': live.get('gold_gst_rate'), 'silver': live.get('silver_gst_rate')}
+    gst = gst if (gst['gold'] or gst['silver']) else None
     if not sell:
-        return {'items': []}
+        return {'items': [], 'gst': gst}
     at_sell = {r['key']: r for r in compute(items, int(sell), 0)}
     # Buyback: the purity's own buyback % of the live 24K rate when set, else the
     # 24K buyback rate x the sell percentage.
     fallback = {r['key']: r['rate'] for r in compute(items, int(buy), 0)} if buy else {}
     return {'items': [{'key': i['key'], 'label': i['label'], 'percent': i['percent'], 'buy_percent': i['buy_percent'],
                        'sell': at_sell[i['key']]['rate'],
-                       'buy': at_sell[i['key']]['buy_rate'] if i['buy_percent'] else fallback.get(i['key'])} for i in items]}
+                       'buy': at_sell[i['key']]['buy_rate'] if i['buy_percent'] else fallback.get(i['key'])} for i in items],
+            'gst': gst}
 
 
 @router.post('/rate-master/preview')
@@ -190,6 +194,54 @@ async def rate_master_preview(body: RateMasterIn, _: dict = Depends(require_staf
               'percent': i.percent if math.isfinite(i.percent) else 0, 'enabled': i.enabled,
               'buy_percent': _buy_pct(i.buy_percent) if i.key in BUY_KEYS else None} for i in body.items if i.key in KEYS]
     return {'computed': compute(items, int(gold), int(silver)), 'base': {'gold': int(gold), 'silver': int(silver)}}
+
+
+# Quick-call buttons under the in-app Live Rates screen: three people (a bullion
+# dealer, a karigar ...) staff can ring in one tap while quoting a rate. The
+# owner/admin sets them from that screen; every signed-in user sees them.
+CONTACT_SLOTS = 3
+
+
+async def get_contacts() -> list:
+    doc = await db.settings.find_one({'id': 'rate_contacts'}, {'_id': 0}) or {}
+    saved = list(doc.get('items') or [])[:CONTACT_SLOTS]
+    saved += [{}] * (CONTACT_SLOTS - len(saved))
+    return [{'name': (c.get('name') or '').strip()[:30], 'phone': (c.get('phone') or '').strip()[:20]} for c in saved]
+
+
+class RateContactIn(BaseModel):
+    name: str = ''
+    phone: str = ''
+
+
+class RateContactsIn(BaseModel):
+    items: list[RateContactIn]
+
+
+@router.get('/rate-master/contacts')
+async def rate_contacts_get(_: dict = Depends(get_current)):
+    return {'items': await get_contacts()}
+
+
+@router.put('/rate-master/contacts')
+async def rate_contacts_put(body: RateContactsIn, user: dict = Depends(require_admin)):
+    if len(body.items) > CONTACT_SLOTS:
+        raise HTTPException(status_code=400, detail=f'At most {CONTACT_SLOTS} people')
+    items = []
+    for i, c in enumerate(body.items, 1):
+        name, phone = c.name.strip()[:30], c.phone.strip()
+        digits = ''.join(ch for ch in phone if ch.isdigit())
+        if phone and (not all(ch.isdigit() or ch in '+ -()' for ch in phone) or not 6 <= len(digits) <= 15):
+            raise HTTPException(status_code=400, detail=f'Person {i}: enter a valid phone number')
+        if name and not phone:
+            raise HTTPException(status_code=400, detail=f'Person {i}: add a phone number for {name}')
+        items.append({'name': name, 'phone': phone[:20]})
+    await db.settings.update_one({'id': 'rate_contacts'}, {'$set': {
+        'id': 'rate_contacts', 'items': items, 'updated_at': now_utc().isoformat(),
+    }}, upsert=True)
+    await log_audit(user, 'settings.rate_contacts.update', 'settings', 'rate_contacts',
+                    '; '.join(c['name'] or c['phone'] for c in items if c['phone'])[:200])
+    return {'items': await get_contacts()}
 
 
 @router.put('/rate-master')

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Image, Platform, Linking } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Image, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '@/src/api/client';
@@ -10,6 +10,8 @@ import { useAuth } from '@/src/auth/AuthContext';
 import { useRouter } from 'expo-router';
 import { RatesInstallHint } from '@/src/components/RatesInstallHint';
 import { StickyHeader, useScrolled } from '@/src/components/ui/StickyHeader';
+import { storage } from '@/src/utils/storage';
+import { Sheet, Input, Button, useToast } from '@/src/components/ui';
 
 type PublicRates = {
   store_name: string;
@@ -23,10 +25,12 @@ type PublicRates = {
   usd_inr: number | null;
 };
 type Purity = { key: string; label: string; percent: number; sell: number | null; buy: number | null };
+type Contact = { name: string; phone: string };
 
 const REFRESH_MS = 60000;
 const STORE_PHONE = '+919781800888';
 const WHATSAPP_CHANNEL_URL = 'https://whatsapp.com/channel/0029VbBHBNPEKyZB1820vR3n';
+const SOURCE_URL = 'https://ayodhyabullion.com';
 
 const fmtINR = (n: number | null) => (n == null ? '—' : `₹${Math.round(n).toLocaleString('en-IN')}`);
 const fmtUSD = (n: number | null) => (n == null ? '—' : `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
@@ -52,7 +56,41 @@ export default function PublicRatesScreen() {
   const [error, setError] = useState('');
   const [fetchingNew, setFetchingNew] = useState(false);
   const [purities, setPurities] = useState<Purity[]>([]);
+  const shownPurities = purities.filter((p) => p.sell);
+  const [puritiesOpen, setPuritiesOpen] = useState(false);
+  useEffect(() => { storage.getItem<boolean>('rmj.rates.purities_open', false).then((v) => setPuritiesOpen(!!v)); }, []);
+  const togglePurities = () => setPuritiesOpen((v) => { storage.setItem('rmj.rates.purities_open', !v); return !v; });
+  // The source's own GST-inclusive bullion rates (staff only) — see fetch_gold_rate.js.
+  const [gst, setGst] = useState<{ gold: number | null; silver: number | null } | null>(null);
+  // How far our gold sell rate is below the source's rate with GST:
+  // (rate with GST − our gold rate) / rate with GST × 100.
+  const gstDiff = gst?.gold && data?.gold_sell ? ((gst.gold - data.gold_sell) / gst.gold) * 100 : null;
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Quick-call buttons (staff only): three people the owner/admin sets up here.
+  const toast = useToast();
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [editing, setEditing] = useState<Contact[] | null>(null);
+  const [savingContacts, setSavingContacts] = useState(false);
+  useEffect(() => {
+    if (user) api.get<{ items: Contact[] }>('/rate-master/contacts').then((r) => setContacts(r.items)).catch(() => {});
+  }, [user]);
+  const saveContacts = async () => {
+    if (!editing) return;
+    setSavingContacts(true);
+    try {
+      const r = await api.put<{ items: Contact[] }>('/rate-master/contacts', { items: editing });
+      setContacts(r.items);
+      setEditing(null);
+      toast.success('Call buttons saved');
+    } catch (e: any) {
+      toast.error(e?.detail || 'Could not save');
+    } finally {
+      setSavingContacts(false);
+    }
+  };
+  const openEditor = () => setEditing([0, 1, 2].map((i) => ({ name: contacts[i]?.name || '', phone: contacts[i]?.phone || '' })));
+  const callSlots = contacts.map((c, i) => ({ ...c, i })).filter((c) => c.phone || isAdmin);
 
   const load = useCallback(async () => {
     try {
@@ -61,7 +99,8 @@ export default function PublicRatesScreen() {
       setError('');
       // Signed-in staff also see 22K / 18K / 14K (Rate Master percentages of
       // the same live rate); the public page stays 24K + silver only.
-      if (user) api.get<{ items: Purity[] }>('/rate-master/live').then((r) => setPurities(r.items)).catch(() => {});
+      if (user) api.get<{ items: Purity[]; gst?: { gold: number | null; silver: number | null } | null }>('/rate-master/live')
+        .then((r) => { setPurities(r.items); setGst(r.gst || null); }).catch(() => {});
     } catch (e: any) {
       setError(e?.detail || 'Could not load rates right now');
     } finally {
@@ -104,7 +143,11 @@ export default function PublicRatesScreen() {
               </Pressable>
             ) : <View style={{ width: 40 }} />}
             <Text style={styles.compactTitle}>Live Rates</Text>
-            <View style={{ width: 40 }} />
+            {/* The source board the rates are scraped from, to check it at a glance. */}
+            <Pressable onPress={() => Linking.openURL(SOURCE_URL)} style={styles.backBtn} testID="rates-source-btn" hitSlop={12}
+              accessibilityRole="link" accessibilityLabel="Open ayodhyabullion.com">
+              <Ionicons name="globe-outline" size={20} color={colors.onSurface} />
+            </Pressable>
           </View>
         </StickyHeader>
       )}
@@ -145,6 +188,29 @@ export default function PublicRatesScreen() {
             </View>
 
             <View style={styles.metalRow}>
+              {/* Rate with GST — the source's "Including GST" bullion rows, as they show them. */}
+              {user && gst && (gst.gold || gst.silver) ? (
+                <View style={styles.metalCard} testID="rate-gst">
+                  <View style={styles.gstHead}>
+                    <Text style={[styles.metalLabel, { marginBottom: 0 }]}>RATE WITH GST</Text>
+                    {gstDiff !== null && (
+                      <Text style={styles.gstDiff} testID="rate-gst-diff">Cash+GST = {gstDiff.toFixed(2)}%</Text>
+                    )}
+                  </View>
+                  <View style={styles.buySellRow}>
+                    <View style={styles.buySellCol}>
+                      <Text style={styles.buySellLabel}>Gold · 99.50%</Text>
+                      <Text style={styles.buySellValue}>{gst.gold ? fmtINR(gst.gold) : '—'}</Text>
+                    </View>
+                    <View style={styles.buySellDivider} />
+                    <View style={styles.buySellCol}>
+                      <Text style={styles.buySellLabel}>Silver · 99.99%</Text>
+                      <Text style={styles.buySellValue}>{gst.silver ? fmtINR(gst.silver) : '—'}</Text>
+                    </View>
+                  </View>
+                </View>
+              ) : null}
+
               <View style={styles.metalCard} testID="rate-gold">
                 <Text style={styles.metalLabel}>GOLD <Text style={styles.metalSub}>· 995 Purity / 10g</Text></Text>
                 <View style={styles.buySellRow}>
@@ -158,28 +224,34 @@ export default function PublicRatesScreen() {
                     <Text style={styles.buySellValue}>{fmtINR(data?.gold_buy ?? null)}</Text>
                   </View>
                 </View>
-              </View>
 
-              {purities.some((p) => p.sell) && (
-                <View style={styles.metalCard} testID="rate-purities">
-                  <Text style={styles.metalLabel}>GOLD PURITIES <Text style={styles.metalSub}>· per 10g</Text></Text>
-                  <View style={styles.purityHead}>
-                    <Text style={[styles.buySellLabel, { flex: 1.2, textAlign: 'left' }]}>Purity</Text>
-                    <Text style={[styles.buySellLabel, styles.purityCol]}>Sell</Text>
-                    <Text style={[styles.buySellLabel, styles.purityCol]}>Buyback</Text>
-                  </View>
-                  {purities.filter((p) => p.sell).map((p) => (
-                    <View key={p.key} style={styles.purityRow} testID={`rate-${p.key}`}>
-                      <View style={{ flex: 1.2 }}>
-                        <Text style={styles.purityName}>{p.label.replace(/^Gold\s+/i, '')}</Text>
-                        <Text style={styles.purityPct}>{p.percent}%</Text>
+                {/* 22K / 18K / 14K (Rate Master) — folded into the gold card, opened on tap. */}
+                {shownPurities.length > 0 && (
+                  <>
+                    <Pressable onPress={togglePurities} style={styles.purityToggle} hitSlop={6} testID="rate-purities-toggle"
+                      accessibilityRole="button" accessibilityState={{ expanded: puritiesOpen }}>
+                      <Text style={styles.purityToggleText}>{shownPurities.map((p) => p.label.replace(/^Gold\s+/i, '')).join(' · ')}</Text>
+                      <Ionicons name={puritiesOpen ? 'chevron-up' : 'chevron-down'} size={16} color={colors.brandSecondary} />
+                    </Pressable>
+                    {puritiesOpen && (
+                      <View testID="rate-purities">
+                        <View style={styles.purityHead}>
+                          <Text style={[styles.purityHeadText, { flex: 1.1, textAlign: 'left' }]}>Purity</Text>
+                          <Text style={[styles.purityHeadText, styles.purityCol]}>Sell</Text>
+                          <Text style={[styles.purityHeadText, styles.purityCol]}>Buyback</Text>
+                        </View>
+                        {shownPurities.map((p, i) => (
+                          <View key={p.key} style={[styles.purityRow, i === shownPurities.length - 1 && { borderBottomWidth: 0 }]} testID={`rate-${p.key}`}>
+                            <Text style={[styles.purityName, { flex: 1.1 }]}>{p.label.replace(/^Gold\s+/i, '')} <Text style={styles.purityPct}>{p.percent}%</Text></Text>
+                            <Text style={[styles.purityVal, styles.purityCol, styles.sellValue]}>{fmtINR(p.sell)}</Text>
+                            <Text style={[styles.purityVal, styles.purityCol]}>{fmtINR(p.buy)}</Text>
+                          </View>
+                        ))}
                       </View>
-                      <Text style={[styles.purityVal, styles.purityCol, styles.sellValue]}>{fmtINR(p.sell)}</Text>
-                      <Text style={[styles.purityVal, styles.purityCol]}>{fmtINR(p.buy)}</Text>
-                    </View>
-                  ))}
-                </View>
-              )}
+                    )}
+                  </>
+                )}
+              </View>
 
               <View style={styles.metalCard} testID="rate-silver">
                 <Text style={styles.metalLabel}>SILVER <Text style={styles.metalSub}>· 999 Purity / 1kg</Text></Text>
@@ -217,6 +289,37 @@ export default function PublicRatesScreen() {
             <Text style={styles.spotDisclaimer}>
               XAU/XAG are international spot benchmarks in USD — informational only, not the local ₹ rate above.
             </Text>
+
+            {internal && callSlots.length > 0 && (
+              <View testID="rates-quick-call">
+                <View style={styles.callHead}>
+                  <Text style={styles.callHeadText}>QUICK CALL</Text>
+                  {isAdmin && (
+                    <Pressable onPress={openEditor} hitSlop={10} style={styles.refreshBtn} testID="rates-call-edit"
+                      accessibilityRole="button" accessibilityLabel="Edit call buttons">
+                      <Ionicons name="create-outline" size={14} color={colors.brandSecondary} />
+                      <Text style={[styles.refreshText, { color: colors.brandSecondary }]}>Edit</Text>
+                    </Pressable>
+                  )}
+                </View>
+                <View style={styles.contactRow}>
+                  {callSlots.map((c) => (c.phone ? (
+                    <Pressable key={c.i} onPress={() => Linking.openURL(`tel:${c.phone.replace(/[^\d+]/g, '')}`)}
+                      style={({ pressed }) => [styles.callBtn, pressed && { opacity: 0.7 }]} testID={`rates-call-${c.i}`}
+                      accessibilityRole="button" accessibilityLabel={`Call ${c.name || c.phone}`}>
+                      <Ionicons name="call" size={17} color={colors.onBrandPrimary} />
+                      <Text style={styles.callBtnText} numberOfLines={2}>{c.name || c.phone}</Text>
+                    </Pressable>
+                  ) : (
+                    <Pressable key={c.i} onPress={openEditor} style={[styles.contactBtn, styles.callEmpty]} testID={`rates-call-add-${c.i}`}
+                      accessibilityRole="button" accessibilityLabel="Add a person to call">
+                      <Ionicons name="add" size={17} color={colors.mutedText} />
+                      <Text style={[styles.contactBtnText, { color: colors.mutedText }]}>Add</Text>
+                    </Pressable>
+                  )))}
+                </View>
+              </View>
+            )}
 
           </>
         )}
@@ -262,6 +365,25 @@ export default function PublicRatesScreen() {
         </View>
         </>)}
       </ScrollView>
+
+      <Sheet visible={!!editing} onClose={() => setEditing(null)} title="Quick call buttons" testID="rates-call-sheet">
+        <Text style={styles.sheetHint}>Up to three people staff can call in one tap from Live Rates. Leave a row empty to hide its button.</Text>
+        {editing?.map((c, i) => (
+          <View key={i} style={styles.sheetRow}>
+            <View style={{ flex: 1 }}>
+              <Input label={`Person ${i + 1}`} value={c.name} placeholder="Name" maxLength={30} testID={`rates-call-name-${i}`}
+                onChangeText={(v) => setEditing((e) => e && e.map((x, j) => (j === i ? { ...x, name: v } : x)))} />
+            </View>
+            <View style={{ flex: 1.2 }}>
+              <Input label="Phone" value={c.phone} placeholder="+91 98765 43210" keyboardType="phone-pad" maxLength={20} testID={`rates-call-phone-${i}`}
+                onChangeText={(v) => setEditing((e) => e && e.map((x, j) => (j === i ? { ...x, phone: v } : x)))} />
+            </View>
+          </View>
+        ))}
+        <View style={{ marginTop: spacing.md }}>
+          <Button label="Save" onPress={saveContacts} loading={savingContacts} testID="rates-call-save" />
+        </View>
+      </Sheet>
     </SafeAreaView>
   );
 }
@@ -297,13 +419,21 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   buySellValue: {
     color: colors.onSurface, fontFamily: fonts.display, fontSize: 24, fontWeight: '800', letterSpacing: -0.4,
   },
+  gstHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm, marginBottom: spacing.md },
+  gstDiff: { color: colors.onSurfaceSecondary, fontSize: 12.5, fontWeight: '800' },
   sellValue: { color: colors.brandPrimary },
-  purityHead: { flexDirection: 'row', alignItems: 'center', paddingBottom: 6, borderBottomWidth: 1, borderBottomColor: colors.divider },
-  purityRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.divider },
+  purityToggle: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    marginTop: spacing.md, paddingTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.divider,
+  },
+  purityToggleText: { color: colors.brandSecondary, fontSize: 13, fontWeight: '700', letterSpacing: 0.3 },
+  purityHead: { flexDirection: 'row', alignItems: 'center', paddingTop: spacing.sm, paddingBottom: 4, borderBottomWidth: 1, borderBottomColor: colors.divider },
+  purityHeadText: { color: colors.mutedText, fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.4 },
+  purityRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 7, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.divider },
   purityCol: { flex: 1, textAlign: 'center' },
-  purityName: { color: colors.onSurface, fontSize: 16, fontWeight: '800' },
-  purityPct: { color: colors.mutedText, fontSize: 11, marginTop: 1 },
-  purityVal: { color: colors.onSurface, fontFamily: fonts.display, fontSize: 18, fontWeight: '800', letterSpacing: -0.3 },
+  purityName: { color: colors.onSurface, fontSize: 14, fontWeight: '800' },
+  purityPct: { color: colors.mutedText, fontSize: 11, fontWeight: '600' },
+  purityVal: { color: colors.onSurface, fontFamily: fonts.display, fontSize: 15, fontWeight: '800', letterSpacing: -0.2 },
   backBtn: {
     width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border,
     alignItems: 'center', justifyContent: 'center',
@@ -334,6 +464,16 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     paddingVertical: 12, paddingHorizontal: 8,
   },
   contactBtnText: { color: colors.onSurface, fontSize: 12.5, fontWeight: '700', textAlign: 'center' },
+  callHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.sm },
+  callHeadText: { color: colors.brandSecondary, fontSize: typography.label.fontSize, fontWeight: typography.label.fontWeight, letterSpacing: typography.label.letterSpacing },
+  callBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: 10, paddingHorizontal: 8, minHeight: 50,
+  },
+  callBtnText: { color: colors.onBrandPrimary, fontSize: 13, fontWeight: '800', flexShrink: 1, textAlign: 'center' },
+  callEmpty: { borderStyle: 'dashed' },
+  sheetHint: { color: colors.onSurfaceSecondary, fontSize: 13, lineHeight: 18, marginBottom: spacing.md },
+  sheetRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.sm },
   disclaimerBox: { paddingTop: spacing.lg, borderTopWidth: 1, borderTopColor: colors.divider },
   disclaimerText: { color: colors.mutedText, fontSize: 11, lineHeight: 16, textAlign: 'center' },
 });
