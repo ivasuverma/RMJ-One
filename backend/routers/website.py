@@ -177,7 +177,7 @@ def _img(key, label, path):
 # Built-in sections, in page order. `hideable`: can be switched off on the site.
 PAGE = [
     {'key': 'hero', 'label': "Today's rate", 'hideable': False, 'fields': [
-        _f('hero_fine', 'Fine print under the rates', 'Rates are indicative and exclude making charges, wastage and GST — they can change through the day, and the rate applicable to any transaction is the one in effect at billing, not the rate shown here. Buyback is offered only on items purchased from us, subject to purity verification.', True),
+        _f('hero_fine', 'Disclaimer — first paragraph', 'Rates are indicative and exclude making charges, wastage and GST — they can change through the day, and the rate applicable to any transaction is the one in effect at billing, not the rate shown here. Buyback is offered only on items purchased from us, subject to purity verification.', True),
     ], 'images': []},
     {'key': 'showcase', 'label': 'Showcase', 'hideable': True, 'fields': [
         _f('showcase_title', 'Heading', 'Three generations of craftsmanship.'),
