@@ -148,6 +148,21 @@ export default function PublicRatesScreen() {
             </View>
 
             <View style={styles.metalRow}>
+              {/* Rate with GST — the source's "Including GST" bullion rows, as they show them. */}
+              {user && gst && (gst.gold || gst.silver) ? (
+                <View style={styles.gstBar} testID="rate-gst">
+                  <Text style={styles.gstLabel}>RATE WITH GST</Text>
+                  <View style={styles.gstRow}>
+                    <Text style={styles.gstSub}>Gold <Text style={styles.gstPct}>· 99.50%</Text></Text>
+                    <Text style={styles.gstValue}>{gst.gold ? fmtINR(gst.gold) : '—'}</Text>
+                  </View>
+                  <View style={styles.gstRow}>
+                    <Text style={styles.gstSub}>Silver <Text style={styles.gstPct}>· 99.99%</Text></Text>
+                    <Text style={styles.gstValue}>{gst.silver ? fmtINR(gst.silver) : '—'}</Text>
+                  </View>
+                </View>
+              ) : null}
+
               <View style={styles.metalCard} testID="rate-gold">
                 <Text style={styles.metalLabel}>GOLD <Text style={styles.metalSub}>· 995 Purity / 10g</Text></Text>
                 <View style={styles.buySellRow}>
@@ -162,24 +177,6 @@ export default function PublicRatesScreen() {
                   </View>
                 </View>
               </View>
-
-              {/* Rate with GST — the source's "Including GST" bullion rows, as they show them. */}
-              {user && gst && (gst.gold || gst.silver) ? (
-                <View style={styles.gstBar} testID="rate-gst">
-                  <Text style={styles.gstLabel}>RATE WITH GST</Text>
-                  <View style={styles.gstRow}>
-                    <View style={styles.gstCol}>
-                      <Text style={styles.gstSub}>Gold · 99.50%</Text>
-                      <Text style={styles.gstValue}>{gst.gold ? fmtINR(gst.gold) : '—'}</Text>
-                    </View>
-                    <View style={styles.buySellDivider} />
-                    <View style={styles.gstCol}>
-                      <Text style={styles.gstSub}>Silver · 99.99%</Text>
-                      <Text style={styles.gstValue}>{gst.silver ? fmtINR(gst.silver) : '—'}</Text>
-                    </View>
-                  </View>
-                </View>
-              ) : null}
 
               {purities.some((p) => p.sell) && (
                 <View style={styles.metalCard} testID="rate-purities">
@@ -316,10 +313,10 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     paddingHorizontal: spacing.lg, paddingVertical: spacing.sm + 2, gap: 6,
   },
   gstLabel: { color: colors.brandSecondary, fontSize: 11, fontWeight: '800', letterSpacing: 0.8 },
-  gstRow: { flexDirection: 'row', alignItems: 'center' },
-  gstCol: { flex: 1, alignItems: 'center' },
-  gstSub: { color: colors.mutedText, fontSize: 11.5, fontWeight: '600' },
-  gstValue: { color: colors.onSurface, fontSize: 17, fontWeight: '800', marginTop: 1 },
+  gstRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },
+  gstSub: { color: colors.onSurfaceSecondary, fontSize: 14, fontWeight: '700' },
+  gstPct: { color: colors.mutedText, fontSize: 12, fontWeight: '600' },
+  gstValue: { color: colors.onSurface, fontSize: 18, fontWeight: '800', textAlign: 'right' },
   buySellRow: { flexDirection: 'row', alignItems: 'center' },
   buySellCol: { flex: 1, alignItems: 'center' },
   buySellDivider: { width: 1, height: 44, backgroundColor: colors.divider },
