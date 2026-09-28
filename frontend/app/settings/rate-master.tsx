@@ -90,7 +90,7 @@ export default function RateMasterScreen() {
   const refetchNow = async () => {
     setRefetching(true);
     try {
-      await api.post('/settings/gold-rate/refetch');
+      await api.post('/settings/gold-rate/refetch', undefined, true, { timeoutMs: 90000 });   // the scrape takes up to ~45s
       toast.success('Refetched');
       await load();
     } catch (e: any) { toast.error(e?.detail || 'Refetch failed'); }

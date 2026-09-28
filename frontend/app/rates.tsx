@@ -32,6 +32,8 @@ const STORE_PHONE = '+919781800888';
 const WHATSAPP_CHANNEL_URL = 'https://whatsapp.com/channel/0029VbBHBNPEKyZB1820vR3n';
 const SOURCE_URL = 'https://ayodhyabullion.com';
 
+// wa.me wants the number in international form, digits only; a bare 10-digit number is Indian.
+const waNumber = (phone: string) => { const d = phone.replace(/\D/g, '').replace(/^0+/, ''); return d.length === 10 ? `91${d}` : d; };
 const fmtINR = (n: number | null) => (n == null ? '—' : `₹${Math.round(n).toLocaleString('en-IN')}`);
 const fmtUSD = (n: number | null) => (n == null ? '—' : `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
 
@@ -44,11 +46,11 @@ const fmtUSD = (n: number | null) => (n == null ? '—' : `$${n.toLocaleString('
 export default function PublicRatesScreen() {
   const { scrolled, onScroll } = useScrolled();
   const { colors } = useTheme();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
   const { user } = useAuth();
   const router = useRouter();
   // Signed in (staff/owner opening it from the dashboard) vs. a customer on the public link.
   const internal = !!user;
+  const styles = useMemo(() => makeStyles(colors, internal), [colors, internal]);
   const isAdmin = user?.role === 'owner' || user?.role === 'admin';
 
   const [data, setData] = useState<PublicRates | null>(null);
@@ -120,7 +122,7 @@ export default function PublicRatesScreen() {
   const fetchNewRate = async () => {
     setFetchingNew(true);
     try {
-      await api.post('/settings/gold-rate/refetch');
+      await api.post('/settings/gold-rate/refetch', undefined, true, { timeoutMs: 90000 });   // the scrape takes up to ~45s
       await load();
     } catch (e: any) {
       setError(e?.detail || 'Could not fetch a new rate');
@@ -304,12 +306,21 @@ export default function PublicRatesScreen() {
                 </View>
                 <View style={styles.contactRow}>
                   {callSlots.map((c) => (c.phone ? (
-                    <Pressable key={c.i} onPress={() => Linking.openURL(`tel:${c.phone.replace(/[^\d+]/g, '')}`)}
-                      style={({ pressed }) => [styles.callBtn, pressed && { opacity: 0.7 }]} testID={`rates-call-${c.i}`}
-                      accessibilityRole="button" accessibilityLabel={`Call ${c.name || c.phone}`}>
-                      <Ionicons name="call" size={17} color={colors.onBrandPrimary} />
-                      <Text style={styles.callBtnText} numberOfLines={2}>{c.name || c.phone}</Text>
-                    </Pressable>
+                    // One pill per person: phone call on the left, their WhatsApp chat on the right
+                    // (WhatsApp has no link that starts a call itself — the chat is one tap from it).
+                    <View key={c.i} style={styles.callPill}>
+                      <Pressable onPress={() => Linking.openURL(`tel:${c.phone.replace(/[^\d+]/g, '')}`)}
+                        style={({ pressed }) => [styles.callBtn, pressed && { opacity: 0.7 }]} testID={`rates-call-${c.i}`}
+                        accessibilityRole="button" accessibilityLabel={`Call ${c.name || c.phone}`}>
+                        <Ionicons name="call" size={13} color={colors.onBrandPrimary} />
+                        <Text style={styles.callBtnText} numberOfLines={2}>{c.name || c.phone}</Text>
+                      </Pressable>
+                      <Pressable onPress={() => Linking.openURL(`https://wa.me/${waNumber(c.phone)}`)}
+                        style={({ pressed }) => [styles.callWa, pressed && { opacity: 0.7 }]} testID={`rates-wa-${c.i}`}
+                        accessibilityRole="button" accessibilityLabel={`WhatsApp ${c.name || c.phone}`}>
+                        <Ionicons name="logo-whatsapp" size={17} color="#FFFFFF" />
+                      </Pressable>
+                    </View>
                   ) : (
                     <Pressable key={c.i} onPress={openEditor} style={[styles.contactBtn, styles.callEmpty]} testID={`rates-call-add-${c.i}`}
                       accessibilityRole="button" accessibilityLabel="Add a person to call">
@@ -388,7 +399,10 @@ export default function PublicRatesScreen() {
   );
 }
 
-const makeStyles = (colors: ThemeColors) => StyleSheet.create({
+// `compact`: the staff view — smaller type and padding so the whole board fits on one phone screen.
+const makeStyles = (colors: ThemeColors, compact: boolean) => {
+  const c = <T,>(full: T, small: T): T => (compact ? small : full);
+  return StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   scroll: { padding: spacing.xl, paddingBottom: spacing.xxxl, maxWidth: 560, width: '100%', alignSelf: 'center' },
   header: { alignItems: 'center', marginBottom: spacing.xxl },
@@ -402,38 +416,38 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
 
   loaderBox: { paddingVertical: spacing.xxxl, alignItems: 'center' },
 
-  metalRow: { gap: spacing.md, marginBottom: spacing.md },
+  metalRow: { gap: c(spacing.md, spacing.sm), marginBottom: c(spacing.md, spacing.sm) },
   metalCard: {
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border,
-    padding: spacing.lg,
+    padding: c(spacing.lg, spacing.md),
   },
   metalLabel: {
     color: colors.brandSecondary, fontSize: typography.label.fontSize, fontWeight: typography.label.fontWeight,
-    letterSpacing: typography.label.letterSpacing, marginBottom: spacing.md,
+    letterSpacing: typography.label.letterSpacing, marginBottom: c(spacing.md, spacing.sm),
   },
   metalSub: { color: colors.mutedText, fontWeight: '600' },
   buySellRow: { flexDirection: 'row', alignItems: 'center' },
   buySellCol: { flex: 1, alignItems: 'center' },
-  buySellDivider: { width: 1, height: 44, backgroundColor: colors.divider },
-  buySellLabel: { color: colors.onSurfaceSecondary, fontSize: typography.caption.fontSize, fontWeight: '600', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.4 },
+  buySellDivider: { width: 1, height: c(44, 36), backgroundColor: colors.divider },
+  buySellLabel: { color: colors.onSurfaceSecondary, fontSize: c(typography.caption.fontSize, 11), fontWeight: '600', marginBottom: c(4, 2), textTransform: 'uppercase', letterSpacing: 0.4 },
   buySellValue: {
-    color: colors.onSurface, fontFamily: fonts.display, fontSize: 24, fontWeight: '800', letterSpacing: -0.4,
+    color: colors.onSurface, fontFamily: fonts.display, fontSize: c(24, 19), fontWeight: '800', letterSpacing: -0.4,
   },
-  gstHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm, marginBottom: spacing.md },
-  gstDiff: { color: colors.onSurfaceSecondary, fontSize: 12.5, fontWeight: '800' },
+  gstHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm, marginBottom: c(spacing.md, spacing.sm) },
+  gstDiff: { color: colors.onSurfaceSecondary, fontSize: c(12.5, 11.5), fontWeight: '800' },
   sellValue: { color: colors.brandPrimary },
   purityToggle: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    marginTop: spacing.md, paddingTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.divider,
+    marginTop: c(spacing.md, spacing.sm), paddingTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.divider,
   },
-  purityToggleText: { color: colors.brandSecondary, fontSize: 13, fontWeight: '700', letterSpacing: 0.3 },
+  purityToggleText: { color: colors.brandSecondary, fontSize: c(13, 12), fontWeight: '700', letterSpacing: 0.3 },
   purityHead: { flexDirection: 'row', alignItems: 'center', paddingTop: spacing.sm, paddingBottom: 4, borderBottomWidth: 1, borderBottomColor: colors.divider },
   purityHeadText: { color: colors.mutedText, fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.4 },
-  purityRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 7, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.divider },
+  purityRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: c(7, 5), borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.divider },
   purityCol: { flex: 1, textAlign: 'center' },
-  purityName: { color: colors.onSurface, fontSize: 14, fontWeight: '800' },
+  purityName: { color: colors.onSurface, fontSize: c(14, 13), fontWeight: '800' },
   purityPct: { color: colors.mutedText, fontSize: 11, fontWeight: '600' },
-  purityVal: { color: colors.onSurface, fontFamily: fonts.display, fontSize: 15, fontWeight: '800', letterSpacing: -0.2 },
+  purityVal: { color: colors.onSurface, fontFamily: fonts.display, fontSize: c(15, 14), fontWeight: '800', letterSpacing: -0.2 },
   backBtn: {
     width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border,
     alignItems: 'center', justifyContent: 'center',
@@ -441,18 +455,18 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   compactHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: spacing.lg },
   compactTitle: { flex: 1, textAlign: 'center', color: colors.onSurface, fontFamily: fonts.display, fontSize: 20, fontWeight: '700' },
 
-  spotRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.lg },
+  spotRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: c(spacing.lg, spacing.sm) },
   spotTile: {
     flex: 1, backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
-    paddingVertical: spacing.md, paddingHorizontal: spacing.sm, alignItems: 'center',
+    paddingVertical: c(spacing.md, spacing.sm), paddingHorizontal: spacing.sm, alignItems: 'center',
   },
-  spotLabel: { color: colors.onSurfaceTertiary, fontSize: 11, fontWeight: '700', letterSpacing: 0.4 },
-  spotValue: { color: colors.onSurface, fontFamily: fonts.display, fontSize: 16, fontWeight: '700', marginTop: 4 },
-  spotUnit: { color: colors.mutedText, fontSize: 11, marginTop: 2 },
-  spotDisclaimer: { color: colors.mutedText, fontSize: 11, textAlign: 'center', marginBottom: spacing.lg, lineHeight: 14 },
+  spotLabel: { color: colors.onSurfaceTertiary, fontSize: c(11, 10), fontWeight: '700', letterSpacing: 0.4 },
+  spotValue: { color: colors.onSurface, fontFamily: fonts.display, fontSize: c(16, 14), fontWeight: '700', marginTop: c(4, 2) },
+  spotUnit: { color: colors.mutedText, fontSize: c(11, 10), marginTop: c(2, 0) },
+  spotDisclaimer: { color: colors.mutedText, fontSize: c(11, 10), textAlign: 'center', marginBottom: c(spacing.lg, spacing.md), lineHeight: 14 },
 
-  statusRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', columnGap: spacing.md, rowGap: 6, marginBottom: spacing.md },
-  updatedText: { color: colors.onSurface, fontSize: 14, fontWeight: '800' },
+  statusRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', columnGap: spacing.md, rowGap: 6, marginBottom: c(spacing.md, spacing.sm) },
+  updatedText: { color: colors.onSurface, fontSize: c(14, 13), fontWeight: '800' },
   errorText: { color: colors.onError, fontSize: typography.caption.fontSize },
   refreshBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   refreshText: { color: colors.onSurfaceSecondary, fontSize: typography.caption.fontSize, fontWeight: '600' },
@@ -466,14 +480,17 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   contactBtnText: { color: colors.onSurface, fontSize: 12.5, fontWeight: '700', textAlign: 'center' },
   callHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.sm },
   callHeadText: { color: colors.brandSecondary, fontSize: typography.label.fontSize, fontWeight: typography.label.fontWeight, letterSpacing: typography.label.letterSpacing },
+  callPill: { flex: 1, flexDirection: 'row', borderRadius: radius.md, overflow: 'hidden', minHeight: 44 },
   callBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: 10, paddingHorizontal: 8, minHeight: 50,
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4,
+    backgroundColor: colors.brandPrimary, paddingVertical: 6, paddingHorizontal: 5,
   },
-  callBtnText: { color: colors.onBrandPrimary, fontSize: 13, fontWeight: '800', flexShrink: 1, textAlign: 'center' },
+  callWa: { width: 30, alignItems: 'center', justifyContent: 'center', backgroundColor: '#25D366' },
+  callBtnText: { color: colors.onBrandPrimary, fontSize: 12, fontWeight: '800', flexShrink: 1, textAlign: 'center' },
   callEmpty: { borderStyle: 'dashed' },
   sheetHint: { color: colors.onSurfaceSecondary, fontSize: 13, lineHeight: 18, marginBottom: spacing.md },
   sheetRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.sm },
   disclaimerBox: { paddingTop: spacing.lg, borderTopWidth: 1, borderTopColor: colors.divider },
   disclaimerText: { color: colors.mutedText, fontSize: 11, lineHeight: 16, textAlign: 'center' },
-});
+  });
+};
