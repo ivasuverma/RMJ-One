@@ -159,14 +159,16 @@ export default function PublicRatesScreen() {
               {/* Rate with GST — the source's "Including GST" bullion rows, as they show them. */}
               {user && gst && (gst.gold || gst.silver) ? (
                 <View style={styles.metalCard} testID="rate-gst">
-                  <Text style={styles.metalLabel}>RATE WITH GST</Text>
-                  <View style={[styles.buySellRow, { alignItems: 'flex-start' }]}>
+                  <View style={styles.gstHead}>
+                    <Text style={[styles.metalLabel, { marginBottom: 0 }]}>RATE WITH GST</Text>
+                    {gstDiff !== null && (
+                      <Text style={styles.gstDiff} testID="rate-gst-diff">Cash+GST = {gstDiff.toFixed(2)}%</Text>
+                    )}
+                  </View>
+                  <View style={styles.buySellRow}>
                     <View style={styles.buySellCol}>
                       <Text style={styles.buySellLabel}>Gold · 99.50%</Text>
                       <Text style={styles.buySellValue}>{gst.gold ? fmtINR(gst.gold) : '—'}</Text>
-                      {gstDiff !== null && (
-                        <Text style={styles.gstDiff} testID="rate-gst-diff">Difference {gstDiff > 0 ? '+' : ''}{gstDiff.toFixed(2)}%</Text>
-                      )}
                     </View>
                     <View style={styles.buySellDivider} />
                     <View style={styles.buySellCol}>
@@ -335,7 +337,8 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   buySellValue: {
     color: colors.onSurface, fontFamily: fonts.display, fontSize: 24, fontWeight: '800', letterSpacing: -0.4,
   },
-  gstDiff: { color: colors.mutedText, fontSize: 12, fontWeight: '700', marginTop: 4 },
+  gstHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm, marginBottom: spacing.md },
+  gstDiff: { color: colors.onSurfaceSecondary, fontSize: 12.5, fontWeight: '800' },
   sellValue: { color: colors.brandPrimary },
   purityToggle: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
