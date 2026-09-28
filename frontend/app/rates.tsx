@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Image, Platform, Linking } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Image, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '@/src/api/client';
@@ -11,6 +11,7 @@ import { useRouter } from 'expo-router';
 import { RatesInstallHint } from '@/src/components/RatesInstallHint';
 import { StickyHeader, useScrolled } from '@/src/components/ui/StickyHeader';
 import { storage } from '@/src/utils/storage';
+import { Sheet, Input, Button, useToast } from '@/src/components/ui';
 
 type PublicRates = {
   store_name: string;
@@ -24,10 +25,12 @@ type PublicRates = {
   usd_inr: number | null;
 };
 type Purity = { key: string; label: string; percent: number; sell: number | null; buy: number | null };
+type Contact = { name: string; phone: string };
 
 const REFRESH_MS = 60000;
 const STORE_PHONE = '+919781800888';
 const WHATSAPP_CHANNEL_URL = 'https://whatsapp.com/channel/0029VbBHBNPEKyZB1820vR3n';
+const SOURCE_URL = 'https://ayodhyabullion.com';
 
 const fmtINR = (n: number | null) => (n == null ? '—' : `₹${Math.round(n).toLocaleString('en-IN')}`);
 const fmtUSD = (n: number | null) => (n == null ? '—' : `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
@@ -63,6 +66,31 @@ export default function PublicRatesScreen() {
   // (rate with GST − our gold rate) / rate with GST × 100.
   const gstDiff = gst?.gold && data?.gold_sell ? ((gst.gold - data.gold_sell) / gst.gold) * 100 : null;
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Quick-call buttons (staff only): three people the owner/admin sets up here.
+  const toast = useToast();
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [editing, setEditing] = useState<Contact[] | null>(null);
+  const [savingContacts, setSavingContacts] = useState(false);
+  useEffect(() => {
+    if (user) api.get<{ items: Contact[] }>('/rate-master/contacts').then((r) => setContacts(r.items)).catch(() => {});
+  }, [user]);
+  const saveContacts = async () => {
+    if (!editing) return;
+    setSavingContacts(true);
+    try {
+      const r = await api.put<{ items: Contact[] }>('/rate-master/contacts', { items: editing });
+      setContacts(r.items);
+      setEditing(null);
+      toast.success('Call buttons saved');
+    } catch (e: any) {
+      toast.error(e?.detail || 'Could not save');
+    } finally {
+      setSavingContacts(false);
+    }
+  };
+  const openEditor = () => setEditing([0, 1, 2].map((i) => ({ name: contacts[i]?.name || '', phone: contacts[i]?.phone || '' })));
+  const callSlots = contacts.map((c, i) => ({ ...c, i })).filter((c) => c.phone || isAdmin);
 
   const load = useCallback(async () => {
     try {
@@ -115,7 +143,11 @@ export default function PublicRatesScreen() {
               </Pressable>
             ) : <View style={{ width: 40 }} />}
             <Text style={styles.compactTitle}>Live Rates</Text>
-            <View style={{ width: 40 }} />
+            {/* The source board the rates are scraped from, to check it at a glance. */}
+            <Pressable onPress={() => Linking.openURL(SOURCE_URL)} style={styles.backBtn} testID="rates-source-btn" hitSlop={12}
+              accessibilityRole="link" accessibilityLabel="Open ayodhyabullion.com">
+              <Ionicons name="globe-outline" size={20} color={colors.onSurface} />
+            </Pressable>
           </View>
         </StickyHeader>
       )}
@@ -258,6 +290,37 @@ export default function PublicRatesScreen() {
               XAU/XAG are international spot benchmarks in USD — informational only, not the local ₹ rate above.
             </Text>
 
+            {internal && callSlots.length > 0 && (
+              <View testID="rates-quick-call">
+                <View style={styles.callHead}>
+                  <Text style={styles.callHeadText}>QUICK CALL</Text>
+                  {isAdmin && (
+                    <Pressable onPress={openEditor} hitSlop={10} style={styles.refreshBtn} testID="rates-call-edit"
+                      accessibilityRole="button" accessibilityLabel="Edit call buttons">
+                      <Ionicons name="create-outline" size={14} color={colors.brandSecondary} />
+                      <Text style={[styles.refreshText, { color: colors.brandSecondary }]}>Edit</Text>
+                    </Pressable>
+                  )}
+                </View>
+                <View style={styles.contactRow}>
+                  {callSlots.map((c) => (c.phone ? (
+                    <Pressable key={c.i} onPress={() => Linking.openURL(`tel:${c.phone.replace(/[^\d+]/g, '')}`)}
+                      style={({ pressed }) => [styles.callBtn, pressed && { opacity: 0.7 }]} testID={`rates-call-${c.i}`}
+                      accessibilityRole="button" accessibilityLabel={`Call ${c.name || c.phone}`}>
+                      <Ionicons name="call" size={17} color={colors.onBrandPrimary} />
+                      <Text style={styles.callBtnText} numberOfLines={2}>{c.name || c.phone}</Text>
+                    </Pressable>
+                  ) : (
+                    <Pressable key={c.i} onPress={openEditor} style={[styles.contactBtn, styles.callEmpty]} testID={`rates-call-add-${c.i}`}
+                      accessibilityRole="button" accessibilityLabel="Add a person to call">
+                      <Ionicons name="add" size={17} color={colors.mutedText} />
+                      <Text style={[styles.contactBtnText, { color: colors.mutedText }]}>Add</Text>
+                    </Pressable>
+                  )))}
+                </View>
+              </View>
+            )}
+
           </>
         )}
 
@@ -302,6 +365,25 @@ export default function PublicRatesScreen() {
         </View>
         </>)}
       </ScrollView>
+
+      <Sheet visible={!!editing} onClose={() => setEditing(null)} title="Quick call buttons" testID="rates-call-sheet">
+        <Text style={styles.sheetHint}>Up to three people staff can call in one tap from Live Rates. Leave a row empty to hide its button.</Text>
+        {editing?.map((c, i) => (
+          <View key={i} style={styles.sheetRow}>
+            <View style={{ flex: 1 }}>
+              <Input label={`Person ${i + 1}`} value={c.name} placeholder="Name" maxLength={30} testID={`rates-call-name-${i}`}
+                onChangeText={(v) => setEditing((e) => e && e.map((x, j) => (j === i ? { ...x, name: v } : x)))} />
+            </View>
+            <View style={{ flex: 1.2 }}>
+              <Input label="Phone" value={c.phone} placeholder="+91 98765 43210" keyboardType="phone-pad" maxLength={20} testID={`rates-call-phone-${i}`}
+                onChangeText={(v) => setEditing((e) => e && e.map((x, j) => (j === i ? { ...x, phone: v } : x)))} />
+            </View>
+          </View>
+        ))}
+        <View style={{ marginTop: spacing.md }}>
+          <Button label="Save" onPress={saveContacts} loading={savingContacts} testID="rates-call-save" />
+        </View>
+      </Sheet>
     </SafeAreaView>
   );
 }
@@ -382,6 +464,16 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     paddingVertical: 12, paddingHorizontal: 8,
   },
   contactBtnText: { color: colors.onSurface, fontSize: 12.5, fontWeight: '700', textAlign: 'center' },
+  callHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.sm },
+  callHeadText: { color: colors.brandSecondary, fontSize: typography.label.fontSize, fontWeight: typography.label.fontWeight, letterSpacing: typography.label.letterSpacing },
+  callBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: 10, paddingHorizontal: 8, minHeight: 50,
+  },
+  callBtnText: { color: colors.onBrandPrimary, fontSize: 13, fontWeight: '800', flexShrink: 1, textAlign: 'center' },
+  callEmpty: { borderStyle: 'dashed' },
+  sheetHint: { color: colors.onSurfaceSecondary, fontSize: 13, lineHeight: 18, marginBottom: spacing.md },
+  sheetRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.sm },
   disclaimerBox: { paddingTop: spacing.lg, borderTopWidth: 1, borderTopColor: colors.divider },
   disclaimerText: { color: colors.mutedText, fontSize: 11, lineHeight: 16, textAlign: 'center' },
 });

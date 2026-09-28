@@ -39,3 +39,17 @@ def test_buyback_percent_saved_and_previewed():
     bad = [{**i, 'buy_percent': 250 if i['key'] == 'gold_18k' else None} for i in items]
     assert requests.put(f"{API}/rate-master", headers=h, json={'items': bad}, timeout=30).status_code == 400
     requests.put(f"{API}/rate-master", headers=h, json={'items': [{**i, 'buy_percent': None} for i in items]}, timeout=30)
+
+
+def test_quick_call_contacts():
+    assert requests.get(f"{API}/rate-master/contacts", timeout=30).status_code in (401, 403)
+    tok = requests.post(f"{API}/auth/login", json={"username": "owner", "password": "Owner@123"}, timeout=30).json()['access_token']
+    h = {"Authorization": f"Bearer {tok}"}
+    body = {'items': [{'name': 'Ayodhya', 'phone': '+91 98765 43210'}, {'name': '', 'phone': ''}, {'name': 'Karigar', 'phone': '9812345678'}]}
+    r = requests.put(f"{API}/rate-master/contacts", headers=h, json=body, timeout=30)
+    assert r.status_code == 200, r.text
+    got = requests.get(f"{API}/rate-master/contacts", headers=h, timeout=30).json()['items']
+    assert len(got) == 3 and got[0] == {'name': 'Ayodhya', 'phone': '+91 98765 43210'} and got[1]['phone'] == ''
+    bad = {'items': [{'name': 'X', 'phone': 'abc'}]}
+    assert requests.put(f"{API}/rate-master/contacts", headers=h, json=bad, timeout=30).status_code == 400
+    assert requests.put(f"{API}/rate-master/contacts", headers=h, json={'items': [{'name': 'Y', 'phone': ''}]}, timeout=30).status_code == 400
