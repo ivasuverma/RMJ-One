@@ -32,6 +32,8 @@ const STORE_PHONE = '+919781800888';
 const WHATSAPP_CHANNEL_URL = 'https://whatsapp.com/channel/0029VbBHBNPEKyZB1820vR3n';
 const SOURCE_URL = 'https://ayodhyabullion.com';
 
+// wa.me wants the number in international form, digits only; a bare 10-digit number is Indian.
+const waNumber = (phone: string) => { const d = phone.replace(/\D/g, '').replace(/^0+/, ''); return d.length === 10 ? `91${d}` : d; };
 const fmtINR = (n: number | null) => (n == null ? '—' : `₹${Math.round(n).toLocaleString('en-IN')}`);
 const fmtUSD = (n: number | null) => (n == null ? '—' : `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
 
@@ -304,12 +306,21 @@ export default function PublicRatesScreen() {
                 </View>
                 <View style={styles.contactRow}>
                   {callSlots.map((c) => (c.phone ? (
-                    <Pressable key={c.i} onPress={() => Linking.openURL(`tel:${c.phone.replace(/[^\d+]/g, '')}`)}
-                      style={({ pressed }) => [styles.callBtn, pressed && { opacity: 0.7 }]} testID={`rates-call-${c.i}`}
-                      accessibilityRole="button" accessibilityLabel={`Call ${c.name || c.phone}`}>
-                      <Ionicons name="call" size={17} color={colors.onBrandPrimary} />
-                      <Text style={styles.callBtnText} numberOfLines={2}>{c.name || c.phone}</Text>
-                    </Pressable>
+                    // One pill per person: phone call on the left, their WhatsApp chat on the right
+                    // (WhatsApp has no link that starts a call itself — the chat is one tap from it).
+                    <View key={c.i} style={styles.callPill}>
+                      <Pressable onPress={() => Linking.openURL(`tel:${c.phone.replace(/[^\d+]/g, '')}`)}
+                        style={({ pressed }) => [styles.callBtn, pressed && { opacity: 0.7 }]} testID={`rates-call-${c.i}`}
+                        accessibilityRole="button" accessibilityLabel={`Call ${c.name || c.phone}`}>
+                        <Ionicons name="call" size={13} color={colors.onBrandPrimary} />
+                        <Text style={styles.callBtnText} numberOfLines={2}>{c.name || c.phone}</Text>
+                      </Pressable>
+                      <Pressable onPress={() => Linking.openURL(`https://wa.me/${waNumber(c.phone)}`)}
+                        style={({ pressed }) => [styles.callWa, pressed && { opacity: 0.7 }]} testID={`rates-wa-${c.i}`}
+                        accessibilityRole="button" accessibilityLabel={`WhatsApp ${c.name || c.phone}`}>
+                        <Ionicons name="logo-whatsapp" size={17} color="#FFFFFF" />
+                      </Pressable>
+                    </View>
                   ) : (
                     <Pressable key={c.i} onPress={openEditor} style={[styles.contactBtn, styles.callEmpty]} testID={`rates-call-add-${c.i}`}
                       accessibilityRole="button" accessibilityLabel="Add a person to call">
@@ -469,11 +480,13 @@ const makeStyles = (colors: ThemeColors, compact: boolean) => {
   contactBtnText: { color: colors.onSurface, fontSize: 12.5, fontWeight: '700', textAlign: 'center' },
   callHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.sm },
   callHeadText: { color: colors.brandSecondary, fontSize: typography.label.fontSize, fontWeight: typography.label.fontWeight, letterSpacing: typography.label.letterSpacing },
+  callPill: { flex: 1, flexDirection: 'row', borderRadius: radius.md, overflow: 'hidden', minHeight: 44 },
   callBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: 8, paddingHorizontal: 8, minHeight: 44,
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4,
+    backgroundColor: colors.brandPrimary, paddingVertical: 6, paddingHorizontal: 5,
   },
-  callBtnText: { color: colors.onBrandPrimary, fontSize: 12.5, fontWeight: '800', flexShrink: 1, textAlign: 'center' },
+  callWa: { width: 30, alignItems: 'center', justifyContent: 'center', backgroundColor: '#25D366' },
+  callBtnText: { color: colors.onBrandPrimary, fontSize: 12, fontWeight: '800', flexShrink: 1, textAlign: 'center' },
   callEmpty: { borderStyle: 'dashed' },
   sheetHint: { color: colors.onSurfaceSecondary, fontSize: 13, lineHeight: 18, marginBottom: spacing.md },
   sheetRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.sm },
