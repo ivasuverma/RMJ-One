@@ -19,6 +19,10 @@
 //                                  it's the first thing on the page, so this stays unambiguous.
 //        GOLD_RATE_XAG_LABEL      (default: SILVER) — same, silver
 //        GOLD_RATE_USDINR_LABEL   (default: USD/INR)
+//        GOLD_RATE_GOLD_GST_LABEL (default: GOLD WITH GST) — the source's GST-inclusive
+//                                  bullion rows ("GOLD WITH GST - 99.50%", "SILVER WITH GST -
+//        GOLD_RATE_SILVER_GST_LABEL (default: SILVER WITH GST)   99.99%"), shown to staff on
+//                                  the in-app Live Rates screen. Best-effort, like xau/xag.
 //        PUPPETEER_EXECUTABLE_PATH (required — path to chrome.exe)
 // Prints one JSON line to stdout: {ok, gold: {rate, row_text}, silver: {rate,
 // row_text}, xau: {rate, row_text}|null, xag: {rate, row_text}|null,
@@ -35,6 +39,8 @@ const SILVER_LABEL = process.env.GOLD_RATE_SILVER_LABEL || 'SILVER RETAIL HAJIR'
 const XAU_LABEL = process.env.GOLD_RATE_XAU_LABEL || 'GOLD';
 const XAG_LABEL = process.env.GOLD_RATE_XAG_LABEL || 'SILVER';
 const USDINR_LABEL = process.env.GOLD_RATE_USDINR_LABEL || 'USD/INR';
+const GOLD_GST_LABEL = process.env.GOLD_RATE_GOLD_GST_LABEL || 'GOLD WITH GST';
+const SILVER_GST_LABEL = process.env.GOLD_RATE_SILVER_GST_LABEL || 'SILVER WITH GST';
 
 (async () => {
   let browser;
@@ -60,7 +66,7 @@ const USDINR_LABEL = process.env.GOLD_RATE_USDINR_LABEL || 'USD/INR';
       { timeout: 25000 },
       GOLD_LABEL, SILVER_LABEL,
     );
-    const result = await page.evaluate((goldLabel, silverLabel, xauLabel, xagLabel, usdInrLabel) => {
+    const result = await page.evaluate((goldLabel, silverLabel, xauLabel, xagLabel, usdInrLabel, goldGstLabel, silverGstLabel) => {
       // For a given row label, find the leaf element whose text contains it,
       // then walk up to the smallest ancestor whose text also contains at
       // least `minNums` numbers (2 for a Buy+Sell row, 1 for a single spot
@@ -112,8 +118,10 @@ const USDINR_LABEL = process.env.GOLD_RATE_USDINR_LABEL || 'USD/INR';
       return {
         gold: extractRow(goldLabel, 2, 1000), silver: extractRow(silverLabel, 2, 1000),
         xau: extractRow(xauLabel, 1), xag: extractRow(xagLabel, 1), usd_inr: extractRow(usdInrLabel, 1),
+        // GST rows show only a Sell ("--" for Buy), so one number is enough.
+        gold_gst: extractRow(goldGstLabel, 1, 1000), silver_gst: extractRow(silverGstLabel, 1, 1000),
       };
-    }, GOLD_LABEL, SILVER_LABEL, XAU_LABEL, XAG_LABEL, USDINR_LABEL);
+    }, GOLD_LABEL, SILVER_LABEL, XAU_LABEL, XAG_LABEL, USDINR_LABEL, GOLD_GST_LABEL, SILVER_GST_LABEL);
 
     const pickLast = (row) => (row && row.numbers && row.numbers.length ? { rate: row.numbers[row.numbers.length - 1], row_text: row.rowText } : null);
     // Spot/USD-INR rows show just the one value — pick the first number
@@ -128,7 +136,9 @@ const USDINR_LABEL = process.env.GOLD_RATE_USDINR_LABEL || 'USD/INR';
     const xau = pickFirst(result.xau);
     const xag = pickFirst(result.xag);
     const usd_inr = pickFirst(result.usd_inr);
-    console.log(JSON.stringify({ ok: true, gold, silver, xau, xag, usd_inr, source_url: URL }));
+    const gold_gst = pickFirst(result.gold_gst);
+    const silver_gst = pickFirst(result.silver_gst);
+    console.log(JSON.stringify({ ok: true, gold, silver, xau, xag, usd_inr, gold_gst, silver_gst, source_url: URL }));
   } catch (e) {
     console.log(JSON.stringify({ ok: false, error: String((e && e.message) || e) }));
     process.exitCode = 1;
