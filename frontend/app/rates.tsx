@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Image, Linking } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Image, Linking, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '@/src/api/client';
@@ -31,6 +31,27 @@ const REFRESH_MS = 60000;
 const STORE_PHONE = '+919781800888';
 const WHATSAPP_CHANNEL_URL = 'https://whatsapp.com/channel/0029VbBHBNPEKyZB1820vR3n';
 const SOURCE_URL = 'https://ayodhyabullion.com';
+// Ayodhya Bullion's own app, which the rates come from. A web page can't start an
+// app that hasn't published a link for itself, so: iPhone → its App Store page
+// (tap Open there); Android → ask Android to open the app by package, falling back
+// to its Play Store page; a computer → the website.
+const AYODHYA_IOS = 'https://apps.apple.com/app/id6777993751';
+const AYODHYA_ANDROID_PKG = 'com.aybullion.com';
+const AYODHYA_PLAY = `https://play.google.com/store/apps/details?id=${AYODHYA_ANDROID_PKG}`;
+function openAyodhyaApp() {
+  const ua = typeof navigator !== 'undefined' ? navigator.userAgent || '' : '';
+  const ios = Platform.OS === 'ios' || /iPhone|iPad|iPod/i.test(ua) || (/Macintosh/i.test(ua) && typeof document !== 'undefined' && 'ontouchend' in document);
+  const android = Platform.OS === 'android' || /Android/i.test(ua);
+  if (ios) return Linking.openURL(AYODHYA_IOS);
+  if (android) {
+    if (Platform.OS === 'web') {
+      window.location.href = `intent:#Intent;action=android.intent.action.MAIN;category=android.intent.category.LAUNCHER;package=${AYODHYA_ANDROID_PKG};S.browser_fallback_url=${encodeURIComponent(AYODHYA_PLAY)};end`;
+      return;
+    }
+    return Linking.openURL(`market://details?id=${AYODHYA_ANDROID_PKG}`).catch(() => Linking.openURL(AYODHYA_PLAY));
+  }
+  return Linking.openURL(SOURCE_URL);
+}
 
 // wa.me wants the number in international form, digits only; a bare 10-digit number is Indian.
 const waNumber = (phone: string) => { const d = phone.replace(/\D/g, '').replace(/^0+/, ''); return d.length === 10 ? `91${d}` : d; };
@@ -145,10 +166,10 @@ export default function PublicRatesScreen() {
               </Pressable>
             ) : <View style={{ width: 40 }} />}
             <Text style={styles.compactTitle}>Live Rates</Text>
-            {/* The source board the rates are scraped from, to check it at a glance. */}
-            <Pressable onPress={() => Linking.openURL(SOURCE_URL)} style={styles.backBtn} testID="rates-source-btn" hitSlop={12}
-              accessibilityRole="link" accessibilityLabel="Open ayodhyabullion.com">
-              <Ionicons name="globe-outline" size={20} color={colors.onSurface} />
+            {/* Opens the Ayodhya Bullion app (the source of these rates) — see openAyodhyaApp. */}
+            <Pressable onPress={openAyodhyaApp} style={styles.backBtn} testID="rates-source-btn" hitSlop={12}
+              accessibilityRole="link" accessibilityLabel="Open the Ayodhya Bullion app">
+              <Ionicons name="open-outline" size={19} color={colors.onSurface} />
             </Pressable>
           </View>
         </StickyHeader>
