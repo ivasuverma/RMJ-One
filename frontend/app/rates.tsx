@@ -59,6 +59,9 @@ export default function PublicRatesScreen() {
   const togglePurities = () => setPuritiesOpen((v) => { storage.setItem('rmj.rates.purities_open', !v); return !v; });
   // The source's own GST-inclusive bullion rates (staff only) — see fetch_gold_rate.js.
   const [gst, setGst] = useState<{ gold: number | null; silver: number | null } | null>(null);
+  // How far our gold sell rate is below the source's rate with GST:
+  // (rate with GST − our gold rate) / rate with GST × 100.
+  const gstDiff = gst?.gold && data?.gold_sell ? ((gst.gold - data.gold_sell) / gst.gold) * 100 : null;
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const load = useCallback(async () => {
@@ -157,10 +160,13 @@ export default function PublicRatesScreen() {
               {user && gst && (gst.gold || gst.silver) ? (
                 <View style={styles.metalCard} testID="rate-gst">
                   <Text style={styles.metalLabel}>RATE WITH GST</Text>
-                  <View style={styles.buySellRow}>
+                  <View style={[styles.buySellRow, { alignItems: 'flex-start' }]}>
                     <View style={styles.buySellCol}>
                       <Text style={styles.buySellLabel}>Gold · 99.50%</Text>
                       <Text style={styles.buySellValue}>{gst.gold ? fmtINR(gst.gold) : '—'}</Text>
+                      {gstDiff !== null && (
+                        <Text style={styles.gstDiff} testID="rate-gst-diff">Difference {gstDiff > 0 ? '+' : ''}{gstDiff.toFixed(2)}%</Text>
+                      )}
                     </View>
                     <View style={styles.buySellDivider} />
                     <View style={styles.buySellCol}>
@@ -329,6 +335,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   buySellValue: {
     color: colors.onSurface, fontFamily: fonts.display, fontSize: 24, fontWeight: '800', letterSpacing: -0.4,
   },
+  gstDiff: { color: colors.mutedText, fontSize: 12, fontWeight: '700', marginTop: 4 },
   sellValue: { color: colors.brandPrimary },
   purityToggle: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
