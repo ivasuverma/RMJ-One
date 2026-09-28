@@ -119,11 +119,37 @@ async def upload_system_backups() -> dict:
             sent.append(f.name)
     if sent:
         await _prune(cfg)
+    # Drive is the place backups are kept: once a file is there (or was sent there
+    # before), the copy on this computer goes after LOCAL_KEEP_DAYS.
+    state = await db.settings.find_one({'id': 'system_backup'}, {'_id': 0, 'uploaded': 1}) or {}
+    uploaded = set(state.get('uploaded') or []) | have | set(sent)
+    removed = await asyncio.to_thread(_remove_uploaded_local, d, uploaded)
     await db.settings.update_one({'id': 'system_backup'}, {'$set': {
         'id': 'system_backup', 'last_check_at': now_utc().isoformat(), 'last_error': None,
+        'uploaded': sorted(uploaded)[-200:],
         **({'last_sent_at': now_utc().isoformat(), 'last_sent': sent} if sent else {}),
+        **({'last_removed_local': removed} if removed else {}),
     }}, upsert=True)
-    return {'ok': True, 'sent': sent}
+    return {'ok': True, 'sent': sent, 'removed_local': removed}
+
+
+LOCAL_KEEP_DAYS = 1
+
+
+def _remove_uploaded_local(d: pathlib.Path, uploaded: set) -> list:
+    cutoff = time.time() - LOCAL_KEEP_DAYS * 86400
+    removed = []
+    for pat in _SYSTEM_PATTERNS:
+        for f in d.glob(pat):
+            try:
+                if f.name in uploaded and f.stat().st_mtime < cutoff:
+                    f.unlink()
+                    removed.append(f.name)
+            except OSError:
+                pass
+    if removed:
+        logger.info(f'removed {len(removed)} local backup file(s) already in Drive: {removed}')
+    return removed
 
 
 async def backup_loop() -> None:

@@ -1492,6 +1492,8 @@ async def on_startup():
     asyncio.create_task(backup_loop())
     from routers.record_photos import record_photo_worker  # background Drive sync for record photos
     asyncio.create_task(record_photo_worker())
+    from media_offload import media_offload_loop  # repair photos, selfies, broadcast photos -> Drive
+    asyncio.create_task(media_offload_loop())
     from gold_rate import gold_rate_loop  # daily reference gold-rate fetch
     asyncio.create_task(gold_rate_loop())
     from instagram_service import instagram_loop  # keeps the website's Instagram rail cache fresh
