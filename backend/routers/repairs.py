@@ -4,7 +4,7 @@ Extracted from the former monolithic server.py (§2.1 router split). Shared
 infrastructure (db, auth deps, models, cross-domain helpers) stays in
 server.py and is imported from here — nothing about behavior changed,
 only where the code lives."""
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from typing import Optional
 from pydantic import BaseModel
 from datetime import datetime, date, timedelta, timezone
@@ -646,6 +646,38 @@ async def repairs_dashboard(_: dict = Depends(require_staff_or_module(['repairs'
     }
 
 
+# intake_photo / final_photo: the original moves to Google Drive shortly after
+# it's taken (media_offload.py) and the field keeps a thumbnail; this serves the
+# full photo — from the field itself until it has moved, then from Drive.
+@router.get('/repair-items/{item_id}/photo/{which}')
+async def repair_item_photo(item_id: str, which: str, _: dict = Depends(require_staff_or_module(['repairs']))):
+    field = {'intake': 'intake_photo', 'final': 'final_photo'}.get(which)
+    if not field:
+        raise HTTPException(status_code=404, detail='Photo not found')
+    item = await db.repair_items.find_one({'id': item_id}, {'_id': 0, field: 1, f'{field}_drive_id': 1})
+    if not item:
+        raise HTTPException(status_code=404, detail='Item not found')
+    headers = {'Cache-Control': 'private, max-age=86400'}
+    drive_id = item.get(f'{field}_drive_id')
+    if drive_id:
+        import drive_service
+        raw = await drive_service.download(await drive_service.get_config(), drive_id)
+        return Response(content=raw, media_type='image/jpeg', headers=headers)
+    value = item.get(field) or ''
+    if not value:
+        raise HTTPException(status_code=404, detail='Photo not found')
+    import base64 as _b64
+    return Response(content=_b64.b64decode(value.split(',', 1)[-1]), media_type='image/jpeg', headers=headers)
+
+
+def _new_final_photo(body, item) -> dict:
+    """A bill that brings a NEW delivery photo (not the thumbnail it was shown)
+    makes it the one to move to Drive again."""
+    if body.final_photo and body.final_photo != item.get('final_photo'):
+        return {'$unset': {'final_photo_drive_id': ''}}
+    return {}
+
+
 @router.get('/repair-items/{item_id}')
 async def get_repair_item(item_id: str, _: dict = Depends(require_staff_or_module(['repairs']))):
     item = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
@@ -1071,7 +1103,7 @@ async def bill_item(item_id: str, body: DeliverIn, user=Depends(require_admin_or
         'billed_amount': billed_amount,
         'delivery_note': body.note or '', 'updated_by': user['name'],
         'final_photo': body.final_photo or item.get('final_photo', ''),
-    }})
+    }, **_new_final_photo(body, item)})
     updated = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
     await log_audit(user, 'repair_item.bill', 'repair_item', item_id, item['item_code'], {'billed_amount': billed_amount})
     # WhatsApp notice to the customer is a separate, manual step from here —
@@ -1232,7 +1264,7 @@ async def edit_bill(item_id: str, body: DeliverIn, user=Depends(require_admin_or
         'billed_amount': billed_amount,
         'delivery_note': body.note or item.get('delivery_note', ''),
         'final_photo': body.final_photo or item.get('final_photo', ''), 'updated_by': user['name'],
-    }})
+    }, **_new_final_photo(body, item)})
     updated = await db.repair_items.find_one({'id': item_id}, {'_id': 0})
     await log_audit(user, 'repair_item.bill_edit', 'repair_item', item_id, item['item_code'], {'billed_amount': billed_amount})
     return updated

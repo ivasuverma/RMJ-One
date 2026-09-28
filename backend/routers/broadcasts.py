@@ -15,9 +15,12 @@ start_broadcast / _drain_once). Kinds:
 Buttons: quick reply (taps are counted per send and can get an automatic
 reply), website link, call. All MARKETING category.
 
-Photos are stored here and served publicly (Meta fetches them by URL when
+Photos are served publicly from a cache here, originals in Google Drive (Meta fetches them by URL when
 sending); a sample of each is uploaded to Meta for review."""
 import asyncio
+import os
+import pathlib
+import time
 import base64
 import re
 import uuid
@@ -58,20 +61,70 @@ async def upload_media(file: UploadFile = File(...), user: dict = Depends(requir
     return {'id': mid, 'url': media_url(mid)}
 
 
+# Broadcast photos are moved to Google Drive shortly after upload (media_offload.py);
+# this server keeps a disk cache so sending doesn't wait on Drive. A cached file not
+# used for MEDIA_CACHE_DAYS is cleared and simply fetched from Drive again next time.
+MEDIA_CACHE_DIR = pathlib.Path(__file__).resolve().parent.parent / 'data' / 'broadcast_cache'
+MEDIA_CACHE_DAYS = 7
+
+
+def _media_cache_path(media_id: str) -> pathlib.Path:
+    if not re.fullmatch(r'[0-9a-fA-F-]{8,64}', media_id or ''):
+        raise HTTPException(status_code=404, detail='Not found')
+    return MEDIA_CACHE_DIR / f'{media_id}.jpg'
+
+
+def cache_media(media_id: str, raw: bytes) -> None:
+    path = _media_cache_path(media_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f'{path.name}.{uuid.uuid4().hex}.tmp')
+    tmp.write_bytes(raw)
+    os.replace(tmp, path)
+    # Clear out anything not used for a while.
+    cutoff = time.time() - MEDIA_CACHE_DAYS * 86400
+    for f in MEDIA_CACHE_DIR.iterdir():
+        try:
+            if f.is_file() and f.stat().st_mtime < cutoff:
+                f.unlink()
+        except OSError:
+            pass
+
+
+async def _load_media(media_id: str):
+    path = _media_cache_path(media_id)
+    if path.is_file():
+        try:
+            os.utime(path, None)
+        except OSError:
+            pass
+        return await asyncio.to_thread(path.read_bytes)
+    m = await db.broadcast_media.find_one({'id': media_id}, {'_id': 0, 'image': 1, 'drive_file_id': 1})
+    if not m:
+        return None
+    if m.get('image'):
+        return base64.b64decode(m['image'])
+    if m.get('drive_file_id'):
+        import drive_service
+        raw = await drive_service.download(await drive_service.get_config(), m['drive_file_id'])
+        await asyncio.to_thread(cache_media, media_id, raw)
+        return raw
+    return None
+
+
 @router.get('/public/broadcast-media/{media_id}')
 async def public_media(media_id: str):
-    m = await db.broadcast_media.find_one({'id': media_id}, {'_id': 0, 'image': 1})
-    if not m or not m.get('image'):
+    raw = await _load_media(media_id)
+    if not raw:
         raise HTTPException(status_code=404, detail='Not found')
-    return Response(content=base64.b64decode(m['image']), media_type='image/jpeg',
+    return Response(content=raw, media_type='image/jpeg',
                     headers={'Cache-Control': 'public, max-age=2592000, immutable'})
 
 
 async def _media_bytes(media_id: str) -> bytes:
-    m = await db.broadcast_media.find_one({'id': media_id}, {'_id': 0, 'image': 1})
-    if not m:
+    raw = await _load_media(media_id)
+    if not raw:
         raise HTTPException(status_code=400, detail='A photo is missing — add it again')
-    return base64.b64decode(m['image'])
+    return raw
 
 
 # ---------------- lists ----------------

@@ -136,6 +136,24 @@ export default function RepairItemDetailScreen() {
   };
 
   const [previewPhoto, setPreviewPhoto] = useState<string | null>(null);
+  // The item carries a small thumbnail; the full photo lives in Google Drive.
+  // Show the thumbnail at once and swap in the full photo when it arrives.
+  const openPhoto = async (which: 'intake' | 'final', thumb: string) => {
+    setPreviewPhoto(thumb);
+    try {
+      const token = (await storage.secureGet<string>(TOKEN_KEY, '')) || '';
+      const res = await fetch(`${process.env.EXPO_PUBLIC_BACKEND_URL || ''}/api/repair-items/${id}/photo/${which}`, { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) return;
+      const blob = await res.blob();
+      const full = await new Promise<string>((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(String(r.result));
+        r.onerror = reject;
+        r.readAsDataURL(blob);
+      });
+      setPreviewPhoto((cur) => (cur === thumb ? full : cur));
+    } catch { /* keep the thumbnail */ }
+  };
 
   const doDeleteItem = () => {
     if (!item) return;
@@ -366,13 +384,13 @@ export default function RepairItemDetailScreen() {
           {(item.intake_photo || item.final_photo) && (
             <View style={styles.photosRow}>
               {item.intake_photo && (
-                <Pressable style={{ alignItems: 'center' }} onPress={() => setPreviewPhoto(item.intake_photo!)} testID="intake-photo-thumb">
+                <Pressable style={{ alignItems: 'center' }} onPress={() => openPhoto('intake', item.intake_photo!)} testID="intake-photo-thumb">
                   <Image source={{ uri: item.intake_photo }} style={styles.photoLarge} />
                   <Text style={styles.photoCaption}>Intake</Text>
                 </Pressable>
               )}
               {item.final_photo && (
-                <Pressable style={{ alignItems: 'center' }} onPress={() => setPreviewPhoto(item.final_photo!)} testID="final-photo-thumb">
+                <Pressable style={{ alignItems: 'center' }} onPress={() => openPhoto('final', item.final_photo!)} testID="final-photo-thumb">
                   <Image source={{ uri: item.final_photo }} style={styles.photoLarge} />
                   <Text style={styles.photoCaption}>Delivery</Text>
                 </Pressable>

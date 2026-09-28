@@ -125,6 +125,9 @@ def _cache_drop(doc_id: str) -> None:
 # doc_store_maintenance_loop); opening it later simply fetches it from Drive again.
 # Nothing not yet in Drive is ever deleted. Only the tiny thumbnails are kept.
 CACHE_RETAIN_DAYS = 7
+# The untouched original (`.full`) of a document that's in Drive is kept at most a
+# day after it was last used; the on-screen copy and thumbnails are the cache above.
+FULL_RETAIN_DAYS = 1
 CACHE_RETAIN_BYTES = 1024 ** 3
 THUMB_SIDE = 240
 VIEW_MAX_SIDE = 1600
@@ -985,13 +988,14 @@ def _evict_sync(synced_ids: set, all_ids: set) -> dict:
                 pass
             continue
         if variant in ('full', 'view') and doc_id in synced_ids:
-            heavy.append((st.st_mtime, st.st_size, f))
+            heavy.append((st.st_mtime, st.st_size, f, variant))
     total = sum(h[1] for h in heavy)
-    for mtime, size, f in sorted(heavy):     # oldest first
-        too_old = (now - mtime) > CACHE_RETAIN_DAYS * 86400
+    for mtime, size, f, variant in sorted(heavy):     # oldest first
+        days = FULL_RETAIN_DAYS if variant == 'full' else CACHE_RETAIN_DAYS
+        too_old = (now - mtime) > days * 86400
         over_budget = total > CACHE_RETAIN_BYTES
         if not (too_old or over_budget):
-            break
+            continue
         try:
             f.unlink(); removed += 1; freed += size; total -= size
         except OSError:

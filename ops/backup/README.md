@@ -4,10 +4,13 @@ Everything runs on one Windows server; the database is a local MongoDB
 (`RMJOneMongo`, data in `D:\RMJ-One\mongodb`). **Google Drive is the only off-site
 place** — for documents/photos and for system backups. Nothing else (no OneDrive).
 
-**Documents and photos** live permanently in Drive (`RMJ One Documents`). The server
-keeps only small grid thumbnails, plus a temporary cache of recently opened files
-(cleared after 7 days / 1 GB, only for files already in Drive). A photo is deleted from
-the server only after it has reached Drive.
+**Documents and photos** live permanently in Drive (`RMJ One Documents`): documents,
+record photos, repair intake/delivery photos, attendance selfies and WhatsApp broadcast
+photos (see backend/media_offload.py). The server keeps only small thumbnails, plus a
+temporary cache of recently opened files (on-screen copies 7 days / 1 GB; originals
+1 day). A photo is deleted from the server only after it has reached Drive. The one
+exception is the website's "Fresh at the counter" photos, which rmj.co.in is served
+from and so stay on the server.
 
 **System backups** — the scheduled task "RMJOne Mongo Backup" runs `backup-nightly.ps1`
 at 02:30 (installed copy: `D:\RMJ-One\mongodbackup-local.ps1` — keep the two in sync):
@@ -18,7 +21,9 @@ at 02:30 (installed copy: `D:\RMJ-One\mongodbackup-local.ps1` — keep the two 
 | `config-<date>.zip` | .env files, service definitions, backup script, WhatsApp gateway settings | 14 |
 
 The backend (`backup_service.upload_system_backups`, hourly) sends new files to the
-Drive folder **RMJ One Backups** and keeps the newest 30 there. Log:
+Drive folder **RMJ One Backups** and keeps the newest 30 there. Once a file is in Drive,
+the local copy is deleted after 1 day (the "Kept locally" count above is only the
+fallback for when Drive is not reachable). Log:
 `D:\RMJ-One\mongodb\logackup.log`. Code lives on GitHub.
 
 **Restore:** stop the backend, download the `.gz` from Drive (or use the local file), then
