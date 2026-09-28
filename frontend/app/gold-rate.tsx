@@ -131,7 +131,7 @@ export default function RateUpdaterScreen() {
   };
 
   const fetchRates = async (): Promise<any | null> => {
-    const doc = await api.post<any>('/settings/gold-rate/refetch', {});
+    const doc = await api.post<any>('/settings/gold-rate/refetch', {}, true, { timeoutMs: 90000 });
     applyToday(doc, template);
     if (doc.error) { toast.error(doc.error); return null; }
     return doc;

@@ -22,19 +22,29 @@ let primaryDownUntil = 0;
 // against it. A no-op wrapper (plain fetch, no timeout added) when
 // LOCAL_BASE isn't set, so this changes nothing for any build that doesn't
 // opt in.
-async function smartFetch(path: string, init: RequestInit): Promise<Response> {
+//
+// `timeoutMs` is for calls that are slow by nature (e.g. the gold-rate
+// refetch, which drives a real browser for up to ~45s): with the 6s default
+// those were cut off mid-run and reported as failed even though the server
+// went on to finish them. And a POST/PUT/DELETE that timed out is never
+// replayed against the local address — the primary may well have received
+// it, and running it twice could double-save.
+async function smartFetch(path: string, init: RequestInit, timeoutMs: number = PRIMARY_TIMEOUT_MS): Promise<Response> {
   if (!LOCAL_BASE || LOCAL_BASE === BASE) {
     return fetch(`${BASE}/api${path}`, init);
   }
   if (Date.now() >= primaryDownUntil) {
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), PRIMARY_TIMEOUT_MS);
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
     try {
       const res = await fetch(`${BASE}/api${path}`, { ...init, signal: ctrl.signal });
       clearTimeout(timer);
       return res;
     } catch {
       clearTimeout(timer);
+      if (ctrl.signal.aborted && (init.method || 'GET') !== 'GET') {
+        throw { status: 0, detail: 'The server is taking too long to answer — check again in a moment.' } as ApiError;
+      }
       primaryDownUntil = Date.now() + FALLBACK_COOLDOWN_MS;
       // fall through to the local address below
     }
@@ -123,14 +133,14 @@ function formatDetail(detail: any): string {
 }
 
 export const api = {
-  async post<T>(path: string, body?: any, auth = true): Promise<T> {
+  async post<T>(path: string, body?: any, auth = true, opts?: { timeoutMs?: number }): Promise<T> {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (auth) Object.assign(headers, await authHeaders());
     const res = await smartFetch(path, {
       method: 'POST',
       headers,
       body: body ? JSON.stringify(body) : undefined,
-    });
+    }, opts?.timeoutMs);
     return handle(res, auth) as Promise<T>;
   },
   async put<T>(path: string, body?: any): Promise<T> {
