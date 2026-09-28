@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { View, Text, Pressable, StyleSheet, Animated, Platform, LayoutChangeEvent } from 'react-native';
 import { BlurView } from 'expo-blur';
+import { useIsFocused } from '@react-navigation/native';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -165,8 +166,13 @@ export function GlassTabBar({ tabs, onCapture, captureTestID }: {
   // panel under the pill, and the bar (tabs, highlight, camera) sits on top.
   const [mounted, setMounted] = useState(false);
   useEffect(() => { setMounted(true); }, []);
+  // The portal lives outside the navigator, so it would stay on screen over
+  // pages pushed on top of the tabs (Settings › a person, a repair…) and
+  // cover their Save buttons. Only show it while the tab group itself is the
+  // screen in front. (On native the bar is inside the tabs and hides itself.)
+  const tabsOnScreen = useIsFocused();
   if (Platform.OS === 'web') {
-    if (!mounted || typeof document === 'undefined') return null;   // static render / first paint
+    if (!mounted || !tabsOnScreen || typeof document === 'undefined') return null;   // static render / first paint / covered
     const gap = bottomGap(insets.bottom);
     return createPortal(
       <>
