@@ -138,12 +138,16 @@
      (never in an already-installed/standalone session, never once
      dismissed) and reveals it via .visible rather than always rendering it,
      so there's no flash-of-hint before that decision runs. */
-  .installhint{display:none; text-align:left; background:var(--char); border:1px solid #262628; border-radius:var(--r-md); padding:14px 16px; margin:18px auto 0; max-width:520px}
+  .installhint{display:none; position:relative; overflow:hidden; text-align:left; background:var(--char); border:1px solid #262628; border-radius:var(--r-md); padding:14px 16px; margin:18px auto 0; max-width:520px}
   .installhint.visible{display:block}
   .installhint.fading{opacity:0; transition:opacity .4s}
   .ihHead{display:flex; align-items:center; gap:8px}
   .ihTitle{flex:1; color:#F5F5F7; font-size:13.5px; font-weight:800}
   .ihClose{background:none; border:none; color:#86868B; font-size:16px; line-height:1; cursor:pointer; padding:2px}
+  .ihCount{color:#86868B; font-size:11.5px; font-weight:700; font-variant-numeric:tabular-nums}
+  /* Shrinking bar along the bottom edge: how long until the banner closes itself. */
+  .ihTimer{position:absolute; left:0; right:0; bottom:0; height:3px; background:rgba(255,255,255,.06)}
+  .ihTimer i{display:block; height:100%; width:100%; background:var(--gold-lt); transform-origin:left; transition:transform 10s linear}
   .ihBody{color:#A1A1A6; font-size:12px; line-height:1.5; margin-top:6px}
   .ihBody b{color:#F5F5F7}
   .ihBtn{display:flex; align-items:center; justify-content:center; gap:6px; width:100%; background:var(--gold-lt); color:#111; border:none; border-radius:var(--r-md); padding:9px; margin-top:8px; font-size:12.5px; font-weight:800; cursor:pointer}
@@ -388,10 +392,12 @@
     <div class="installhint" id="installHint">
       <div class="ihHead">
         <span class="ihTitle">Add this page to your Home Screen</span>
+        <span class="ihCount" id="ihCount" aria-hidden="true">10s</span>
         <button class="ihClose" id="ihClose" aria-label="Dismiss">✕</button>
       </div>
       <p class="ihBody" id="ihBody">Open the browser menu and tap <b>Add to Home screen</b> — one tap next time to check today's rate.</p>
       <button class="ihBtn" id="ihInstallBtn" style="display:none">Add to Home Screen</button>
+      <div class="ihTimer" aria-hidden="true"><i id="ihBar"></i></div>
     </div>
     <div class="metals">
       <div class="metal">
@@ -751,8 +757,20 @@ document.querySelectorAll('#sheet a').forEach(a=>a.addEventListener('click',()=>
   }
   document.getElementById('ihClose').onclick=dismissHint;
   hint.classList.add('visible');
-  // Auto-hide for this visit only (not saved) so it doesn't sit over the rates; ✕ still dismisses for good.
-  setTimeout(()=>{ hint.classList.add('fading'); setTimeout(()=>hint.classList.remove('visible','fading'),400); }, 15000);
+  // Auto-hide after 10 s for this visit only (not saved) so it doesn't sit over the
+  // rates — with a countdown and a shrinking bar; ✕ still dismisses for good.
+  const AUTO_CLOSE_S=10, count=document.getElementById('ihCount'), bar=document.getElementById('ihBar');
+  let left=AUTO_CLOSE_S;
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{ bar.style.transform='scaleX(0)'; }));
+  const tick=setInterval(()=>{
+    left-=1;
+    count.textContent=left+'s';
+    if (left>0) return;
+    clearInterval(tick);
+    hint.classList.add('fading');
+    setTimeout(()=>hint.classList.remove('visible','fading'),400);
+  }, 1000);
+  document.getElementById('ihClose').addEventListener('click',()=>clearInterval(tick));
 })();
 
 /* Find your piece — metal tab → style (gold only) → piece; each piece chip
