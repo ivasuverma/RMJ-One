@@ -96,7 +96,8 @@ export default function PersonScreen() {
             {deleting ? <ActivityIndicator size="small" color={colors.onError} /> : <Ionicons name="trash-outline" size={20} color={colors.onError} />}
           </Pressable>
         ) : (
-          <View style={styles.iconBtn} />
+          // keeps the title centred without drawing an empty button
+          <View style={{ width: 40 }} />
         )}
       </View>
 
