@@ -1,7 +1,7 @@
 name: Site check (from outside)
-# One-off reachability check of the public addresses, from GitHub's servers
-# (i.e. how a customer on the internet sees them). One step per address so the
-# failing one shows by name.
+# One-off lookups from GitHub's servers, which can reach sites the dev sandbox
+# can't. Currently: does the Ayodhya Bullion iPhone app publish a link a web
+# page could use to open it directly (universal link or URL scheme)?
 on:
   push:
     branches: [site-check]
@@ -9,23 +9,17 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - name: rmj.co.in (website)
+      - name: App Store lookup (bundle id)
         if: always()
-        run: curl -sS -o /dev/null -w '%{http_code} %{time_total}s\n' --max-time 20 -f https://rmj.co.in/
-      - name: app.rmj.co.in (RMJ One app)
-        if: always()
-        run: curl -sS -o /dev/null -w '%{http_code} %{time_total}s\n' --max-time 20 -f https://app.rmj.co.in/
-      - name: api.rmj.co.in/api/ (server health)
-        if: always()
-        run: curl -sS --max-time 20 -f https://api.rmj.co.in/api/
-      - name: api public rates (website rate box)
-        if: always()
-        run: curl -sS --max-time 20 -f https://api.rmj.co.in/api/public/rates | head -c 300
-      - name: api public website content
-        if: always()
-        run: curl -sS -o /dev/null -w '%{http_code}\n' --max-time 20 -f https://api.rmj.co.in/api/public/website/content
-      - name: website pieces + instagram
+        run: curl -sS --max-time 20 "https://itunes.apple.com/lookup?id=6777993751&country=in" | python3 -c "import sys,json; r=json.load(sys.stdin)['results']; [print(x.get('trackName'),'|',x.get('bundleId'),'|',x.get('sellerName'),'|',x.get('sellerUrl'),'|',x.get('artistName')) for x in r]"
+      - name: Universal links file (ayodhyabullion.com)
         if: always()
         run: |
-          curl -sS -o /dev/null -w 'pieces %{http_code}\n' --max-time 20 -f https://api.rmj.co.in/api/public/website/pieces
-          curl -sS -o /dev/null -w 'instagram %{http_code}\n' --max-time 20 https://api.rmj.co.in/api/public/instagram
+          for u in https://ayodhyabullion.com/.well-known/apple-app-site-association https://ayodhyabullion.com/apple-app-site-association https://www.ayodhyabullion.com/.well-known/apple-app-site-association; do
+            echo "== $u"; curl -sS -L --max-time 20 -w '\n[%{http_code} %{content_type}]\n' "$u" | head -c 1500; echo; done
+      - name: Links to apps on ayodhyabullion.com
+        if: always()
+        run: curl -sS -L --max-time 20 https://ayodhyabullion.com/ | grep -oiE '(itms-apps|apps\.apple\.com|play\.google\.com|intent:|[a-z][a-z0-9+.-]{2,30}://)[^"'"'"' <>]{0,120}' | sort -u | head -40
+      - name: Android app page (Play Store)
+        if: always()
+        run: curl -sS -L --max-time 20 "https://play.google.com/store/apps/details?id=com.aybullion.com&hl=en" | grep -oE '"(Ayodhya[^"]{0,60}|[^"]{0,40}Bullion[^"]{0,40})"' | sort -u | head -10
