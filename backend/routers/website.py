@@ -211,7 +211,8 @@ PAGE = [
     {'key': 'about', 'label': 'About', 'hideable': True, 'fields': [
         _f('about_title', 'Heading', 'Three generations, one family counter.'),
         _f('about_p1', 'First paragraph', "Ram Murti Jewellers was founded in 1932 by Sh. Ram Murti, whose name we still carry with pride. His son, Mr. Jugal Kishore Verma, carried the counter forward for decades, and today it's run by Mr. Vasu Verma — the same family, the same street, for over nine decades.", True),
-        _f('about_p2', 'Second paragraph', 'Many of our customers bought their first piece here for their own wedding, and now bring their children. We keep it simple: rates you can check, hallmarked gold, and honest advice — from a family that has been jewellers in India for generations.', True),
+        _f('about_p2', 'Second paragraph', "Our counter holds a carefully chosen range of hallmarked gold jewellery — fine necklaces and bracelets, detailed earrings and rings — each piece made with care and finished by hand. Alongside it sits our diamond collection: stones we handpick for their quality and brilliance, set into engagement rings, statement pendants and earrings made for life's biggest moments.", True),
+        _f('about_p3', 'Third paragraph', "Many families who bought their wedding jewellery here now bring their children, and we look after every visit the same way. We take the time to understand what you're looking for, explain every rate and charge clearly, and help you find a piece that suits you — for your own collection or as a gift for someone you love. Come and see us at Field Ganj, Ludhiana.", True),
     ], 'images': [_img('about_photo', 'Photo', 'assets/photos/dsc_0021-m5K2JDwG4zs2MZbz.JPG')]},
     {'key': 'visit', 'label': 'Visit', 'hideable': False, 'fields': [
         _f('visit_title', 'Heading', 'Visit our counter.'),
