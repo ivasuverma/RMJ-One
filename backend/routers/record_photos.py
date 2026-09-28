@@ -273,13 +273,30 @@ def _drive_filename(doc: dict) -> str:
 _last_view_clean = [0.0]
 
 
-def _clean_views() -> None:
+# Photos of a finished record — a delivered repair item, a Stock In/Out sample
+# that has come back — are cleared from the cache after a day instead.
+FINISHED_RETAIN_DAYS = 1
+_FINISHED = {'repair_item': ('repair_items', 'delivered'), 'sample': ('samples', 'received')}
+
+
+async def _finished_photo_ids() -> set:
+    ids = set()
+    for ref_type, (coll, status) in _FINISHED.items():
+        refs = [r['id'] for r in await db[coll].find({'status': status}, {'_id': 0, 'id': 1}).to_list(None)]
+        for i in range(0, len(refs), 2000):
+            async for p in db.record_photos.find({'ref_type': ref_type, 'ref_id': {'$in': refs[i:i + 2000]}}, {'_id': 0, 'id': 1}):
+                ids.add(p['id'])
+    return ids
+
+
+def _clean_views(finished: set = frozenset()) -> None:
     if not VIEW_DIR.is_dir():
         return
-    cutoff = time.time() - VIEW_RETAIN_DAYS * 86400
+    now = time.time()
     for f in VIEW_DIR.iterdir():
         try:
-            if f.is_file() and f.stat().st_mtime < cutoff:
+            days = FINISHED_RETAIN_DAYS if f.stem in finished else VIEW_RETAIN_DAYS
+            if f.is_file() and f.stat().st_mtime < now - days * 86400:
                 f.unlink()
         except OSError:
             pass
@@ -327,10 +344,11 @@ async def record_photo_worker():
                             await _notify_system_health('drive_upload_failed', 'Photo upload failed',
                                                          f'A record photo failed to upload to Google Drive: {err}', '/settings/google-drive')
                     continue
-            # Clear on-screen copies not opened for VIEW_RETAIN_DAYS (regenerated from Drive on demand).
+            # Clear on-screen copies not opened for VIEW_RETAIN_DAYS, or a day for a
+            # finished record (regenerated from Drive on demand).
             if time.monotonic() - _last_view_clean[0] > 3600:
                 _last_view_clean[0] = time.monotonic()
-                await asyncio.to_thread(_clean_views)
+                await asyncio.to_thread(_clean_views, await _finished_photo_ids())
         except Exception:
             pass
         await asyncio.sleep(6)

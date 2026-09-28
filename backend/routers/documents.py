@@ -126,7 +126,8 @@ def _cache_drop(doc_id: str) -> None:
 # Nothing not yet in Drive is ever deleted. Only the tiny thumbnails are kept.
 CACHE_RETAIN_DAYS = 7
 # The untouched original (`.full`) of a document that's in Drive is kept at most a
-# day after it was last used; the on-screen copy and thumbnails are the cache above.
+# day after it was last used; the on-screen copy and thumbnails are the cache above —
+# except for a document marked done, whose on-screen copy also goes after a day.
 FULL_RETAIN_DAYS = 1
 CACHE_RETAIN_BYTES = 1024 ** 3
 THUMB_SIDE = 240
@@ -962,7 +963,7 @@ async def document_file(
     return Response(content=raw, media_type=media_type, headers=cache_headers)
 
 
-def _evict_sync(synced_ids: set, all_ids: set) -> dict:
+def _evict_sync(synced_ids: set, all_ids: set, done_ids: set = frozenset()) -> dict:
     """Delete cached originals/on-screen copies that are safely in Drive and unused
     for CACHE_RETAIN_DAYS (or oldest-first over the size budget), and any file whose
     document no longer exists. Thumbnails are kept."""
@@ -988,10 +989,11 @@ def _evict_sync(synced_ids: set, all_ids: set) -> dict:
                 pass
             continue
         if variant in ('full', 'view') and doc_id in synced_ids:
-            heavy.append((st.st_mtime, st.st_size, f, variant))
+            heavy.append((st.st_mtime, st.st_size, f, variant, doc_id))
     total = sum(h[1] for h in heavy)
-    for mtime, size, f, variant in sorted(heavy):     # oldest first
-        days = FULL_RETAIN_DAYS if variant == 'full' else CACHE_RETAIN_DAYS
+    for mtime, size, f, variant, doc_id in sorted(heavy):     # oldest first
+        # A document marked done is finished with: its cached copies go after a day too.
+        days = FULL_RETAIN_DAYS if (variant == 'full' or doc_id in done_ids) else CACHE_RETAIN_DAYS
         too_old = (now - mtime) > days * 86400
         over_budget = total > CACHE_RETAIN_BYTES
         if not (too_old or over_budget):
@@ -1011,7 +1013,7 @@ async def doc_store_maintenance_loop() -> None:
     while True:
         try:
             rows = await db.documents.find(
-                {'deleted': {'$ne': True}}, {'_id': 0, 'id': 1, 'local_kind': 1, 'file': 1, 'upload_state': 1},
+                {'deleted': {'$ne': True}}, {'_id': 0, 'id': 1, 'local_kind': 1, 'file': 1, 'upload_state': 1, 'status': 1},
             ).to_list(None)
             names = os.listdir(DOC_CACHE_DIR) if DOC_CACHE_DIR.is_dir() else []
             have_thumb = {n[:-len('.thumb')] for n in names if n.endswith('.thumb')}
@@ -1022,7 +1024,8 @@ async def doc_store_maintenance_loop() -> None:
                         await _cache_write(r['id'], 'thumb', raw)
                     await asyncio.sleep(0.3)
             synced = {r['id'] for r in rows if r.get('upload_state') == 'synced' and (r.get('file') or {}).get('drive_file_id')}
-            res = await asyncio.to_thread(_evict_sync, synced, {r['id'] for r in rows})
+            done = {r['id'] for r in rows if r.get('status') == 'done'}
+            res = await asyncio.to_thread(_evict_sync, synced, {r['id'] for r in rows}, done)
             if res['removed']:
                 logger.info(f"doc cache: cleared {res['removed']} file(s), {res['freed'] // 1024} KB")
         except Exception as e:
