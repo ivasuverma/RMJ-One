@@ -32,6 +32,7 @@
   "name": "Sh. Ram Murti"
  },
  "telephone": "+91-97818-00888",
+ "email": "mail@rmj.co.in",
  "address": {
   "@type": "PostalAddress",
   "streetAddress": "1694/3 Field Ganj Main Road",
@@ -115,11 +116,11 @@
   .sheet a.sm{font-size:16px; font-weight:500; color:#A1A1A6; border:none; padding-top:18px}
 
   /* ---------- RATE HERO ---------- */
-  .hero{background:var(--black); color:#F5F5F7; padding:calc(72px + clamp(56px,9vw,96px)) 0 clamp(64px,9vw,104px); position:relative; overflow:hidden}
+  .hero{background:var(--black); color:#F5F5F7; padding:calc(72px + clamp(24px,5vw,56px)) 0 clamp(32px,6vw,64px); position:relative; overflow:hidden}
   .hero .wrap{position:relative; text-align:center}
-  .hero h1{font-size:clamp(38px,7.2vw,84px); font-weight:700; letter-spacing:-.04em; line-height:1.02}
+  .hero h1{font-size:clamp(30px,5.6vw,64px); font-weight:700; letter-spacing:-.04em; line-height:1.02}
   .hero h1 .g{background:linear-gradient(180deg,var(--gold-hi),var(--gold-lt) 55%,#B8893B); -webkit-background-clip:text; background-clip:text; color:transparent}
-  .status{display:inline-flex; align-items:center; gap:8px; margin-top:18px; font-size:clamp(14px,1.6vw,17px); color:#A1A1A6}
+  .status{display:inline-flex; align-items:center; gap:8px; margin-top:12px; font-size:clamp(14px,1.6vw,17px); color:#A1A1A6}
   .status i{width:8px; height:8px; border-radius:50%; background:var(--up); box-shadow:0 0 0 0 rgba(52,199,89,.6); animation:pulse 2.4s infinite}
   .status.stale i{background:#FF9F0A; animation:none}
   .rfr{display:inline-flex; align-items:center; justify-content:center; gap:5px; flex-shrink:0; min-width:34px; height:34px; padding:0 10px; margin-left:2px; border:none; border-radius:980px; background:rgba(255,255,255,.08); color:#F5F5F7; cursor:pointer; font:inherit; font-size:12.5px; font-weight:600; font-variant-numeric:tabular-nums}
@@ -153,7 +154,7 @@
      restyled for the black hero instead of re-inventing a different rate
      shape (the earlier per-purity 24K/22K/18K board didn't match what the
      API actually returns). */
-  .metals{display:grid; grid-template-columns:repeat(2,1fr); gap:clamp(12px,1.6vw,18px); margin:clamp(40px,6vw,60px) auto 0; max-width:760px}
+  .metals{display:grid; grid-template-columns:repeat(2,1fr); gap:clamp(12px,1.6vw,18px); margin:clamp(20px,4vw,36px) auto 0; max-width:760px}
   .metal{background:var(--char); border:1px solid #262628; border-radius:var(--r-lg); padding:clamp(20px,2.6vw,30px) clamp(18px,2.4vw,26px); text-align:left}
   .mhead{font-size:15px; color:var(--gold-lt); font-weight:700}
   .mhead span{font-size:12.5px; color:#86868B; font-weight:500; margin-left:6px}
@@ -284,6 +285,12 @@
   footer{background:#000; border-top:0; padding:36px 0 calc(36px + env(safe-area-inset-bottom)); font-size:12.5px; color:rgba(255,255,255,.55)}
   footer .top{display:flex; justify-content:space-between; align-items:center; gap:20px; flex-wrap:wrap; padding-bottom:20px; border-bottom:1px solid rgba(255,255,255,.12)}
   footer .fbrand{display:flex; align-items:center; gap:10px; color:#fff; font-weight:700; font-size:15px}
+  /* "EST 1932" set small and wide-spaced beside the name, at its top edge. */
+  .est{align-self:flex-start; margin-left:10px; font-size:11px; font-weight:500; letter-spacing:.22em; color:var(--gold-lt); white-space:nowrap; line-height:1}
+  footer .fbrand .est{margin-left:0; margin-top:1px}
+  .brand .est{margin-top:4px}
+  /* On phones the header name already fills the width beside the menu button. */
+  @media (max-width:520px){ .hdrEst{display:none} }
   footer .fbrand img{width:32px; height:auto; border-radius:7px; box-shadow:0 0 0 1px var(--grey2)}
   footer .bottom{display:flex; justify-content:space-between; gap:14px; flex-wrap:wrap; padding-top:18px}
   footer a{text-decoration:none; color:rgba(255,255,255,.8)}
@@ -321,7 +328,7 @@
     .sval{font-size:13px}
     .metals{grid-template-columns:1fr}
     .pval{font-size:22px}
-    .hero h1{font-size:36px}
+    .hero h1{font-size:29px}
     .brand .wm small{display:none}
   }
   .cmstext{white-space:pre-line}
@@ -349,7 +356,7 @@
 <nav id="nav">
   <div class="wrap">
     <a class="brand" href="#top" aria-label="Ram Murti Jewellers home">
-      <span class="lockup hdr" style="--h:46px" role="img" aria-label="Ram Murti Jewellers"><img class="lt" src="assets/images/logo-tile.webp" alt=""><span class="lw"></span></span>
+      <span class="lockup hdr" style="--h:46px" role="img" aria-label="Ram Murti Jewellers"><img class="lt" src="assets/images/logo-tile.webp" alt=""><span class="lw"></span></span><span class="est hdrEst" aria-label="Established 1932">EST 1932</span>
     </a>
     <div class="links">
       <a href="#top">Today's rate</a>
@@ -422,10 +429,6 @@
         <p>Ram Murti Jewellers is not responsible for any loss, claim or decision based on the rates shown here, including anything caused by delays, temporary inaccuracies, interruptions or technical faults.</p>
       </div>
     </details>
-    <div class="actions">
-      <a class="btn wa" href="https://wa.me/919781800888?text=Hello%2C%20I%27d%20like%20a%20quote%20at%20today%27s%20gold%20rate.">Get a quote on WhatsApp</a>
-      <a class="btn ghost" href="tel:+919781800888">Call the shop</a>
-    </div>
     <!-- Shown only once RMJ-One returns the official number's subscribe link. -->
     <a class="subscribe" id="subscribeBtn" href="#" hidden>
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
@@ -545,6 +548,7 @@
         <h3>Contact</h3>
         <ul class="clist">
           <li>Phone <a href="tel:+919781800888">+91 97818 00888</a></li>
+          <li>Email <a href="mailto:mail@rmj.co.in">mail@rmj.co.in</a></li>
           <li>WhatsApp <a href="https://wa.me/919781800888">Message us</a></li>
           <li>Instagram <a href="https://www.instagram.com/rammurtijewellers">@rammurtijewellers</a></li>
           <li>Pay online <a href="payment.html">Scan UPI QR</a></li>
@@ -558,7 +562,7 @@
 <footer>
   <div class="wrap">
     <div class="top">
-      <div class="fbrand"><span class="lockup" style="--h:29px" role="img" aria-label="Ram Murti Jewellers"><img class="lt" src="assets/images/logo-tile.webp" alt=""><span class="lw"></span></span></div>
+      <div class="fbrand"><span class="lockup" style="--h:29px" role="img" aria-label="Ram Murti Jewellers"><img class="lt" src="assets/images/logo-tile.webp" alt=""><span class="lw"></span></span><span class="est" aria-label="Established 1932">EST 1932</span></div>
       <div class="fl"><a href="https://www.instagram.com/rammurtijewellers">Instagram</a><a href="https://www.facebook.com/rmj.co.in">Facebook</a><a href="https://www.linkedin.com/company/rammurtijewellers/">LinkedIn</a></div>
     </div>
     <div class="bottom">
