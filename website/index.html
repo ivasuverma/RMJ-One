@@ -183,6 +183,16 @@
   .subscribe b{display:block; font-size:15px; font-weight:600}
   .subscribe small{display:block; font-size:12.5px; color:#A1A1A6; margin-top:2px}
   .fine{font-size:13px; color:#86868B; max-width:600px; margin:20px auto 0; line-height:1.55}
+  /* Full disclaimer under the rates — folded away, opened on tap. */
+  .disc{max-width:600px; margin:10px auto 0; font-size:13px; color:#86868B; line-height:1.55}
+  .disc summary{cursor:pointer; list-style:none; display:inline-flex; align-items:center; gap:6px; color:#A1A1A6; font-weight:600; padding:4px 8px; border-radius:8px}
+  .disc summary::-webkit-details-marker{display:none}
+  .disc summary::after{content:""; width:7px; height:7px; border-right:1.6px solid currentColor; border-bottom:1.6px solid currentColor; transform:translateY(-2px) rotate(45deg); transition:transform .2s}
+  .disc[open] summary::after{transform:translateY(1px) rotate(-135deg)}
+  .disc summary:focus-visible{outline:2px solid var(--gold-lt); outline-offset:2px}
+  .discBody{text-align:left; margin-top:8px; padding:14px 16px; border:1px solid rgba(255,255,255,.12); border-radius:14px; background:rgba(255,255,255,.04)}
+  .discBody p + p{margin-top:8px}
+  .discBody b{color:#D2D2D7}
   .actions{display:flex; gap:12px; justify-content:center; margin-top:30px; flex-wrap:wrap}
   .btn{display:inline-flex; align-items:center; justify-content:center; gap:8px; font-size:17px; font-weight:500; text-decoration:none; padding:13px 24px; border-radius:980px; transition:transform .15s, background .2s; min-height:48px}
   .btn:active{transform:scale(.97)}
@@ -404,6 +414,14 @@
       <p>Live rates are temporarily unavailable. Please call or WhatsApp us for today's rate — this page will update by itself as soon as they're back.</p>
     </div>
     <p class="fine" data-cms="hero_fine">Rates are indicative and exclude making charges, wastage and GST — they can change through the day, and the rate applicable to any transaction is the one in effect at billing, not the rate shown here. Buyback is offered only on items purchased from us, subject to purity verification.</p>
+    <details class="disc">
+      <summary>Disclaimer</summary>
+      <div class="discBody">
+        <p>The gold and silver rates on this page are for general reference only. They follow live bullion market prices, can run a minute or more behind the market because of technical or network delays, and may change at any time without notice. What you actually pay or receive at Ram Murti Jewellers depends on the market at that moment, the purity, making charges, wastage, GST, the type of piece and other factors at the time of the transaction.</p>
+        <p><b>No rate shown here is an offer, quotation or promise to buy or sell gold, silver, jewellery, bullion or anything else at that price.</b> Every sale and purchase is billed at the rate we confirm in our store at the time of the transaction, so please call or WhatsApp us to confirm the current rate before you decide to buy or sell.</p>
+        <p>Ram Murti Jewellers is not responsible for any loss, claim or decision based on the rates shown here, including anything caused by delays, temporary inaccuracies, interruptions or technical faults.</p>
+      </div>
+    </details>
     <div class="actions">
       <a class="btn wa" href="https://wa.me/919781800888?text=Hello%2C%20I%27d%20like%20a%20quote%20at%20today%27s%20gold%20rate.">Get a quote on WhatsApp</a>
       <a class="btn ghost" href="tel:+919781800888">Call the shop</a>
