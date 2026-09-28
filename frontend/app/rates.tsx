@@ -10,6 +10,7 @@ import { useAuth } from '@/src/auth/AuthContext';
 import { useRouter } from 'expo-router';
 import { RatesInstallHint } from '@/src/components/RatesInstallHint';
 import { StickyHeader, useScrolled } from '@/src/components/ui/StickyHeader';
+import { storage } from '@/src/utils/storage';
 
 type PublicRates = {
   store_name: string;
@@ -52,6 +53,10 @@ export default function PublicRatesScreen() {
   const [error, setError] = useState('');
   const [fetchingNew, setFetchingNew] = useState(false);
   const [purities, setPurities] = useState<Purity[]>([]);
+  const shownPurities = purities.filter((p) => p.sell);
+  const [puritiesOpen, setPuritiesOpen] = useState(false);
+  useEffect(() => { storage.getItem<boolean>('rmj.rates.purities_open', false).then((v) => setPuritiesOpen(!!v)); }, []);
+  const togglePurities = () => setPuritiesOpen((v) => { storage.setItem('rmj.rates.purities_open', !v); return !v; });
   // The source's own GST-inclusive bullion rates (staff only) — see fetch_gold_rate.js.
   const [gst, setGst] = useState<{ gold: number | null; silver: number | null } | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -179,28 +184,34 @@ export default function PublicRatesScreen() {
                     <Text style={styles.buySellValue}>{fmtINR(data?.gold_buy ?? null)}</Text>
                   </View>
                 </View>
-              </View>
 
-              {purities.some((p) => p.sell) && (
-                <View style={styles.metalCard} testID="rate-purities">
-                  <Text style={styles.metalLabel}>GOLD PURITIES <Text style={styles.metalSub}>· per 10g</Text></Text>
-                  <View style={styles.purityHead}>
-                    <Text style={[styles.buySellLabel, { flex: 1.2, textAlign: 'left' }]}>Purity</Text>
-                    <Text style={[styles.buySellLabel, styles.purityCol]}>Sell</Text>
-                    <Text style={[styles.buySellLabel, styles.purityCol]}>Buyback</Text>
-                  </View>
-                  {purities.filter((p) => p.sell).map((p) => (
-                    <View key={p.key} style={styles.purityRow} testID={`rate-${p.key}`}>
-                      <View style={{ flex: 1.2 }}>
-                        <Text style={styles.purityName}>{p.label.replace(/^Gold\s+/i, '')}</Text>
-                        <Text style={styles.purityPct}>{p.percent}%</Text>
+                {/* 22K / 18K / 14K (Rate Master) — folded into the gold card, opened on tap. */}
+                {shownPurities.length > 0 && (
+                  <>
+                    <Pressable onPress={togglePurities} style={styles.purityToggle} hitSlop={6} testID="rate-purities-toggle"
+                      accessibilityRole="button" accessibilityState={{ expanded: puritiesOpen }}>
+                      <Text style={styles.purityToggleText}>{shownPurities.map((p) => p.label.replace(/^Gold\s+/i, '')).join(' · ')}</Text>
+                      <Ionicons name={puritiesOpen ? 'chevron-up' : 'chevron-down'} size={16} color={colors.brandSecondary} />
+                    </Pressable>
+                    {puritiesOpen && (
+                      <View testID="rate-purities">
+                        <View style={styles.purityHead}>
+                          <Text style={[styles.purityHeadText, { flex: 1.1, textAlign: 'left' }]}>Purity</Text>
+                          <Text style={[styles.purityHeadText, styles.purityCol]}>Sell</Text>
+                          <Text style={[styles.purityHeadText, styles.purityCol]}>Buyback</Text>
+                        </View>
+                        {shownPurities.map((p, i) => (
+                          <View key={p.key} style={[styles.purityRow, i === shownPurities.length - 1 && { borderBottomWidth: 0 }]} testID={`rate-${p.key}`}>
+                            <Text style={[styles.purityName, { flex: 1.1 }]}>{p.label.replace(/^Gold\s+/i, '')} <Text style={styles.purityPct}>{p.percent}%</Text></Text>
+                            <Text style={[styles.purityVal, styles.purityCol, styles.sellValue]}>{fmtINR(p.sell)}</Text>
+                            <Text style={[styles.purityVal, styles.purityCol]}>{fmtINR(p.buy)}</Text>
+                          </View>
+                        ))}
                       </View>
-                      <Text style={[styles.purityVal, styles.purityCol, styles.sellValue]}>{fmtINR(p.sell)}</Text>
-                      <Text style={[styles.purityVal, styles.purityCol]}>{fmtINR(p.buy)}</Text>
-                    </View>
-                  ))}
-                </View>
-              )}
+                    )}
+                  </>
+                )}
+              </View>
 
               <View style={styles.metalCard} testID="rate-silver">
                 <Text style={styles.metalLabel}>SILVER <Text style={styles.metalSub}>· 999 Purity / 1kg</Text></Text>
@@ -319,12 +330,18 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     color: colors.onSurface, fontFamily: fonts.display, fontSize: 24, fontWeight: '800', letterSpacing: -0.4,
   },
   sellValue: { color: colors.brandPrimary },
-  purityHead: { flexDirection: 'row', alignItems: 'center', paddingBottom: 6, borderBottomWidth: 1, borderBottomColor: colors.divider },
-  purityRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.divider },
+  purityToggle: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    marginTop: spacing.md, paddingTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.divider,
+  },
+  purityToggleText: { color: colors.brandSecondary, fontSize: 13, fontWeight: '700', letterSpacing: 0.3 },
+  purityHead: { flexDirection: 'row', alignItems: 'center', paddingTop: spacing.sm, paddingBottom: 4, borderBottomWidth: 1, borderBottomColor: colors.divider },
+  purityHeadText: { color: colors.mutedText, fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.4 },
+  purityRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 7, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.divider },
   purityCol: { flex: 1, textAlign: 'center' },
-  purityName: { color: colors.onSurface, fontSize: 16, fontWeight: '800' },
-  purityPct: { color: colors.mutedText, fontSize: 11, marginTop: 1 },
-  purityVal: { color: colors.onSurface, fontFamily: fonts.display, fontSize: 18, fontWeight: '800', letterSpacing: -0.3 },
+  purityName: { color: colors.onSurface, fontSize: 14, fontWeight: '800' },
+  purityPct: { color: colors.mutedText, fontSize: 11, fontWeight: '600' },
+  purityVal: { color: colors.onSurface, fontFamily: fonts.display, fontSize: 15, fontWeight: '800', letterSpacing: -0.2 },
   backBtn: {
     width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border,
     alignItems: 'center', justifyContent: 'center',
