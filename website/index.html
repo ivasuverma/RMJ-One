@@ -32,6 +32,7 @@
   "name": "Sh. Ram Murti"
  },
  "telephone": "+91-97818-00888",
+ "email": "mail@rmj.co.in",
  "address": {
   "@type": "PostalAddress",
   "streetAddress": "1694/3 Field Ganj Main Road",
@@ -115,11 +116,11 @@
   .sheet a.sm{font-size:16px; font-weight:500; color:#A1A1A6; border:none; padding-top:18px}
 
   /* ---------- RATE HERO ---------- */
-  .hero{background:var(--black); color:#F5F5F7; padding:calc(72px + clamp(56px,9vw,96px)) 0 clamp(64px,9vw,104px); position:relative; overflow:hidden}
+  .hero{background:var(--black); color:#F5F5F7; padding:calc(72px + clamp(24px,5vw,56px)) 0 clamp(32px,6vw,64px); position:relative; overflow:hidden}
   .hero .wrap{position:relative; text-align:center}
-  .hero h1{font-size:clamp(38px,7.2vw,84px); font-weight:700; letter-spacing:-.04em; line-height:1.02}
+  .hero h1{font-size:clamp(30px,5.6vw,64px); font-weight:700; letter-spacing:-.04em; line-height:1.02}
   .hero h1 .g{background:linear-gradient(180deg,var(--gold-hi),var(--gold-lt) 55%,#B8893B); -webkit-background-clip:text; background-clip:text; color:transparent}
-  .status{display:inline-flex; align-items:center; gap:8px; margin-top:18px; font-size:clamp(14px,1.6vw,17px); color:#A1A1A6}
+  .status{display:inline-flex; align-items:center; gap:8px; margin-top:12px; font-size:clamp(14px,1.6vw,17px); color:#A1A1A6}
   .status i{width:8px; height:8px; border-radius:50%; background:var(--up); box-shadow:0 0 0 0 rgba(52,199,89,.6); animation:pulse 2.4s infinite}
   .status.stale i{background:#FF9F0A; animation:none}
   .rfr{display:inline-flex; align-items:center; justify-content:center; gap:5px; flex-shrink:0; min-width:34px; height:34px; padding:0 10px; margin-left:2px; border:none; border-radius:980px; background:rgba(255,255,255,.08); color:#F5F5F7; cursor:pointer; font:inherit; font-size:12.5px; font-weight:600; font-variant-numeric:tabular-nums}
@@ -137,12 +138,16 @@
      (never in an already-installed/standalone session, never once
      dismissed) and reveals it via .visible rather than always rendering it,
      so there's no flash-of-hint before that decision runs. */
-  .installhint{display:none; text-align:left; background:var(--char); border:1px solid #262628; border-radius:var(--r-md); padding:14px 16px; margin:18px auto 0; max-width:520px}
+  .installhint{display:none; position:relative; overflow:hidden; text-align:left; background:var(--char); border:1px solid #262628; border-radius:var(--r-md); padding:14px 16px; margin:18px auto 0; max-width:520px}
   .installhint.visible{display:block}
   .installhint.fading{opacity:0; transition:opacity .4s}
   .ihHead{display:flex; align-items:center; gap:8px}
   .ihTitle{flex:1; color:#F5F5F7; font-size:13.5px; font-weight:800}
   .ihClose{background:none; border:none; color:#86868B; font-size:16px; line-height:1; cursor:pointer; padding:2px}
+  .ihCount{color:#86868B; font-size:11.5px; font-weight:700; font-variant-numeric:tabular-nums}
+  /* Shrinking bar along the bottom edge: how long until the banner closes itself. */
+  .ihTimer{position:absolute; left:0; right:0; bottom:0; height:3px; background:rgba(255,255,255,.06)}
+  .ihTimer i{display:block; height:100%; width:100%; background:var(--gold-lt); transform-origin:left; transition:transform 10s linear}
   .ihBody{color:#A1A1A6; font-size:12px; line-height:1.5; margin-top:6px}
   .ihBody b{color:#F5F5F7}
   .ihBtn{display:flex; align-items:center; justify-content:center; gap:6px; width:100%; background:var(--gold-lt); color:#111; border:none; border-radius:var(--r-md); padding:9px; margin-top:8px; font-size:12.5px; font-weight:800; cursor:pointer}
@@ -153,7 +158,7 @@
      restyled for the black hero instead of re-inventing a different rate
      shape (the earlier per-purity 24K/22K/18K board didn't match what the
      API actually returns). */
-  .metals{display:grid; grid-template-columns:repeat(2,1fr); gap:clamp(12px,1.6vw,18px); margin:clamp(40px,6vw,60px) auto 0; max-width:760px}
+  .metals{display:grid; grid-template-columns:repeat(2,1fr); gap:clamp(12px,1.6vw,18px); margin:clamp(20px,4vw,36px) auto 0; max-width:760px}
   .metal{background:var(--char); border:1px solid #262628; border-radius:var(--r-lg); padding:clamp(20px,2.6vw,30px) clamp(18px,2.4vw,26px); text-align:left}
   .mhead{font-size:15px; color:var(--gold-lt); font-weight:700}
   .mhead span{font-size:12.5px; color:#86868B; font-weight:500; margin-left:6px}
@@ -183,6 +188,16 @@
   .subscribe b{display:block; font-size:15px; font-weight:600}
   .subscribe small{display:block; font-size:12.5px; color:#A1A1A6; margin-top:2px}
   .fine{font-size:13px; color:#86868B; max-width:600px; margin:20px auto 0; line-height:1.55}
+  /* Full disclaimer under the rates — folded away, opened on tap. */
+  .disc{max-width:600px; margin:10px auto 0; font-size:13px; color:#86868B; line-height:1.55}
+  .disc summary{cursor:pointer; list-style:none; display:inline-flex; align-items:center; gap:6px; color:#A1A1A6; font-weight:600; padding:4px 8px; border-radius:8px}
+  .disc summary::-webkit-details-marker{display:none}
+  .disc summary::after{content:""; width:7px; height:7px; border-right:1.6px solid currentColor; border-bottom:1.6px solid currentColor; transform:translateY(-2px) rotate(45deg); transition:transform .2s}
+  .disc[open] summary::after{transform:translateY(1px) rotate(-135deg)}
+  .disc summary:focus-visible{outline:2px solid var(--gold-lt); outline-offset:2px}
+  .discBody{text-align:left; margin-top:8px; padding:14px 16px; border:1px solid rgba(255,255,255,.12); border-radius:14px; background:rgba(255,255,255,.04)}
+  .discBody p + p{margin-top:8px}
+  .discBody b{color:#D2D2D7}
   .actions{display:flex; gap:12px; justify-content:center; margin-top:30px; flex-wrap:wrap}
   .btn{display:inline-flex; align-items:center; justify-content:center; gap:8px; font-size:17px; font-weight:500; text-decoration:none; padding:13px 24px; border-radius:980px; transition:transform .15s, background .2s; min-height:48px}
   .btn:active{transform:scale(.97)}
@@ -274,6 +289,12 @@
   footer{background:#000; border-top:0; padding:36px 0 calc(36px + env(safe-area-inset-bottom)); font-size:12.5px; color:rgba(255,255,255,.55)}
   footer .top{display:flex; justify-content:space-between; align-items:center; gap:20px; flex-wrap:wrap; padding-bottom:20px; border-bottom:1px solid rgba(255,255,255,.12)}
   footer .fbrand{display:flex; align-items:center; gap:10px; color:#fff; font-weight:700; font-size:15px}
+  /* "EST 1932" set small and wide-spaced beside the name, at its top edge. */
+  .est{align-self:flex-start; margin-left:6px; font-size:6.5px; font-weight:600; letter-spacing:.2em; color:var(--gold-lt); white-space:nowrap; line-height:1}
+  footer .fbrand .est{margin-left:0; margin-top:1px}
+  .brand .est{margin-top:4px}
+  /* On phones the header name already fills the width beside the menu button. */
+  @media (max-width:520px){ .hdrEst{display:none} }
   footer .fbrand img{width:32px; height:auto; border-radius:7px; box-shadow:0 0 0 1px var(--grey2)}
   footer .bottom{display:flex; justify-content:space-between; gap:14px; flex-wrap:wrap; padding-top:18px}
   footer a{text-decoration:none; color:rgba(255,255,255,.8)}
@@ -311,7 +332,7 @@
     .sval{font-size:13px}
     .metals{grid-template-columns:1fr}
     .pval{font-size:22px}
-    .hero h1{font-size:36px}
+    .hero h1{font-size:29px}
     .brand .wm small{display:none}
   }
   .cmstext{white-space:pre-line}
@@ -339,7 +360,7 @@
 <nav id="nav">
   <div class="wrap">
     <a class="brand" href="#top" aria-label="Ram Murti Jewellers home">
-      <span class="lockup hdr" style="--h:46px" role="img" aria-label="Ram Murti Jewellers"><img class="lt" src="assets/images/logo-tile.webp" alt=""><span class="lw"></span></span>
+      <span class="lockup hdr" style="--h:46px" role="img" aria-label="Ram Murti Jewellers"><img class="lt" src="assets/images/logo-tile.webp" alt=""><span class="lw"></span></span><span class="est hdrEst" aria-label="Established 1932">EST 1932</span>
     </a>
     <div class="links">
       <a href="#top">Today's rate</a>
@@ -371,10 +392,12 @@
     <div class="installhint" id="installHint">
       <div class="ihHead">
         <span class="ihTitle">Add this page to your Home Screen</span>
+        <span class="ihCount" id="ihCount" aria-hidden="true">10s</span>
         <button class="ihClose" id="ihClose" aria-label="Dismiss">✕</button>
       </div>
       <p class="ihBody" id="ihBody">Open the browser menu and tap <b>Add to Home screen</b> — one tap next time to check today's rate.</p>
       <button class="ihBtn" id="ihInstallBtn" style="display:none">Add to Home Screen</button>
+      <div class="ihTimer" aria-hidden="true"><i id="ihBar"></i></div>
     </div>
     <div class="metals">
       <div class="metal">
@@ -404,10 +427,14 @@
       <p>Live rates are temporarily unavailable. Please call or WhatsApp us for today's rate — this page will update by itself as soon as they're back.</p>
     </div>
     <p class="fine" data-cms="hero_fine">Rates are indicative and exclude making charges, wastage and GST — they can change through the day, and the rate applicable to any transaction is the one in effect at billing, not the rate shown here. Buyback is offered only on items purchased from us, subject to purity verification.</p>
-    <div class="actions">
-      <a class="btn wa" href="https://wa.me/919781800888?text=Hello%2C%20I%27d%20like%20a%20quote%20at%20today%27s%20gold%20rate.">Get a quote on WhatsApp</a>
-      <a class="btn ghost" href="tel:+919781800888">Call the shop</a>
-    </div>
+    <details class="disc">
+      <summary>Disclaimer</summary>
+      <div class="discBody">
+        <p>The gold and silver rates on this page are for general reference only. They follow live bullion market prices, can run a minute or more behind the market because of technical or network delays, and may change at any time without notice. What you actually pay or receive at Ram Murti Jewellers depends on the market at that moment, the purity, making charges, wastage, GST, the type of piece and other factors at the time of the transaction.</p>
+        <p><b>No rate shown here is an offer, quotation or promise to buy or sell gold, silver, jewellery, bullion or anything else at that price.</b> Every sale and purchase is billed at the rate we confirm in our store at the time of the transaction, so please call or WhatsApp us to confirm the current rate before you decide to buy or sell.</p>
+        <p>Ram Murti Jewellers is not responsible for any loss, claim or decision based on the rates shown here, including anything caused by delays, temporary inaccuracies, interruptions or technical faults.</p>
+      </div>
+    </details>
     <!-- Shown only once RMJ-One returns the official number's subscribe link. -->
     <a class="subscribe" id="subscribeBtn" href="#" hidden>
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
@@ -497,7 +524,8 @@
         <div class="logo"><img src="assets/images/logo-tile.webp" alt=""></div>
         <h2 data-cms="about_title">Three generations, one family counter.</h2>
         <p data-cms="about_p1">Ram Murti Jewellers was founded in 1932 by Sh. Ram Murti, whose name we still carry with pride. His son, Mr. Jugal Kishore Verma, carried the counter forward for decades, and today it's run by Mr. Vasu Verma — the same family, the same street, for over nine decades.</p>
-        <p data-cms="about_p2">Many of our customers bought their first piece here for their own wedding, and now bring their children. We keep it simple: rates you can check, hallmarked gold, and honest advice — from a family that has been jewellers in India for generations.</p>
+        <p data-cms="about_p2">Our counter holds a carefully chosen range of hallmarked gold jewellery — fine necklaces and bracelets, detailed earrings and rings — each piece made with care and finished by hand. Alongside it sits our diamond collection: stones we handpick for their quality and brilliance, set into engagement rings, statement pendants and earrings made for life's biggest moments.</p>
+        <p data-cms="about_p3">Many families who bought their wedding jewellery here now bring their children, and we look after every visit the same way. We take the time to understand what you're looking for, explain every rate and charge clearly, and help you find a piece that suits you — for your own collection or as a gift for someone you love. Come and see us at Field Ganj, Ludhiana.</p>
       </div>
       <div class="pic"><img loading="lazy" data-cms-img="about_photo" src="assets/photos/dsc_0021-m5K2JDwG4zs2MZbz.JPG" alt="Jewellery at the Ram Murti Jewellers counter"></div>
     </div>
@@ -527,6 +555,7 @@
         <h3>Contact</h3>
         <ul class="clist">
           <li>Phone <a href="tel:+919781800888">+91 97818 00888</a></li>
+          <li>Email <a href="mailto:mail@rmj.co.in">mail@rmj.co.in</a></li>
           <li>WhatsApp <a href="https://wa.me/919781800888">Message us</a></li>
           <li>Instagram <a href="https://www.instagram.com/rammurtijewellers">@rammurtijewellers</a></li>
           <li>Pay online <a href="payment.html">Scan UPI QR</a></li>
@@ -540,7 +569,7 @@
 <footer>
   <div class="wrap">
     <div class="top">
-      <div class="fbrand"><span class="lockup" style="--h:29px" role="img" aria-label="Ram Murti Jewellers"><img class="lt" src="assets/images/logo-tile.webp" alt=""><span class="lw"></span></span></div>
+      <div class="fbrand"><span class="lockup" style="--h:29px" role="img" aria-label="Ram Murti Jewellers"><img class="lt" src="assets/images/logo-tile.webp" alt=""><span class="lw"></span></span><span class="est" aria-label="Established 1932">EST 1932</span></div>
       <div class="fl"><a href="https://www.instagram.com/rammurtijewellers">Instagram</a><a href="https://www.facebook.com/rmj.co.in">Facebook</a><a href="https://www.linkedin.com/company/rammurtijewellers/">LinkedIn</a></div>
     </div>
     <div class="bottom">
@@ -729,8 +758,20 @@ document.querySelectorAll('#sheet a').forEach(a=>a.addEventListener('click',()=>
   }
   document.getElementById('ihClose').onclick=dismissHint;
   hint.classList.add('visible');
-  // Auto-hide for this visit only (not saved) so it doesn't sit over the rates; ✕ still dismisses for good.
-  setTimeout(()=>{ hint.classList.add('fading'); setTimeout(()=>hint.classList.remove('visible','fading'),400); }, 15000);
+  // Auto-hide after 10 s for this visit only (not saved) so it doesn't sit over the
+  // rates — with a countdown and a shrinking bar; ✕ still dismisses for good.
+  const AUTO_CLOSE_S=10, count=document.getElementById('ihCount'), bar=document.getElementById('ihBar');
+  let left=AUTO_CLOSE_S;
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{ bar.style.transform='scaleX(0)'; }));
+  const tick=setInterval(()=>{
+    left-=1;
+    count.textContent=left+'s';
+    if (left>0) return;
+    clearInterval(tick);
+    hint.classList.add('fading');
+    setTimeout(()=>hint.classList.remove('visible','fading'),400);
+  }, 1000);
+  document.getElementById('ihClose').addEventListener('click',()=>clearInterval(tick));
 })();
 
 /* Find your piece — metal tab → style (gold only) → piece; each piece chip
