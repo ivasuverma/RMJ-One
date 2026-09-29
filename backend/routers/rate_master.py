@@ -166,7 +166,9 @@ async def rate_master_live(_: dict = Depends(get_current)):
     sell, buy = live.get('gold_rate'), live.get('gold_buy_rate')
     items = [i for i in await get_items() if i['base'] == 'gold' and i['key'] != 'gold_24k' and i['enabled']]
     # The source's GST-inclusive bullion rows (see fetch_gold_rate.js) — shown to staff only.
-    gst = {'gold': live.get('gold_gst_rate'), 'silver': live.get('silver_gst_rate')}
+    # gold_base: the source's own gold rate BEFORE our margin — what the staff
+    # screen's "Cash+GST" difference is measured against.
+    gst = {'gold': live.get('gold_gst_rate'), 'silver': live.get('silver_gst_rate'), 'gold_base': live.get('fetched_gold')}
     gst = gst if (gst['gold'] or gst['silver']) else None
     if not sell:
         return {'items': [], 'gst': gst}
