@@ -20,7 +20,7 @@ def test_live_purities_shape():
     assert all(i['key'].startswith('gold_') and i['key'] != 'gold_24k' for i in items)
     # The source's GST-inclusive rows ride along for the staff screen: null until scraped.
     gst = r.json()['gst']
-    assert gst is None or set(gst) == {'gold', 'silver'}
+    assert gst is None or set(gst) == {'gold', 'silver', 'gold_base'}
 
 
 def test_buyback_percent_saved_and_previewed():

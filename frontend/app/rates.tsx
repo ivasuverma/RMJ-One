@@ -84,10 +84,10 @@ export default function PublicRatesScreen() {
   useEffect(() => { storage.getItem<boolean>('rmj.rates.purities_open', false).then((v) => setPuritiesOpen(!!v)); }, []);
   const togglePurities = () => setPuritiesOpen((v) => { storage.setItem('rmj.rates.purities_open', !v); return !v; });
   // The source's own GST-inclusive bullion rates (staff only) — see fetch_gold_rate.js.
-  const [gst, setGst] = useState<{ gold: number | null; silver: number | null } | null>(null);
-  // How far our gold sell rate is below the source's rate with GST:
-  // (rate with GST − our gold rate) / rate with GST × 100.
-  const gstDiff = gst?.gold && data?.gold_sell ? ((gst.gold - data.gold_sell) / gst.gold) * 100 : null;
+  const [gst, setGst] = useState<{ gold: number | null; silver: number | null; gold_base?: number | null } | null>(null);
+  // Cash+GST: how far the source's rate with GST is above its own gold rate
+  // before our margin — (rate with GST − gold rate before margin) / rate with GST × 100.
+  const gstDiff = gst?.gold && gst?.gold_base ? ((gst.gold - gst.gold_base) / gst.gold) * 100 : null;
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Quick-call buttons (staff only): three people the owner/admin sets up here.
@@ -96,7 +96,7 @@ export default function PublicRatesScreen() {
   const [editing, setEditing] = useState<Contact[] | null>(null);
   const [savingContacts, setSavingContacts] = useState(false);
   useEffect(() => {
-    if (user) api.get<{ items: Contact[] }>('/rate-master/contacts').then((r) => setContacts(r.items)).catch(() => {});
+    if (user) api.get<{ items: Contact[] }>('/rate-master/contacts').then((r) => setContacts(r.items || [])).catch(() => {});
   }, [user]);
   const saveContacts = async () => {
     if (!editing) return;
@@ -122,7 +122,7 @@ export default function PublicRatesScreen() {
       setError('');
       // Signed-in staff also see 22K / 18K / 14K (Rate Master percentages of
       // the same live rate); the public page stays 24K + silver only.
-      if (user) api.get<{ items: Purity[]; gst?: { gold: number | null; silver: number | null } | null }>('/rate-master/live')
+      if (user) api.get<{ items: Purity[]; gst?: { gold: number | null; silver: number | null; gold_base?: number | null } | null }>('/rate-master/live')
         .then((r) => { setPurities(r.items); setGst(r.gst || null); }).catch(() => {});
     } catch (e: any) {
       setError(e?.detail || 'Could not load rates right now');
