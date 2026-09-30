@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, Platform, ActivityIndicator,
+  View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, Platform, ActivityIndicator, TextInput,
 } from 'react-native';
 import { notify } from '@/src/utils/notify';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -56,14 +56,18 @@ export default function Approvals() {
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
+  // Times the approver applies to a correction (HH:MM) — start as what the employee asked for.
+  const [times, setTimes] = useState<Record<string, { in: string; out: string }>>({});
+  const timeFor = (c: Correction) => times[c.id] || { in: c.desired_check_in || '', out: c.desired_check_out || '' };
+  const setTime = (c: Correction, k: 'in' | 'out', v: string) => setTimes((t) => ({ ...t, [c.id]: { ...timeFor(c), [k]: v } }));
   const inFlight = useRef<Set<string>>(new Set());
-  const decide = async (kind: 'correction' | 'leave', id: string, action: 'approve' | 'reject') => {
+  const decide = async (kind: 'correction' | 'leave', id: string, action: 'approve' | 'reject', extra?: { check_in?: string; check_out?: string }) => {
     const key = `${kind}:${id}`;
     if (inFlight.current.has(key)) return; // guards rapid double/triple taps on Approve/Reject
     inFlight.current.add(key);
     try {
       const path = kind === 'correction' ? `/attendance/corrections/${id}/decide` : `/leaves/${id}/decide`;
-      await api.post(path, { action });
+      await api.post(path, { action, ...(extra || {}) });
       await load();
     } catch (e: any) {
       notify('Failed', e?.detail || 'Please try again');
@@ -114,7 +118,20 @@ export default function Approvals() {
                   <View style={{ flex: 1 }}>
                     <Text style={styles.name}>{c.employee_name}</Text>
                     <Text style={styles.meta}>{c.employee_code} · {reasonLabel(c.reason_type)} · {fmtDate(c.date)}</Text>
-                    {(!!c.desired_check_in || !!c.desired_check_out) && (
+                    {c.status === 'pending' ? (
+                      // Editable: approving writes these onto the day (blank = keep what's there).
+                      <View style={styles.desiredRow}>
+                        {(['in', 'out'] as const).map((k) => (
+                          <View key={k} style={styles.timeBox}>
+                            <Ionicons name={k === 'in' ? 'log-in-outline' : 'log-out-outline'} size={13} color={colors.brandSecondary} />
+                            <Text style={styles.desiredText}>{k === 'in' ? 'In' : 'Out'}</Text>
+                            <TextInput value={timeFor(c)[k]} onChangeText={(v) => setTime(c, k, v)} placeholder="HH:MM" maxLength={5}
+                              placeholderTextColor={colors.mutedText} keyboardType="numbers-and-punctuation"
+                              style={styles.timeInput} testID={`corr-${c.id}-${k}`} />
+                          </View>
+                        ))}
+                      </View>
+                    ) : (!!c.desired_check_in || !!c.desired_check_out) && (
                       <View style={styles.desiredRow}>
                         <View style={styles.desiredPill}>
                           <Ionicons name="log-in-outline" size={12} color={colors.brandSecondary} />
@@ -132,7 +149,14 @@ export default function Approvals() {
                 </View>
                 {c.status === 'pending' && (
                   <DecideRow
-                    onApprove={() => decide('correction', c.id, 'approve')}
+                    onApprove={() => {
+                      const t = timeFor(c);
+                      const ok = (v: string) => !v.trim() || /^([01]?\d|2[0-3]):[0-5]\d$/.test(v.trim());
+                      if (!ok(t.in) || !ok(t.out)) { notify('Check the time', 'Use 24-hour HH:MM, e.g. 10:15 or 19:30.'); return; }
+                      decide('correction', c.id, 'approve', {
+                        ...(t.in.trim() ? { check_in: t.in.trim() } : {}), ...(t.out.trim() ? { check_out: t.out.trim() } : {}),
+                      });
+                    }}
                     onReject={() => decide('correction', c.id, 'reject')}
                     testIDPrefix={`corr-${c.id}`}
                   />
@@ -252,6 +276,11 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.brandTertiary,
     borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 3,
   },
+  timeBox: {
+    flexDirection: 'row', alignItems: 'center', gap: 5, paddingLeft: 8, borderRadius: radius.sm,
+    borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface,
+  },
+  timeInput: { width: 58, paddingVertical: 5, paddingHorizontal: 4, color: colors.onSurface, fontSize: 13, fontWeight: '700' },
   desiredText: { color: colors.brandSecondary, fontSize: 11, fontWeight: '700' },
 
   actions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },

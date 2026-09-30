@@ -8,7 +8,7 @@ import logging
 import math
 from pathlib import Path
 from urllib.parse import quote
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Optional, Literal, Dict
 import uuid
 from datetime import datetime, timedelta, timezone, date
@@ -580,10 +580,16 @@ class PunchIn(BaseModel):
     selfie: str  # base64 data URI or raw base64
 
 
+_HHMM = r'^([01]?\d|2[0-3]):[0-5]\d$'
+
+
 class CorrectionIn(BaseModel):
     date: Optional[str] = None  # YYYY-MM-DD, default today
     reason_type: Literal['forgot_check_in', 'forgot_check_out', 'machine_error', 'other']
     note: Optional[str] = ''
+    # The actual times (HH:MM, IST) — applied to the day when the correction is approved.
+    desired_check_in: Optional[str] = Field(default=None, pattern=_HHMM)
+    desired_check_out: Optional[str] = Field(default=None, pattern=_HHMM)
 
 
 class LeaveIn(BaseModel):
@@ -596,6 +602,10 @@ class LeaveIn(BaseModel):
 class DecisionIn(BaseModel):
     action: Literal['approve', 'reject']
     note: Optional[str] = ''
+    # Corrections only: the times to apply (HH:MM, IST) — the approver can fill in or
+    # adjust what the employee asked for. Blank = use the employee's requested time.
+    check_in: Optional[str] = Field(default=None, pattern=_HHMM)
+    check_out: Optional[str] = Field(default=None, pattern=_HHMM)
 
 
 class PushSubscriptionIn(BaseModel):
