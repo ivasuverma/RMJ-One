@@ -34,6 +34,7 @@ from server import (
     GoldLoanPaymentIn,
     GoldLoanTxnUpdateIn,
     log_audit,
+    assert_mobile_unique,
     _notify_module,
     _pdf_response,
     get_print_config,
@@ -192,6 +193,7 @@ async def create_gold_loan(body: GoldLoanIn, user=Depends(require_admin_or_modul
     elif body.new_customer:
         if len(re.sub(r'\D', '', body.new_customer.mobile or '')) < 7:
             raise HTTPException(status_code=400, detail='A mobile number is required for a new customer')
+        await assert_mobile_unique('customer', body.new_customer.mobile)
         customer = {'id': str(uuid.uuid4()), **body.new_customer.model_dump(), 'created_at': now_utc().isoformat()}
         await db.customers.insert_one(dict(customer))
         try: await _mirror_party_account('customer', customer['id'], customer.get('name', ''), customer.get('mobile', ''))

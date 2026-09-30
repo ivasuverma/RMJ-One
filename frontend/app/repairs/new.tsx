@@ -13,6 +13,8 @@ import { makeThumbFromDataUri } from '@/src/utils/imageThumb';
 import { DateField } from '@/src/components/DateField';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { findByMobile, mobileMatches } from '@/src/utils/mobile';
+import { DuplicateMobileNotice } from '@/src/components/DuplicateMobileNotice';
 
 type Customer = { id: string; name: string; mobile: string; address: string };
 type RepairType = { id: string; name: string; default_labour: number; requires_karigar_default: boolean; active: boolean };
@@ -58,13 +60,11 @@ export default function NewRepairOrderScreen() {
   const [newAddress, setNewAddress] = useState('');
 
   const filteredCustomers = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    const list = q
-      ? allCustomers.filter((c) => c.name.toLowerCase().includes(q) || (c.mobile || '').includes(q))
-      : allCustomers;
-    return list.slice(0, 100);
+    // Customers are found by mobile number only.
+    return allCustomers.filter((c) => mobileMatches(c.mobile, query)).slice(0, 100);
   }, [allCustomers, query]);
 
+  const dupCustomer = mode === 'new' ? findByMobile(allCustomers, newMobile) : undefined;
   const pickCustomer = (c: Customer) => { setSelected(c); setCustPickerOpen(false); setQuery(''); };
 
   // The one item
@@ -101,6 +101,7 @@ export default function NewRepairOrderScreen() {
     if (mode === 'new' && !newName.trim()) { notify('Missing', 'Enter the customer name'); return; }
     // Same rule as a ledger account: a new party must have a mobile number.
     if (mode === 'new' && newMobile.replace(/\D/g, '').length < 7) { notify('Missing', 'A mobile number is required for a new customer'); return; }
+    if (mode === 'new' && dupCustomer) { notify('Already saved', `This mobile number belongs to ${dupCustomer.name} — pick them under Existing Customer`); return; }
     if (!description.trim()) { notify('Missing', 'Enter a description for the item'); return; }
     if (!photo) { notify('Missing', 'Add a photo of the item before saving'); return; }
     submittingRef.current = true;
@@ -179,10 +180,10 @@ export default function NewRepairOrderScreen() {
                 {custPickerOpen && (
                   <View style={styles.pickerList} testID="customer-picker-list">
                     <View style={[styles.searchRow, { marginHorizontal: spacing.sm, marginTop: spacing.sm }]}>
-                      <Ionicons name="search-outline" size={16} color={colors.mutedText} />
+                      <Ionicons name="call-outline" size={16} color={colors.mutedText} />
                       <TextInput
-                        testID="customer-search" value={query} onChangeText={setQuery} autoFocus
-                        placeholder="Search by name or mobile" placeholderTextColor={colors.mutedText}
+                        testID="customer-search" value={query} onChangeText={(v) => setQuery(v.replace(/\D/g, ''))} autoFocus keyboardType="phone-pad"
+                        placeholder="Search by mobile number" placeholderTextColor={colors.mutedText}
                         style={styles.searchInput}
                       />
                     </View>
@@ -206,6 +207,10 @@ export default function NewRepairOrderScreen() {
               <TextInput testID="new-customer-name" value={newName} onChangeText={setNewName} placeholder="Customer name" placeholderTextColor={colors.mutedText} style={styles.input} />
               <Text style={styles.label}>Mobile <Text style={{ color: colors.onError }}>*</Text></Text>
               <TextInput testID="new-customer-mobile" value={newMobile} onChangeText={setNewMobile} keyboardType="phone-pad" placeholder="98xxxxxxxx" placeholderTextColor={colors.mutedText} style={styles.input} />
+              {dupCustomer && (
+                <DuplicateMobileNotice name={dupCustomer.name} testID="new-customer-duplicate"
+                  onUse={() => { setSelected(dupCustomer); setMode('existing'); setNewName(''); setNewMobile(''); }} />
+              )}
               <Text style={styles.label}>Address (optional)</Text>
               <TextInput testID="new-customer-address" value={newAddress} onChangeText={setNewAddress} placeholder="Address" placeholderTextColor={colors.mutedText} style={styles.input} />
             </View>

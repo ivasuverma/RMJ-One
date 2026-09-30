@@ -4,6 +4,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { api } from '@/src/api/client';
 import { spacing, radius, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { findByMobile, mobileMatches } from '@/src/utils/mobile';
+import { DuplicateMobileNotice } from '@/src/components/DuplicateMobileNotice';
 
 export type ChooserKarigar = { id: string; name: string; mobile?: string; is_employee?: boolean };
 export type KarigarMode = 'existing' | 'new';
@@ -12,7 +14,9 @@ export type KarigarMode = 'existing' | 'new';
  * "Existing Karigar / New Karigar", the same pattern as the customer choice
  * on New Repair Intake: pick one from the list (with search), or type a new
  * karigar's name and mobile. The new one is only created when the form is
- * saved (see createKarigar), so backing out leaves nothing behind.
+ * saved (see createKarigar), so backing out leaves nothing behind. Karigars
+ * are found by mobile number, and a New Karigar whose number is already saved
+ * is flagged (with a one-tap switch to that karigar) — the server refuses it too.
  */
 export function KarigarChooser({
   karigars, picked, onPick, mode, onMode, newName, onNewName, newMobile, onNewMobile, placeholder = 'Choose a karigar', testID = 'karigar',
@@ -31,10 +35,8 @@ export function KarigarChooser({
   const s = useMemo(() => makeStyles(colors), [colors]);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const list = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return q ? karigars.filter((k) => k.name.toLowerCase().includes(q) || (k.mobile || '').includes(q)) : karigars;
-  }, [karigars, query]);
+  const list = useMemo(() => karigars.filter((k) => mobileMatches(k.mobile, query)), [karigars, query]);
+  const duplicate = mode === 'new' ? findByMobile(karigars, newMobile) : undefined;
 
   return (
     <View>
@@ -47,9 +49,13 @@ export function KarigarChooser({
       </View>
 
       {mode === 'new' ? (
-        <View style={{ gap: spacing.sm }}>
+        <View>
           <TextInput value={newName} onChangeText={onNewName} placeholder="Karigar name" placeholderTextColor={colors.mutedText} style={s.input} testID={`${testID}-new-name`} />
-          <TextInput value={newMobile} onChangeText={onNewMobile} placeholder="Mobile number" placeholderTextColor={colors.mutedText} keyboardType="phone-pad" style={s.input} testID={`${testID}-new-mobile`} />
+          <TextInput value={newMobile} onChangeText={onNewMobile} placeholder="Mobile number" placeholderTextColor={colors.mutedText} keyboardType="phone-pad" style={[s.input, { marginTop: spacing.sm }]} testID={`${testID}-new-mobile`} />
+          {duplicate && (
+            <DuplicateMobileNotice name={duplicate.name} testID={`${testID}-duplicate`}
+              onUse={() => { onPick(duplicate); onMode('existing'); onNewName(''); onNewMobile(''); }} />
+          )}
         </View>
       ) : picked ? (
         <View style={s.selectedCard} testID={`${testID}-selected`}>
@@ -69,19 +75,17 @@ export function KarigarChooser({
           </Pressable>
           {open && (
             <View style={s.pickerList}>
-              {karigars.length > 6 && (
-                <View style={s.searchRow}>
-                  <Ionicons name="search-outline" size={16} color={colors.mutedText} />
-                  <TextInput value={query} onChangeText={setQuery} placeholder="Search by name or mobile" placeholderTextColor={colors.mutedText} style={s.searchInput} testID={`${testID}-search`} />
-                </View>
-              )}
+              <View style={s.searchRow}>
+                <Ionicons name="call-outline" size={16} color={colors.mutedText} />
+                <TextInput value={query} onChangeText={(v) => setQuery(v.replace(/\D/g, ''))} placeholder="Search by mobile number" placeholderTextColor={colors.mutedText} keyboardType="phone-pad" autoFocus style={s.searchInput} testID={`${testID}-search`} />
+              </View>
               <ScrollView style={{ maxHeight: 240 }} nestedScrollEnabled keyboardShouldPersistTaps="handled">
                 {list.length === 0 ? (
                   <Text style={[s.pickerRowMeta, { padding: spacing.md }]}>{karigars.length ? 'No karigars found' : 'No karigars yet — use New Karigar'}</Text>
                 ) : list.map((k) => (
                   <Pressable key={k.id} onPress={() => { onPick(k); setOpen(false); setQuery(''); }} style={s.pickerRow} testID={`${testID}-${k.id}`}>
                     <Text style={s.pickerRowName}>{k.name}</Text>
-                    <Text style={s.pickerRowMeta}>{k.is_employee ? 'In-house' : 'Outside'}</Text>
+                    <Text style={s.pickerRowMeta}>{k.mobile || (k.is_employee ? 'In-house' : '—')}</Text>
                   </Pressable>
                 ))}
               </ScrollView>
@@ -94,9 +98,11 @@ export function KarigarChooser({
 }
 
 /** Checks a New Karigar entry; returns a message for what's missing, or null. */
-export function newKarigarProblem(name: string, mobile: string): string | null {
+export function newKarigarProblem(name: string, mobile: string, karigars: ChooserKarigar[] = []): string | null {
   if (!name.trim()) return 'Enter the new karigar’s name';
   if (mobile.replace(/\D/g, '').length < 7) return 'A mobile number is required for a new karigar';
+  const dup = findByMobile(karigars, mobile);
+  if (dup) return `This mobile number is already saved as ${dup.name} — pick them under Existing Karigar`;
   return null;
 }
 

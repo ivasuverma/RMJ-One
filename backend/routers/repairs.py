@@ -39,6 +39,7 @@ from server import (
     post_gold_ledger_entry,
     delete_gold_ledger_entries,
     log_audit,
+    assert_mobile_unique,
     notify_user,
     _notify_module,
     _notify_system_health,
@@ -168,6 +169,7 @@ async def create_customer(body: CustomerIn, user=Depends(require_ledger_access('
     # this stays customer_ledger-only, no 'repairs' OR needed here.
     if len(re.sub(r'\D', '', body.mobile or '')) < 7:
         raise HTTPException(status_code=400, detail='A mobile number is required')
+    await assert_mobile_unique('customer', body.mobile)
     doc = {'id': str(uuid.uuid4()), **body.model_dump(), 'created_at': now_utc().isoformat()}
     await db.customers.insert_one(dict(doc))
     try: await _mirror_party_account('customer', doc['id'], body.name, body.mobile)
@@ -180,6 +182,7 @@ async def create_customer(body: CustomerIn, user=Depends(require_ledger_access('
 async def update_customer(cid: str, body: CustomerIn, user=Depends(require_ledger_edit_right('customer_ledger', 'edit'))):
     if not await db.customers.find_one({'id': cid}):
         raise HTTPException(status_code=404, detail='Customer not found')
+    await assert_mobile_unique('customer', body.mobile, exclude_id=cid)
     await db.customers.update_one({'id': cid}, {'$set': body.model_dump()})
     await log_audit(user, 'customer.update', 'customer', cid, body.name)
     return await db.customers.find_one({'id': cid}, {'_id': 0})
@@ -249,6 +252,7 @@ async def create_karigar(body: KarigarIn, user=Depends(require_admin_or_module([
     elif len(re.sub(r'\D', '', body.mobile or '')) < 7:
         # Outside karigars need a mobile number (in-house ones are employees).
         raise HTTPException(status_code=400, detail='A mobile number is required')
+    await assert_mobile_unique('karigar', body.mobile)
     doc = {'id': str(uuid.uuid4()), **{**body.model_dump(), 'name': name}, 'created_at': now_utc().isoformat()}
     await db.karigars.insert_one(dict(doc))
     try: await _mirror_party_account('karigar', doc['id'], name, body.mobile)
@@ -261,6 +265,7 @@ async def create_karigar(body: KarigarIn, user=Depends(require_admin_or_module([
 async def update_karigar(kid: str, body: KarigarIn, user=Depends(require_admin_or_module_right('karigar_ledger', 'edit'))):
     if not await db.karigars.find_one({'id': kid}):
         raise HTTPException(status_code=404, detail='Karigar not found')
+    await assert_mobile_unique('karigar', body.mobile, exclude_id=kid)
     await db.karigars.update_one({'id': kid}, {'$set': body.model_dump()})
     await log_audit(user, 'karigar.update', 'karigar', kid, body.name)
     return await db.karigars.find_one({'id': kid}, {'_id': 0})
@@ -367,6 +372,7 @@ async def create_repair_order(body: RepairOrderIn, user=Depends(require_admin_or
     elif body.new_customer:
         if len(re.sub(r'\D', '', body.new_customer.mobile or '')) < 7:
             raise HTTPException(status_code=400, detail='A mobile number is required for a new customer')
+        await assert_mobile_unique('customer', body.new_customer.mobile)
         customer = {'id': str(uuid.uuid4()), **body.new_customer.model_dump(), 'created_at': now_utc().isoformat()}
         await db.customers.insert_one(dict(customer))
         try: await _mirror_party_account('customer', customer['id'], customer.get('name', ''), customer.get('mobile', ''))

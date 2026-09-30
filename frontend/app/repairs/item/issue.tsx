@@ -48,7 +48,7 @@ export default function IssueToKarigarScreen() {
    * Returns undefined (after telling the user) if the New Karigar entry is incomplete. */
   const resolveKarigar = async (): Promise<Karigar | null | undefined> => {
     if (kMode === 'existing') return pickedKarigar;
-    const problem = newKarigarProblem(newKName, newKMobile);
+    const problem = newKarigarProblem(newKName, newKMobile, karigars);
     if (problem) { notify('Missing', problem); return undefined; }
     const k = await createKarigar(newKName, newKMobile) as Karigar;
     setKarigars((list) => [...list, k].sort((x, y) => x.name.localeCompare(y.name)));

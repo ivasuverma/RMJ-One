@@ -13,6 +13,8 @@ import { enqueueRecordPhoto } from '@/src/utils/uploadQueue';
 import { makeThumbFromDataUri } from '@/src/utils/imageThumb';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { findByMobile, mobileMatches } from '@/src/utils/mobile';
+import { DuplicateMobileNotice } from '@/src/components/DuplicateMobileNotice';
 
 type Customer = { id: string; name: string; mobile: string; address: string };
 type GoldLoan = {
@@ -52,9 +54,11 @@ export default function NewGoldLoanScreen() {
 
   const filteredCustomers = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const list = q ? allCustomers.filter((c) => c.name.toLowerCase().includes(q) || (c.mobile || '').includes(q)) : allCustomers;
+    // Customers are found by mobile number only.
+    const list = allCustomers.filter((c) => mobileMatches(c.mobile, q));
     return list.slice(0, 100);
   }, [allCustomers, query]);
+  const dupCustomer = mode === 'new' ? findByMobile(allCustomers, newMobile) : undefined;
   const pickCustomer = (c: Customer) => { setSelected(c); setCustPickerOpen(false); setQuery(''); };
 
   const [customerName, setCustomerName] = useState(''); // display-only in edit mode — customer can't be changed after issue
@@ -108,6 +112,7 @@ export default function NewGoldLoanScreen() {
     if (!isEdit && mode === 'existing' && !selected) { notify('Missing', 'Pick a customer, or switch to New Customer'); return; }
     if (!isEdit && mode === 'new' && !newName.trim()) { notify('Missing', 'Enter the customer name'); return; }
     if (!isEdit && mode === 'new' && newMobile.replace(/\D/g, '').length < 7) { notify('Missing', 'A mobile number is required for a new customer'); return; }
+    if (!isEdit && mode === 'new' && dupCustomer) { notify('Already saved', `This mobile number belongs to ${dupCustomer.name} — pick them under Existing`); return; }
     if (!description.trim()) { notify('Missing', 'Describe what is being pledged'); return; }
     const w = parseFloat(weight);
     if (!w || w <= 0) { notify('Missing', 'Enter a weight greater than 0'); return; }
@@ -206,7 +211,7 @@ export default function NewGoldLoanScreen() {
                   </Pressable>
                   {custPickerOpen && (
                     <View style={styles.pickerList}>
-                      <TextInput value={query} onChangeText={setQuery} placeholder="Search name or mobile" placeholderTextColor={colors.mutedText} style={styles.searchInput} testID="loan-customer-search" />
+                      <TextInput value={query} onChangeText={(v) => setQuery(v.replace(/\D/g, ''))} placeholder="Search by mobile number" placeholderTextColor={colors.mutedText} keyboardType="phone-pad" autoFocus style={styles.searchInput} testID="loan-customer-search" />
                       <ScrollView style={{ maxHeight: 220 }} nestedScrollEnabled keyboardShouldPersistTaps="handled">
                         {filteredCustomers.map((c) => (
                           <Pressable key={c.id} onPress={() => pickCustomer(c)} style={styles.pickerRow} testID={`loan-cust-${c.id}`}>
@@ -223,6 +228,10 @@ export default function NewGoldLoanScreen() {
                 <>
                   <TextInput testID="loan-new-name" value={newName} onChangeText={setNewName} placeholder="Customer name" placeholderTextColor={colors.mutedText} style={styles.input} />
                   <TextInput testID="loan-new-mobile" value={newMobile} onChangeText={setNewMobile} placeholder="Mobile number" placeholderTextColor={colors.mutedText} keyboardType="phone-pad" style={[styles.input, { marginTop: spacing.sm }]} />
+                  {dupCustomer && (
+                    <DuplicateMobileNotice name={dupCustomer.name} testID="loan-new-duplicate"
+                      onUse={() => { pickCustomer(dupCustomer); setMode('existing'); setNewName(''); setNewMobile(''); }} />
+                  )}
                   <TextInput testID="loan-new-address" value={newAddress} onChangeText={setNewAddress} placeholder="Address (optional)" placeholderTextColor={colors.mutedText} style={[styles.input, { marginTop: spacing.sm }]} multiline />
                 </>
               )}

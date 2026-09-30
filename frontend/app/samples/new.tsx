@@ -15,7 +15,7 @@ import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { KarigarChooser, KarigarMode, createKarigar, newKarigarProblem } from '@/src/components/KarigarChooser';
 
-type Karigar = { id: string; name: string; active: boolean };
+type Karigar = { id: string; name: string; mobile?: string; active: boolean };
 type ItemMaster = { id: string; name: string; purity: number; category: string; active: boolean };
 type Sample = {
   id: string; sample_code: string; description: string; tag_number: string;
@@ -111,7 +111,7 @@ export default function NewSampleScreen() {
   const submit = async () => {
     if (submittingRef.current) return;
     if (!isEdit && kMode === 'existing' && !karigarId) { notify('Missing', 'Pick which karigar this sample goes to, or add a New Karigar'); return; }
-    const newKProblem = !isEdit && kMode === 'new' ? newKarigarProblem(newKName, newKMobile) : null;
+    const newKProblem = !isEdit && kMode === 'new' ? newKarigarProblem(newKName, newKMobile, karigars) : null;
     if (newKProblem) { notify('Missing', newKProblem); return; }
     if (!description.trim()) { notify('Missing', 'Describe the sample piece'); return; }
     const w = parseFloat(weight);
