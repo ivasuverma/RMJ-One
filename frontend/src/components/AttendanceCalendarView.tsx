@@ -32,7 +32,7 @@ type StatusStyle = { bg: string; fg: string };
 // pairs (not theme semantic tokens) are used for the statuses beyond the
 // core 4 (success/warning/error/info) since this palette only has those four
 // plus neutral/brand to work with.
-function makeStatusStyles(_colors: ThemeColors, scheme: 'light' | 'dark'): Record<string, StatusStyle> {
+export function makeStatusStyles(_colors: ThemeColors, scheme: 'light' | 'dark'): Record<string, StatusStyle> {
   // One clearly different hue per status, with fills strong enough to tell apart
   // at a glance (the old theme tints were ~12% and several looked alike):
   // green · orange · purple · red · pink · blue · grey · cyan.

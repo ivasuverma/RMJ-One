@@ -4,13 +4,13 @@ import { useTheme } from '@/src/theme/ThemeContext';
 import AttendanceCalendarView from '@/src/components/AttendanceCalendarView';
 
 export default function AttendanceCalendarRoute() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, name } = useLocalSearchParams<{ id: string; name?: string }>();
   const { colors } = useTheme();
   const router = useRouter();
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.surface }} edges={['top']}>
-      <AttendanceCalendarView empId={id!} onBack={() => router.back()} />
+      <AttendanceCalendarView empId={id!} onBack={() => router.back()} title={name || 'Calendar'} />
     </SafeAreaView>
   );
 }

@@ -67,7 +67,7 @@ function pillFor(r: Row) {
 export default function OwnerAttendance() {
   const { scrolled, onScroll } = useScrolled();
   const router = useRouter();
-  const { from, seg: segParam } = useLocalSearchParams<{ from?: string; seg?: string }>();
+  const { from, seg: segParam, year: yearParam, month: monthParam } = useLocalSearchParams<{ from?: string; seg?: string; year?: string; month?: string }>();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const toast = useToast();
@@ -88,8 +88,15 @@ export default function OwnerAttendance() {
   const [liveOpen, setLiveOpen] = useState<Record<string, boolean>>({});
   const isToday = date === todayIST();
   const now = new Date();
-  const [year, setYear] = useState(now.getFullYear());
-  const [month, setMonth] = useState(now.getMonth() + 1);
+  // ?year=&month= opens Payroll on that month (e.g. Payday on Home opens last month's salaries).
+  const [year, setYear] = useState(() => Number(yearParam) || now.getFullYear());
+  const [month, setMonth] = useState(() => (Number(monthParam) >= 1 && Number(monthParam) <= 12 ? Number(monthParam) : now.getMonth() + 1));
+  // Tab screens stay mounted — follow a new link (seg/year/month) when it arrives.
+  useEffect(() => {
+    if (segParam === 'pay' || segParam === 'live' || segParam === 'today') setSeg(segParam as Seg);
+    const y = Number(yearParam), m = Number(monthParam);
+    if (y && m >= 1 && m <= 12) { setYear(y); setMonth(m); }
+  }, [segParam, yearParam, monthParam]);
   const stepMonth = (delta: number) => {
     let m = month + delta;
     let y = year;

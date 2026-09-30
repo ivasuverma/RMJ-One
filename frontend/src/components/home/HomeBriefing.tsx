@@ -15,7 +15,9 @@ import { Skeleton } from '@/src/components/ui';
 import { StickyHeader, useScrolled, HeaderSpacer } from '@/src/components/ui/StickyHeader';
 import { TabBarSpacer } from '@/src/components/GlassTabBar';
 import { UploadQueueBadge } from '@/src/components/UploadQueueBadge';
+import { Marquee } from './Marquee';
 import { StaffSheet } from './StaffSheet';
+import { NotifRow, notifTarget, Notif } from '@/src/components/notifications/NotifRow';
 import { QuickEditSheet, EmployeePickSheet, QUICK_ICON } from './QuickSheets';
 import { HomeSummary, isOk, NeedRow, QuickActions, StaffPerson } from './types';
 
@@ -64,6 +66,15 @@ export default function HomeBriefing() {
   const [pickAdvance, setPickAdvance] = useState(false);
   const [quickOverride, setQuickOverride] = useState<QuickActions | null>(null);
   const go = (route: string) => router.push(route as any);
+  const [readIds, setReadIds] = useState<Set<string>>(new Set());   // tapped here, before the next refresh
+  const openNotif = (n: Notif) => {
+    if (!n.read && !readIds.has(n.id)) {
+      setReadIds((p) => new Set(p).add(n.id));
+      api.post(`/notifications/${n.id}/read`, {}).catch(() => {});
+    }
+    const to = notifTarget(n.url);
+    if (to) go(to);
+  };
 
   const header = isOk(data?.header) ? data!.header : null;
   const today = header?.date || new Date().toISOString().slice(0, 10);
@@ -95,12 +106,12 @@ export default function HomeBriefing() {
         refreshControl={<RefreshControl refreshing={pulling} onRefresh={onPull} tintColor={colors.brandPrimary} />}>
         <HeaderSpacer />
 
-        {/* Rate ticker */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.ticker} style={s.edgeToEdge}>
-          {isOk(data?.rates) ? (
-            <>
+        {/* Rate ticker — slides like a news ticker; tap a rate for the Rates page */}
+        {isOk(data?.rates) ? (
+          <View style={[s.edgeToEdge, s.ticker]}>
+            <Marquee testID="home-rates">
               {data!.rates.items.map((r) => (
-                <Pressable key={r.key} style={s.tk} onPress={() => data!.rates && isOk(data!.rates) && data!.rates.can_open && go('/gold-rate')} testID={`home-rate-${r.key}`}>
+                <Pressable key={r.key} style={s.tk} onPress={() => go('/rates')} testID={`home-rate-${r.key}`}>
                   <Text style={s.tkLabel}>{r.label}</Text>
                   <Text style={s.tkRate}>{inr(r.rate)}</Text>
                   {r.change != null && r.change !== 0 && (
@@ -117,9 +128,13 @@ export default function HomeBriefing() {
                   </Text>
                 </Pressable>
               )}
-            </>
-          ) : !data ? [0, 1, 2].map((i) => <Skeleton key={i} width={120} height={36} radius={12} />) : null}
-        </ScrollView>
+            </Marquee>
+          </View>
+        ) : !data ? (
+          <View style={[s.edgeToEdge, s.ticker, { flexDirection: 'row', gap: 8, paddingHorizontal: spacing.lg }]}>
+            {[0, 1, 2].map((i) => <Skeleton key={i} width={120} height={36} radius={12} />)}
+          </View>
+        ) : null}
 
         {/* Cash in hand */}
         {data?.cash !== null && (isOk(data?.cash) ? (
@@ -152,9 +167,6 @@ export default function HomeBriefing() {
                 </View>
                 <View style={s.mact}>
                   <Pressable onPress={() => go('/cashbook')} style={[s.mBtn, s.mBtnGold]} testID="home-open-cashbook"><Text style={s.mBtnGoldText}>Open Cash Book</Text></Pressable>
-                  {data!.cash.can_edit && (
-                    <Pressable onPress={() => go('/cashbook')} style={s.mBtn} testID="home-close-day"><Text style={s.mBtnText}>Close the day</Text></Pressable>
-                  )}
                 </View>
               </View>
             )}
@@ -179,7 +191,7 @@ export default function HomeBriefing() {
         )}
 
         {/* Needs you today */}
-        {Array.isArray(data?.needs_you) ? (
+        {data?.needs_you === null ? null : Array.isArray(data?.needs_you) ? (
           <>
             <SectionHead s={s} title="Needs you today" right={data!.needs_you.length ? String(data!.needs_you.length) : undefined} />
             <View style={s.list} testID="home-needs">
@@ -274,6 +286,31 @@ export default function HomeBriefing() {
           </>
         )}
 
+        {/* Notifications — the latest few, same list the bell opens */}
+        {isOk(data?.notifications) && (() => {
+          const nt = data!.notifications;
+          const fresh = Math.max(0, nt.unread - nt.items.filter((n) => !n.read && readIds.has(n.id)).length);
+          return (
+            <>
+              <SectionHead s={s} title="Notifications" right={fresh ? `${fresh} new` : undefined} onRight={() => go('/notifications')} />
+              <View style={s.list} testID="home-notifications">
+                {nt.items.length === 0 ? (
+                  <View style={s.item}>
+                    <View style={[s.ic, { backgroundColor: colors.brandTertiary }]}><Ionicons name="notifications-outline" size={16} color={colors.brandSecondary} /></View>
+                    <View style={s.mid}><Text style={s.t1}>No notifications yet</Text></View>
+                  </View>
+                ) : nt.items.map((n, i) => (
+                  <NotifRow key={n.id} n={readIds.has(n.id) ? { ...n, read: true } : n} first={i === 0} onPress={() => openNotif(n)} testID={`home-notif-${n.id}`} />
+                ))}
+                <Pressable style={({ pressed }) => [s.item, s.itemSep, s.viewAll, pressed && { backgroundColor: colors.surfaceTertiary }]} onPress={() => go('/notifications')} testID="home-notif-all">
+                  <Text style={s.viewAllText}>View all notifications</Text>
+                  <Ionicons name="chevron-forward" size={16} color={colors.brandSecondary} />
+                </Pressable>
+              </View>
+            </>
+          );
+        })()}
+
         {loading && !!data && <Text style={s.updating}>Updating…</Text>}
         <TabBarSpacer />
       </ScrollView>
@@ -339,7 +376,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   roundBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surfaceSecondary, alignItems: 'center', justifyContent: 'center', borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
   bellDot: { position: 'absolute', top: 9, right: 10, width: 8, height: 8, borderRadius: 4, backgroundColor: colors.onError, borderWidth: 1.5, borderColor: colors.surfaceSecondary },
 
-  ticker: { paddingHorizontal: spacing.lg, gap: 8, paddingTop: spacing.sm },
+  ticker: { paddingTop: spacing.sm },
   tk: { flexDirection: 'row', alignItems: 'baseline', gap: 7, backgroundColor: colors.surfaceSecondary, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
   tkLabel: { color: colors.brandSecondary, fontSize: 11, fontWeight: '700' },
   tkRate: { color: colors.onSurface, fontSize: 15, fontWeight: '700', fontVariant: ['tabular-nums'] },
@@ -388,6 +425,8 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   act: { backgroundColor: colors.brandTertiary, paddingHorizontal: 11, paddingVertical: 6, borderRadius: 999 },
   actText: { color: colors.brandSecondary, fontSize: 13, fontWeight: '600' },
   amt: { color: colors.onSurface, fontSize: 15, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  viewAll: { justifyContent: 'space-between', paddingVertical: 14 },
+  viewAllText: { color: colors.brandSecondary, fontSize: 15, fontWeight: '600' },
   day: { color: colors.mutedText, fontSize: 12.5, fontWeight: '700', paddingHorizontal: 14, paddingTop: 12, paddingBottom: 2 },
 
   staff: { paddingHorizontal: spacing.lg, gap: 10, paddingVertical: 2 },
