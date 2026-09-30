@@ -455,8 +455,8 @@ const makeStyles = (colors: ThemeColors, compact: boolean) => {
   buySellValue: {
     color: colors.onSurface, fontFamily: fonts.display, fontSize: c(24, 19), fontWeight: '800', letterSpacing: -0.4,
   },
-  // Heading, with the difference on its own line under it (left-aligned).
-  gstHead: { alignItems: 'flex-start', gap: 3, marginBottom: c(spacing.md, spacing.sm) },
+  // Heading on the left, the difference on the right of the same line.
+  gstHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm, marginBottom: c(spacing.md, spacing.sm) },
   gstDiff: { color: colors.onSurfaceSecondary, fontSize: c(12.5, 11.5), fontWeight: '800' },
   sellValue: { color: colors.brandPrimary },
   purityToggle: {
