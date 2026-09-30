@@ -13,7 +13,7 @@ import { makeThumbFromDataUri } from '@/src/utils/imageThumb';
 import { DateField } from '@/src/components/DateField';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
-import { KarigarChooser, KarigarMode, createKarigar, newKarigarProblem } from '@/src/components/KarigarChooser';
+import { KarigarChooser, createKarigar, resolveKarigar } from '@/src/components/KarigarChooser';
 
 type Karigar = { id: string; name: string; mobile?: string; active: boolean };
 type ItemMaster = { id: string; name: string; purity: number; category: string; active: boolean };
@@ -50,13 +50,13 @@ export default function NewSampleScreen() {
   }, []);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const [karigarId, setKarigarId] = useState('');
   const [karigarName, setKarigarName] = useState(''); // display-only in edit mode — the karigar can't be changed after issue
-  // Existing Karigar / New Karigar (see KarigarChooser); a new one is saved with the sample.
-  const [kMode, setKMode] = useState<KarigarMode>('existing');
-  const [newKName, setNewKName] = useState('');
-  const [newKMobile, setNewKMobile] = useState('');
-  const pickedKarigar = karigars.find((k) => k.id === karigarId) || null;
+  // Karigar, mobile first (see KarigarChooser): a saved number is that
+  // karigar, an unknown one plus a name is a new karigar saved with the sample.
+  const [kMobile, setKMobile] = useState('');
+  const [kName, setKName] = useState('');
+  const [kInHouse, setKInHouse] = useState<Karigar | null>(null);
+  const kEntry = resolveKarigar(karigars, kMobile, kName, kInHouse);
 
   const [issueType, setIssueType] = useState('');
   const [issueTypeOther, setIssueTypeOther] = useState(false);
@@ -79,7 +79,7 @@ export default function NewSampleScreen() {
     (async () => {
       try {
         const s = await api.get<Sample>(`/samples/${editId}`);
-        setKarigarId(s.karigar_id); setKarigarName(s.karigar_name);
+        setKarigarName(s.karigar_name);
         setIssueType(s.issue_type || '');
         // issueTypes (fetched in `load`, above) may not have arrived yet —
         // the effect below re-checks once it does.
@@ -110,9 +110,8 @@ export default function NewSampleScreen() {
 
   const submit = async () => {
     if (submittingRef.current) return;
-    if (!isEdit && kMode === 'existing' && !karigarId) { notify('Missing', 'Pick which karigar this sample goes to, or add a New Karigar'); return; }
-    const newKProblem = !isEdit && kMode === 'new' ? newKarigarProblem(newKName, newKMobile, karigars) : null;
-    if (newKProblem) { notify('Missing', newKProblem); return; }
+    if (!isEdit && kEntry.kind === 'none') { notify('Missing', 'Enter the mobile number of the karigar this sample goes to'); return; }
+    if (!isEdit && kEntry.kind === 'error') { notify('Missing', kEntry.message); return; }
     if (!description.trim()) { notify('Missing', 'Describe the sample piece'); return; }
     const w = parseFloat(weight);
     if (!w || w <= 0) { notify('Missing', 'Enter a weight greater than 0'); return; }
@@ -129,12 +128,11 @@ export default function NewSampleScreen() {
         });
         router.back();
       } else {
-        let kid = karigarId;
-        if (kMode === 'new') {
-          // Saved first, and kept picked, so a retry after a failed save doesn't add it twice.
-          const k = await createKarigar(newKName, newKMobile);
-          setKarigars((list) => [...list, { id: k.id, name: k.name, active: true }].sort((a, b) => a.name.localeCompare(b.name)));
-          setKarigarId(k.id); setKMode('existing'); setNewKName(''); setNewKMobile('');
+        let kid = kEntry.kind === 'existing' ? kEntry.party.id : '';
+        if (kEntry.kind === 'new') {
+          // Added to the list, so a retry after a failed save finds it by its number instead of adding it twice.
+          const k = await createKarigar(kEntry.name, kEntry.mobile);
+          setKarigars((list) => [...list, { id: k.id, name: k.name, mobile: k.mobile, active: true }].sort((a, b) => a.name.localeCompare(b.name)));
           kid = k.id;
         }
         const created = await api.post<{ id: string }[]>('/samples', {
@@ -192,8 +190,8 @@ export default function NewSampleScreen() {
             </View>
           ) : (
             <KarigarChooser
-              karigars={karigars} picked={pickedKarigar} onPick={(k) => setKarigarId(k?.id || '')}
-              mode={kMode} onMode={setKMode} newName={newKName} onNewName={setNewKName} newMobile={newKMobile} onNewMobile={setNewKMobile}
+              karigars={karigars} mobile={kMobile} onMobile={setKMobile} name={kName} onName={setKName}
+              inHouse={kInHouse} onInHouse={(k) => setKInHouse(k as Karigar | null)}
               testID="sample-karigar"
             />
           )}

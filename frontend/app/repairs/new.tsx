@@ -13,8 +13,7 @@ import { makeThumbFromDataUri } from '@/src/utils/imageThumb';
 import { DateField } from '@/src/components/DateField';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
-import { findByMobile, mobileMatches } from '@/src/utils/mobile';
-import { DuplicateMobileNotice } from '@/src/components/DuplicateMobileNotice';
+import { PartyByMobile, resolveParty } from '@/src/components/PartyByMobile';
 
 type Customer = { id: string; name: string; mobile: string; address: string };
 type RepairType = { id: string; name: string; default_labour: number; requires_karigar_default: boolean; active: boolean };
@@ -50,22 +49,12 @@ export default function NewRepairOrderScreen() {
   }, []);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  // Customer
-  const [mode, setMode] = useState<'existing' | 'new'>('existing');
-  const [query, setQuery] = useState('');
-  const [custPickerOpen, setCustPickerOpen] = useState(false);
-  const [selected, setSelected] = useState<Customer | null>(null);
-  const [newName, setNewName] = useState('');
-  const [newMobile, setNewMobile] = useState('');
+  // Customer, mobile first (see PartyByMobile): a saved number is that
+  // customer, an unknown one plus a name is a new customer.
+  const [custMobile, setCustMobile] = useState('');
+  const [custName, setCustName] = useState('');
   const [newAddress, setNewAddress] = useState('');
-
-  const filteredCustomers = useMemo(() => {
-    // Customers are found by mobile number only.
-    return allCustomers.filter((c) => mobileMatches(c.mobile, query)).slice(0, 100);
-  }, [allCustomers, query]);
-
-  const dupCustomer = mode === 'new' ? findByMobile(allCustomers, newMobile) : undefined;
-  const pickCustomer = (c: Customer) => { setSelected(c); setCustPickerOpen(false); setQuery(''); };
+  const cust = resolveParty(allCustomers, custMobile, custName, 'customer');
 
   // The one item
   const [itemMasterId, setItemMasterId] = useState('');
@@ -97,11 +86,8 @@ export default function NewRepairOrderScreen() {
 
   const submit = async () => {
     if (submittingRef.current) return;
-    if (mode === 'existing' && !selected) { notify('Missing', 'Pick a customer, or switch to New Customer'); return; }
-    if (mode === 'new' && !newName.trim()) { notify('Missing', 'Enter the customer name'); return; }
-    // Same rule as a ledger account: a new party must have a mobile number.
-    if (mode === 'new' && newMobile.replace(/\D/g, '').length < 7) { notify('Missing', 'A mobile number is required for a new customer'); return; }
-    if (mode === 'new' && dupCustomer) { notify('Already saved', `This mobile number belongs to ${dupCustomer.name} — pick them under Existing Customer`); return; }
+    if (cust.kind === 'none') { notify('Missing', 'Enter the customer’s mobile number'); return; }
+    if (cust.kind === 'error') { notify('Missing', cust.message); return; }
     if (!description.trim()) { notify('Missing', 'Enter a description for the item'); return; }
     if (!photo) { notify('Missing', 'Add a photo of the item before saving'); return; }
     submittingRef.current = true;
@@ -117,8 +103,8 @@ export default function NewRepairOrderScreen() {
           due_date: dueDate || null, notes: '', intake_photo: '',
         }],
       };
-      if (mode === 'existing') body.customer_id = selected!.id;
-      else body.new_customer = { name: newName.trim(), mobile: newMobile, address: newAddress, notes: '' };
+      if (cust.kind === 'existing') body.customer_id = cust.party.id;
+      else if (cust.kind === 'new') body.new_customer = { name: cust.name, mobile: cust.mobile, address: newAddress, notes: '' };
 
       const res = await api.post<{ order: { id: string }; items: { id: string }[] }>('/repair-orders', body);
       const createdItem = res.items?.[0];
@@ -151,70 +137,10 @@ export default function NewRepairOrderScreen() {
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 100 }} keyboardShouldPersistTaps="handled">
           <Text style={styles.section}>Customer</Text>
-          <View style={styles.chipRow}>
-            <Pressable onPress={() => setMode('existing')} style={[styles.chip, mode === 'existing' && styles.chipActive]} testID="mode-existing">
-              <Text style={[styles.chipText, mode === 'existing' && styles.chipTextActive]}>Existing Customer</Text>
-            </Pressable>
-            <Pressable onPress={() => setMode('new')} style={[styles.chip, mode === 'new' && styles.chipActive]} testID="mode-new">
-              <Text style={[styles.chipText, mode === 'new' && styles.chipTextActive]}>New Customer</Text>
-            </Pressable>
-          </View>
-
-          {mode === 'existing' ? (
-            selected ? (
-              <View style={styles.selectedCard} testID="selected-customer">
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.cName}>{selected.name}</Text>
-                  <Text style={styles.cMeta}>{selected.mobile || 'No mobile on file'}</Text>
-                </View>
-                <Pressable onPress={() => setSelected(null)} style={styles.smallBtn} testID="change-customer-btn">
-                  <Text style={styles.smallBtnText}>Change</Text>
-                </Pressable>
-              </View>
-            ) : (
-              <>
-                <Pressable onPress={() => setCustPickerOpen((v) => !v)} style={styles.picker} testID="customer-picker-toggle">
-                  <Text style={styles.pickerPlaceholder}>Choose a customer</Text>
-                  <Ionicons name={custPickerOpen ? 'chevron-up' : 'chevron-down'} size={16} color={colors.mutedText} />
-                </Pressable>
-                {custPickerOpen && (
-                  <View style={styles.pickerList} testID="customer-picker-list">
-                    <View style={[styles.searchRow, { marginHorizontal: spacing.sm, marginTop: spacing.sm }]}>
-                      <Ionicons name="call-outline" size={16} color={colors.mutedText} />
-                      <TextInput
-                        testID="customer-search" value={query} onChangeText={(v) => setQuery(v.replace(/\D/g, ''))} autoFocus keyboardType="phone-pad"
-                        placeholder="Search by mobile number" placeholderTextColor={colors.mutedText}
-                        style={styles.searchInput}
-                      />
-                    </View>
-                    <ScrollView style={{ maxHeight: 260 }} nestedScrollEnabled keyboardShouldPersistTaps="handled">
-                      {filteredCustomers.length === 0 ? (
-                        <Text style={[styles.pickerRowMeta, { padding: spacing.md }]}>No customers found</Text>
-                      ) : filteredCustomers.map((c) => (
-                        <Pressable key={c.id} onPress={() => pickCustomer(c)} style={styles.pickerRow} testID={`customer-result-${c.id}`}>
-                          <Text style={styles.pickerRowName}>{c.name}</Text>
-                          <Text style={styles.pickerRowMeta}>{c.mobile || '—'}</Text>
-                        </Pressable>
-                      ))}
-                    </ScrollView>
-                  </View>
-                )}
-              </>
-            )
-          ) : (
-            <View style={styles.formCard} testID="new-customer-form">
-              <Text style={styles.label}>Name</Text>
-              <TextInput testID="new-customer-name" value={newName} onChangeText={setNewName} placeholder="Customer name" placeholderTextColor={colors.mutedText} style={styles.input} />
-              <Text style={styles.label}>Mobile <Text style={{ color: colors.onError }}>*</Text></Text>
-              <TextInput testID="new-customer-mobile" value={newMobile} onChangeText={setNewMobile} keyboardType="phone-pad" placeholder="98xxxxxxxx" placeholderTextColor={colors.mutedText} style={styles.input} />
-              {dupCustomer && (
-                <DuplicateMobileNotice name={dupCustomer.name} testID="new-customer-duplicate"
-                  onUse={() => { setSelected(dupCustomer); setMode('existing'); setNewName(''); setNewMobile(''); }} />
-              )}
-              <Text style={styles.label}>Address (optional)</Text>
-              <TextInput testID="new-customer-address" value={newAddress} onChangeText={setNewAddress} placeholder="Address" placeholderTextColor={colors.mutedText} style={styles.input} />
-            </View>
-          )}
+          <PartyByMobile list={allCustomers} mobile={custMobile} onMobile={setCustMobile} name={custName} onName={setCustName} kindLabel="customer" testID="customer">
+            <Text style={styles.label}>Address (optional)</Text>
+            <TextInput testID="new-customer-address" value={newAddress} onChangeText={setNewAddress} placeholder="Address" placeholderTextColor={colors.mutedText} style={styles.input} />
+          </PartyByMobile>
 
           <Text style={[styles.section, { marginTop: spacing.xl }]}>Item</Text>
           <Pressable onPress={() => setImPickerOpen((v) => !v)} style={styles.picker} testID="item-im-toggle">
@@ -319,24 +245,10 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
 
   section: { color: colors.brandSecondary, fontSize: 11, letterSpacing: 1, textTransform: 'uppercase', marginBottom: spacing.sm },
   chipRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md, flexWrap: 'wrap' },
-  chip: { flexGrow: 1, alignItems: 'center', paddingVertical: 10, paddingHorizontal: spacing.sm, borderRadius: radius.md, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border },
-  chipActive: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
-  chipText: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '700' },
-  chipTextActive: { color: colors.onBrandPrimary },
   dayChip: { paddingVertical: 6, paddingHorizontal: spacing.sm, borderRadius: radius.pill, backgroundColor: colors.surfaceTertiary, borderWidth: 1, borderColor: colors.border },
   dayChipText: { color: colors.onSurfaceSecondary, fontSize: 11, fontWeight: '700' },
 
-  searchRow: {
-    flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.surfaceSecondary,
-    borderRadius: radius.pill, borderWidth: 1, borderColor: colors.border, paddingHorizontal: spacing.md, marginBottom: spacing.sm,
-  },
-  searchInput: { flex: 1, color: colors.onSurface, paddingVertical: 12, fontSize: 14 },
-  selectedCard: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surfaceSecondary, borderRadius: radius.md,
-    borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.md,
-  },
 
-  formCard: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.lg, marginBottom: spacing.md },
   label: { color: colors.onSurfaceSecondary, fontSize: 12, marginBottom: 6, marginTop: spacing.md },
   input: {
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
@@ -367,10 +279,6 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   removePhotoLink: { alignSelf: 'flex-end', marginTop: 6 },
   removePhotoText: { color: colors.onError, fontSize: 11, fontWeight: '700' },
 
-  cName: { color: colors.onSurface, fontWeight: '700', fontSize: 14 },
-  cMeta: { color: colors.onSurfaceTertiary, fontSize: 12, marginTop: 2 },
-  smallBtn: { backgroundColor: colors.surfaceTertiary, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, borderColor: colors.border },
-  smallBtnText: { color: colors.onSurfaceSecondary, fontSize: 11, fontWeight: '700' },
 
   submitBtn: {
     flexDirection: 'row', gap: spacing.sm, alignItems: 'center', justifyContent: 'center',

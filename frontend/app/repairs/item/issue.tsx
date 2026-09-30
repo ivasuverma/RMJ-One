@@ -10,7 +10,8 @@ import { notify } from '@/src/utils/notify';
 import { promptChoice } from '@/src/utils/choicePrompt';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
-import { KarigarChooser, KarigarMode, createKarigar, newKarigarProblem } from '@/src/components/KarigarChooser';
+import { KarigarChooser, createKarigar, resolveKarigar } from '@/src/components/KarigarChooser';
+import { mobileKey } from '@/src/utils/mobile';
 
 type Item = {
   id: string; item_code: string; description: string; customer_name: string;
@@ -35,24 +36,28 @@ export default function IssueToKarigarScreen() {
   const [pickList, setPickList] = useState<Item[]>([]);
   const [karigars, setKarigars] = useState<Karigar[]>([]);
   const [loading, setLoading] = useState(true);
-  const [pickedKarigar, setPickedKarigar] = useState<Karigar | null>(null);
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const submittingRef = useRef(false);
-  // Existing Karigar / New Karigar (see KarigarChooser); a new one is saved with the issue.
-  const [kMode, setKMode] = useState<KarigarMode>('existing');
-  const [newKName, setNewKName] = useState('');
-  const [newKMobile, setNewKMobile] = useState('');
+  // Karigar, mobile first (see KarigarChooser): a saved number is that
+  // karigar, an unknown one plus a name is a new karigar saved with the issue.
+  const [kMobile, setKMobile] = useState('');
+  const [kName, setKName] = useState('');
+  const [kInHouse, setKInHouse] = useState<Karigar | null>(null);
+  const kEntry = resolveKarigar(karigars, kMobile, kName, kInHouse);
+  const setKarigarEntry = (k: Karigar | null) => {
+    const byMobile = !!k && mobileKey(k.mobile).length >= 7;
+    setKMobile(byMobile ? k!.mobile : ''); setKName(''); setKInHouse(k && !byMobile ? k : null);
+  };
 
-  /** The karigar to issue to: the picked one, or the New Karigar entry saved now.
-   * Returns undefined (after telling the user) if the New Karigar entry is incomplete. */
-  const resolveKarigar = async (): Promise<Karigar | null | undefined> => {
-    if (kMode === 'existing') return pickedKarigar;
-    const problem = newKarigarProblem(newKName, newKMobile, karigars);
-    if (problem) { notify('Missing', problem); return undefined; }
-    const k = await createKarigar(newKName, newKMobile) as Karigar;
+  /** The karigar to issue to (null = none entered), saving a new one first.
+   * Returns undefined (after telling the user) if the entry is incomplete. */
+  const getKarigar = async (): Promise<Karigar | null | undefined> => {
+    if (kEntry.kind === 'none') return null;
+    if (kEntry.kind === 'existing') return kEntry.party;
+    if (kEntry.kind === 'error') { notify('Missing', kEntry.message); return undefined; }
+    const k = await createKarigar(kEntry.name, kEntry.mobile) as Karigar;
     setKarigars((list) => [...list, k].sort((x, y) => x.name.localeCompare(y.name)));
-    setPickedKarigar(k); setKMode('existing'); setNewKName(''); setNewKMobile('');
     return k;
   };
 
@@ -72,7 +77,7 @@ export default function IssueToKarigarScreen() {
           const txn = res.history.find((h) => h.id === txnId);
           if (txn) {
             setNote(txn.note || '');
-            setPickedKarigar(ks.find((k) => k.id === txn.karigar_id) || null);
+            setKarigarEntry(ks.find((k) => k.id === txn.karigar_id) || null);
           }
         }
         setMode('form');
@@ -85,7 +90,7 @@ export default function IssueToKarigarScreen() {
   }, [routeItemId, bulkIds, txnId]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const pickItem = (it: Item) => { setPickedKarigar(null); setNote(''); setItem(it); setMode('form'); };
+  const pickItem = (it: Item) => { setKarigarEntry(null); setNote(''); setItem(it); setMode('form'); };
 
   const printIssueSlip = async (itemId: string) => {
     try { await api.post(`/repair-items/${itemId}/issue-slip/print`, {}); }
@@ -97,10 +102,10 @@ export default function IssueToKarigarScreen() {
     // Editing an existing issue transaction always needs a karigar (it's a real
     // record of who has the item). A fresh issue can skip the karigar entirely —
     // the backend then moves the tag straight to "Pending to Bill".
-    if (isEdit && kMode === 'existing' && !pickedKarigar) { notify('Missing', 'Pick a karigar'); return; }
+    if (isEdit && kEntry.kind === 'none') { notify('Missing', 'Enter the karigar’s mobile number'); return; }
     submittingRef.current = true; setBusy(true);
     try {
-      const k = await resolveKarigar();
+      const k = await getKarigar();
       if (k === undefined) return;
       if (isEdit) {
         await api.put(`/repair-items/${item.id}/transactions/${txnId}`, { karigar_id: k!.id, note });
@@ -127,10 +132,10 @@ export default function IssueToKarigarScreen() {
 
   const submitBulk = async () => {
     if (submittingRef.current || bulkItems.length === 0) return;
-    if (kMode === 'existing' && !pickedKarigar) { notify('Missing', 'Pick a karigar'); return; }
+    if (kEntry.kind === 'none') { notify('Missing', 'Enter the karigar’s mobile number'); return; }
     submittingRef.current = true; setBusy(true);
     let k: Karigar | null | undefined;
-    try { k = await resolveKarigar(); } catch (e: any) { notify('Failed', e?.detail || 'Could not add karigar'); }
+    try { k = await getKarigar(); } catch (e: any) { notify('Failed', e?.detail || 'Could not add karigar'); }
     if (!k) { setBusy(false); submittingRef.current = false; return; }
     let okCount = 0;
     const issuedIds: string[] = [];
@@ -153,7 +158,7 @@ export default function IssueToKarigarScreen() {
   };
 
   const onBack = () => {
-    if (mode === 'form' && !routeItemId) { setItem(null); setPickedKarigar(null); setNote(''); setMode('pick'); return; }
+    if (mode === 'form' && !routeItemId) { setItem(null); setKarigarEntry(null); setNote(''); setMode('pick'); return; }
     router.back();
   };
 
@@ -217,8 +222,8 @@ export default function IssueToKarigarScreen() {
 
             <Text style={styles.label}>Karigar</Text>
             <KarigarChooser
-              karigars={karigars} picked={pickedKarigar} onPick={(x) => setPickedKarigar(x as Karigar | null)}
-              mode={kMode} onMode={setKMode} newName={newKName} onNewName={setNewKName} newMobile={newKMobile} onNewMobile={setNewKMobile}
+              karigars={karigars} mobile={kMobile} onMobile={setKMobile} name={kName} onName={setKName}
+              inHouse={kInHouse} onInHouse={(x) => setKInHouse(x as Karigar | null)}
               testID="issue-karigar"
             />
             <Text style={styles.label}>Note (optional)</Text>
@@ -246,18 +251,18 @@ export default function IssueToKarigarScreen() {
 
             <Text style={styles.label}>{isEdit ? 'Karigar' : 'Karigar (optional)'}</Text>
             <KarigarChooser
-              karigars={karigars} picked={pickedKarigar} onPick={(x) => setPickedKarigar(x as Karigar | null)}
-              mode={kMode} onMode={setKMode} newName={newKName} onNewName={setNewKName} newMobile={newKMobile} onNewMobile={setNewKMobile}
+              karigars={karigars} mobile={kMobile} onMobile={setKMobile} name={kName} onName={setKName}
+              inHouse={kInHouse} onInHouse={(x) => setKInHouse(x as Karigar | null)}
               testID="issue-karigar"
             />
-            {!isEdit && kMode === 'existing' && !pickedKarigar && (
+            {!isEdit && kEntry.kind === 'none' && (
               <Text style={styles.hint}>No karigar needed on this job? Leave this blank and the tag will go straight to "Pending to Bill".</Text>
             )}
             <Text style={styles.label}>Note (optional)</Text>
             <TextInput testID="issue-note" value={note} onChangeText={setNote} placeholder="Instructions for the karigar" placeholderTextColor={colors.mutedText} style={styles.input} />
             <Pressable onPress={submit} disabled={busy} style={[styles.saveBtn, busy && { opacity: 0.6 }]} testID="issue-save-btn">
               {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : (
-                <Text style={styles.saveBtnText}>{isEdit ? 'Save Changes' : pickedKarigar || kMode === 'new' ? 'Issue to Karigar' : 'Mark Pending to Bill'}</Text>
+                <Text style={styles.saveBtnText}>{isEdit ? 'Save Changes' : kEntry.kind !== 'none' ? 'Issue to Karigar' : 'Mark Pending to Bill'}</Text>
               )}
             </Pressable>
           </ScrollView>
