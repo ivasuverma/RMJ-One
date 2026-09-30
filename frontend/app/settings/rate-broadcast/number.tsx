@@ -7,6 +7,7 @@ import { api } from '@/src/api/client';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { useToast } from '@/src/components/ui';
 import { Header, makeStyles, MetaStatus } from './_shared';
+import { HeaderSpacer } from '@/src/components/ui/StickyHeader';
 
 type Diag = {
   app_secret_set: boolean; verify_token_set: boolean;
@@ -103,6 +104,7 @@ export default function BroadcastNumberScreen() {
       {!loaded ? <View style={styles.centered}><ActivityIndicator color={colors.brandPrimary} /></View> : (
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled"
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}>
+          <HeaderSpacer />
           <Text style={styles.hint}>
             A separate number on the official WhatsApp Business Platform (Meta). It sends only rate and offer broadcasts;
             everything else stays on the shop’s OpenWA number.

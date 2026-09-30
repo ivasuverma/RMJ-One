@@ -2,7 +2,7 @@ import { ReactNode, useMemo } from 'react';
 import { RefreshControl, ScrollView, StyleProp, View, ViewStyle } from 'react-native';
 import { Edge, SafeAreaView } from 'react-native-safe-area-context';
 import { spacing, ThemeColors } from '@/src/theme';
-import { StickyHeader, useScrolled } from './StickyHeader';
+import { HeaderSpacer, StickyHeader, useScrolled } from './StickyHeader';
 import { useTheme } from '@/src/theme/ThemeContext';
 
 /** Root shell every screen in the app re-implements by hand today
@@ -49,6 +49,7 @@ export function Screen({
           ) : undefined
         }
       >
+        {header ? <HeaderSpacer /> : null}
         {children}
       </ScrollView>
     </SafeAreaView>

@@ -13,7 +13,7 @@ import { isPushSupported, isSubscribed, subscribeToPush, unsubscribeFromPush } f
 import { QuickUnlockCard } from '@/src/components/QuickUnlockCard';
 import { TabBarSpacer } from '@/src/components/GlassTabBar';
 import { GlassSettings } from '@/src/components/GlassSettings';
-import { StickyHeader, useScrolled } from '@/src/components/ui/StickyHeader';
+import { StickyHeader, useScrolled, HeaderSpacer } from '@/src/components/ui/StickyHeader';
 
 // Employee settings — same language as the admin Settings screen: an
 // Apple-ID-style profile card at the top (all personal/contact/bank details
@@ -64,6 +64,7 @@ export default function EmployeeProfile() {
         <Text style={styles.title}>Settings</Text>
       </StickyHeader>
       <ScrollView onScroll={onScroll} scrollEventThrottle={16} contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        <HeaderSpacer />
 
         {/* Apple-ID-style profile card — tap to edit all details */}
         <Pressable testID="emp-profile-card" onPress={() => router.push('/(emp)/edit-profile' as any)} style={({ pressed }) => [styles.profileCard, pressed && { opacity: 0.85 }]}>

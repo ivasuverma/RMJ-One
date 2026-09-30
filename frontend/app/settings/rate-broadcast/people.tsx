@@ -9,6 +9,7 @@ import { pickWebFile } from '@/src/components/DocumentCaptureSheet';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { useToast } from '@/src/components/ui';
 import { BList, Header, makeStyles, Overview, Plan, Sub, num } from './_shared';
+import { HeaderSpacer } from '@/src/components/ui/StickyHeader';
 
 // Built-in rate lists, or `list:<id>` for one of the owner's own lists.
 type Filter = 'weekly' | 'daily' | 'stopped' | 'all' | `list:${string}`;
@@ -131,6 +132,7 @@ export default function BroadcastPeopleScreen() {
       <Header title="People" colors={colors} />
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled"
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); reload(); }} tintColor={colors.brandPrimary} />}>
+        <HeaderSpacer />
         <Text style={styles.hint}>
           The customer list gets the weekly send; daily subscribers joined themselves by sending START to the shop’s number
           or the official one. Make your own lists (Bridal, VIP…) for offers and new designs. Anyone who replies STOP or taps

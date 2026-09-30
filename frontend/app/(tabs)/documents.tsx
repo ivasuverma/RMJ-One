@@ -19,6 +19,7 @@ import { UploadQueueBadge } from '@/src/components/UploadQueueBadge';
 import { TabBarSpacer } from '@/src/components/GlassTabBar';
 import { useScrolled } from '@/src/components/ui/StickyHeader';
 import { ModuleHeader } from '@/src/components/ui/ModuleHeader';
+import { HeaderSpacer } from '@/src/components/ui/StickyHeader';
 
 type Doc = {
   id: string; category_key: string; status: 'pending' | 'done'; upload_state: string;
@@ -322,6 +323,7 @@ export default function DocumentsScreen() {
       />
       <ScrollView onScroll={onScroll} scrollEventThrottle={16} contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled"
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}>
+        <HeaderSpacer />
 
         {/* The Done tab only appears for people allowed to browse the Done
             folder (Settings › People). Pending is always the default. When

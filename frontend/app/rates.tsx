@@ -9,7 +9,7 @@ import { useTheme } from '@/src/theme/ThemeContext';
 import { useAuth } from '@/src/auth/AuthContext';
 import { useRouter } from 'expo-router';
 import { RatesInstallHint } from '@/src/components/RatesInstallHint';
-import { StickyHeader, useScrolled } from '@/src/components/ui/StickyHeader';
+import { StickyHeader, useScrolled, HeaderSpacer } from '@/src/components/ui/StickyHeader';
 import { storage } from '@/src/utils/storage';
 import { Sheet, Input, Button, useToast } from '@/src/components/ui';
 
@@ -176,6 +176,7 @@ export default function PublicRatesScreen() {
         </StickyHeader>
       )}
       <ScrollView contentContainerStyle={[styles.scroll, internal && { paddingTop: spacing.md }]} onScroll={onScroll} scrollEventThrottle={16}>
+        <HeaderSpacer />
         {!internal && (
           <>
             <View style={styles.header}>

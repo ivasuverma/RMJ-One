@@ -8,7 +8,7 @@ import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { ErrorState } from '@/src/components/ui';
 import { TabBarSpacer } from '@/src/components/GlassTabBar';
-import { StickyHeader, useScrolled } from '@/src/components/ui/StickyHeader';
+import { StickyHeader, useScrolled, HeaderSpacer } from '@/src/components/ui/StickyHeader';
 
 // Ledger tab (owner/admin/accountant). The books, grouped by what they are about:
 //   People — the customer, karigar and employee ledgers (each party's own account)
@@ -119,6 +119,7 @@ export default function LedgerScreen() {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}
       >
+        <HeaderSpacer />
 
         {failed && (
           <View style={{ marginTop: spacing.lg }}>

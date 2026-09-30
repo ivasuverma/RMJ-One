@@ -9,6 +9,7 @@ import { spacing, radius, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { useToast } from '@/src/components/ui';
 import { Brand, Content, Header, SITE_URL, makeStyles } from './_shared';
+import { HeaderSpacer } from '@/src/components/ui/StickyHeader';
 
 // Logo & name size on rmj.co.in — how big the logo and the RAMMURTI
 // JEWELLERS name are in the site's header (the footer and the other places
@@ -96,6 +97,7 @@ export default function WebsiteBrandScreen() {
     <SafeAreaView style={styles.root} edges={['top']} testID="website-brand-screen">
       <Header title="Logo & name size" colors={colors} />
       <ScrollView contentContainerStyle={styles.scroll}>
+        <HeaderSpacer />
         <Text style={styles.hint}>How big the logo and the RAMMURTI JEWELLERS name look at the top of rmj.co.in. The footer and other places follow in proportion.</Text>
 
         <View style={b.band} testID="brand-preview">

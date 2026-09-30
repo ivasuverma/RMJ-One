@@ -8,6 +8,7 @@ import { spacing, radius, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { useToast } from '@/src/components/ui';
 import { Content, Header, OwnSection, PageSection, SITE_URL, makeStyles } from './_shared';
+import { HeaderSpacer } from '@/src/components/ui/StickyHeader';
 
 // Website — rmj.co.in laid out top to bottom, the way a visitor scrolls it.
 // Tap a part to edit its words and photos (or switch it off); the shop's own
@@ -83,6 +84,7 @@ export default function WebsiteScreen() {
         right={<Pressable onPress={openSite} style={styles.iconBtn} hitSlop={12} accessibilityRole="link" accessibilityLabel="Open rmj.co.in"><Ionicons name="open-outline" size={18} color={colors.onSurface} /></Pressable>} />
       <ScrollView contentContainerStyle={styles.scroll}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}>
+        <HeaderSpacer />
         <Text style={styles.hint}>rmj.co.in from top to bottom. Tap a part to change its words or photos, or add your own section. Changes show on the site straight away.</Text>
 
         <Pressable onPress={() => router.push('/website/brand' as any)} style={w.row} testID="website-brand" accessibilityRole="button" accessibilityLabel="Logo and name size">

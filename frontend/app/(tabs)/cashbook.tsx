@@ -15,6 +15,7 @@ import { fmtCompactINR } from '@/src/utils/money';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { ModuleHeader, HeaderButton } from '@/src/components/ui/ModuleHeader';
+import { HeaderSpacer } from '@/src/components/ui/StickyHeader';
 import { counterColorOptions, counterToneFor } from '@/src/theme/palettes';
 import { useAuth } from '@/src/auth/AuthContext';
 import { ErrorState } from '@/src/components/ui';
@@ -323,6 +324,7 @@ export default function CashBookScreen() {
           {isOwner && <HeaderButton icon="settings-outline" label="Cash Book counters" testID="cashbook-settings-btn" onPress={openManageCounters} />}
         </> : undefined}
       />
+      <HeaderSpacer />
 
       {mode === 'view' && (
         <>

@@ -12,6 +12,7 @@ import { useToast } from '@/src/components/ui';
 import { confirmAction } from '@/src/utils/confirm';
 import { Header, KIND_LABEL, makeStyles, MyTpl, Overview, statusLabel, Tpl, templateLine } from './_shared';
 import { TplPreview } from './_preview';
+import { HeaderSpacer } from '@/src/components/ui/StickyHeader';
 
 const BUTTON_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
   'See live rates': 'open-outline', 'Call the shop': 'call-outline', 'Weekly only': 'calendar-outline', 'Stop updates': 'arrow-undo-outline',
@@ -93,6 +94,7 @@ export default function BroadcastTemplatesScreen() {
       <Header title="Templates" colors={colors} />
       <ScrollView contentContainerStyle={styles.scroll}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}>
+        <HeaderSpacer />
         <Text style={styles.hint}>
           Meta only delivers messages you start through a template it has approved. The text and buttons are fixed once
           approved; the photo on top can change any time.

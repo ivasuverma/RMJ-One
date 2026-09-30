@@ -5,7 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
-import { StickyHeader, useScrolled } from '@/src/components/ui/StickyHeader';
+import { StickyHeader, useScrolled, HeaderSpacer } from '@/src/components/ui/StickyHeader';
 
 type TileDef = {
   key: string; label: string; icon: keyof typeof Ionicons.glyphMap;
@@ -57,6 +57,7 @@ export default function TransactionsScreen() {
         <Text style={styles.subtitle}>Where you record something happening.</Text>
       </StickyHeader>
       <ScrollView onScroll={onScroll} scrollEventThrottle={16} contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        <HeaderSpacer />
 
         {SECTIONS.map((section) => (
           <View key={section.title}>

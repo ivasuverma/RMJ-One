@@ -10,6 +10,7 @@ import { useTheme } from '@/src/theme/ThemeContext';
 import { useToast } from '@/src/components/ui';
 import { BButton, BCard, BtnType, Header, KIND_LABEL, makeStyles, TplKind } from './_shared';
 import { TplPreview } from './_preview';
+import { HeaderSpacer } from '@/src/components/ui/StickyHeader';
 
 const TYPE_LABEL: Record<BtnType, string> = { quick_reply: 'Reply', url: 'Website', phone: 'Call' };
 const PRESETS: { label: string; buttons: BButton[] }[] = [
@@ -96,6 +97,7 @@ export default function NewTemplateScreen() {
     <SafeAreaView style={styles.root} edges={['top']} testID="broadcast-new-template-screen">
       <Header title="New template" colors={colors} />
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+        <HeaderSpacer />
         <View style={styles.card}>
           <Text style={styles.small}>Name (only you see this)</Text>
           <TextInput value={label} onChangeText={setLabel} maxLength={60} placeholder="e.g. Diwali bridal offer" placeholderTextColor={colors.mutedText} style={styles.input} testID="tpl-label" />

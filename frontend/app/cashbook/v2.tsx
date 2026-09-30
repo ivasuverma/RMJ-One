@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, RefreshControl, Image, Platform } from 'react-native';
 import { ModuleHeader, HeaderButton } from '@/src/components/ui/ModuleHeader';
+import { HeaderSpacer } from '@/src/components/ui/StickyHeader';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -235,6 +236,7 @@ export default function CashBookScreen() {
           {isOwner && <HeaderButton icon="settings-outline" label="Cash Book counters" testID="cashbook-settings-btn" onPress={() => router.push('/cashbook?manage=1' as any)} />}
         </>}
       />
+      <HeaderSpacer />
 
       <View style={styles.stickyBar}>
         {!isEmployee && (

@@ -10,7 +10,7 @@ import { istTime, istDate, todayIST, displayDateOnlyWithWeekday, localDateStr } 
 import { spacing, radius, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { haptics } from '@/src/utils/haptics';
-import { FilterChips, useToast, ModuleHeader, HeaderButton } from '@/src/components/ui';
+import { FilterChips, useToast, ModuleHeader, HeaderButton, HeaderSpacer } from '@/src/components/ui';
 import { TabBarSpacer } from '@/src/components/GlassTabBar';
 import { useScrolled } from '@/src/components/ui/StickyHeader';
 
@@ -188,6 +188,7 @@ export default function OwnerAttendance() {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); if (seg === 'pay') loadPay(); if (seg === 'live') loadLive(); }} tintColor={colors.brandPrimary} />}
       >
+        <HeaderSpacer />
 
         {/* Segmented control — Live moved next to Approvals in the header. */}
         <View style={styles.seg}>
