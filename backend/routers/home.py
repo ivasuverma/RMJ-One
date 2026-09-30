@@ -33,19 +33,17 @@ logger = logging.getLogger('home')
 HOME_DEFAULTS = {
     'sample_overdue_days': 3,       # a sample with no due date counts as out too long after this many days
     'document_pending_days': 1,     # pending photos turn amber after this many days
-    'late_grace_min': 10,           # "late" = checked in more than this many minutes after shift start
     'not_checked_in_min': 15,       # "not checked in" = this many minutes past shift start with no punch
     'broadcast_deadline': '11:00',  # a rate broadcast not sent by this time (IST) is flagged
     'customer_balance_min': 5000,   # customer balances listed under Owed to you start at this amount
     'coming_up_days': 7,            # how far ahead Coming up looks
-    'payday_day': 1,                # day of the month salaries are paid (for Coming up)
+    'payday_day': 2,                # day of the month last month's salaries are paid (for Coming up)
 }
 
 
 class HomeSettingsIn(BaseModel):
     sample_overdue_days: Optional[int] = Field(default=None, ge=0, le=90)
     document_pending_days: Optional[int] = Field(default=None, ge=0, le=90)
-    late_grace_min: Optional[int] = Field(default=None, ge=0, le=240)
     not_checked_in_min: Optional[int] = Field(default=None, ge=0, le=480)
     broadcast_deadline: Optional[str] = Field(default=None, pattern=r'^([01]\d|2[0-3]):[0-5]\d$')
     customer_balance_min: Optional[int] = Field(default=None, ge=0, le=100_000_000)
@@ -325,7 +323,7 @@ async def _staff_today(user: dict, s: dict, now: datetime) -> dict:
     employees, att, holiday, store, shifts, leaves = await asyncio.gather(
         db.employees.find({'status': {'$ne': 'inactive'}},
                           {'_id': 0, 'id': 1, 'name': 1, 'status': 1, 'shift': 1, 'photo_thumb': 1, 'designation': 1, 'department': 1}).sort('name', 1).to_list(2000),
-        db.attendance.find({'date': today}, {'_id': 0, 'employee_id': 1, 'check_in.timestamp': 1, 'check_out.timestamp': 1, 'status': 1}).to_list(2000),
+        db.attendance.find({'date': today}, {'_id': 0, 'employee_id': 1, 'check_in.timestamp': 1, 'check_out.timestamp': 1, 'status': 1, 'is_late': 1}).to_list(2000),
         db.holidays.find_one({'date': today}, {'_id': 0, 'id': 1}),
         db.settings.find_one({'id': 'store'}, {'_id': 0}),
         db.shifts.find({}, {'_id': 0}).to_list(200),
@@ -350,7 +348,13 @@ async def _staff_today(user: dict, s: dict, now: datetime) -> dict:
         elif cin:
             t = datetime.fromisoformat(cin).astimezone(IST)
             late_min = max(0, t.hour * 60 + t.minute - start)
-            status = 'late' if late_min > s['late_grace_min'] else 'present'
+            # Late is whatever Attendance decided at punch time (shift grace, else the store's
+            # grace from Settings); only recompute with the same rule if the flag is missing.
+            if 'is_late' in a:
+                late = bool(a['is_late'])
+            else:
+                late = late_min > int((shift or {}).get('grace_min', store.get('grace_min', 15)))
+            status = 'late' if late else 'present'
         elif a.get('status') == 'absent':
             status, late_min = 'absent', 0
         else:
