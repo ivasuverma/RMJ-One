@@ -397,7 +397,8 @@ async def _needs_you(user: dict, s: dict, now: datetime, staff: Optional[dict]) 
 
     if can_view(user, 'repairs'):
         open_items = await db.repair_items.find(
-            {'status': {'$ne': 'delivered'}}, {'_id': 0, 'status': 1, 'due_date': 1, 'customer_name': 1, 'created_at': 1},
+            {'status': {'$ne': 'delivered'}},
+            {'_id': 0, 'status': 1, 'due_date': 1, 'customer_name': 1, 'created_at': 1, 'karigar_name': 1, 'karigar_due_back': 1},
         ).sort('due_date', 1).to_list(5000)
         overdue = [i for i in open_items if i.get('due_date') and i['due_date'] < today]
         if overdue:
@@ -405,6 +406,14 @@ async def _needs_you(user: dict, s: dict, now: datetime, staff: Optional[dict]) 
                          'title': f"{len(overdue)} repair{'s' if len(overdue) != 1 else ''} overdue",
                          'detail': _names([i.get('customer_name') for i in overdue]),
                          'action': 'Review', 'route': '/repairs?filter=overdue', 'can_act': True})
+        # Past the date the karigar was to bring it back (set on every issue since due back became required).
+        late = sorted([i for i in open_items if i['status'] == 'with_karigar' and i.get('karigar_due_back') and i['karigar_due_back'] < today],
+                      key=lambda i: i['karigar_due_back'])
+        if late:
+            rows.append({'key': 'repairs_karigar_late', 'severity': 'amber', 'module': 'repairs', 'count': len(late),
+                         'title': f"{len(late)} repair{'s' if len(late) != 1 else ''} late from karigar",
+                         'detail': _names([i.get('karigar_name') for i in late]),
+                         'action': 'Review', 'route': '/repairs?filter=with_karigar', 'can_act': True})
         ready = sorted([i for i in open_items if i['status'] == 'ready'], key=lambda i: i.get('created_at') or '')
         if ready:
             rows.append({'key': 'repairs_ready', 'severity': 'gold', 'module': 'repairs', 'count': len(ready),
@@ -562,6 +571,16 @@ async def _coming_up(user: dict, s: dict, now: datetime) -> dict:
                           'title': f"{len(its)} repair{'s' if len(its) != 1 else ''} promised",
                           'detail': _names([f"{x.get('customer_name') or ''} {x.get('description') or ''}".strip() for x in its], 2),
                           'route': '/repairs'})
+
+        back: dict = {}
+        async for i in db.repair_items.find({'status': 'with_karigar', 'karigar_due_back': {'$gte': start, '$lte': end}},
+                                            {'_id': 0, 'karigar_due_back': 1, 'karigar_name': 1}):
+            back.setdefault(i['karigar_due_back'], []).append(i)
+        for d, its in back.items():
+            items.append({'date': d, 'kind': 'repairs_karigar_due', 'module': 'repairs',
+                          'title': f"{len(its)} repair{'s' if len(its) != 1 else ''} due back from karigar",
+                          'detail': _names([x.get('karigar_name') for x in its], 2),
+                          'route': '/repairs?filter=with_karigar'})
 
     if can_view(user, 'samples'):
         async for x in db.samples.find({'status': 'with_karigar', 'due_date': {'$gte': start, '$lte': end}},

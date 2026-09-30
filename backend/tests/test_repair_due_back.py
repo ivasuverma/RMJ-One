@@ -46,3 +46,9 @@ def test_issue_with_due_back():
     item = requests.get(f"{API}/repair-items/{item_id}", headers=h, timeout=30).json()
     assert item['item']['karigar_due_back'] == '2026-10-08'
     assert next(t for t in item['history'] if t['direction'] == 'issue')['due_back'] == '2026-10-08'
+
+    # Past its due-back date, it shows on Home under Needs you today.
+    requests.put(f"{API}/repair-items/{item_id}/transactions/{issue['id']}", headers=h,
+                 json={'karigar_id': kid, 'note': '', 'due_back': '2020-01-01'}, timeout=30)
+    needs = requests.get(f"{API}/home/summary?fresh=1", headers=h, timeout=60).json()['needs_you']
+    assert any(r['key'] == 'repairs_karigar_late' for r in needs)
