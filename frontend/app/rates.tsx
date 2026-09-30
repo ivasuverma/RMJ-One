@@ -85,9 +85,10 @@ export default function PublicRatesScreen() {
   const togglePurities = () => setPuritiesOpen((v) => { storage.setItem('rmj.rates.purities_open', !v); return !v; });
   // The source's own GST-inclusive bullion rates (staff only) — see fetch_gold_rate.js.
   const [gst, setGst] = useState<{ gold: number | null; silver: number | null; gold_base?: number | null } | null>(null);
-  // Cash+GST: how far the source's rate with GST is above its own gold rate
-  // before our margin — (rate with GST − gold rate before margin) / rate with GST × 100.
-  const gstDiff = gst?.gold && gst?.gold_base ? ((gst.gold - gst.gold_base) / gst.gold) * 100 : null;
+  // "Diff with GST": how far the source's rate with GST is above its own gold rate
+  // before our margin — in ₹, and as (rate with GST − gold rate before margin) / rate with GST × 100.
+  const gstDiffValue = gst?.gold && gst?.gold_base ? gst.gold - gst.gold_base : null;
+  const gstDiff = gstDiffValue !== null && gst?.gold ? (gstDiffValue / gst.gold) * 100 : null;
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Quick-call buttons (staff only): three people the owner/admin sets up here.
@@ -217,7 +218,7 @@ export default function PublicRatesScreen() {
                   <View style={styles.gstHead}>
                     <Text style={[styles.metalLabel, { marginBottom: 0 }]}>RATE WITH GST</Text>
                     {gstDiff !== null && (
-                      <Text style={styles.gstDiff} testID="rate-gst-diff">Cash+GST = {gstDiff.toFixed(2)}%</Text>
+                      <Text style={styles.gstDiff} testID="rate-gst-diff">Diff with GST : {fmtINR(gstDiffValue)} ({gstDiff.toFixed(2)}%)</Text>
                     )}
                   </View>
                   <View style={styles.buySellRow}>
@@ -454,7 +455,8 @@ const makeStyles = (colors: ThemeColors, compact: boolean) => {
   buySellValue: {
     color: colors.onSurface, fontFamily: fonts.display, fontSize: c(24, 19), fontWeight: '800', letterSpacing: -0.4,
   },
-  gstHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm, marginBottom: c(spacing.md, spacing.sm) },
+  // Heading, with the difference on its own line under it (left-aligned).
+  gstHead: { alignItems: 'flex-start', gap: 3, marginBottom: c(spacing.md, spacing.sm) },
   gstDiff: { color: colors.onSurfaceSecondary, fontSize: c(12.5, 11.5), fontWeight: '800' },
   sellValue: { color: colors.brandPrimary },
   purityToggle: {
