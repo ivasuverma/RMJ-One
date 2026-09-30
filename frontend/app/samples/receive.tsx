@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Platform, KeyboardAvoidingView,
 } from 'react-native';
@@ -10,10 +10,14 @@ import { notify } from '@/src/utils/notify';
 import { confirmAction } from '@/src/utils/confirm';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { Image } from 'expo-image';
+import { RecordPhotos } from '@/src/components/RecordPhotos';
 
 type Sample = {
   id: string; sample_code: string; description: string; tag_number: string;
   weight: number; karigar_name: string; status: 'with_karigar' | 'received';
+  photo?: string;   // older samples kept their photo inline; newer ones use record photos
+  issue_type?: string; purity?: number | null; pc_count?: number;
   received_weight: number | null; note: string;
   pay_weight?: number | null; recv_weight?: number | null; write_off_loss?: boolean;
 };
@@ -41,10 +45,12 @@ export default function ReceiveSampleScreen() {
   const [gapChoice, setGapChoice] = useState<GapChoice>('carry');
   const [payWeight, setPayWeight] = useState('');
   const [recvWeight, setRecvWeight] = useState('');
-  const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const submittingRef = useRef(false);
+  // Settings › Items & Purity, only to name the purity (e.g. "22K · 91.6%").
+  const [purities, setPurities] = useState<{ name: string; purity: number }[]>([]);
+  useEffect(() => { api.get<{ name: string; purity: number }[]>('/item-master').then(setPurities).catch(() => {}); }, []);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -62,7 +68,6 @@ export default function ReceiveSampleScreen() {
       setPayWeight(isEdit && s.pay_weight ? String(s.pay_weight) : '');
       setRecvWeight(isEdit && s.recv_weight ? String(s.recv_weight) : '');
       setGapChoice(isEdit && s.write_off_loss ? 'loss' : isEdit && (s.pay_weight || s.recv_weight) ? 'settle' : 'carry');
-      setNote(isEdit ? (s.note || '') : '');
     } catch (_e) { /* ignore */ }
     finally { setLoading(false); }
   }, [id]);
@@ -78,7 +83,7 @@ export default function ReceiveSampleScreen() {
     setBusy(true);
     try {
       const payload = {
-        received_weight: w, note: note.trim(),
+        received_weight: w,
         pay_weight: gapChoice === 'settle' ? parseFloat(payWeight) || 0 : 0,
         recv_weight: gapChoice === 'settle' ? parseFloat(recvWeight) || 0 : 0,
         write_off_loss: gapChoice === 'loss',
@@ -126,6 +131,9 @@ export default function ReceiveSampleScreen() {
   const w = parseFloat(receivedWeight) || 0;
   const diff = receivedWeight ? round3(w - sample.weight) : 0;
 
+  const namedPurity = sample.purity ? purities.find((p) => Math.abs(p.purity - (sample.purity as number)) < 0.001) : undefined;
+  const purityText = !sample.purity ? '—' : namedPurity ? `${namedPurity.name} · ${sample.purity}%` : `${sample.purity}%`;
+
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="receive-sample-screen">
       <View style={styles.header}>
@@ -147,6 +155,27 @@ export default function ReceiveSampleScreen() {
           <View style={styles.pickedCard}>
             <Text style={styles.cName}>{sample.sample_code}{sample.tag_number ? ` · Tag ${sample.tag_number}` : ''} · {sample.description}</Text>
             <Text style={styles.cMeta}>with {sample.karigar_name}</Text>
+          </View>
+
+          {/* The photos taken at issue, to check the piece coming back is the same one. */}
+          {sample.photo ? <Image source={{ uri: sample.photo }} style={styles.issuePhoto} contentFit="cover" testID="receive-issue-photo" /> : null}
+          <RecordPhotos refType="sample" refId={sample.id} label="Photos at issue" readOnly
+            emptyText={sample.photo ? '' : 'No photos were taken when this was issued.'} />
+
+          {/* What was issued, to check against what's come back. */}
+          <View style={styles.detailRow} testID="receive-issued-details">
+            <View style={[styles.detailCell, { flex: 1.4 }]}>
+              <Text style={styles.detailLabel}>Type of issue</Text>
+              <Text style={styles.detailValue} numberOfLines={1}>{sample.issue_type || '—'}</Text>
+            </View>
+            <View style={[styles.detailCell, { flex: 1.6 }]}>
+              <Text style={styles.detailLabel}>Purity</Text>
+              <Text style={styles.detailValue} numberOfLines={1}>{purityText}</Text>
+            </View>
+            <View style={styles.detailCell}>
+              <Text style={styles.detailLabel}>Pieces</Text>
+              <Text style={styles.detailValue}>{sample.pc_count ?? 1}</Text>
+            </View>
           </View>
 
           <Text style={styles.label}>Issued weight (g)</Text>
@@ -222,13 +251,6 @@ export default function ReceiveSampleScreen() {
             </>
           )}
 
-          <Text style={styles.label}>Note (optional)</Text>
-          <TextInput
-            testID="receive-note" value={note} onChangeText={setNote}
-            placeholder="Anything worth noting about the return" placeholderTextColor={colors.mutedText}
-            style={styles.input} multiline
-          />
-
           <Pressable
             style={[styles.saveBtn, busy && { opacity: 0.6 }]} disabled={busy}
             onPress={submit} testID="confirm-receive-sample-btn"
@@ -254,6 +276,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   title: { flex: 1, color: colors.onSurface, fontSize: 18, fontWeight: '600', fontFamily: fonts.display },
 
+  issuePhoto: { width: '100%', height: 220, borderRadius: radius.lg, backgroundColor: colors.surfaceTertiary, marginTop: spacing.md },
   pickedCard: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.lg },
   cName: { color: colors.onSurface, fontWeight: '700', fontSize: 13 },
   cMeta: { color: colors.onSurfaceTertiary, fontSize: 11, marginTop: 2 },
@@ -263,6 +286,13 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
     color: colors.onSurface, paddingHorizontal: spacing.md, paddingVertical: 12, fontSize: 14,
   },
+  detailRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
+  detailCell: {
+    flex: 1, backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    paddingHorizontal: spacing.md, paddingVertical: 10,
+  },
+  detailLabel: { color: colors.mutedText, fontSize: 11, fontWeight: '600' },
+  detailValue: { color: colors.onSurface, fontSize: 15, fontWeight: '700', marginTop: 2 },
   readonlyBox: {
     backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
     paddingHorizontal: spacing.md, paddingVertical: 12,
