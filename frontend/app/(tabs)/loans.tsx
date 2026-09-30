@@ -6,6 +6,8 @@ import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { api } from '@/src/api/client';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { ModuleHeader, HeaderButton } from '@/src/components/ui/ModuleHeader';
+import { useScrolled } from '@/src/components/ui/StickyHeader';
 import { ErrorState } from '@/src/components/ui';
 import { TabBarSpacer } from '@/src/components/GlassTabBar';
 
@@ -29,6 +31,7 @@ const STAGES: { key: string; label: string; tone: StageTone }[] = [
 
 export default function GoldLoansScreen() {
   const router = useRouter();
+  const { scrolled, onScroll } = useScrolled();
   const { status: routeStatus } = useLocalSearchParams<{ status?: string }>();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
@@ -58,25 +61,16 @@ export default function GoldLoansScreen() {
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="gold-loans-screen">
-      <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
-          <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-        </Pressable>
-        <View style={styles.titleInline}>
-          <Text style={styles.title}>Gold Loans</Text>
-          <Pressable onPress={() => { setRefreshing(true); load(); }} disabled={refreshing} testID="loans-refresh-btn" accessibilityRole="button" accessibilityLabel="Refresh" hitSlop={10}>
-            {refreshing ? <ActivityIndicator size="small" color={colors.onSurface} /> : <Ionicons name="refresh" size={15} color={colors.onSurface} />}
-          </Pressable>
-        </View>
-        <Pressable onPress={() => router.push('/loans/calculator' as any)} style={styles.iconBtn} testID="loan-calculator-btn" hitSlop={12} accessibilityLabel="Gold value calculator">
-          <Ionicons name="calculator-outline" size={19} color={colors.onSurface} />
-        </Pressable>
-        <Pressable onPress={() => router.push('/loans/new' as any)} style={[styles.iconBtn, styles.addBtn]} testID="new-loan-btn" hitSlop={12}>
-          <Ionicons name="add" size={22} color={colors.onBrandPrimary} />
-        </Pressable>
-      </View>
+      <ModuleHeader
+        title="Gold Loans" scrolled={scrolled}
+        onRefresh={() => { setRefreshing(true); load(); }} refreshing={refreshing}
+        actions={<>
+          <HeaderButton icon="calculator-outline" label="Gold value calculator" testID="loan-calculator-btn" onPress={() => router.push('/loans/calculator' as any)} />
+          <HeaderButton icon="add" primary label="New gold loan" testID="new-loan-btn" onPress={() => router.push('/loans/new' as any)} />
+        </>}
+      />
 
-      <ScrollView
+      <ScrollView onScroll={onScroll} scrollEventThrottle={16}
         contentContainerStyle={{ padding: spacing.lg }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}
       >

@@ -8,6 +8,8 @@ import { confirmAction } from '@/src/utils/confirm';
 import { istTime } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { ModuleHeader } from '@/src/components/ui/ModuleHeader';
+import { useScrolled } from '@/src/components/ui/StickyHeader';
 import { useToast } from '@/src/components/ui';
 
 type Today = {
@@ -47,6 +49,7 @@ function buildMessage(template: string, goldRate: number, silverRate: number, fe
 // chatbot answers with it too). What each place looks like is set up in Settings.
 export default function RateUpdaterScreen() {
   const router = useRouter();
+  const { scrolled, onScroll } = useScrolled();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const toast = useToast();
@@ -190,10 +193,7 @@ export default function RateUpdaterScreen() {
   if (loading) {
     return (
       <SafeAreaView style={styles.root} edges={['top']}>
-        <View style={styles.header}>
-          <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}><Ionicons name="chevron-back" size={22} color={colors.onSurface} /></Pressable>
-          <View style={{ flex: 1 }} /><View style={{ width: 40 }} />
-        </View>
+        <ModuleHeader title="Rate Updater" />
         <View style={styles.centered}><ActivityIndicator color={colors.brandPrimary} size="large" /></View>
       </SafeAreaView>
     );
@@ -208,13 +208,12 @@ export default function RateUpdaterScreen() {
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="gold-rate-screen">
-      <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}><Ionicons name="chevron-back" size={22} color={colors.onSurface} /></Pressable>
-        <Text style={styles.title}>Rate Updater</Text>
-        <Pressable onPress={load} style={styles.iconBtn} testID="gold-rate-refresh-btn" hitSlop={12} accessibilityRole="button" accessibilityLabel="Refresh"><Ionicons name="refresh" size={18} color={colors.onSurface} /></Pressable>
-      </View>
+      <ModuleHeader
+        title="Rate Updater" scrolled={scrolled}
+        onRefresh={() => { setRefreshing(true); load(); }} refreshing={refreshing}
+      />
 
-      <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 80 }} keyboardShouldPersistTaps="handled"
+      <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 80 }} onScroll={onScroll} scrollEventThrottle={16} keyboardShouldPersistTaps="handled"
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}>
 
         {/* ---- 1. The rate (one for everything) ---- */}

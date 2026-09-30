@@ -14,6 +14,7 @@ import { displayDateOnlyWithWeekday, localDateStr, todayIST } from '@/src/utils/
 import { fmtCompactINR } from '@/src/utils/money';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { ModuleHeader, HeaderButton } from '@/src/components/ui/ModuleHeader';
 import { counterColorOptions, counterToneFor } from '@/src/theme/palettes';
 import { useAuth } from '@/src/auth/AuthContext';
 import { ErrorState } from '@/src/components/ui';
@@ -313,29 +314,15 @@ export default function CashBookScreen() {
 
   return (
     <SafeAreaView style={[styles.root, pageTone && { backgroundColor: pageTone.pageBg }]} edges={['top']} testID="cashbook-screen">
-      <View style={styles.header}>
-        <Pressable onPress={onBack} style={styles.iconBtn} testID="back-btn" hitSlop={12} accessibilityRole="button" accessibilityLabel="Back">
-          <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-        </Pressable>
-        <View style={styles.titleInline}>
-          <Text style={styles.title}>{headerTitle}</Text>
-          {mode === 'view' && (
-            <Pressable onPress={() => { setRefreshing(true); load(date, counterId); }} disabled={refreshing} testID="cashbook-refresh-btn" accessibilityRole="button" accessibilityLabel="Refresh" hitSlop={10}>
-              {refreshing ? <ActivityIndicator size="small" color={colors.onSurface} /> : <Ionicons name="refresh" size={15} color={colors.onSurface} />}
-            </Pressable>
-          )}
-        </View>
-        {mode === 'view' ? (
-          <Pressable onPress={() => router.push('/cashbook/v2' as any)} style={styles.iconBtn} testID="cashbook-new-view-btn" hitSlop={12} accessibilityLabel="Switch to the new Cash Book view">
-            <Ionicons name="sparkles-outline" size={19} color={colors.brandSecondary} />
-          </Pressable>
-        ) : null}
-        {mode === 'view' && isOwner ? (
-          <Pressable onPress={openManageCounters} style={styles.iconBtn} testID="cashbook-settings-btn" hitSlop={12}>
-            <Ionicons name="settings-outline" size={19} color={colors.onSurface} />
-          </Pressable>
-        ) : mode !== 'view' ? <View style={{ width: 40 }} /> : null}
-      </View>
+      <ModuleHeader
+        title={headerTitle} onBack={onBack}
+        backLabel={mode === 'settings' && counterForm ? 'Counters' : mode !== 'view' ? 'Cash Book' : 'Work'}
+        onRefresh={mode === 'view' ? () => { setRefreshing(true); load(date, counterId); } : undefined} refreshing={refreshing}
+        actions={mode === 'view' ? <>
+          <HeaderButton icon="sparkles-outline" label="Switch to the new Cash Book view" testID="cashbook-new-view-btn" onPress={() => router.push('/cashbook/v2' as any)} />
+          {isOwner && <HeaderButton icon="settings-outline" label="Cash Book counters" testID="cashbook-settings-btn" onPress={openManageCounters} />}
+        </> : undefined}
+      />
 
       {mode === 'view' && (
         <>

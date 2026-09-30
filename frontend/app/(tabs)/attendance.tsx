@@ -7,12 +7,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
 import { istTime, istDate, todayIST, displayDateOnlyWithWeekday, localDateStr } from '@/src/utils/datetime';
-import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
+import { spacing, radius, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { haptics } from '@/src/utils/haptics';
-import { FilterChips, useToast } from '@/src/components/ui';
+import { FilterChips, useToast, ModuleHeader, HeaderButton } from '@/src/components/ui';
 import { TabBarSpacer } from '@/src/components/GlassTabBar';
-import { StickyHeader, useScrolled } from '@/src/components/ui/StickyHeader';
+import { useScrolled } from '@/src/components/ui/StickyHeader';
 
 // Attendance & Payroll — one screen inside Work, three segments (matches the
 // v2 design comp): Today (daily in/out), Calendar (pick a person, edit any
@@ -83,6 +83,8 @@ export default function OwnerAttendance() {
   const [locations, setLocations] = useState<Location[]>([]);
   const [deptFilter, setDeptFilter] = useState('all');
   const [locFilter, setLocFilter] = useState('all');
+  const [showFilters, setShowFilters] = useState(false);
+  const filtered = locFilter !== 'all' || deptFilter !== 'all';
   const [liveOpen, setLiveOpen] = useState<Record<string, boolean>>({});
   const isToday = date === todayIST();
   const now = new Date();
@@ -171,35 +173,16 @@ export default function OwnerAttendance() {
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="attendance-screen">
-      <StickyHeader scrolled={scrolled}>
-        <Pressable onPress={goBack} style={styles.backRow} hitSlop={8} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back">
-          <Ionicons name="chevron-back" size={18} color={colors.brandPrimary} />
-          <Text style={styles.backText}>Work</Text>
-        </Pressable>
-        <View style={styles.titleRow}>
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <View style={styles.titleInline}>
-              <Text style={styles.h1}>Attendance</Text>
-              <Pressable
-                onPress={() => { setRefreshing(true); load(); if (seg === 'pay') loadPay(); if (seg === 'live') loadLive(); }}
-                disabled={refreshing}
-                testID="attendance-refresh-btn" accessibilityRole="button" accessibilityLabel="Refresh"
-                hitSlop={10}
-              >
-                {refreshing ? <ActivityIndicator size="small" color={colors.onSurface} /> : <Ionicons name="refresh" size={16} color={colors.onSurface} />}
-              </Pressable>
-            </View>
-            <Text style={styles.sub}>{subtitle}</Text>
-          </View>
-          <Pressable onPress={() => { if (seg !== 'live') haptics.selection(); setSeg('live'); loadLive(); }} style={[styles.apprBtn, seg === 'live' && styles.apprBtnOn]} testID="attendance-live-btn" hitSlop={8}>
-            <Ionicons name="pulse-outline" size={22} color={seg === 'live' ? colors.onBrandPrimary : colors.onSurface} />
-          </Pressable>
-          <Pressable onPress={() => router.push('/approvals' as any)} style={[styles.apprBtn, { marginLeft: spacing.sm }]} testID="attendance-approvals" hitSlop={8}>
-            <Ionicons name="checkmark-done-outline" size={22} color={colors.onSurface} />
-            {pendingApprovals > 0 && <View style={styles.apprBadge}><Text style={styles.apprBadgeText}>{pendingApprovals}</Text></View>}
-          </Pressable>
-        </View>
-      </StickyHeader>
+      <ModuleHeader
+        title="Attendance" subtitle={subtitle} onBack={goBack} scrolled={scrolled}
+        onRefresh={() => { setRefreshing(true); load(); if (seg === 'pay') loadPay(); if (seg === 'live') loadLive(); }} refreshing={refreshing}
+        actions={<>
+          <HeaderButton icon="pulse-outline" active={seg === 'live'} label="Live punches" testID="attendance-live-btn"
+            onPress={() => { if (seg !== 'live') haptics.selection(); setSeg('live'); loadLive(); }} />
+          <HeaderButton icon="checkmark-done-outline" badge={pendingApprovals} label="Approvals" testID="attendance-approvals"
+            onPress={() => router.push('/approvals' as any)} />
+        </>}
+      />
       <ScrollView onScroll={onScroll} scrollEventThrottle={16}
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
@@ -219,37 +202,49 @@ export default function OwnerAttendance() {
           <ActivityIndicator color={colors.brandPrimary} style={{ marginTop: 40 }} />
         ) : seg === 'today' ? (
           <>
-            {locations.length > 1 && (
-              <FilterChips
-                testID="attendance-loc-filter"
-                options={[{ key: 'all', label: 'All Locations' }, ...locations.map((l) => ({ key: l.id, label: l.name }))]}
-                value={locFilter}
-                onChange={setLocFilter}
-              />
-            )}
-            {departments.length > 1 && (
-              <View style={{ marginTop: locations.length > 1 ? spacing.sm : 0 }}>
-                <FilterChips
-                  testID="attendance-dept-filter"
-                  options={[{ key: 'all', label: 'All Departments' }, ...departments.map((d) => ({ key: d.id, label: d.name }))]}
-                  value={deptFilter}
-                  onChange={setDeptFilter}
-                />
-              </View>
-            )}
             {/* Date filter — step back/forward a day to review past attendance. */}
             <View style={styles.dateNav}>
               <Pressable onPress={() => setDate((d) => localDateStr(new Date(new Date(d + 'T12:00:00').getTime() - 86400000)))} style={styles.dateArrow} testID="date-prev" hitSlop={8}>
                 <Ionicons name="chevron-back" size={18} color={colors.onSurface} />
               </Pressable>
-              <Text style={styles.dateLabel}>{isToday ? 'Today' : displayDateOnlyWithWeekday(date)}</Text>
+              <Text style={styles.dateLabel} numberOfLines={1}>{isToday ? `Today · ${shortDay(date)}` : displayDateOnlyWithWeekday(date)}</Text>
               <Pressable onPress={() => !isToday && setDate((d) => localDateStr(new Date(new Date(d + 'T12:00:00').getTime() + 86400000)))} disabled={isToday} style={[styles.dateArrow, isToday && { opacity: 0.3 }]} testID="date-next" hitSlop={8}>
                 <Ionicons name="chevron-forward" size={18} color={colors.onSurface} />
               </Pressable>
               {!isToday && (
                 <Pressable onPress={() => setDate(todayIST())} style={styles.dateToday} testID="date-today"><Text style={styles.dateTodayText}>Today</Text></Pressable>
               )}
+              {(locations.length > 1 || departments.length > 1) && (
+                // Location / department filters stay folded away (All by default) until this is tapped.
+                <Pressable onPress={() => setShowFilters((v) => !v)} hitSlop={8} testID="attendance-filter-btn"
+                  style={[styles.dateArrow, (showFilters || filtered) && styles.filterBtnOn]}
+                  accessibilityRole="button" accessibilityLabel="Location filter" accessibilityState={{ expanded: showFilters }}>
+                  <Ionicons name="location-outline" size={17} color={showFilters || filtered ? colors.onBrandPrimary : colors.onSurface} />
+                </Pressable>
+              )}
             </View>
+            {showFilters && (
+              <View style={styles.filterBox}>
+              {locations.length > 1 && (
+                <FilterChips
+                  testID="attendance-loc-filter"
+                  options={[{ key: 'all', label: 'All Locations' }, ...locations.map((l) => ({ key: l.id, label: l.name }))]}
+                  value={locFilter}
+                  onChange={setLocFilter}
+                />
+              )}
+              {departments.length > 1 && (
+                <View style={{ marginTop: locations.length > 1 ? spacing.sm : 0 }}>
+                  <FilterChips
+                    testID="attendance-dept-filter"
+                    options={[{ key: 'all', label: 'All Departments' }, ...departments.map((d) => ({ key: d.id, label: d.name }))]}
+                    value={deptFilter}
+                    onChange={setDeptFilter}
+                  />
+                </View>
+              )}
+              </View>
+            )}
             <View style={styles.sumRow}>
               {([['present', 'Present', 'good', counts.present], ['late', 'Late', 'warn', counts.late], ['absent', 'Absent', 'bad', counts.absent], ['notin', 'Not in', 'info', counts.notin]] as const).map(([key, label, tone, n]) => (
                 <SumChip key={key} n={n} label={label} tone={tone} colors={colors} active={todayFilter === key} onPress={() => setTodayFilter((f) => (f === key ? 'all' : key))} />
@@ -380,6 +375,13 @@ function Avatar({ photo, name, colors }: { photo?: string; name: string; colors:
   return <View style={styles.av}><Text style={styles.avText}>{initials(name)}</Text></View>;
 }
 
+// "Wed, 30 Sep" from 'YYYY-MM-DD'.
+function shortDay(ds: string): string {
+  const [y, m, d] = ds.split('-').map((n) => parseInt(n, 10));
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return `${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][dt.getUTCDay()]}, ${d} ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][m - 1]}`;
+}
+
 function SumChip({ n, label, tone, colors, active, onPress }: { n: number; label: string; tone: string; colors: ThemeColors; active?: boolean; onPress?: () => void }) {
   const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
@@ -393,16 +395,6 @@ function SumChip({ n, label, tone, colors, active, onPress }: { n: number; label
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   scroll: { padding: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.xxxl },
-  backRow: { flexDirection: 'row', alignItems: 'center', gap: 2, marginBottom: 6 },
-  backText: { color: colors.brandPrimary, fontSize: 16, fontWeight: '500' },
-  titleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
-  h1: { color: colors.onSurface, fontSize: 26, fontWeight: '800', fontFamily: fonts.display, letterSpacing: -0.5 },
-  apprBtn: { width: 46, height: 46, borderRadius: 23, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
-  titleInline: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  apprBtnOn: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
-  apprBadge: { position: 'absolute', top: -3, right: -3, minWidth: 20, height: 20, borderRadius: 10, paddingHorizontal: 5, backgroundColor: colors.brandPrimary, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: colors.surface },
-  apprBadgeText: { color: colors.onBrandPrimary, fontSize: 11, fontWeight: '800' },
-  sub: { color: colors.onSurfaceSecondary, fontSize: 15, marginTop: 2 },
 
   seg: { flexDirection: 'row', backgroundColor: colors.surfaceTertiary, borderRadius: 12, padding: 4, gap: 3, marginTop: spacing.xs },
   sg: { flex: 1, alignItems: 'center', paddingVertical: 9, borderRadius: 9 },
@@ -410,15 +402,17 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   sgText: { color: colors.mutedText, fontSize: 14, fontWeight: '600' },
   sgTextOn: { color: colors.onSurface },
 
-  dateNav: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.lg },
+  dateNav: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.md },
   dateArrow: { width: 34, height: 34, borderRadius: 17, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
   dateLabel: { flex: 1, textAlign: 'center', color: colors.onSurface, fontSize: 15, fontWeight: '700' },
   dateToday: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10, backgroundColor: colors.brandPrimary },
   dateTodayText: { color: colors.onBrandPrimary, fontSize: 13, fontWeight: '700' },
-  sumRow: { flexDirection: 'row', gap: 9, marginTop: spacing.lg },
-  sc: { flex: 1, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, borderRadius: 15, paddingVertical: 13, alignItems: 'center' },
-  scN: { fontSize: 22, fontWeight: '800', letterSpacing: -0.5 },
-  scL: { fontSize: 11, color: colors.mutedText, marginTop: 3, fontWeight: '600' },
+  sumRow: { flexDirection: 'row', gap: 7, marginTop: spacing.md },
+  sc: { flex: 1, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, borderRadius: 12, paddingVertical: 7, alignItems: 'center' },
+  scN: { fontSize: 17, fontWeight: '800', letterSpacing: -0.3 },
+  scL: { fontSize: 10.5, color: colors.mutedText, marginTop: 1, fontWeight: '600' },
+  filterBtnOn: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
+  filterBox: { marginTop: spacing.sm },
 
   sec: { fontSize: 13, fontWeight: '700', letterSpacing: 0.7, color: colors.mutedText, textTransform: 'uppercase', marginTop: spacing.xl, marginBottom: spacing.md },
   monthRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.lg, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: 6 },

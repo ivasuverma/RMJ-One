@@ -1,7 +1,7 @@
-import { View, Text, StyleSheet, Pressable } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { ReactNode } from 'react';
+import { StyleSheet } from 'react-native';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
+import { ModuleHeader } from '@/src/components/ui/ModuleHeader';
 
 // Shared types and styles for the Website editor (Work › Website) — not a
 // route itself (expo-router ignores `_` files). Backend: routers/website.py.
@@ -27,18 +27,10 @@ const API_BASE = process.env.EXPO_PUBLIC_BACKEND_URL || '';
 export const abs = (url: string, thumb = false) =>
   url.startsWith('http') ? url : `${API_BASE}${url}${thumb ? '?thumb=true' : ''}`;
 
-export function Header({ title, colors, right }: { title: string; colors: ThemeColors; right?: React.ReactNode }) {
-  const router = useRouter();
-  const s = makeStyles(colors);
-  return (
-    <View style={s.header}>
-      <Pressable onPress={() => router.back()} style={s.iconBtn} hitSlop={12} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back">
-        <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-      </Pressable>
-      <Text style={s.title} numberOfLines={1}>{title}</Text>
-      {right || <View style={{ width: 40 }} />}
-    </View>
-  );
+// The shared Apple-style module header (see ModuleHeader). The module's own
+// front page goes back to Work; its inner pages go back to the module.
+export function Header({ title, right, backLabel }: { title: string; colors?: ThemeColors; right?: ReactNode; backLabel?: string }) {
+  return <ModuleHeader title={title} backLabel={backLabel || (title === 'Website' ? 'Work' : 'Website')} actions={right} />;
 }
 
 export const makeStyles = (colors: ThemeColors) => StyleSheet.create({
