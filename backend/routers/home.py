@@ -415,16 +415,21 @@ async def _needs_you(user: dict, s: dict, now: datetime, staff: Optional[dict]) 
                          'action': 'Review', 'route': '/samples?status=overdue', 'can_act': True})
 
     # Tasks: the whole team's for whoever has the Tasks module, otherwise just your own.
-    tq = {'status': 'open', 'due_date': {'$lt': today, '$nin': [None, '']}}
-    if not can_view(user, 'tasks'):
+    # An employee also sees their own tasks due today (their old Home's "My tasks today").
+    own = not can_view(user, 'tasks')
+    tq = {'status': 'open', 'due_date': {'$lte' if own else '$lt': today, '$nin': [None, '']}}
+    if own:
         tq['assigned_to'] = user['id']
     if can_view(user, 'tasks') or user.get('role') == 'employee':
         tasks = await db.tasks.find(tq, {'_id': 0, 'title': 1, 'due_date': 1}).sort('due_date', 1).to_list(2000)
         if tasks:
-            rows.append({'key': 'tasks_overdue', 'severity': 'amber', 'module': 'tasks', 'count': len(tasks),
-                         'title': f"{len(tasks)} task{'s' if len(tasks) != 1 else ''} overdue",
-                         'detail': f"Oldest: {tasks[0].get('title') or 'Untitled'}",
-                         'action': 'Review', 'route': '/tasks', 'can_act': True})
+            late = sum(1 for t in tasks if t['due_date'] < today)
+            title = (f"{len(tasks)} task{'s' if len(tasks) != 1 else ''} overdue" if late == len(tasks)
+                     else f"{len(tasks)} task{'s' if len(tasks) != 1 else ''} due today" + (f" · {late} overdue" if late else ''))
+            rows.append({'key': 'tasks_overdue', 'severity': 'amber' if late else 'gold', 'module': 'tasks', 'count': len(tasks),
+                         'title': title,
+                         'detail': f"{'Oldest' if late else 'First'}: {tasks[0].get('title') or 'Untitled'}",
+                         'action': 'Review', 'route': '/(emp)/tasks' if user.get('role') == 'employee' else '/tasks', 'can_act': True})
 
     if can_view(user, 'documents'):
         from routers.documents import _account_rights, _visible_keys, _role
@@ -659,6 +664,9 @@ async def build_summary(user: dict) -> dict:
     now = _ist_now()
     today = now.date().isoformat()
     s, hidden = await asyncio.gather(home_settings(), _hidden_sections(user))
+    if user.get('role') == 'employee':
+        # The employee Home shows rates, quick actions, Needs you and notifications only.
+        hidden = hidden + [k for k in ('cash', 'staff', 'owed', 'coming_up') if k not in hidden]
     show = lambda k: k not in hidden   # noqa: E731
 
     async def none():
