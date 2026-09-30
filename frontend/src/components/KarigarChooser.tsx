@@ -38,7 +38,9 @@ export function KarigarChooser({
           </Pressable>
         </View>
       ) : (
-        <PartyByMobile list={karigars} mobile={mobile} onMobile={onMobile} name={name} onName={onName} kindLabel="karigar" testID={testID} />
+        <PartyByMobile list={karigars} mobile={mobile} onMobile={onMobile} name={name} onName={onName} kindLabel="karigar" testID={testID}
+          // In-house karigars may have no number: picking one of them selects them directly.
+          onPick={(k) => { if (mobileKey(k.mobile).length >= 7) { onMobile(k.mobile || ''); onName(''); } else onInHouse(k as ChooserKarigar); }} />
       )}
       {!inHouse && !mobile && noMobile.length > 0 && (
         <View style={s.chips}>
