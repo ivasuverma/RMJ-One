@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Platform, KeyboardAvoidingView, RefreshControl, Image,
 } from 'react-native';
@@ -30,6 +30,7 @@ type Item = {
   bill_extra_charges?: number | null; bill_extra_charges_note?: string | null;
   bill_previous_balance?: number | null; final_photo?: string | null;
   bill_weight_rate?: number | null; bill_value_add?: number | null;
+  repair_type?: string | null; purity?: number | null;
 };
 
 type Txn = {
@@ -82,6 +83,20 @@ export default function RepairBillScreen() {
   const [closeItem, setCloseItem] = useState<Item | null>(null);
   const [closeDate, setCloseDate] = useState('');
   const [closeBy, setCloseBy] = useState('');
+  // Delivered By is picked from the staff list (the signed-in person first,
+  // since they're usually the one handing it over).
+  const [staff, setStaff] = useState<string[]>([]);
+  const [staffOpen, setStaffOpen] = useState(false);
+  useEffect(() => {
+    api.get<{ name: string }[]>('/employees?status=active')
+      .then((list) => setStaff(list.map((e) => e.name).filter(Boolean)))
+      .catch(() => setStaff([]));
+  }, []);
+  const staffNames = useMemo(() => {
+    const names = [...staff];
+    if (user?.name && !names.includes(user.name)) names.unshift(user.name);
+    return names;
+  }, [staff, user?.name]);
   const [loading, setLoading] = useState(!!routeItemId);
   const [refreshing, setRefreshing] = useState(false);
   const [printingId, setPrintingId] = useState('');
@@ -501,10 +516,25 @@ export default function RepairBillScreen() {
               <Text style={styles.cName}>{closeItem.item_code} · {closeItem.customer_name}</Text>
               <Text style={styles.cMeta}>{closeItem.description}{closeItem.billed_amount != null ? ` · Billed ₹${closeItem.billed_amount.toFixed(0)}` : ''}</Text>
             </View>
+            <DeliveryDetails item={closeItem} />
             <Text style={styles.hint}>Record when the customer actually picked up the item and who handed it over.</Text>
             <DateField label="Date Delivered" value={closeDate} onChange={setCloseDate} testID="close-delivered-at" />
             <Text style={styles.label}>Delivered By</Text>
-            <TextInput testID="close-delivered-by" value={closeBy} onChangeText={setCloseBy} placeholder="Who handed over the item" placeholderTextColor={colors.mutedText} style={styles.input} />
+            <Pressable onPress={() => setStaffOpen((v) => !v)} style={styles.staffPicker} testID="close-delivered-by">
+              <Text style={closeBy ? styles.staffValue : styles.staffPlaceholder} numberOfLines={1}>{closeBy || 'Who handed over the item'}</Text>
+              <Ionicons name={staffOpen ? 'chevron-up' : 'chevron-down'} size={16} color={colors.mutedText} />
+            </Pressable>
+            {staffOpen && (
+              <ScrollView style={styles.staffList} nestedScrollEnabled keyboardShouldPersistTaps="handled" testID="close-delivered-by-list">
+                {staffNames.map((n) => (
+                  <Pressable key={n} onPress={() => { setCloseBy(n); setStaffOpen(false); }} style={styles.staffRow} testID={`close-delivered-by-${n}`}>
+                    <Text style={[styles.staffRowText, n === closeBy && { fontWeight: '800' }]}>{n}</Text>
+                    {n === closeBy && <Ionicons name="checkmark" size={16} color={colors.brandPrimary} />}
+                  </Pressable>
+                ))}
+                {staffNames.length === 0 && <Text style={[styles.staffPlaceholder, { padding: spacing.md }]}>No staff found</Text>}
+              </ScrollView>
+            )}
             <Pressable onPress={submitClose} disabled={busy} style={[styles.saveBtn, busy && { opacity: 0.6 }]} testID="close-delivery-save-btn">
               {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.saveBtnText}>Close Delivery</Text>}
             </Pressable>
@@ -688,7 +718,68 @@ export default function RepairBillScreen() {
   );
 }
 
+const inr = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`;
+const grams = (n: number) => `${n.toFixed(3)}g`;
+
+/** Everything about the job on one card, to check before handing it over:
+ * weights (in, back from the karigar, difference) and the bill. */
+function DeliveryDetails({ item }: { item: Item }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+  const issued = item.current_issue_weight ?? null;
+  const diff = item.weight_diff ?? null;
+  const back = issued != null && diff != null ? issued + diff : null;
+  const rows: [string, string, 'plain' | 'good' | 'bad' | 'total'][] = [];
+  if (item.repair_type) rows.push(['Repair type', item.repair_type, 'plain']);
+  if (item.karigar_name) rows.push(['Karigar', item.karigar_name, 'plain']);
+  rows.push(['Weight at intake', `${grams(item.gross_weight)}${item.purity ? ` · ${item.purity}%` : ''}`, 'plain']);
+  if (issued != null && item.karigar_name) rows.push(['Issued to karigar', grams(issued), 'plain']);
+  if (back != null) rows.push(['Received back', grams(back), 'plain']);
+  if (diff != null) {
+    const fine = item.fine_weight_diff != null && Math.abs(item.fine_weight_diff) > 0.0005 ? ` (fine ${item.fine_weight_diff > 0 ? '+' : ''}${item.fine_weight_diff.toFixed(3)}g)` : '';
+    rows.push(['Weight difference', `${diff > 0 ? '+' : ''}${grams(diff)}${fine}`, Math.abs(diff) < 0.0005 ? 'plain' : diff < 0 ? 'bad' : 'good']);
+  }
+  const labour = item.bill_labour_charge ?? item.labour_charge;
+  if (labour) rows.push(['Labour', inr(labour), 'plain']);
+  if (item.bill_material_adjustment) rows.push(['Material adjustment', inr(item.bill_material_adjustment), 'plain']);
+  if (item.bill_extra_charges) rows.push([`Extra charges${item.bill_extra_charges_note ? ` · ${item.bill_extra_charges_note}` : ''}`, inr(item.bill_extra_charges), 'plain']);
+  if (item.bill_previous_balance) rows.push(['Previous balance', inr(item.bill_previous_balance), 'plain']);
+  if (item.billed_amount != null) rows.push([item.billed_amount < 0 ? 'Credit to customer' : 'Bill amount', inr(Math.abs(item.billed_amount)), 'total']);
+  if (item.payment_mode) rows.push(['Payment', item.payment_mode, 'plain']);
+  return (
+    <View style={styles.detailCard} testID="close-details">
+      {rows.map(([k, v, tone], i) => (
+        <View key={k} style={[styles.detailRow, i > 0 && styles.detailRowSep, tone === 'total' && styles.detailRowTotal]}>
+          <Text style={[styles.detailKey, tone === 'total' && styles.detailTotalText]}>{k}</Text>
+          <Text style={[
+            styles.detailVal,
+            tone === 'good' && { color: colors.onSuccess }, tone === 'bad' && { color: colors.onError },
+            tone === 'total' && styles.detailTotalText,
+          ]}>{v}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
+  detailCard: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, paddingHorizontal: spacing.md, marginBottom: spacing.md },
+  detailRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: spacing.md, paddingVertical: 9 },
+  detailRowSep: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.divider },
+  detailRowTotal: { paddingVertical: 11 },
+  detailKey: { color: colors.mutedText, fontSize: 13, flexShrink: 1 },
+  detailVal: { color: colors.onSurface, fontSize: 14, fontWeight: '700', textAlign: 'right' },
+  detailTotalText: { color: colors.onSurface, fontSize: 16, fontWeight: '800' },
+  staffPicker: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm,
+    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    paddingHorizontal: spacing.md, paddingVertical: 12,
+  },
+  staffValue: { flex: 1, color: colors.onSurface, fontSize: 14, fontWeight: '600' },
+  staffPlaceholder: { flex: 1, color: colors.mutedText, fontSize: 14 },
+  staffList: { maxHeight: 260, backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, marginTop: spacing.xs },
+  staffRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.md, paddingVertical: 11 },
+  staffRowText: { color: colors.onSurface, fontSize: 14 },
   root: { flex: 1, backgroundColor: colors.surface },
   header: {
     flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg,
