@@ -6,7 +6,7 @@ import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
-import { istTime, istDate, todayIST, nowISTLongLabel, displayDateOnlyWithWeekday, localDateStr } from '@/src/utils/datetime';
+import { istTime, istDate, todayIST, displayDateOnlyWithWeekday, localDateStr } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { haptics } from '@/src/utils/haptics';
@@ -164,7 +164,8 @@ export default function OwnerAttendance() {
     finally { setRunning(false); }
   };
 
-  const subtitle = seg === 'today' ? (isToday ? `${nowISTLongLabel()} · ${inCount} of ${rows.length} in` : `${displayDateOnlyWithWeekday(date)} · ${inCount} of ${rows.length} in`)
+  // The day is already shown in the date bar below, so the header just gives the count.
+  const subtitle = seg === 'today' ? `${inCount} of ${rows.length} in`
     : seg === 'live' ? 'Every check-in and check-out, newest first'
       : `${MONTHS[month - 1]} ${year} · salary synced to attendance`;
 
@@ -401,9 +402,9 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   apprBtnOn: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
   apprBadge: { position: 'absolute', top: -3, right: -3, minWidth: 20, height: 20, borderRadius: 10, paddingHorizontal: 5, backgroundColor: colors.brandPrimary, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: colors.surface },
   apprBadgeText: { color: colors.onBrandPrimary, fontSize: 11, fontWeight: '800' },
-  sub: { color: colors.onSurfaceSecondary, fontSize: 15, marginTop: 6 },
+  sub: { color: colors.onSurfaceSecondary, fontSize: 15, marginTop: 2 },
 
-  seg: { flexDirection: 'row', backgroundColor: colors.surfaceTertiary, borderRadius: 12, padding: 4, gap: 3, marginTop: spacing.lg },
+  seg: { flexDirection: 'row', backgroundColor: colors.surfaceTertiary, borderRadius: 12, padding: 4, gap: 3, marginTop: spacing.xs },
   sg: { flex: 1, alignItems: 'center', paddingVertical: 9, borderRadius: 9 },
   sgOn: { backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.borderStrong },
   sgText: { color: colors.mutedText, fontSize: 14, fontWeight: '600' },
