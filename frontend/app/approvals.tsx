@@ -1,12 +1,13 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, Platform, ActivityIndicator, TextInput,
+  View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, Platform, ActivityIndicator,
 } from 'react-native';
 import { notify } from '@/src/utils/notify';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
+import { TimeInput } from '@/src/components/TimeInput';
 import { displayDateOnly, istTime24 } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
@@ -20,7 +21,7 @@ type Correction = {
 };
 type DaySummary = { check_in?: string | null; check_out?: string | null; working_hours?: number; status?: string | null };
 // One side of the comparison, as display strings.
-type DayView = { in: string; out: string; hours: string; status: string };
+type DayView = { in: string; out: string; hours: string; status: string; note?: string; bad?: boolean };
 
 const STATUS_LABEL: Record<string, string> = { present: 'Present', half_day: 'Half day', absent: 'Absent', leave: 'Leave', holiday: 'Holiday', weekly_off: 'Weekly off' };
 const toMin = (t: string) => { const m = /^(\d{1,2}):(\d{2})$/.exec(t.trim()); return m ? +m[1] * 60 + +m[2] : null; };
@@ -35,9 +36,22 @@ function projected(cur: DayView, t: { in: string; out: string }, hasRecord: bool
   if (!t.in.trim() && !t.out.trim()) {
     return hasRecord ? { ...cur } : { in: '—', out: '—', hours: '8h 00m', status: 'Present' };
   }
-  const a = toMin(tin), b = toMin(tout);
+  const a = toMin(tin);
+  let b = toMin(tout);
+  let out = tout || '—';
+  let note: string | undefined;
+  // Same rule as the server: a morning check-out before the check-in means PM ("8:00" → 20:00).
+  if (t.out.trim() && a !== null && b !== null && b <= a && b < 720 && b + 720 > a) {
+    b += 720;
+    out = `${String(Math.floor(b / 60)).padStart(2, '0')}:${String(b % 60).padStart(2, '0')}`;
+    note = `${tout} read as ${out} (PM)`;
+  }
+  const bad = a !== null && b !== null && b <= a;
   const hrs = a !== null && b !== null && b > a ? (b - a) / 60 : 0;
-  return { in: tin || '—', out: tout || '—', hours: fmtHours(hrs), status: hrs ? (hrs >= 4 ? 'Present' : 'Half day') : 'Present' };
+  return {
+    in: tin || '—', out, hours: bad ? 'Out before In' : fmtHours(hrs),
+    status: hrs ? (hrs >= 4 ? 'Present' : 'Half day') : 'Present', note, bad,
+  };
 }
 type Leave = {
   id: string; employee_name: string; employee_code: string;
@@ -148,8 +162,8 @@ export default function Approvals() {
                           <View key={k} style={styles.timeBox}>
                             <Ionicons name={k === 'in' ? 'log-in-outline' : 'log-out-outline'} size={13} color={colors.brandSecondary} />
                             <Text style={styles.desiredText}>{k === 'in' ? 'In' : 'Out'}</Text>
-                            <TextInput value={timeFor(c)[k]} onChangeText={(v) => setTime(c, k, v)} placeholder="HH:MM" maxLength={5}
-                              placeholderTextColor={colors.mutedText} keyboardType="numbers-and-punctuation"
+                            <TimeInput value={timeFor(c)[k]} onChangeText={(v) => setTime(c, k, v)} placeholder="HH:MM"
+                              placeholderTextColor={colors.mutedText}
                               style={styles.timeInput} testID={`corr-${c.id}-${k}`} />
                           </View>
                         ))}
@@ -243,6 +257,8 @@ function Compare({ left, right, leftLabel, rightLabel, testID }: { left: DayView
           </View>
         );
       })}
+      {!!right.note && <Text style={styles.cmpNote}>{right.note}</Text>}
+      {right.bad && <Text style={[styles.cmpNote, { color: colors.onError }]}>Check-out is before check-in — fix the Out time before approving.</Text>}
     </View>
   );
 }
@@ -337,6 +353,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   cmpKey: { width: 64, color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '700' },
   cmpCell: { flex: 1, color: colors.onSurface, fontSize: 13, fontWeight: '600' },
   cmpOld: { color: colors.mutedText, textDecorationLine: 'line-through' },
+  cmpNote: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '600', paddingHorizontal: 10, paddingVertical: 6, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.divider },
   cmpNew: { color: colors.brandPrimary, fontWeight: '800' },
   timeBox: {
     flexDirection: 'row', alignItems: 'center', gap: 5, paddingLeft: 8, borderRadius: radius.sm,

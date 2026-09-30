@@ -11,6 +11,7 @@ import { notify } from '@/src/utils/notify';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { DateField } from '@/src/components/DateField';
+import { TimeInput } from '@/src/components/TimeInput';
 import { shiftedISTDate } from '@/src/utils/datetime';
 
 const OPTIONS = [
@@ -103,15 +104,15 @@ export default function CorrectionForm() {
             {askIn && (
               <View style={{ flex: 1 }}>
                 <Text style={styles.label}>{needIn ? 'Time you arrived' : 'Check-in time (optional)'}</Text>
-                <TextInput testID="corr-in-time" value={inTime} onChangeText={setInTime} placeholder="HH:MM e.g. 10:15"
-                  placeholderTextColor={colors.mutedText} style={styles.timeInput} keyboardType="numbers-and-punctuation" maxLength={5} />
+                <TimeInput testID="corr-in-time" value={inTime} onChangeText={setInTime} placeholder="HH:MM e.g. 10:15"
+                  placeholderTextColor={colors.mutedText} style={styles.timeInput} />
               </View>
             )}
             {askOut && (
               <View style={{ flex: 1 }}>
                 <Text style={styles.label}>{needOut ? 'Time you left' : 'Check-out time (optional)'}</Text>
-                <TextInput testID="corr-out-time" value={outTime} onChangeText={setOutTime} placeholder="HH:MM e.g. 19:30"
-                  placeholderTextColor={colors.mutedText} style={styles.timeInput} keyboardType="numbers-and-punctuation" maxLength={5} />
+                <TimeInput testID="corr-out-time" value={outTime} onChangeText={setOutTime} placeholder="HH:MM e.g. 19:30"
+                  placeholderTextColor={colors.mutedText} style={styles.timeInput} />
               </View>
             )}
           </View>
