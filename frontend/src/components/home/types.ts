@@ -45,9 +45,10 @@ export type HomeSummary = {
   rates: Maybe<Rates>;
   cash: Maybe<Cash>;
   quick_actions: Maybe<QuickActions>;
-  needs_you: NeedRow[] | Unavailable;
+  needs_you: NeedRow[] | Unavailable | null;   // null = hidden in Settings › Home screen
   staff: Maybe<Staff>;
   owed: Maybe<Owed>;
   coming_up: Maybe<ComingUp>;
+  hidden_sections?: string[];
   cached?: boolean;
 };

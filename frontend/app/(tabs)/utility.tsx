@@ -186,6 +186,10 @@ export default function UtilityScreen() {
           </View>
         )}
         <GlassSettings testID="glass-settings" />
+        {(isOwner || user?.role === 'admin') && (
+          <Row icon="home-outline" label="Home screen" sub="Show or hide parts of Home, and when it flags things"
+            onPress={() => router.push('/settings/home-screen' as any)} testID="settings-row-home-screen" />
+        )}
 
         <Pressable testID="logout-btn" style={styles.logout} onPress={onLogout}>
           <Ionicons name="log-out-outline" size={20} color={colors.onError} />

@@ -572,18 +572,60 @@ async def _coming_up(user: dict, s: dict, now: datetime) -> dict:
                 pay_d = d
                 break
         if pay_d:
+            prev = pay_d.replace(day=1) - timedelta(days=1)   # salaries paid for the month before payday
+
             async def load():
                 from routers.payroll import _compute_payroll
-                prev = pay_d.replace(day=1) - timedelta(days=1)   # salaries paid for the month before payday
                 rows = await _compute_payroll(prev.year, prev.month)
                 return {'count': len(rows), 'net': round(sum(max(r.get('net_salary') or 0, 0) for r in rows), 2)}
             p = await _shared(f'payday:{pay_d.isoformat()}', 300, load)
-            items.append({'date': pay_d.isoformat(), 'kind': 'payday', 'module': 'payroll', 'title': 'Payday',
+            items.append({'date': pay_d.isoformat(), 'kind': 'payday', 'module': 'payroll', 'title': f"Payday · {prev.strftime('%B')} salaries",
                           'detail': f"{p['count']} employee{'s' if p['count'] != 1 else ''} · ₹{p['net']:,.0f} after advances",
-                          'route': '/payroll'})
+                          'route': f'/attendance?seg=pay&year={prev.year}&month={prev.month}'})
 
     items.sort(key=lambda x: x['date'])
     return {'items': items[:6], 'total': len(items), 'until': end}
+
+
+# ---------------- Sections shown ----------------
+# The Home sections a person can switch off for themselves (Settings › Home screen).
+HOME_SECTIONS = [
+    {'key': 'rates', 'label': 'Rates ticker'},
+    {'key': 'cash', 'label': 'Cash in hand'},
+    {'key': 'quick_actions', 'label': 'Quick actions'},
+    {'key': 'needs_you', 'label': 'Needs you today'},
+    {'key': 'staff', 'label': 'In the shop'},
+    {'key': 'owed', 'label': 'Owed to you'},
+    {'key': 'coming_up', 'label': 'Coming up'},
+]
+SECTION_KEYS = [x['key'] for x in HOME_SECTIONS]
+
+
+async def _hidden_sections(user: dict) -> list[str]:
+    prefs = await db.user_prefs.find_one({'user_id': user['id']}, {'_id': 0, 'home_hidden_sections': 1}) or {}
+    return [k for k in (prefs.get('home_hidden_sections') or []) if k in SECTION_KEYS]
+
+
+class SectionsIn(BaseModel):
+    hidden: list[str] = Field(default_factory=list, max_length=20)
+
+
+@router.get('/home/sections')
+async def get_sections(user: dict = Depends(get_current)):
+    return {'sections': HOME_SECTIONS, 'hidden': await _hidden_sections(user)}
+
+
+@router.put('/home/sections')
+async def put_sections(body: SectionsIn, user: dict = Depends(get_current)):
+    """Which Home sections this person hides — saved per user, so it follows them to any device."""
+    hidden = [k for k in dict.fromkeys(body.hidden) if k in SECTION_KEYS]
+    await db.user_prefs.update_one(
+        {'user_id': user['id']},
+        {'$set': {'user_id': user['id'], 'home_hidden_sections': hidden, 'updated_at': now_utc().isoformat()}},
+        upsert=True,
+    )
+    _USER_CACHE.pop(user['id'], None)
+    return {'sections': HOME_SECTIONS, 'hidden': hidden}
 
 
 # ---------------- Summary ----------------
@@ -605,21 +647,27 @@ async def build_summary(user: dict) -> dict:
     t0 = time.monotonic()
     now = _ist_now()
     today = now.date().isoformat()
-    s = await home_settings()
+    s, hidden = await asyncio.gather(home_settings(), _hidden_sections(user))
+    show = lambda k: k not in hidden   # noqa: E731
+
+    async def none():
+        return None
 
     header, rates, quick = await asyncio.gather(
         _section('header', _header(user, now)),
-        _section('rates', _rates(user, today, s, now)),
-        _section('quick_actions', _quick_actions(user)),
+        _section('rates', _rates(user, today, s, now)) if show('rates') else none(),
+        _section('quick_actions', _quick_actions(user)) if show('quick_actions') else none(),
     )
-    staff_task = asyncio.ensure_future(_section('staff', _staff_today(user, s, now))) if can_view(user, 'attendance') else None
-    cash_task = asyncio.ensure_future(_section('cash', _cash(user, today))) if can_view(user, 'cash_book') else None
-    owed_task = asyncio.ensure_future(_section('owed', _owed(user, s, now.date())))
-    coming_task = asyncio.ensure_future(_section('coming_up', _coming_up(user, s, now)))
+    # Staff is also what Needs you reads for late / not-in rows, so it's built when either shows.
+    want_staff = can_view(user, 'attendance') and (show('staff') or show('needs_you'))
+    staff_task = asyncio.ensure_future(_section('staff', _staff_today(user, s, now))) if want_staff else None
+    cash_task = asyncio.ensure_future(_section('cash', _cash(user, today))) if can_view(user, 'cash_book') and show('cash') else None
+    owed_task = asyncio.ensure_future(_section('owed', _owed(user, s, now.date()))) if show('owed') else None
+    coming_task = asyncio.ensure_future(_section('coming_up', _coming_up(user, s, now))) if show('coming_up') else None
     staff = await staff_task if staff_task else None
-    needs = await _section('needs_you', _needs_you(user, s, now, staff if staff and not staff.get('unavailable') else None))
-    owed = await owed_task
-    if not owed.get('unavailable') and not any(owed.get(k) for k in ('customers', 'loan_interest', 'karigars')):
+    needs = await _section('needs_you', _needs_you(user, s, now, staff if staff and not staff.get('unavailable') else None)) if show('needs_you') else None
+    owed = await owed_task if owed_task else None
+    if owed and not owed.get('unavailable') and not any(owed.get(k) for k in ('customers', 'loan_interest', 'karigars')):
         owed = None   # nothing here this person may see
     return {
         'generated_at': now_utc().isoformat(),
@@ -628,9 +676,10 @@ async def build_summary(user: dict) -> dict:
         'cash': await cash_task if cash_task else None,
         'quick_actions': quick,
         'needs_you': needs,
-        'staff': staff,
+        'staff': staff if show('staff') else None,
         'owed': owed,
-        'coming_up': await coming_task,
+        'coming_up': await coming_task if coming_task else None,
+        'hidden_sections': hidden,
         'settings': s,
         'took_ms': round((time.monotonic() - t0) * 1000),
     }

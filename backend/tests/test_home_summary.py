@@ -70,3 +70,17 @@ def test_home_settings_round_trip():
     # Employees can't change them.
     emp = _login('rmj001', '1234', employee=True)
     assert requests.put(f"{API}/settings/home", headers=emp, json={'sample_overdue_days': 9}, timeout=30).status_code == 403
+
+
+def test_sections_hidden_per_user():
+    h = _login('owner', 'Owner@123')
+    try:
+        r = requests.put(f"{API}/home/sections", headers=h, json={'hidden': ['owed', 'coming_up', 'nope']}, timeout=30)
+        assert r.status_code == 200, r.text
+        assert r.json()['hidden'] == ['owed', 'coming_up']
+        d = requests.get(f"{API}/home/summary", headers=h, timeout=60).json()
+        assert d['owed'] is None and d['coming_up'] is None
+        assert d['hidden_sections'] == ['owed', 'coming_up']
+        assert d['cash'] is not None
+    finally:
+        requests.put(f"{API}/home/sections", headers=h, json={'hidden': []}, timeout=30)
