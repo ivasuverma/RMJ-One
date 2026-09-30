@@ -114,6 +114,7 @@ export default function NewSampleScreen() {
 
   const submit = async () => {
     if (submittingRef.current) return;
+    if (!issueType.trim()) { notify('Missing', issueTypeOther ? 'Type the type of issue' : 'Choose the type of issue'); return; }
     if (!isEdit && kEntry.kind === 'none') { notify('Missing', 'Enter the mobile number of the karigar this sample goes to'); return; }
     if (!isEdit && kEntry.kind === 'error') { notify('Missing', kEntry.message); return; }
     const w = parseFloat(weight);
@@ -201,7 +202,7 @@ export default function NewSampleScreen() {
             />
           )}
 
-          <Text style={styles.label}>Type of Issue (optional)</Text>
+          <Text style={styles.label}>Type of Issue</Text>
           <Pressable onPress={() => setIssueTypePickerOpen((v) => !v)} style={styles.picker} testID="sample-issue-type-toggle">
             <Text style={issueType || issueTypeOther ? styles.pickerValue : styles.pickerPlaceholder}>
               {issueTypeOther ? 'Other' : issueType || 'Choose a type'}
