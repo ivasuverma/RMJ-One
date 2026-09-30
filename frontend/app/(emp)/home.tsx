@@ -150,7 +150,7 @@ export default function EmployeeHome() {
             {!appCheckinEnabled && (
               <View style={styles.doneBadge} testID="app-checkin-disabled-notice">
                 <Ionicons name="finger-print-outline" size={16} color={colors.mutedText} />
-                <Text style={styles.doneText}>Tracked via biometric device — app check-in/out is off.</Text>
+                <Text style={styles.doneText}>Punch in and out on the biometric machine at the shop — your times show here.</Text>
               </View>
             )}
             {appCheckinEnabled && !hasCheckIn && (
