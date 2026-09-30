@@ -12,6 +12,7 @@ import { ErrorState } from '@/src/components/ui';
 import { TabBarSpacer } from '@/src/components/GlassTabBar';
 import { useScrolled } from '@/src/components/ui/StickyHeader';
 import { ModuleHeader, HeaderButton } from '@/src/components/ui/ModuleHeader';
+import { HeaderSpacer } from '@/src/components/ui/StickyHeader';
 
 type Item = {
   id: string; item_code: string; customer_name: string; description: string;
@@ -93,6 +94,7 @@ export default function RepairOrdersScreen() {
         contentContainerStyle={styles.scroll}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(filter); }} tintColor={colors.brandPrimary} />}
       >
+        <HeaderSpacer />
 
         {/* Pipeline bar */}
         <View style={styles.pipe}>

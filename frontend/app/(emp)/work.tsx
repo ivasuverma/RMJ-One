@@ -11,7 +11,7 @@ import { useTheme } from '@/src/theme/ThemeContext';
 import { UploadQueueBadge } from '@/src/components/UploadQueueBadge';
 import { AppSetupBanner } from '@/src/components/AppSetupBanner';
 import { TabBarSpacer } from '@/src/components/GlassTabBar';
-import { StickyHeader, useScrolled } from '@/src/components/ui/StickyHeader';
+import { StickyHeader, useScrolled, HeaderSpacer } from '@/src/components/ui/StickyHeader';
 
 // Employee Work hub — same card language as the admin Work board: an
 // "In progress" list of process rows (each showing its live state before you
@@ -139,6 +139,7 @@ export default function EmployeeWorkScreen() {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}
       >
+        <HeaderSpacer />
 
         <AppSetupBanner />
 

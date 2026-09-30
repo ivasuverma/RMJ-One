@@ -8,6 +8,7 @@ import { spacing, radius, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { useToast } from '@/src/components/ui';
 import { Header, makeStyles, MetaStatus, Overview, SHORT_DAYS, num, templateLine } from './_shared';
+import { HeaderSpacer } from '@/src/components/ui/StickyHeader';
 
 type Step = { key: string; n: number; title: string; sub: string; ok: boolean; route: string; icon: keyof typeof Ionicons.glyphMap };
 
@@ -78,6 +79,7 @@ export default function RateBroadcastHub() {
       <Header title="Rate Broadcast" colors={colors} />
       <ScrollView contentContainerStyle={styles.scroll}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}>
+        <HeaderSpacer />
         <Text style={styles.hint}>
           Rates and offers to customers on WhatsApp, from the official (Meta) number only — the shop’s OpenWA number is
           never used for these, so a big send can’t get it banned. Set up each part in order.

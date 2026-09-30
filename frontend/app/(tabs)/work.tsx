@@ -13,7 +13,7 @@ import { ErrorState } from '@/src/components/ui';
 import { UploadQueueBadge } from '@/src/components/UploadQueueBadge';
 import { LiveRateButton } from '@/src/components/LiveRateButton';
 import { TabBarSpacer } from '@/src/components/GlassTabBar';
-import { StickyHeader, useScrolled } from '@/src/components/ui/StickyHeader';
+import { StickyHeader, useScrolled, HeaderSpacer } from '@/src/components/ui/StickyHeader';
 
 // Work — the operational hub, laid out to the v2 design comp: a search bar,
 // an "In progress" list of process rows (each showing its live state before
@@ -261,6 +261,7 @@ export default function WorkScreen() {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}
       >
+        <HeaderSpacer />
 
         <Pressable onPress={() => go('/repairs/search')} style={styles.search} testID="work-search">
           <Ionicons name="search-outline" size={17} color={colors.mutedText} />

@@ -11,6 +11,7 @@ import { useTheme } from '@/src/theme/ThemeContext';
 import { ModuleHeader } from '@/src/components/ui/ModuleHeader';
 import { useScrolled } from '@/src/components/ui/StickyHeader';
 import { useToast } from '@/src/components/ui';
+import { HeaderSpacer } from '@/src/components/ui/StickyHeader';
 
 type Today = {
   date: string; gold_rate: number | null; silver_rate: number | null;
@@ -215,6 +216,7 @@ export default function RateUpdaterScreen() {
 
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 80 }} onScroll={onScroll} scrollEventThrottle={16} keyboardShouldPersistTaps="handled"
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}>
+        <HeaderSpacer />
 
         {/* ---- 1. The rate (one for everything) ---- */}
         <View style={styles.card} testID="ru-rates-card">

@@ -8,6 +8,7 @@ import { useTheme } from '@/src/theme/ThemeContext';
 import { useToast } from '@/src/components/ui';
 import { ToggleSwitch } from '@/src/components/ui/ToggleSwitch';
 import { AUDIENCE_LABEL, Audience, BList, Header, Job, KIND_LABEL, MyTpl, Overview, Settings, SHORT_DAYS, jobAudience, makeStyles, num, when } from './_shared';
+import { HeaderSpacer } from '@/src/components/ui/StickyHeader';
 
 // Step 4 — send now, the daily/weekly schedule, and recent sends with their
 // delivery results (from Meta's status webhooks).
@@ -90,6 +91,7 @@ export default function BroadcastSendScreen() {
       <Header title="Send & schedule" colors={colors} />
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled"
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}>
+        <HeaderSpacer />
 
         {!rateApproved && !templates.length && (
           <View style={[styles.status, styles.warn]}>

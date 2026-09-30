@@ -11,7 +11,7 @@ import { isPushSupported, isSubscribed, subscribeToPush, unsubscribeFromPush } f
 import { NotificationSetupHint } from '@/src/components/NotificationSetupHint';
 import { TabBarSpacer } from '@/src/components/GlassTabBar';
 import { GlassSettings } from '@/src/components/GlassSettings';
-import { StickyHeader, useScrolled } from '@/src/components/ui/StickyHeader';
+import { StickyHeader, useScrolled, HeaderSpacer } from '@/src/components/ui/StickyHeader';
 
 // Settings, rethought (v2 Phase 6): grouped iOS-style inset list — a profile
 // card at the top, then quiet section headers over full-width rows (icon +
@@ -123,6 +123,7 @@ export default function UtilityScreen() {
         <Text style={styles.title}>Settings</Text>
       </StickyHeader>
       <ScrollView onScroll={onScroll} scrollEventThrottle={16} contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        <HeaderSpacer />
 
         {/* Apple-ID-style profile card */}
         <Pressable testID="utility-account-card" onPress={() => router.push('/settings/account' as any)} style={({ pressed }) => [styles.profileCard, pressed && { opacity: 0.85 }]}>

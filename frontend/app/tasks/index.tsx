@@ -10,7 +10,7 @@ import { todayIST } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { ModuleHeader, HeaderButton } from '@/src/components/ui/ModuleHeader';
-import { useScrolled } from '@/src/components/ui/StickyHeader';
+import { HeaderSpacer, useScrolled } from '@/src/components/ui/StickyHeader';
 import { ErrorState } from '@/src/components/ui';
 
 type Task = {
@@ -107,6 +107,7 @@ export default function TasksListScreen() {
         onRefresh={() => { setRefreshing(true); load(); }} refreshing={refreshing}
         actions={<HeaderButton icon="add" primary label="New task" testID="new-task-btn" onPress={() => router.push(addRoute as any)} />}
       />
+      <HeaderSpacer />
 
       <View style={styles.segRow}>
         {(['open', 'done', 'all', 'recurring'] as Filter[]).map((f) => (

@@ -22,7 +22,7 @@ import { employeeTabAccess } from '@/src/components/EmployeeTabBar';
 import { haptics } from '@/src/utils/haptics';
 import { useToast } from '@/src/components/ui';
 import { TabBarSpacer } from '@/src/components/GlassTabBar';
-import { StickyHeader, useScrolled } from '@/src/components/ui/StickyHeader';
+import { StickyHeader, useScrolled, HeaderSpacer } from '@/src/components/ui/StickyHeader';
 
 // Modules a tile can be shown for on this dashboard — icon/label/route match
 // the same module rows on the Work tab ((emp)/work.tsx) so a module looks
@@ -149,6 +149,7 @@ export default function EmployeeHome() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}
         showsVerticalScrollIndicator={false}
       >
+        <HeaderSpacer />
 
         {loading ? (
           <View style={{ paddingVertical: 80, alignItems: 'center' }}>
