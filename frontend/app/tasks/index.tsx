@@ -9,6 +9,8 @@ import { confirmAction } from '@/src/utils/confirm';
 import { todayIST } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { ModuleHeader, HeaderButton } from '@/src/components/ui/ModuleHeader';
+import { useScrolled } from '@/src/components/ui/StickyHeader';
 import { ErrorState } from '@/src/components/ui';
 
 type Task = {
@@ -44,6 +46,7 @@ function endsLabel(t: Template) {
 // so there's one Tasks screen instead of two navigation destinations.
 export default function TasksListScreen() {
   const router = useRouter();
+  const { scrolled, onScroll } = useScrolled();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -98,20 +101,12 @@ export default function TasksListScreen() {
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="tasks-list-screen">
-      <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
-          <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-        </Pressable>
-        <Text style={styles.title}>Tasks</Text>
-        <Pressable onPress={() => router.push(addRoute as any)} style={[styles.iconBtn, styles.addBtn]} testID="new-task-btn" hitSlop={12}>
-          <Ionicons name="add" size={22} color={colors.onBrandPrimary} />
-        </Pressable>
-      </View>
-
-      <View style={styles.summaryRow}>
-        <View style={styles.summaryTile}><Text style={styles.summaryValue}>{openCount}</Text><Text style={styles.summaryLabel}>Open</Text></View>
-        <View style={styles.summaryTile}><Text style={[styles.summaryValue, overdueCount > 0 && { color: colors.onError }]}>{overdueCount}</Text><Text style={styles.summaryLabel}>Overdue</Text></View>
-      </View>
+      <ModuleHeader
+        title="Tasks" scrolled={scrolled}
+        subtitle={`${openCount} open${overdueCount ? ` · ${overdueCount} overdue` : ''}`}
+        onRefresh={() => { setRefreshing(true); load(); }} refreshing={refreshing}
+        actions={<HeaderButton icon="add" primary label="New task" testID="new-task-btn" onPress={() => router.push(addRoute as any)} />}
+      />
 
       <View style={styles.segRow}>
         {(['open', 'done', 'all', 'recurring'] as Filter[]).map((f) => (
@@ -126,7 +121,7 @@ export default function TasksListScreen() {
       ) : error && tasks.length === 0 ? (
         <View style={{ padding: spacing.lg }}><ErrorState message={error} onRetry={load} testID="tasks-error" /></View>
       ) : (
-        <ScrollView
+        <ScrollView onScroll={onScroll} scrollEventThrottle={16}
           contentContainerStyle={{ padding: spacing.lg, paddingBottom: 60 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}
         >

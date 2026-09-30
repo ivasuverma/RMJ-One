@@ -1,8 +1,7 @@
 import { ReactNode } from 'react';
-import { View, Text, StyleSheet, Pressable } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
+import { StyleSheet } from 'react-native';
+import { spacing, radius, ThemeColors } from '@/src/theme';
+import { ModuleHeader } from '@/src/components/ui/ModuleHeader';
 
 // Shared types, labels and styles for the Rate Broadcast screens (index =
 // hub, number, templates, people, send) — not a route itself (expo-router
@@ -65,25 +64,12 @@ export function templateLine(ov: Overview): string {
   return `Waiting for Meta’s review (${(t.status || 'pending').toLowerCase()})`;
 }
 
-export function Header({ title, colors, right }: { title: string; colors: ThemeColors; right?: ReactNode }) {
-  const router = useRouter();
-  const s = headerStyles(colors);
-  return (
-    <View style={s.header}>
-      <Pressable onPress={() => router.back()} style={s.iconBtn} hitSlop={12} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back">
-        <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-      </Pressable>
-      <Text style={s.title} numberOfLines={1}>{title}</Text>
-      {right || <View style={{ width: 40 }} />}
-    </View>
-  );
+// The shared Apple-style module header (see ModuleHeader). The module's own
+// front page goes back to Work; its inner pages go back to the module.
+export function Header({ title, right, backLabel }: { title: string; colors?: ThemeColors; right?: ReactNode; backLabel?: string }) {
+  return <ModuleHeader title={title} backLabel={backLabel || (title === 'Rate Broadcast' ? 'Work' : 'Rate Broadcast')} actions={right} />;
 }
 
-const headerStyles = (colors: ThemeColors) => StyleSheet.create({
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg, paddingVertical: spacing.md, gap: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.divider },
-  iconBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surfaceSecondary, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border },
-  title: { flex: 1, color: colors.onSurface, fontSize: 20, fontWeight: '600', fontFamily: fonts.display, textAlign: 'center' },
-});
 
 export const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },

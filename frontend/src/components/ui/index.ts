@@ -19,3 +19,4 @@ export type { BalanceDirection } from './DualBalance';
 export { ToastProvider, useToast } from './Toast';
 export { Sheet } from './Sheet';
 export { StickyHeader, useScrolled } from './StickyHeader';
+export { ModuleHeader, HeaderButton } from './ModuleHeader';

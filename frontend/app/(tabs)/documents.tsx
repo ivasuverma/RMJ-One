@@ -17,7 +17,8 @@ import { QuickDocCapture } from '@/src/components/QuickDocCapture';
 import { extractPdfJpegs } from '@/src/utils/imagesToPdf';
 import { UploadQueueBadge } from '@/src/components/UploadQueueBadge';
 import { TabBarSpacer } from '@/src/components/GlassTabBar';
-import { StickyHeader, useScrolled } from '@/src/components/ui/StickyHeader';
+import { useScrolled } from '@/src/components/ui/StickyHeader';
+import { ModuleHeader } from '@/src/components/ui/ModuleHeader';
 
 type Doc = {
   id: string; category_key: string; status: 'pending' | 'done'; upload_state: string;
@@ -303,21 +304,12 @@ export default function DocumentsScreen() {
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="documents-screen">
-      <StickyHeader scrolled={scrolled}>
-        <Pressable onPress={() => (doneCat ? setDoneCat(null) : router.back())} style={styles.backRow} hitSlop={8} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back">
-          <Ionicons name="chevron-back" size={18} color={colors.brandPrimary} />
-          <Text style={styles.backText}>{doneCat ? 'Folders' : 'Work'}</Text>
-        </Pressable>
-        <View style={styles.titleRow}>
-          <View style={{ flex: 1 }}>
-            <View style={styles.titleInline}>
-              <Text style={styles.h1}>{doneCat ? (catMap[doneCat]?.label || 'Documents') : 'Documents'}</Text>
-              <Pressable onPress={() => { setRefreshing(true); load(); }} disabled={refreshing} testID="documents-refresh-btn" accessibilityRole="button" accessibilityLabel="Refresh" hitSlop={10}>
-                {refreshing ? <ActivityIndicator size="small" color={colors.brandSecondary} /> : <Ionicons name="refresh" size={15} color={colors.brandSecondary} />}
-              </Pressable>
-            </View>
-            {!doneCat && <Text style={styles.sub}>Snap · record · filed &amp; searchable.</Text>}
-          </View>
+      <ModuleHeader
+        title={doneCat ? (catMap[doneCat]?.label || 'Documents') : 'Documents'}
+        subtitle={doneCat ? null : 'Snap · record · filed & searchable.'}
+        backLabel={doneCat ? 'Folders' : 'Work'} onBack={() => (doneCat ? setDoneCat(null) : router.back())} scrolled={scrolled}
+        onRefresh={() => { setRefreshing(true); load(); }} refreshing={refreshing}
+        actions={<>
           <UploadQueueBadge />
           <View style={styles.drivePill}>
             {summary && summary.uploading_count > 0
@@ -326,8 +318,8 @@ export default function DocumentsScreen() {
                 ? <><Ionicons name="cloud-done-outline" size={13} color={colors.onSuccess} /><Text style={[styles.drivePillText, { color: colors.onSuccess }]}>Synced</Text></>
                 : <><Ionicons name="phone-portrait-outline" size={13} color={colors.mutedText} /><Text style={[styles.drivePillText, { color: colors.mutedText }]}>Local</Text></>}
           </View>
-        </View>
-      </StickyHeader>
+        </>}
+      />
       <ScrollView onScroll={onScroll} scrollEventThrottle={16} contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled"
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}>
 

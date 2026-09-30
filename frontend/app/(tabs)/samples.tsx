@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, RefreshControl, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, RefreshControl } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -8,6 +8,8 @@ import { api } from '@/src/api/client';
 import { istDateTime, todayIST } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { ModuleHeader, HeaderButton } from '@/src/components/ui/ModuleHeader';
+import { useScrolled } from '@/src/components/ui/StickyHeader';
 import { TabBarSpacer } from '@/src/components/GlassTabBar';
 
 type Sample = {
@@ -39,6 +41,7 @@ const STAGES: { key: string; label: string; tone: StageTone; countKey: keyof Pip
 
 export default function SamplesScreen() {
   const router = useRouter();
+  const { scrolled, onScroll } = useScrolled();
   const { status: routeStatus } = useLocalSearchParams<{ status?: string }>();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
@@ -79,26 +82,13 @@ export default function SamplesScreen() {
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="samples-screen">
-      <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
-          <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-        </Pressable>
-        <View style={styles.titleInline}>
-          <Text style={styles.title}>Stock In/Out</Text>
-          <Pressable onPress={() => { setRefreshing(true); load(); }} disabled={refreshing} testID="samples-refresh-btn" accessibilityRole="button" accessibilityLabel="Refresh" hitSlop={10}>
-            {refreshing ? <ActivityIndicator size="small" color={colors.onSurface} /> : <Ionicons name="refresh" size={15} color={colors.onSurface} />}
-          </Pressable>
-        </View>
-        {/* Issuing a new sample only ever needed module access on the
-            backend (require_admin_or_module, no right check) — matching
-            Repair's unconditional add button instead of gating this behind
-            the Edit right, which is meant for modifying existing records. */}
-        <Pressable onPress={() => router.push('/samples/new' as any)} style={[styles.iconBtn, styles.addBtn]} testID="new-sample-btn" hitSlop={12}>
-          <Ionicons name="add" size={22} color={colors.onBrandPrimary} />
-        </Pressable>
-      </View>
+      <ModuleHeader
+        title="Stock In/Out" scrolled={scrolled}
+        onRefresh={() => { setRefreshing(true); load(); }} refreshing={refreshing}
+        actions={<HeaderButton icon="add" primary label="New stock out" testID="new-sample-btn" onPress={() => router.push('/samples/new' as any)} />}
+      />
 
-      <ScrollView
+      <ScrollView onScroll={onScroll} scrollEventThrottle={16}
         contentContainerStyle={{ padding: spacing.lg }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}
       >
