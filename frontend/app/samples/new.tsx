@@ -13,6 +13,7 @@ import { makeThumbFromDataUri } from '@/src/utils/imageThumb';
 import { DateField } from '@/src/components/DateField';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { KarigarChooser, KarigarMode, createKarigar, newKarigarProblem } from '@/src/components/KarigarChooser';
 
 type Karigar = { id: string; name: string; active: boolean };
 type ItemMaster = { id: string; name: string; purity: number; category: string; active: boolean };
@@ -51,7 +52,10 @@ export default function NewSampleScreen() {
 
   const [karigarId, setKarigarId] = useState('');
   const [karigarName, setKarigarName] = useState(''); // display-only in edit mode — the karigar can't be changed after issue
-  const [karigarPickerOpen, setKarigarPickerOpen] = useState(false);
+  // Existing Karigar / New Karigar (see KarigarChooser); a new one is saved with the sample.
+  const [kMode, setKMode] = useState<KarigarMode>('existing');
+  const [newKName, setNewKName] = useState('');
+  const [newKMobile, setNewKMobile] = useState('');
   const pickedKarigar = karigars.find((k) => k.id === karigarId) || null;
 
   const [issueType, setIssueType] = useState('');
@@ -106,7 +110,9 @@ export default function NewSampleScreen() {
 
   const submit = async () => {
     if (submittingRef.current) return;
-    if (!isEdit && !karigarId) { notify('Missing', 'Pick which karigar this sample goes to'); return; }
+    if (!isEdit && kMode === 'existing' && !karigarId) { notify('Missing', 'Pick which karigar this sample goes to, or add a New Karigar'); return; }
+    const newKProblem = !isEdit && kMode === 'new' ? newKarigarProblem(newKName, newKMobile) : null;
+    if (newKProblem) { notify('Missing', newKProblem); return; }
     if (!description.trim()) { notify('Missing', 'Describe the sample piece'); return; }
     const w = parseFloat(weight);
     if (!w || w <= 0) { notify('Missing', 'Enter a weight greater than 0'); return; }
@@ -123,8 +129,16 @@ export default function NewSampleScreen() {
         });
         router.back();
       } else {
+        let kid = karigarId;
+        if (kMode === 'new') {
+          // Saved first, and kept picked, so a retry after a failed save doesn't add it twice.
+          const k = await createKarigar(newKName, newKMobile);
+          setKarigars((list) => [...list, { id: k.id, name: k.name, active: true }].sort((a, b) => a.name.localeCompare(b.name)));
+          setKarigarId(k.id); setKMode('existing'); setNewKName(''); setNewKMobile('');
+          kid = k.id;
+        }
         const created = await api.post<{ id: string }[]>('/samples', {
-          karigar_id: karigarId, note: note.trim(), issue_type: issueType.trim(), due_date: dueDate || null,
+          karigar_id: kid, note: note.trim(), issue_type: issueType.trim(), due_date: dueDate || null,
           items: [{ description: description.trim(), tag_number: '', weight: w, purity: pur, pc_count: parseInt(pcCount, 10) || 1, photo: '' }],
         });
         const rec = created?.[0];
@@ -177,22 +191,11 @@ export default function NewSampleScreen() {
               <Text style={styles.pickerValue}>{karigarName}</Text>
             </View>
           ) : (
-            <>
-              <Pressable onPress={() => setKarigarPickerOpen((v) => !v)} style={styles.picker} testID="sample-karigar-toggle">
-                <Text style={pickedKarigar ? styles.pickerValue : styles.pickerPlaceholder}>{pickedKarigar ? pickedKarigar.name : 'Choose a karigar'}</Text>
-                <Ionicons name={karigarPickerOpen ? 'chevron-up' : 'chevron-down'} size={16} color={colors.mutedText} />
-              </Pressable>
-              {karigarPickerOpen && (
-                <ScrollView style={styles.pickerList} nestedScrollEnabled keyboardShouldPersistTaps="handled">
-                  {karigars.map((k) => (
-                    <Pressable key={k.id} onPress={() => { setKarigarId(k.id); setKarigarPickerOpen(false); }} style={styles.pickerRow} testID={`sample-karigar-${k.id}`}>
-                      <Text style={styles.pickerRowName}>{k.name}</Text>
-                    </Pressable>
-                  ))}
-                  {karigars.length === 0 && <Text style={[styles.pickerRowMeta, { padding: spacing.md }]}>No karigars set up yet</Text>}
-                </ScrollView>
-              )}
-            </>
+            <KarigarChooser
+              karigars={karigars} picked={pickedKarigar} onPick={(k) => setKarigarId(k?.id || '')}
+              mode={kMode} onMode={setKMode} newName={newKName} onNewName={setNewKName} newMobile={newKMobile} onNewMobile={setNewKMobile}
+              testID="sample-karigar"
+            />
           )}
 
           <Text style={styles.label}>Type of Issue (optional)</Text>

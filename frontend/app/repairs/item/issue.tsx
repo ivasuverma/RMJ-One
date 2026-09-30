@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Platform, KeyboardAvoidingView, Modal,
+  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Platform, KeyboardAvoidingView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,6 +10,7 @@ import { notify } from '@/src/utils/notify';
 import { promptChoice } from '@/src/utils/choicePrompt';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { KarigarChooser, KarigarMode, createKarigar, newKarigarProblem } from '@/src/components/KarigarChooser';
 
 type Item = {
   id: string; item_code: string; description: string; customer_name: string;
@@ -34,28 +35,25 @@ export default function IssueToKarigarScreen() {
   const [pickList, setPickList] = useState<Item[]>([]);
   const [karigars, setKarigars] = useState<Karigar[]>([]);
   const [loading, setLoading] = useState(true);
-  const [kPickerOpen, setKPickerOpen] = useState(false);
   const [pickedKarigar, setPickedKarigar] = useState<Karigar | null>(null);
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const submittingRef = useRef(false);
-  // Inline "add karigar" from the picker.
-  const [kAddOpen, setKAddOpen] = useState(false);
+  // Existing Karigar / New Karigar (see KarigarChooser); a new one is saved with the issue.
+  const [kMode, setKMode] = useState<KarigarMode>('existing');
   const [newKName, setNewKName] = useState('');
   const [newKMobile, setNewKMobile] = useState('');
-  const [savingK, setSavingK] = useState(false);
 
-  const createKarigar = async () => {
-    if (!newKName.trim()) { notify('Missing', 'Enter the karigar name'); return; }
-    if (newKMobile.replace(/\D/g, '').length < 7) { notify('Missing', 'A mobile number is required'); return; }
-    setSavingK(true);
-    try {
-      const k = await api.post<Karigar>('/karigars', { name: newKName.trim(), mobile: newKMobile.trim(), is_employee: false });
-      setKarigars((list) => [...list, k].sort((a, b) => a.name.localeCompare(b.name)));
-      setPickedKarigar(k);
-      setKAddOpen(false); setKPickerOpen(false); setNewKName(''); setNewKMobile('');
-    } catch (e: any) { notify('Failed', e?.detail || 'Could not add karigar'); }
-    finally { setSavingK(false); }
+  /** The karigar to issue to: the picked one, or the New Karigar entry saved now.
+   * Returns undefined (after telling the user) if the New Karigar entry is incomplete. */
+  const resolveKarigar = async (): Promise<Karigar | null | undefined> => {
+    if (kMode === 'existing') return pickedKarigar;
+    const problem = newKarigarProblem(newKName, newKMobile);
+    if (problem) { notify('Missing', problem); return undefined; }
+    const k = await createKarigar(newKName, newKMobile) as Karigar;
+    setKarigars((list) => [...list, k].sort((x, y) => x.name.localeCompare(y.name)));
+    setPickedKarigar(k); setKMode('existing'); setNewKName(''); setNewKMobile('');
+    return k;
   };
 
   const load = useCallback(async () => {
@@ -99,20 +97,22 @@ export default function IssueToKarigarScreen() {
     // Editing an existing issue transaction always needs a karigar (it's a real
     // record of who has the item). A fresh issue can skip the karigar entirely —
     // the backend then moves the tag straight to "Pending to Bill".
-    if (isEdit && !pickedKarigar) { notify('Missing', 'Pick a karigar'); return; }
+    if (isEdit && kMode === 'existing' && !pickedKarigar) { notify('Missing', 'Pick a karigar'); return; }
     submittingRef.current = true; setBusy(true);
     try {
+      const k = await resolveKarigar();
+      if (k === undefined) return;
       if (isEdit) {
-        await api.put(`/repair-items/${item.id}/transactions/${txnId}`, { karigar_id: pickedKarigar!.id, note });
+        await api.put(`/repair-items/${item.id}/transactions/${txnId}`, { karigar_id: k!.id, note });
       } else {
-        await api.post(`/repair-items/${item.id}/issue`, { karigar_id: pickedKarigar?.id ?? null, note });
+        await api.post(`/repair-items/${item.id}/issue`, { karigar_id: k?.id ?? null, note });
       }
       setBusy(false); submittingRef.current = false;
       // Only a real karigar issue produces a challan to print — "Mark Pending
       // to Bill" (no karigar picked) has nothing to hand anyone.
-      if (pickedKarigar) {
+      if (k) {
         promptChoice(
-          'Issued', `Handed to ${pickedKarigar.name}.`, 'Print Slip',
+          'Issued', `Handed to ${k.name}.`, 'Print Slip',
           async () => { await printIssueSlip(item.id); router.replace(`/repairs/item/${item.id}` as any); },
           () => router.replace(`/repairs/item/${item.id}` as any),
         );
@@ -127,19 +127,22 @@ export default function IssueToKarigarScreen() {
 
   const submitBulk = async () => {
     if (submittingRef.current || bulkItems.length === 0) return;
-    if (!pickedKarigar) { notify('Missing', 'Pick a karigar'); return; }
+    if (kMode === 'existing' && !pickedKarigar) { notify('Missing', 'Pick a karigar'); return; }
     submittingRef.current = true; setBusy(true);
+    let k: Karigar | null | undefined;
+    try { k = await resolveKarigar(); } catch (e: any) { notify('Failed', e?.detail || 'Could not add karigar'); }
+    if (!k) { setBusy(false); submittingRef.current = false; return; }
     let okCount = 0;
     const issuedIds: string[] = [];
     const failed: string[] = [];
     for (const it of bulkItems) {
-      try { await api.post(`/repair-items/${it.id}/issue`, { karigar_id: pickedKarigar.id, note }); okCount += 1; issuedIds.push(it.id); }
+      try { await api.post(`/repair-items/${it.id}/issue`, { karigar_id: k!.id, note }); okCount += 1; issuedIds.push(it.id); }
       catch (_e) { failed.push(it.item_code); }
     }
     setBusy(false); submittingRef.current = false;
     if (failed.length === 0) {
       promptChoice(
-        'Done', `Issued ${okCount} tag${okCount === 1 ? '' : 's'} to ${pickedKarigar.name}`, 'Print Slips',
+        'Done', `Issued ${okCount} tag${okCount === 1 ? '' : 's'} to ${k.name}`, 'Print Slips',
         async () => { for (const iid of issuedIds) await printIssueSlip(iid); router.back(); },
         () => router.back(),
       );
@@ -213,25 +216,11 @@ export default function IssueToKarigarScreen() {
             ))}
 
             <Text style={styles.label}>Karigar</Text>
-            <Pressable onPress={() => setKPickerOpen((v) => !v)} style={styles.picker} testID="issue-karigar-toggle">
-              <Text style={pickedKarigar ? styles.pickerValue : styles.pickerPlaceholder}>{pickedKarigar ? pickedKarigar.name : 'Choose a karigar'}</Text>
-              <Ionicons name={kPickerOpen ? 'chevron-up' : 'chevron-down'} size={16} color={colors.mutedText} />
-            </Pressable>
-            {kPickerOpen && (
-              <View style={styles.pickerList}>
-                <Pressable onPress={() => { setKAddOpen(true); setKPickerOpen(false); }} style={[styles.pickerRow, styles.addKarigarRow]} testID="issue-karigar-add">
-                  <Text style={styles.addKarigarText}>+ Add new karigar</Text>
-                </Pressable>
-                <ScrollView style={styles.pickerScroll} nestedScrollEnabled keyboardShouldPersistTaps="handled">
-                  {karigars.map((k) => (
-                    <Pressable key={k.id} onPress={() => { setPickedKarigar(k); setKPickerOpen(false); }} style={styles.pickerRow} testID={`issue-karigar-${k.id}`}>
-                      <Text style={styles.pickerRowName}>{k.name}</Text>
-                      <Text style={styles.pickerRowMeta}>{k.is_employee ? 'In-house' : 'Outside'}</Text>
-                    </Pressable>
-                  ))}
-                </ScrollView>
-              </View>
-            )}
+            <KarigarChooser
+              karigars={karigars} picked={pickedKarigar} onPick={(x) => setPickedKarigar(x as Karigar | null)}
+              mode={kMode} onMode={setKMode} newName={newKName} onNewName={setNewKName} newMobile={newKMobile} onNewMobile={setNewKMobile}
+              testID="issue-karigar"
+            />
             <Text style={styles.label}>Note (optional)</Text>
             <TextInput testID="issue-note" value={note} onChangeText={setNote} placeholder="Instructions for the karigar" placeholderTextColor={colors.mutedText} style={styles.input} />
             <Pressable onPress={submitBulk} disabled={busy} style={[styles.saveBtn, busy && { opacity: 0.6 }]} testID="issue-bulk-save-btn">
@@ -256,54 +245,25 @@ export default function IssueToKarigarScreen() {
             </View>
 
             <Text style={styles.label}>{isEdit ? 'Karigar' : 'Karigar (optional)'}</Text>
-            <Pressable onPress={() => setKPickerOpen((v) => !v)} style={styles.picker} testID="issue-karigar-toggle">
-              <Text style={pickedKarigar ? styles.pickerValue : styles.pickerPlaceholder}>{pickedKarigar ? pickedKarigar.name : 'Choose a karigar'}</Text>
-              <Ionicons name={kPickerOpen ? 'chevron-up' : 'chevron-down'} size={16} color={colors.mutedText} />
-            </Pressable>
-            {kPickerOpen && (
-              <View style={styles.pickerList}>
-                <Pressable onPress={() => { setKAddOpen(true); setKPickerOpen(false); }} style={[styles.pickerRow, styles.addKarigarRow]} testID="issue-karigar-add">
-                  <Text style={styles.addKarigarText}>+ Add new karigar</Text>
-                </Pressable>
-                <ScrollView style={styles.pickerScroll} nestedScrollEnabled keyboardShouldPersistTaps="handled">
-                  {karigars.map((k) => (
-                    <Pressable key={k.id} onPress={() => { setPickedKarigar(k); setKPickerOpen(false); }} style={styles.pickerRow} testID={`issue-karigar-${k.id}`}>
-                      <Text style={styles.pickerRowName}>{k.name}</Text>
-                      <Text style={styles.pickerRowMeta}>{k.is_employee ? 'In-house' : 'Outside'}</Text>
-                    </Pressable>
-                  ))}
-                </ScrollView>
-              </View>
-            )}
-            {!isEdit && !pickedKarigar && (
+            <KarigarChooser
+              karigars={karigars} picked={pickedKarigar} onPick={(x) => setPickedKarigar(x as Karigar | null)}
+              mode={kMode} onMode={setKMode} newName={newKName} onNewName={setNewKName} newMobile={newKMobile} onNewMobile={setNewKMobile}
+              testID="issue-karigar"
+            />
+            {!isEdit && kMode === 'existing' && !pickedKarigar && (
               <Text style={styles.hint}>No karigar needed on this job? Leave this blank and the tag will go straight to "Pending to Bill".</Text>
             )}
             <Text style={styles.label}>Note (optional)</Text>
             <TextInput testID="issue-note" value={note} onChangeText={setNote} placeholder="Instructions for the karigar" placeholderTextColor={colors.mutedText} style={styles.input} />
             <Pressable onPress={submit} disabled={busy} style={[styles.saveBtn, busy && { opacity: 0.6 }]} testID="issue-save-btn">
               {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : (
-                <Text style={styles.saveBtnText}>{isEdit ? 'Save Changes' : pickedKarigar ? 'Issue to Karigar' : 'Mark Pending to Bill'}</Text>
+                <Text style={styles.saveBtnText}>{isEdit ? 'Save Changes' : pickedKarigar || kMode === 'new' ? 'Issue to Karigar' : 'Mark Pending to Bill'}</Text>
               )}
             </Pressable>
           </ScrollView>
         </KeyboardAvoidingView>
       ) : null}
 
-      <Modal visible={kAddOpen} transparent animationType="fade" onRequestClose={() => setKAddOpen(false)}>
-        <Pressable style={styles.kAddBackdrop} onPress={() => setKAddOpen(false)}>
-          <Pressable style={styles.kAddSheet} onPress={(e) => e.stopPropagation()}>
-            <Text style={styles.kAddTitle}>New karigar</Text>
-            <TextInput value={newKName} onChangeText={setNewKName} placeholder="Name" placeholderTextColor={colors.mutedText} style={styles.input} testID="new-karigar-name" />
-            <TextInput value={newKMobile} onChangeText={setNewKMobile} placeholder="Mobile number" placeholderTextColor={colors.mutedText} keyboardType="phone-pad" style={styles.input} testID="new-karigar-mobile" />
-            <View style={styles.kAddBtns}>
-              <Pressable onPress={() => setKAddOpen(false)} style={[styles.kAddBtn, styles.kAddCancel]}><Text style={styles.kAddCancelText}>Cancel</Text></Pressable>
-              <Pressable onPress={createKarigar} disabled={savingK} style={[styles.kAddBtn, styles.kAddSave, savingK && { opacity: 0.6 }]} testID="new-karigar-save">
-                {savingK ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.kAddSaveText}>Add karigar</Text>}
-              </Pressable>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
     </SafeAreaView>
   );
 }
@@ -347,33 +307,10 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
     color: colors.onSurface, paddingHorizontal: spacing.md, paddingVertical: 12, fontSize: 14,
   },
-  picker: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
-    paddingHorizontal: spacing.md, paddingVertical: 12,
-  },
-  pickerValue: { color: colors.onSurface, fontSize: 14, fontWeight: '600' },
-  pickerPlaceholder: { color: colors.mutedText, fontSize: 14 },
   // overflow: 'hidden' is what actually enforces maxHeight here — without it
   // a plain View lets its content spill past the box and visually overlap
   // whatever renders after it (the Note field, the save button) instead of
   // being clipped/scrollable.
-  pickerList: { backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, marginTop: spacing.xs, maxHeight: 260, overflow: 'hidden' },
-  pickerScroll: { maxHeight: 220 },
-  pickerRow: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: spacing.md, paddingVertical: 10 },
-  addKarigarRow: { borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: colors.brandTertiary },
-  addKarigarText: { color: colors.brandSecondary, fontSize: 14, fontWeight: '800' },
-  kAddBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: spacing.lg },
-  kAddSheet: { backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.lg, gap: spacing.sm },
-  kAddTitle: { color: colors.onSurface, fontSize: 18, fontWeight: '800', fontFamily: fonts.display, marginBottom: spacing.xs },
-  kAddBtns: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
-  kAddBtn: { flex: 1, paddingVertical: 13, borderRadius: radius.md, alignItems: 'center' },
-  kAddCancel: { backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border },
-  kAddCancelText: { color: colors.onSurfaceSecondary, fontWeight: '700' },
-  kAddSave: { backgroundColor: colors.brandPrimary },
-  kAddSaveText: { color: colors.onBrandPrimary, fontWeight: '800' },
-  pickerRowName: { color: colors.onSurface, fontSize: 13, fontWeight: '600' },
-  pickerRowMeta: { color: colors.mutedText, fontSize: 12 },
 
   iconBox: {
     width: 36, height: 36, borderRadius: 18, backgroundColor: colors.brandTertiary,

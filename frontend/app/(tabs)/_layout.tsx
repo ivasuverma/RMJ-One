@@ -45,7 +45,15 @@ export default function OwnerTabsLayout() {
       // conditional tabs) — never the owner bar, whose tabs lead to
       // owner-only screens. EmployeeTabBar navigates by href, so it works
       // here even though this navigator's routes are the owner's.
-      tabBar={(props) => (isEmployee ? <EmployeeTabBar /> : <OwnerTabBar {...props} />)}
+      // A route marked tabBarStyle display:none hides the bar for everyone —
+      // checked here so the employee bar (which doesn't read route options)
+      // hides too.
+      tabBar={(props) => {
+        const focused = props.state.routes[props.state.index];
+        const style = props.descriptors[focused.key]?.options.tabBarStyle as { display?: string } | undefined;
+        if (style?.display === 'none') return null;
+        return isEmployee ? <EmployeeTabBar /> : <OwnerTabBar {...props} />;
+      }}
       // Each module's landing screen below (cashbook/attendance/documents/
       // samples/loans/repairs) is registered here as its own tab so it keeps
       // the bottom bar, even though it's normally reached by pushing from
@@ -116,22 +124,22 @@ export default function OwnerTabsLayout() {
       <Tabs.Screen name="payroll" options={{ href: null, tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="settings" options={{ href: null, tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="masters" options={{ href: null }} />
-      {/* Each module's landing/list screen lives here (no tabBarStyle
-          override, so — like masters above — the bar stays visible) so it
-          keeps the bottom bar and stays mounted in the background when you
+      {/* Each module's landing/list screen lives here so it stays mounted in the background when you
           switch tabs and back, instead of unmounting like a plain stack push.
           Every sub-page (a single record, an edit form, a new-record screen)
           is intentionally left OUTSIDE this group as a normal stack route —
           the bar still hides there, same as before. Route paths are
           unchanged (a group folder adds no URL segment), so nothing that
           links to /cashbook, /documents, /samples, /loans, or /repairs
-          needed updating. */}
+          needed updating. Gold Loans, Stock In/Out, Repairs and Attendance
+          hide the bottom bar (their header's back button is the way out);
+          Cash Book and Documents keep it. */}
       <Tabs.Screen name="cashbook" options={{ href: null }} />
-      <Tabs.Screen name="attendance" options={{ href: null }} />
+      <Tabs.Screen name="attendance" options={{ href: null, tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="documents" options={{ href: null }} />
-      <Tabs.Screen name="samples" options={{ href: null }} />
-      <Tabs.Screen name="loans" options={{ href: null }} />
-      <Tabs.Screen name="repairs" options={{ href: null }} />
+      <Tabs.Screen name="samples" options={{ href: null, tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="loans" options={{ href: null, tabBarStyle: { display: 'none' } }} />
+      <Tabs.Screen name="repairs" options={{ href: null, tabBarStyle: { display: 'none' } }} />
     </Tabs>
   );
 }

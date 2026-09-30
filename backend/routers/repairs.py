@@ -201,7 +201,7 @@ async def delete_customer(cid: str, user=Depends(require_owner), _mod=Depends(re
 @router.get('/karigars')
 async def list_karigars(
     q: Optional[str] = None, cursor: Optional[str] = None, limit: Optional[int] = None,
-    _: dict = Depends(require_staff_or_module(['repairs', 'karigar_ledger'])),
+    _: dict = Depends(require_staff_or_module(['repairs', 'karigar_ledger', 'samples'])),
 ):
     """Pagination is opt-in — see GET /customers's docstring for why (same
     pattern: pickers that never pass `limit` keep getting a bare array,
@@ -237,7 +237,8 @@ async def list_karigars(
 
 
 @router.post('/karigars')
-async def create_karigar(body: KarigarIn, user=Depends(require_admin_or_module(['repairs', 'karigar_ledger']))):
+async def create_karigar(body: KarigarIn, user=Depends(require_admin_or_module(['repairs', 'karigar_ledger', 'samples']))):
+    # Stock In/Out can add a karigar too, from its issue form (New Karigar).
     name = body.name
     if body.is_employee:
         if not body.employee_id:
