@@ -11,6 +11,7 @@ import re
 import uuid
 from server import (
     db,
+    notify_employee_attendance,
     now_utc,
     today_str,
     haversine_m,
@@ -71,7 +72,7 @@ async def check_in(body: PunchIn, user=Depends(require_employee)):
     # owner/admin broadcast copy). Push + in-app only: a WhatsApp message on
     # every punch, twice a day per employee, is the bulk of automated volume
     # on the shop number for very little value.
-    await notify_user(user['id'], 'Checked in', f"You checked in at {time_label}", '/', whatsapp=False)
+    await notify_employee_attendance(user['id'], 'self_checked_in', 'Checked in', f"You checked in at {time_label}", '/')
     await _notify_module('attendance', f"{user['name']} checked in", time_label, '/(tabs)/attendance',
                           script='attendance_checkin', admin_only=True)
 
@@ -101,7 +102,7 @@ async def check_out(body: PunchIn, user=Depends(require_employee)):
     hours = result['working_hours']
     detail = f"Worked {hours}h today" + (' · Half day' if result['status'] == 'half_day' else '')
     # Personal confirmation, same rationale as check-in above.
-    await notify_user(user['id'], 'Checked out', f"You checked out — {detail}", '/', whatsapp=False)
+    await notify_employee_attendance(user['id'], 'self_checked_out', 'Checked out', f"You checked out — {detail}", '/')
     await _notify_module('attendance', f"{user['name']} checked out", detail, '/(tabs)/attendance',
                           script='attendance_checkout', admin_only=True)
     return {'ok': True, 'working_hours': hours, 'timestamp': result['timestamp']}
@@ -647,7 +648,7 @@ async def decide_correction(cid: str, body: DecisionIn, user=Depends(require_adm
             'before': applied.get('before'), 'after': applied.get('after')} if applied else {}),
     }})
     await log_audit(user, f'correction.{new_status}', 'correction', cid, r.get('employee_code', ''))
-    await notify_user(r['employee_id'], f'Correction {new_status}',
+    await notify_employee_attendance(r['employee_id'], 'self_correction_decided', f'Correction {new_status}',
                        f"Your correction request for {r['date']} was {new_status}", '/leaves')
     return await db.corrections.find_one({'id': cid}, {'_id': 0})
 
@@ -699,7 +700,7 @@ async def decide_leave(lid: str, body: DecisionIn, user=Depends(require_admin_or
             'description': f"{l['from_date']} → {l['to_date']}", 'amount': 0,
             'created_at': now_utc().isoformat(),
         })
-    await notify_user(l['employee_id'], f'Leave {new_status}',
+    await notify_employee_attendance(l['employee_id'], 'self_leave_decided', f'Leave {new_status}',
                        f"Your leave request ({l['from_date']} → {l['to_date']}) was {new_status}", '/leaves')
     await log_audit(user, f'leave.{new_status}', 'leave', lid, l.get('employee_code', ''))
     return await db.leaves.find_one({'id': lid}, {'_id': 0})

@@ -26,6 +26,7 @@ from server import (
     NOTIFICATION_MODULES,
     NOTIFICATION_MODULE_KEYS,
     NOTIFICATION_SCRIPT_KEYS,
+    EMPLOYEE_ATTENDANCE_ALERT_KEYS,
     NOTIFICATION_SCRIPTS_BY_MODULE,
     log_audit,
 )
@@ -230,14 +231,14 @@ def _build_access_update(body: 'ModuleAccessUpdateIn', existing: dict) -> dict:
         # Keys are either a whole module's on/off or one individual script's
         # override within it — both namespaces are valid here (see
         # _wants_script in server.py for how the two are resolved together).
-        allowed_notif_keys = NOTIFICATION_MODULE_KEYS | NOTIFICATION_SCRIPT_KEYS
+        allowed_notif_keys = NOTIFICATION_MODULE_KEYS | NOTIFICATION_SCRIPT_KEYS | EMPLOYEE_ATTENDANCE_ALERT_KEYS
         merged = dict(existing.get('notif_prefs') or {})
         merged.update({k: bool(v) for k, v in (body.notif_prefs or {}).items() if k in allowed_notif_keys})
         extra['notif_prefs'] = merged
     if body.notif_prefs_whatsapp is not None:
         # WhatsApp's own copy of the above, independent of it — see
         # _wants_script_whatsapp in server.py.
-        allowed_notif_keys = NOTIFICATION_MODULE_KEYS | NOTIFICATION_SCRIPT_KEYS
+        allowed_notif_keys = NOTIFICATION_MODULE_KEYS | NOTIFICATION_SCRIPT_KEYS | EMPLOYEE_ATTENDANCE_ALERT_KEYS
         merged_wa = dict(existing.get('notif_prefs_whatsapp') or {})
         merged_wa.update({k: bool(v) for k, v in (body.notif_prefs_whatsapp or {}).items() if k in allowed_notif_keys})
         extra['notif_prefs_whatsapp'] = merged_wa
