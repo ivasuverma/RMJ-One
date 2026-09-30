@@ -23,7 +23,7 @@ type Item = {
   description: string; repair_type: string; gross_weight: number; pc_count: number;
   labour_charge: number; needs_karigar: boolean; due_date: string | null; notes: string;
   status: RepairItemStatus;
-  karigar_id: string | null; karigar_name: string | null;
+  karigar_id: string | null; karigar_name: string | null; karigar_due_back?: string | null;
   current_issue_weight: number | null; current_issue_fine_weight?: number | null;
   weight_diff?: number; fine_weight_diff?: number; customer_adjustment?: number;
   bill_labour_charge?: number; bill_material_adjustment?: number; bill_extra_charges?: number; bill_extra_charges_note?: string;
@@ -324,6 +324,7 @@ export default function RepairItemDetailScreen() {
             <MetaCell icon="cash-outline" label="Labour" value={`₹${(item.status === 'delivered' ? (item.bill_labour_charge ?? item.labour_charge) : item.labour_charge).toFixed(0)}`} colors={colors} />
             <MetaCell icon="calendar-outline" label="Due" value={item.due_date || '—'} colors={colors} />
             {item.karigar_name && <MetaCell icon="hammer-outline" label="Karigar" value={item.karigar_name} colors={colors} />}
+            {item.status === 'with_karigar' && !!item.karigar_due_back && <MetaCell icon="time-outline" label="Due back" value={item.karigar_due_back} colors={colors} />}
             {item.billed_amount != null && <MetaCell icon="receipt-outline" label="Billed" value={`₹${item.billed_amount.toFixed(0)}`} colors={colors} />}
             {item.delivered_at && <MetaCell icon="checkmark-done-outline" label="Delivered" value={`${istDate(item.delivered_at)}${item.delivered_by ? ` · by ${item.delivered_by}` : ''}`} colors={colors} />}
             {item.updated_by && <MetaCell icon="pencil-outline" label="Last by" value={item.updated_by} colors={colors} />}

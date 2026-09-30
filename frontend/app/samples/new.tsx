@@ -10,7 +10,7 @@ import { api } from '@/src/api/client';
 import { PhotoCaptureModal } from '@/src/components/PhotoCaptureModal';
 import { enqueueRecordPhoto } from '@/src/utils/uploadQueue';
 import { makeThumbFromDataUri } from '@/src/utils/imageThumb';
-import { DateField } from '@/src/components/DateField';
+import { DueBackField } from '@/src/components/DueBackField';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { KarigarChooser, createKarigar, resolveKarigar } from '@/src/components/KarigarChooser';
@@ -124,6 +124,7 @@ export default function NewSampleScreen() {
     // Description is optional; a blank one takes the purity item's name (e.g. "22K") so lists aren't blank.
     const desc = description.trim() || pickedItem?.name || '';
     if (!isEdit && !photo) { notify('Missing', 'Add a photo of the sample before saving'); return; }
+    if (!dueDate) { notify('Missing', 'Choose when the sample is due back'); return; }
     submittingRef.current = true;
     setSaving(true);
     try {
@@ -274,7 +275,7 @@ export default function NewSampleScreen() {
             </Pressable>
           )}
 
-          <DateField label="Due back (optional)" value={dueDate} onChange={setDueDate} testID="sample-due-date" />
+          <DueBackField label="Due back" value={dueDate} onChange={setDueDate} days={[1, 3, 5]} testID="sample-due-date" />
 
           <Pressable onPress={submit} disabled={saving} style={[styles.submitBtn, saving && { opacity: 0.6 }]} testID="submit-sample-btn">
             {saving ? <ActivityIndicator color={colors.onBrandPrimary} /> : (

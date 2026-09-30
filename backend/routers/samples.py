@@ -59,6 +59,8 @@ async def create_samples(body: SampleIn, user=Depends(require_admin_or_module('s
     karigar = await db.karigars.find_one({'id': body.karigar_id}, {'_id': 0})
     if not karigar:
         raise HTTPException(status_code=404, detail='Karigar not found')
+    if not body.due_date:
+        raise HTTPException(status_code=400, detail='Choose when the sample is due back')
     if not (body.issue_type or '').strip():
         raise HTTPException(status_code=400, detail='Choose the type of issue')
     for spec in body.items:

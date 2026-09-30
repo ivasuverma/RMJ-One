@@ -747,6 +747,8 @@ async def issue_to_karigar(item_id: str, body: IssueToKarigarIn, user=Depends(re
                               f"{item['item_code']} ({item.get('customer_name', '')}) is ready for delivery", '/repairs', script='repair_item_ready')
         return await db.repair_items.find_one({'id': item_id}, {'_id': 0})
 
+    if not body.due_back:
+        raise HTTPException(status_code=400, detail='Choose when the karigar should bring it back')
     karigar = await db.karigars.find_one({'id': body.karigar_id}, {'_id': 0})
     if not karigar: raise HTTPException(status_code=404, detail='Karigar not found')
 
@@ -761,7 +763,7 @@ async def issue_to_karigar(item_id: str, body: IssueToKarigarIn, user=Depends(re
     txn = {
         'id': txn_id, 'item_id': item_id, 'item_code': item['item_code'], 'karigar_id': karigar['id'],
         'karigar_name': karigar['name'], 'direction': 'issue', 'weight': weight, 'fine_weight': fine_weight,
-        'note': body.note or '', 'challan_no': challan_no, 'created_at': iso, 'created_by': user['name'],
+        'note': body.note or '', 'due_back': body.due_back, 'challan_no': challan_no, 'created_at': iso, 'created_by': user['name'],
     }
     await db.karigar_transactions.insert_one(dict(txn))
     await post_gold_ledger_entry({
@@ -773,7 +775,7 @@ async def issue_to_karigar(item_id: str, body: IssueToKarigarIn, user=Depends(re
     await db.repair_items.update_one({'id': item_id}, {'$set': {
         'status': 'with_karigar', 'karigar_id': karigar['id'], 'karigar_name': karigar['name'],
         'current_issue_weight': weight, 'current_issue_fine_weight': fine_weight, 'updated_by': user['name'],
-        'issued_by': user['name'], 'issued_by_id': user['id'],
+        'issued_by': user['name'], 'issued_by_id': user['id'], 'karigar_due_back': body.due_back,
     }})
     await log_audit(user, 'repair_item.issue', 'repair_item', item_id, item['item_code'], {'karigar': karigar['name'], 'weight': weight})
     if karigar.get('is_employee') and karigar.get('employee_id'):
@@ -1016,11 +1018,13 @@ async def edit_karigar_transaction(item_id: str, txn_id: str, body: KarigarTrans
         await db.karigar_transactions.update_one({'id': txn_id}, {'$set': {
             'karigar_id': new_karigar_id, 'karigar_name': new_karigar_name,
             'note': body.note or '', 'edited_at': iso, 'edited_by': user['name'],
+            **({'due_back': body.due_back or None} if body.due_back is not None else {}),
         }})
         await db.karigar_ledger.update_many({'txn_id': txn_id}, {'$set': {'karigar_id': new_karigar_id}})
         await db.metal_ledger.update_many({'txn_id': txn_id}, {'$set': {'karigar_id': new_karigar_id}})
         await db.repair_items.update_one({'id': item_id}, {'$set': {
             'karigar_id': new_karigar_id, 'karigar_name': new_karigar_name, 'updated_by': user['name'],
+            **({'karigar_due_back': body.due_back or None} if body.due_back is not None else {}),
         }})
     else:
         if body.weight is None:
@@ -1067,7 +1071,7 @@ async def delete_karigar_transaction(item_id: str, txn_id: str, user=Depends(req
     await delete_gold_ledger_entries({'txn_id': txn_id})
     if txn['direction'] == 'issue':
         await db.repair_items.update_one({'id': item_id}, {'$set': {
-            'status': 'received', 'karigar_id': None, 'karigar_name': None,
+            'status': 'received', 'karigar_id': None, 'karigar_name': None, 'karigar_due_back': None,
             'current_issue_weight': None, 'current_issue_fine_weight': None, 'updated_by': user['name'],
         }})
     else:

@@ -897,6 +897,9 @@ class IssueToKarigarIn(BaseModel):
     # No weight field — the whole tag goes out, so weight issued always equals
     # the item's own gross_weight. Server derives it; never trust client input here.
     note: Optional[str] = ''
+    # When the karigar should bring it back (YYYY-MM-DD) — separate from the date
+    # promised to the customer (the item's due_date).
+    due_back: Optional[str] = Field(default=None, pattern=r'^\d{4}-\d{2}-\d{2}$')
 
 
 class ReceiveFromKarigarIn(BaseModel):
@@ -937,6 +940,7 @@ class KarigarTransactionEditIn(BaseModel):
     # as at issue time (same rule as creating an issue).
     karigar_id: Optional[str] = None
     note: Optional[str] = ''
+    due_back: Optional[str] = Field(default=None, pattern=r'^(\d{4}-\d{2}-\d{2})?$')   # issue edits; '' clears it
     # Receive edits: the same full field set as ReceiveFromKarigarIn, so
     # correcting a receive re-opens the same full form used to create it
     # rather than a bare weight box. `weight` is required for a receive edit.
@@ -1015,7 +1019,7 @@ class SampleIn(BaseModel):
     # What the sample is going out for (e.g. "quoting", "reference",
     # "exhibition") — free text, voucher-level, same for every item in the batch.
     issue_type: Optional[str] = ''
-    due_date: Optional[str] = None  # when it's expected back, for the Overdue filter
+    due_date: Optional[str] = Field(default=None, pattern=r'^\d{4}-\d{2}-\d{2}$')  # when it's expected back — required on issue
     items: List[SampleItemSpec]
 
 
