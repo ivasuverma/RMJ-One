@@ -13,6 +13,7 @@ import { enqueueRecordPhoto } from '@/src/utils/uploadQueue';
 import { makeThumbFromDataUri } from '@/src/utils/imageThumb';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { PartyByMobile, resolveParty } from '@/src/components/PartyByMobile';
 
 type Customer = { id: string; name: string; mobile: string; address: string };
 type GoldLoan = {
@@ -41,21 +42,12 @@ export default function NewGoldLoanScreen() {
   }, []);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  // Customer — existing/new, same pattern as a repair intake.
-  const [mode, setMode] = useState<'existing' | 'new'>('existing');
-  const [query, setQuery] = useState('');
-  const [custPickerOpen, setCustPickerOpen] = useState(false);
-  const [selected, setSelected] = useState<Customer | null>(null);
-  const [newName, setNewName] = useState('');
-  const [newMobile, setNewMobile] = useState('');
+  // Customer, mobile first (see PartyByMobile), same as a repair intake: a
+  // saved number is that customer, an unknown one plus a name is a new customer.
+  const [custMobile, setCustMobile] = useState('');
+  const [custName, setCustName] = useState('');
   const [newAddress, setNewAddress] = useState('');
-
-  const filteredCustomers = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    const list = q ? allCustomers.filter((c) => c.name.toLowerCase().includes(q) || (c.mobile || '').includes(q)) : allCustomers;
-    return list.slice(0, 100);
-  }, [allCustomers, query]);
-  const pickCustomer = (c: Customer) => { setSelected(c); setCustPickerOpen(false); setQuery(''); };
+  const cust = resolveParty(allCustomers, custMobile, custName, 'customer');
 
   const [customerName, setCustomerName] = useState(''); // display-only in edit mode — customer can't be changed after issue
   const [description, setDescription] = useState('');
@@ -105,9 +97,8 @@ export default function NewGoldLoanScreen() {
 
   const submit = async () => {
     if (submittingRef.current) return;
-    if (!isEdit && mode === 'existing' && !selected) { notify('Missing', 'Pick a customer, or switch to New Customer'); return; }
-    if (!isEdit && mode === 'new' && !newName.trim()) { notify('Missing', 'Enter the customer name'); return; }
-    if (!isEdit && mode === 'new' && newMobile.replace(/\D/g, '').length < 7) { notify('Missing', 'A mobile number is required for a new customer'); return; }
+    if (!isEdit && cust.kind === 'none') { notify('Missing', 'Enter the customer’s mobile number'); return; }
+    if (!isEdit && cust.kind === 'error') { notify('Missing', cust.message); return; }
     if (!description.trim()) { notify('Missing', 'Describe what is being pledged'); return; }
     const w = parseFloat(weight);
     if (!w || w <= 0) { notify('Missing', 'Enter a weight greater than 0'); return; }
@@ -132,8 +123,8 @@ export default function NewGoldLoanScreen() {
           principal: p, interest_rate_percent: r,
           loan_date: loanDate || null, estimate_return_date: estimateDate || null, note: note.trim(),
         };
-        if (mode === 'existing') body.customer_id = selected!.id;
-        else body.new_customer = { name: newName.trim(), mobile: newMobile, address: newAddress, notes: '' };
+        if (cust.kind === 'existing') body.customer_id = cust.party.id;
+        else if (cust.kind === 'new') body.new_customer = { name: cust.name, mobile: cust.mobile, address: newAddress, notes: '' };
 
         const created = await api.post<{ id: string }>('/gold-loans', body);
         loanId = created.id;
@@ -188,45 +179,9 @@ export default function NewGoldLoanScreen() {
               <Text style={styles.pickerValue}>{customerName}</Text>
             </View>
           ) : (
-            <>
-              <View style={styles.chipRow}>
-                <Pressable onPress={() => setMode('existing')} style={[styles.chip, mode === 'existing' && styles.chipActive]} testID="cust-mode-existing">
-                  <Text style={[styles.chipText, mode === 'existing' && styles.chipTextActive]}>Existing</Text>
-                </Pressable>
-                <Pressable onPress={() => setMode('new')} style={[styles.chip, mode === 'new' && styles.chipActive]} testID="cust-mode-new">
-                  <Text style={[styles.chipText, mode === 'new' && styles.chipTextActive]}>New Customer</Text>
-                </Pressable>
-              </View>
-
-              {mode === 'existing' ? (
-                <>
-                  <Pressable onPress={() => setCustPickerOpen((v) => !v)} style={styles.picker} testID="loan-customer-toggle">
-                    <Text style={selected ? styles.pickerValue : styles.pickerPlaceholder}>{selected ? selected.name : 'Choose a customer'}</Text>
-                    <Ionicons name={custPickerOpen ? 'chevron-up' : 'chevron-down'} size={16} color={colors.mutedText} />
-                  </Pressable>
-                  {custPickerOpen && (
-                    <View style={styles.pickerList}>
-                      <TextInput value={query} onChangeText={setQuery} placeholder="Search name or mobile" placeholderTextColor={colors.mutedText} style={styles.searchInput} testID="loan-customer-search" />
-                      <ScrollView style={{ maxHeight: 220 }} nestedScrollEnabled keyboardShouldPersistTaps="handled">
-                        {filteredCustomers.map((c) => (
-                          <Pressable key={c.id} onPress={() => pickCustomer(c)} style={styles.pickerRow} testID={`loan-cust-${c.id}`}>
-                            <Text style={styles.pickerRowName}>{c.name}</Text>
-                            <Text style={styles.pickerRowMeta}>{c.mobile}</Text>
-                          </Pressable>
-                        ))}
-                        {filteredCustomers.length === 0 && <Text style={[styles.pickerRowMeta, { padding: spacing.md }]}>No matches</Text>}
-                      </ScrollView>
-                    </View>
-                  )}
-                </>
-              ) : (
-                <>
-                  <TextInput testID="loan-new-name" value={newName} onChangeText={setNewName} placeholder="Customer name" placeholderTextColor={colors.mutedText} style={styles.input} />
-                  <TextInput testID="loan-new-mobile" value={newMobile} onChangeText={setNewMobile} placeholder="Mobile number" placeholderTextColor={colors.mutedText} keyboardType="phone-pad" style={[styles.input, { marginTop: spacing.sm }]} />
-                  <TextInput testID="loan-new-address" value={newAddress} onChangeText={setNewAddress} placeholder="Address (optional)" placeholderTextColor={colors.mutedText} style={[styles.input, { marginTop: spacing.sm }]} multiline />
-                </>
-              )}
-            </>
+            <PartyByMobile list={allCustomers} mobile={custMobile} onMobile={setCustMobile} name={custName} onName={setCustName} kindLabel="customer" testID="loan-customer">
+              <TextInput testID="loan-new-address" value={newAddress} onChangeText={setNewAddress} placeholder="Address (optional)" placeholderTextColor={colors.mutedText} style={[styles.input, { marginTop: spacing.sm }]} multiline />
+            </PartyByMobile>
           )}
 
           <Text style={styles.label}>Description</Text>
@@ -321,11 +276,6 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   hintText: { color: colors.mutedText, fontSize: 11, marginTop: 6 },
 
-  chipRow: { flexDirection: 'row', gap: spacing.sm },
-  chip: { flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: radius.md, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border },
-  chipActive: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
-  chipText: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '700' },
-  chipTextActive: { color: colors.onBrandPrimary },
 
   picker: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
@@ -333,15 +283,6 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     paddingHorizontal: spacing.md, paddingVertical: 12,
   },
   pickerValue: { color: colors.onSurface, fontSize: 14, fontWeight: '600' },
-  pickerPlaceholder: { color: colors.mutedText, fontSize: 14 },
-  pickerList: { backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, marginTop: spacing.xs, overflow: 'hidden', padding: spacing.xs },
-  searchInput: {
-    backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
-    color: colors.onSurface, paddingHorizontal: spacing.md, paddingVertical: 10, fontSize: 13, marginBottom: spacing.xs,
-  },
-  pickerRow: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: spacing.sm, paddingVertical: 10 },
-  pickerRowName: { color: colors.onSurface, fontSize: 13, fontWeight: '600' },
-  pickerRowMeta: { color: colors.mutedText, fontSize: 12 },
   pickerDisabled: { opacity: 0.7 },
   readonlyInput: { justifyContent: 'center' },
   readonlyText: { color: colors.onSurfaceSecondary, fontSize: 14, fontWeight: '600' },

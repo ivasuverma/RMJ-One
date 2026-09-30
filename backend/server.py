@@ -4,6 +4,7 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.gzip import GZipMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
+import re
 import logging
 import math
 from pathlib import Path
@@ -1849,6 +1850,28 @@ def _iter_month_dates(year: int, month: int):
 
 
 # ---------------- Audit log (shared — called from nearly every domain) ----------------
+def mobile_key(mobile: Optional[str]) -> str:
+    """A mobile number's last 10 digits — "+91 98765 43210", "098765-43210" and
+    "9876543210" are the same number."""
+    return re.sub(r'\D', '', mobile or '')[-10:]
+
+
+async def assert_mobile_unique(kind: str, mobile: Optional[str], exclude_id: Optional[str] = None) -> None:
+    """Customers and karigars are identified by mobile number: refuse a second
+    customer (or karigar) with a number already saved on another one. `kind`
+    is 'customer' or 'karigar'. Blank numbers aren't checked (in-house
+    karigars may have none; a required number is checked by the caller)."""
+    key = mobile_key(mobile)
+    if len(key) < 7:
+        return
+    coll = db.customers if kind == 'customer' else db.karigars
+    # Stored numbers may carry spaces/+91, so compare on normalised digits.
+    tail = re.escape(key[-4:])
+    async for other in coll.find({'mobile': {'$regex': tail}}, {'_id': 0, 'id': 1, 'name': 1, 'mobile': 1}):
+        if other['id'] != exclude_id and mobile_key(other.get('mobile')) == key:
+            raise HTTPException(status_code=409, detail=f"This mobile number is already saved for {kind} {other.get('name', '')}".strip())
+
+
 async def log_audit(user, action: str, entity_type: str, entity_id: str = '',
                     entity_label: str = '', details: Optional[dict] = None):
     try:
