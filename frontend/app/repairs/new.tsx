@@ -171,18 +171,10 @@ export default function NewRepairOrderScreen() {
               </Pressable>
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.label}>Weight (g)</Text>
-              <TextInput testID="item-weight" value={weight} onChangeText={(v) => setWeight(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0.000" placeholderTextColor={colors.mutedText} style={styles.input} />
+              <Text style={styles.label}>Labour (₹)</Text>
+              <TextInput testID="item-labour" value={labour} onChangeText={(v) => setLabour(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />
             </View>
-            <Pressable onPress={() => setCameraOpen(true)} style={styles.photoSmallBtn} testID="item-photo-btn">
-              {photo ? <Image source={{ uri: photo }} style={styles.photoSmallImg} /> : <Ionicons name="camera-outline" size={20} color={colors.onSurfaceSecondary} />}
-            </Pressable>
           </View>
-          {!!photo && (
-            <Pressable onPress={() => setPhoto('')} style={styles.removePhotoLink} testID="item-remove-photo">
-              <Text style={styles.removePhotoText}>Remove photo</Text>
-            </Pressable>
-          )}
           {rtPickerOpen && (
             <View style={styles.pickerList}>
               {repairTypes.filter((rt) => rt.active).map((rt) => (
@@ -195,8 +187,20 @@ export default function NewRepairOrderScreen() {
             </View>
           )}
 
-          <Text style={styles.label}>Labour (₹)</Text>
-          <TextInput testID="item-labour" value={labour} onChangeText={(v) => setLabour(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />
+          <View style={{ flexDirection: 'row', gap: spacing.sm, alignItems: 'flex-end' }}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.label}>Weight (g)</Text>
+              <TextInput testID="item-weight" value={weight} onChangeText={(v) => setWeight(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0.000" placeholderTextColor={colors.mutedText} style={styles.input} />
+            </View>
+            <Pressable onPress={() => setCameraOpen(true)} style={styles.photoSmallBtn} testID="item-photo-btn">
+              {photo ? <Image source={{ uri: photo }} style={styles.photoSmallImg} /> : <Ionicons name="camera-outline" size={20} color={colors.onSurfaceSecondary} />}
+            </Pressable>
+          </View>
+          {!!photo && (
+            <Pressable onPress={() => setPhoto('')} style={styles.removePhotoLink} testID="item-remove-photo">
+              <Text style={styles.removePhotoText}>Remove photo</Text>
+            </Pressable>
+          )}
 
           <DateField label="Due Date" value={dueDate} onChange={setDueDate} testID="item-due" />
           <View style={styles.chipRow}>
