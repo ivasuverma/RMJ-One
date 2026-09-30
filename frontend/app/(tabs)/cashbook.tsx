@@ -4,7 +4,7 @@ import {
   KeyboardAvoidingView, RefreshControl,
 } from 'react-native';
 import { notify } from '@/src/utils/notify';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
@@ -20,7 +20,7 @@ import { counterColorOptions, counterToneFor } from '@/src/theme/palettes';
 import { useAuth } from '@/src/auth/AuthContext';
 import { ErrorState } from '@/src/components/ui';
 import { ToggleSwitch } from '@/src/components/ui/ToggleSwitch';
-import { TabBarSpacer, useTabBarInset } from '@/src/components/GlassTabBar';
+import { TabBarSpacer } from '@/src/components/GlassTabBar';
 
 // Same rule as the backend's counter_limit_alert: storage places don't alert by default.
 const defaultLimitAlert = (name: string) => !/drawer|locker|safe|bank|vault|tijori|almirah/i.test(name || '');
@@ -52,7 +52,8 @@ type Mode = 'view' | 'form' | 'settings';
 const fmtINR = (n: number) => `₹${Math.round(n || 0).toLocaleString('en-IN')}`;
 
 export default function CashBookScreen() {
-  const tabInset = useTabBarInset();
+  // No bottom bar on Cash Book, so the action buttons sit just above the home indicator.
+  const bottomInset = useSafeAreaInsets().bottom;
   const router = useRouter();
   const { manage } = useLocalSearchParams<{ manage?: string }>();
   const { colors, scheme } = useTheme();
@@ -443,7 +444,7 @@ export default function CashBookScreen() {
           )}
 
           {counters.length > 0 && (
-            <View style={[styles.fabRow, { bottom: spacing.lg + tabInset }]}>
+            <View style={[styles.fabRow, { bottom: spacing.lg + bottomInset }]}>
               <Pressable onPress={() => openAdd('received')} style={[styles.fab, { backgroundColor: colors.brandPrimary }]} testID="cashbook-add-received">
                 <Ionicons name="add" size={18} color={colors.onBrandPrimary} />
                 <Text style={styles.fabText}>Received</Text>
