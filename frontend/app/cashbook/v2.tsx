@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, RefreshControl, Image, Platform } from 'react-native';
+import { ModuleHeader, HeaderButton } from '@/src/components/ui/ModuleHeader';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -227,21 +228,13 @@ export default function CashBookScreen() {
 
   return (
     <SafeAreaView style={[styles.root, pageTone && { backgroundColor: pageTone.pageBg }]} edges={['top']} testID="cashbook-screen">
-      <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
-          <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-        </Pressable>
-        <Text style={styles.title}>Cash Book</Text>
-        <Pressable onPress={() => router.back()} style={styles.classicBtn} testID="cashbook-classic-btn" hitSlop={8}>
-          <Ionicons name="reader-outline" size={15} color={colors.onSurfaceSecondary} />
-          <Text style={styles.classicText}>Classic view</Text>
-        </Pressable>
-        {isOwner ? (
-          <Pressable onPress={() => router.push('/cashbook?manage=1' as any)} style={styles.iconBtn} testID="cashbook-settings-btn" hitSlop={12}>
-            <Ionicons name="settings-outline" size={19} color={colors.onSurface} />
-          </Pressable>
-        ) : null}
-      </View>
+      <ModuleHeader
+        title="Cash Book" backLabel="Work"
+        actions={<>
+          <HeaderButton icon="reader-outline" label="Switch to the classic Cash Book view" testID="cashbook-classic-btn" onPress={() => router.back()} />
+          {isOwner && <HeaderButton icon="settings-outline" label="Cash Book counters" testID="cashbook-settings-btn" onPress={() => router.push('/cashbook?manage=1' as any)} />}
+        </>}
+      />
 
       <View style={styles.stickyBar}>
         {!isEmployee && (
@@ -505,11 +498,6 @@ export default function CashBookScreen() {
 
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg, paddingVertical: spacing.md, gap: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.divider },
-  iconBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surfaceSecondary, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border },
-  title: { flex: 1, color: colors.onSurface, fontSize: 20, fontWeight: '600', fontFamily: fonts.display },
-  classicBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, height: 34, borderRadius: radius.pill, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border },
-  classicText: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '700' },
   stickyBar: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.xs, gap: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.divider },
   dayNav: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   navBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },

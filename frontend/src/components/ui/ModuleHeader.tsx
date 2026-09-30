@@ -7,11 +7,11 @@ import { useTheme } from '@/src/theme/ThemeContext';
 import { StickyHeader } from './StickyHeader';
 
 /**
- * The one header every module opened from the Work tab uses, Apple style:
- * a small "‹ Work" back link, a large title (with an optional refresh button
- * beside it) and a one-line subtitle, and round action buttons on the right.
- * Pinned above the content; a hairline appears once the content scrolls under
- * it (pass `scrolled` from useScrolled()).
+ * The one header every module opened from the Work tab uses, Apple style: a
+ * round back button, the title (with an optional refresh button beside it)
+ * and a one-line subtitle, and round action buttons on the right, all on one
+ * row. Pinned above the content; a hairline appears once the content scrolls
+ * under it (pass `scrolled` from useScrolled()).
  */
 export function ModuleHeader({
   title, subtitle, backLabel = 'Work', onBack, onRefresh, refreshing, actions, scrolled = false, testID,
@@ -31,19 +31,15 @@ export function ModuleHeader({
   const s = useMemo(() => makeStyles(colors), [colors]);
   return (
     <StickyHeader scrolled={scrolled} testID={testID}>
-      <Pressable onPress={onBack || (() => router.back())} style={s.backRow} hitSlop={8} testID="back-btn"
-        accessibilityRole="button" accessibilityLabel={`Back to ${backLabel}`}>
-        <Ionicons name="chevron-back" size={18} color={colors.brandPrimary} />
-        <Text style={s.backText}>{backLabel}</Text>
-      </Pressable>
-      <View style={s.titleRow}>
+      <View style={s.row}>
+        <HeaderButton icon="chevron-back" onPress={onBack || (() => router.back())} testID="back-btn" label={`Back to ${backLabel}`} />
         <View style={{ flex: 1, minWidth: 0 }}>
           <View style={s.titleInline}>
             <Text style={s.h1} numberOfLines={1}>{title}</Text>
             {onRefresh && (
               <Pressable onPress={onRefresh} disabled={refreshing} hitSlop={10} testID="module-refresh-btn"
                 accessibilityRole="button" accessibilityLabel="Refresh">
-                {refreshing ? <ActivityIndicator size="small" color={colors.onSurface} /> : <Ionicons name="refresh" size={16} color={colors.onSurface} />}
+                {refreshing ? <ActivityIndicator size="small" color={colors.onSurface} /> : <Ionicons name="refresh" size={17} color={colors.onSurfaceSecondary} />}
               </Pressable>
             )}
           </View>
@@ -55,9 +51,11 @@ export function ModuleHeader({
   );
 }
 
-/** A round header button: an icon, optionally filled (primary) or with a count badge. */
-export function HeaderButton({ icon, onPress, primary, active, badge, testID, label }: {
+/** A round white header button: an icon (optionally tinted), filled when
+ * primary/active, or with a count badge. */
+export function HeaderButton({ icon, onPress, primary, active, badge, testID, label, tint }: {
   icon: keyof typeof Ionicons.glyphMap;
+  tint?: string;
   onPress: () => void;
   primary?: boolean;
   active?: boolean;
@@ -71,23 +69,23 @@ export function HeaderButton({ icon, onPress, primary, active, badge, testID, la
   return (
     <Pressable onPress={onPress} style={[s.btn, filled && s.btnOn]} hitSlop={8} testID={testID}
       accessibilityRole="button" accessibilityLabel={label}>
-      <Ionicons name={icon} size={22} color={filled ? colors.onBrandPrimary : colors.onSurface} />
+      <Ionicons name={icon} size={icon === 'chevron-back' ? 24 : 21} color={filled ? colors.onBrandPrimary : tint || colors.onSurface} />
       {!!badge && badge > 0 && <View style={s.badge}><Text style={s.badgeText}>{badge}</Text></View>}
     </Pressable>
   );
 }
 
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
-  backRow: { flexDirection: 'row', alignItems: 'center', gap: 2, marginBottom: 6, alignSelf: 'flex-start' },
-  backText: { color: colors.brandPrimary, fontSize: 16, fontWeight: '500' },
-  titleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
-  titleInline: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  h1: { color: colors.onSurface, fontSize: 26, fontWeight: '800', fontFamily: fonts.display, letterSpacing: -0.5, flexShrink: 1 },
-  sub: { color: colors.onSurfaceSecondary, fontSize: 15, marginTop: 2 },
-  actions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  row: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  titleInline: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  h1: { color: colors.onSurface, fontSize: 24, fontWeight: '800', fontFamily: fonts.display, letterSpacing: -0.5, flexShrink: 1 },
+  sub: { color: colors.onSurfaceSecondary, fontSize: 13.5, marginTop: 1 },
+  actions: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   btn: {
-    width: 46, height: 46, borderRadius: 23, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border,
+    width: 44, height: 44, borderRadius: 22, backgroundColor: colors.surfaceSecondary,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
     alignItems: 'center', justifyContent: 'center',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 8, elevation: 2,
   },
   btnOn: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
   badge: {

@@ -319,7 +319,7 @@ export default function CashBookScreen() {
         backLabel={mode === 'settings' && counterForm ? 'Counters' : mode !== 'view' ? 'Cash Book' : 'Work'}
         onRefresh={mode === 'view' ? () => { setRefreshing(true); load(date, counterId); } : undefined} refreshing={refreshing}
         actions={mode === 'view' ? <>
-          <HeaderButton icon="sparkles-outline" label="Switch to the new Cash Book view" testID="cashbook-new-view-btn" onPress={() => router.push('/cashbook/v2' as any)} />
+          <HeaderButton icon="sparkles-outline" tint={colors.brandSecondary} label="Switch to the new Cash Book view" testID="cashbook-new-view-btn" onPress={() => router.push('/cashbook/v2' as any)} />
           {isOwner && <HeaderButton icon="settings-outline" label="Cash Book counters" testID="cashbook-settings-btn" onPress={openManageCounters} />}
         </> : undefined}
       />
