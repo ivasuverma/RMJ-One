@@ -74,7 +74,6 @@ export default function NewSampleScreen() {
     || (purity ? itemMasters.find((im) => im.active && Math.abs(im.purity - parseFloat(purity)) < 0.001) : undefined);
   const purityLabel = pickedItem ? `${pickedItem.name} · ${pickedItem.purity}%` : purity ? `${purity}%` : '';
   const [dueDate, setDueDate] = useState('');
-  const [note, setNote] = useState('');
   const [photo, setPhoto] = useState('');
   const [cameraOpen, setCameraOpen] = useState(false);
 
@@ -91,7 +90,7 @@ export default function NewSampleScreen() {
         setIssueTypeOther(!!s.issue_type && !issueTypes.includes(s.issue_type));
         setDescription(s.description);
         setWeight(String(s.weight ?? '')); setPcCount(String(s.pc_count ?? '1')); setPurity(s.purity ? String(s.purity) : '');
-        setDueDate(s.due_date || ''); setNote(s.note || ''); setPhoto(s.photo || '');
+        setDueDate(s.due_date || ''); setPhoto(s.photo || '');
       } catch (e: any) { notify('Failed', e?.detail || 'Could not load this sample'); router.back(); }
       finally { setLoadingSample(false); }
     })();
@@ -130,7 +129,7 @@ export default function NewSampleScreen() {
       if (isEdit) {
         await api.put(`/samples/${editId}`, {
           description: desc, weight: w, purity: pur, pc_count: parseInt(pcCount, 10) || 1,
-          issue_type: issueType.trim(), due_date: dueDate || null, photo, note,
+          issue_type: issueType.trim(), due_date: dueDate || null, photo,
         });
         router.back();
       } else {
@@ -142,7 +141,7 @@ export default function NewSampleScreen() {
           kid = k.id;
         }
         const created = await api.post<{ id: string }[]>('/samples', {
-          karigar_id: kid, note: note.trim(), issue_type: issueType.trim(), due_date: dueDate || null,
+          karigar_id: kid, issue_type: issueType.trim(), due_date: dueDate || null,
           items: [{ description: desc, tag_number: '', weight: w, purity: pur, pc_count: parseInt(pcCount, 10) || 1, photo: '' }],
         });
         const rec = created?.[0];
@@ -275,9 +274,6 @@ export default function NewSampleScreen() {
           )}
 
           <DateField label="Due back (optional)" value={dueDate} onChange={setDueDate} testID="sample-due-date" />
-
-          <Text style={styles.label}>Note (optional)</Text>
-          <TextInput testID="sample-note" value={note} onChangeText={setNote} placeholder="Anything worth remembering" placeholderTextColor={colors.mutedText} style={styles.input} multiline />
 
           <Pressable onPress={submit} disabled={saving} style={[styles.submitBtn, saving && { opacity: 0.6 }]} testID="submit-sample-btn">
             {saving ? <ActivityIndicator color={colors.onBrandPrimary} /> : (
