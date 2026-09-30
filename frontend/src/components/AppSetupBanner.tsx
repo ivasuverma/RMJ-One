@@ -3,6 +3,8 @@ import { View, Text, StyleSheet, Pressable, ActivityIndicator, Platform } from '
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
 import { getPushPermission, isSubscribed, subscribeToPush } from '@/src/utils/push';
+import { storage } from '@/src/utils/storage';
+import { api } from '@/src/api/client';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
@@ -10,8 +12,9 @@ import { useTheme } from '@/src/theme/ThemeContext';
 //   1. install the app to their Home Screen, and
 //   2. turn on notifications.
 // It walks them through whichever step is still pending with clear, device-
-// specific instructions, and disappears entirely once both are done. It is
-// deliberately NOT dismissible — the whole point is to get everyone set up.
+// specific instructions, and disappears entirely once both are done. The X hides
+// that step on this device — until an admin presses Remind (Settings › Staff
+// Notifications), which brings it back.
 
 function isStandalone(): boolean {
   if (typeof window === 'undefined') return false;
@@ -35,6 +38,32 @@ export function AppSetupBanner() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  // mode -> when it was closed on this device (ISO time); hidden until read.
+  const [dismissed, setDismissed] = useState<Record<string, string | boolean>>({ install: true, notify: true });
+  const [nudgedAt, setNudgedAt] = useState<string | null>(null);
+  useEffect(() => {
+    storage.getItem<string>('app_setup_dismissed', '{}')
+      .then((raw) => { try { setDismissed(JSON.parse(raw || '{}') || {}); } catch { setDismissed({}); } })
+      .catch(() => setDismissed({}));
+    api.get<{ nudged_at: string | null }>('/notifications/status').then((r) => setNudgedAt(r?.nudged_at || null)).catch(() => {});
+  }, []);
+  // Closed, and not reminded since.
+  const isDismissed = (m: Mode) => {
+    const d = dismissed[m];
+    if (!d) return false;
+    if (d === true || !nudgedAt) return d === true ? !nudgedAt : true;
+    return d > nudgedAt;
+  };
+  const dismiss = (m: Mode) => {
+    const next = { ...dismissed, [m]: new Date().toISOString() };
+    setDismissed(next);
+    storage.setItem('app_setup_dismissed', JSON.stringify(next));
+  };
+  const closeBtn = (m: Mode) => (
+    <Pressable onPress={() => dismiss(m)} hitSlop={10} style={styles.close} accessibilityRole="button" accessibilityLabel="Dismiss" testID="app-setup-dismiss">
+      <Ionicons name="close" size={18} color={colors.mutedText} />
+    </Pressable>
+  );
 
   const recompute = useCallback(async () => {
     if (Platform.OS !== 'web' || typeof window === 'undefined') { setMode('done'); return; }
@@ -79,7 +108,7 @@ export function AppSetupBanner() {
     setBusy(false);
   };
 
-  if (mode === 'done') return null;
+  if (mode === 'done' || isDismissed(mode)) return null;
 
   if (mode === 'install') {
     const ios = isIOS();
@@ -88,6 +117,7 @@ export function AppSetupBanner() {
         <View style={styles.headRow}>
           <View style={styles.iconRing}><Ionicons name="phone-portrait-outline" size={18} color={colors.onBrandPrimary} /></View>
           <Text style={styles.title}>Install RMJ One on your phone</Text>
+          {closeBtn('install')}
         </View>
         <Text style={styles.sub}>Add it to your Home Screen so it opens like a real app and can send you notifications.</Text>
 
@@ -119,6 +149,7 @@ export function AppSetupBanner() {
       <View style={styles.headRow}>
         <View style={styles.iconRing}><Ionicons name="notifications-outline" size={18} color={colors.onBrandPrimary} /></View>
         <Text style={styles.title}>Turn on notifications</Text>
+        {closeBtn('notify')}
       </View>
       <Text style={styles.sub}>Get alerts for tasks, approvals and reminders. Tap the button, then choose <Text style={styles.bold}>Allow</Text> when your phone asks.</Text>
       {!!err && <Text style={styles.err}>{err}</Text>}
@@ -144,6 +175,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     backgroundColor: colors.brandTertiary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.brandPrimary,
     padding: spacing.md, marginBottom: spacing.lg,
   },
+  close: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceTertiary },
   headRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   iconRing: { width: 34, height: 34, borderRadius: 17, backgroundColor: colors.brandPrimary, alignItems: 'center', justifyContent: 'center' },
   title: { flex: 1, color: colors.onSurface, fontSize: 15, fontWeight: '800', fontFamily: fonts.display },

@@ -225,6 +225,16 @@ async def _rates(user: dict, today: str, s: dict, now: datetime) -> dict:
     ]
     out = {'items': [r for r in rows if r['rate']], 'fetched_at': live.get('fetched_at'),
            'can_open': can_view(user, 'gold_rate'), 'broadcast': None}
+    # Staff who can't get push notifications (owner/admin only — they can remind them).
+    if user.get('role') in ('owner', 'admin'):
+        from routers.notifications import staff_push_status
+        off = [r for r in await _shared('staff_push', 60, staff_push_status) if not r['devices']]
+        if off:
+            rows.append({'key': 'staff_notifications_off', 'severity': 'gold', 'module': 'notifications', 'count': len(off),
+                         'title': f"{len(off)} staff have notifications off" if len(off) != 1 else '1 staff member has notifications off',
+                         'detail': _names([r['name'] for r in off]),
+                         'action': 'Remind', 'route': '/settings/staff-notifications', 'can_act': True})
+
     if can_view(user, 'rate_broadcast'):
         out['broadcast'] = await _broadcast_status(s, now)
     return out
@@ -415,16 +425,21 @@ async def _needs_you(user: dict, s: dict, now: datetime, staff: Optional[dict]) 
                          'action': 'Review', 'route': '/samples?status=overdue', 'can_act': True})
 
     # Tasks: the whole team's for whoever has the Tasks module, otherwise just your own.
-    tq = {'status': 'open', 'due_date': {'$lt': today, '$nin': [None, '']}}
-    if not can_view(user, 'tasks'):
+    # An employee also sees their own tasks due today (their old Home's "My tasks today").
+    own = not can_view(user, 'tasks')
+    tq = {'status': 'open', 'due_date': {'$lte' if own else '$lt': today, '$nin': [None, '']}}
+    if own:
         tq['assigned_to'] = user['id']
     if can_view(user, 'tasks') or user.get('role') == 'employee':
         tasks = await db.tasks.find(tq, {'_id': 0, 'title': 1, 'due_date': 1}).sort('due_date', 1).to_list(2000)
         if tasks:
-            rows.append({'key': 'tasks_overdue', 'severity': 'amber', 'module': 'tasks', 'count': len(tasks),
-                         'title': f"{len(tasks)} task{'s' if len(tasks) != 1 else ''} overdue",
-                         'detail': f"Oldest: {tasks[0].get('title') or 'Untitled'}",
-                         'action': 'Review', 'route': '/tasks', 'can_act': True})
+            late = sum(1 for t in tasks if t['due_date'] < today)
+            title = (f"{len(tasks)} task{'s' if len(tasks) != 1 else ''} overdue" if late == len(tasks)
+                     else f"{len(tasks)} task{'s' if len(tasks) != 1 else ''} due today" + (f" · {late} overdue" if late else ''))
+            rows.append({'key': 'tasks_overdue', 'severity': 'amber' if late else 'gold', 'module': 'tasks', 'count': len(tasks),
+                         'title': title,
+                         'detail': f"{'Oldest' if late else 'First'}: {tasks[0].get('title') or 'Untitled'}",
+                         'action': 'Review', 'route': '/(emp)/tasks' if user.get('role') == 'employee' else '/tasks', 'can_act': True})
 
     if can_view(user, 'documents'):
         from routers.documents import _account_rights, _visible_keys, _role
@@ -609,34 +624,57 @@ async def _notifications(user: dict) -> dict:
         db.notifications.count_documents({'user_id': user['id'], 'read': False}),
     )
     return {'unread': unread, 'items': items}
-SECTION_KEYS = [x['key'] for x in HOME_SECTIONS]
+# The employee Home has its own, shorter set; the punch card can be moved but not hidden.
+EMP_SECTIONS = [
+    {'key': 'rates', 'label': 'Rates ticker'},
+    {'key': 'punch', 'label': "Today's punch & reminders", 'fixed': True},
+    {'key': 'quick_actions', 'label': 'Quick actions'},
+    {'key': 'needs_you', 'label': 'Needs you today'},
+    {'key': 'notifications', 'label': 'Notifications'},
+]
+SECTION_KEYS = list(dict.fromkeys([x['key'] for x in HOME_SECTIONS + EMP_SECTIONS]))
+
+
+def _sections_for(user: dict) -> list[dict]:
+    return EMP_SECTIONS if user.get('role') == 'employee' else HOME_SECTIONS
+
+
+async def _layout(user: dict) -> dict:
+    """This person's Home sections in their order, and which are hidden."""
+    prefs = await db.user_prefs.find_one({'user_id': user['id']}, {'_id': 0, 'home_hidden_sections': 1, 'home_section_order': 1}) or {}
+    mine = _sections_for(user)
+    by_key = {x['key']: x for x in mine}
+    order = [k for k in (prefs.get('home_section_order') or []) if k in by_key]
+    order += [x['key'] for x in mine if x['key'] not in order]   # sections added later go at the end
+    hidden = [k for k in (prefs.get('home_hidden_sections') or []) if k in SECTION_KEYS and not (by_key.get(k) or {}).get('fixed')]
+    return {'sections': [by_key[k] for k in order], 'order': order, 'hidden': hidden}
 
 
 async def _hidden_sections(user: dict) -> list[str]:
-    prefs = await db.user_prefs.find_one({'user_id': user['id']}, {'_id': 0, 'home_hidden_sections': 1}) or {}
-    return [k for k in (prefs.get('home_hidden_sections') or []) if k in SECTION_KEYS]
+    return (await _layout(user))['hidden']
 
 
 class SectionsIn(BaseModel):
     hidden: list[str] = Field(default_factory=list, max_length=20)
+    order: Optional[list[str]] = Field(default=None, max_length=20)
 
 
 @router.get('/home/sections')
 async def get_sections(user: dict = Depends(get_current)):
-    return {'sections': HOME_SECTIONS, 'hidden': await _hidden_sections(user)}
+    return await _layout(user)
 
 
 @router.put('/home/sections')
 async def put_sections(body: SectionsIn, user: dict = Depends(get_current)):
-    """Which Home sections this person hides — saved per user, so it follows them to any device."""
-    hidden = [k for k in dict.fromkeys(body.hidden) if k in SECTION_KEYS]
-    await db.user_prefs.update_one(
-        {'user_id': user['id']},
-        {'$set': {'user_id': user['id'], 'home_hidden_sections': hidden, 'updated_at': now_utc().isoformat()}},
-        upsert=True,
-    )
+    """Which Home sections this person hides, and in what order — saved per user, so it
+    follows them to any device. Sending no `order` keeps the saved one."""
+    upd = {'user_id': user['id'], 'home_hidden_sections': [k for k in dict.fromkeys(body.hidden) if k in SECTION_KEYS],
+           'updated_at': now_utc().isoformat()}
+    if body.order is not None:
+        upd['home_section_order'] = [k for k in dict.fromkeys(body.order) if k in SECTION_KEYS]
+    await db.user_prefs.update_one({'user_id': user['id']}, {'$set': upd}, upsert=True)
     _USER_CACHE.pop(user['id'], None)
-    return {'sections': HOME_SECTIONS, 'hidden': hidden}
+    return await _layout(user)
 
 
 # ---------------- Summary ----------------
@@ -658,7 +696,11 @@ async def build_summary(user: dict) -> dict:
     t0 = time.monotonic()
     now = _ist_now()
     today = now.date().isoformat()
-    s, hidden = await asyncio.gather(home_settings(), _hidden_sections(user))
+    s, layout = await asyncio.gather(home_settings(), _layout(user))
+    hidden = layout['hidden']
+    if user.get('role') == 'employee':
+        # The employee Home shows rates, quick actions, Needs you and notifications only.
+        hidden = hidden + [k for k in ('cash', 'staff', 'owed', 'coming_up') if k not in hidden]
     show = lambda k: k not in hidden   # noqa: E731
 
     async def none():
@@ -693,6 +735,7 @@ async def build_summary(user: dict) -> dict:
         'coming_up': await coming_task if coming_task else None,
         'notifications': await notif_task if notif_task else None,
         'hidden_sections': hidden,
+        'section_order': layout['order'],
         'settings': s,
         'took_ms': round((time.monotonic() - t0) * 1000),
     }

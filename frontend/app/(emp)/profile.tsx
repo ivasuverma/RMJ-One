@@ -114,6 +114,8 @@ export default function EmployeeProfile() {
           </View>
         )}
         <GlassSettings testID="emp-glass-settings" />
+        <Row icon="home-outline" label="Home screen" sub="Reorder or hide parts of Home"
+          onPress={() => router.push('/settings/home-screen' as any)} testID="emp-settings-home-screen" />
 
         {/* Sign in */}
         <Text style={styles.groupTitle}>Sign in</Text>

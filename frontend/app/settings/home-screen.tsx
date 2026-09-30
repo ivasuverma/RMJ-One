@@ -11,7 +11,7 @@ import { ToggleSwitch } from '@/src/components/ui/ToggleSwitch';
 
 // Settings › Home screen. The sections switch is per person (saved to their account,
 // so it follows them to any device); the alert rules below it apply to everyone's Home.
-type Section = { key: string; label: string };
+type Section = { key: string; label: string; fixed?: boolean };
 type Rules = Record<string, number | string>;
 
 const RULES: { key: string; label: string; sub: string; unit?: string; time?: boolean }[] = [
@@ -45,13 +45,24 @@ export default function HomeScreenSettings() {
   }, []);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const toggle = async (key: string) => {
-    const prev = hidden;
+  // Every change saves straight away (order and hidden together), and rolls back if it fails.
+  const persist = async (nextSections: Section[], nextHidden: Set<string>) => {
+    const prev = { sections, hidden };
+    setSections(nextSections); setHidden(nextHidden);
+    try { await api.put('/home/sections', { hidden: [...nextHidden], order: nextSections.map((x) => x.key) }); }
+    catch (e: any) { setSections(prev.sections); setHidden(prev.hidden); toast.error(e?.detail || 'Could not save'); }
+  };
+  const toggle = (key: string) => {
     const next = new Set(hidden);
     if (next.has(key)) next.delete(key); else next.add(key);
-    setHidden(next);
-    try { await api.put('/home/sections', { hidden: [...next] }); }
-    catch (e: any) { setHidden(prev); toast.error(e?.detail || 'Could not save'); }
+    persist(sections || [], next);
+  };
+  const move = (i: number, d: number) => {
+    const list = [...(sections || [])];
+    const j = i + d;
+    if (j < 0 || j >= list.length) return;
+    [list[i], list[j]] = [list[j], list[i]];
+    persist(list, hidden);
   };
 
   const dirty = !!rules && RULES.some((r) => String(rules[r.key]) !== (draft[r.key] ?? ''));
@@ -83,20 +94,29 @@ export default function HomeScreenSettings() {
       <View style={styles.header}>
         <Pressable onPress={() => router.back()} style={styles.iconBtn} hitSlop={12} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back"><Ionicons name="chevron-back" size={22} color={colors.onSurface} /></Pressable>
         <Text style={styles.title}>Home screen</Text>
-        <View style={styles.iconBtn} />
+        <View style={{ width: 40 }} />
       </View>
 
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 60 }} keyboardShouldPersistTaps="handled">
         <Text style={styles.sectionLabel}>Show on Home</Text>
-        <Text style={styles.note}>Turn off any part of Home you don&apos;t need. Saved to your account, so it applies on every device you sign in on.</Text>
+        <Text style={styles.note}>Move sections up or down to reorder your Home, and turn off any you don&apos;t need. Saved to your account, so it applies on every device you sign in on.</Text>
         {!sections ? <ActivityIndicator color={colors.brandPrimary} style={{ marginVertical: 30 }} /> : (
           <View style={styles.card}>
             {sections.map((x, i) => (
-              <Pressable key={x.key} onPress={() => toggle(x.key)} style={[styles.row, i > 0 && styles.sep]}
-                accessibilityRole="switch" accessibilityState={{ checked: !hidden.has(x.key) }} testID={`home-section-${x.key}`}>
-                <Text style={styles.rowLabel}>{x.label}</Text>
-                <ToggleSwitch value={!hidden.has(x.key)} />
-              </Pressable>
+              <View key={x.key} style={[styles.row, i > 0 && styles.sep]} testID={`home-section-${x.key}`}>
+                <Text style={[styles.rowLabel, hidden.has(x.key) && { color: colors.mutedText }]}>{x.label}</Text>
+                <Pressable onPress={() => move(i, -1)} disabled={i === 0} hitSlop={6} style={styles.arrow} accessibilityLabel={`Move ${x.label} up`} testID={`home-section-up-${x.key}`}>
+                  <Ionicons name="chevron-up" size={17} color={i === 0 ? colors.border : colors.onSurface} />
+                </Pressable>
+                <Pressable onPress={() => move(i, 1)} disabled={i === sections.length - 1} hitSlop={6} style={styles.arrow} accessibilityLabel={`Move ${x.label} down`} testID={`home-section-down-${x.key}`}>
+                  <Ionicons name="chevron-down" size={17} color={i === sections.length - 1 ? colors.border : colors.onSurface} />
+                </Pressable>
+                {x.fixed ? <View style={{ width: 51 }} /> : (
+                  <Pressable onPress={() => toggle(x.key)} accessibilityRole="switch" accessibilityState={{ checked: !hidden.has(x.key) }} accessibilityLabel={`Show ${x.label}`} testID={`home-section-toggle-${x.key}`}>
+                    <ToggleSwitch value={!hidden.has(x.key)} />
+                  </Pressable>
+                )}
+              </View>
             ))}
           </View>
         )}
@@ -143,6 +163,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   rowLabel: { flex: 1, color: colors.onSurface, fontSize: 15, fontWeight: '600' },
   rowSub: { color: colors.mutedText, fontSize: 12, marginTop: 1 },
   input: { width: 60, textAlign: 'center', color: colors.onSurface, fontSize: 15, fontWeight: '600', backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, paddingVertical: 8, paddingHorizontal: 6 },
+  arrow: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceTertiary },
   unit: { color: colors.mutedText, fontSize: 13, minWidth: 26 },
   save: { marginTop: spacing.md, backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: 13, alignItems: 'center' },
   saveText: { color: colors.onBrandPrimary, fontSize: 15, fontWeight: '700' },

@@ -1,41 +1,31 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable, RefreshControl,
-  ActivityIndicator, Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { notify } from '@/src/utils/notify';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthContext';
 import { istTime, nowISTLongLabel, todayIST } from '@/src/utils/datetime';
-import { spacing, radius, images, fonts, ThemeColors } from '@/src/theme';
+import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { PunchCaptureModal, PunchResult } from '@/src/components/PunchCaptureModal';
 import { UploadQueueBadge } from '@/src/components/UploadQueueBadge';
-import { LiveRateButton } from '@/src/components/LiveRateButton';
 import { AppSetupBanner } from '@/src/components/AppSetupBanner';
 import { employeeTabAccess } from '@/src/components/EmployeeTabBar';
 import { haptics } from '@/src/utils/haptics';
 import { useToast } from '@/src/components/ui';
 import { TabBarSpacer } from '@/src/components/GlassTabBar';
 import { useCachedLoad } from '@/src/hooks/use-cached-load';
+import { RateTicker, QuickRow, QuickItem, NeedsSection, NotificationsSection, QUICK_ROUTE } from '@/src/components/home/sections';
+import { QUICK_ICON } from '@/src/components/home/QuickSheets';
+import { HomeSummary, isOk } from '@/src/components/home/types';
 import { StickyHeader, useScrolled, HeaderSpacer } from '@/src/components/ui/StickyHeader';
 
-// Modules a tile can be shown for on this dashboard — icon/label/route match
-// the same module rows on the Work tab ((emp)/work.tsx) so a module looks
-// and navigates identically wherever it appears.
-const MODULE_TILES: { key: string; label: string; icon: keyof typeof Ionicons.glyphMap; route: string }[] = [
-  { key: 'repairs', label: 'Repairs', icon: 'construct-outline', route: '/repairs' },
-  { key: 'samples', label: 'Stock In/Out', icon: 'diamond-outline', route: '/samples' },
-  { key: 'cash_book', label: 'Cash Book', icon: 'wallet-outline', route: '/cashbook' },
-  { key: 'documents', label: 'Documents', icon: 'documents-outline', route: '/documents' },
-  { key: 'customer_ledger', label: 'Customer Ledger', icon: 'person-outline', route: '/reports/customer-ledger' },
-  { key: 'karigar_ledger', label: 'Karigar Ledger', icon: 'hammer-outline', route: '/reports/karigar-ledger' },
-];
 
 type Att = {
   id?: string;
@@ -49,6 +39,8 @@ type Att = {
 type Task = { id: string; title: string; due_date?: string };
 
 type Store = { work_start?: string; work_end?: string; grace_min?: number; name?: string; radius_m?: number; app_checkin_enabled?: boolean };
+
+const EMP_ORDER = ['rates', 'punch', 'quick_actions', 'needs_you', 'notifications'];
 
 type HomeData = { day: string; att: Att; store: Store; tasks: Task[] };
 
@@ -64,36 +56,32 @@ export default function EmployeeHome() {
   // Work-from-home staff don't record attendance — hide the punch card and
   // the check-in/out reminders for them.
   const isRemote = !!user?.remote;
-  const { colors, scheme } = useTheme();
+  const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const toast = useToast();
-  const heroGradient = scheme === 'light'
-    ? ['rgba(247,241,230,0.4)', 'rgba(247,241,230,0.98)'] as const
-    : ['rgba(13,13,13,0.5)', 'rgba(13,13,13,0.98)'] as const;
   const router = useRouter();
   const [pulled, setPulled] = useState(false);
   const [showPunch, setShowPunch] = useState<null | 'check_in' | 'check_out'>(null);
   const [unread, setUnread] = useState(0);
-  const moduleTiles = MODULE_TILES.filter((m) => hasModule(m.key));
 
   // The last copy saved on this phone paints instantly; fresh data swaps in behind it.
   const { data, loading: fetching, reload } = useCachedLoad<HomeData>(user ? `emp_home_v1:${user.id}` : null, async () => {
-    const [a, s, t] = await Promise.all([
+    const [a, s] = await Promise.all([
       api.get<Att>('/attendance/me/today'),
       api.get<Store>('/settings/store').catch(() => ({} as Store)),
-      api.get<Task[]>('/tasks?status=open').catch(() => [] as Task[]),
     ]);
-    return { day: todayIST(), att: a || {}, store: s || {}, tasks: t || [] };
+    return { day: todayIST(), att: a || {}, store: s || {}, tasks: [] };
   }, 120000);
+  // Rates, quick actions, Needs you and notifications — the same briefing the owner's Home
+  // uses, already filtered by the server to what this person may see.
+  const brief = useCachedLoad<HomeSummary>(user ? `home_summary_v1:${user.id}` : null,
+    (fresh) => api.get<HomeSummary>(`/home/summary${fresh ? '?fresh=1' : ''}`));
+  const summary = brief.data;
   const loading = !data;
   const today = todayIST();
   // A copy saved on an earlier day says nothing about today's punch.
   const att: Att | null = data ? (data.day === today ? data.att : {}) : null;
   const store: Store = data?.store || {};
-  // Due-today or overdue only — what actually needs doing now, oldest due first.
-  const myTasks = useMemo(() => (data?.tasks || [])
-    .filter((x) => x.due_date && x.due_date <= today)
-    .sort((x, y) => (x.due_date || '').localeCompare(y.due_date || '')), [data, today]);
   const load = reload;
   const refreshing = pulled && fetching;
   useEffect(() => { if (!fetching) setPulled(false); }, [fetching]);
@@ -125,6 +113,130 @@ export default function EmployeeHome() {
   const reminderCheckIn = appCheckinEnabled && !hasCheckIn && shouldRemindCheckIn(now, store.work_start, store.grace_min);
   const reminderCheckOut = appCheckinEnabled && hasCheckIn && !hasCheckOut && shouldRemindCheckOut(now, store.work_end);
 
+  // Each Home section, in this person's order (Settings › Home screen); the punch card
+  // group also carries the setup banner and check-in/out reminders.
+  const blocks: Record<string, ReactNode> = {
+    rates: (
+      <>
+        <RateTicker rates={isOk(summary?.rates) ? summary!.rates : null} loading={!summary} />
+      </>
+    ),
+    punch: (
+      <>
+        <View style={{ marginTop: spacing.md }}>
+          {/* Punch card — hidden entirely for work-from-home staff */}
+          {isRemote && (
+            <View style={styles.punchCard} testID="remote-card">
+              <Text style={styles.punchLabel}>WORK FROM HOME</Text>
+              <View style={styles.doneBadge}>
+                <Ionicons name="home" size={18} color={colors.brandPrimary} />
+                <Text style={styles.doneText}>No attendance to record. Your salary is paid in full each month.</Text>
+              </View>
+            </View>
+          )}
+          {!isRemote && (
+          <View style={styles.punchCard} testID="punch-card">
+            <View style={styles.punchTopRow}>
+              <Text style={styles.punchLabel}>TODAY&apos;S PUNCH</Text>
+              {!!att?.is_late && <View style={styles.lateBadge}><Ionicons name="warning-outline" size={11} color={colors.onWarning} /><Text style={styles.lateText}>Late</Text></View>}
+              {!!att?.working_hours && <Text style={styles.hoursText}>{att.working_hours}h worked</Text>}
+            </View>
+            <View style={styles.punchRow}>
+              <PunchSlot label="Check In" time={fmtTime(att?.check_in?.timestamp)} icon="log-in-outline" done={hasCheckIn} testID="slot-check-in" />
+              <View style={styles.punchDivider} />
+              <PunchSlot label="Check Out" time={fmtTime(att?.check_out?.timestamp)} icon="log-out-outline" done={hasCheckOut} testID="slot-check-out" />
+            </View>
+
+            {!appCheckinEnabled && (
+              <View style={styles.doneBadge} testID="app-checkin-disabled-notice">
+                <Ionicons name="finger-print-outline" size={16} color={colors.mutedText} />
+                <Text style={styles.doneText}>Punch in and out on the biometric machine at the shop — your times show here.</Text>
+              </View>
+            )}
+            {appCheckinEnabled && !hasCheckIn && (
+              <Pressable onPress={() => setShowPunch('check_in')} style={styles.punchBtn} testID="btn-check-in">
+                <Ionicons name="log-in" size={18} color={colors.onBrandPrimary} />
+                <Text style={styles.punchBtnText}>Check In</Text>
+              </Pressable>
+            )}
+            {appCheckinEnabled && hasCheckIn && !hasCheckOut && (
+              <Pressable onPress={() => setShowPunch('check_out')} style={[styles.punchBtn, styles.punchBtnOut]} testID="btn-check-out">
+                <Ionicons name="log-out" size={18} color={colors.onSurface} />
+                <Text style={[styles.punchBtnText, { color: colors.onSurface }]}>Check Out</Text>
+              </Pressable>
+            )}
+            {appCheckinEnabled && hasCheckIn && hasCheckOut && (
+              <View style={styles.doneBadge} testID="punch-done-badge">
+                <Ionicons name="checkmark-circle" size={16} color={colors.brandPrimary} />
+                <Text style={styles.doneText}>All punches done · See you tomorrow</Text>
+              </View>
+            )}
+          </View>
+          )}
+
+          {/* Install-to-home-screen + enable-notifications onboarding */}
+          <AppSetupBanner />
+
+          {/* Reminder banners */}
+          {!isRemote && reminderCheckIn && (
+            <ReminderBanner
+              testID="reminder-checkin"
+              icon="alarm-outline" color={colors.warning}
+              title="Check-In Reminder"
+              subtitle="You haven't punched in today. Punch in now, or tap a day on your Calendar to request a correction."
+              actions={[
+                { label: 'Punch In', onPress: () => setShowPunch('check_in'), primary: true, testID: 'reminder-checkin-btn' },
+              ]}
+            />
+          )}
+          {!isRemote && reminderCheckOut && (
+            <ReminderBanner
+              testID="reminder-checkout"
+              icon="alarm-outline" color={colors.warning}
+              title="Check-Out Reminder"
+              subtitle="You haven't punched out yet. Don't forget!"
+              actions={[
+                { label: 'Punch Out', onPress: () => setShowPunch('check_out'), primary: true, testID: 'reminder-checkout-btn' },
+              ]}
+            />
+          )}
+
+        </View>
+      </>
+    ),
+    quick_actions: (
+      <>
+        {/* Quick actions — their own Calendar, Leave and Ledger first (work-from-home staff
+            have no attendance, so no Calendar or Leave), then the create shortcuts for the
+            modules the owner gave them Edit rights on. */}
+        <QuickRow items={[
+          ...(!isRemote ? [
+            { key: 'calendar', label: 'Calendar', icon: 'calendar-outline', onPress: () => router.push('/(emp)/calendar' as any) },
+            { key: 'leave', label: 'Leave', icon: 'airplane-outline', onPress: () => router.push('/leaves') },
+          ] as QuickItem[] : []),
+          { key: 'ledger', label: 'My Ledger', icon: 'book-outline', onPress: () => router.push(`/ledger/${user?.id}`) },
+          // My Tasks otherwise lives in the Work hub; with no Work tab this is the way to it.
+          ...(!employeeTabAccess(hasModule).work ? [{ key: 'tasks', label: 'My Tasks', icon: 'checkbox-outline', onPress: () => router.push('/(emp)/tasks' as any) }] as QuickItem[] : []),
+          ...(isOk(summary?.quick_actions) ? summary!.quick_actions.tiles.filter((t) => QUICK_ROUTE[t.key]).map((t) => ({
+            key: t.key, label: t.label, icon: QUICK_ICON[t.key] || 'ellipse-outline', onPress: () => router.push(QUICK_ROUTE[t.key] as any),
+          })) : []),
+        ]} />
+
+      </>
+    ),
+    needs_you: (
+      <>
+        <NeedsSection needs={summary ? summary.needs_you : undefined} loading={!summary} />
+      </>
+    ),
+    notifications: (
+      <>
+        <NotificationsSection data={isOk(summary?.notifications) ? summary!.notifications : null} />
+      </>
+    ),
+  };
+  const order = summary?.section_order?.length ? summary.section_order : EMP_ORDER;
+
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="emp-home-screen">
       <StickyHeader scrolled={scrolled} style={{ paddingHorizontal: 0, paddingTop: 0, paddingBottom: 0 }}>
@@ -141,7 +253,6 @@ export default function EmployeeHome() {
             <Text style={styles.heroCode}>{user?.employee_code} · {user?.designation || '—'}</Text>
           </View>
           <UploadQueueBadge />
-          <LiveRateButton testID="emp-rate-btn" />
           <Pressable onPress={() => router.push('/notifications' as any)} style={styles.iconBtn} testID="emp-notifications-btn" hitSlop={12}>
             <Ionicons name="notifications-outline" size={20} color={colors.onSurface} />
             {unread > 0 && <View style={styles.bellDot} />}
@@ -150,7 +261,7 @@ export default function EmployeeHome() {
       </StickyHeader>
       <ScrollView onScroll={onScroll} scrollEventThrottle={16}
         contentContainerStyle={{ paddingBottom: spacing.xxxl }}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setPulled(true); load(); }} tintColor={colors.brandPrimary} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setPulled(true); load(); brief.refresh(); }} tintColor={colors.brandPrimary} />}
         showsVerticalScrollIndicator={false}
       >
         <HeaderSpacer />
@@ -160,137 +271,8 @@ export default function EmployeeHome() {
             <ActivityIndicator color={colors.brandPrimary} size="large" />
           </View>
         ) : (
-          <View style={{ paddingHorizontal: spacing.lg, marginTop: spacing.lg }}>
-            {/* Install-to-home-screen + enable-notifications onboarding */}
-            <AppSetupBanner />
-
-            {/* Reminder banners */}
-            {!isRemote && reminderCheckIn && (
-              <ReminderBanner
-                testID="reminder-checkin"
-                icon="alarm-outline" color={colors.warning}
-                title="Check-In Reminder"
-                subtitle="You haven't punched in today. Punch in now, or tap a day on your Calendar to request a correction."
-                actions={[
-                  { label: 'Punch In', onPress: () => setShowPunch('check_in'), primary: true, testID: 'reminder-checkin-btn' },
-                ]}
-              />
-            )}
-            {!isRemote && reminderCheckOut && (
-              <ReminderBanner
-                testID="reminder-checkout"
-                icon="alarm-outline" color={colors.warning}
-                title="Check-Out Reminder"
-                subtitle="You haven't punched out yet. Don't forget!"
-                actions={[
-                  { label: 'Punch Out', onPress: () => setShowPunch('check_out'), primary: true, testID: 'reminder-checkout-btn' },
-                ]}
-              />
-            )}
-
-            {/* Punch card — hidden entirely for work-from-home staff */}
-            {isRemote && (
-              <View style={styles.punchCard} testID="remote-card">
-                <Text style={styles.punchLabel}>WORK FROM HOME</Text>
-                <View style={styles.doneBadge}>
-                  <Ionicons name="home" size={18} color={colors.brandPrimary} />
-                  <Text style={styles.doneText}>No attendance to record. Your salary is paid in full each month.</Text>
-                </View>
-              </View>
-            )}
-            {!isRemote && (
-            <View style={styles.punchCard} testID="punch-card">
-              <View style={styles.punchTopRow}>
-                <Text style={styles.punchLabel}>TODAY&apos;S PUNCH</Text>
-                {!!att?.is_late && <View style={styles.lateBadge}><Ionicons name="warning-outline" size={11} color={colors.onWarning} /><Text style={styles.lateText}>Late</Text></View>}
-                {!!att?.working_hours && <Text style={styles.hoursText}>{att.working_hours}h worked</Text>}
-              </View>
-              <View style={styles.punchRow}>
-                <PunchSlot label="Check In" time={fmtTime(att?.check_in?.timestamp)} icon="log-in-outline" done={hasCheckIn} testID="slot-check-in" />
-                <View style={styles.punchDivider} />
-                <PunchSlot label="Check Out" time={fmtTime(att?.check_out?.timestamp)} icon="log-out-outline" done={hasCheckOut} testID="slot-check-out" />
-              </View>
-
-              {!appCheckinEnabled && (
-                <View style={styles.doneBadge} testID="app-checkin-disabled-notice">
-                  <Ionicons name="finger-print-outline" size={16} color={colors.mutedText} />
-                  <Text style={styles.doneText}>Tracked via biometric device — app check-in/out is off.</Text>
-                </View>
-              )}
-              {appCheckinEnabled && !hasCheckIn && (
-                <Pressable onPress={() => setShowPunch('check_in')} style={styles.punchBtn} testID="btn-check-in">
-                  <Ionicons name="log-in" size={18} color={colors.onBrandPrimary} />
-                  <Text style={styles.punchBtnText}>Check In</Text>
-                </Pressable>
-              )}
-              {appCheckinEnabled && hasCheckIn && !hasCheckOut && (
-                <Pressable onPress={() => setShowPunch('check_out')} style={[styles.punchBtn, styles.punchBtnOut]} testID="btn-check-out">
-                  <Ionicons name="log-out" size={18} color={colors.onSurface} />
-                  <Text style={[styles.punchBtnText, { color: colors.onSurface }]}>Check Out</Text>
-                </Pressable>
-              )}
-              {appCheckinEnabled && hasCheckIn && hasCheckOut && (
-                <View style={styles.doneBadge} testID="punch-done-badge">
-                  <Ionicons name="checkmark-circle" size={16} color={colors.brandPrimary} />
-                  <Text style={styles.doneText}>All punches done · See you tomorrow</Text>
-                </View>
-              )}
-            </View>
-            )}
-
-            {/* Module tiles — one per module this employee has been granted,
-                same icon/label/route as the equivalent Work-tab row. */}
-            {moduleTiles.length > 0 && (
-              <>
-                <Text style={styles.section}>My modules</Text>
-                <View style={styles.tileGrid}>
-                  {moduleTiles.map((m) => (
-                    <ModuleTile key={m.key} icon={m.icon} label={m.label} onPress={() => router.push(m.route as any)} testID={`home-tile-${m.key}`} />
-                  ))}
-                </View>
-              </>
-            )}
-
-            {/* My tasks due today / overdue */}
-            {myTasks.length > 0 && (
-              <>
-                <View style={styles.taskHeaderRow}>
-                  <Text style={styles.section}>My tasks today</Text>
-                  <Pressable onPress={() => router.push('/(emp)/tasks' as any)} testID="emp-tasks-see-all">
-                    <Text style={styles.taskSeeAll}>See all</Text>
-                  </Pressable>
-                </View>
-                <View style={styles.taskCard}>
-                  {myTasks.slice(0, 4).map((t, i) => {
-                    const overdue = !!t.due_date && t.due_date < todayIST();
-                    return (
-                      <Pressable
-                        key={t.id}
-                        testID={`emp-task-${t.id}`}
-                        onPress={() => router.push('/(emp)/tasks' as any)}
-                        style={({ pressed }) => [styles.taskRow, i === Math.min(myTasks.length, 4) - 1 && styles.taskRowLast, pressed && { opacity: 0.7 }]}
-                      >
-                        <View style={[styles.taskDot, { backgroundColor: overdue ? colors.onError : colors.brandPrimary }]} />
-                        <Text style={styles.taskTitle} numberOfLines={1}>{t.title}</Text>
-                        {overdue && <Text style={styles.taskOverdue}>Overdue</Text>}
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              </>
-            )}
-
-            {/* Quick actions — work-from-home staff have no attendance, so
-                Calendar and Leave request are dropped for them. */}
-            <Text style={styles.section}>Quick actions</Text>
-            <View style={styles.actionsRow}>
-              {!isRemote && <ActionCard icon="calendar-outline" label="Calendar" onPress={() => router.push('/(emp)/calendar' as any)} testID="action-calendar" />}
-              {!isRemote && <ActionCard icon="airplane-outline" label="Leave request" onPress={() => router.push('/leaves')} testID="action-leave" />}
-              <ActionCard icon="book-outline" label="My Ledger" onPress={() => router.push(`/ledger/${user?.id}`)} testID="action-ledger" />
-              {/* My Tasks otherwise lives in the Work hub; with no Work tab
-                  (nothing enabled behind it) this is the way to it. */}
-              {!employeeTabAccess(hasModule).work && <ActionCard icon="checkbox-outline" label="My Tasks" onPress={() => router.push('/(emp)/tasks' as any)} testID="action-tasks" />}
-            </View>
+          <View style={{ paddingHorizontal: spacing.lg }}>
+            {order.map((k) => <Fragment key={k}>{blocks[k]}</Fragment>)}
           </View>
         )}
         <TabBarSpacer />
@@ -374,28 +356,7 @@ function PunchSlot({ label, time, icon, done, testID }: { label: string; time: s
   );
 }
 
-function ModuleTile({ icon, label, onPress, testID }: { icon: any; label: string; onPress: () => void; testID?: string }) {
-  const { colors } = useTheme();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
-  return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.moduleTile, pressed && { opacity: 0.85 }]} testID={testID}>
-      <View style={styles.moduleTileIcon}><Ionicons name={icon} size={20} color={colors.brandSecondary} /></View>
-      <Text style={styles.moduleTileLabel} numberOfLines={1}>{label}</Text>
-      <Ionicons name="chevron-forward" size={16} color={colors.mutedText} />
-    </Pressable>
-  );
-}
 
-function ActionCard({ icon, label, onPress, testID }: { icon: any; label: string; onPress: () => void; testID?: string }) {
-  const { colors } = useTheme();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
-  return (
-    <Pressable onPress={onPress} style={styles.actionCard} testID={testID}>
-      <View style={styles.actionIcon}><Ionicons name={icon} size={20} color={colors.brandSecondary} /></View>
-      <Text style={styles.actionLabel}>{label}</Text>
-    </Pressable>
-  );
-}
 
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
@@ -444,7 +405,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
 
   punchCard: {
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg,
-    borderWidth: 1, borderColor: colors.border, padding: spacing.md,
+    borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.md,
   },
   punchTopRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm },
   punchLabel: { flex: 1, color: colors.brandSecondary, fontSize: 11, letterSpacing: 1 },
