@@ -12,13 +12,14 @@ import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { KarigarChooser, createKarigar, resolveKarigar } from '@/src/components/KarigarChooser';
 import { mobileKey } from '@/src/utils/mobile';
+import { DueBackField } from '@/src/components/DueBackField';
 
 type Item = {
   id: string; item_code: string; description: string; customer_name: string;
   gross_weight: number; purity?: number;
 };
 type Karigar = { id: string; name: string; mobile: string; is_employee: boolean };
-type Txn = { id: string; direction: 'issue' | 'receive'; karigar_id: string; note: string };
+type Txn = { id: string; direction: 'issue' | 'receive'; karigar_id: string; note: string; due_back?: string | null };
 
 type Mode = 'pick' | 'form' | 'bulk';
 
@@ -37,6 +38,7 @@ export default function IssueToKarigarScreen() {
   const [karigars, setKarigars] = useState<Karigar[]>([]);
   const [loading, setLoading] = useState(true);
   const [note, setNote] = useState('');
+  const [dueBack, setDueBack] = useState('');   // when the karigar should bring it back (YYYY-MM-DD)
   const [busy, setBusy] = useState(false);
   const submittingRef = useRef(false);
   // Karigar, mobile first (see KarigarChooser): a saved number is that
@@ -77,6 +79,7 @@ export default function IssueToKarigarScreen() {
           const txn = res.history.find((h) => h.id === txnId);
           if (txn) {
             setNote(txn.note || '');
+            setDueBack(txn.due_back || '');
             setKarigarEntry(ks.find((k) => k.id === txn.karigar_id) || null);
           }
         }
@@ -108,9 +111,9 @@ export default function IssueToKarigarScreen() {
       const k = await getKarigar();
       if (k === undefined) return;
       if (isEdit) {
-        await api.put(`/repair-items/${item.id}/transactions/${txnId}`, { karigar_id: k!.id, note });
+        await api.put(`/repair-items/${item.id}/transactions/${txnId}`, { karigar_id: k!.id, note, due_back: dueBack });
       } else {
-        await api.post(`/repair-items/${item.id}/issue`, { karigar_id: k?.id ?? null, note });
+        await api.post(`/repair-items/${item.id}/issue`, { karigar_id: k?.id ?? null, note, due_back: k ? dueBack || null : null });
       }
       setBusy(false); submittingRef.current = false;
       // Only a real karigar issue produces a challan to print — "Mark Pending
@@ -141,7 +144,7 @@ export default function IssueToKarigarScreen() {
     const issuedIds: string[] = [];
     const failed: string[] = [];
     for (const it of bulkItems) {
-      try { await api.post(`/repair-items/${it.id}/issue`, { karigar_id: k!.id, note }); okCount += 1; issuedIds.push(it.id); }
+      try { await api.post(`/repair-items/${it.id}/issue`, { karigar_id: k!.id, note, due_back: dueBack || null }); okCount += 1; issuedIds.push(it.id); }
       catch (_e) { failed.push(it.item_code); }
     }
     setBusy(false); submittingRef.current = false;
@@ -226,6 +229,7 @@ export default function IssueToKarigarScreen() {
               inHouse={kInHouse} onInHouse={(x) => setKInHouse(x as Karigar | null)}
               testID="issue-karigar"
             />
+            <DueBackField value={dueBack} onChange={setDueBack} days={[1, 3, 5, 7]} testID="issue-due-back" />
             <Text style={styles.label}>Note (optional)</Text>
             <TextInput testID="issue-note" value={note} onChangeText={setNote} placeholder="Instructions for the karigar" placeholderTextColor={colors.mutedText} style={styles.input} />
             <Pressable onPress={submitBulk} disabled={busy} style={[styles.saveBtn, busy && { opacity: 0.6 }]} testID="issue-bulk-save-btn">
@@ -257,6 +261,9 @@ export default function IssueToKarigarScreen() {
             />
             {!isEdit && kEntry.kind === 'none' && (
               <Text style={styles.hint}>No karigar needed on this job? Leave this blank and the tag will go straight to "Pending to Bill".</Text>
+            )}
+            {(isEdit || kEntry.kind !== 'none') && (
+              <DueBackField value={dueBack} onChange={setDueBack} days={[1, 3, 5, 7]} testID="issue-due-back" />
             )}
             <Text style={styles.label}>Note (optional)</Text>
             <TextInput testID="issue-note" value={note} onChangeText={setNote} placeholder="Instructions for the karigar" placeholderTextColor={colors.mutedText} style={styles.input} />
