@@ -131,10 +131,10 @@ export default function OwnerTabsLayout() {
           the bar still hides there, same as before. Route paths are
           unchanged (a group folder adds no URL segment), so nothing that
           links to /cashbook, /documents, /samples, /loans, or /repairs
-          needed updating. Gold Loans, Stock In/Out, Repairs and Attendance
-          hide the bottom bar (their header's back button is the way out);
-          Cash Book and Documents keep it. */}
-      <Tabs.Screen name="cashbook" options={{ href: null }} />
+          needed updating. Gold Loans, Stock In/Out, Repairs, Attendance and
+          Cash Book hide the bottom bar (their header's back button is the way
+          out); Documents keeps it. */}
+      <Tabs.Screen name="cashbook" options={{ href: null, tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="attendance" options={{ href: null, tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="documents" options={{ href: null }} />
       <Tabs.Screen name="samples" options={{ href: null, tabBarStyle: { display: 'none' } }} />
