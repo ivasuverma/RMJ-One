@@ -152,19 +152,20 @@ export default function SamplesScreen() {
                     {s.issued_by ? ` · by ${s.issued_by}` : ''}
                   </Text>
                 </View>
-                <View style={[styles.badge, isOverdue ? styles.badgeOverdue : s.status === 'received' ? styles.badgeReceived : styles.badgeOut]}>
-                  <Text style={[styles.badgeText, isOverdue ? styles.badgeTextOverdue : s.status === 'received' ? styles.badgeTextReceived : styles.badgeTextOut]}>
-                    {isOverdue ? 'Overdue' : s.status === 'received' ? 'Received' : 'With Karigar'}
-                  </Text>
+                {/* Status, and Receive under it (not on a row of its own) to keep the card short. */}
+                <View style={styles.cardSide}>
+                  <View style={[styles.badge, isOverdue ? styles.badgeOverdue : s.status === 'received' ? styles.badgeReceived : styles.badgeOut]}>
+                    <Text style={[styles.badgeText, isOverdue ? styles.badgeTextOverdue : s.status === 'received' ? styles.badgeTextReceived : styles.badgeTextOut]}>
+                      {isOverdue ? 'Overdue' : s.status === 'received' ? 'Received' : 'With Karigar'}
+                    </Text>
+                  </View>
+                  {s.status === 'with_karigar' && (
+                    <Pressable onPress={() => router.push(`/samples/receive?id=${s.id}` as any)} style={styles.recvBtn} testID={`receive-${s.id}`}>
+                      <Text style={styles.recvBtnText}>Receive</Text>
+                    </Pressable>
+                  )}
                 </View>
               </View>
-              {s.status === 'with_karigar' && (
-                <View style={styles.actRow}>
-                  <Pressable onPress={() => router.push(`/samples/receive?id=${s.id}` as any)} style={styles.recvBtn} testID={`receive-${s.id}`}>
-                    <Text style={styles.recvBtnText}>Receive</Text>
-                  </Pressable>
-                </View>
-              )}
             </Pressable>
           );
         })}
@@ -214,12 +215,13 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.sm,
   },
   cardTop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
+  // Full card height: the badge top-right, Receive bottom-right.
+  cardSide: { alignSelf: 'stretch', alignItems: 'flex-end', justifyContent: 'space-between', gap: spacing.sm },
   cardThumb: { width: 44, height: 44, borderRadius: radius.sm, backgroundColor: colors.surfaceTertiary },
   cardThumbFallback: {
     width: 44, height: 44, borderRadius: radius.sm, backgroundColor: colors.surfaceTertiary,
     alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border,
   },
-  actRow: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 6 },
   recvBtn: { backgroundColor: colors.brandPrimary, borderRadius: 8, paddingVertical: 6, paddingHorizontal: 12 },
   recvBtnText: { color: colors.onBrandPrimary, fontSize: 12, fontWeight: '700' },
   cName: { color: colors.onSurface, fontWeight: '700', fontSize: 14 },
