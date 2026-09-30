@@ -17,6 +17,7 @@ import { Screen, Section, StatTile, Skeleton, ErrorState, DualBalance, Tone, She
 import { LiveRateButton } from '@/src/components/LiveRateButton';
 import { UploadQueueBadge } from '@/src/components/UploadQueueBadge';
 import { TabBarSpacer } from '@/src/components/GlassTabBar';
+import HomeBriefing from '@/src/components/home/HomeBriefing';
 
 type DashboardData = {
   todays_attendance: {
@@ -107,7 +108,14 @@ type TileSpec = {
   route: string; dashboardRoute?: string; details?: TileDetailRow[];
 };
 
+/** Owners and admins get the daily briefing; everyone else keeps this dashboard. */
 export default function DashboardScreen() {
+  const { user } = useAuth();
+  if (user?.role === 'owner' || user?.role === 'admin') return <HomeBriefing />;
+  return <LegacyDashboard />;
+}
+
+function LegacyDashboard() {
   const { user, hasModule } = useAuth();
   const { colors } = useTheme();
   const { width } = useWindowDimensions();

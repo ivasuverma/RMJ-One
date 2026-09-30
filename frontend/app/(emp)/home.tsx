@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable, RefreshControl,
   ActivityIndicator, Platform,
@@ -22,6 +22,7 @@ import { employeeTabAccess } from '@/src/components/EmployeeTabBar';
 import { haptics } from '@/src/utils/haptics';
 import { useToast } from '@/src/components/ui';
 import { TabBarSpacer } from '@/src/components/GlassTabBar';
+import { useCachedLoad } from '@/src/hooks/use-cached-load';
 import { StickyHeader, useScrolled, HeaderSpacer } from '@/src/components/ui/StickyHeader';
 
 // Modules a tile can be shown for on this dashboard — icon/label/route match
@@ -45,7 +46,11 @@ type Att = {
   status?: string;
 };
 
+type Task = { id: string; title: string; due_date?: string };
+
 type Store = { work_start?: string; work_end?: string; grace_min?: number; name?: string; radius_m?: number; app_checkin_enabled?: boolean };
+
+type HomeData = { day: string; att: Att; store: Store; tasks: Task[] };
 
 const fmtTime = (iso?: string) => {
   if (!iso) return '—';
@@ -66,37 +71,36 @@ export default function EmployeeHome() {
     ? ['rgba(247,241,230,0.4)', 'rgba(247,241,230,0.98)'] as const
     : ['rgba(13,13,13,0.5)', 'rgba(13,13,13,0.98)'] as const;
   const router = useRouter();
-  const [att, setAtt] = useState<Att | null>(null);
-  const [store, setStore] = useState<Store>({});
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+  const [pulled, setPulled] = useState(false);
   const [showPunch, setShowPunch] = useState<null | 'check_in' | 'check_out'>(null);
   const [unread, setUnread] = useState(0);
-  const [myTasks, setMyTasks] = useState<{ id: string; title: string; due_date?: string }[]>([]);
   const moduleTiles = MODULE_TILES.filter((m) => hasModule(m.key));
 
-  const load = useCallback(async () => {
-    try {
-      const [a, s, t] = await Promise.all([
-        api.get<Att>('/attendance/me/today').catch(() => ({} as Att)),
-        api.get<Store>('/settings/store').catch(() => ({} as Store)),
-        api.get<{ id: string; title: string; due_date?: string }[]>('/tasks?status=open').catch(() => []),
-      ]);
-      setAtt(a || {});
-      setStore(s || {});
-      // Due-today or overdue only — what actually needs doing now, newest due first.
-      const today = todayIST();
-      setMyTasks((t || []).filter((x) => x.due_date && x.due_date <= today).sort((x, y) => (x.due_date || '').localeCompare(y.due_date || '')));
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
+  // The last copy saved on this phone paints instantly; fresh data swaps in behind it.
+  const { data, loading: fetching, reload } = useCachedLoad<HomeData>(user ? `emp_home_v1:${user.id}` : null, async () => {
+    const [a, s, t] = await Promise.all([
+      api.get<Att>('/attendance/me/today'),
+      api.get<Store>('/settings/store').catch(() => ({} as Store)),
+      api.get<Task[]>('/tasks?status=open').catch(() => [] as Task[]),
+    ]);
+    return { day: todayIST(), att: a || {}, store: s || {}, tasks: t || [] };
+  }, 120000);
+  const loading = !data;
+  const today = todayIST();
+  // A copy saved on an earlier day says nothing about today's punch.
+  const att: Att | null = data ? (data.day === today ? data.att : {}) : null;
+  const store: Store = data?.store || {};
+  // Due-today or overdue only — what actually needs doing now, oldest due first.
+  const myTasks = useMemo(() => (data?.tasks || [])
+    .filter((x) => x.due_date && x.due_date <= today)
+    .sort((x, y) => (x.due_date || '').localeCompare(y.due_date || '')), [data, today]);
+  const load = reload;
+  const refreshing = pulled && fetching;
+  useEffect(() => { if (!fetching) setPulled(false); }, [fetching]);
 
   useFocusEffect(useCallback(() => {
-    load();
     api.get<{ count: number }>('/notifications/unread-count').then((r) => setUnread(r.count)).catch(() => {});
-  }, [load]));
+  }, []));
 
   const doPunch = async (r: PunchResult) => {
     const endpoint = showPunch === 'check_in' ? '/attendance/check-in' : '/attendance/check-out';
@@ -146,7 +150,7 @@ export default function EmployeeHome() {
       </StickyHeader>
       <ScrollView onScroll={onScroll} scrollEventThrottle={16}
         contentContainerStyle={{ paddingBottom: spacing.xxxl }}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setPulled(true); load(); }} tintColor={colors.brandPrimary} />}
         showsVerticalScrollIndicator={false}
       >
         <HeaderSpacer />
