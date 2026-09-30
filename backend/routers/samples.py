@@ -73,7 +73,7 @@ async def create_samples(body: SampleIn, user=Depends(require_admin_or_module('s
         sample_id = str(uuid.uuid4())
         sample_code = await _next_sample_code()
         sample = {
-            'id': sample_id, 'sample_code': sample_code, 'description': spec.description,
+            'id': sample_id, 'sample_code': sample_code, 'description': (spec.description or '').strip(),
             'tag_number': spec.tag_number or '', 'weight': spec.weight, 'purity': round(spec.purity, 3), 'pc_count': spec.pc_count or 1,
             'photo': spec.photo or '', 'photo_thumb': _make_photo_thumb(spec.photo or ''),
             'issue_type': body.issue_type or '', 'due_date': body.due_date,
@@ -90,7 +90,7 @@ async def create_samples(body: SampleIn, user=Depends(require_admin_or_module('s
             'id': str(uuid.uuid4()), 'karigar_id': karigar['id'], 'karigar_name': karigar['name'], 'type': 'gold_out',
             'weight': spec.weight, 'fine_weight': round(spec.weight * spec.purity / 100, 3), 'amount': None,
             'item_id': sample_id, 'item_code': sample_code,
-            'note': f"Sample issued: {spec.description}{tag_note}", 'created_at': iso, 'created_by': user['name'],
+            'note': f"Sample issued: {spec.description or sample_code}{tag_note}", 'created_at': iso, 'created_by': user['name'],
         })
         created.append({k: v for k, v in sample.items() if k != '_id'})
 
