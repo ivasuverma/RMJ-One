@@ -1,11 +1,12 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Platform, Modal, TextInput, KeyboardAvoidingView,
+  View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Platform, Modal, KeyboardAvoidingView,
 } from 'react-native';
 import { notify } from '@/src/utils/notify';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
 import { api } from '@/src/api/client';
+import { TimeInput } from '@/src/components/TimeInput';
 import { useAuth } from '@/src/auth/AuthContext';
 import { confirmAction } from '@/src/utils/confirm';
 import { displayDateOnly, displayDateOnlyWithWeekday, istTime24 } from '@/src/utils/datetime';
@@ -361,24 +362,20 @@ function DayDetail({ day, empId, canEdit, shifts, onClose, onSaved }: {
           <View style={styles.timeRow}>
             <View style={{ flex: 1 }}>
               <Text style={styles.timeLabel}>Check-In</Text>
-              <TextInput
+              <TimeInput
                 testID="day-in-time"
                 value={inTime} onChangeText={(v) => { setInTime(v); setOffStatus(null); }}
-                editable
                 placeholder="HH:MM (24h)" placeholderTextColor={colors.mutedText}
-                keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'default'}
-                style={styles.timeInput} autoCapitalize="none"
+                style={styles.timeInput}
               />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.timeLabel}>Check-Out</Text>
-              <TextInput
+              <TimeInput
                 testID="day-out-time"
                 value={outTime} onChangeText={(v) => { setOutTime(v); setOffStatus(null); }}
-                editable
                 placeholder="HH:MM (24h)" placeholderTextColor={colors.mutedText}
-                keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'default'}
-                style={styles.timeInput} autoCapitalize="none"
+                style={styles.timeInput}
               />
             </View>
           </View>

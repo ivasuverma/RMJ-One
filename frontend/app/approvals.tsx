@@ -1,12 +1,13 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, Platform, ActivityIndicator, TextInput,
+  View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, Platform, ActivityIndicator,
 } from 'react-native';
 import { notify } from '@/src/utils/notify';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
+import { TimeInput } from '@/src/components/TimeInput';
 import { displayDateOnly, istTime24 } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
@@ -161,8 +162,8 @@ export default function Approvals() {
                           <View key={k} style={styles.timeBox}>
                             <Ionicons name={k === 'in' ? 'log-in-outline' : 'log-out-outline'} size={13} color={colors.brandSecondary} />
                             <Text style={styles.desiredText}>{k === 'in' ? 'In' : 'Out'}</Text>
-                            <TextInput value={timeFor(c)[k]} onChangeText={(v) => setTime(c, k, v)} placeholder="HH:MM" maxLength={5}
-                              placeholderTextColor={colors.mutedText} keyboardType="numbers-and-punctuation"
+                            <TimeInput value={timeFor(c)[k]} onChangeText={(v) => setTime(c, k, v)} placeholder="HH:MM"
+                              placeholderTextColor={colors.mutedText}
                               style={styles.timeInput} testID={`corr-${c.id}-${k}`} />
                           </View>
                         ))}
