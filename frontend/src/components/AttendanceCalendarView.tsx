@@ -365,7 +365,7 @@ function DayDetail({ day, empId, canEdit, shifts, onClose, onSaved }: {
               <TimeInput
                 testID="day-in-time"
                 value={inTime} onChangeText={(v) => { setInTime(v); setOffStatus(null); }}
-                placeholder="HH:MM (24h)" placeholderTextColor={colors.mutedText}
+                placeholder="HH:MM" placeholderTextColor={colors.mutedText}
                 style={styles.timeInput}
               />
             </View>
@@ -374,7 +374,7 @@ function DayDetail({ day, empId, canEdit, shifts, onClose, onSaved }: {
               <TimeInput
                 testID="day-out-time"
                 value={outTime} onChangeText={(v) => { setOutTime(v); setOffStatus(null); }}
-                placeholder="HH:MM (24h)" placeholderTextColor={colors.mutedText}
+                placeholder="HH:MM" placeholderTextColor={colors.mutedText}
                 style={styles.timeInput}
               />
             </View>
