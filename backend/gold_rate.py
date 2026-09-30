@@ -291,6 +291,13 @@ async def _store_live_rate(fetched_gold, fetched_silver, gold_rate, silver_rate,
         if v is not None:
             fields[k] = v
     await db.settings.update_one({'id': 'gold_rate_live'}, {'$set': fields}, upsert=True)
+    if gold_rate is not None:
+        # One row per day, overwritten with each fetch — so each day keeps its
+        # last rate, and Home can show the change since the previous day's.
+        day = now_utc().astimezone(IST).date().isoformat()
+        await db.rate_daily.update_one(
+            {'date': day}, {'$set': {'date': day, 'gold': gold_rate, 'silver': silver_rate, 'at': fetched_at}}, upsert=True,
+        )
 
 
 def _compute_rates(result: dict, cfg: dict) -> tuple:
