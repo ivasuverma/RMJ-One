@@ -104,3 +104,18 @@ def test_section_order_saved_per_user():
     assert 'punch' in e['order'] and 'cash' not in e['order']
     # The punch card can't be hidden.
     assert 'punch' not in requests.put(f"{API}/home/sections", headers=emp, json={'hidden': ['punch']}, timeout=30).json()['hidden']
+
+
+def test_staff_notification_status_and_nudge():
+    h = _login('owner', 'Owner@123')
+    r = requests.get(f"{API}/notifications/staff-status", headers=h, timeout=30)
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert isinstance(d['staff'], list) and d['off'] == sum(1 for x in d['staff'] if not x['devices'])
+    emp = _login('rmj001', '1234', employee=True)
+    assert requests.get(f"{API}/notifications/staff-status", headers=emp, timeout=30).status_code == 403
+    me = next(x for x in d['staff'] if x['name'])
+    n = requests.post(f"{API}/notifications/staff-nudge", headers=h, json={'employee_ids': [me['id']]}, timeout=30)
+    assert n.status_code == 200 and n.json()['reminded'] == 1
+    again = requests.get(f"{API}/notifications/staff-status", headers=h, timeout=30).json()
+    assert next(x for x in again['staff'] if x['id'] == me['id'])['nudged_at'] == n.json()['at']

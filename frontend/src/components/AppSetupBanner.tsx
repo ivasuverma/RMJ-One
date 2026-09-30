@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
 import { getPushPermission, isSubscribed, subscribeToPush } from '@/src/utils/push';
 import { storage } from '@/src/utils/storage';
+import { api } from '@/src/api/client';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
@@ -12,7 +13,8 @@ import { useTheme } from '@/src/theme/ThemeContext';
 //   2. turn on notifications.
 // It walks them through whichever step is still pending with clear, device-
 // specific instructions, and disappears entirely once both are done. The X hides
-// that step on this device for good (e.g. staff who only use a shared tablet).
+// that step on this device — until an admin presses Remind (Settings › Staff
+// Notifications), which brings it back.
 
 function isStandalone(): boolean {
   if (typeof window === 'undefined') return false;
@@ -36,14 +38,24 @@ export function AppSetupBanner() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
-  const [dismissed, setDismissed] = useState<Record<string, boolean>>({ install: true, notify: true });   // hidden until read
+  // mode -> when it was closed on this device (ISO time); hidden until read.
+  const [dismissed, setDismissed] = useState<Record<string, string | boolean>>({ install: true, notify: true });
+  const [nudgedAt, setNudgedAt] = useState<string | null>(null);
   useEffect(() => {
     storage.getItem<string>('app_setup_dismissed', '{}')
       .then((raw) => { try { setDismissed(JSON.parse(raw || '{}') || {}); } catch { setDismissed({}); } })
       .catch(() => setDismissed({}));
+    api.get<{ nudged_at: string | null }>('/notifications/status').then((r) => setNudgedAt(r?.nudged_at || null)).catch(() => {});
   }, []);
+  // Closed, and not reminded since.
+  const isDismissed = (m: Mode) => {
+    const d = dismissed[m];
+    if (!d) return false;
+    if (d === true || !nudgedAt) return d === true ? !nudgedAt : true;
+    return d > nudgedAt;
+  };
   const dismiss = (m: Mode) => {
-    const next = { ...dismissed, [m]: true };
+    const next = { ...dismissed, [m]: new Date().toISOString() };
     setDismissed(next);
     storage.setItem('app_setup_dismissed', JSON.stringify(next));
   };
@@ -96,7 +108,7 @@ export function AppSetupBanner() {
     setBusy(false);
   };
 
-  if (mode === 'done' || dismissed[mode]) return null;
+  if (mode === 'done' || isDismissed(mode)) return null;
 
   if (mode === 'install') {
     const ios = isIOS();

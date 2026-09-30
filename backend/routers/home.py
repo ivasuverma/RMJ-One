@@ -225,6 +225,16 @@ async def _rates(user: dict, today: str, s: dict, now: datetime) -> dict:
     ]
     out = {'items': [r for r in rows if r['rate']], 'fetched_at': live.get('fetched_at'),
            'can_open': can_view(user, 'gold_rate'), 'broadcast': None}
+    # Staff who can't get push notifications (owner/admin only — they can remind them).
+    if user.get('role') in ('owner', 'admin'):
+        from routers.notifications import staff_push_status
+        off = [r for r in await _shared('staff_push', 60, staff_push_status) if not r['devices']]
+        if off:
+            rows.append({'key': 'staff_notifications_off', 'severity': 'gold', 'module': 'notifications', 'count': len(off),
+                         'title': f"{len(off)} staff have notifications off" if len(off) != 1 else '1 staff member has notifications off',
+                         'detail': _names([r['name'] for r in off]),
+                         'action': 'Remind', 'route': '/settings/staff-notifications', 'can_act': True})
+
     if can_view(user, 'rate_broadcast'):
         out['broadcast'] = await _broadcast_status(s, now)
     return out
