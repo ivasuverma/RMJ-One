@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Platform, KeyboardAvoidingView,
 } from 'react-native';
@@ -48,9 +48,6 @@ export default function ReceiveSampleScreen() {
   const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const submittingRef = useRef(false);
-  // Settings › Items & Purity, only to name the purity (e.g. "22K · 91.6%").
-  const [purities, setPurities] = useState<{ name: string; purity: number }[]>([]);
-  useEffect(() => { api.get<{ name: string; purity: number }[]>('/item-master').then(setPurities).catch(() => {}); }, []);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -131,8 +128,7 @@ export default function ReceiveSampleScreen() {
   const w = parseFloat(receivedWeight) || 0;
   const diff = receivedWeight ? round3(w - sample.weight) : 0;
 
-  const namedPurity = sample.purity ? purities.find((p) => Math.abs(p.purity - (sample.purity as number)) < 0.001) : undefined;
-  const purityText = !sample.purity ? '—' : namedPurity ? `${namedPurity.name} · ${sample.purity}%` : `${sample.purity}%`;
+  const purityText = sample.purity ? `${sample.purity}%` : '—';
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="receive-sample-screen">
@@ -153,7 +149,7 @@ export default function ReceiveSampleScreen() {
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 60 }} keyboardShouldPersistTaps="handled">
           <View style={styles.pickedCard}>
-            <Text style={styles.cName}>{sample.sample_code}{sample.tag_number ? ` · Tag ${sample.tag_number}` : ''} · {sample.description}</Text>
+            <Text style={styles.cName}>{sample.sample_code}{sample.tag_number ? ` · Tag ${sample.tag_number}` : ''}</Text>
             <Text style={styles.cMeta}>with {sample.karigar_name}</Text>
           </View>
 
@@ -176,6 +172,10 @@ export default function ReceiveSampleScreen() {
               <Text style={styles.detailLabel}>Pieces</Text>
               <Text style={styles.detailValue}>{sample.pc_count ?? 1}</Text>
             </View>
+          </View>
+          <View style={[styles.detailCell, styles.detailWide]} testID="receive-description">
+            <Text style={styles.detailLabel}>Description</Text>
+            <Text style={[styles.detailValue, styles.detailDesc]}>{sample.description || '—'}</Text>
           </View>
 
           <Text style={styles.label}>Issued weight (g)</Text>
@@ -291,6 +291,8 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     flex: 1, backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
     paddingHorizontal: spacing.md, paddingVertical: 10,
   },
+  detailWide: { flexGrow: 0, flexShrink: 0, flexBasis: 'auto', marginTop: spacing.sm },
+  detailDesc: { fontSize: 14, fontWeight: '600', lineHeight: 20 },
   detailLabel: { color: colors.mutedText, fontSize: 11, fontWeight: '600' },
   detailValue: { color: colors.onSurface, fontSize: 15, fontWeight: '700', marginTop: 2 },
   readonlyBox: {
