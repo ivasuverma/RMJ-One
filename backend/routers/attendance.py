@@ -38,7 +38,6 @@ from server import (
     _resolve_attendance_state,
     _iter_month_dates,
     log_audit,
-    notify_user,
     _notify_module,
     IST,
 )
