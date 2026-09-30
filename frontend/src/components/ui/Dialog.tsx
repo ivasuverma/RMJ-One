@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { fonts, ThemeColors } from '@/src/theme';
@@ -38,43 +39,65 @@ export function DialogHost() {
     b?.onPress?.();
   };
   const cancel = dialog?.buttons.find((b) => b.style === 'cancel');
+
+  // Escape cancels, as the modal did on web.
+  useEffect(() => {
+    if (Platform.OS !== 'web' || !dialog || typeof window === 'undefined') return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && cancel) press(cancel); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [dialog]); // eslint-disable-line react-hooks/exhaustive-deps
   const row = (dialog?.buttons.length ?? 0) <= 2;
 
+  const content = (
+    <Pressable style={styles.backdrop} onPress={() => cancel && press(cancel)} accessibilityLabel="Dismiss">
+      <Pressable style={styles.card} accessibilityRole="alert" onPress={() => {}}>
+        <View style={styles.body}>
+          <Text style={styles.title}>{dialog?.title}</Text>
+          {!!dialog?.message && <Text style={styles.message}>{dialog.message}</Text>}
+        </View>
+        <View style={[styles.buttons, row && styles.buttonsRow]}>
+          {dialog?.buttons.map((b, i) => (
+            <Pressable
+              key={b.label}
+              onPress={() => press(b)}
+              accessibilityRole="button"
+              accessibilityLabel={b.label}
+              style={({ pressed }) => [
+                styles.btn, row && styles.btnRow, i > 0 && (row ? styles.sepLeft : styles.sepTop),
+                pressed && { backgroundColor: colors.surfaceTertiary },
+              ]}
+            >
+              <Text style={[
+                styles.btnText,
+                b.style === 'destructive' && { color: colors.onError },
+                b.style !== 'cancel' && { fontWeight: '600' },
+              ]}>{b.label}</Text>
+            </Pressable>
+          ))}
+        </View>
+      </Pressable>
+    </Pressable>
+  );
+
+  // Web: every Modal is its own layer on the page, stacked in the order they
+  // were first created — this host is created at app start, so a dialog
+  // opened from inside another modal (e.g. deleting from the document viewer)
+  // appeared BEHIND it. So on web it's drawn straight on the page, above
+  // every modal.
+  if (Platform.OS === 'web') {
+    if (!dialog || typeof document === 'undefined') return null;
+    return createPortal(<View style={styles.webLayer}>{content}</View>, document.body);
+  }
   return (
     <Modal visible={!!dialog} transparent animationType="fade" onRequestClose={() => press(cancel)}>
-      <Pressable style={styles.backdrop} onPress={() => cancel && press(cancel)} accessibilityLabel="Dismiss">
-        <Pressable style={styles.card} accessibilityRole="alert" onPress={() => {}}>
-          <View style={styles.body}>
-            <Text style={styles.title}>{dialog?.title}</Text>
-            {!!dialog?.message && <Text style={styles.message}>{dialog.message}</Text>}
-          </View>
-          <View style={[styles.buttons, row && styles.buttonsRow]}>
-            {dialog?.buttons.map((b, i) => (
-              <Pressable
-                key={b.label}
-                onPress={() => press(b)}
-                accessibilityRole="button"
-                accessibilityLabel={b.label}
-                style={({ pressed }) => [
-                  styles.btn, row && styles.btnRow, i > 0 && (row ? styles.sepLeft : styles.sepTop),
-                  pressed && { backgroundColor: colors.surfaceTertiary },
-                ]}
-              >
-                <Text style={[
-                  styles.btnText,
-                  b.style === 'destructive' && { color: colors.onError },
-                  b.style !== 'cancel' && { fontWeight: '600' },
-                ]}>{b.label}</Text>
-              </Pressable>
-            ))}
-          </View>
-        </Pressable>
-      </Pressable>
+      {content}
     </Modal>
   );
 }
 
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
+  webLayer: { position: 'fixed' as any, top: 0, left: 0, right: 0, bottom: 0, zIndex: 100000 },
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', alignItems: 'center', justifyContent: 'center', padding: 24 },
   card: { width: 290, maxWidth: '100%', backgroundColor: colors.surfaceSecondary, borderRadius: 16, overflow: 'hidden' },
   body: { paddingHorizontal: 18, paddingTop: 20, paddingBottom: 18, alignItems: 'center', gap: 6 },
