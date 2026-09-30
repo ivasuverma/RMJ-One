@@ -2536,7 +2536,8 @@ async def _notify_module_impl(module: str, title: str, body: str, url: str = '/'
             if module_gated and module not in resolve_modules({'role': 'employee', 'module_access': e.get('module_access')}):
                 continue
             wants_push = _wants_script(e, 'employee', module, script)
-            wants_wa = _wants_script_whatsapp(e, 'employee', module, script)
+            # Employees get attendance alerts as push only, never WhatsApp.
+            wants_wa = module != 'attendance' and _wants_script_whatsapp(e, 'employee', module, script)
             if wants_push or wants_wa:
                 await notify_user(e['id'], title, body, url, push=wants_push, whatsapp=wants_wa)
     except Exception as e:
@@ -2613,7 +2614,7 @@ async def _check_missed_attendance():
             continue
 
         await notify_user(emp['id'], 'Missed check-in',
-                           "You haven't checked in yet today — don't forget to mark your attendance.", '/')
+                           "You haven't checked in yet today — don't forget to mark your attendance.", '/', whatsapp=False)
         await db.attendance_reminders.update_one(
             {'employee_id': emp['id'], 'date': today},
             {'$set': {'employee_id': emp['id'], 'date': today, 'sent_at': now_utc().isoformat()}},
@@ -2655,7 +2656,7 @@ async def _check_missed_checkout():
             continue  # never checked in, or already checked out — nothing to remind about
 
         await notify_user(emp['id'], 'Missed check-out',
-                           "You checked in today but haven't checked out yet — don't forget before you leave.", '/')
+                           "You checked in today but haven't checked out yet — don't forget before you leave.", '/', whatsapp=False)
         # Also flag it to the owner/admin as an attendance discrepancy —
         # unlike the employee's own reminder above, this respects the
         # Notification Settings module toggle since it's a staff-facing
@@ -2737,7 +2738,7 @@ async def _check_daily_absentee_summary():
         # the missed-check-in/check-out reminders, independent of the
         # owner/admin summary broadcast below.
         await notify_user(emp['id'], 'Marked absent today',
-                           "You were marked absent today — no check-in was recorded and you weren't on approved leave.", '/')
+                           "You were marked absent today — no check-in was recorded and you weren't on approved leave.", '/', whatsapp=False)
 
     await db.absentee_summaries.update_one(
         {'date': today},

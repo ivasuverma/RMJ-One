@@ -648,7 +648,7 @@ async def decide_correction(cid: str, body: DecisionIn, user=Depends(require_adm
     }})
     await log_audit(user, f'correction.{new_status}', 'correction', cid, r.get('employee_code', ''))
     await notify_user(r['employee_id'], f'Correction {new_status}',
-                       f"Your correction request for {r['date']} was {new_status}", '/leaves')
+                       f"Your correction request for {r['date']} was {new_status}", '/leaves', whatsapp=False)
     return await db.corrections.find_one({'id': cid}, {'_id': 0})
 
 # ---------------- Leaves ----------------
@@ -700,7 +700,7 @@ async def decide_leave(lid: str, body: DecisionIn, user=Depends(require_admin_or
             'created_at': now_utc().isoformat(),
         })
     await notify_user(l['employee_id'], f'Leave {new_status}',
-                       f"Your leave request ({l['from_date']} → {l['to_date']}) was {new_status}", '/leaves')
+                       f"Your leave request ({l['from_date']} → {l['to_date']}) was {new_status}", '/leaves', whatsapp=False)
     await log_audit(user, f'leave.{new_status}', 'leave', lid, l.get('employee_code', ''))
     return await db.leaves.find_one({'id': lid}, {'_id': 0})
 
