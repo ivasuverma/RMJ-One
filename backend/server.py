@@ -1001,7 +1001,7 @@ class KarigarLedgerEntryIn(BaseModel):
 
 # ---------------- Samples (gold sample pieces issued to a karigar, expected back at the same weight) ----------------
 class SampleItemSpec(BaseModel):
-    description: str
+    description: Optional[str] = ''   # optional; the app fills in the purity item's name when blank
     tag_number: Optional[str] = ''
     weight: float
     pc_count: int = 1

@@ -11,8 +11,8 @@ export type ChooserKarigar = { id: string; name: string; mobile?: string; is_emp
 /**
  * Karigar entry, mobile first (see PartyByMobile): a saved number fills in
  * the karigar, an unknown one takes a name and creates a new karigar on save.
- * In-house karigars (staff) may have no mobile saved, so they're offered as
- * one-tap chips instead.
+ * In-house karigars (staff) may have no mobile saved; they're picked from the
+ * list instead (see PartyByMobile's list button).
  */
 export function KarigarChooser({
   karigars, mobile, onMobile, name, onName, inHouse, onInHouse, testID = 'karigar',
@@ -25,7 +25,6 @@ export function KarigarChooser({
 }) {
   const { colors } = useTheme();
   const s = useMemo(() => makeStyles(colors), [colors]);
-  const noMobile = useMemo(() => karigars.filter((k) => mobileKey(k.mobile).length < 7), [karigars]);
 
   return (
     <View>
@@ -41,16 +40,6 @@ export function KarigarChooser({
         <PartyByMobile list={karigars} mobile={mobile} onMobile={onMobile} name={name} onName={onName} kindLabel="karigar" testID={testID}
           // In-house karigars may have no number: picking one of them selects them directly.
           onPick={(k) => { if (mobileKey(k.mobile).length >= 7) { onMobile(k.mobile || ''); onName(''); } else onInHouse(k as ChooserKarigar); }} />
-      )}
-      {!inHouse && !mobile && noMobile.length > 0 && (
-        <View style={s.chips}>
-          <Text style={s.chipsLabel}>In-house:</Text>
-          {noMobile.map((k) => (
-            <Pressable key={k.id} onPress={() => onInHouse(k)} style={s.chip} testID={`${testID}-inhouse-${k.id}`}>
-              <Text style={s.chipText}>{k.name}</Text>
-            </Pressable>
-          ))}
-        </View>
       )}
     </View>
   );
@@ -76,8 +65,4 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   pickedMeta: { color: colors.mutedText, fontSize: 12 },
   smallBtn: { paddingHorizontal: spacing.md, paddingVertical: 6, borderRadius: radius.pill, backgroundColor: colors.surfaceTertiary },
   smallBtnText: { color: colors.onSurface, fontSize: 12, fontWeight: '700' },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: spacing.xs, marginTop: spacing.sm },
-  chipsLabel: { color: colors.mutedText, fontSize: 12, marginRight: 2 },
-  chip: { paddingHorizontal: 11, paddingVertical: 6, borderRadius: radius.pill, backgroundColor: colors.surfaceTertiary, borderWidth: 1, borderColor: colors.border },
-  chipText: { color: colors.onSurface, fontSize: 12, fontWeight: '600' },
 });

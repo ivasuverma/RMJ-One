@@ -68,8 +68,12 @@ export default function NewSampleScreen() {
   const [itemMasterId, setItemMasterId] = useState('');
   const [imPickerOpen, setImPickerOpen] = useState(false);
   const pickItemMaster = (im: ItemMaster) => { setItemMasterId(im.id); setPurity(String(im.purity)); setImPickerOpen(false); };
+  // Purity is picked from Settings › Items & Purity (e.g. "22K · 91.6%"); an
+  // older sample's purity that matches no item still shows as its %.
+  const pickedItem = itemMasters.find((im) => im.id === itemMasterId)
+    || (purity ? itemMasters.find((im) => im.active && Math.abs(im.purity - parseFloat(purity)) < 0.001) : undefined);
+  const purityLabel = pickedItem ? `${pickedItem.name} · ${pickedItem.purity}%` : purity ? `${purity}%` : '';
   const [dueDate, setDueDate] = useState('');
-  const [note, setNote] = useState('');
   const [photo, setPhoto] = useState('');
   const [cameraOpen, setCameraOpen] = useState(false);
 
@@ -86,7 +90,7 @@ export default function NewSampleScreen() {
         setIssueTypeOther(!!s.issue_type && !issueTypes.includes(s.issue_type));
         setDescription(s.description);
         setWeight(String(s.weight ?? '')); setPcCount(String(s.pc_count ?? '1')); setPurity(s.purity ? String(s.purity) : '');
-        setDueDate(s.due_date || ''); setNote(s.note || ''); setPhoto(s.photo || '');
+        setDueDate(s.due_date || ''); setPhoto(s.photo || '');
       } catch (e: any) { notify('Failed', e?.detail || 'Could not load this sample'); router.back(); }
       finally { setLoadingSample(false); }
     })();
@@ -110,21 +114,23 @@ export default function NewSampleScreen() {
 
   const submit = async () => {
     if (submittingRef.current) return;
+    if (!issueType.trim()) { notify('Missing', issueTypeOther ? 'Type the type of issue' : 'Choose the type of issue'); return; }
     if (!isEdit && kEntry.kind === 'none') { notify('Missing', 'Enter the mobile number of the karigar this sample goes to'); return; }
     if (!isEdit && kEntry.kind === 'error') { notify('Missing', kEntry.message); return; }
-    if (!description.trim()) { notify('Missing', 'Describe the sample piece'); return; }
     const w = parseFloat(weight);
     if (!w || w <= 0) { notify('Missing', 'Enter a weight greater than 0'); return; }
     const pur = parseFloat(purity);
-    if (!pur || pur <= 0 || pur > 100) { notify('Missing', 'Enter the purity (100 for pure gold, 92 for 22K, 75 for 18K)'); return; }
+    if (!pur || pur <= 0 || pur > 100) { notify('Missing', itemMasters.length ? 'Choose the purity' : 'Enter the purity (100 for pure gold, 92 for 22K, 75 for 18K)'); return; }
+    // Description is optional; a blank one takes the purity item's name (e.g. "22K") so lists aren't blank.
+    const desc = description.trim() || pickedItem?.name || '';
     if (!isEdit && !photo) { notify('Missing', 'Add a photo of the sample before saving'); return; }
     submittingRef.current = true;
     setSaving(true);
     try {
       if (isEdit) {
         await api.put(`/samples/${editId}`, {
-          description: description.trim(), weight: w, purity: pur, pc_count: parseInt(pcCount, 10) || 1,
-          issue_type: issueType.trim(), due_date: dueDate || null, photo, note,
+          description: desc, weight: w, purity: pur, pc_count: parseInt(pcCount, 10) || 1,
+          issue_type: issueType.trim(), due_date: dueDate || null, photo,
         });
         router.back();
       } else {
@@ -136,8 +142,8 @@ export default function NewSampleScreen() {
           kid = k.id;
         }
         const created = await api.post<{ id: string }[]>('/samples', {
-          karigar_id: kid, note: note.trim(), issue_type: issueType.trim(), due_date: dueDate || null,
-          items: [{ description: description.trim(), tag_number: '', weight: w, purity: pur, pc_count: parseInt(pcCount, 10) || 1, photo: '' }],
+          karigar_id: kid, issue_type: issueType.trim(), due_date: dueDate || null,
+          items: [{ description: desc, tag_number: '', weight: w, purity: pur, pc_count: parseInt(pcCount, 10) || 1, photo: '' }],
         });
         const rec = created?.[0];
         if (photo && rec?.id) {
@@ -196,7 +202,7 @@ export default function NewSampleScreen() {
             />
           )}
 
-          <Text style={styles.label}>Type of Issue (optional)</Text>
+          <Text style={styles.label}>Type of Issue</Text>
           <Pressable onPress={() => setIssueTypePickerOpen((v) => !v)} style={styles.picker} testID="sample-issue-type-toggle">
             <Text style={issueType || issueTypeOther ? styles.pickerValue : styles.pickerPlaceholder}>
               {issueTypeOther ? 'Other' : issueType || 'Choose a type'}
@@ -224,36 +230,25 @@ export default function NewSampleScreen() {
             />
           )}
 
-          <Text style={styles.label}>Item type (optional)</Text>
-          <Pressable onPress={() => setImPickerOpen((v) => !v)} style={styles.picker} testID="sample-item-master-toggle">
-            <Text style={itemMasterId ? styles.pickerValue : styles.pickerPlaceholder}>
-              {itemMasterId ? `${itemMasters.find((im) => im.id === itemMasterId)?.name} (${itemMasters.find((im) => im.id === itemMasterId)?.purity}%)` : 'Choose to fill in the purity below'}
-            </Text>
-            <Ionicons name={imPickerOpen ? 'chevron-up' : 'chevron-down'} size={16} color={colors.mutedText} />
-          </Pressable>
-          {imPickerOpen && (
-            <ScrollView style={styles.pickerList} nestedScrollEnabled keyboardShouldPersistTaps="handled">
-              {itemMasters.filter((im) => im.active).map((im) => (
-                <Pressable key={im.id} onPress={() => pickItemMaster(im)} style={styles.pickerRow} testID={`sample-item-master-${im.id}`}>
-                  <Text style={styles.pickerRowName}>{im.name}</Text>
-                  <Text style={styles.pickerRowMeta}>{im.purity}%</Text>
-                </Pressable>
-              ))}
-              {itemMasters.length === 0 && <Text style={[styles.pickerRowMeta, { padding: spacing.md }]}>No items set up yet — Settings › Items &amp; Purity</Text>}
-            </ScrollView>
-          )}
-
-          <Text style={styles.label}>Description</Text>
-          <TextInput testID="sample-description" value={description} onChangeText={setDescription} placeholder="e.g. 22K sample ring design" placeholderTextColor={colors.mutedText} style={styles.input} />
+          <Text style={styles.label}>Description (optional)</Text>
+          <TextInput testID="sample-description" value={description} onChangeText={setDescription} placeholder="e.g. sample ring design" placeholderTextColor={colors.mutedText} style={styles.input} />
 
           <View style={{ flexDirection: 'row', gap: spacing.sm, alignItems: 'flex-end' }}>
             <View style={{ flex: 2 }}>
               <Text style={styles.label}>Weight (g)</Text>
               <TextInput testID="sample-weight" value={weight} onChangeText={(v) => setWeight(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0.000" placeholderTextColor={colors.mutedText} style={styles.input} />
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.label}>Purity %</Text>
-              <TextInput testID="sample-purity" value={purity} onChangeText={(v) => setPurity(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="92" placeholderTextColor={colors.mutedText} style={styles.input} />
+            <View style={{ flex: 2 }}>
+              <Text style={styles.label}>Purity</Text>
+              {itemMasters.length > 0 ? (
+                <Pressable onPress={() => setImPickerOpen((v) => !v)} style={[styles.picker, styles.purityPicker]} testID="sample-item-master-toggle">
+                  <Text style={purityLabel ? styles.pickerValue : styles.pickerPlaceholder} numberOfLines={1}>{purityLabel || 'Choose'}</Text>
+                  <Ionicons name={imPickerOpen ? 'chevron-up' : 'chevron-down'} size={15} color={colors.mutedText} />
+                </Pressable>
+              ) : (
+                // Nothing set up in Settings › Items & Purity yet: type the % instead.
+                <TextInput testID="sample-purity" value={purity} onChangeText={(v) => { setPurity(v.replace(/[^0-9.]/g, '')); setItemMasterId(''); }} keyboardType="decimal-pad" placeholder="92 %" placeholderTextColor={colors.mutedText} style={styles.input} />
+              )}
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.label}>Pieces</Text>
@@ -263,6 +258,16 @@ export default function NewSampleScreen() {
               {photo ? <Image source={{ uri: photo }} style={styles.photoSmallImg} /> : <Ionicons name="camera-outline" size={20} color={colors.onSurfaceSecondary} />}
             </Pressable>
           </View>
+          {imPickerOpen && (
+            <ScrollView style={styles.pickerList} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+              {itemMasters.filter((im) => im.active).map((im) => (
+                <Pressable key={im.id} onPress={() => pickItemMaster(im)} style={styles.pickerRow} testID={`sample-item-master-${im.id}`}>
+                  <Text style={styles.pickerRowName}>{im.name}</Text>
+                  <Text style={styles.pickerRowMeta}>{im.purity}%</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+          )}
           {!!photo && (
             <Pressable onPress={() => setPhoto('')} style={styles.removePhotoLink} testID="sample-remove-photo">
               <Text style={styles.removePhotoText}>Remove photo</Text>
@@ -270,9 +275,6 @@ export default function NewSampleScreen() {
           )}
 
           <DateField label="Due back (optional)" value={dueDate} onChange={setDueDate} testID="sample-due-date" />
-
-          <Text style={styles.label}>Note (optional)</Text>
-          <TextInput testID="sample-note" value={note} onChangeText={setNote} placeholder="Anything worth remembering" placeholderTextColor={colors.mutedText} style={styles.input} multiline />
 
           <Pressable onPress={submit} disabled={saving} style={[styles.submitBtn, saving && { opacity: 0.6 }]} testID="submit-sample-btn">
             {saving ? <ActivityIndicator color={colors.onBrandPrimary} /> : (
@@ -322,6 +324,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   pickerDisabled: { opacity: 0.7 },
   pickerValue: { color: colors.onSurface, fontSize: 14, fontWeight: '600' },
   pickerPlaceholder: { color: colors.mutedText, fontSize: 14 },
+  purityPicker: { paddingHorizontal: spacing.sm },
   pickerList: { backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, marginTop: spacing.xs, maxHeight: 220 },
   pickerRow: { paddingHorizontal: spacing.md, paddingVertical: 10 },
   pickerRowName: { color: colors.onSurface, fontSize: 13, fontWeight: '600' },
