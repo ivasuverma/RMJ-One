@@ -43,11 +43,11 @@ export default function CorrectionForm() {
     const tin = askIn ? inTime.trim() : '';
     const tout = askOut ? outTime.trim() : '';
     if ((needIn && !tin) || (needOut && !tout)) {
-      notify('Add the time', needIn ? 'Enter the time you arrived (e.g. 10:15).' : 'Enter the time you left (e.g. 19:30).');
+      notify('Add the time', needIn ? 'Enter the time you arrived (e.g. 10:15 AM).' : 'Enter the time you left (e.g. 7:30 PM).');
       return;
     }
     if ((tin && !validTime(tin)) || (tout && !validTime(tout))) {
-      notify('Check the time', 'Use 24-hour HH:MM, e.g. 10:15 or 19:30.');
+      notify('Check the time', 'Enter the time as HH:MM (e.g. 10:15) and pick AM or PM.');
       return;
     }
     if (submittingRef.current) return;
@@ -104,14 +104,14 @@ export default function CorrectionForm() {
             {askIn && (
               <View style={{ flex: 1 }}>
                 <Text style={styles.label}>{needIn ? 'Time you arrived' : 'Check-in time (optional)'}</Text>
-                <TimeInput testID="corr-in-time" value={inTime} onChangeText={setInTime} placeholder="HH:MM e.g. 10:15"
+                <TimeInput testID="corr-in-time" value={inTime} onChangeText={setInTime} placeholder="e.g. 10:15"
                   placeholderTextColor={colors.mutedText} style={styles.timeInput} />
               </View>
             )}
             {askOut && (
               <View style={{ flex: 1 }}>
                 <Text style={styles.label}>{needOut ? 'Time you left' : 'Check-out time (optional)'}</Text>
-                <TimeInput testID="corr-out-time" value={outTime} onChangeText={setOutTime} placeholder="HH:MM e.g. 19:30"
+                <TimeInput testID="corr-out-time" value={outTime} onChangeText={setOutTime} placeholder="e.g. 07:30"
                   placeholderTextColor={colors.mutedText} style={styles.timeInput} />
               </View>
             )}

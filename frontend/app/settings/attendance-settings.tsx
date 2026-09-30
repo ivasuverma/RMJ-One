@@ -153,10 +153,10 @@ export default function AttendanceSettings() {
           <SectionTitle text="Shift Hours" />
           <View style={styles.row2}>
             <View style={{ flex: 1 }}>
-              <F label="Start (HH:MM)" time v={form.work_start} onC={(v) => setForm({ ...form, work_start: v })} testID="as-start" />
+              <F label="Start" time v={form.work_start} onC={(v) => setForm({ ...form, work_start: v })} testID="as-start" />
             </View>
             <View style={{ flex: 1 }}>
-              <F label="End (HH:MM)" time v={form.work_end} onC={(v) => setForm({ ...form, work_end: v })} testID="as-end" />
+              <F label="End" time v={form.work_end} onC={(v) => setForm({ ...form, work_end: v })} testID="as-end" />
             </View>
           </View>
           <F label="Late Grace (minutes)" v={form.grace_min} onC={(v) => setForm({ ...form, grace_min: v.replace(/[^0-9]/g, '') })} kt="numeric" testID="as-grace" />

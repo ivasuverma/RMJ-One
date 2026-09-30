@@ -25,6 +25,11 @@ type DayView = { in: string; out: string; hours: string; status: string; note?: 
 
 const STATUS_LABEL: Record<string, string> = { present: 'Present', half_day: 'Half day', absent: 'Absent', leave: 'Leave', holiday: 'Holiday', weekly_off: 'Weekly off' };
 const toMin = (t: string) => { const m = /^(\d{1,2}):(\d{2})$/.exec(t.trim()); return m ? +m[1] * 60 + +m[2] : null; };
+// "19:30" → "7:30 PM" for display; anything else is shown as it is.
+const to12h = (v: string) => {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(v);
+  return m ? `${+m[1] % 12 || 12}:${m[2]} ${+m[1] < 12 ? 'AM' : 'PM'}` : v;
+};
 const fmtHours = (h?: number | null) => (h ? `${Math.floor(h)}h ${String(Math.round((h % 1) * 60)).padStart(2, '0')}m` : '—');
 const viewOf = (d?: DaySummary | null): DayView => d
   ? { in: d.check_in ? istTime24(d.check_in) : '—', out: d.check_out ? istTime24(d.check_out) : '—', hours: fmtHours(d.working_hours), status: STATUS_LABEL[d.status || ''] || '—' }
@@ -44,7 +49,7 @@ function projected(cur: DayView, t: { in: string; out: string }, hasRecord: bool
   if (t.out.trim() && a !== null && b !== null && b <= a && b < 720 && b + 720 > a) {
     b += 720;
     out = `${String(Math.floor(b / 60)).padStart(2, '0')}:${String(b % 60).padStart(2, '0')}`;
-    note = `${tout} read as ${out} (PM)`;
+    note = `${to12h(tout)} read as ${to12h(out)}`;
   }
   const bad = a !== null && b !== null && b <= a;
   const hrs = a !== null && b !== null && b > a ? (b - a) / 60 : 0;
@@ -157,11 +162,11 @@ export default function Approvals() {
                     <Text style={styles.meta}>{c.employee_code} · {reasonLabel(c.reason_type)} · {fmtDate(c.date)}</Text>
                     {c.status === 'pending' ? (
                       // Editable: approving writes these onto the day (blank = keep what's there).
-                      <View style={styles.desiredRow}>
+                      <View style={styles.timeCol}>
                         {(['in', 'out'] as const).map((k) => (
                           <View key={k} style={styles.timeBox}>
                             <Ionicons name={k === 'in' ? 'log-in-outline' : 'log-out-outline'} size={13} color={colors.brandSecondary} />
-                            <Text style={styles.desiredText}>{k === 'in' ? 'In' : 'Out'}</Text>
+                            <Text style={[styles.desiredText, { width: 26 }]}>{k === 'in' ? 'In' : 'Out'}</Text>
                             <TimeInput value={timeFor(c)[k]} onChangeText={(v) => setTime(c, k, v)} placeholder="HH:MM"
                               placeholderTextColor={colors.mutedText}
                               style={styles.timeInput} testID={`corr-${c.id}-${k}`} />
@@ -196,7 +201,7 @@ export default function Approvals() {
                     onApprove={() => {
                       const t = timeFor(c);
                       const ok = (v: string) => !v.trim() || /^([01]?\d|2[0-3]):[0-5]\d$/.test(v.trim());
-                      if (!ok(t.in) || !ok(t.out)) { notify('Check the time', 'Use 24-hour HH:MM, e.g. 10:15 or 19:30.'); return; }
+                      if (!ok(t.in) || !ok(t.out)) { notify('Check the time', 'Enter the time as HH:MM and pick AM or PM.'); return; }
                       decide('correction', c.id, 'approve', {
                         ...(t.in.trim() ? { check_in: t.in.trim() } : {}), ...(t.out.trim() ? { check_out: t.out.trim() } : {}),
                       });
@@ -252,8 +257,8 @@ function Compare({ left, right, leftLabel, rightLabel, testID }: { left: DayView
         return (
           <View key={k} style={styles.cmpRow}>
             <Text style={styles.cmpKey}>{label}</Text>
-            <Text style={[styles.cmpCell, changed && left[k] !== '—' && styles.cmpOld]}>{left[k]}</Text>
-            <Text style={[styles.cmpCell, changed && styles.cmpNew]}>{right[k]}</Text>
+            <Text style={[styles.cmpCell, changed && left[k] !== '—' && styles.cmpOld]}>{k === 'in' || k === 'out' ? to12h(left[k] as string) : left[k]}</Text>
+            <Text style={[styles.cmpCell, changed && styles.cmpNew]}>{k === 'in' || k === 'out' ? to12h(right[k] as string) : right[k]}</Text>
           </View>
         );
       })}
@@ -355,11 +360,12 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   cmpOld: { color: colors.mutedText, textDecorationLine: 'line-through' },
   cmpNote: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '600', paddingHorizontal: 10, paddingVertical: 6, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.divider },
   cmpNew: { color: colors.brandPrimary, fontWeight: '800' },
+  timeCol: { gap: 6, marginTop: 8 },
   timeBox: {
-    flexDirection: 'row', alignItems: 'center', gap: 5, paddingLeft: 8, borderRadius: radius.sm,
+    flexDirection: 'row', alignItems: 'center', gap: 5, paddingLeft: 8, paddingRight: 3, paddingVertical: 3, borderRadius: radius.sm,
     borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface,
   },
-  timeInput: { width: 58, paddingVertical: 5, paddingHorizontal: 4, color: colors.onSurface, fontSize: 13, fontWeight: '700' },
+  timeInput: { paddingVertical: 5, paddingHorizontal: 2, color: colors.onSurface, fontSize: 13, fontWeight: '700' },
   desiredText: { color: colors.brandSecondary, fontSize: 11, fontWeight: '700' },
 
   actions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
