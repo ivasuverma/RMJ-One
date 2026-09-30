@@ -42,7 +42,7 @@ function makeStatusStyles(colors: ThemeColors, scheme: 'light' | 'dark'): Record
     missing_punch: light ? { bg: '#FCE4EF', fg: '#A32468' } : { bg: '#4A1330', fg: '#F2A0C7' }, // pink/magenta
     leave: { bg: colors.info, fg: colors.onInfo },                                              // blue
     holiday: { bg: colors.surfaceTertiary, fg: colors.mutedText },                              // neutral grey
-    weekly_off: light ? { bg: '#E1EFEA', fg: '#2F7A62' } : { bg: '#163A32', fg: '#7FD9BC' },     // teal
+    weekly_off: light ? { bg: '#D9F2FA', fg: '#0A7EA4' } : { bg: '#0E3440', fg: '#7DD3EA' },     // sky cyan — teal was too close to present's green
   };
 }
 
