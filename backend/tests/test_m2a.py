@@ -162,7 +162,7 @@ class TestCorrections:
         h = _emp_headers('RMJ003', '3456')
         # create
         r = requests.post(f"{API}/attendance/corrections", headers=h, json={
-            'reason_type': 'forgot_check_in', 'note': 'TEST correction'
+            'reason_type': 'forgot_check_in', 'note': 'TEST correction', 'desired_check_in': '10:15',
         }, timeout=30)
         assert r.status_code == 200, r.text
         cid = r.json()['id']
@@ -186,6 +186,52 @@ class TestCorrections:
         # decide again -> 400
         rd2 = requests.post(f"{API}/attendance/corrections/{cid}/decide", headers=owner_headers, json={'action': 'approve'}, timeout=30)
         assert rd2.status_code == 400
+
+
+    def test_forgot_check_out_is_applied_and_keeps_check_in(self, owner_headers):
+        """Approving a 'forgot check-out' must actually set the check-out on the day,
+        keep the existing check-in, and work out the hours again."""
+        h = _emp_headers('RMJ003', '3456')
+        me = requests.get(f"{API}/auth/me", headers=h, timeout=30).json()
+        emp_id = me.get('employee_id') or me.get('id')
+        day = '2026-01-07'
+        # The day as it was: checked in at 10:00, never checked out.
+        r0 = requests.put(f"{API}/attendance/day/{emp_id}/{day}", headers=owner_headers,
+                          json={'status': 'present', 'check_in_time': '10:00'}, timeout=30)
+        assert r0.status_code == 200, r0.text
+        # A request with no time for a day that has a record can't be applied: refused, not silently "approved".
+        bare = requests.post(f"{API}/attendance/corrections", headers=h,
+                             json={'date': day, 'reason_type': 'forgot_check_out'}, timeout=30).json()
+        # The approver sees the day as it stands now.
+        pend = requests.get(f"{API}/attendance/corrections?status=pending", headers=owner_headers, timeout=30).json()
+        cur = next(x for x in pend if x['id'] == bare['id'])['current']
+        assert cur['check_in'] and cur['check_out'] is None
+        rb = requests.post(f"{API}/attendance/corrections/{bare['id']}/decide", headers=owner_headers, json={'action': 'approve'}, timeout=30)
+        assert rb.status_code == 400
+        # ...but the approver can supply the time while approving.
+        rb2 = requests.post(f"{API}/attendance/corrections/{bare['id']}/decide", headers=owner_headers,
+                            json={'action': 'approve', 'check_out': '19:30'}, timeout=30)
+        assert rb2.status_code == 200, rb2.text
+        assert rb2.json()['status'] == 'approved' and rb2.json()['applied_check_out'] == '19:30'
+        # ...and it keeps a before/after record of what approving changed.
+        assert rb2.json()['before']['check_out'] is None and rb2.json()['after']['working_hours'] == 9.5
+        cal = requests.get(f"{API}/attendance/calendar/{emp_id}?year=2026&month=1", headers=owner_headers, timeout=30).json()
+        d = next(x for x in cal['days'] if x['date'] == day)
+        assert d['check_in'] and d['check_out']
+        assert d['working_hours'] == 9.5
+
+        # Employee's own time is used when the approver doesn't change it; check-in stays as it was.
+        c = requests.post(f"{API}/attendance/corrections", headers=h,
+                          json={'date': day, 'reason_type': 'forgot_check_out', 'desired_check_out': '12:30'}, timeout=30).json()
+        assert requests.post(f"{API}/attendance/corrections/{c['id']}/decide", headers=owner_headers, json={'action': 'approve'}, timeout=30).status_code == 200
+        cal = requests.get(f"{API}/attendance/calendar/{emp_id}?year=2026&month=1", headers=owner_headers, timeout=30).json()
+        d = next(x for x in cal['days'] if x['date'] == day)
+        assert d['working_hours'] == 2.5 and d['status'] == 'half_day'
+
+        # Bad time format is rejected at request time.
+        assert requests.post(f"{API}/attendance/corrections", headers=h,
+                             json={'date': day, 'reason_type': 'other', 'desired_check_in': '25:99'}, timeout=30).status_code == 422
+        requests.delete(f"{API}/attendance/day/{emp_id}/{day}", headers=owner_headers, timeout=30)
 
 
 # ------- Leaves -------

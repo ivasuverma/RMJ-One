@@ -524,6 +524,7 @@ async def create_correction(body: CorrectionIn, user=Depends(require_employee)):
         'employee_code': user['employee_code'],
         'date': body.date or today_str(),
         'reason_type': body.reason_type, 'note': body.note or '',
+        'desired_check_in': body.desired_check_in, 'desired_check_out': body.desired_check_out,
         'status': 'pending', 'created_at': iso, 'decided_by': None, 'decided_at': None, 'decision_note': '',
     }
     await db.corrections.insert_one(dict(doc))
@@ -541,7 +542,82 @@ async def list_corrections(
     query: dict = {}
     if status_: query['status'] = status_
     if user['role'] == 'employee': query['employee_id'] = user['id']
-    return await db.corrections.find(query, {'_id': 0}).sort('created_at', -1).to_list(500)
+    rows = await db.corrections.find(query, {'_id': 0}).sort('created_at', -1).to_list(500)
+    # Pending requests carry the day as it stands now ("current"), so the approver
+    # can compare it with what approving would make it. Decided ones already carry
+    # the before/after snapshot taken when they were approved.
+    pending = [c for c in rows if c.get('status') == 'pending']
+    if pending:
+        keys = {(c['employee_id'], c['date']) for c in pending}
+        found = {}
+        async for a in db.attendance.find(
+            {'employee_id': {'$in': list({k[0] for k in keys})}, 'date': {'$in': list({k[1] for k in keys})}},
+            {'_id': 0, 'employee_id': 1, 'date': 1, 'check_in.timestamp': 1, 'check_out.timestamp': 1, 'working_hours': 1, 'status': 1},
+        ):
+            found[(a['employee_id'], a['date'])] = _day_summary(a)
+        for c in pending:
+            c['current'] = found.get((c['employee_id'], c['date']))
+    return rows
+
+
+def _day_summary(a: Optional[dict]) -> Optional[dict]:
+    """The parts of an attendance day a correction changes, for showing before/after."""
+    if not a:
+        return None
+    return {
+        'check_in': (a.get('check_in') or {}).get('timestamp'),
+        'check_out': (a.get('check_out') or {}).get('timestamp'),
+        'working_hours': a.get('working_hours') or 0,
+        'status': a.get('status'),
+    }
+
+
+async def _apply_correction(r: dict, t_in: Optional[str], t_out: Optional[str], user: dict) -> dict:
+    """Write an approved correction onto the employee's day. Only the time(s) given
+    change — the other punch is kept — and hours and full/half day are worked out
+    again from the resulting check-in and check-out (same 4-hour rule as a normal
+    check-out). A day with no record and no times becomes a stub 8-hour present day,
+    as before. Raises if there is nothing to apply, instead of approving silently."""
+    existing = await db.attendance.find_one({'employee_id': r['employee_id'], 'date': r['date']}, {'_id': 0})
+    before = _day_summary(existing)
+    now_iso = now_utc().isoformat()
+    if not (t_in or t_out):
+        if existing:
+            raise HTTPException(status_code=400, detail='Enter the check-in and/or check-out time to apply before approving')
+        await db.attendance.insert_one({
+            'id': str(uuid.uuid4()), 'employee_id': r['employee_id'], 'date': r['date'],
+            'check_in': None, 'check_out': None, 'is_late': False, 'working_hours': 8,
+            'status': 'present', 'created_at': now_iso, 'via_correction': True,
+        })
+        return {'in': None, 'out': None, 'before': before,
+                'after': {'check_in': None, 'check_out': None, 'working_hours': 8, 'status': 'present'}}
+    iso_in = _combine_dt(r['date'], t_in) if t_in else None
+    iso_out = _combine_dt(r['date'], t_out) if t_out else None
+    edit = {'edited': True, 'via_correction': True}
+    check_in = {**((existing or {}).get('check_in') or {}), 'timestamp': iso_in, **edit} if iso_in else (existing or {}).get('check_in')
+    check_out = {**((existing or {}).get('check_out') or {}), 'timestamp': iso_out, **edit} if iso_out else (existing or {}).get('check_out')
+    hours = 0
+    if check_in and check_out and check_in.get('timestamp') and check_out.get('timestamp'):
+        try:
+            hours = round((datetime.fromisoformat(check_out['timestamp']) - datetime.fromisoformat(check_in['timestamp'])).total_seconds() / 3600, 2)
+        except Exception:
+            hours = 0
+        if hours <= 0:
+            raise HTTPException(status_code=400, detail='Check-out must be after check-in')
+    update = {
+        'check_in': check_in, 'check_out': check_out, 'working_hours': hours,
+        'status': ('present' if hours >= 4 else 'half_day') if hours else 'present',
+        'half_day_reason': 'short_hours' if 0 < hours < 4 else None,
+        'via_correction': True, 'edited_by': user['name'], 'edited_at': now_iso,
+    }
+    if existing:
+        await db.attendance.update_one({'id': existing['id']}, {'$set': update})
+    else:
+        await db.attendance.insert_one({
+            'id': str(uuid.uuid4()), 'employee_id': r['employee_id'], 'date': r['date'],
+            'is_late': False, 'created_at': now_iso, **update,
+        })
+    return {'in': t_in, 'out': t_out, 'before': before, 'after': _day_summary(update)}
 
 
 @router.post('/attendance/corrections/{cid}/decide')
@@ -550,43 +626,17 @@ async def decide_correction(cid: str, body: DecisionIn, user=Depends(require_adm
     if not r: raise HTTPException(status_code=404, detail='Correction not found')
     if r['status'] != 'pending': raise HTTPException(status_code=400, detail='Already decided')
     new_status = 'approved' if body.action == 'approve' else 'rejected'
+    applied = None
+    if new_status == 'approved':
+        # Apply first, so a correction is only marked approved once the day really changed.
+        applied = await _apply_correction(r, body.check_in or r.get('desired_check_in'),
+                                          body.check_out or r.get('desired_check_out'), user)
     await db.corrections.update_one({'id': cid}, {'$set': {
         'status': new_status, 'decided_by': user['name'], 'decided_at': now_utc().isoformat(),
         'decision_note': body.note or '',
+        **({'applied_check_in': applied.get('in'), 'applied_check_out': applied.get('out'),
+            'before': applied.get('before'), 'after': applied.get('after')} if applied else {}),
     }})
-    # If approved, add a stub attendance entry so it counts in payroll
-    if new_status == 'approved':
-        existing = await db.attendance.find_one({'employee_id': r['employee_id'], 'date': r['date']}, {'_id': 0})
-        # If desired times were provided, apply them precisely; otherwise create a stub 8-hour day.
-        desired_in = r.get('desired_check_in')
-        desired_out = r.get('desired_check_out')
-        if desired_in or desired_out:
-            iso_in = _combine_dt(r['date'], desired_in) if desired_in else None
-            iso_out = _combine_dt(r['date'], desired_out) if desired_out else None
-            hours = 0
-            if iso_in and iso_out:
-                try:
-                    hours = round((datetime.fromisoformat(iso_out) - datetime.fromisoformat(iso_in)).total_seconds() / 3600, 2)
-                except Exception: hours = 0
-            update = {
-                'check_in': {'timestamp': iso_in, 'edited': True} if iso_in else None,
-                'check_out': {'timestamp': iso_out, 'edited': True} if iso_out else None,
-                'working_hours': hours, 'status': 'present' if hours >= 4 else 'half_day' if hours > 0 else 'present',
-                'via_correction': True, 'edited_by': user['name'], 'edited_at': now_utc().isoformat(),
-            }
-            if existing:
-                await db.attendance.update_one({'id': existing['id']}, {'$set': update})
-            else:
-                await db.attendance.insert_one({
-                    'id': str(uuid.uuid4()), 'employee_id': r['employee_id'], 'date': r['date'],
-                    'is_late': False, 'created_at': now_utc().isoformat(), **update,
-                })
-        elif not existing:
-            await db.attendance.insert_one({
-                'id': str(uuid.uuid4()), 'employee_id': r['employee_id'], 'date': r['date'],
-                'check_in': None, 'check_out': None, 'is_late': False, 'working_hours': 8,
-                'status': 'present', 'created_at': now_utc().isoformat(), 'via_correction': True,
-            })
     await log_audit(user, f'correction.{new_status}', 'correction', cid, r.get('employee_code', ''))
     await notify_user(r['employee_id'], f'Correction {new_status}',
                        f"Your correction request for {r['date']} was {new_status}", '/leaves')

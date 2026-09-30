@@ -10,6 +10,8 @@ import { api } from '@/src/api/client';
 import { notify } from '@/src/utils/notify';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { DateField } from '@/src/components/DateField';
+import { shiftedISTDate } from '@/src/utils/datetime';
 
 const OPTIONS = [
   { key: 'forgot_check_in', label: 'Forgot Check-In', icon: 'log-in-outline' },
@@ -24,15 +26,37 @@ export default function CorrectionForm() {
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [type, setType] = useState<typeof OPTIONS[number]['key']>('forgot_check_in');
   const [note, setNote] = useState('');
+  // The day and the actual time(s) — what the approver applies to the attendance.
+  const [date, setDate] = useState(shiftedISTDate(0));
+  const [inTime, setInTime] = useState('');
+  const [outTime, setOutTime] = useState('');
+  const askIn = type !== 'forgot_check_out';
+  const askOut = type !== 'forgot_check_in';
+  const needIn = type === 'forgot_check_in';
+  const needOut = type === 'forgot_check_out';
+  const validTime = (t: string) => /^([01]?\d|2[0-3]):[0-5]\d$/.test(t.trim());
   const [saving, setSaving] = useState(false);
   const submittingRef = useRef(false);
 
   const submit = async () => {
+    const tin = askIn ? inTime.trim() : '';
+    const tout = askOut ? outTime.trim() : '';
+    if ((needIn && !tin) || (needOut && !tout)) {
+      notify('Add the time', needIn ? 'Enter the time you arrived (e.g. 10:15).' : 'Enter the time you left (e.g. 19:30).');
+      return;
+    }
+    if ((tin && !validTime(tin)) || (tout && !validTime(tout))) {
+      notify('Check the time', 'Use 24-hour HH:MM, e.g. 10:15 or 19:30.');
+      return;
+    }
     if (submittingRef.current) return;
     submittingRef.current = true;
     setSaving(true);
     try {
-      await api.post('/attendance/corrections', { reason_type: type, note });
+      await api.post('/attendance/corrections', {
+        reason_type: type, note, date,
+        desired_check_in: tin || null, desired_check_out: tout || null,
+      });
       notify('Submitted', 'Your correction request was sent to the owner.');
       router.back();
     } catch (e: any) {
@@ -69,6 +93,27 @@ export default function CorrectionForm() {
                 {type === o.key && <Ionicons name="checkmark-circle" size={20} color={colors.brandPrimary} />}
               </Pressable>
             ))}
+          </View>
+
+          <View style={{ marginTop: spacing.xl }}>
+            <DateField label="Day" value={date} onChange={setDate} testID="corr-date" />
+          </View>
+
+          <View style={styles.timeRow}>
+            {askIn && (
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>{needIn ? 'Time you arrived' : 'Check-in time (optional)'}</Text>
+                <TextInput testID="corr-in-time" value={inTime} onChangeText={setInTime} placeholder="HH:MM e.g. 10:15"
+                  placeholderTextColor={colors.mutedText} style={styles.timeInput} keyboardType="numbers-and-punctuation" maxLength={5} />
+              </View>
+            )}
+            {askOut && (
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>{needOut ? 'Time you left' : 'Check-out time (optional)'}</Text>
+                <TextInput testID="corr-out-time" value={outTime} onChangeText={setOutTime} placeholder="HH:MM e.g. 19:30"
+                  placeholderTextColor={colors.mutedText} style={styles.timeInput} keyboardType="numbers-and-punctuation" maxLength={5} />
+              </View>
+            )}
           </View>
 
           <Text style={[styles.label, { marginTop: spacing.xl }]}>Note (optional)</Text>
@@ -117,6 +162,11 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   optLabel: { flex: 1, color: colors.onSurfaceTertiary, fontSize: 14, fontWeight: '600' },
+  timeRow: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.lg },
+  timeInput: {
+    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    paddingHorizontal: spacing.md, paddingVertical: 12, color: colors.onSurface, fontSize: 15, marginTop: -spacing.sm,
+  },
   textArea: {
     minHeight: 100, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md,
     borderWidth: 1, borderColor: colors.border, padding: spacing.md, color: colors.onSurface,
