@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Platform, KeyboardAvoidingView,
 } from 'react-native';
@@ -17,6 +17,7 @@ type Sample = {
   id: string; sample_code: string; description: string; tag_number: string;
   weight: number; karigar_name: string; status: 'with_karigar' | 'received';
   photo?: string;   // older samples kept their photo inline; newer ones use record photos
+  issue_type?: string; purity?: number | null; pc_count?: number;
   received_weight: number | null; note: string;
   pay_weight?: number | null; recv_weight?: number | null; write_off_loss?: boolean;
 };
@@ -48,6 +49,9 @@ export default function ReceiveSampleScreen() {
   const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const submittingRef = useRef(false);
+  // Settings › Items & Purity, only to name the purity (e.g. "22K · 91.6%").
+  const [purities, setPurities] = useState<{ name: string; purity: number }[]>([]);
+  useEffect(() => { api.get<{ name: string; purity: number }[]>('/item-master').then(setPurities).catch(() => {}); }, []);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -129,6 +133,9 @@ export default function ReceiveSampleScreen() {
   const w = parseFloat(receivedWeight) || 0;
   const diff = receivedWeight ? round3(w - sample.weight) : 0;
 
+  const namedPurity = sample.purity ? purities.find((p) => Math.abs(p.purity - (sample.purity as number)) < 0.001) : undefined;
+  const purityText = !sample.purity ? '—' : namedPurity ? `${namedPurity.name} · ${sample.purity}%` : `${sample.purity}%`;
+
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="receive-sample-screen">
       <View style={styles.header}>
@@ -156,6 +163,22 @@ export default function ReceiveSampleScreen() {
           {sample.photo ? <Image source={{ uri: sample.photo }} style={styles.issuePhoto} contentFit="cover" testID="receive-issue-photo" /> : null}
           <RecordPhotos refType="sample" refId={sample.id} label="Photos at issue" readOnly
             emptyText={sample.photo ? '' : 'No photos were taken when this was issued.'} />
+
+          {/* What was issued, to check against what's come back. */}
+          <View style={styles.detailRow} testID="receive-issued-details">
+            <View style={[styles.detailCell, { flex: 1.4 }]}>
+              <Text style={styles.detailLabel}>Type of issue</Text>
+              <Text style={styles.detailValue} numberOfLines={1}>{sample.issue_type || '—'}</Text>
+            </View>
+            <View style={[styles.detailCell, { flex: 1.6 }]}>
+              <Text style={styles.detailLabel}>Purity</Text>
+              <Text style={styles.detailValue} numberOfLines={1}>{purityText}</Text>
+            </View>
+            <View style={styles.detailCell}>
+              <Text style={styles.detailLabel}>Pieces</Text>
+              <Text style={styles.detailValue}>{sample.pc_count ?? 1}</Text>
+            </View>
+          </View>
 
           <Text style={styles.label}>Issued weight (g)</Text>
           <View style={styles.readonlyBox}><Text style={styles.readonlyBoxText}>{sample.weight.toFixed(3)}</Text></View>
@@ -272,6 +295,13 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
     color: colors.onSurface, paddingHorizontal: spacing.md, paddingVertical: 12, fontSize: 14,
   },
+  detailRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
+  detailCell: {
+    flex: 1, backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    paddingHorizontal: spacing.md, paddingVertical: 10,
+  },
+  detailLabel: { color: colors.mutedText, fontSize: 11, fontWeight: '600' },
+  detailValue: { color: colors.onSurface, fontSize: 15, fontWeight: '700', marginTop: 2 },
   readonlyBox: {
     backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
     paddingHorizontal: spacing.md, paddingVertical: 12,
