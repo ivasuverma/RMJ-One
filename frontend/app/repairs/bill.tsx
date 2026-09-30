@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Platform, KeyboardAvoidingView, RefreshControl, Image,
 } from 'react-native';
@@ -82,6 +82,20 @@ export default function RepairBillScreen() {
   const [closeItem, setCloseItem] = useState<Item | null>(null);
   const [closeDate, setCloseDate] = useState('');
   const [closeBy, setCloseBy] = useState('');
+  // Delivered By is picked from the staff list (the signed-in person first,
+  // since they're usually the one handing it over).
+  const [staff, setStaff] = useState<string[]>([]);
+  const [staffOpen, setStaffOpen] = useState(false);
+  useEffect(() => {
+    api.get<{ name: string }[]>('/employees?status=active')
+      .then((list) => setStaff(list.map((e) => e.name).filter(Boolean)))
+      .catch(() => setStaff([]));
+  }, []);
+  const staffNames = useMemo(() => {
+    const names = [...staff];
+    if (user?.name && !names.includes(user.name)) names.unshift(user.name);
+    return names;
+  }, [staff, user?.name]);
   const [loading, setLoading] = useState(!!routeItemId);
   const [refreshing, setRefreshing] = useState(false);
   const [printingId, setPrintingId] = useState('');
@@ -504,7 +518,21 @@ export default function RepairBillScreen() {
             <Text style={styles.hint}>Record when the customer actually picked up the item and who handed it over.</Text>
             <DateField label="Date Delivered" value={closeDate} onChange={setCloseDate} testID="close-delivered-at" />
             <Text style={styles.label}>Delivered By</Text>
-            <TextInput testID="close-delivered-by" value={closeBy} onChangeText={setCloseBy} placeholder="Who handed over the item" placeholderTextColor={colors.mutedText} style={styles.input} />
+            <Pressable onPress={() => setStaffOpen((v) => !v)} style={styles.staffPicker} testID="close-delivered-by">
+              <Text style={closeBy ? styles.staffValue : styles.staffPlaceholder} numberOfLines={1}>{closeBy || 'Who handed over the item'}</Text>
+              <Ionicons name={staffOpen ? 'chevron-up' : 'chevron-down'} size={16} color={colors.mutedText} />
+            </Pressable>
+            {staffOpen && (
+              <ScrollView style={styles.staffList} nestedScrollEnabled keyboardShouldPersistTaps="handled" testID="close-delivered-by-list">
+                {staffNames.map((n) => (
+                  <Pressable key={n} onPress={() => { setCloseBy(n); setStaffOpen(false); }} style={styles.staffRow} testID={`close-delivered-by-${n}`}>
+                    <Text style={[styles.staffRowText, n === closeBy && { fontWeight: '800' }]}>{n}</Text>
+                    {n === closeBy && <Ionicons name="checkmark" size={16} color={colors.brandPrimary} />}
+                  </Pressable>
+                ))}
+                {staffNames.length === 0 && <Text style={[styles.staffPlaceholder, { padding: spacing.md }]}>No staff found</Text>}
+              </ScrollView>
+            )}
             <Pressable onPress={submitClose} disabled={busy} style={[styles.saveBtn, busy && { opacity: 0.6 }]} testID="close-delivery-save-btn">
               {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.saveBtnText}>Close Delivery</Text>}
             </Pressable>
@@ -689,6 +717,16 @@ export default function RepairBillScreen() {
 }
 
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
+  staffPicker: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm,
+    backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    paddingHorizontal: spacing.md, paddingVertical: 12,
+  },
+  staffValue: { flex: 1, color: colors.onSurface, fontSize: 14, fontWeight: '600' },
+  staffPlaceholder: { flex: 1, color: colors.mutedText, fontSize: 14 },
+  staffList: { maxHeight: 260, backgroundColor: colors.surfaceTertiary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, marginTop: spacing.xs },
+  staffRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.md, paddingVertical: 11 },
+  staffRowText: { color: colors.onSurface, fontSize: 14 },
   root: { flex: 1, backgroundColor: colors.surface },
   header: {
     flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg,
