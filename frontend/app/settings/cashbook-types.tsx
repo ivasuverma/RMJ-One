@@ -7,9 +7,10 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import { api } from '@/src/api/client';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { ToggleSwitch } from '@/src/components/ui/ToggleSwitch';
 
 type EntryType = 'received' | 'paid';
-type QuickName = { id: string; name: string; entry_type: EntryType | null };
+type QuickName = { id: string; name: string; entry_type: EntryType | null; active?: boolean };
 
 // Predefined "Type" options for Cash Book entries (Settings > Masters) —
 // shown on the entry form as chips, filtered to whichever list matches the
@@ -55,6 +56,28 @@ export default function CashbookTypesScreen() {
       setNewType('');
     } catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
     finally { setSaving(false); submittingRef.current = false; }
+  };
+
+  // Rename in place: the pencil turns the row into a text box; Enter or the tick saves.
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const startRename = (t: QuickName) => { setEditingId(t.id); setEditName(t.name); };
+  const saveRename = async (t: QuickName) => {
+    const n = editName.trim();
+    if (!n || n === t.name) { setEditingId(null); return; }
+    try {
+      const updated = await api.put<QuickName>(`/cashbook/quick-names/${t.id}`, { name: n });
+      setTypes((prev) => prev.map((x) => (x.id === t.id ? updated : x)));
+      setEditingId(null);
+    } catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
+  };
+
+  // Switched off: kept (and still shown on past entries) but not offered on new ones.
+  const toggleActive = async (t: QuickName) => {
+    const active = t.active === false;
+    setTypes((prev) => prev.map((x) => (x.id === t.id ? { ...x, active } : x)));
+    try { await api.put(`/cashbook/quick-names/${t.id}`, { active }); }
+    catch (e: any) { notify('Failed', e?.detail || 'Please try again'); await load(); }
   };
 
   const remove = async (t: QuickName) => {
@@ -111,11 +134,38 @@ export default function CashbookTypesScreen() {
           {visible.length === 0 ? (
             <Text style={styles.empty}>No {tab === 'received' ? 'receive' : 'pay'} types yet — the Type field will just be left blank on entries.</Text>
           ) : visible.map((t) => (
-            <View key={t.id} style={styles.row} testID={`cashbook-type-${t.id}`}>
-              <Text style={styles.rowText}>{t.name}</Text>
-              <Pressable onPress={() => remove(t)} style={styles.delBtn} hitSlop={10} testID={`cashbook-type-del-${t.id}`}>
-                <Ionicons name="trash-outline" size={16} color={colors.onError} />
-              </Pressable>
+            <View key={t.id} style={[styles.row, t.active === false && styles.rowOff]} testID={`cashbook-type-${t.id}`}>
+              {editingId === t.id ? (
+                <>
+                  <TextInput
+                    value={editName} onChangeText={setEditName} onSubmitEditing={() => saveRename(t)} autoFocus
+                    style={[styles.input, styles.renameInput]} returnKeyType="done" testID={`cashbook-type-rename-input-${t.id}`}
+                  />
+                  <Pressable onPress={() => saveRename(t)} style={styles.iconBtnSm} hitSlop={8} testID={`cashbook-type-rename-save-${t.id}`}>
+                    <Ionicons name="checkmark" size={18} color={colors.brandPrimary} />
+                  </Pressable>
+                  <Pressable onPress={() => setEditingId(null)} style={styles.iconBtnSm} hitSlop={8}>
+                    <Ionicons name="close" size={18} color={colors.mutedText} />
+                  </Pressable>
+                </>
+              ) : (
+                <>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={[styles.rowText, t.active === false && styles.rowTextOff]} numberOfLines={1}>{t.name}</Text>
+                    {t.active === false && <Text style={styles.offTag}>Hidden · not offered on new entries</Text>}
+                  </View>
+                  <Pressable onPress={() => startRename(t)} style={styles.iconBtnSm} hitSlop={8} testID={`cashbook-type-rename-${t.id}`} accessibilityLabel={`Rename ${t.name}`}>
+                    <Ionicons name="create-outline" size={18} color={colors.onSurface} />
+                  </Pressable>
+                  <Pressable onPress={() => toggleActive(t)} hitSlop={8} testID={`cashbook-type-active-${t.id}`}
+                    accessibilityRole="switch" accessibilityState={{ checked: t.active !== false }} accessibilityLabel={`${t.name} active`}>
+                    <ToggleSwitch value={t.active !== false} />
+                  </Pressable>
+                  <Pressable onPress={() => remove(t)} style={styles.delBtn} hitSlop={10} testID={`cashbook-type-del-${t.id}`}>
+                    <Ionicons name="trash-outline" size={16} color={colors.onError} />
+                  </Pressable>
+                </>
+              )}
             </View>
           ))}
         </ScrollView>
@@ -161,6 +211,11 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     paddingHorizontal: spacing.md, paddingVertical: 12, marginBottom: spacing.sm,
   },
   rowText: { flex: 1, color: colors.onSurface, fontSize: 14, fontWeight: '600' },
+  rowOff: { opacity: 0.75 },
+  rowTextOff: { color: colors.mutedText },
+  offTag: { color: colors.mutedText, fontSize: 11, marginTop: 2 },
+  renameInput: { flex: 1, paddingVertical: 8 },
+  iconBtnSm: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   delBtn: {
     width: 30, height: 30, borderRadius: 15, backgroundColor: colors.error,
     borderWidth: 1, borderColor: colors.onError, alignItems: 'center', justifyContent: 'center',

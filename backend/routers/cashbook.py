@@ -40,6 +40,7 @@ from server import (
     CashBookCounterIn,
     CashBookCounterUpdateIn,
     CashBookQuickNameIn,
+    CashBookQuickNameUpdate,
     log_audit,
     _notify_module,
     notify_user,
@@ -315,6 +316,9 @@ async def create_quick_name(body: CashBookQuickNameIn, user=Depends(require_admi
         {'name': {'$regex': f'^{re.escape(name)}$', '$options': 'i'}, 'entry_type': body.entry_type}, {'_id': 0},
     )
     if existing:
+        if existing.get('active') is False:   # re-adding a switched-off type turns it back on
+            await db.cashbook_quick_names.update_one({'id': existing['id']}, {'$set': {'active': True}})
+            existing['active'] = True
         return existing
     quick_id = str(uuid.uuid4())
     doc = {
@@ -324,6 +328,40 @@ async def create_quick_name(body: CashBookQuickNameIn, user=Depends(require_admi
     await db.cashbook_quick_names.insert_one(dict(doc))
     await log_audit(user, 'cashbook.quickname.create', 'cashbook_quick_name', quick_id, name)
     return {k: v for k, v in doc.items() if k != '_id'}
+
+
+@router.put('/cashbook/quick-names/{quick_id}')
+async def update_quick_name(quick_id: str, body: CashBookQuickNameUpdate, user=Depends(require_admin_or_module_right('cash_book', 'edit'))):
+    doc = await db.cashbook_quick_names.find_one({'id': quick_id}, {'_id': 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail='Not found')
+    upd: dict = {}
+    if body.active is not None:
+        upd['active'] = bool(body.active)
+    new_name = (body.name or '').strip() if body.name is not None else None
+    if new_name is not None and new_name != doc['name']:
+        if not new_name:
+            raise HTTPException(status_code=400, detail='Name is required')
+        clash = await db.cashbook_quick_names.find_one(
+            {'name': {'$regex': f'^{re.escape(new_name)}$', '$options': 'i'}, 'entry_type': doc.get('entry_type'), 'id': {'$ne': quick_id}},
+            {'_id': 0, 'id': 1},
+        )
+        if clash:
+            raise HTTPException(status_code=409, detail=f'"{new_name}" is already in this list')
+        upd['name'] = new_name
+    if not upd:
+        return doc
+    await db.cashbook_quick_names.update_one({'id': quick_id}, {'$set': upd})
+    if 'name' in upd:
+        # Entries store the type as its label, so carry the new name onto the
+        # ones that used the old one — otherwise they'd read as two types.
+        q = {'category': doc['name']}
+        if doc.get('entry_type'):
+            q['type'] = doc['entry_type']
+        await db.cashbook_entries.update_many(q, {'$set': {'category': upd['name']}})
+    await log_audit(user, 'cashbook.quickname.update', 'cashbook_quick_name', quick_id, upd.get('name', doc['name']),
+                    {k: v for k, v in upd.items()})
+    return await db.cashbook_quick_names.find_one({'id': quick_id}, {'_id': 0})
 
 
 @router.delete('/cashbook/quick-names/{quick_id}')

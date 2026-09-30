@@ -33,7 +33,7 @@ type DayData = {
 };
 type Counter = { id: string; name: string; closing_balance: number; color?: string | null; active: boolean };
 type CounterLite = { id: string; name: string };
-type QuickName = { id: string; name: string; entry_type: EntryType | null };
+type QuickName = { id: string; name: string; entry_type: EntryType | null; active?: boolean };
 type Shot = { id: string; blob: Blob; thumb: string };
 type Filter = 'all' | 'received' | 'paid' | 'transfer';
 
@@ -131,7 +131,7 @@ export default function CashBookScreen() {
   const shown = rows.filter((r) => filter === 'all' || (filter === 'transfer' ? r.transfer : !r.transfer && filter === r.e.type));
   const net = day ? day.total_received - day.total_paid : 0;
   const otherCounters = transferOptions.filter((c) => c.id !== counterId);
-  const tags = quickNames.filter((q) => !isTransfer && (q.entry_type == null || q.entry_type === kind));
+  const tags = quickNames.filter((q) => !isTransfer && q.active !== false && (q.entry_type == null || q.entry_type === kind));
   const counterName = (id?: string | null) => transferOptions.find((c) => c.id === id)?.name || counters.find((c) => c.id === id)?.name || '';
 
   // Tints the whole page to the selected counter's colour, so switching
