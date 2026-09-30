@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Platform,
   KeyboardAvoidingView, RefreshControl,
@@ -55,7 +55,7 @@ export default function CashBookScreen() {
   // No bottom bar on Cash Book, so the action buttons sit just above the home indicator.
   const bottomInset = useSafeAreaInsets().bottom;
   const router = useRouter();
-  const { manage } = useLocalSearchParams<{ manage?: string }>();
+  const { manage, new: newEntry } = useLocalSearchParams<{ manage?: string; new?: string }>();
   const { colors, scheme } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const { user, hasRight } = useAuth();
@@ -157,6 +157,13 @@ export default function CashBookScreen() {
     setAddingQuickName(false); setNewQuickName('');
     setMode('form');
   };
+  // Home's Cash in / Cash out tiles open straight into the entry form (?new=received|paid).
+  const openedFromLink = useRef(false);
+  useEffect(() => {
+    if (openedFromLink.current || (newEntry !== 'received' && newEntry !== 'paid')) return;
+    openedFromLink.current = true;
+    openAdd(newEntry);
+  }, [newEntry]); // eslint-disable-line react-hooks/exhaustive-deps
   const openEdit = (e: Entry) => {
     setEditing(e); setEntryType(e.type); setAmount(String(e.amount)); setName(e.name); setCategory(e.category || ''); setNote(e.note || '');
     setIsTransfer(false); setTransferCounterId('');

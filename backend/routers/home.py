@@ -408,7 +408,7 @@ async def _needs_you(user: dict, s: dict, now: datetime, staff: Optional[dict]) 
             rows.append({'key': 'samples_overdue', 'severity': 'amber', 'module': 'samples', 'count': len(late),
                          'title': f"{len(late)} sample{'s' if len(late) != 1 else ''} out too long",
                          'detail': f"With {_names([x.get('karigar_name') for x in late])}",
-                         'action': 'Review', 'route': '/samples?filter=overdue', 'can_act': True})
+                         'action': 'Review', 'route': '/samples?status=overdue', 'can_act': True})
 
     # Tasks: the whole team's for whoever has the Tasks module, otherwise just your own.
     tq = {'status': 'open', 'due_date': {'$lt': today, '$nin': [None, '']}}
@@ -420,7 +420,7 @@ async def _needs_you(user: dict, s: dict, now: datetime, staff: Optional[dict]) 
             rows.append({'key': 'tasks_overdue', 'severity': 'amber', 'module': 'tasks', 'count': len(tasks),
                          'title': f"{len(tasks)} task{'s' if len(tasks) != 1 else ''} overdue",
                          'detail': f"Oldest: {tasks[0].get('title') or 'Untitled'}",
-                         'action': 'Review', 'route': '/tasks?filter=overdue', 'can_act': True})
+                         'action': 'Review', 'route': '/tasks', 'can_act': True})
 
     if can_view(user, 'documents'):
         from routers.documents import _account_rights, _visible_keys, _role
