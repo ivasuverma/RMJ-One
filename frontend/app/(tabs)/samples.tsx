@@ -215,7 +215,8 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.sm,
   },
   cardTop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
-  cardSide: { alignItems: 'flex-end', gap: spacing.sm },
+  // Full card height: the badge top-right, Receive bottom-right.
+  cardSide: { alignSelf: 'stretch', alignItems: 'flex-end', justifyContent: 'space-between', gap: spacing.sm },
   cardThumb: { width: 44, height: 44, borderRadius: radius.sm, backgroundColor: colors.surfaceTertiary },
   cardThumbFallback: {
     width: 44, height: 44, borderRadius: radius.sm, backgroundColor: colors.surfaceTertiary,
