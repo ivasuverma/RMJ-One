@@ -68,11 +68,11 @@ export default function NewSampleScreen() {
   const [itemMasterId, setItemMasterId] = useState('');
   const [imPickerOpen, setImPickerOpen] = useState(false);
   const pickItemMaster = (im: ItemMaster) => { setItemMasterId(im.id); setPurity(String(im.purity)); setImPickerOpen(false); };
-  // Purity is picked from Settings › Items & Purity (e.g. "22K · 91.6%"); an
-  // older sample's purity that matches no item still shows as its %.
+  // Purity is picked from Settings › Items & Purity and shown as its value;
+  // an older sample's purity that matches no item still shows as its %.
   const pickedItem = itemMasters.find((im) => im.id === itemMasterId)
     || (purity ? itemMasters.find((im) => im.active && Math.abs(im.purity - parseFloat(purity)) < 0.001) : undefined);
-  const purityLabel = pickedItem ? `${pickedItem.name} · ${pickedItem.purity}%` : purity ? `${purity}%` : '';
+  const purityLabel = pickedItem ? `${pickedItem.purity}%` : purity ? `${purity}%` : '';   // the value only, e.g. 91.6%
   const [dueDate, setDueDate] = useState('');
   const [photo, setPhoto] = useState('');
   const [cameraOpen, setCameraOpen] = useState(false);
