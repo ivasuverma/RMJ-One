@@ -228,6 +228,17 @@ class TestCorrections:
         d = next(x for x in cal['days'] if x['date'] == day)
         assert d['working_hours'] == 2.5 and d['status'] == 'half_day'
 
+        # A check-out typed 12-hour style ("8:00" for 8 PM) after an 11:33 check-in is read as 20:00.
+        pm = requests.post(f"{API}/attendance/corrections/calendar", headers=h,
+                           json={'date': day, 'desired_check_in': '11:33', 'desired_check_out': '8:00'}, timeout=30).json()
+        rp = requests.post(f"{API}/attendance/corrections/{pm['id']}/decide", headers=owner_headers, json={'action': 'approve'}, timeout=30)
+        assert rp.status_code == 200, rp.text
+        assert rp.json()['applied_check_out'] == '20:00' and rp.json()['after']['working_hours'] == 8.45
+        # A check-out still before the check-in after that (e.g. 13:00 in, 12:30 out) is refused.
+        bad = requests.post(f"{API}/attendance/corrections/calendar", headers=h,
+                            json={'date': day, 'desired_check_in': '13:00', 'desired_check_out': '12:30'}, timeout=30).json()
+        assert requests.post(f"{API}/attendance/corrections/{bad['id']}/decide", headers=owner_headers, json={'action': 'approve'}, timeout=30).status_code == 400
+
         # Bad time format is rejected at request time.
         assert requests.post(f"{API}/attendance/corrections", headers=h,
                              json={'date': day, 'reason_type': 'other', 'desired_check_in': '25:99'}, timeout=30).status_code == 422

@@ -365,7 +365,7 @@ function DayDetail({ day, empId, canEdit, shifts, onClose, onSaved }: {
                 testID="day-in-time"
                 value={inTime} onChangeText={(v) => { setInTime(v); setOffStatus(null); }}
                 editable
-                placeholder="HH:MM" placeholderTextColor={colors.mutedText}
+                placeholder="HH:MM (24h)" placeholderTextColor={colors.mutedText}
                 keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'default'}
                 style={styles.timeInput} autoCapitalize="none"
               />
@@ -376,7 +376,7 @@ function DayDetail({ day, empId, canEdit, shifts, onClose, onSaved }: {
                 testID="day-out-time"
                 value={outTime} onChangeText={(v) => { setOutTime(v); setOffStatus(null); }}
                 editable
-                placeholder="HH:MM" placeholderTextColor={colors.mutedText}
+                placeholder="HH:MM (24h)" placeholderTextColor={colors.mutedText}
                 keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'default'}
                 style={styles.timeInput} autoCapitalize="none"
               />

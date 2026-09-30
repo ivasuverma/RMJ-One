@@ -599,7 +599,16 @@ async def _apply_correction(r: dict, t_in: Optional[str], t_out: Optional[str], 
     hours = 0
     if check_in and check_out and check_in.get('timestamp') and check_out.get('timestamp'):
         try:
-            hours = round((datetime.fromisoformat(check_out['timestamp']) - datetime.fromisoformat(check_in['timestamp'])).total_seconds() / 3600, 2)
+            t0 = datetime.fromisoformat(check_in['timestamp'])
+            t1 = datetime.fromisoformat(check_out['timestamp'])
+            # A check-out typed as a 12-hour time ("8:00" for 8 PM) lands before the
+            # check-in: read it as PM. The shop has no overnight shifts, so a morning
+            # check-out that's earlier than the check-in can only mean the evening.
+            if iso_out and t1 <= t0 and t1.astimezone(IST).hour < 12 and t1 + timedelta(hours=12) > t0:
+                t1 += timedelta(hours=12)
+                check_out = {**check_out, 'timestamp': t1.isoformat()}
+                t_out = t1.astimezone(IST).strftime('%H:%M')
+            hours = round((t1 - t0).total_seconds() / 3600, 2)
         except Exception:
             hours = 0
         if hours <= 0:
