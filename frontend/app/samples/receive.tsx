@@ -45,7 +45,6 @@ export default function ReceiveSampleScreen() {
   const [gapChoice, setGapChoice] = useState<GapChoice>('carry');
   const [payWeight, setPayWeight] = useState('');
   const [recvWeight, setRecvWeight] = useState('');
-  const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const submittingRef = useRef(false);
@@ -69,7 +68,6 @@ export default function ReceiveSampleScreen() {
       setPayWeight(isEdit && s.pay_weight ? String(s.pay_weight) : '');
       setRecvWeight(isEdit && s.recv_weight ? String(s.recv_weight) : '');
       setGapChoice(isEdit && s.write_off_loss ? 'loss' : isEdit && (s.pay_weight || s.recv_weight) ? 'settle' : 'carry');
-      setNote(isEdit ? (s.note || '') : '');
     } catch (_e) { /* ignore */ }
     finally { setLoading(false); }
   }, [id]);
@@ -85,7 +83,7 @@ export default function ReceiveSampleScreen() {
     setBusy(true);
     try {
       const payload = {
-        received_weight: w, note: note.trim(),
+        received_weight: w,
         pay_weight: gapChoice === 'settle' ? parseFloat(payWeight) || 0 : 0,
         recv_weight: gapChoice === 'settle' ? parseFloat(recvWeight) || 0 : 0,
         write_off_loss: gapChoice === 'loss',
@@ -252,13 +250,6 @@ export default function ReceiveSampleScreen() {
               )}
             </>
           )}
-
-          <Text style={styles.label}>Note (optional)</Text>
-          <TextInput
-            testID="receive-note" value={note} onChangeText={setNote}
-            placeholder="Anything worth noting about the return" placeholderTextColor={colors.mutedText}
-            style={styles.input} multiline
-          />
 
           <Pressable
             style={[styles.saveBtn, busy && { opacity: 0.6 }]} disabled={busy}
