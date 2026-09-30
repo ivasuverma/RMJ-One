@@ -6,19 +6,17 @@ import { useTheme } from '@/src/theme/ThemeContext';
 import { AccessEditor, Rights } from '@/src/hooks/use-access-editor';
 
 // Attendance isn't a grantable access module (every employee has their own
-// attendance, nothing to permission), so it never appeared in availableModules
-// and its alerts were invisible here — even though the employee always gets
-// them. These five are sent by notify_user() unconditionally (see server.py's
-// _check_missed_attendance/_check_missed_checkout/_check_daily_absentee_summary
-// and routers/attendance.py's check-in/check-out) — never gated by the
-// Notification Settings module toggle, so they're shown read-only rather than
-// as switches that would do nothing if flipped.
-const ATTENDANCE_ALWAYS_ON = [
-  'Checked in',
-  'Checked out',
-  "Missed check-in reminder",
-  "Missed check-out reminder",
-  'Marked absent',
+// attendance, nothing to permission), so its alerts get their own card. These
+// are the employee's own alerts (see EMPLOYEE_ATTENDANCE_ALERTS in server.py),
+// each sent by push and/or WhatsApp as chosen here. Unset: push on, WhatsApp off.
+const ATTENDANCE_ALERTS: { key: string; label: string }[] = [
+  { key: 'self_checked_in', label: 'Checked in' },
+  { key: 'self_checked_out', label: 'Checked out' },
+  { key: 'self_missed_checkin', label: 'Missed check-in reminder' },
+  { key: 'self_missed_checkout', label: 'Missed check-out reminder' },
+  { key: 'self_absent', label: 'Marked absent' },
+  { key: 'self_correction_decided', label: 'Correction approved / rejected' },
+  { key: 'self_leave_decided', label: 'Leave approved / rejected' },
 ];
 
 const MODULE_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
@@ -79,6 +77,13 @@ export function EmployeeAccessAlerts({ editor, onSave }: { editor: AccessEditor;
   });
 
   const onCount = availableModules.filter((m) => mods.has(m.key)).length;
+  const attPush = (k: string) => notifPrefs[k] !== false;
+  const attWa = (k: string) => notifPrefsWhatsapp[k] === true;
+  const attOn = ATTENDANCE_ALERTS.filter((a) => attPush(a.key) || attWa(a.key));
+  const attSummary = !notifOn ? 'Notifications off' : (() => {
+    const p = attOn.filter((a) => attPush(a.key)).length, w = attOn.filter((a) => attWa(a.key)).length;
+    return `${attOn.length} of ${ATTENDANCE_ALERTS.length} alerts · ${p} push · ${w} WhatsApp`;
+  })();
 
   return (
     <>
@@ -102,20 +107,35 @@ export function EmployeeAccessAlerts({ editor, onSave }: { editor: AccessEditor;
           <View style={styles.modIcon}><Ionicons name="time-outline" size={16} color={colors.brandSecondary} /></View>
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={styles.modTitle}>Attendance</Text>
-            <Text style={styles.modSub} numberOfLines={1}>Always on · {ATTENDANCE_ALWAYS_ON.length} alerts</Text>
+            <Text style={styles.modSub} numberOfLines={1}>{attSummary}</Text>
           </View>
           <Ionicons name={expanded.has('attendance') ? 'chevron-down' : 'chevron-forward'} size={15} color={colors.mutedText} style={{ marginRight: 4 }} />
         </Pressable>
         {expanded.has('attendance') && (
           <View style={styles.cardBody}>
-            <Text style={styles.levelNote}>Tells them about their own check-in, check-out and absences — always sent, can&apos;t be turned off.</Text>
-            {ATTENDANCE_ALWAYS_ON.map((label) => (
-              <View key={label} style={styles.alertRow}>
-                <Text style={styles.alertLabel}>{label}</Text>
-                <Ionicons name="notifications" size={13} color={colors.brandSecondary} />
-                <Ionicons name="logo-whatsapp" size={13} color={colors.brandSecondary} />
-              </View>
-            ))}
+            {notifOn ? (
+              <>
+                <View style={styles.alertsHead}>
+                  <Text style={[styles.levelNote, { flex: 1 }]}>Their own attendance alerts. Pick push, WhatsApp or both for each.</Text>
+                  <View style={styles.channelIcons}>
+                    <Ionicons name="notifications-outline" size={13} color={colors.mutedText} />
+                    <Ionicons name="logo-whatsapp" size={13} color={colors.mutedText} />
+                  </View>
+                </View>
+                {ATTENDANCE_ALERTS.map((al) => {
+                  const p = attPush(al.key), w = attWa(al.key);
+                  return (
+                    <View key={al.key} style={styles.alertRow}>
+                      <Text style={styles.alertLabel}>{al.label}</Text>
+                      <ChannelChip icon="notifications" on={p} onPress={() => setNotifPrefs((x) => ({ ...x, [al.key]: !p }))} testID={`ea-att-push-${al.key}`} />
+                      <ChannelChip icon="logo-whatsapp" on={w} onPress={() => setNotifPrefsWhatsapp((x) => ({ ...x, [al.key]: !w }))} testID={`ea-att-wa-${al.key}`} />
+                    </View>
+                  );
+                })}
+              </>
+            ) : (
+              <Text style={styles.levelNote}>Notifications are off for this person.</Text>
+            )}
           </View>
         )}
       </View>

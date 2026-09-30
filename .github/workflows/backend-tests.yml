@@ -48,7 +48,13 @@ jobs:
 
       - name: Run tests (serially — several suites share seeded state)
         working-directory: backend
-        run: python -m pytest tests -n 0 -q -rs
+        run: |
+          set -o pipefail
+          python -m pytest tests -n 0 -q -rs --tb=short 2>&1 | tee ../pytest.log
+
+      - name: Failures as annotations
+        if: failure()
+        run: grep -E '^(FAILED|ERROR) |^E  ' pytest.log | head -40 | sed 's/^/::error::/' || true
 
       - name: Backend log on failure
         if: failure()

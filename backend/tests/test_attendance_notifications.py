@@ -1,8 +1,8 @@
-"""Every attendance notification an employee gets arrives by push (plus the
-in-app bell), never WhatsApp: missed check-in, missed check-out, marked
-absent, correction and leave decisions, and the module broadcast about their
-own check-in. Runs the real code in-process with the push/WhatsApp senders
-swapped for recorders. Needs a real MongoDB (CI has one)."""
+"""An employee's own attendance alerts (missed check-in, missed check-out,
+marked absent, correction and leave decisions) arrive by push only unless
+that employee is set to get one by WhatsApp. Runs the real code in-process
+with the push/WhatsApp senders swapped for recorders. Needs a real MongoDB
+(CI has one)."""
 import asyncio
 import os
 import uuid
@@ -15,10 +15,10 @@ pytestmark = pytest.mark.skipif(not os.environ.get('MONGO_URL'), reason='needs a
 DAY = '2031-01-06'  # a Monday far from any real data
 
 
-def test_employee_attendance_notifications_are_push_only(monkeypatch):
+def test_employee_attendance_alerts_follow_channel_choice(monkeypatch):
     import server
     from routers import attendance as att
-    db = server.db
+    from motor.motor_asyncio import AsyncIOMotorClient
 
     push, wa = [], []
 
@@ -46,12 +46,16 @@ def test_employee_attendance_notifications_are_push_only(monkeypatch):
         return (emp_id, title) in push
 
     async def go():
+        # A client on this test's own event loop, for the code under test too.
+        db = AsyncIOMotorClient(os.environ['MONGO_URL'])[os.environ.get('DB_NAME', 'rmj')]
+        monkeypatch.setattr(server, 'db', db)
+        monkeypatch.setattr(att, 'db', db)
         await db.holidays.delete_many({'date': DAY})
         await db.employees.insert_one({
             'id': emp_id, 'name': 'Test Notif Emp', 'employee_code': 'TNE1', 'status': 'active',
             'mobile': '9999999999', 'notifications_enabled': True,
-            # Even someone who switched attendance WhatsApp on gets push only.
-            'notif_prefs': {'attendance': True}, 'notif_prefs_whatsapp': {'attendance': True},
+            # Leave decisions switched to WhatsApp only; everything else left at the default.
+            'notif_prefs': {'self_leave_decided': False}, 'notif_prefs_whatsapp': {'self_leave_decided': True},
         })
         await db.push_subscriptions.insert_one({'user_id': emp_id, 'role': 'employee', 'endpoint': f'https://push.test/{emp_id}'})
         try:
@@ -90,20 +94,14 @@ def test_employee_attendance_notifications_are_push_only(monkeypatch):
             await att.decide_leave(lid, server.DecisionIn(action='approve'), admin)
             await settle()
             assert got('Correction rejected')
-            assert got('Leave approved')
+            assert not got('Leave approved')  # WhatsApp only for this one
 
-            # The "<name> checked in" module broadcast, which reaches the subject employee.
-            await server._notify_module_impl('attendance', 'Test Notif Emp checked in', '10:02', '/',
-                                             script='attendance_checkin', subject_employee_id=emp_id)
-            await settle()
-            assert got('Test Notif Emp checked in')
-
-            # Every one is also in the employee's in-app notifications...
+            # Every one is in the employee's in-app notifications...
             titles = {n['title'] async for n in db.notifications.find({'user_id': emp_id})}
             assert {'Missed check-in', 'Missed check-out', 'Marked absent today', 'Correction rejected',
-                    'Leave approved', 'Test Notif Emp checked in'} <= titles
-            # ...and none went by WhatsApp.
-            assert [t for (u, t) in wa if u == emp_id] == []
+                    'Leave approved'} <= titles
+            # ...and only the one switched to WhatsApp went by WhatsApp.
+            assert [t for (u, t) in wa if u == emp_id] == ['Leave approved']
         finally:
             for coll in ('attendance', 'notifications', 'push_subscriptions', 'corrections', 'leaves', 'timeline'):
                 await db[coll].delete_many({'$or': [{'employee_id': emp_id}, {'user_id': emp_id}]})

@@ -2459,6 +2459,32 @@ for _s in NOTIFICATION_SCRIPTS:
 NOTIFICATION_SCRIPT_KEYS = {s['key'] for s in NOTIFICATION_SCRIPTS}
 
 
+# An employee's own attendance alerts (their check-in, a missed punch, their
+# correction/leave decided). Each one's channel is chosen per employee on
+# their profile's Attendance card — stored under these keys in notif_prefs
+# (push) and notif_prefs_whatsapp. Unset: push on, WhatsApp off.
+EMPLOYEE_ATTENDANCE_ALERTS = [
+    {'key': 'self_checked_in', 'label': 'Checked in'},
+    {'key': 'self_checked_out', 'label': 'Checked out'},
+    {'key': 'self_missed_checkin', 'label': 'Missed check-in reminder'},
+    {'key': 'self_missed_checkout', 'label': 'Missed check-out reminder'},
+    {'key': 'self_absent', 'label': 'Marked absent'},
+    {'key': 'self_correction_decided', 'label': 'Correction approved / rejected'},
+    {'key': 'self_leave_decided', 'label': 'Leave approved / rejected'},
+]
+EMPLOYEE_ATTENDANCE_ALERT_KEYS = {a['key'] for a in EMPLOYEE_ATTENDANCE_ALERTS}
+
+
+async def notify_employee_attendance(emp_id: str, key: str, title: str, body: str, url: str = '/'):
+    """Send one of an employee's own attendance alerts by the channels they're
+    set to receive it on (see EMPLOYEE_ATTENDANCE_ALERTS)."""
+    e = await db.employees.find_one({'id': emp_id}, {'_id': 0, 'notif_prefs': 1, 'notif_prefs_whatsapp': 1}) or {}
+    push = (e.get('notif_prefs') or {}).get(key, True) is not False
+    wa = (e.get('notif_prefs_whatsapp') or {}).get(key, False) is True
+    if push or wa:
+        await notify_user(emp_id, title, body, url, push=push, whatsapp=wa)
+
+
 def _wants_script(acc: dict, role: str, module: str, script: Optional[str] = None) -> bool:
     """Whether this account should receive this event. Decided per person on
     their People page: the master switch gates everything, then a specific
@@ -2536,8 +2562,7 @@ async def _notify_module_impl(module: str, title: str, body: str, url: str = '/'
             if module_gated and module not in resolve_modules({'role': 'employee', 'module_access': e.get('module_access')}):
                 continue
             wants_push = _wants_script(e, 'employee', module, script)
-            # Employees get attendance alerts as push only, never WhatsApp.
-            wants_wa = module != 'attendance' and _wants_script_whatsapp(e, 'employee', module, script)
+            wants_wa = _wants_script_whatsapp(e, 'employee', module, script)
             if wants_push or wants_wa:
                 await notify_user(e['id'], title, body, url, push=wants_push, whatsapp=wants_wa)
     except Exception as e:
@@ -2613,8 +2638,8 @@ async def _check_missed_attendance():
         if leave:
             continue
 
-        await notify_user(emp['id'], 'Missed check-in',
-                           "You haven't checked in yet today — don't forget to mark your attendance.", '/', whatsapp=False)
+        await notify_employee_attendance(emp['id'], 'self_missed_checkin', 'Missed check-in',
+                           "You haven't checked in yet today — don't forget to mark your attendance.", '/')
         await db.attendance_reminders.update_one(
             {'employee_id': emp['id'], 'date': today},
             {'$set': {'employee_id': emp['id'], 'date': today, 'sent_at': now_utc().isoformat()}},
@@ -2655,8 +2680,8 @@ async def _check_missed_checkout():
         if not att or not att.get('check_in') or att.get('check_out'):
             continue  # never checked in, or already checked out — nothing to remind about
 
-        await notify_user(emp['id'], 'Missed check-out',
-                           "You checked in today but haven't checked out yet — don't forget before you leave.", '/', whatsapp=False)
+        await notify_employee_attendance(emp['id'], 'self_missed_checkout', 'Missed check-out',
+                           "You checked in today but haven't checked out yet — don't forget before you leave.", '/')
         # Also flag it to the owner/admin as an attendance discrepancy —
         # unlike the employee's own reminder above, this respects the
         # Notification Settings module toggle since it's a staff-facing
@@ -2737,8 +2762,8 @@ async def _check_daily_absentee_summary():
         # Personal notice to the employee themselves — always sent, same as
         # the missed-check-in/check-out reminders, independent of the
         # owner/admin summary broadcast below.
-        await notify_user(emp['id'], 'Marked absent today',
-                           "You were marked absent today — no check-in was recorded and you weren't on approved leave.", '/', whatsapp=False)
+        await notify_employee_attendance(emp['id'], 'self_absent', 'Marked absent today',
+                           "You were marked absent today — no check-in was recorded and you weren't on approved leave.", '/')
 
     await db.absentee_summaries.update_one(
         {'date': today},
