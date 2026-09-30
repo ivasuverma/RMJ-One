@@ -53,5 +53,6 @@ export type HomeSummary = {
   coming_up: Maybe<ComingUp>;
   notifications?: Maybe<{ unread: number; items: Notif[] }>;
   hidden_sections?: string[];
+  section_order?: string[];
   cached?: boolean;
 };

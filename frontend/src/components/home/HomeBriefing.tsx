@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { Fragment, ReactNode, useMemo, useState } from 'react';
 import { LayoutAnimation, Platform, Pressable, RefreshControl, ScrollView, Text, View, UIManager } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
@@ -20,6 +20,8 @@ import { StaffSheet } from './StaffSheet';
 import { RateTicker, QuickRow, NeedsSection, NotificationsSection, SectionHead, Unavailable, MODULE_ICON, QUICK_ROUTE } from './sections';
 import { QuickEditSheet, EmployeePickSheet, QUICK_ICON } from './QuickSheets';
 import { HomeSummary, isOk, QuickActions, StaffPerson } from './types';
+
+const DEFAULT_ORDER = ['rates', 'cash', 'quick_actions', 'needs_you', 'staff', 'owed', 'coming_up', 'notifications'];
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) UIManager.setLayoutAnimationEnabledExperimental(true);
 
@@ -67,29 +69,15 @@ export default function HomeBriefing() {
   const onPull = async () => { setPulling(true); await refresh(); setPulling(false); };
   const toggleCash = () => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setCashOpen((v) => !v); };
 
-  return (
-    <SafeAreaView style={s.root} edges={['top']} testID="home-briefing">
-      <StickyHeader scrolled={scrolled}>
-        <View style={s.top}>
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <Text style={s.date}>{longDate(today)}</Text>
-            <Text style={s.hi} numberOfLines={1}>{greeting}{firstName ? `, ${firstName}` : ''}</Text>
-          </View>
-          <UploadQueueBadge />
-          <Pressable onPress={() => go('/repairs/search')} style={s.roundBtn} accessibilityLabel="Search" testID="home-search"><Ionicons name="search-outline" size={19} color={colors.onSurface} /></Pressable>
-          <Pressable onPress={() => go('/notifications')} style={s.roundBtn} accessibilityLabel="Notifications" testID="home-bell">
-            <Ionicons name="notifications-outline" size={19} color={colors.onSurface} />
-            {!!header?.unread_notifications && <View style={s.bellDot} />}
-          </Pressable>
-        </View>
-      </StickyHeader>
-
-      <ScrollView onScroll={onScroll} scrollEventThrottle={16} contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={pulling} onRefresh={onPull} tintColor={colors.brandPrimary} />}>
-        <HeaderSpacer />
-
+  // Each Home section, shown in this person's order (Settings › Home screen).
+  const blocks: Record<string, ReactNode> = {
+    rates: (
+      <>
         <RateTicker rates={isOk(data?.rates) ? data!.rates : null} loading={!data} />
-
+      </>
+    ),
+    cash: (
+      <>
         {/* Cash in hand */}
         {data?.cash !== null && (isOk(data?.cash) ? (
           <Pressable onPress={toggleCash} style={s.money} testID="home-cash">
@@ -126,7 +114,10 @@ export default function HomeBriefing() {
             )}
           </Pressable>
         ) : !data ? <Skeleton height={112} radius={22} style={{ marginTop: spacing.md }} /> : <Unavailable label="Cash" s={s} />)}
-
+      </>
+    ),
+    quick_actions: (
+      <>
         {/* Quick actions */}
         {quick && (quick.tiles.length > 0 || quick.available.length > 0) && (
           <QuickRow onEdit={() => setEditQuick(true)} items={quick.tiles.map((t) => ({
@@ -134,10 +125,16 @@ export default function HomeBriefing() {
             onPress: () => (t.key === 'advance' ? setPickAdvance(true) : go(QUICK_ROUTE[t.key])),
           }))} />
         )}
-
+      </>
+    ),
+    needs_you: (
+      <>
         {/* Needs you today */}
         <NeedsSection needs={data ? data.needs_you : undefined} loading={!data} />
-
+      </>
+    ),
+    staff: (
+      <>
         {/* In the shop */}
         {data?.staff !== null && data?.staff !== undefined && (isOk(data.staff) ? (
           data.staff.working_day && data.staff.people.length > 0 && (
@@ -157,10 +154,13 @@ export default function HomeBriefing() {
             </>
           )
         ) : <Unavailable label="In the shop" s={s} />)}
-
+      </>
+    ),
+    owed: (
+      <>
         {/* Owed to you */}
         {data?.owed !== null && data?.owed !== undefined && (isOk(data.owed) ? (
-          <>
+      <>
             <SectionHead s={s} title="Owed to you" right="Ledger" onRight={() => go('/(tabs)/ledger')} />
             <View style={s.owed}>
               {data.owed.customers && (
@@ -196,12 +196,15 @@ export default function HomeBriefing() {
                 ))}
               </View>
             )}
-          </>
-        ) : <Unavailable label="Owed to you" s={s} />)}
-
+      </>
+    ) : <Unavailable label="Owed to you" s={s} />)}
+      </>
+    ),
+    coming_up: (
+      <>
         {/* Coming up */}
         {isOk(data?.coming_up) && data!.coming_up.items.length > 0 && (
-          <>
+      <>
             <SectionHead s={s} title="Coming up" right={data!.coming_up.total > data!.coming_up.items.length ? `+${data!.coming_up.total - data!.coming_up.items.length} more` : 'Next 7 days'} />
             <View style={s.list} testID="home-coming">
               {data!.coming_up.items.map((c, i, arr) => (
@@ -214,11 +217,41 @@ export default function HomeBriefing() {
                 </View>
               ))}
             </View>
-          </>
-        )}
-
+      </>
+    )}
+      </>
+    ),
+    notifications: (
+      <>
         {/* Notifications — the latest few, same list the bell opens */}
         <NotificationsSection data={isOk(data?.notifications) ? data!.notifications : null} />
+      </>
+    ),
+  };
+  const order = data?.section_order?.length ? data.section_order : DEFAULT_ORDER;
+
+  return (
+    <SafeAreaView style={s.root} edges={['top']} testID="home-briefing">
+      <StickyHeader scrolled={scrolled}>
+        <View style={s.top}>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={s.date}>{longDate(today)}</Text>
+            <Text style={s.hi} numberOfLines={1}>{greeting}{firstName ? `, ${firstName}` : ''}</Text>
+          </View>
+          <UploadQueueBadge />
+          <Pressable onPress={() => go('/repairs/search')} style={s.roundBtn} accessibilityLabel="Search" testID="home-search"><Ionicons name="search-outline" size={19} color={colors.onSurface} /></Pressable>
+          <Pressable onPress={() => go('/notifications')} style={s.roundBtn} accessibilityLabel="Notifications" testID="home-bell">
+            <Ionicons name="notifications-outline" size={19} color={colors.onSurface} />
+            {!!header?.unread_notifications && <View style={s.bellDot} />}
+          </Pressable>
+        </View>
+      </StickyHeader>
+
+      <ScrollView onScroll={onScroll} scrollEventThrottle={16} contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={pulling} onRefresh={onPull} tintColor={colors.brandPrimary} />}>
+        <HeaderSpacer />
+
+        {order.map((k) => <Fragment key={k}>{blocks[k]}</Fragment>)}
 
         {loading && !!data && <Text style={s.updating}>Updating…</Text>}
         <TabBarSpacer />

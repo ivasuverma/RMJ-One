@@ -85,3 +85,22 @@ def test_sections_hidden_per_user():
         assert isinstance(d['notifications']['items'], list) and len(d['notifications']['items']) <= 5
     finally:
         requests.put(f"{API}/home/sections", headers=h, json={'hidden': []}, timeout=30)
+
+
+def test_section_order_saved_per_user():
+    h = _login('owner', 'Owner@123')
+    try:
+        r = requests.put(f"{API}/home/sections", headers=h, json={'hidden': [], 'order': ['notifications', 'needs_you', 'bogus']}, timeout=30)
+        assert r.status_code == 200, r.text
+        order = r.json()['order']
+        assert order[:2] == ['notifications', 'needs_you'] and 'bogus' not in order and 'cash' in order
+        assert requests.get(f"{API}/home/summary", headers=h, timeout=60).json()['section_order'] == order
+        # Sending only `hidden` keeps the saved order.
+        assert requests.put(f"{API}/home/sections", headers=h, json={'hidden': ['owed']}, timeout=30).json()['order'] == order
+    finally:
+        requests.put(f"{API}/home/sections", headers=h, json={'hidden': [], 'order': []}, timeout=30)
+    emp = _login('rmj001', '1234', employee=True)
+    e = requests.get(f"{API}/home/sections", headers=emp, timeout=30).json()
+    assert 'punch' in e['order'] and 'cash' not in e['order']
+    # The punch card can't be hidden.
+    assert 'punch' not in requests.put(f"{API}/home/sections", headers=emp, json={'hidden': ['punch']}, timeout=30).json()['hidden']

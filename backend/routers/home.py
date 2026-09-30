@@ -614,34 +614,57 @@ async def _notifications(user: dict) -> dict:
         db.notifications.count_documents({'user_id': user['id'], 'read': False}),
     )
     return {'unread': unread, 'items': items}
-SECTION_KEYS = [x['key'] for x in HOME_SECTIONS]
+# The employee Home has its own, shorter set; the punch card can be moved but not hidden.
+EMP_SECTIONS = [
+    {'key': 'rates', 'label': 'Rates ticker'},
+    {'key': 'punch', 'label': "Today's punch & reminders", 'fixed': True},
+    {'key': 'quick_actions', 'label': 'Quick actions'},
+    {'key': 'needs_you', 'label': 'Needs you today'},
+    {'key': 'notifications', 'label': 'Notifications'},
+]
+SECTION_KEYS = list(dict.fromkeys([x['key'] for x in HOME_SECTIONS + EMP_SECTIONS]))
+
+
+def _sections_for(user: dict) -> list[dict]:
+    return EMP_SECTIONS if user.get('role') == 'employee' else HOME_SECTIONS
+
+
+async def _layout(user: dict) -> dict:
+    """This person's Home sections in their order, and which are hidden."""
+    prefs = await db.user_prefs.find_one({'user_id': user['id']}, {'_id': 0, 'home_hidden_sections': 1, 'home_section_order': 1}) or {}
+    mine = _sections_for(user)
+    by_key = {x['key']: x for x in mine}
+    order = [k for k in (prefs.get('home_section_order') or []) if k in by_key]
+    order += [x['key'] for x in mine if x['key'] not in order]   # sections added later go at the end
+    hidden = [k for k in (prefs.get('home_hidden_sections') or []) if k in SECTION_KEYS and not (by_key.get(k) or {}).get('fixed')]
+    return {'sections': [by_key[k] for k in order], 'order': order, 'hidden': hidden}
 
 
 async def _hidden_sections(user: dict) -> list[str]:
-    prefs = await db.user_prefs.find_one({'user_id': user['id']}, {'_id': 0, 'home_hidden_sections': 1}) or {}
-    return [k for k in (prefs.get('home_hidden_sections') or []) if k in SECTION_KEYS]
+    return (await _layout(user))['hidden']
 
 
 class SectionsIn(BaseModel):
     hidden: list[str] = Field(default_factory=list, max_length=20)
+    order: Optional[list[str]] = Field(default=None, max_length=20)
 
 
 @router.get('/home/sections')
 async def get_sections(user: dict = Depends(get_current)):
-    return {'sections': HOME_SECTIONS, 'hidden': await _hidden_sections(user)}
+    return await _layout(user)
 
 
 @router.put('/home/sections')
 async def put_sections(body: SectionsIn, user: dict = Depends(get_current)):
-    """Which Home sections this person hides — saved per user, so it follows them to any device."""
-    hidden = [k for k in dict.fromkeys(body.hidden) if k in SECTION_KEYS]
-    await db.user_prefs.update_one(
-        {'user_id': user['id']},
-        {'$set': {'user_id': user['id'], 'home_hidden_sections': hidden, 'updated_at': now_utc().isoformat()}},
-        upsert=True,
-    )
+    """Which Home sections this person hides, and in what order — saved per user, so it
+    follows them to any device. Sending no `order` keeps the saved one."""
+    upd = {'user_id': user['id'], 'home_hidden_sections': [k for k in dict.fromkeys(body.hidden) if k in SECTION_KEYS],
+           'updated_at': now_utc().isoformat()}
+    if body.order is not None:
+        upd['home_section_order'] = [k for k in dict.fromkeys(body.order) if k in SECTION_KEYS]
+    await db.user_prefs.update_one({'user_id': user['id']}, {'$set': upd}, upsert=True)
     _USER_CACHE.pop(user['id'], None)
-    return {'sections': HOME_SECTIONS, 'hidden': hidden}
+    return await _layout(user)
 
 
 # ---------------- Summary ----------------
@@ -663,7 +686,8 @@ async def build_summary(user: dict) -> dict:
     t0 = time.monotonic()
     now = _ist_now()
     today = now.date().isoformat()
-    s, hidden = await asyncio.gather(home_settings(), _hidden_sections(user))
+    s, layout = await asyncio.gather(home_settings(), _layout(user))
+    hidden = layout['hidden']
     if user.get('role') == 'employee':
         # The employee Home shows rates, quick actions, Needs you and notifications only.
         hidden = hidden + [k for k in ('cash', 'staff', 'owed', 'coming_up') if k not in hidden]
@@ -701,6 +725,7 @@ async def build_summary(user: dict) -> dict:
         'coming_up': await coming_task if coming_task else None,
         'notifications': await notif_task if notif_task else None,
         'hidden_sections': hidden,
+        'section_order': layout['order'],
         'settings': s,
         'took_ms': round((time.monotonic() - t0) * 1000),
     }

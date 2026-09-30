@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable, RefreshControl,
   ActivityIndicator,
@@ -39,6 +39,8 @@ type Att = {
 type Task = { id: string; title: string; due_date?: string };
 
 type Store = { work_start?: string; work_end?: string; grace_min?: number; name?: string; radius_m?: number; app_checkin_enabled?: boolean };
+
+const EMP_ORDER = ['rates', 'punch', 'quick_actions', 'needs_you', 'notifications'];
 
 type HomeData = { day: string; att: Att; store: Store; tasks: Task[] };
 
@@ -111,6 +113,130 @@ export default function EmployeeHome() {
   const reminderCheckIn = appCheckinEnabled && !hasCheckIn && shouldRemindCheckIn(now, store.work_start, store.grace_min);
   const reminderCheckOut = appCheckinEnabled && hasCheckIn && !hasCheckOut && shouldRemindCheckOut(now, store.work_end);
 
+  // Each Home section, in this person's order (Settings › Home screen); the punch card
+  // group also carries the setup banner and check-in/out reminders.
+  const blocks: Record<string, ReactNode> = {
+    rates: (
+      <>
+        <RateTicker rates={isOk(summary?.rates) ? summary!.rates : null} loading={!summary} />
+      </>
+    ),
+    punch: (
+      <>
+        <View style={{ marginTop: spacing.md }}>
+          {/* Punch card — hidden entirely for work-from-home staff */}
+          {isRemote && (
+            <View style={styles.punchCard} testID="remote-card">
+              <Text style={styles.punchLabel}>WORK FROM HOME</Text>
+              <View style={styles.doneBadge}>
+                <Ionicons name="home" size={18} color={colors.brandPrimary} />
+                <Text style={styles.doneText}>No attendance to record. Your salary is paid in full each month.</Text>
+              </View>
+            </View>
+          )}
+          {!isRemote && (
+          <View style={styles.punchCard} testID="punch-card">
+            <View style={styles.punchTopRow}>
+              <Text style={styles.punchLabel}>TODAY&apos;S PUNCH</Text>
+              {!!att?.is_late && <View style={styles.lateBadge}><Ionicons name="warning-outline" size={11} color={colors.onWarning} /><Text style={styles.lateText}>Late</Text></View>}
+              {!!att?.working_hours && <Text style={styles.hoursText}>{att.working_hours}h worked</Text>}
+            </View>
+            <View style={styles.punchRow}>
+              <PunchSlot label="Check In" time={fmtTime(att?.check_in?.timestamp)} icon="log-in-outline" done={hasCheckIn} testID="slot-check-in" />
+              <View style={styles.punchDivider} />
+              <PunchSlot label="Check Out" time={fmtTime(att?.check_out?.timestamp)} icon="log-out-outline" done={hasCheckOut} testID="slot-check-out" />
+            </View>
+
+            {!appCheckinEnabled && (
+              <View style={styles.doneBadge} testID="app-checkin-disabled-notice">
+                <Ionicons name="finger-print-outline" size={16} color={colors.mutedText} />
+                <Text style={styles.doneText}>Tracked via biometric device — app check-in/out is off.</Text>
+              </View>
+            )}
+            {appCheckinEnabled && !hasCheckIn && (
+              <Pressable onPress={() => setShowPunch('check_in')} style={styles.punchBtn} testID="btn-check-in">
+                <Ionicons name="log-in" size={18} color={colors.onBrandPrimary} />
+                <Text style={styles.punchBtnText}>Check In</Text>
+              </Pressable>
+            )}
+            {appCheckinEnabled && hasCheckIn && !hasCheckOut && (
+              <Pressable onPress={() => setShowPunch('check_out')} style={[styles.punchBtn, styles.punchBtnOut]} testID="btn-check-out">
+                <Ionicons name="log-out" size={18} color={colors.onSurface} />
+                <Text style={[styles.punchBtnText, { color: colors.onSurface }]}>Check Out</Text>
+              </Pressable>
+            )}
+            {appCheckinEnabled && hasCheckIn && hasCheckOut && (
+              <View style={styles.doneBadge} testID="punch-done-badge">
+                <Ionicons name="checkmark-circle" size={16} color={colors.brandPrimary} />
+                <Text style={styles.doneText}>All punches done · See you tomorrow</Text>
+              </View>
+            )}
+          </View>
+          )}
+
+          {/* Install-to-home-screen + enable-notifications onboarding */}
+          <AppSetupBanner />
+
+          {/* Reminder banners */}
+          {!isRemote && reminderCheckIn && (
+            <ReminderBanner
+              testID="reminder-checkin"
+              icon="alarm-outline" color={colors.warning}
+              title="Check-In Reminder"
+              subtitle="You haven't punched in today. Punch in now, or tap a day on your Calendar to request a correction."
+              actions={[
+                { label: 'Punch In', onPress: () => setShowPunch('check_in'), primary: true, testID: 'reminder-checkin-btn' },
+              ]}
+            />
+          )}
+          {!isRemote && reminderCheckOut && (
+            <ReminderBanner
+              testID="reminder-checkout"
+              icon="alarm-outline" color={colors.warning}
+              title="Check-Out Reminder"
+              subtitle="You haven't punched out yet. Don't forget!"
+              actions={[
+                { label: 'Punch Out', onPress: () => setShowPunch('check_out'), primary: true, testID: 'reminder-checkout-btn' },
+              ]}
+            />
+          )}
+
+        </View>
+      </>
+    ),
+    quick_actions: (
+      <>
+        {/* Quick actions — their own Calendar, Leave and Ledger first (work-from-home staff
+            have no attendance, so no Calendar or Leave), then the create shortcuts for the
+            modules the owner gave them Edit rights on. */}
+        <QuickRow items={[
+          ...(!isRemote ? [
+            { key: 'calendar', label: 'Calendar', icon: 'calendar-outline', onPress: () => router.push('/(emp)/calendar' as any) },
+            { key: 'leave', label: 'Leave', icon: 'airplane-outline', onPress: () => router.push('/leaves') },
+          ] as QuickItem[] : []),
+          { key: 'ledger', label: 'My Ledger', icon: 'book-outline', onPress: () => router.push(`/ledger/${user?.id}`) },
+          // My Tasks otherwise lives in the Work hub; with no Work tab this is the way to it.
+          ...(!employeeTabAccess(hasModule).work ? [{ key: 'tasks', label: 'My Tasks', icon: 'checkbox-outline', onPress: () => router.push('/(emp)/tasks' as any) }] as QuickItem[] : []),
+          ...(isOk(summary?.quick_actions) ? summary!.quick_actions.tiles.filter((t) => QUICK_ROUTE[t.key]).map((t) => ({
+            key: t.key, label: t.label, icon: QUICK_ICON[t.key] || 'ellipse-outline', onPress: () => router.push(QUICK_ROUTE[t.key] as any),
+          })) : []),
+        ]} />
+
+      </>
+    ),
+    needs_you: (
+      <>
+        <NeedsSection needs={summary ? summary.needs_you : undefined} loading={!summary} />
+      </>
+    ),
+    notifications: (
+      <>
+        <NotificationsSection data={isOk(summary?.notifications) ? summary!.notifications : null} />
+      </>
+    ),
+  };
+  const order = summary?.section_order?.length ? summary.section_order : EMP_ORDER;
+
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="emp-home-screen">
       <StickyHeader scrolled={scrolled} style={{ paddingHorizontal: 0, paddingTop: 0, paddingBottom: 0 }}>
@@ -146,103 +272,7 @@ export default function EmployeeHome() {
           </View>
         ) : (
           <View style={{ paddingHorizontal: spacing.lg }}>
-            <RateTicker rates={isOk(summary?.rates) ? summary!.rates : null} loading={!summary} />
-            <View style={{ height: spacing.md }} />
-            {/* Punch card — hidden entirely for work-from-home staff */}
-            {isRemote && (
-              <View style={styles.punchCard} testID="remote-card">
-                <Text style={styles.punchLabel}>WORK FROM HOME</Text>
-                <View style={styles.doneBadge}>
-                  <Ionicons name="home" size={18} color={colors.brandPrimary} />
-                  <Text style={styles.doneText}>No attendance to record. Your salary is paid in full each month.</Text>
-                </View>
-              </View>
-            )}
-            {!isRemote && (
-            <View style={styles.punchCard} testID="punch-card">
-              <View style={styles.punchTopRow}>
-                <Text style={styles.punchLabel}>TODAY&apos;S PUNCH</Text>
-                {!!att?.is_late && <View style={styles.lateBadge}><Ionicons name="warning-outline" size={11} color={colors.onWarning} /><Text style={styles.lateText}>Late</Text></View>}
-                {!!att?.working_hours && <Text style={styles.hoursText}>{att.working_hours}h worked</Text>}
-              </View>
-              <View style={styles.punchRow}>
-                <PunchSlot label="Check In" time={fmtTime(att?.check_in?.timestamp)} icon="log-in-outline" done={hasCheckIn} testID="slot-check-in" />
-                <View style={styles.punchDivider} />
-                <PunchSlot label="Check Out" time={fmtTime(att?.check_out?.timestamp)} icon="log-out-outline" done={hasCheckOut} testID="slot-check-out" />
-              </View>
-
-              {!appCheckinEnabled && (
-                <View style={styles.doneBadge} testID="app-checkin-disabled-notice">
-                  <Ionicons name="finger-print-outline" size={16} color={colors.mutedText} />
-                  <Text style={styles.doneText}>Tracked via biometric device — app check-in/out is off.</Text>
-                </View>
-              )}
-              {appCheckinEnabled && !hasCheckIn && (
-                <Pressable onPress={() => setShowPunch('check_in')} style={styles.punchBtn} testID="btn-check-in">
-                  <Ionicons name="log-in" size={18} color={colors.onBrandPrimary} />
-                  <Text style={styles.punchBtnText}>Check In</Text>
-                </Pressable>
-              )}
-              {appCheckinEnabled && hasCheckIn && !hasCheckOut && (
-                <Pressable onPress={() => setShowPunch('check_out')} style={[styles.punchBtn, styles.punchBtnOut]} testID="btn-check-out">
-                  <Ionicons name="log-out" size={18} color={colors.onSurface} />
-                  <Text style={[styles.punchBtnText, { color: colors.onSurface }]}>Check Out</Text>
-                </Pressable>
-              )}
-              {appCheckinEnabled && hasCheckIn && hasCheckOut && (
-                <View style={styles.doneBadge} testID="punch-done-badge">
-                  <Ionicons name="checkmark-circle" size={16} color={colors.brandPrimary} />
-                  <Text style={styles.doneText}>All punches done · See you tomorrow</Text>
-                </View>
-              )}
-            </View>
-            )}
-
-            {/* Install-to-home-screen + enable-notifications onboarding */}
-            <AppSetupBanner />
-
-            {/* Reminder banners */}
-            {!isRemote && reminderCheckIn && (
-              <ReminderBanner
-                testID="reminder-checkin"
-                icon="alarm-outline" color={colors.warning}
-                title="Check-In Reminder"
-                subtitle="You haven't punched in today. Punch in now, or tap a day on your Calendar to request a correction."
-                actions={[
-                  { label: 'Punch In', onPress: () => setShowPunch('check_in'), primary: true, testID: 'reminder-checkin-btn' },
-                ]}
-              />
-            )}
-            {!isRemote && reminderCheckOut && (
-              <ReminderBanner
-                testID="reminder-checkout"
-                icon="alarm-outline" color={colors.warning}
-                title="Check-Out Reminder"
-                subtitle="You haven't punched out yet. Don't forget!"
-                actions={[
-                  { label: 'Punch Out', onPress: () => setShowPunch('check_out'), primary: true, testID: 'reminder-checkout-btn' },
-                ]}
-              />
-            )}
-
-            {/* Quick actions — their own Calendar, Leave and Ledger first (work-from-home staff
-                have no attendance, so no Calendar or Leave), then the create shortcuts for the
-                modules the owner gave them Edit rights on. */}
-            <QuickRow items={[
-              ...(!isRemote ? [
-                { key: 'calendar', label: 'Calendar', icon: 'calendar-outline', onPress: () => router.push('/(emp)/calendar' as any) },
-                { key: 'leave', label: 'Leave', icon: 'airplane-outline', onPress: () => router.push('/leaves') },
-              ] as QuickItem[] : []),
-              { key: 'ledger', label: 'My Ledger', icon: 'book-outline', onPress: () => router.push(`/ledger/${user?.id}`) },
-              // My Tasks otherwise lives in the Work hub; with no Work tab this is the way to it.
-              ...(!employeeTabAccess(hasModule).work ? [{ key: 'tasks', label: 'My Tasks', icon: 'checkbox-outline', onPress: () => router.push('/(emp)/tasks' as any) }] as QuickItem[] : []),
-              ...(isOk(summary?.quick_actions) ? summary!.quick_actions.tiles.filter((t) => QUICK_ROUTE[t.key]).map((t) => ({
-                key: t.key, label: t.label, icon: QUICK_ICON[t.key] || 'ellipse-outline', onPress: () => router.push(QUICK_ROUTE[t.key] as any),
-              })) : []),
-            ]} />
-
-            <NeedsSection needs={summary ? summary.needs_you : undefined} loading={!summary} />
-            <NotificationsSection data={isOk(summary?.notifications) ? summary!.notifications : null} />
+            {order.map((k) => <Fragment key={k}>{blocks[k]}</Fragment>)}
           </View>
         )}
         <TabBarSpacer />
