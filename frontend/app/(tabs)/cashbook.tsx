@@ -45,7 +45,7 @@ type Counter = {
 // /cashbook/counters/transfer-options: naming a counter as a transfer
 // counterparty is allowed even without view access to its ledger).
 type CounterLite = { id: string; name: string };
-type QuickName = { id: string; name: string; entry_type: EntryType | null };
+type QuickName = { id: string; name: string; entry_type: EntryType | null; active?: boolean };
 
 type Mode = 'view' | 'form' | 'settings';
 
@@ -105,7 +105,7 @@ export default function CashBookScreen() {
   const [addingQuickName, setAddingQuickName] = useState(false);
   const [newQuickName, setNewQuickName] = useState('');
   const visibleQuickNames = useMemo(
-    () => quickNames.filter((q) => q.entry_type == null || q.entry_type === entryType),
+    () => quickNames.filter((q) => q.active !== false && (q.entry_type == null || q.entry_type === entryType)),
     [quickNames, entryType],
   );
 

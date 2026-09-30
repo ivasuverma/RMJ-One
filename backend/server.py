@@ -1150,6 +1150,13 @@ class CashBookCounterUpdateIn(BaseModel):
     limit_alert: Optional[bool] = None
 
 
+class CashBookQuickNameUpdate(BaseModel):
+    """Rename a Cash Receive/Pay Type, or switch it off (it stays on past
+    entries but isn't offered for new ones)."""
+    name: Optional[str] = None
+    active: Optional[bool] = None
+
+
 class CashBookQuickNameIn(BaseModel):
     # A reusable Name/Description preset (e.g. "Milk", "Tea", "Electricity")
     # shop staff can tap to fill an entry instantly instead of retyping it
