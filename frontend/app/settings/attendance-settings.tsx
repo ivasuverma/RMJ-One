@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as Location from 'expo-location';
 import { api } from '@/src/api/client';
+import { TimeInput } from '@/src/components/TimeInput';
 import { notify } from '@/src/utils/notify';
 import { confirmAction } from '@/src/utils/confirm';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
@@ -152,10 +153,10 @@ export default function AttendanceSettings() {
           <SectionTitle text="Shift Hours" />
           <View style={styles.row2}>
             <View style={{ flex: 1 }}>
-              <F label="Start (HH:MM)" v={form.work_start} onC={(v) => setForm({ ...form, work_start: v })} testID="as-start" />
+              <F label="Start (HH:MM)" time v={form.work_start} onC={(v) => setForm({ ...form, work_start: v })} testID="as-start" />
             </View>
             <View style={{ flex: 1 }}>
-              <F label="End (HH:MM)" v={form.work_end} onC={(v) => setForm({ ...form, work_end: v })} testID="as-end" />
+              <F label="End (HH:MM)" time v={form.work_end} onC={(v) => setForm({ ...form, work_end: v })} testID="as-end" />
             </View>
           </View>
           <F label="Late Grace (minutes)" v={form.grace_min} onC={(v) => setForm({ ...form, grace_min: v.replace(/[^0-9]/g, '') })} kt="numeric" testID="as-grace" />
@@ -219,13 +220,17 @@ function SectionTitle({ text }: { text: string }) {
   const styles = useMemo(() => makeStyles(colors), [colors]);
   return <Text style={styles.section}>{text}</Text>;
 }
-function F({ label, v, onC, kt, testID }: { label: string; v: string; onC: (s: string) => void; kt?: any; testID?: string }) {
+function F({ label, v, onC, kt, testID, time }: { label: string; v: string; onC: (s: string) => void; kt?: any; testID?: string; time?: boolean }) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <View style={{ marginBottom: spacing.md }}>
       <Text style={styles.label}>{label}</Text>
-      <TextInput testID={testID} value={v} onChangeText={onC} keyboardType={kt} style={styles.input} autoCapitalize="none" autoCorrect={false} placeholderTextColor={colors.mutedText} />
+      {time ? (
+        <TimeInput testID={testID} value={v} onChangeText={onC} style={styles.input} placeholder="HH:MM" placeholderTextColor={colors.mutedText} />
+      ) : (
+        <TextInput testID={testID} value={v} onChangeText={onC} keyboardType={kt} style={styles.input} autoCapitalize="none" autoCorrect={false} placeholderTextColor={colors.mutedText} />
+      )}
     </View>
   );
 }

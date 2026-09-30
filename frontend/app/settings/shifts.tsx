@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { api } from '@/src/api/client';
+import { TimeInput } from '@/src/components/TimeInput';
 import { confirmAction } from '@/src/utils/confirm';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
@@ -133,11 +134,11 @@ export default function ShiftsScreen() {
                   <View style={styles.row2}>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.label}>Start</Text>
-                      <TextInput testID="shift-start" value={start} onChangeText={setStart} placeholder="10:00" placeholderTextColor={colors.mutedText} style={styles.input} autoCapitalize="none" />
+                      <TimeInput testID="shift-start" value={start} onChangeText={setStart} placeholder="10:00" placeholderTextColor={colors.mutedText} style={styles.input} />
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.label}>End</Text>
-                      <TextInput testID="shift-end" value={end} onChangeText={setEnd} placeholder="19:30" placeholderTextColor={colors.mutedText} style={styles.input} autoCapitalize="none" />
+                      <TimeInput testID="shift-end" value={end} onChangeText={setEnd} placeholder="19:30" placeholderTextColor={colors.mutedText} style={styles.input} />
                     </View>
                   </View>
                   <Text style={styles.label}>Grace (min)</Text>
