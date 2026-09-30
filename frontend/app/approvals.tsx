@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
-import { displayDateOnly } from '@/src/utils/datetime';
+import { displayDateOnly, istTime24 } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
@@ -15,7 +15,30 @@ type Correction = {
   id: string; employee_name: string; employee_code: string; date: string;
   reason_type: string; note: string; status: 'pending' | 'approved' | 'rejected';
   created_at: string; desired_check_in?: string | null; desired_check_out?: string | null;
+  current?: DaySummary | null;                       // pending: the day as it stands now
+  before?: DaySummary | null; after?: DaySummary | null;   // approved: what approving changed
 };
+type DaySummary = { check_in?: string | null; check_out?: string | null; working_hours?: number; status?: string | null };
+// One side of the comparison, as display strings.
+type DayView = { in: string; out: string; hours: string; status: string };
+
+const STATUS_LABEL: Record<string, string> = { present: 'Present', half_day: 'Half day', absent: 'Absent', leave: 'Leave', holiday: 'Holiday', weekly_off: 'Weekly off' };
+const toMin = (t: string) => { const m = /^(\d{1,2}):(\d{2})$/.exec(t.trim()); return m ? +m[1] * 60 + +m[2] : null; };
+const fmtHours = (h?: number | null) => (h ? `${Math.floor(h)}h ${String(Math.round((h % 1) * 60)).padStart(2, '0')}m` : '—');
+const viewOf = (d?: DaySummary | null): DayView => d
+  ? { in: d.check_in ? istTime24(d.check_in) : '—', out: d.check_out ? istTime24(d.check_out) : '—', hours: fmtHours(d.working_hours), status: STATUS_LABEL[d.status || ''] || '—' }
+  : { in: '—', out: '—', hours: '—', status: 'No record' };
+// What approving a pending correction would make the day: the approver's times over the current ones.
+function projected(cur: DayView, t: { in: string; out: string }, hasRecord: boolean): DayView {
+  const tin = t.in.trim() || (cur.in !== '—' ? cur.in : '');
+  const tout = t.out.trim() || (cur.out !== '—' ? cur.out : '');
+  if (!t.in.trim() && !t.out.trim()) {
+    return hasRecord ? { ...cur } : { in: '—', out: '—', hours: '8h 00m', status: 'Present' };
+  }
+  const a = toMin(tin), b = toMin(tout);
+  const hrs = a !== null && b !== null && b > a ? (b - a) / 60 : 0;
+  return { in: tin || '—', out: tout || '—', hours: fmtHours(hrs), status: hrs ? (hrs >= 4 ? 'Present' : 'Half day') : 'Present' };
+}
 type Leave = {
   id: string; employee_name: string; employee_code: string;
   from_date: string; to_date: string; leave_type: string; reason: string;
@@ -147,6 +170,13 @@ export default function Approvals() {
                   </View>
                   <StatusChip s={c.status} />
                 </View>
+                {/* The day as it is vs. what approving makes it (or made it). */}
+                {c.status === 'pending' ? (
+                  <Compare left={viewOf(c.current)} right={projected(viewOf(c.current), timeFor(c), !!c.current)}
+                    leftLabel="Current" rightLabel="After approval" testID={`corr-${c.id}-compare`} />
+                ) : c.status === 'approved' && c.after ? (
+                  <Compare left={viewOf(c.before)} right={viewOf(c.after)} leftLabel="Before" rightLabel="After" testID={`corr-${c.id}-compare`} />
+                ) : null}
                 {c.status === 'pending' && (
                   <DecideRow
                     onApprove={() => {
@@ -189,6 +219,31 @@ export default function Approvals() {
         </ScrollView>
       )}
     </SafeAreaView>
+  );
+}
+
+function Compare({ left, right, leftLabel, rightLabel, testID }: { left: DayView; right: DayView; leftLabel: string; rightLabel: string; testID?: string }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+  const rows: [string, keyof DayView][] = [['In', 'in'], ['Out', 'out'], ['Hours', 'hours'], ['Status', 'status']];
+  return (
+    <View style={styles.cmp} testID={testID}>
+      <View style={styles.cmpRow}>
+        <Text style={[styles.cmpKey, styles.cmpHead]} />
+        <Text style={[styles.cmpCell, styles.cmpHead]}>{leftLabel}</Text>
+        <Text style={[styles.cmpCell, styles.cmpHead]}>{rightLabel}</Text>
+      </View>
+      {rows.map(([label, k]) => {
+        const changed = left[k] !== right[k];
+        return (
+          <View key={k} style={styles.cmpRow}>
+            <Text style={styles.cmpKey}>{label}</Text>
+            <Text style={[styles.cmpCell, changed && left[k] !== '—' && styles.cmpOld]}>{left[k]}</Text>
+            <Text style={[styles.cmpCell, changed && styles.cmpNew]}>{right[k]}</Text>
+          </View>
+        );
+      })}
+    </View>
   );
 }
 
@@ -276,6 +331,13 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.brandTertiary,
     borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 3,
   },
+  cmp: { marginTop: spacing.sm, borderRadius: radius.sm, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' },
+  cmpRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 5, paddingHorizontal: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.divider },
+  cmpHead: { color: colors.mutedText, fontSize: 10.5, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.4 },
+  cmpKey: { width: 64, color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '700' },
+  cmpCell: { flex: 1, color: colors.onSurface, fontSize: 13, fontWeight: '600' },
+  cmpOld: { color: colors.mutedText, textDecorationLine: 'line-through' },
+  cmpNew: { color: colors.brandPrimary, fontWeight: '800' },
   timeBox: {
     flexDirection: 'row', alignItems: 'center', gap: 5, paddingLeft: 8, borderRadius: radius.sm,
     borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface,

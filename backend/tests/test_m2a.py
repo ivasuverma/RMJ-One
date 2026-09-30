@@ -202,6 +202,10 @@ class TestCorrections:
         # A request with no time for a day that has a record can't be applied: refused, not silently "approved".
         bare = requests.post(f"{API}/attendance/corrections", headers=h,
                              json={'date': day, 'reason_type': 'forgot_check_out'}, timeout=30).json()
+        # The approver sees the day as it stands now.
+        pend = requests.get(f"{API}/attendance/corrections?status=pending", headers=owner_headers, timeout=30).json()
+        cur = next(x for x in pend if x['id'] == bare['id'])['current']
+        assert cur['check_in'] and cur['check_out'] is None
         rb = requests.post(f"{API}/attendance/corrections/{bare['id']}/decide", headers=owner_headers, json={'action': 'approve'}, timeout=30)
         assert rb.status_code == 400
         # ...but the approver can supply the time while approving.
@@ -209,6 +213,8 @@ class TestCorrections:
                             json={'action': 'approve', 'check_out': '19:30'}, timeout=30)
         assert rb2.status_code == 200, rb2.text
         assert rb2.json()['status'] == 'approved' and rb2.json()['applied_check_out'] == '19:30'
+        # ...and it keeps a before/after record of what approving changed.
+        assert rb2.json()['before']['check_out'] is None and rb2.json()['after']['working_hours'] == 9.5
         cal = requests.get(f"{API}/attendance/calendar/{emp_id}?year=2026&month=1", headers=owner_headers, timeout=30).json()
         d = next(x for x in cal['days'] if x['date'] == day)
         assert d['check_in'] and d['check_out']
