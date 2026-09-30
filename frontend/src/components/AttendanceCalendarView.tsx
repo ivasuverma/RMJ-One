@@ -32,17 +32,29 @@ type StatusStyle = { bg: string; fg: string };
 // pairs (not theme semantic tokens) are used for the statuses beyond the
 // core 4 (success/warning/error/info) since this palette only has those four
 // plus neutral/brand to work with.
-function makeStatusStyles(colors: ThemeColors, scheme: 'light' | 'dark'): Record<string, StatusStyle> {
+function makeStatusStyles(_colors: ThemeColors, scheme: 'light' | 'dark'): Record<string, StatusStyle> {
+  // One clearly different hue per status, with fills strong enough to tell apart
+  // at a glance (the old theme tints were ~12% and several looked alike):
+  // green · orange · purple · red · pink · blue · grey · cyan.
   const light = scheme === 'light';
-  return {
-    present: { bg: colors.success, fg: colors.onSuccess },                                   // green
-    late: { bg: colors.warning, fg: colors.onWarning },                                       // amber/gold
-    half_day: light ? { bg: '#F0E4F7', fg: '#7A3E96' } : { bg: '#3A1F45', fg: '#D9A8E8' },     // purple
-    absent: { bg: colors.error, fg: colors.onError },                                          // red
-    missing_punch: light ? { bg: '#FCE4EF', fg: '#A32468' } : { bg: '#4A1330', fg: '#F2A0C7' }, // pink/magenta
-    leave: { bg: colors.info, fg: colors.onInfo },                                              // blue
-    holiday: { bg: colors.surfaceTertiary, fg: colors.mutedText },                              // neutral grey
-    weekly_off: light ? { bg: '#D9F2FA', fg: '#0A7EA4' } : { bg: '#0E3440', fg: '#7DD3EA' },     // sky cyan — teal was too close to present's green
+  return light ? {
+    present:       { bg: '#CDEBD6', fg: '#1C6B38' },   // green
+    late:          { bg: '#FFE0B8', fg: '#A8520A' },   // orange
+    half_day:      { bg: '#E6D5F7', fg: '#6A2C9E' },   // purple
+    absent:        { bg: '#F9CFCC', fg: '#B3261E' },   // red
+    missing_punch: { bg: '#FBD3E9', fg: '#B0226E' },   // pink
+    leave:         { bg: '#D3E0FB', fg: '#2447B3' },   // blue
+    holiday:       { bg: '#E3E1DC', fg: '#57534E' },   // grey
+    weekly_off:    { bg: '#C8EFF5', fg: '#0B6E80' },   // cyan
+  } : {
+    present:       { bg: '#16391F', fg: '#7FD69A' },
+    late:          { bg: '#43290B', fg: '#FFB566' },
+    half_day:      { bg: '#33204A', fg: '#CFA6F5' },
+    absent:        { bg: '#461614', fg: '#FF928A' },
+    missing_punch: { bg: '#471532', fg: '#F7A3D0' },
+    leave:         { bg: '#172A55', fg: '#9DB7FF' },
+    holiday:       { bg: '#2B2A28', fg: '#B5B0A8' },
+    weekly_off:    { bg: '#0D3740', fg: '#74DCEC' },
   };
 }
 
@@ -140,12 +152,12 @@ export default function AttendanceCalendarView({ empId, onBack, title = 'Calenda
             );
             return (
               <View style={styles.monthSummary} testID="calendar-month-summary">
-                {cell(c.present, 'Present', colors.onSuccess)}
-                {cell(c.late, 'Late', colors.onWarning)}
-                {cell(c.half, 'Half', colors.onWarning)}
-                {cell(c.absent, 'Absent', colors.onError)}
-                {cell(c.leave, 'Leave', colors.brandSecondary)}
-                {cell(c.off, 'Off', colors.mutedText)}
+                {cell(c.present, 'Present', statusStyles.present.fg)}
+                {cell(c.late, 'Late', statusStyles.late.fg)}
+                {cell(c.half, 'Half', statusStyles.half_day.fg)}
+                {cell(c.absent, 'Absent', statusStyles.absent.fg)}
+                {cell(c.leave, 'Leave', statusStyles.leave.fg)}
+                {cell(c.off, 'Off', statusStyles.weekly_off.fg)}
               </View>
             );
           })()}
@@ -479,7 +491,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
 
   legend: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md, marginTop: spacing.lg },
   legendItem: { flexDirection: 'row', gap: 4, alignItems: 'center' },
-  legendDot: { width: 10, height: 10, borderRadius: 3, borderWidth: 1.5 },
+  legendDot: { width: 12, height: 12, borderRadius: 3, borderWidth: 1.5 },
   legendText: { color: colors.onSurfaceTertiary, fontSize: 11 },
 
   modalBg: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)' },
