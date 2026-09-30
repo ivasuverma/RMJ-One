@@ -16,6 +16,7 @@ import { StickyHeader, useScrolled, HeaderSpacer } from '@/src/components/ui/Sti
 import { TabBarSpacer } from '@/src/components/GlassTabBar';
 import { UploadQueueBadge } from '@/src/components/UploadQueueBadge';
 import { Marquee } from './Marquee';
+import { StaffSheet } from './StaffSheet';
 import { NotifRow, notifTarget, Notif } from '@/src/components/notifications/NotifRow';
 import { QuickEditSheet, EmployeePickSheet, QUICK_ICON } from './QuickSheets';
 import { HomeSummary, isOk, NeedRow, QuickActions, StaffPerson } from './types';
@@ -60,6 +61,7 @@ export default function HomeBriefing() {
   );
   const [pulling, setPulling] = useState(false);
   const [cashOpen, setCashOpen] = useState(false);
+  const [person, setPerson] = useState<StaffPerson | null>(null);
   const [editQuick, setEditQuick] = useState(false);
   const [pickAdvance, setPickAdvance] = useState(false);
   const [quickOverride, setQuickOverride] = useState<QuickActions | null>(null);
@@ -212,7 +214,7 @@ export default function HomeBriefing() {
               <SectionHead s={s} title="In the shop" right={`${data.staff.present} of ${data.staff.due} in`} onRight={() => go('/attendance')} />
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.staff} style={s.edgeToEdge}>
                 {data.staff.people.map((p) => (
-                  <Pressable key={p.id} style={s.p} onPress={() => go(`/attendance/calendar/${p.id}?name=${encodeURIComponent(p.name)}`)} testID={`home-staff-${p.id}`}>
+                  <Pressable key={p.id} style={s.p} onPress={() => setPerson(p)} testID={`home-staff-${p.id}`}>
                     <View style={[s.av, { borderColor: ringColor(p.status, colors) }, (p.status === 'not_in' || p.status === 'absent') && { opacity: 0.75 }]}>
                       {p.photo ? <Image source={{ uri: p.photo }} style={s.avImg} /> : <Text style={s.avText}>{initials(p.name)}</Text>}
                     </View>
@@ -313,6 +315,7 @@ export default function HomeBriefing() {
         <TabBarSpacer />
       </ScrollView>
 
+      <StaffSheet person={person} onClose={() => setPerson(null)} canSeePay={isOk(data?.staff) ? !!data!.staff.can_see_pay : false} />
       <QuickEditSheet visible={editQuick} data={quick} onClose={() => setEditQuick(false)} onSaved={(q) => { setQuickOverride(q); reload(); }} />
       <EmployeePickSheet visible={pickAdvance} onClose={() => setPickAdvance(false)}
         onPick={(id) => { setPickAdvance(false); go(`/ledger/new?emp=${id}&type=advance`); }} />
