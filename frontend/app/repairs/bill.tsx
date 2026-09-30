@@ -30,6 +30,7 @@ type Item = {
   bill_extra_charges?: number | null; bill_extra_charges_note?: string | null;
   bill_previous_balance?: number | null; final_photo?: string | null;
   bill_weight_rate?: number | null; bill_value_add?: number | null;
+  repair_type?: string | null; purity?: number | null;
 };
 
 type Txn = {
@@ -515,6 +516,7 @@ export default function RepairBillScreen() {
               <Text style={styles.cName}>{closeItem.item_code} · {closeItem.customer_name}</Text>
               <Text style={styles.cMeta}>{closeItem.description}{closeItem.billed_amount != null ? ` · Billed ₹${closeItem.billed_amount.toFixed(0)}` : ''}</Text>
             </View>
+            <DeliveryDetails item={closeItem} />
             <Text style={styles.hint}>Record when the customer actually picked up the item and who handed it over.</Text>
             <DateField label="Date Delivered" value={closeDate} onChange={setCloseDate} testID="close-delivered-at" />
             <Text style={styles.label}>Delivered By</Text>
@@ -716,7 +718,58 @@ export default function RepairBillScreen() {
   );
 }
 
+const inr = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`;
+const grams = (n: number) => `${n.toFixed(3)}g`;
+
+/** Everything about the job on one card, to check before handing it over:
+ * weights (in, back from the karigar, difference) and the bill. */
+function DeliveryDetails({ item }: { item: Item }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+  const issued = item.current_issue_weight ?? null;
+  const diff = item.weight_diff ?? null;
+  const back = issued != null && diff != null ? issued + diff : null;
+  const rows: [string, string, 'plain' | 'good' | 'bad' | 'total'][] = [];
+  if (item.repair_type) rows.push(['Repair type', item.repair_type, 'plain']);
+  if (item.karigar_name) rows.push(['Karigar', item.karigar_name, 'plain']);
+  rows.push(['Weight at intake', `${grams(item.gross_weight)}${item.purity ? ` · ${item.purity}%` : ''}`, 'plain']);
+  if (issued != null && item.karigar_name) rows.push(['Issued to karigar', grams(issued), 'plain']);
+  if (back != null) rows.push(['Received back', grams(back), 'plain']);
+  if (diff != null) {
+    const fine = item.fine_weight_diff != null && Math.abs(item.fine_weight_diff) > 0.0005 ? ` (fine ${item.fine_weight_diff > 0 ? '+' : ''}${item.fine_weight_diff.toFixed(3)}g)` : '';
+    rows.push(['Weight difference', `${diff > 0 ? '+' : ''}${grams(diff)}${fine}`, Math.abs(diff) < 0.0005 ? 'plain' : diff < 0 ? 'bad' : 'good']);
+  }
+  const labour = item.bill_labour_charge ?? item.labour_charge;
+  if (labour) rows.push(['Labour', inr(labour), 'plain']);
+  if (item.bill_material_adjustment) rows.push(['Material adjustment', inr(item.bill_material_adjustment), 'plain']);
+  if (item.bill_extra_charges) rows.push([`Extra charges${item.bill_extra_charges_note ? ` · ${item.bill_extra_charges_note}` : ''}`, inr(item.bill_extra_charges), 'plain']);
+  if (item.bill_previous_balance) rows.push(['Previous balance', inr(item.bill_previous_balance), 'plain']);
+  if (item.billed_amount != null) rows.push([item.billed_amount < 0 ? 'Credit to customer' : 'Bill amount', inr(Math.abs(item.billed_amount)), 'total']);
+  if (item.payment_mode) rows.push(['Payment', item.payment_mode, 'plain']);
+  return (
+    <View style={styles.detailCard} testID="close-details">
+      {rows.map(([k, v, tone], i) => (
+        <View key={k} style={[styles.detailRow, i > 0 && styles.detailRowSep, tone === 'total' && styles.detailRowTotal]}>
+          <Text style={[styles.detailKey, tone === 'total' && styles.detailTotalText]}>{k}</Text>
+          <Text style={[
+            styles.detailVal,
+            tone === 'good' && { color: colors.onSuccess }, tone === 'bad' && { color: colors.onError },
+            tone === 'total' && styles.detailTotalText,
+          ]}>{v}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
+  detailCard: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, paddingHorizontal: spacing.md, marginBottom: spacing.md },
+  detailRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: spacing.md, paddingVertical: 9 },
+  detailRowSep: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.divider },
+  detailRowTotal: { paddingVertical: 11 },
+  detailKey: { color: colors.mutedText, fontSize: 13, flexShrink: 1 },
+  detailVal: { color: colors.onSurface, fontSize: 14, fontWeight: '700', textAlign: 'right' },
+  detailTotalText: { color: colors.onSurface, fontSize: 16, fontWeight: '800' },
   staffPicker: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm,
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
