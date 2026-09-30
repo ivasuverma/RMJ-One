@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { View, Text, StyleSheet, TextInput, Pressable } from 'react-native';
+import { View, Text, StyleSheet, TextInput, Pressable, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { spacing, radius, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
@@ -12,14 +12,16 @@ export type Party = { id: string; name: string; mobile?: string | null };
  * by mobile number (no two share one), so the mobile is typed first:
  * - a saved number fills in the name, and that person is used;
  * - an unknown number needs a name, and a new one is created on save.
- * While typing, saved numbers containing the digits are offered to tap.
- * The parent keeps `mobile` and `name` (the name typed for a new one) and
+ * While typing, saved numbers containing the digits are offered to tap, and
+ * the list button next to the field opens everyone to pick from. The parent keeps `mobile` and `name` (the name typed for a new one) and
  * resolves them with `resolveParty` when saving.
  */
 export function PartyByMobile({
-  list, mobile, onMobile, name, onName, kindLabel, testID, children,
+  list, mobile, onMobile, name, onName, kindLabel, testID, children, onPick,
 }: {
   list: Party[];
+  /** Picked from the list; by default that fills in their mobile number. */
+  onPick?: (p: Party) => void;
   mobile: string; onMobile: (v: string) => void;
   name: string; onName: (v: string) => void;
   kindLabel: string;  // 'customer' | 'karigar' — for the labels
@@ -29,12 +31,19 @@ export function PartyByMobile({
   const { colors } = useTheme();
   const s = useMemo(() => makeStyles(colors), [colors]);
   const [focused, setFocused] = useState(false);
+  const [listOpen, setListOpen] = useState(false);
+  // Without an onPick, picking fills in the number — so only people who have one are listed.
+  const sorted = useMemo(
+    () => list.filter((p) => onPick || mobileKey(p.mobile).length >= 7).sort((a, b) => a.name.localeCompare(b.name)).slice(0, 500),
+    [list, onPick],
+  );
+  const pick = (p: Party) => { setListOpen(false); if (onPick) onPick(p); else onMobile(p.mobile || ''); };
   const match = findByMobile(list, mobile);
   const digits = mobile.replace(/\D/g, '');
   const suggestions = useMemo(() => {
-    if (match || digits.length < 3) return [];
+    if (match || listOpen || digits.length < 3) return [];
     return list.filter((p) => (p.mobile || '').replace(/\D/g, '').includes(digits)).slice(0, 5);
-  }, [list, digits, match]);
+  }, [list, digits, match, listOpen]);
   const isNew = !match && mobileKey(mobile).length >= 7;
 
   return (
@@ -52,12 +61,31 @@ export function PartyByMobile({
             <Ionicons name="close-circle" size={18} color={colors.mutedText} />
           </Pressable>
         )}
+        <Pressable onPress={() => setListOpen((v) => !v)} style={s.listBtn} hitSlop={6} testID={`${testID}-list-toggle`}
+          accessibilityRole="button" accessibilityLabel={`Choose from saved ${kindLabel}s`}>
+          <Ionicons name={listOpen ? 'chevron-up' : 'chevron-down'} size={18} color={colors.onSurface} />
+        </Pressable>
       </View>
+
+      {listOpen && (
+        <View style={s.suggest} testID={`${testID}-list`}>
+          <ScrollView style={{ maxHeight: 280 }} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+            {sorted.length === 0 ? (
+              <Text style={[s.suggestMeta, { padding: spacing.md }]}>No saved {kindLabel}s yet — type a mobile number to add one</Text>
+            ) : sorted.map((p) => (
+              <Pressable key={p.id} onPress={() => pick(p)} style={s.suggestRow} testID={`${testID}-list-${p.id}`}>
+                <Text style={s.suggestName}>{p.name}</Text>
+                <Text style={s.suggestMeta}>{p.mobile || '—'}</Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        </View>
+      )}
 
       {suggestions.length > 0 && (
         <View style={s.suggest} testID={`${testID}-suggestions`}>
           {suggestions.map((p) => (
-            <Pressable key={p.id} onPress={() => onMobile(p.mobile || '')} style={s.suggestRow} testID={`${testID}-suggest-${p.id}`}>
+            <Pressable key={p.id} onPress={() => pick(p)} style={s.suggestRow} testID={`${testID}-suggest-${p.id}`}>
               <Text style={s.suggestName}>{p.name}</Text>
               <Text style={s.suggestMeta}>{p.mobile}</Text>
             </Pressable>
@@ -107,6 +135,10 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, paddingHorizontal: spacing.md,
   },
   inputRowFocused: { borderColor: colors.onSurface },
+  listBtn: {
+    marginRight: -spacing.sm, paddingHorizontal: spacing.sm, alignSelf: 'stretch', justifyContent: 'center',
+    borderLeftWidth: StyleSheet.hairlineWidth, borderLeftColor: colors.border,
+  },
   // The row draws the focus ring, so the bare input inside mustn't draw its own (web).
   inputBare: { flex: 1, color: colors.onSurface, paddingVertical: 12, fontSize: 15, letterSpacing: 0.3, outlineStyle: 'none' } as object,
   input: {
