@@ -1019,7 +1019,7 @@ class SampleIn(BaseModel):
     # What the sample is going out for (e.g. "quoting", "reference",
     # "exhibition") — free text, voucher-level, same for every item in the batch.
     issue_type: Optional[str] = ''
-    due_date: Optional[str] = None  # when it's expected back, for the Overdue filter
+    due_date: Optional[str] = Field(default=None, pattern=r'^\d{4}-\d{2}-\d{2}$')  # when it's expected back — required on issue
     items: List[SampleItemSpec]
 
 

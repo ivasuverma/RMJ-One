@@ -1,4 +1,4 @@
-"""Repair issue to karigar: an optional due-back date is saved on the issue and the
+"""Repair issue to karigar: a required due-back date is saved on the issue and the
 item, can be changed on edit, and bad dates are rejected."""
 import os
 import random
@@ -29,6 +29,8 @@ def test_issue_with_due_back():
 
     bad = requests.post(f"{API}/repair-items/{item_id}/issue", headers=h, json={'karigar_id': kid, 'due_back': '5 Oct'}, timeout=30)
     assert bad.status_code == 422
+    missing = requests.post(f"{API}/repair-items/{item_id}/issue", headers=h, json={'karigar_id': kid}, timeout=30)
+    assert missing.status_code == 400   # required when a karigar is picked
 
     r = requests.post(f"{API}/repair-items/{item_id}/issue", headers=h, json={'karigar_id': kid, 'due_back': '2026-10-05'}, timeout=30)
     assert r.status_code == 200, r.text

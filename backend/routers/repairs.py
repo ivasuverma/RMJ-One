@@ -747,6 +747,8 @@ async def issue_to_karigar(item_id: str, body: IssueToKarigarIn, user=Depends(re
                               f"{item['item_code']} ({item.get('customer_name', '')}) is ready for delivery", '/repairs', script='repair_item_ready')
         return await db.repair_items.find_one({'id': item_id}, {'_id': 0})
 
+    if not body.due_back:
+        raise HTTPException(status_code=400, detail='Choose when the karigar should bring it back')
     karigar = await db.karigars.find_one({'id': body.karigar_id}, {'_id': 0})
     if not karigar: raise HTTPException(status_code=404, detail='Karigar not found')
 

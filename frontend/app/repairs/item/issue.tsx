@@ -106,6 +106,7 @@ export default function IssueToKarigarScreen() {
     // record of who has the item). A fresh issue can skip the karigar entirely —
     // the backend then moves the tag straight to "Pending to Bill".
     if (isEdit && kEntry.kind === 'none') { notify('Missing', 'Enter the karigar’s mobile number'); return; }
+    if (kEntry.kind !== 'none' && !dueBack) { notify('Missing', 'Choose when the karigar should bring it back'); return; }
     submittingRef.current = true; setBusy(true);
     try {
       const k = await getKarigar();
@@ -136,6 +137,7 @@ export default function IssueToKarigarScreen() {
   const submitBulk = async () => {
     if (submittingRef.current || bulkItems.length === 0) return;
     if (kEntry.kind === 'none') { notify('Missing', 'Enter the karigar’s mobile number'); return; }
+    if (!dueBack) { notify('Missing', 'Choose when the karigar should bring it back'); return; }
     submittingRef.current = true; setBusy(true);
     let k: Karigar | null | undefined;
     try { k = await getKarigar(); } catch (e: any) { notify('Failed', e?.detail || 'Could not add karigar'); }
@@ -229,7 +231,7 @@ export default function IssueToKarigarScreen() {
               inHouse={kInHouse} onInHouse={(x) => setKInHouse(x as Karigar | null)}
               testID="issue-karigar"
             />
-            <DueBackField value={dueBack} onChange={setDueBack} days={[1, 3, 5, 7]} testID="issue-due-back" />
+            <DueBackField label="Due back" value={dueBack} onChange={setDueBack} days={[1, 3, 5, 7]} testID="issue-due-back" />
             <Text style={styles.label}>Note (optional)</Text>
             <TextInput testID="issue-note" value={note} onChangeText={setNote} placeholder="Instructions for the karigar" placeholderTextColor={colors.mutedText} style={styles.input} />
             <Pressable onPress={submitBulk} disabled={busy} style={[styles.saveBtn, busy && { opacity: 0.6 }]} testID="issue-bulk-save-btn">
@@ -263,7 +265,7 @@ export default function IssueToKarigarScreen() {
               <Text style={styles.hint}>No karigar needed on this job? Leave this blank and the tag will go straight to "Pending to Bill".</Text>
             )}
             {(isEdit || kEntry.kind !== 'none') && (
-              <DueBackField value={dueBack} onChange={setDueBack} days={[1, 3, 5, 7]} testID="issue-due-back" />
+              <DueBackField label="Due back" value={dueBack} onChange={setDueBack} days={[1, 3, 5, 7]} testID="issue-due-back" />
             )}
             <Text style={styles.label}>Note (optional)</Text>
             <TextInput testID="issue-note" value={note} onChangeText={setNote} placeholder="Instructions for the karigar" placeholderTextColor={colors.mutedText} style={styles.input} />
