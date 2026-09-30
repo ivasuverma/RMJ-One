@@ -16,6 +16,7 @@ import { StickyHeader, useScrolled, HeaderSpacer } from '@/src/components/ui/Sti
 import { TabBarSpacer } from '@/src/components/GlassTabBar';
 import { UploadQueueBadge } from '@/src/components/UploadQueueBadge';
 import { Marquee } from './Marquee';
+import { NotifRow, notifTarget, Notif } from '@/src/components/notifications/NotifRow';
 import { QuickEditSheet, EmployeePickSheet, QUICK_ICON } from './QuickSheets';
 import { HomeSummary, isOk, NeedRow, QuickActions, StaffPerson } from './types';
 
@@ -63,6 +64,15 @@ export default function HomeBriefing() {
   const [pickAdvance, setPickAdvance] = useState(false);
   const [quickOverride, setQuickOverride] = useState<QuickActions | null>(null);
   const go = (route: string) => router.push(route as any);
+  const [readIds, setReadIds] = useState<Set<string>>(new Set());   // tapped here, before the next refresh
+  const openNotif = (n: Notif) => {
+    if (!n.read && !readIds.has(n.id)) {
+      setReadIds((p) => new Set(p).add(n.id));
+      api.post(`/notifications/${n.id}/read`, {}).catch(() => {});
+    }
+    const to = notifTarget(n.url);
+    if (to) go(to);
+  };
 
   const header = isOk(data?.header) ? data!.header : null;
   const today = header?.date || new Date().toISOString().slice(0, 10);
@@ -274,6 +284,31 @@ export default function HomeBriefing() {
           </>
         )}
 
+        {/* Notifications — the latest few, same list the bell opens */}
+        {isOk(data?.notifications) && (() => {
+          const nt = data!.notifications;
+          const fresh = Math.max(0, nt.unread - nt.items.filter((n) => !n.read && readIds.has(n.id)).length);
+          return (
+            <>
+              <SectionHead s={s} title="Notifications" right={fresh ? `${fresh} new` : undefined} onRight={() => go('/notifications')} />
+              <View style={s.list} testID="home-notifications">
+                {nt.items.length === 0 ? (
+                  <View style={s.item}>
+                    <View style={[s.ic, { backgroundColor: colors.brandTertiary }]}><Ionicons name="notifications-outline" size={16} color={colors.brandSecondary} /></View>
+                    <View style={s.mid}><Text style={s.t1}>No notifications yet</Text></View>
+                  </View>
+                ) : nt.items.map((n, i) => (
+                  <NotifRow key={n.id} n={readIds.has(n.id) ? { ...n, read: true } : n} first={i === 0} onPress={() => openNotif(n)} testID={`home-notif-${n.id}`} />
+                ))}
+                <Pressable style={({ pressed }) => [s.item, s.itemSep, s.viewAll, pressed && { backgroundColor: colors.surfaceTertiary }]} onPress={() => go('/notifications')} testID="home-notif-all">
+                  <Text style={s.viewAllText}>View all notifications</Text>
+                  <Ionicons name="chevron-forward" size={16} color={colors.brandSecondary} />
+                </Pressable>
+              </View>
+            </>
+          );
+        })()}
+
         {loading && !!data && <Text style={s.updating}>Updating…</Text>}
         <TabBarSpacer />
       </ScrollView>
@@ -387,6 +422,8 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   act: { backgroundColor: colors.brandTertiary, paddingHorizontal: 11, paddingVertical: 6, borderRadius: 999 },
   actText: { color: colors.brandSecondary, fontSize: 13, fontWeight: '600' },
   amt: { color: colors.onSurface, fontSize: 15, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  viewAll: { justifyContent: 'space-between', paddingVertical: 14 },
+  viewAllText: { color: colors.brandSecondary, fontSize: 15, fontWeight: '600' },
   day: { color: colors.mutedText, fontSize: 12.5, fontWeight: '700', paddingHorizontal: 14, paddingTop: 12, paddingBottom: 2 },
 
   staff: { paddingHorizontal: spacing.lg, gap: 10, paddingVertical: 2 },

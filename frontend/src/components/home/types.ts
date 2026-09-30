@@ -1,3 +1,5 @@
+import type { Notif } from '@/src/components/notifications/NotifRow';
+
 // Shape of GET /home/summary (see backend routers/home.py). A section is null when this
 // person has no access to it, and { unavailable: true } when it failed to load this time.
 export type Unavailable = { unavailable: true };
@@ -49,6 +51,7 @@ export type HomeSummary = {
   staff: Maybe<Staff>;
   owed: Maybe<Owed>;
   coming_up: Maybe<ComingUp>;
+  notifications?: Maybe<{ unread: number; items: Notif[] }>;
   hidden_sections?: string[];
   cached?: boolean;
 };

@@ -6,7 +6,7 @@ import requests
 
 API = os.environ['EXPO_PUBLIC_BACKEND_URL'].rstrip('/') + '/api'
 
-SECTIONS = ('header', 'rates', 'cash', 'quick_actions', 'needs_you', 'staff', 'owed', 'coming_up')
+SECTIONS = ('header', 'rates', 'cash', 'quick_actions', 'needs_you', 'staff', 'owed', 'coming_up', 'notifications')
 
 
 def _login(username, password, employee=False):
@@ -82,5 +82,6 @@ def test_sections_hidden_per_user():
         assert d['owed'] is None and d['coming_up'] is None
         assert d['hidden_sections'] == ['owed', 'coming_up']
         assert d['cash'] is not None
+        assert isinstance(d['notifications']['items'], list) and len(d['notifications']['items']) <= 5
     finally:
         requests.put(f"{API}/home/sections", headers=h, json={'hidden': []}, timeout=30)

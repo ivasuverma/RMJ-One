@@ -597,7 +597,18 @@ HOME_SECTIONS = [
     {'key': 'staff', 'label': 'In the shop'},
     {'key': 'owed', 'label': 'Owed to you'},
     {'key': 'coming_up', 'label': 'Coming up'},
+    {'key': 'notifications', 'label': 'Notifications'},
 ]
+
+
+async def _notifications(user: dict) -> dict:
+    """The latest few notifications and how many are unread — the same list the bell opens."""
+    items, unread = await asyncio.gather(
+        db.notifications.find({'user_id': user['id']}, {'_id': 0, 'id': 1, 'title': 1, 'body': 1, 'url': 1, 'read': 1, 'created_at': 1})
+        .sort('created_at', -1).to_list(5),
+        db.notifications.count_documents({'user_id': user['id'], 'read': False}),
+    )
+    return {'unread': unread, 'items': items}
 SECTION_KEYS = [x['key'] for x in HOME_SECTIONS]
 
 
@@ -664,6 +675,7 @@ async def build_summary(user: dict) -> dict:
     cash_task = asyncio.ensure_future(_section('cash', _cash(user, today))) if can_view(user, 'cash_book') and show('cash') else None
     owed_task = asyncio.ensure_future(_section('owed', _owed(user, s, now.date()))) if show('owed') else None
     coming_task = asyncio.ensure_future(_section('coming_up', _coming_up(user, s, now))) if show('coming_up') else None
+    notif_task = asyncio.ensure_future(_section('notifications', _notifications(user))) if show('notifications') else None
     staff = await staff_task if staff_task else None
     needs = await _section('needs_you', _needs_you(user, s, now, staff if staff and not staff.get('unavailable') else None)) if show('needs_you') else None
     owed = await owed_task if owed_task else None
@@ -679,6 +691,7 @@ async def build_summary(user: dict) -> dict:
         'staff': staff if show('staff') else None,
         'owed': owed,
         'coming_up': await coming_task if coming_task else None,
+        'notifications': await notif_task if notif_task else None,
         'hidden_sections': hidden,
         'settings': s,
         'took_ms': round((time.monotonic() - t0) * 1000),
