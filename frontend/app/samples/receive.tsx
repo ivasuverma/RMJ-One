@@ -10,10 +10,13 @@ import { notify } from '@/src/utils/notify';
 import { confirmAction } from '@/src/utils/confirm';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { Image } from 'expo-image';
+import { RecordPhotos } from '@/src/components/RecordPhotos';
 
 type Sample = {
   id: string; sample_code: string; description: string; tag_number: string;
   weight: number; karigar_name: string; status: 'with_karigar' | 'received';
+  photo?: string;   // older samples kept their photo inline; newer ones use record photos
   received_weight: number | null; note: string;
   pay_weight?: number | null; recv_weight?: number | null; write_off_loss?: boolean;
 };
@@ -149,6 +152,11 @@ export default function ReceiveSampleScreen() {
             <Text style={styles.cMeta}>with {sample.karigar_name}</Text>
           </View>
 
+          {/* The photos taken at issue, to check the piece coming back is the same one. */}
+          {sample.photo ? <Image source={{ uri: sample.photo }} style={styles.issuePhoto} contentFit="cover" testID="receive-issue-photo" /> : null}
+          <RecordPhotos refType="sample" refId={sample.id} label="Photos at issue" readOnly
+            emptyText={sample.photo ? '' : 'No photos were taken when this was issued.'} />
+
           <Text style={styles.label}>Issued weight (g)</Text>
           <View style={styles.readonlyBox}><Text style={styles.readonlyBoxText}>{sample.weight.toFixed(3)}</Text></View>
 
@@ -254,6 +262,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   title: { flex: 1, color: colors.onSurface, fontSize: 18, fontWeight: '600', fontFamily: fonts.display },
 
+  issuePhoto: { width: '100%', height: 220, borderRadius: radius.lg, backgroundColor: colors.surfaceTertiary, marginTop: spacing.md },
   pickedCard: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.lg },
   cName: { color: colors.onSurface, fontWeight: '700', fontSize: 13 },
   cMeta: { color: colors.onSurfaceTertiary, fontSize: 11, marginTop: 2 },

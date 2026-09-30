@@ -18,11 +18,15 @@ type Photo = { id: string; upload_state: string; file: { mime: string }; _local?
 // Drop-in gallery for high-res reference photos attached to any record. Photos
 // are captured, saved to the background queue (uploads full-res to Drive,
 // keeps a thumbnail), and shown here. Reusable across repairs/samples/employees.
-export function RecordPhotos({ refType, refId, label = 'Photos' }: { refType: string; refId: string; label?: string }) {
+// `readOnly` just shows them (bigger, no Add/delete) — e.g. to check an item
+// against its photos when it comes back.
+export function RecordPhotos({ refType, refId, label = 'Photos', readOnly = false, emptyText = 'No photos yet.' }: {
+  refType: string; refId: string; label?: string; readOnly?: boolean; emptyText?: string;
+}) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const { user } = useAuth();
-  const canDelete = user?.role === 'owner' || user?.role === 'admin';
+  const canDelete = !readOnly && (user?.role === 'owner' || user?.role === 'admin');
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [pending, setPending] = useState<{ id: string; uri: string }[]>([]);
   const [captureOpen, setCaptureOpen] = useState(false);
@@ -70,16 +74,18 @@ export function RecordPhotos({ refType, refId, label = 'Photos' }: { refType: st
     <View style={styles.wrap}>
       <View style={styles.head}>
         <Text style={styles.label}>{label}</Text>
-        <Pressable onPress={() => setCaptureOpen(true)} style={styles.addBtn} testID="record-photo-add" hitSlop={8}>
-          <Ionicons name="camera" size={16} color={colors.onBrandPrimary} />
-          <Text style={styles.addText}>Add</Text>
-        </Pressable>
+        {!readOnly && (
+          <Pressable onPress={() => setCaptureOpen(true)} style={styles.addBtn} testID="record-photo-add" hitSlop={8}>
+            <Ionicons name="camera" size={16} color={colors.onBrandPrimary} />
+            <Text style={styles.addText}>Add</Text>
+          </Pressable>
+        )}
       </View>
 
       {loading ? (
         <ActivityIndicator color={colors.brandPrimary} style={{ marginVertical: spacing.md }} />
       ) : (photos.length + pending.length) === 0 ? (
-        <Text style={styles.empty}>No photos yet.</Text>
+        <Text style={styles.empty}>{emptyText}</Text>
       ) : (
         <View style={styles.grid}>
           {pending.map((p) => (
@@ -89,7 +95,7 @@ export function RecordPhotos({ refType, refId, label = 'Photos' }: { refType: st
             </View>
           ))}
           {photos.map((ph) => (
-            <Pressable key={ph.id} style={styles.tile} onPress={() => openFull(ph.id)}>
+            <Pressable key={ph.id} style={[styles.tile, readOnly && styles.tileBig]} onPress={() => openFull(ph.id)} testID={`record-photo-${ph.id}`}>
               {token ? <Image source={{ uri: fileUri(ph.id), headers: { Authorization: `Bearer ${token}` } }} style={styles.img} contentFit="cover" cachePolicy="memory-disk" /> : null}
               {ph.upload_state !== 'synced' && (ph.upload_state === 'queued' || ph.upload_state === 'uploading' || ph.upload_state === 'local') && (
                 <View style={styles.stateBadge}><Ionicons name="cloud-upload-outline" size={11} color="#fff" /></View>
@@ -132,6 +138,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   empty: { color: colors.mutedText, fontSize: 13 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   tile: { width: 92, height: 92, borderRadius: radius.md, overflow: 'hidden', backgroundColor: colors.surfaceTertiary },
+  tileBig: { width: 150, height: 150 },
   img: { width: '100%', height: '100%' },
   uploadingBadge: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.35)' },
   stateBadge: { position: 'absolute', bottom: 4, left: 4, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 8, padding: 3 },
