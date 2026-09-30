@@ -5,8 +5,8 @@ import { spacing, radius, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { BLUR_RANGE, GLASS_DEFAULT, TINT_RANGE, setGlass, useGlass } from '@/src/theme/glass';
 
-// Settings › Glass bar — blur and tint of the frosted bottom bar. Changes
-// apply live, so the bar at the bottom of this very screen is the preview.
+// Settings › Glass bar — blur and tint of the frosted bottom bar and page
+// headers. Changes apply live, so the bar and header on this screen preview it.
 export function GlassSettings({ testID = 'glass-settings' }: { testID?: string }) {
   const { colors } = useTheme();
   const s = useMemo(() => makeStyles(colors), [colors]);
@@ -38,8 +38,8 @@ export function GlassSettings({ testID = 'glass-settings' }: { testID?: string }
         accessibilityRole="button" accessibilityState={{ expanded: open }}>
         <View style={s.rowIcon}><Ionicons name="layers-outline" size={22} color={colors.brandSecondary} /></View>
         <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={s.rowLabel} numberOfLines={1}>Glass bar</Text>
-          <Text style={s.rowSub} numberOfLines={1}>Blur and tint of the bottom bar</Text>
+          <Text style={s.rowLabel} numberOfLines={1}>Glass bar & headers</Text>
+          <Text style={s.rowSub} numberOfLines={1}>Blur and tint of the bottom bar and headers</Text>
         </View>
         <Text style={s.rowValue}>{g.blur === 0 ? 'Clear' : `Blur ${g.blur}`} · {g.tint}%</Text>
         <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={18} color={colors.mutedText} style={{ marginLeft: 6 }} />
@@ -48,7 +48,7 @@ export function GlassSettings({ testID = 'glass-settings' }: { testID?: string }
         <View style={s.panel} testID={`${testID}-panel`}>
           {stepper('Blur', 'How frosted the glass is', g.blur, 'px', BLUR_RANGE, (v) => setGlass({ blur: v }), 'blur')}
           {stepper('Tint', 'How see-through it is — lower is clearer', g.tint, '%', TINT_RANGE, (v) => setGlass({ tint: v }), 'tint')}
-          <Text style={s.hint}>Scroll this page to see the bar change as you adjust it. Saved on this device.</Text>
+          <Text style={s.hint}>Scroll this page to see the bar and header change as you adjust it. Saved on this device.</Text>
           {!isDefault && (
             <Pressable onPress={() => setGlass(GLASS_DEFAULT)} style={s.reset} accessibilityRole="button" testID={`${testID}-reset`}>
               <Text style={s.resetText}>Back to default</Text>

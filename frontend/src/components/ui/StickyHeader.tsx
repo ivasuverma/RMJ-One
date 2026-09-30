@@ -58,7 +58,7 @@ export function StickyHeader({ children, scrolled, style, testID }: {
 }) {
   const { colors, scheme } = useTheme();
   const dark = scheme === 'dark';
-  const { blur } = useGlass();   // Settings › Glass bar — same strength as the bottom bar
+  const { blur, tint } = useGlass();   // Settings › Glass bar — the same blur and tint as the bottom bar
   const key = useRouteKey();
   const floating = useSyncExternalStore(subscribe, () => entry(key).spacers > 0, () => false);
   const setHeight = useCallback((height: number) => {
@@ -73,14 +73,15 @@ export function StickyHeader({ children, scrolled, style, testID }: {
   const glass = floating && blur > 0 && Platform.OS !== 'android';
   const s = useMemo(() => StyleSheet.create({
     bar: {
-      backgroundColor: glass ? withAlpha(colors.surface, dark ? 0.72 : 0.78) : colors.surface,
+      // Tint = how much of the page colour sits on the glass (lower is clearer), as on the bar.
+      backgroundColor: glass ? withAlpha(colors.surface, tint / 100) : colors.surface,
       paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.sm,
       borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'transparent', zIndex: 2,
     },
     float: { position: 'absolute', top: 0, left: 0, right: 0 },
     anchor: { height: 0, zIndex: 10, overflow: 'visible' },
     line: { borderBottomColor: colors.divider },
-  }), [colors, dark, glass]);
+  }), [colors, glass, tint]);
 
   // react-native-web drops backdrop-filter from styles, so set it on the element itself.
   const webRef = useRef<View>(null);
