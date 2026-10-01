@@ -51,4 +51,5 @@ def test_issue_with_due_back():
     requests.put(f"{API}/repair-items/{item_id}/transactions/{issue['id']}", headers=h,
                  json={'karigar_id': kid, 'note': '', 'due_back': '2020-01-01'}, timeout=30)
     needs = requests.get(f"{API}/home/summary?fresh=1", headers=h, timeout=60).json()['needs_you']
-    assert any(r['key'] == 'repairs_karigar_late' for r in needs)
+    row = next(r for r in needs if r['key'] == 'repairs_with_karigar')
+    assert 'late' in row['detail']

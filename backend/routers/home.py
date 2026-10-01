@@ -400,25 +400,50 @@ async def _needs_you(user: dict, s: dict, now: datetime, staff: Optional[dict]) 
             {'status': {'$ne': 'delivered'}},
             {'_id': 0, 'status': 1, 'due_date': 1, 'customer_name': 1, 'created_at': 1, 'karigar_name': 1, 'karigar_due_back': 1},
         ).sort('due_date', 1).to_list(5000)
-        overdue = [i for i in open_items if i.get('due_date') and i['due_date'] < today]
+        today_d = now.date()
+
+        def days_late(d: str) -> int:
+            return (today_d - date.fromisoformat(d[:10])).days
+
+        def late_note(items: list) -> str:
+            """'2 overdue' for items past the date promised to the customer."""
+            n = sum(1 for i in items if i.get('due_date') and i['due_date'] < today)
+            return f"{n} overdue" if n else ''
+
+        # Overdue: past the date promised to the customer, with how late the worst one is.
+        overdue = [i for i in open_items if i['status'] != 'pending_delivery' and i.get('due_date') and i['due_date'] < today]
         if overdue:
+            worst = days_late(overdue[0]['due_date'])
             rows.append({'key': 'repairs_overdue', 'severity': 'red', 'module': 'repairs', 'count': len(overdue),
                          'title': f"{len(overdue)} repair{'s' if len(overdue) != 1 else ''} overdue",
-                         'detail': _names([i.get('customer_name') for i in overdue]),
+                         'detail': ' · '.join(x for x in (f"up to {worst} day{'s' if worst != 1 else ''} late",
+                                                           _names([i.get('customer_name') for i in overdue])) if x),
                          'action': 'Review', 'route': '/repairs?filter=overdue', 'can_act': True})
-        # Past the date the karigar was to bring it back (set on every issue since due back became required).
-        late = sorted([i for i in open_items if i['status'] == 'with_karigar' and i.get('karigar_due_back') and i['karigar_due_back'] < today],
-                      key=lambda i: i['karigar_due_back'])
-        if late:
-            rows.append({'key': 'repairs_karigar_late', 'severity': 'amber', 'module': 'repairs', 'count': len(late),
-                         'title': f"{len(late)} repair{'s' if len(late) != 1 else ''} late from karigar",
-                         'detail': _names([i.get('karigar_name') for i in late]),
+
+        # Pending to send: received from the customer, not yet issued to a karigar.
+        to_send = [i for i in open_items if i['status'] == 'received']
+        if to_send:
+            rows.append({'key': 'repairs_to_send', 'severity': 'amber' if late_note(to_send) else 'gold', 'module': 'repairs',
+                         'count': len(to_send), 'title': f"{len(to_send)} pending to send",
+                         'detail': ' · '.join(x for x in (late_note(to_send), _names([i.get('customer_name') for i in to_send])) if x),
+                         'action': 'Send', 'route': '/repairs?filter=received', 'can_act': can_edit(user, 'repairs')})
+
+        # Pending from karigar: with a karigar; late = past the due-back date set at issue.
+        with_k = sorted([i for i in open_items if i['status'] == 'with_karigar'], key=lambda i: i.get('karigar_due_back') or '9999')
+        if with_k:
+            late = [i for i in with_k if i.get('karigar_due_back') and i['karigar_due_back'] < today]
+            note = f"{len(late)} late" if late else ''
+            rows.append({'key': 'repairs_with_karigar', 'severity': 'amber' if late else 'gold', 'module': 'repairs',
+                         'count': len(with_k), 'title': f"{len(with_k)} pending from karigar",
+                         'detail': ' · '.join(x for x in (note, _names([i.get('karigar_name') for i in (late or with_k)])) if x),
                          'action': 'Review', 'route': '/repairs?filter=with_karigar', 'can_act': True})
+
+        # Pending to bill: back from the karigar (or needed none), waiting for the bill.
         ready = sorted([i for i in open_items if i['status'] == 'ready'], key=lambda i: i.get('created_at') or '')
         if ready:
             rows.append({'key': 'repairs_ready', 'severity': 'gold', 'module': 'repairs', 'count': len(ready),
-                         'title': f"{len(ready)} repair{'s' if len(ready) != 1 else ''} ready to bill",
-                         'detail': _names([i.get('customer_name') for i in ready]),
+                         'title': f"{len(ready)} pending to bill",
+                         'detail': ' · '.join(x for x in (late_note(ready), _names([i.get('customer_name') for i in ready])) if x),
                          'action': 'Bill', 'route': '/repairs?filter=ready', 'can_act': can_edit(user, 'repairs')})
 
     if can_view(user, 'samples'):

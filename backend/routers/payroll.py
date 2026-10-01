@@ -232,13 +232,16 @@ async def _compute_payroll(year: int, month: int) -> list:
     # employee who has been gone for over a month AND is fully settled (no
     # pending payable/receivable) is dropped from payroll below.
     all_balances: dict = {}
+    earned_months: set = set()   # (employee id, 'YYYY-MM') whose salary has been posted
     async for t in db.timeline.find(
         {'type': {'$in': ['advance', 'bonus', 'fine', 'deduction', 'salary', 'salary_earned', 'salary_paid']}},
-        {'_id': 0, 'employee_id': 1, 'type': 1, 'amount': 1, 'sign': 1},
+        {'_id': 0, 'employee_id': 1, 'type': 1, 'amount': 1, 'sign': 1, 'year': 1, 'month': 1},
     ):
         eid = t.get('employee_id')
         if not eid:
             continue
+        if t.get('type') == 'salary_earned' and t.get('year') and t.get('month'):
+            earned_months.add((eid, f"{int(t['year']):04d}-{int(t['month']):02d}"))
         amt = abs(float(t.get('amount') or 0))
         tt = t.get('type')
         if tt in ('salary', 'salary_earned'):
@@ -263,6 +266,12 @@ async def _compute_payroll(year: int, month: int) -> list:
             da = e.get('deactivated_at') or e.get('updated_at')   # fallback for staff deactivated before tracking
             settled = abs(all_balances.get(e['id'], 0)) < 0.5
             if settled and da and da < inactive_cutoff:
+                continue
+            # Paid off and gone: once their final month's salary is posted and nothing is
+            # owed either way, hide them from the month they left onwards (earlier months,
+            # when they were still working, keep their row).
+            left_month = ((e.get('left_date') or '')[:7]) or (da or '')[:7]
+            if settled and left_month and month_ym >= left_month and (e['id'], left_month) in earned_months:
                 continue
         att_by_date = att_by_emp.get(e['id'], {})
         shift = shifts_by_name.get(e.get('shift'))
