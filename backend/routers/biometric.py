@@ -89,6 +89,44 @@ BACKLOG_MAX_HOURS = 72
 # offline/unplugged, not just between visits. 24h (not a few hours) so an
 # overnight/no-punch stretch (e.g. a closed day) doesn't false-alarm.
 DEVICE_OFFLINE_HOURS = 24
+# During shop hours staff punch all the time and the device polls every few
+# seconds, so a short silence already means it has dropped off (e.g. after a
+# server restart) — flag it quickly so someone can restart it.
+DEVICE_OFFLINE_SHOP_MIN = 20
+
+
+async def _in_shop_hours(now_ist: datetime) -> bool:
+    """Open hours today (store work_start..work_end IST), not Sunday or a holiday."""
+    if now_ist.weekday() == 6:
+        return False
+    if await db.holidays.find_one({'date': now_ist.date().isoformat()}, {'_id': 0, 'id': 1}):
+        return False
+    store = await db.settings.find_one({'id': 'store'}, {'_id': 0, 'work_start': 1, 'work_end': 1}) or {}
+
+    def mins(hhmm: str, default: int) -> int:
+        try:
+            h, m = (hhmm or '').split(':')
+            return int(h) * 60 + int(m)
+        except Exception:
+            return default
+    start, end = mins(store.get('work_start'), 600), mins(store.get('work_end'), 1170)
+    now_m = now_ist.hour * 60 + now_ist.minute
+    return start <= now_m <= end
+
+
+async def _mark_seen(serial: str) -> None:
+    """Any contact from the device: record it, and if it had been flagged offline
+    say it's back (its stored punches follow on their own)."""
+    prev = await db.biometric_devices.find_one_and_update(
+        {'serial': serial}, {'$set': {'last_seen': now_utc().isoformat(), 'status': 'online'}},
+        projection={'_id': 0, 'status': 1, 'label': 1, 'serial': 1},
+    )
+    if prev and prev.get('status') == 'offline':
+        await _notify_system_health(
+            'biometric_device_online', 'Biometric device back online',
+            f"{prev.get('label') or prev.get('serial')} is connected again — punches it stored while offline are coming in now.",
+            '/settings/biometric',
+        )
 
 # ---------------- Biometric (eSSL Cloud Push) ----------------
 class DeviceIn(BaseModel):
@@ -195,6 +233,8 @@ async def biometric_health_loop() -> None:
     while True:
         try:
             now = now_utc()
+            shop_open = await _in_shop_hours(now.astimezone(IST))
+            limit_s = DEVICE_OFFLINE_SHOP_MIN * 60 if shop_open else DEVICE_OFFLINE_HOURS * 3600
             async for d in db.biometric_devices.find({'status': {'$ne': 'offline'}}, {'_id': 0}):
                 last = d.get('last_seen')
                 if not last:
@@ -203,16 +243,18 @@ async def biometric_health_loop() -> None:
                     last_dt = datetime.fromisoformat(last)
                 except Exception:
                     continue
-                if (now - last_dt).total_seconds() >= DEVICE_OFFLINE_HOURS * 3600:
+                if (now - last_dt).total_seconds() >= limit_s:
                     await db.biometric_devices.update_one({'id': d['id']}, {'$set': {'status': 'offline'}})
+                    quiet = f'{DEVICE_OFFLINE_SHOP_MIN} minutes' if shop_open else f'{DEVICE_OFFLINE_HOURS} hours'
                     await _notify_system_health(
                         'biometric_device_offline', 'Biometric device offline',
-                        f"{d.get('label') or d.get('serial')} hasn't checked in for over {DEVICE_OFFLINE_HOURS} hours.",
+                        f"{d.get('label') or d.get('serial')} hasn't checked in for over {quiet}. Punches stay stored in the "
+                        'device — switch it off and on if it doesn\'t reconnect in a few minutes.',
                         '/settings/biometric',
                     )
         except Exception as e:
             logger.warning(f'biometric health loop error: {e}')
-        await asyncio.sleep(1800)
+        await asyncio.sleep(300)
 
 
 async def _ingest_biometric_punch(serial: str, user_id: str, ts: datetime, event_type: str = 'auto', verify_mode: str = '') -> dict:
@@ -305,8 +347,7 @@ async def _ingest_biometric_punch(serial: str, user_id: str, ts: datetime, event
     # last_seen = when we actually heard from the device (now), NOT the punch's
     # own timestamp — a re-dump of an old punch was making "Last seen" read as
     # the punch time (e.g. yesterday) instead of the live connection time.
-    await db.biometric_devices.update_one({'serial': serial},
-                                          {'$set': {'last_seen': now_utc().isoformat(), 'status': 'online'}})
+    await _mark_seen(serial)
     log_doc['result'] = 'accepted'; log_doc['action'] = kind; log_doc['attendance_id'] = result['attendance_id']
     log_doc['employee_id'] = emp['id']; log_doc['employee_name'] = emp['name']
     await db.biometric_logs.insert_one(dict(log_doc))
@@ -380,9 +421,7 @@ async def _touch_device(serial: str) -> None:
     'offline' 24h after the last accepted punch, which fired a false
     'device offline' alert and showed a false status on System Health. Any
     contact from the device counts."""
-    await db.biometric_devices.update_one(
-        {'serial': serial}, {'$set': {'last_seen': now_utc().isoformat(), 'status': 'online'}}
-    )
+    await _mark_seen(serial)
 
 
 @iclock_router.get('/iclock/cdata')
@@ -391,9 +430,7 @@ async def iclock_handshake(SN: str = Query(...)):
     """Device 'hello' on boot / periodic re-handshake. Tells it how often to
     push and what tables we want. A plain 200 with this shape is enough for
     it to start sending ATTLOG data."""
-    await db.biometric_devices.update_one(
-        {'serial': SN}, {'$set': {'last_seen': now_utc().isoformat(), 'status': 'online'}}
-    )
+    await _mark_seen(SN)
     body = (
         "GET OPTION FROM: {sn}\r\n"
         "Stamp=9999\r\n"

@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'expo-router';
 import { api, saveToken, clearToken, getToken, isSessionOnly, setUnauthorizedHandler } from '@/src/api/client';
+import { storage } from '@/src/utils/storage';
 import { isQuickUnlockEnabled, runQuickUnlock } from '@/src/utils/quickUnlock';
 
 export type User = {
@@ -144,10 +145,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
+    // Drop this person's saved copy of Home (cash, staff, payroll figures) so a
+    // shared shop device keeps nothing behind after they sign out.
+    const uid = user?.id;
+    if (uid) await Promise.all([`home_summary_v1:${uid}`, `emp_home_v1:${uid}`].map((k) => storage.removeItem(k).catch(() => false)));
     await clearToken();
     setLocked(false);
     setUser(null);
-  }, []);
+  }, [user?.id]);
 
   const updateMyAccount = useCallback(async (currentPassword: string, newUsername?: string, newPassword?: string, newName?: string, newMobile?: string) => {
     // Re-save the fresh token the same way the current one is stored — a

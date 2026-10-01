@@ -505,23 +505,37 @@ async def _refresh_unpaid_payroll(employee_id: str, year: int, month: int) -> No
     ledger — so deleting/adding an advance (or bonus/fine/deduction) in the
     ledger flows straight through to that month's payroll instead of showing a
     stale figure. No-op if the month is locked, already paid, or not saved."""
+    await refresh_payroll_month(year, month, [employee_id])
+
+
+async def refresh_payroll_month(year: int, month: int, employee_ids: Optional[list] = None) -> int:
+    """Bring a run (saved) month's UNPAID entries up to date — for everyone, or just
+    `employee_ids`. Used after anything that changes pay after payroll was run:
+    attendance edits, leave, holidays, salary/shift changes, late device punches.
+    Locked months, paid entries and months not yet run are left alone. Returns how
+    many entries were refreshed."""
     lock = await db.payroll_locks.find_one({'year': year, 'month': month}, {'_id': 0})
     if lock and lock.get('locked'):
-        return
-    existing = await db.payroll_entries.find_one({'year': year, 'month': month, 'employee_id': employee_id}, {'_id': 0})
-    if not existing or existing.get('paid'):
-        return
-    rows = await _compute_payroll(year, month)
-    r = next((x for x in rows if x['employee_id'] == employee_id), None)
-    if not r:
-        return
+        return 0
+    q = {'year': year, 'month': month, 'paid': {'$ne': True}}
+    if employee_ids is not None:
+        q['employee_id'] = {'$in': list(employee_ids)}
+    entries = await db.payroll_entries.find(q, {'_id': 0, 'id': 1, 'employee_id': 1}).to_list(1000)
+    if not entries:
+        return 0
+    by_emp = {r['employee_id']: r for r in await _compute_payroll(year, month)}
     store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
-    net_exact = round(r['earned'] + r['bonus'] - r['advance'] - r['fine'] - r['manual_deduction'] + r['opening_balance'], 2)
-    net_salary = round(net_exact / 10) * 10 if store.get('round_net_salary') else net_exact
-    await db.payroll_entries.update_one(
-        {'id': existing['id']}, {'$set': {**r, 'net_salary_exact': net_exact, 'net_salary': net_salary}},
-    )
-    await _upsert_salary_earned(employee_id, year, month, r['earned'], net_exact, net_salary, existing['id'])
+    n = 0
+    for e in entries:
+        r = by_emp.get(e['employee_id'])
+        if not r:
+            continue
+        net_exact = round(r['earned'] + r['bonus'] - r['advance'] - r['fine'] - r['manual_deduction'] + r['opening_balance'], 2)
+        net_salary = round(net_exact / 10) * 10 if store.get('round_net_salary') else net_exact
+        await db.payroll_entries.update_one({'id': e['id']}, {'$set': {**r, 'net_salary_exact': net_exact, 'net_salary': net_salary}})
+        await _upsert_salary_earned(e['employee_id'], year, month, r['earned'], net_exact, net_salary, e['id'])
+        n += 1
+    return n
 
 
 def _entry_year_month(e: dict) -> tuple:
@@ -986,10 +1000,14 @@ MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', '
 SYSTEM_ACTOR = {'id': 'system', 'name': 'Automatic payroll', 'role': 'system'}
 
 
-async def _once(key: str) -> bool:
-    """True the first time a scheduled job key is seen (so the 15-minute poll fires it once)."""
-    res = await db.scheduled_jobs.update_one({'key': key}, {'$setOnInsert': {'key': key, 'at': now_utc().isoformat()}}, upsert=True)
-    return res.upserted_id is not None
+async def _done(key: str) -> bool:
+    """Whether a scheduled job already finished (the 15-minute poll fires each one once)."""
+    return bool(await db.scheduled_jobs.find_one({'key': key}, {'_id': 0, 'key': 1}))
+
+
+async def _mark_done(key: str) -> None:
+    """Recorded only AFTER the job succeeds, so a restart or error mid-run retries it."""
+    await db.scheduled_jobs.update_one({'key': key}, {'$setOnInsert': {'key': key, 'at': now_utc().isoformat()}}, upsert=True)
 
 
 async def check_payroll_schedule() -> None:
@@ -1006,7 +1024,8 @@ async def check_payroll_schedule() -> None:
     today = now.date()
     last_day = monthrange(today.year, today.month)[1]
 
-    if today.day == min(30, last_day) and await _once(f'attendance_check:{today.year:04d}-{today.month:02d}'):
+    check_key = f'attendance_check:{today.year:04d}-{today.month:02d}'
+    if today.day == min(30, last_day) and not await _done(check_key):
         month_name = MONTH_NAMES[today.month - 1]
         remote = {x['name'] async for x in db.shifts.find({'remote': True}, {'_id': 0, 'name': 1})}
         async for e in db.employees.find({'status': 'active'}, {'_id': 0, 'id': 1, 'shift': 1}):
@@ -1016,10 +1035,12 @@ async def check_payroll_schedule() -> None:
             await notify_user(e['id'], f'Check your {month_name} attendance',
                               f'Open your Calendar and report any mistakes now — {month_name} payroll is worked out on the 2nd.',
                               '/(emp)/calendar', whatsapp=False)
+        await _mark_done(check_key)
 
     if today.day == 2:
         y, m = (today.year - 1, 12) if today.month == 1 else (today.year, today.month - 1)
-        if not await _once(f'payroll_auto:{y:04d}-{m:02d}'):
+        run_key = f'payroll_auto:{y:04d}-{m:02d}'
+        if await _done(run_key):
             return
         label = f'{MONTH_NAMES[m - 1]} {y}'
         lock = await db.payroll_locks.find_one({'year': y, 'month': m}, {'_id': 0})
@@ -1027,6 +1048,7 @@ async def check_payroll_schedule() -> None:
             await notify_roles(['owner', 'admin'], f'{label} payroll is locked',
                                'It was not re-run automatically. Unlock it in Payroll if attendance changed.',
                                f'/attendance?seg=pay&year={y}&month={m}')
+            await _mark_done(run_key)
             return
         res = await _save_payroll(PayrollGenerateIn(year=y, month=m), SYSTEM_ACTOR)
         entries = await db.payroll_entries.find({'year': y, 'month': m}, {'_id': 0, 'net_salary': 1, 'paid': 1}).to_list(1000)
@@ -1035,4 +1057,5 @@ async def check_payroll_schedule() -> None:
                            f"Kindly check it — {len(entries)} employee{'s' if len(entries) != 1 else ''} · ₹{total:,} to pay"
                            + (f" ({res['kept_paid']} already paid)" if res.get('kept_paid') else '') + '.',
                            f'/attendance?seg=pay&year={y}&month={m}')
+        await _mark_done(run_key)
 

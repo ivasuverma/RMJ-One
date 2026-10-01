@@ -281,6 +281,17 @@ async def update_employee(emp_id: str, body: EmployeeIn, user: dict = Depends(re
             'created_at': iso,
         })
     await log_audit(user, 'employee.update', 'employee', emp_id, data.get('employee_code', existing.get('employee_code', '')))
+    # Salary, shift or joining/leaving dates change pay: bring this person's run,
+    # unpaid payroll for this month and last month up to date.
+    if any(k in set_fields and set_fields[k] != existing.get(k) for k in ('base_salary', 'shift', 'joining_date', 'left_date', 'status')):
+        from routers.payroll import refresh_payroll_month
+        today = now_utc().date().replace(day=1)
+        prev = (today - timedelta(days=1)).replace(day=1)
+        for d in (prev, today):
+            try:
+                await refresh_payroll_month(d.year, d.month, [emp_id])
+            except Exception:   # noqa: BLE001 — never fail the employee save over this
+                pass
     return await db.employees.find_one({'id': emp_id}, {'_id': 0, 'password_hash': 0})
 
 
