@@ -9,7 +9,7 @@ balance always reflects samples out with them.
 New module, added alongside the §2.1 router split — see server.py for the
 'samples' entry in MODULE_DEFS."""
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import date, timedelta
 import re
@@ -315,6 +315,8 @@ async def update_sample(sample_id: str, body: SampleUpdateIn, user=Depends(requi
         upd['photo_thumb'] = _make_photo_thumb(body.photo)
     if body.note is not None: upd['note'] = body.note
     if body.weight is not None and body.weight > 0 and round(body.weight, 3) != round(sample['weight'], 3):
+        if body.weight <= _parts_weight(sample):
+            raise HTTPException(status_code=400, detail=f'{_parts_weight(sample):.3f}g has already come back — the issued weight must be more than that')
         upd['weight'] = body.weight
         # The weight was already booked to the karigar's gold-out ledger entry
         # at issue time — keep that entry in sync so the balance stays right,
@@ -410,6 +412,15 @@ async def sample_issue_slip_print(sample_id: str, user=Depends(require_staff_or_
     return {'ok': True}
 
 
+def _parts_weight(sample: dict) -> float:
+    return round(sum(float(p.get('weight') or 0) for p in sample.get('partial_receipts') or []), 3)
+
+
+def _still_out(sample: dict) -> float:
+    """Issued weight minus any part already received back."""
+    return round(float(sample['weight']) - _parts_weight(sample), 3)
+
+
 async def _post_sample_receive_ledger(sample: dict, body: SampleReceiveIn, txn_id: str, iso: str, user: dict) -> float:
     """Every karigar_ledger entry for one receive event. The main 'received
     back' credit is normally whatever weight physically came back, as-is —
@@ -423,7 +434,9 @@ async def _post_sample_receive_ledger(sample: dict, body: SampleReceiveIn, txn_i
     Tagged with txn_id so an edit/delete can find and replace exactly these
     entries without touching the original issue's gold_out. Shared by
     create and edit, same delete-then-repost pattern as repairs.py."""
-    weight_diff = round(body.received_weight - sample['weight'], 3)
+    # After part returns, the final receive covers only what is still out.
+    expected = _still_out(sample)
+    weight_diff = round(body.received_weight - expected, 3)
     write_off = bool(body.write_off_loss) and weight_diff < 0
     pur = sample.get('purity')
 
@@ -436,8 +449,8 @@ async def _post_sample_receive_ledger(sample: dict, body: SampleReceiveIn, txn_i
         note += ' · shortfall written off as loss'
     await post_gold_ledger_entry({
         'id': str(uuid.uuid4()), 'karigar_id': sample['karigar_id'], 'karigar_name': sample.get('karigar_name'), 'type': 'gold_in',
-        'weight': sample['weight'] if write_off else body.received_weight,
-        'fine_weight': _fine(sample['weight'] if write_off else body.received_weight), 'amount': None,
+        'weight': expected if write_off else body.received_weight,
+        'fine_weight': _fine(expected if write_off else body.received_weight), 'amount': None,
         'item_id': sample['id'], 'item_code': sample['sample_code'], 'txn_id': txn_id,
         'note': note, 'created_at': iso, 'created_by': user['name'],
     })
@@ -485,7 +498,8 @@ async def receive_sample(sample_id: str, body: SampleReceiveIn, user=Depends(req
     iso = now_utc().isoformat()
     weight_diff = await _post_sample_receive_ledger(sample, body, txn_id, iso, user)
     await db.samples.update_one({'id': sample_id}, {'$set': {
-        'status': 'received', 'received_weight': body.received_weight, 'weight_diff': weight_diff,
+        'status': 'received', 'received_weight': round(body.received_weight + _parts_weight(sample), 3),
+        'final_received_weight': body.received_weight, 'weight_diff': weight_diff,
         'received_at': iso, 'received_by': user['name'], 'receive_txn_id': txn_id,
         'pay_weight': body.pay_weight or 0, 'recv_weight': body.recv_weight or 0,
         'write_off_loss': bool(body.write_off_loss) and weight_diff < 0,
@@ -517,7 +531,8 @@ async def edit_sample_receive(sample_id: str, body: SampleReceiveIn, user=Depend
     iso = now_utc().isoformat()
     weight_diff = await _post_sample_receive_ledger(sample, body, txn_id, iso, user)
     await db.samples.update_one({'id': sample_id}, {'$set': {
-        'received_weight': body.received_weight, 'weight_diff': weight_diff,
+        'received_weight': round(body.received_weight + _parts_weight(sample), 3),
+        'final_received_weight': body.received_weight, 'weight_diff': weight_diff,
         'received_at': iso, 'received_by': user['name'], 'receive_txn_id': txn_id,
         'pay_weight': body.pay_weight or 0, 'recv_weight': body.recv_weight or 0,
         'write_off_loss': bool(body.write_off_loss) and weight_diff < 0,
@@ -541,7 +556,7 @@ async def delete_sample_receive(sample_id: str, user=Depends(require_admin_or_mo
     if txn_id:
         await delete_gold_ledger_entries({'txn_id': txn_id})
     await db.samples.update_one({'id': sample_id}, {'$set': {
-        'status': 'with_karigar', 'received_weight': None, 'weight_diff': None,
+        'status': 'with_karigar', 'received_weight': None, 'final_received_weight': None, 'weight_diff': None,
         'received_at': None, 'received_by': None, 'receive_txn_id': None,
         'pay_weight': 0, 'recv_weight': 0, 'write_off_loss': False,
     }})
@@ -549,3 +564,65 @@ async def delete_sample_receive(sample_id: str, user=Depends(require_admin_or_mo
     return await db.samples.find_one({'id': sample_id}, {'_id': 0})
 
 
+
+
+class SamplePartIn(BaseModel):
+    weight: float = Field(gt=0)
+    pieces: int = Field(default=0, ge=0)
+    note: Optional[str] = ''
+
+
+@router.post('/samples/{sample_id}/receive-part')
+async def receive_sample_part(sample_id: str, body: SamplePartIn, user=Depends(require_admin_or_module('samples'))):
+    """Some of the pieces came back, the rest are still with the karigar.
+    Credits the karigar's gold balance for what came back now; the sample
+    stays 'with karigar' for the rest, and the final receive settles any gap
+    on the whole lot."""
+    sample = await db.samples.find_one({'id': sample_id}, {'_id': 0})
+    if not sample:
+        raise HTTPException(status_code=404, detail='Sample not found')
+    if sample['status'] != 'with_karigar':
+        raise HTTPException(status_code=400, detail='This sample is not currently with a karigar')
+    out_w = _still_out(sample)
+    if body.weight >= out_w:
+        raise HTTPException(status_code=400, detail=f'Only {out_w:.3f}g is still out — for the rest, use Receive instead')
+    pcs_out = int(sample.get('pc_count') or 1) - sum(int(p.get('pieces') or 0) for p in sample.get('partial_receipts') or [])
+    if body.pieces and body.pieces >= pcs_out:
+        raise HTTPException(status_code=400, detail=f'Only {pcs_out} pieces are still out — for all of them, use Receive instead')
+
+    part_id, txn_id, iso = str(uuid.uuid4()), str(uuid.uuid4()), now_utc().isoformat()
+    pur = sample.get('purity')
+    pcs = f"{body.pieces} pc, " if body.pieces else ''
+    await post_gold_ledger_entry({
+        'id': str(uuid.uuid4()), 'karigar_id': sample['karigar_id'], 'karigar_name': sample.get('karigar_name'), 'type': 'gold_in',
+        'weight': body.weight, 'fine_weight': round(body.weight * pur / 100, 3) if pur else None, 'amount': None,
+        'item_id': sample['id'], 'item_code': sample['sample_code'], 'txn_id': txn_id,
+        'note': f"Part received back ({pcs}{body.weight:.3f}g): {sample['description']}",
+        'created_at': iso, 'created_by': user['name'],
+    })
+    part = {'id': part_id, 'txn_id': txn_id, 'weight': round(body.weight, 3), 'pieces': body.pieces,
+            'note': (body.note or '').strip(), 'received_at': iso, 'received_by': user['name']}
+    await db.samples.update_one({'id': sample_id}, {'$push': {'partial_receipts': part}})
+    await log_audit(user, 'sample.receive_part', 'sample', sample_id, sample['sample_code'], {'weight': body.weight, 'pieces': body.pieces})
+    left = round(out_w - body.weight, 3)
+    await _notify_module('samples', 'Sample part received back',
+                          f"{sample['sample_code']} · {pcs}{body.weight:.3f}g back from {sample['karigar_name']} · {left:.3f}g still out",
+                          '/samples', script='sample_received')
+    return await db.samples.find_one({'id': sample_id}, {'_id': 0})
+
+
+@router.delete('/samples/{sample_id}/receive-part/{part_id}')
+async def delete_sample_part(sample_id: str, part_id: str, user=Depends(require_admin_or_module_right('samples', 'delete'))):
+    """Undoes one part receive and its gold balance entry."""
+    sample = await db.samples.find_one({'id': sample_id}, {'_id': 0})
+    if not sample:
+        raise HTTPException(status_code=404, detail='Sample not found')
+    if sample['status'] != 'with_karigar':
+        raise HTTPException(status_code=400, detail='Undo the final receive first')
+    part = next((p for p in sample.get('partial_receipts') or [] if p['id'] == part_id), None)
+    if not part:
+        raise HTTPException(status_code=404, detail='Part receive not found')
+    await delete_gold_ledger_entries({'txn_id': part['txn_id']})
+    await db.samples.update_one({'id': sample_id}, {'$pull': {'partial_receipts': {'id': part_id}}})
+    await log_audit(user, 'sample.receive_part_delete', 'sample', sample_id, sample['sample_code'], {'weight': part['weight']})
+    return await db.samples.find_one({'id': sample_id}, {'_id': 0})

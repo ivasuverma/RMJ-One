@@ -16,6 +16,7 @@ import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { ErrorState } from '@/src/components/ui';
 import { GlassButton } from '@/src/components/ui/GlassButton';
+import { Part, partsSummary } from '@/src/utils/samples';
 
 type Sample = {
   id: string; sample_code: string; description: string; tag_number: string;
@@ -24,7 +25,7 @@ type Sample = {
   status: 'with_karigar' | 'received';
   received_weight: number | null; weight_diff: number | null;
   issued_at: string; issued_by: string; received_at: string | null; received_by: string | null;
-  note: string;
+  note: string; final_received_weight?: number | null; partial_receipts?: Part[];
 };
 
 export default function SampleDetailScreen() {
@@ -111,6 +112,16 @@ export default function SampleDetailScreen() {
   }
 
   const isWithKarigar = sample.status === 'with_karigar';
+  const ps = partsSummary(sample);
+  const undoPart = (p: Part) => confirmAction(
+    'Undo this part receive?',
+    `${p.weight.toFixed(3)}g goes back to "still with ${sample.karigar_name}", and its entry on their gold balance is removed.`,
+    'Undo',
+    async () => {
+      try { setSample(await api.del<Sample>(`/samples/${sample.id}/receive-part/${p.id}`)); }
+      catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
+    },
+  );
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="sample-detail-screen">
@@ -135,7 +146,7 @@ export default function SampleDetailScreen() {
         <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 60 }} keyboardShouldPersistTaps="handled">
           <View style={[styles.badge, isWithKarigar ? styles.badgeOut : styles.badgeReceived, { alignSelf: 'flex-start' }]}>
             <Text style={[styles.badgeText, isWithKarigar ? styles.badgeTextOut : styles.badgeTextReceived]}>
-              {isWithKarigar ? 'With Karigar' : 'Received'}
+              {isWithKarigar ? (ps.parts.length ? 'Part received' : 'With Karigar') : 'Received'}
             </Text>
           </View>
 
@@ -158,6 +169,33 @@ export default function SampleDetailScreen() {
               </View>
             )}
           </View>
+          {ps.parts.length > 0 && (
+            <View style={styles.detailCard} testID="sample-parts">
+              <Text style={styles.partsTitle}>
+                {isWithKarigar ? `Back so far ${ps.backW.toFixed(3)}g · still out ${ps.outW.toFixed(3)}g` : 'Came back in parts'}
+                {isWithKarigar && (sample.pc_count ?? 1) > 1 ? ` (${ps.outPcs} pc)` : ''}
+              </Text>
+              {ps.parts.map((p) => (
+                <View key={p.id} style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>{istDateTime(p.received_at)} · {p.received_by}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    <Text style={styles.detailValue}>{p.pieces ? `${p.pieces} pc · ` : ''}{p.weight.toFixed(3)}g</Text>
+                    {isWithKarigar && canDelete && (
+                      <Pressable onPress={() => undoPart(p)} hitSlop={8} testID={`undo-part-${p.id}`}>
+                        <Ionicons name="arrow-undo-outline" size={16} color={colors.onError} />
+                      </Pressable>
+                    )}
+                  </View>
+                </View>
+              ))}
+              {!isWithKarigar && sample.final_received_weight != null && (
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>{sample.received_at ? istDateTime(sample.received_at) : ''} · rest</Text>
+                  <Text style={styles.detailValue}>{sample.final_received_weight.toFixed(3)}g</Text>
+                </View>
+              )}
+            </View>
+          )}
           {sample.status === 'received' && !!sample.weight_diff && (
             <View style={styles.diffTile}>
               <Text style={[styles.summaryValue, { color: colors.onWarning }]}>{sample.weight_diff > 0 ? '+' : ''}{sample.weight_diff.toFixed(3)}g</Text>
@@ -242,6 +280,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   detailLabel: { color: colors.mutedText, fontSize: 12 },
   detailValue: { color: colors.onSurface, fontSize: 13, fontWeight: '600' },
 
+  partsTitle: { color: colors.onSurface, fontSize: 14, fontWeight: '800', marginBottom: 4 },
   primaryBtn: { backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: 14, alignItems: 'center', marginTop: spacing.lg },
   primaryBtnText: { color: colors.onBrandPrimary, fontWeight: '800', fontSize: 14 },
   actionBtn: {

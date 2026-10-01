@@ -17,6 +17,7 @@ type Sample = {
   id: string; sample_code: string; description: string; tag_number: string;
   weight: number; pc_count?: number; karigar_id: string; karigar_name: string;
   status: 'with_karigar' | 'received'; weight_diff: number | null;
+  partial_receipts?: { weight: number; pieces: number }[];
   due_date: string | null; issue_type?: string; photo_thumb?: string;
   issued_at: string; received_at: string | null; issued_by?: string;
 };
@@ -151,6 +152,10 @@ export default function SamplesScreen() {
                     {at ? istDateTime(at) : ''}
                     {s.issued_by ? ` · by ${s.issued_by}` : ''}
                   </Text>
+                  {s.status === 'with_karigar' && !!s.partial_receipts?.length && (() => {
+                    const back = s.partial_receipts.reduce((t, p) => t + (p.weight || 0), 0);
+                    return <Text style={styles.partTag} testID={`part-${s.id}`}>Part back · {(s.weight - back).toFixed(3)}g still out</Text>;
+                  })()}
                   {isOverdue && <OverdueTag text="Overdue from karigar" days={daysLate(s.due_date)} testID={`overdue-${s.id}`} />}
                 </View>
                 {/* Status, and Receive under it (not on a row of its own) to keep the card short. */}
@@ -178,6 +183,7 @@ export default function SamplesScreen() {
 
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
+  partTag: { alignSelf: 'flex-start', marginTop: 4, color: colors.brandSecondary, backgroundColor: colors.brandTertiary, fontSize: 11.5, fontWeight: '700', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6, overflow: 'hidden' },
   header: {
     flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md, gap: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.divider,
