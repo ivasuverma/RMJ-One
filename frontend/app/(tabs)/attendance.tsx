@@ -39,33 +39,28 @@ type PayRow = {
 };
 
 /** Salary − deductions − paid = payable, one line per employee (only the parts that apply). */
-function payLine(p: PayRow, fmt: (n: number) => string): { text: string; payable: number } {
-  // Start from the full monthly salary, then what absence took off (base − earned).
+function payLine(p: PayRow, fmt: (n: number) => string): { text: string; spoken: string; payable: number } {
+  // Values only, e.g. "₹20,000 − ₹667 − ₹12,000 − ₹3 − ₹3,000 = ₹4,330": the full salary, then
+  // the absent-day cut, bonus/advance/fine/deduction, carry-over, rounding and what's paid.
+  // `spoken` keeps the words for screen readers.
   const base = p.base_salary ?? p.earned ?? 0;
-  const parts: string[] = [`${fmt(base)} salary`];
-  const daysCut = base - (p.earned ?? base);
-  if (Math.abs(daysCut) >= 0.5) {
-    const why = [
-      p.absent_days ? `${p.absent_days} absent` : '',
-      p.half_days ? `${p.half_days} half day${p.half_days === 1 ? '' : 's'}` : '',
-      p.missing_punch_days ? `${p.missing_punch_days} missing punch` : '',
-      p.not_employed_days ? `${p.not_employed_days} not joined/left` : '',
-      p.future_days ? `${p.future_days} days to come` : '',
-    ].filter(Boolean).join(', ');
-    parts.push(daysCut > 0 ? `− ${fmt(daysCut)} for ${why || 'unpaid days'}` : `+ ${fmt(-daysCut)} Sunday work`);
-  }
-  const add = (v: number | undefined, label: string, sign: '+' | '−') => { if (v && Math.abs(v) >= 0.5) parts.push(`${sign} ${fmt(Math.abs(v))} ${label}`); };
-  add(p.bonus, 'bonus', '+');
-  add(p.advance, 'advance', '−');
-  add(p.fine, 'fine', '−');
-  add(p.manual_deduction, 'deduction', '−');
-  if (p.opening_balance && Math.abs(p.opening_balance) >= 0.5) parts.push(`${p.opening_balance > 0 ? '+' : '−'} ${fmt(Math.abs(p.opening_balance))} ${p.opening_balance > 0 ? 'carried over' : 'owed from before'}`);
-  // Net pay rounded to the nearest ₹10 (Attendance settings) — show the difference so the line adds up.
-  const round = p.net_salary_exact != null ? (p.net_salary || 0) - p.net_salary_exact : 0;
-  if (Math.abs(round) >= 0.5) parts.push(`${round > 0 ? '+' : '−'} ${fmt(Math.abs(round))} rounding`);
-  add(p.amount_paid, 'paid', '−');
+  const parts: string[] = [fmt(base)];
+  const words: string[] = [`${fmt(base)} salary`];
+  const push = (v: number, label: string) => {
+    if (Math.abs(v) < 0.5) return;
+    parts.push(`${v > 0 ? '+' : '−'} ${fmt(Math.abs(v))}`);
+    words.push(`${v > 0 ? 'plus' : 'minus'} ${fmt(Math.abs(v))} ${label}`);
+  };
+  push((p.earned ?? base) - base, 'for unpaid days');
+  push(p.bonus || 0, 'bonus');
+  push(-(p.advance || 0), 'advance');
+  push(-(p.fine || 0), 'fine');
+  push(-(p.manual_deduction || 0), 'deduction');
+  push(p.opening_balance || 0, 'balance from before');
+  push(p.net_salary_exact != null ? (p.net_salary || 0) - p.net_salary_exact : 0, 'rounding');
+  push(-(p.amount_paid || 0), 'paid');
   const payable = Math.max(0, Math.round((p.net_salary || 0) - (p.amount_paid || 0)));
-  return { text: `${parts.join(' ')} = ${fmt(payable)} payable`, payable };
+  return { text: `${parts.join(' ')} = ${fmt(payable)}`, spoken: `${words.join(', ')}, equals ${fmt(payable)} payable`, payable };
 }
 type PayrollResp = { year: number; month: number; rows: PayRow[]; total_net: number; saved?: boolean; locked?: boolean };
 type Ev = { id: string; employee_name: string; type: 'check_in' | 'check_out'; timestamp: string; is_late?: boolean; working_hours?: number; source?: string };
@@ -384,18 +379,18 @@ export default function OwnerAttendance() {
             {!pay || pay.rows.length === 0 ? (
               <Text style={styles.empty}>No payroll for this month yet.</Text>
             ) : pay.rows.map((p) => (
-              <Pressable key={p.employee_id} onPress={() => router.push({ pathname: '/payroll/[emp]', params: { emp: p.employee_id, year: String(year), month: String(month) } } as any)} style={({ pressed }) => [styles.erow, pressed && { opacity: 0.8 }]} testID={`pay-row-${p.employee_id}`}>
+              <Pressable key={p.employee_id} onPress={() => router.push({ pathname: '/payroll/[emp]', params: { emp: p.employee_id, year: String(year), month: String(month) } } as any)} style={({ pressed }) => [styles.erow, { alignItems: 'flex-start' }, pressed && { opacity: 0.8 }]} testID={`pay-row-${p.employee_id}`}>
                 <Avatar photo={p.photo} name={p.name} colors={colors} />
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <Text style={styles.en} numberOfLines={1}>{p.name}</Text>
-                  <Text style={styles.et} numberOfLines={1}>
+                  <Text style={styles.payLine} numberOfLines={2} testID={`pay-line-${p.employee_id}`} accessibilityLabel={payLine(p, fmtINR).spoken}>{payLine(p, fmtINR).text}</Text>
+                </View>
+                <View style={{ alignItems: 'flex-end' }}>
+                  <Text style={[styles.et, { marginTop: 0 }]} numberOfLines={1}>
                     <Text style={{ color: colors.onSuccess, fontWeight: '700' }}>{p.present_days ?? 0}P</Text>
                     {'  '}<Text style={{ color: colors.onError, fontWeight: '700' }}>{p.absent_days ?? 0}A</Text>
                     {'  '}<Text style={{ color: colors.onWarning, fontWeight: '700' }}>{p.half_days ?? 0}HD</Text>
                   </Text>
-                  <Text style={styles.payLine} numberOfLines={3} testID={`pay-line-${p.employee_id}`}>{payLine(p, fmtINR).text}</Text>
-                </View>
-                <View style={{ alignItems: 'flex-end' }}>
                   <Text style={styles.payV}>{fmtINR(p.paid ? p.net_salary : payLine(p, fmtINR).payable)}</Text>
                   {p.paid
                     ? <View style={styles.paidTick}><Ionicons name="checkmark-circle" size={13} color={colors.onSuccess} /><Text style={[styles.payS, { color: colors.onSuccess }]}>paid</Text></View>
