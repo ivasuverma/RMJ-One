@@ -2673,8 +2673,7 @@ MISSED_ATTENDANCE_GRACE_MIN = 30  # keep in sync with attendance.py's NOT_CHECKE
 async def _check_missed_attendance():
     # Punches may be stuck in an offline biometric device — don't tell staff they
     # missed a punch (or admins they're absent) until it reconnects.
-    from routers.biometric import biometric_offline
-    if await biometric_offline():
+    if await db.biometric_devices.find_one({'status': 'offline'}, {'_id': 0, 'id': 1}):
         return
     now_ist = now_utc().astimezone(IST)
     today = now_ist.date().isoformat()
@@ -2727,8 +2726,7 @@ async def _check_missed_checkout():
     reminder."""
     # Punches may be stuck in an offline biometric device — don't tell staff they
     # missed a punch (or admins they're absent) until it reconnects.
-    from routers.biometric import biometric_offline
-    if await biometric_offline():
+    if await db.biometric_devices.find_one({'status': 'offline'}, {'_id': 0, 'id': 1}):
         return
     now_ist = now_utc().astimezone(IST)
     today = now_ist.date().isoformat()
@@ -2781,8 +2779,7 @@ async def _check_attendance_anomalies():
     doesn't re-notify for the same day."""
     # Punches may be stuck in an offline biometric device — don't tell staff they
     # missed a punch (or admins they're absent) until it reconnects.
-    from routers.biometric import biometric_offline
-    if await biometric_offline():
+    if await db.biometric_devices.find_one({'status': 'offline'}, {'_id': 0, 'id': 1}):
         return
     now_ist = now_utc().astimezone(IST)
     today = now_ist.date().isoformat()
@@ -2813,8 +2810,7 @@ async def _check_daily_absentee_summary():
     the loop polls every 15 minutes."""
     # Punches may be stuck in an offline biometric device — don't tell staff they
     # missed a punch (or admins they're absent) until it reconnects.
-    from routers.biometric import biometric_offline
-    if await biometric_offline():
+    if await db.biometric_devices.find_one({'status': 'offline'}, {'_id': 0, 'id': 1}):
         return
     now_ist = now_utc().astimezone(IST)
     today = now_ist.date().isoformat()

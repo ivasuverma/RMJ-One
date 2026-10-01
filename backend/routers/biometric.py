@@ -114,12 +114,6 @@ async def _in_shop_hours(now_ist: datetime) -> bool:
     return start <= now_m <= end
 
 
-async def biometric_offline() -> bool:
-    """True when a registered device is currently flagged offline — attendance
-    reminders pause then, since a missing punch may just be stuck in the device."""
-    return bool(await db.biometric_devices.find_one({'status': 'offline'}, {'_id': 0, 'id': 1}))
-
-
 async def _mark_seen(serial: str) -> None:
     """Any contact from the device: record it, and if it had been flagged offline
     say it's back (its stored punches follow on their own)."""
