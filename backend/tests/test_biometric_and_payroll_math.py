@@ -27,7 +27,7 @@ def test_device_handshake_and_attlog():
     assert d.status_code == 200, d.text
     root = BASE   # the device protocol is served at the server root, LAN-only
     hs = requests.get(f"{root}/iclock/cdata?SN={serial}", timeout=30)
-    assert hs.status_code == 200 and 'ATTLOG' in hs.text
+    assert hs.status_code == 200 and 'GET OPTION FROM' in hs.text
     dev = next(x for x in requests.get(f"{API}/biometric/devices", headers=h, timeout=30).json() if x['serial'] == serial)
     assert dev['status'] == 'online' and dev['last_seen']
 
