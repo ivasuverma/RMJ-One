@@ -32,7 +32,26 @@ type PayRow = {
   employee_id: string; name: string; designation: string; photo?: string;
   total_days: number; effective_days: number; advance: number; net_salary: number; paid?: boolean; id?: string;
   present_days?: number; absent_days?: number; half_days?: number;
+  earned?: number; bonus?: number; fine?: number; manual_deduction?: number; opening_balance?: number; amount_paid?: number;
+  net_salary_exact?: number;
 };
+
+/** Salary − deductions − paid = payable, one line per employee (only the parts that apply). */
+function payLine(p: PayRow, fmt: (n: number) => string): { text: string; payable: number } {
+  const parts: string[] = [`${fmt(p.earned ?? 0)} salary`];
+  const add = (v: number | undefined, label: string, sign: '+' | '−') => { if (v && Math.abs(v) >= 0.5) parts.push(`${sign} ${fmt(Math.abs(v))} ${label}`); };
+  add(p.bonus, 'bonus', '+');
+  add(p.advance, 'advance', '−');
+  add(p.fine, 'fine', '−');
+  add(p.manual_deduction, 'deduction', '−');
+  if (p.opening_balance && Math.abs(p.opening_balance) >= 0.5) parts.push(`${p.opening_balance > 0 ? '+' : '−'} ${fmt(Math.abs(p.opening_balance))} ${p.opening_balance > 0 ? 'carried over' : 'owed from before'}`);
+  // Net pay rounded to the nearest ₹10 (Attendance settings) — show the difference so the line adds up.
+  const round = p.net_salary_exact != null ? (p.net_salary || 0) - p.net_salary_exact : 0;
+  if (Math.abs(round) >= 0.5) parts.push(`${round > 0 ? '+' : '−'} ${fmt(Math.abs(round))} rounding`);
+  add(p.amount_paid, 'paid', '−');
+  const payable = Math.max(0, Math.round((p.net_salary || 0) - (p.amount_paid || 0)));
+  return { text: `${parts.join(' ')} = ${fmt(payable)} payable`, payable };
+}
 type PayrollResp = { year: number; month: number; rows: PayRow[]; total_net: number };
 type Ev = { id: string; employee_name: string; type: 'check_in' | 'check_out'; timestamp: string; is_late?: boolean; working_hours?: number; source?: string };
 
@@ -344,14 +363,14 @@ export default function OwnerAttendance() {
                     <Text style={{ color: colors.onSuccess, fontWeight: '700' }}>{p.present_days ?? 0}P</Text>
                     {'  '}<Text style={{ color: colors.onError, fontWeight: '700' }}>{p.absent_days ?? 0}A</Text>
                     {'  '}<Text style={{ color: colors.onWarning, fontWeight: '700' }}>{p.half_days ?? 0}HD</Text>
-                    {p.advance ? `  ·  ${fmtINR(p.advance)} adv` : ''}
                   </Text>
+                  <Text style={styles.payLine} numberOfLines={2} testID={`pay-line-${p.employee_id}`}>{payLine(p, fmtINR).text}</Text>
                 </View>
                 <View style={{ alignItems: 'flex-end' }}>
-                  <Text style={styles.payV}>{fmtINR(p.net_salary)}</Text>
+                  <Text style={styles.payV}>{fmtINR(p.paid ? p.net_salary : payLine(p, fmtINR).payable)}</Text>
                   {p.paid
                     ? <View style={styles.paidTick}><Ionicons name="checkmark-circle" size={13} color={colors.onSuccess} /><Text style={[styles.payS, { color: colors.onSuccess }]}>paid</Text></View>
-                    : <Text style={styles.payS}>net payable</Text>}
+                    : <Text style={styles.payS}>{p.amount_paid ? 'left to pay' : 'net payable'}</Text>}
                 </View>
               </Pressable>
             ))}
@@ -459,6 +478,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
 
   payV: { fontSize: 16, fontWeight: '800', color: colors.brandSecondary },
   payS: { fontSize: 11, color: colors.mutedText, marginTop: 2 },
+  payLine: { color: colors.mutedText, fontSize: 11.5, marginTop: 2, lineHeight: 15 },
   paidTick: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 2 },
   liveDayHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   liveDayCount: { color: colors.mutedText, fontSize: 12, fontWeight: '700' },
