@@ -65,7 +65,7 @@ export default function SetEmployeeCredentials() {
         <View style={{ padding: spacing.xl }}>
           <Text style={styles.info}>
             {empName ? `Set the username and password ${empName} will use to log in.` : 'Set the username and password this employee will use to log in.'}
-            {' '}You'll get a share prompt with the new login once it's saved.
+            {' '}You&apos;ll get a share prompt with the new login once it&apos;s saved.
           </Text>
 
           <Text style={styles.label}>Username</Text>

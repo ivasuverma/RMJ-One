@@ -59,7 +59,7 @@ export default function SetPasswordScreen() {
           </View>
           <Text style={styles.title}>Set a password</Text>
           <Text style={styles.subtitle}>
-            You're signed in with a temporary default password. Choose a new one before continuing — only you should know it.
+            You&apos;re signed in with a temporary default password. Choose a new one before continuing — only you should know it.
           </Text>
 
           <View style={styles.formCard}>

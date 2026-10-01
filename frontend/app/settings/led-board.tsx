@@ -152,7 +152,7 @@ export default function LedBoardScreen() {
 
         <View style={styles.infoBox}>
           <Ionicons name="tv-outline" size={16} color={colors.brandSecondary} />
-          <Text style={styles.infoText}>Shows today's gold and silver rate on the shop's LED board. It updates when you confirm the rate on the Rate Updater screen, or when you tap "Update board now".</Text>
+          <Text style={styles.infoText}>Shows today&apos;s gold and silver rate on the shop&apos;s LED board. It updates when you confirm the rate on the Rate Updater screen, or when you tap &quot;Update board now&quot;.</Text>
         </View>
 
         <View style={styles.card}>

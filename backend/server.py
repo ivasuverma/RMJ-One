@@ -1229,6 +1229,10 @@ async def seed():
     await db.users.create_index('username', unique=True)
     await db.employees.create_index('employee_code')
     await db.employees.create_index('biometric_id')
+    try:   # one closure per counter per day
+        await db.cashbook_closures.create_index([('counter_id', 1), ('date', 1)], unique=True)
+    except Exception as e:
+        logger.warning(f'index cashbook_closures: {e}')
     # Home / payroll schedule collections: one row each, so unique.
     for coll, field in (('user_prefs', 'user_id'), ('scheduled_jobs', 'key'), ('rate_daily', 'date')):
         try:

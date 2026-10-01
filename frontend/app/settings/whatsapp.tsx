@@ -148,7 +148,7 @@ export default function WhatsAppSettingsScreen() {
           >
             <View style={{ flex: 1 }}>
               <Text style={styles.toggleLabel}>Ready-for-pickup notice</Text>
-              <Text style={styles.toggleSub}>Lets staff send a "your item is ready" WhatsApp message from a billed tag's detail screen</Text>
+              <Text style={styles.toggleSub}>Lets staff send a &quot;your item is ready&quot; WhatsApp message from a billed tag&apos;s detail screen</Text>
             </View>
             <ToggleSwitch value={!!(form.enabled && form.repair_ready_notice)} />
           </Pressable>
@@ -160,7 +160,7 @@ export default function WhatsAppSettingsScreen() {
           >
             <View style={{ flex: 1 }}>
               <Text style={styles.toggleLabel}>Item received notice</Text>
-              <Text style={styles.toggleSub}>Lets staff send a "we've received your item" WhatsApp message from a freshly-intake tag's detail screen</Text>
+              <Text style={styles.toggleSub}>Lets staff send a &quot;we&apos;ve received your item&quot; WhatsApp message from a freshly-intake tag&apos;s detail screen</Text>
             </View>
             <ToggleSwitch value={!!(form.enabled && form.repair_received_notice)} />
           </Pressable>
@@ -180,7 +180,7 @@ export default function WhatsAppSettingsScreen() {
           >
             <View style={{ flex: 1 }}>
               <Text style={styles.toggleLabel}>Auto-reply chatbot</Text>
-              <Text style={styles.toggleSub}>Customers who message the shop's number and reply RATE or STATUS get an automatic reply — no AI, fixed answers only</Text>
+              <Text style={styles.toggleSub}>Customers who message the shop&apos;s number and reply RATE or STATUS get an automatic reply — no AI, fixed answers only</Text>
             </View>
             <ToggleSwitch value={!!(form.enabled && form.chatbot_enabled)} />
           </Pressable>
@@ -218,7 +218,7 @@ export default function WhatsAppSettingsScreen() {
 
         <View style={styles.infoBox}>
           <Ionicons name="information-circle-outline" size={16} color={colors.brandSecondary} />
-          <Text style={styles.infoText}>More WhatsApp flows (gold loan reminders, etc.) will get their own group here as they're added.</Text>
+          <Text style={styles.infoText}>More WhatsApp flows (gold loan reminders, etc.) will get their own group here as they&apos;re added.</Text>
         </View>
       </ScrollView>
 

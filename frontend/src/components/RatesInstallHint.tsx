@@ -75,11 +75,11 @@ export function RatesInstallHint() {
       {ios ? (
         <Text style={styles.body}>
           Tap the Share button <Ionicons name="share-outline" size={12} color={colors.onSurfaceSecondary} /> in Safari, then{' '}
-          <Text style={styles.bold}>Add to Home Screen</Text> — one tap next time to check today's rate.
+          <Text style={styles.bold}>Add to Home Screen</Text> — one tap next time to check today&apos;s rate.
         </Text>
       ) : deferredPrompt ? (
         <>
-          <Text style={styles.body}>One tap next time to check today's rate — no need to reopen the link.</Text>
+          <Text style={styles.body}>One tap next time to check today&apos;s rate — no need to reopen the link.</Text>
           <Pressable onPress={install} style={styles.installBtn} testID="rates-install-btn">
             <Ionicons name="download-outline" size={14} color={colors.onBrandPrimary} />
             <Text style={styles.installBtnText}>Add to Home Screen</Text>
@@ -88,7 +88,7 @@ export function RatesInstallHint() {
       ) : (
         <Text style={styles.body}>
           Open the browser menu <Ionicons name="ellipsis-vertical" size={12} color={colors.onSurfaceSecondary} /> and tap{' '}
-          <Text style={styles.bold}>Add to Home screen</Text> — one tap next time to check today's rate.
+          <Text style={styles.bold}>Add to Home screen</Text> — one tap next time to check today&apos;s rate.
         </Text>
       )}
     </View>

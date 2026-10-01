@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Platform, KeyboardAvoidingView, Alert,
+  View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator, Platform, KeyboardAvoidingView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -85,7 +85,7 @@ export default function AssistantScreen() {
             <View style={styles.heroBox}>
               <View style={styles.heroIcon}><Ionicons name="sparkles" size={22} color={colors.onBrandPrimary} /></View>
               <Text style={styles.heroTitle}>Ask me anything about your team.</Text>
-              <Text style={styles.heroSub}>I can look up today's attendance, pending approvals, ledger balances, and payroll totals.</Text>
+              <Text style={styles.heroSub}>I can look up today&apos;s attendance, pending approvals, ledger balances, and payroll totals.</Text>
 
               <View style={styles.suggestions}>
                 {SUGGESTIONS.map((s) => (

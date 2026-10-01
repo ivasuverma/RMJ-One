@@ -118,7 +118,7 @@ export default function EmployeeLedger() {
             <View style={styles.balanceCard}>
               <Text style={styles.balanceLabel}>TOTAL THIS MONTH</Text>
               <Text style={[styles.balanceValue, { color: colors.brandPrimary }]}>{fmtINR(data?.total || 0)}</Text>
-              <Text style={styles.balanceHint}>{(data?.entries || []).length} {(data?.entries || []).length === 1 ? 'entry' : 'entries'} feeding this month's payroll figure</Text>
+              <Text style={styles.balanceHint}>{(data?.entries || []).length} {(data?.entries || []).length === 1 ? 'entry' : 'entries'} feeding this month&apos;s payroll figure</Text>
             </View>
           ) : (
             <View style={styles.balanceCard}>

@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { GlassSurface } from '@/src/components/ui/GlassSurface';
+import { friendlyDate } from '@/src/utils/friendlyDate';
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const WEEK_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
@@ -51,7 +52,7 @@ export function DateField({ label, value, onChange, placeholder = 'Select a date
       {label && <Text style={styles.label}>{label}</Text>}
       <Pressable onPress={openPicker} style={styles.field} testID={testID}>
         <Ionicons name="calendar-outline" size={16} color={colors.mutedText} />
-        <Text style={value ? styles.value : styles.placeholder}>{value || placeholder}</Text>
+        <Text style={value ? styles.value : styles.placeholder}>{value ? friendlyDate(value) : placeholder}</Text>
       </Pressable>
 
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>

@@ -11,9 +11,9 @@ import { useTheme } from '@/src/theme/ThemeContext';
 import { ErrorState } from '@/src/components/ui';
 import { OverdueTag, daysLate } from '@/src/components/OverdueTag';
 import { TabBarSpacer } from '@/src/components/GlassTabBar';
-import { useScrolled } from '@/src/components/ui/StickyHeader';
+import { useScrolled , HeaderSpacer } from '@/src/components/ui/StickyHeader';
 import { ModuleHeader, HeaderButton } from '@/src/components/ui/ModuleHeader';
-import { HeaderSpacer } from '@/src/components/ui/StickyHeader';
+import { friendlyDate } from '@/src/utils/friendlyDate';
 
 type Item = {
   id: string; item_code: string; customer_name: string; description: string;
@@ -150,7 +150,7 @@ export default function RepairOrdersScreen() {
           // to the description line), then whichever people/dates matter for
           // that particular stage.
           const detailParts: (string | ReactNode)[] = [];
-          if (i.due_date && i.status !== 'delivered') detailParts.push(`Due ${i.due_date}`);
+          if (i.due_date && i.status !== 'delivered') detailParts.push(`Due ${friendlyDate(i.due_date)}`);
           if (i.status === 'with_karigar' && i.karigar_name) {
             detailParts.push(<>With <Text style={styles.cKarigar}>{i.karigar_name}</Text></>);
           }

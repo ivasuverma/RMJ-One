@@ -1,7 +1,7 @@
 import { ReactNode, useMemo } from 'react';
-import { RefreshControl, ScrollView, StyleProp, View, ViewStyle } from 'react-native';
+import { RefreshControl, ScrollView, StyleProp, ViewStyle } from 'react-native';
 import { Edge, SafeAreaView } from 'react-native-safe-area-context';
-import { spacing, ThemeColors } from '@/src/theme';
+import { spacing } from '@/src/theme';
 import { HeaderSpacer, StickyHeader, useScrolled } from './StickyHeader';
 import { useTheme } from '@/src/theme/ThemeContext';
 

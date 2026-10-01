@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
+import { DayClose, Closure } from '@/src/components/cashbook/DayClose';
 import { confirmAction } from '@/src/utils/confirm';
 import { DateField } from '@/src/components/DateField';
 import { RecordPhotos } from '@/src/components/RecordPhotos';
@@ -30,6 +31,7 @@ type Entry = {
 type DayData = {
   date: string; counter_id: string; counter_name: string; opening_balance: number; entries: Entry[];
   total_received: number; total_paid: number; closing_balance: number;
+  closure?: Closure | null;   // set once the day is closed (counted and locked)
 };
 type Counter = { id: string; name: string; closing_balance: number; color?: string | null; active: boolean };
 type CounterLite = { id: string; name: string };
@@ -313,6 +315,9 @@ export default function CashBookScreen() {
                 </Text>
               </View>
             </Card>
+            <DayClose counterId={day.counter_id} counterName={day.counter_name} date={date} today={todayIST()}
+              bookBalance={day.closing_balance} closure={day.closure} canClose={canEdit} isOwner={isOwner}
+              onChanged={() => load(date, counterId)} />
 
             <SegmentedControl
               testID="cashbook-filter"
@@ -335,7 +340,7 @@ export default function CashBookScreen() {
                   const title = transfer ? `${e.type === 'paid' ? 'To' : 'From'} ${counterName(e.transfer_counter_id) || e.name.replace(/^Transfer\s+(to|from)\s+/i, '')}` : e.name;
                   const sub = transfer ? (e.type === 'paid' ? 'Transfer out ↑' : 'Transfer in ↓') : e.category || '';
                   return (
-                    <Pressable key={e.id} disabled={!canEdit} onPress={() => openEdit(e)}
+                    <Pressable key={e.id} disabled={!canEdit || !!day?.closure} onPress={() => openEdit(e)}
                       style={[styles.row, i > 0 && styles.rowBorder]} testID={`cashbook-entry-${e.id}`}>
                       <View style={[styles.rowIcon, { backgroundColor: kindBg(k) }]}>
                         <Ionicons name={k === 'received' ? 'arrow-down' : k === 'paid' ? 'arrow-up' : 'swap-horizontal'} size={17} color={kindColor(k)} />
@@ -363,7 +368,7 @@ export default function CashBookScreen() {
         )}
       </ScrollView>
 
-      {counterId ? (
+      {counterId && !day?.closure ? (
         <View style={styles.fabRow}>
           <Pressable onPress={() => openAdd('received')} style={[styles.fab, { backgroundColor: colors.brandPrimary }]} testID="cashbook-add-received">
             <Ionicons name="add" size={18} color={colors.onBrandPrimary} />
@@ -379,7 +384,7 @@ export default function CashBookScreen() {
       <Sheet visible={sheet} onClose={() => setSheet(false)} title={editing ? 'Edit entry' : (kind === 'received' ? 'Cash Received' : 'Cash Paid')} testID="cashbook-sheet">
         <View style={{ gap: spacing.md }}>
           {editing ? (
-            editingTransfer ? <Text style={styles.hint}>A transfer's direction and location can't change — delete it and add it again to change them.</Text> : null
+            editingTransfer ? <Text style={styles.hint}>A transfer&apos;s direction and location can&apos;t change — delete it and add it again to change them.</Text> : null
           ) : null}
           <View style={styles.amountBox}>
             <Text style={styles.rupee}>₹</Text>

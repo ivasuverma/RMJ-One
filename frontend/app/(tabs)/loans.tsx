@@ -7,10 +7,10 @@ import { api } from '@/src/api/client';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { ModuleHeader, HeaderButton } from '@/src/components/ui/ModuleHeader';
-import { HeaderSpacer } from '@/src/components/ui/StickyHeader';
-import { useScrolled } from '@/src/components/ui/StickyHeader';
+import { HeaderSpacer , useScrolled } from '@/src/components/ui/StickyHeader';
 import { ErrorState } from '@/src/components/ui';
 import { TabBarSpacer } from '@/src/components/GlassTabBar';
+import { friendlyDate } from '@/src/utils/friendlyDate';
 
 type Loan = {
   id: string; loan_no: string; customer_name: string; customer_mobile: string;
@@ -125,7 +125,7 @@ export default function GoldLoansScreen() {
                 <Text style={styles.cMeta2}>
                   {l.weight.toFixed(3)}g · {fmtINR(l.principal)} loan
                   {l.status === 'active' ? ` · ${fmtINR(l.total_outstanding)} due` : ''}
-                  {l.estimate_return_date ? ` · Due ${l.estimate_return_date}` : ''}
+                  {l.estimate_return_date ? ` · Due ${friendlyDate(l.estimate_return_date)}` : ''}
                 </Text>
               </View>
               <View style={[styles.badge, l.status === 'closed' ? styles.badgeClosed : l.overdue ? styles.badgeOverdue : styles.badgeActive]}>

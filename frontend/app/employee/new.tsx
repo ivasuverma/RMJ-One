@@ -338,7 +338,7 @@ export default function EmployeeForm() {
 
           <SectionTitle text="Auto Advance" />
           <Text style={styles.hint}>
-            Optional — auto-record a fixed advance every month on a set day (e.g. ₹5,000 on the 5th). It's deducted from that month's payroll like any manual advance; pay the rest by cash.
+            Optional — auto-record a fixed advance every month on a set day (e.g. ₹5,000 on the 5th). It&apos;s deducted from that month&apos;s payroll like any manual advance; pay the rest by cash.
           </Text>
           <View style={styles.row2}>
             <View style={{ flex: 1 }}>

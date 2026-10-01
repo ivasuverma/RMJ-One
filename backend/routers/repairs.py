@@ -6,7 +6,7 @@ server.py and is imported from here — nothing about behavior changed,
 only where the code lives."""
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from typing import Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import datetime, date, timedelta, timezone
 import uuid
 import re
@@ -17,6 +17,8 @@ from server import (
     today_str,
     IST,
     require_owner,
+    get_current,
+    resolve_modules,
     require_module,
     require_staff_or_module,
     require_admin_or_module,
@@ -781,6 +783,46 @@ async def issue_to_karigar(item_id: str, body: IssueToKarigarIn, user=Depends(re
     if karigar.get('is_employee') and karigar.get('employee_id'):
         await notify_user(karigar['employee_id'], 'Repair item issued to you', f"{item['item_code']} — {item['description']}", '/(emp)/tasks')
     return await db.repair_items.find_one({'id': item_id}, {'_id': 0})
+
+
+class DueBackIn(BaseModel):
+    due_back: str = Field(pattern=r'^\d{4}-\d{2}-\d{2}$')
+
+
+@router.put('/repair-items/{item_id}/due-back')
+async def set_repair_due_back(item_id: str, body: DueBackIn, user=Depends(require_admin_or_module_right('repairs', 'edit'))):
+    """Set when the karigar should bring an item back — for items issued before due
+    back was required (and to change it later). Updates the item and its open issue."""
+    item = await db.repair_items.find_one({'id': item_id}, {'_id': 0, 'status': 1, 'item_code': 1})
+    if not item:
+        raise HTTPException(status_code=404, detail='Item not found')
+    if item['status'] != 'with_karigar':
+        raise HTTPException(status_code=400, detail='Only an item that is with a karigar has a due-back date')
+    await db.repair_items.update_one({'id': item_id}, {'$set': {'karigar_due_back': body.due_back}})
+    last = await db.karigar_transactions.find_one({'item_id': item_id, 'direction': 'issue'}, {'_id': 0, 'id': 1}, sort=[('created_at', -1)])
+    if last:
+        await db.karigar_transactions.update_one({'id': last['id']}, {'$set': {'due_back': body.due_back}})
+    await log_audit(user, 'repair_item.due_back', 'repair_item', item_id, item.get('item_code', ''), {'due_back': body.due_back})
+    return {'ok': True, 'due_back': body.due_back}
+
+
+@router.get('/due-back/missing')
+async def due_back_missing(user=Depends(get_current)):
+    """Repairs and samples with a karigar that have no due-back date (issued before
+    it was required), so they can be given one and show up when late."""
+    mods = resolve_modules(user) if user.get('role') != 'owner' else None
+    out = {'repairs': [], 'samples': []}
+    if mods is None or 'repairs' in mods:
+        out['repairs'] = await db.repair_items.find(
+            {'status': 'with_karigar', 'karigar_due_back': {'$in': [None, '']}},
+            {'_id': 0, 'id': 1, 'item_code': 1, 'customer_name': 1, 'description': 1, 'karigar_name': 1, 'due_date': 1, 'updated_at': 1},
+        ).sort('item_code', 1).to_list(500)
+    if mods is None or 'samples' in mods:
+        out['samples'] = await db.samples.find(
+            {'status': 'with_karigar', 'due_date': {'$in': [None, '']}},
+            {'_id': 0, 'id': 1, 'sample_code': 1, 'description': 1, 'karigar_name': 1, 'issued_at': 1},
+        ).sort('sample_code', 1).to_list(500)
+    return out
 
 
 def _compute_receive(item: dict, body) -> dict:

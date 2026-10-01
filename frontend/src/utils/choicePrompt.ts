@@ -22,7 +22,7 @@ export function promptChoice(
       { label: 'Skip', style: 'cancel', onPress: onSecondary },
       { label: primaryLabel, onPress: onPrimary },
     ] })) return;
-    // eslint-disable-next-line no-alert
+     
     if (typeof window !== 'undefined' && window.confirm(`${title}\n\n${message}\n\n${primaryLabel}?`)) onPrimary();
     else onSecondary();
     return;

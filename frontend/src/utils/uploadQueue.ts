@@ -110,7 +110,7 @@ async function notifyUploadFailed(item: OutboxItem): Promise<void> {
     if (reg && (reg as any).showNotification) {
       await (reg as any).showNotification(title, { body, tag: 'rmj-upload-failed', renotify: true });
     } else {
-      // eslint-disable-next-line no-new
+       
       new Notification(title, { body });
     }
   } catch { /* ignore */ }
@@ -245,7 +245,7 @@ async function drain(): Promise<void> {
   try {
     // Process oldest-first, one at a time. On a failure, stop and schedule a
     // retry with backoff — the item stays in the outbox and is tried again.
-    // eslint-disable-next-line no-constant-condition
+     
     while (true) {
       const items = await idbAll();
       // Skip items already marked as a permanent failure — they stay in the

@@ -140,15 +140,15 @@ export default function BiometricScreen() {
                 <Ionicons name="link-outline" size={18} color={colors.brandSecondary} />
                 <View style={{ flex: 1 }}>
                   <Text style={styles.pushLabel}>On the device: Comm → Cloud Server Settings — leave Server Mode as ADMS, just set:</Text>
-                  <Text style={styles.pushUrl}>Server Address: your server's LAN IP</Text>
-                  <Text style={styles.pushUrl}>Server Port: 8000 (backend's local port)</Text>
+                  <Text style={styles.pushUrl}>Server Address: your server&apos;s LAN IP</Text>
+                  <Text style={styles.pushUrl}>Server Port: 8000 (backend&apos;s local port)</Text>
                 </View>
               </View>
 
               <View style={styles.pushCard}>
                 <Ionicons name="finger-print-outline" size={18} color={colors.brandSecondary} />
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.pushLabel}>Or, if using eSSL's eBioServer app: in its Master Settings, set Web URL to this (leave Symmetric Key blank), and set each employee's Biometric ID on their profile:</Text>
+                  <Text style={styles.pushLabel}>Or, if using eSSL&apos;s eBioServer app: in its Master Settings, set Web URL to this (leave Symmetric Key blank), and set each employee&apos;s Biometric ID on their profile:</Text>
                   <Text style={styles.pushUrl} selectable>{webhookUrl}</Text>
                 </View>
               </View>

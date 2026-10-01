@@ -4,14 +4,14 @@ import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { api, TOKEN_KEY } from '@/src/api/client';
 import { storage } from '@/src/utils/storage';
-
-const BASE = process.env.EXPO_PUBLIC_BACKEND_URL || '';
 import { enqueueRecordPhoto, onOutboxChange } from '@/src/utils/uploadQueue';
 import { confirmAction } from '@/src/utils/confirm';
 import { useAuth } from '@/src/auth/AuthContext';
 import { PhotoCaptureModal } from '@/src/components/PhotoCaptureModal';
 import { spacing, radius, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+
+const BASE = process.env.EXPO_PUBLIC_BACKEND_URL || '';
 
 type Photo = { id: string; upload_state: string; file: { mime: string }; _local?: string };
 

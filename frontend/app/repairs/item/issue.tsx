@@ -196,7 +196,7 @@ export default function IssueToKarigarScreen() {
 
       {mode === 'pick' ? (
         <ScrollView contentContainerStyle={{ padding: spacing.lg }}>
-          <Text style={styles.hint}>Pick a tag that's ready to go out to a karigar.</Text>
+          <Text style={styles.hint}>Pick a tag that&apos;s ready to go out to a karigar.</Text>
           {loading ? (
             <ActivityIndicator color={colors.brandPrimary} style={{ marginTop: 40 }} />
           ) : pickList.length === 0 ? (
@@ -263,7 +263,7 @@ export default function IssueToKarigarScreen() {
               testID="issue-karigar"
             />
             {!isEdit && kEntry.kind === 'none' && (
-              <Text style={styles.hint}>No karigar needed on this job? Leave this blank and the tag will go straight to "Pending to Bill".</Text>
+              <Text style={styles.hint}>No karigar needed on this job? Leave this blank and the tag will go straight to &quot;Pending to Bill&quot;.</Text>
             )}
             {(isEdit || kEntry.kind !== 'none') && (
               <DueBackField label="Due back" value={dueBack} onChange={setDueBack} days={[1, 3, 5, 7]} testID="issue-due-back" />

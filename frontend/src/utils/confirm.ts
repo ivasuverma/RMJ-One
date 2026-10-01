@@ -20,7 +20,7 @@ export function confirmAction(
       { label: 'Cancel', style: 'cancel' },
       { label: confirmLabel, style: 'destructive', onPress: onConfirm },
     ] })) return;
-    // eslint-disable-next-line no-alert
+     
     if (typeof window !== 'undefined' && window.confirm(`${title}\n\n${message}`)) {
       onConfirm();
     }

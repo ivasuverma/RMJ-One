@@ -54,7 +54,7 @@ export function FloatingCaptureButton({ onPress, testID }: { onPress: () => void
     return <FabButton onPress={onPress} testID={testID} bottom={bottom} colors={colors} />;
   }
   if (!portalEl) return null;
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
+   
   const ReactDOM = require('react-dom');
   return ReactDOM.createPortal(
     <FabButton onPress={onPress} testID={testID} bottom={bottom} colors={colors} />,

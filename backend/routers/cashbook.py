@@ -23,6 +23,7 @@ management (create/rename/deactivate) is owner-only — entry CRUD follows
 the usual module/right checks and applies across whichever counter the
 caller is working in."""
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 from typing import Optional
 import asyncio
 import re
@@ -375,6 +376,81 @@ async def delete_quick_name(quick_id: str, user=Depends(require_admin_or_module_
 
 
 # ---------------- Entries ----------------
+# ---------------- Close the day ----------------
+# Closing a counter's day = counting the cash, recording any difference as one
+# adjustment entry (so the book matches the count), and locking that day: no
+# entry on it can be added, changed or deleted until the owner reopens it.
+async def _closure(counter_id: str, date: str) -> Optional[dict]:
+    return await db.cashbook_closures.find_one({'counter_id': counter_id, 'date': date}, {'_id': 0})
+
+
+async def _assert_day_open(counter_id: str, date: str) -> None:
+    if await _closure(counter_id, date):
+        c = await db.cashbook_counters.find_one({'id': counter_id}, {'_id': 0, 'name': 1}) or {}
+        raise HTTPException(status_code=400, detail=f"{date} is closed for {c.get('name') or 'this counter'}. Ask the owner to reopen it to make changes.")
+
+
+class DayCloseIn(BaseModel):
+    counter_id: str
+    date: str = Field(pattern=r'^\d{4}-\d{2}-\d{2}$')
+    counted: float = Field(ge=0)
+    note: Optional[str] = ''
+
+
+@router.post('/cashbook/close')
+async def close_cashbook_day(body: DayCloseIn, user=Depends(require_admin_or_module_right('cash_book', 'edit'))):
+    _assert_counter_allowed(user, body.counter_id)
+    counter = await _get_counter(body.counter_id)
+    if body.date > (now_utc() + timedelta(hours=5, minutes=30)).date().isoformat():   # IST today
+        raise HTTPException(status_code=400, detail="A day can't be closed before it happens")
+    await _assert_day_open(body.counter_id, body.date)
+    day = await get_cashbook_day(date=body.date, counter_id=body.counter_id, user=user)
+    expected = day['closing_balance']
+    counted = round(body.counted, 2)
+    diff = round(counted - expected, 2)
+    iso = now_utc().isoformat()
+    adj_id = None
+    if abs(diff) >= 0.01:
+        # One entry for the difference, so the book's balance equals the counted cash.
+        d_recv, d_paid = (diff, 0.0) if diff > 0 else (0.0, -diff)
+        lowest, _ = await _walk_balance(body.counter_id, body.date, d_recv, d_paid)
+        if lowest < -0.01:
+            raise HTTPException(status_code=400, detail='This count would make a later day negative — check the later entries first.')
+        adj_id = str(uuid.uuid4())
+        await db.cashbook_entries.insert_one({
+            'id': adj_id, 'date': body.date, 'counter_id': counter['id'], 'type': 'received' if diff > 0 else 'paid',
+            'amount': abs(diff), 'name': 'Cash count difference', 'category': 'Day close',
+            'note': (body.note or '').strip() or f'Counted ₹{counted:,.2f}, book said ₹{expected:,.2f}',
+            'created_at': iso, 'created_by': user['name'], 'created_by_id': user['id'],
+            'linked_entry_id': None, 'transfer_counter_id': None, 'day_close_adjustment': True,
+        })
+    doc = {
+        'id': str(uuid.uuid4()), 'counter_id': counter['id'], 'counter_name': counter['name'], 'date': body.date,
+        'expected': expected, 'counted': counted, 'difference': diff, 'note': (body.note or '').strip(),
+        'adjustment_entry_id': adj_id, 'closed_by': user['name'], 'closed_by_id': user['id'], 'closed_at': iso,
+    }
+    await db.cashbook_closures.insert_one(dict(doc))
+    await log_audit(user, 'cashbook.close_day', 'cashbook', doc['id'], f"{counter['name']} · {body.date}",
+                    {'expected': expected, 'counted': counted, 'difference': diff})
+    if abs(diff) >= 0.01:
+        await _notify_module('cash_book', f"Cash {'over' if diff > 0 else 'short'} by ₹{abs(diff):,.0f}",
+                             f"{counter['name']} · {body.date}: counted ₹{counted:,.0f}, book said ₹{expected:,.0f} (closed by {user['name']})",
+                             '/cashbook', admin_only=True)
+    return doc
+
+
+@router.delete('/cashbook/close/{counter_id}/{date}')
+async def reopen_cashbook_day(counter_id: str, date: str, user=Depends(require_owner)):
+    c = await _closure(counter_id, date)
+    if not c:
+        raise HTTPException(status_code=404, detail='This day is not closed')
+    if c.get('adjustment_entry_id'):
+        await db.cashbook_entries.delete_one({'id': c['adjustment_entry_id']})
+    await db.cashbook_closures.delete_one({'counter_id': counter_id, 'date': date})
+    await log_audit(user, 'cashbook.reopen_day', 'cashbook', c['id'], f"{c.get('counter_name', '')} · {date}", {})
+    return {'ok': True}
+
+
 @router.get('/cashbook/day')
 async def get_cashbook_day(date: str = Query(...), counter_id: str = Query(...), user: dict = Depends(require_staff_or_module('cash_book'))):
     _assert_counter_allowed(user, counter_id)
@@ -396,6 +472,7 @@ async def get_cashbook_day(date: str = Query(...), counter_id: str = Query(...),
         'date': date, 'counter_id': counter_id, 'counter_name': counter['name'],
         'opening_balance': opening, 'entries': entries,
         'total_received': total_received, 'total_paid': total_paid, 'closing_balance': closing,
+        'closure': await _closure(counter_id, date),
     }
 
 
@@ -427,6 +504,9 @@ async def create_cashbook_entry(body: CashBookEntryIn, user=Depends(require_admi
         counter = await _get_counter(body.counter_id)
         other_counter = None
 
+    await _assert_day_open(counter['id'], body.date)
+    if other_counter:
+        await _assert_day_open(other_counter['id'], body.date)
     iso = now_utc().isoformat()
     entry_id = str(uuid.uuid4())
     entry = {
@@ -512,7 +592,14 @@ async def update_cashbook_entry(entry_id: str, body: CashBookEntryUpdateIn, user
     if not entry:
         raise HTTPException(status_code=404, detail='Entry not found')
     _assert_counter_allowed(user, entry['counter_id'])
+    await _assert_day_open(entry['counter_id'], entry['date'])
+    if body.date is not None or body.counter_id is not None:
+        await _assert_day_open(body.counter_id or entry['counter_id'], body.date or entry['date'])
     linked_id = entry.get('linked_entry_id')
+    if linked_id:
+        mirror = await db.cashbook_entries.find_one({'id': linked_id}, {'_id': 0, 'counter_id': 1, 'date': 1})
+        if mirror:
+            await _assert_day_open(mirror['counter_id'], body.date or mirror['date'])
     if linked_id and (body.type is not None or body.counter_id is not None):
         raise HTTPException(status_code=400, detail='This entry is linked to a transfer — delete and re-add it to change its type or counter')
     upd: dict = {}
@@ -609,6 +696,11 @@ async def delete_cashbook_entry(entry_id: str, user=Depends(require_admin_or_mod
     # same reason as on create — undoing a transfer to/from a counter this
     # employee can't browse must still be possible from this side.
     linked_id = entry.get('linked_entry_id')
+    await _assert_day_open(entry['counter_id'], entry['date'])
+    if linked_id:
+        mirror = await db.cashbook_entries.find_one({'id': linked_id}, {'_id': 0, 'counter_id': 1, 'date': 1})
+        if mirror:
+            await _assert_day_open(mirror['counter_id'], mirror['date'])
     await db.cashbook_entries.delete_one({'id': entry_id})
     if linked_id:
         # A transfer is one action against two books — deleting one side

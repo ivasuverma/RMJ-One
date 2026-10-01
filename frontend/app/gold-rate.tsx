@@ -9,9 +9,8 @@ import { istTime } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { ModuleHeader } from '@/src/components/ui/ModuleHeader';
-import { useScrolled } from '@/src/components/ui/StickyHeader';
+import { useScrolled , HeaderSpacer } from '@/src/components/ui/StickyHeader';
 import { useToast } from '@/src/components/ui';
-import { HeaderSpacer } from '@/src/components/ui/StickyHeader';
 
 type Today = {
   date: string; gold_rate: number | null; silver_rate: number | null;
@@ -222,7 +221,7 @@ export default function RateUpdaterScreen() {
         <View style={styles.card} testID="ru-rates-card">
           <View style={styles.cardHead}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.cardTitle}>Today's rate</Text>
+              <Text style={styles.cardTitle}>Today&apos;s rate</Text>
               <Text style={[styles.sub, today?.error && { color: colors.onError }]}>{sourceLine}</Text>
             </View>
             <Pressable onPress={doFetch} disabled={!!busy} style={[styles.fetchBtn, !!busy && { opacity: 0.6 }]} testID="gold-rate-refetch">
