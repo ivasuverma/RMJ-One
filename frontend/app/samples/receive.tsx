@@ -8,6 +8,8 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
 import { notify } from '@/src/utils/notify';
 import { confirmAction } from '@/src/utils/confirm';
+import { istDateTime } from '@/src/utils/datetime';
+import { Part, partsSummary } from '@/src/utils/samples';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { Image } from 'expo-image';
@@ -21,6 +23,7 @@ type Sample = {
   issue_type?: string; purity?: number | null; pc_count?: number;
   received_weight: number | null; note: string;
   pay_weight?: number | null; recv_weight?: number | null; write_off_loss?: boolean;
+  final_received_weight?: number | null; partial_receipts?: Part[];
 };
 
 // How a shortfall/surplus vs. the issued weight gets handled — mutually
@@ -47,6 +50,9 @@ export default function ReceiveSampleScreen() {
   const [payWeight, setPayWeight] = useState('');
   const [recvWeight, setRecvWeight] = useState('');
   const [busy, setBusy] = useState(false);
+  const [mode, setMode] = useState<'all' | 'part'>('all');
+  const [partWeight, setPartWeight] = useState('');
+  const [partPcs, setPartPcs] = useState('');
   const [deleting, setDeleting] = useState(false);
   const submittingRef = useRef(false);
 
@@ -62,7 +68,9 @@ export default function ReceiveSampleScreen() {
       // matching return is the common case, and a greyed-out placeholder
       // that happens to equal the weight above it reads, at a glance,
       // exactly like an already-entered value.
-      setReceivedWeight(String(isEdit ? s.received_weight ?? s.weight : s.weight));
+      const out = partsSummary(s).outW;
+      setReceivedWeight(String(isEdit ? s.final_received_weight ?? s.received_weight ?? out : out));
+      setMode('all'); setPartWeight(''); setPartPcs('');
       setPayWeight(isEdit && s.pay_weight ? String(s.pay_weight) : '');
       setRecvWeight(isEdit && s.recv_weight ? String(s.recv_weight) : '');
       setGapChoice(isEdit && s.write_off_loss ? 'loss' : isEdit && (s.pay_weight || s.recv_weight) ? 'settle' : 'carry');
@@ -73,7 +81,25 @@ export default function ReceiveSampleScreen() {
 
   const isEdit = sample?.status === 'received';
 
+  const submitPart = async () => {
+    if (submittingRef.current || !sample) return;
+    const w = parseFloat(partWeight);
+    if (!w || w <= 0) { notify('Missing', 'Enter the weight that came back'); return; }
+    submittingRef.current = true;
+    setBusy(true);
+    try {
+      await api.post(`/samples/${sample.id}/receive-part`, { weight: w, pieces: parseInt(partPcs, 10) || 0 });
+      router.back();
+    } catch (e: any) {
+      notify('Failed', e?.detail || 'Please try again');
+    } finally {
+      setBusy(false);
+      submittingRef.current = false;
+    }
+  };
+
   const submit = async () => {
+    if (mode === 'part') { submitPart(); return; }
     if (submittingRef.current || !sample) return;
     const w = parseFloat(receivedWeight);
     if (!w || w <= 0) { notify('Missing', 'Enter the weight received back'); return; }
@@ -126,8 +152,12 @@ export default function ReceiveSampleScreen() {
     );
   }
 
+  const ps = partsSummary(sample);
+  const hasParts = ps.parts.length > 0;
   const w = parseFloat(receivedWeight) || 0;
-  const diff = receivedWeight ? round3(w - sample.weight) : 0;
+  const diff = receivedWeight ? round3(w - ps.outW) : 0;
+  const pw = parseFloat(partWeight) || 0;
+  const pp = parseInt(partPcs, 10) || 0;
 
   const purityText = sample.purity ? `${sample.purity}%` : '—';
 
@@ -179,26 +209,80 @@ export default function ReceiveSampleScreen() {
             <Text style={[styles.detailValue, styles.detailDesc]}>{sample.description || '—'}</Text>
           </View>
 
-          <Text style={styles.label}>Issued weight (g)</Text>
-          <View style={styles.readonlyBox}><Text style={styles.readonlyBoxText}>{sample.weight.toFixed(3)}</Text></View>
+          {hasParts && (
+            <View style={styles.partsCard} testID="receive-parts-so-far">
+              <Text style={styles.partsTitle}>Already back · {ps.backW.toFixed(3)}g{ps.backPcs ? ` · ${ps.backPcs} pc` : ''}</Text>
+              {ps.parts.map((p) => (
+                <Text key={p.id} style={styles.partsLine}>{istDateTime(p.received_at)} · {p.pieces ? `${p.pieces} pc · ` : ''}{p.weight.toFixed(3)}g</Text>
+              ))}
+            </View>
+          )}
 
-          <Text style={styles.label}>Received weight (g)</Text>
-          <TextInput
-            testID="received-weight" value={receivedWeight}
-            onChangeText={(v) => setReceivedWeight(v.replace(/[^0-9.]/g, ''))}
-            keyboardType="decimal-pad" placeholder="0.000"
-            placeholderTextColor={colors.mutedText} style={styles.input}
-          />
+          {!isEdit && (
+            <View style={styles.modeRow}>
+              {(['all', 'part'] as const).map((m) => (
+                <Pressable key={m} onPress={() => setMode(m)} style={[styles.modeBtn, mode === m && styles.modeBtnActive]} testID={`receive-mode-${m}`}>
+                  <Text style={[styles.modeText, mode === m && styles.modeTextActive]}>{m === 'all' ? (hasParts ? 'Rest is back' : 'All back') : 'Only part back'}</Text>
+                </Pressable>
+              ))}
+            </View>
+          )}
 
-          {!!receivedWeight && (
-            <Text style={[styles.diffHint, diff !== 0 && { color: diff > 0 ? colors.onWarning : colors.onSuccess }]}>
-              {diff === 0 ? 'Matches the issued weight exactly.' : `${diff > 0 ? '+' : ''}${diff.toFixed(3)}g vs issued — expected the same weight back.`}
-            </Text>
+          <View style={styles.partRow}>
+            <View style={styles.fieldColFlex}>
+              <Text style={styles.label}>{hasParts ? 'Still out (g)' : 'Issued weight (g)'}</Text>
+              <View style={styles.readonlyBox}><Text style={styles.readonlyBoxText}>{ps.outW.toFixed(3)}</Text></View>
+            </View>
+            {(sample.pc_count ?? 1) > 1 && (
+              <View style={styles.fieldColFlex}>
+                <Text style={styles.label}>{hasParts ? 'Pieces still out' : 'Pieces'}</Text>
+                <View style={styles.readonlyBox}><Text style={styles.readonlyBoxText}>{ps.outPcs}</Text></View>
+              </View>
+            )}
+          </View>
+
+          {mode === 'part' ? (
+            <>
+              <View style={styles.partRow}>
+                {(sample.pc_count ?? 1) > 1 && (
+                  <View style={styles.fieldColFlex}>
+                    <Text style={styles.label}>Pieces back now</Text>
+                    <TextInput testID="part-pieces" value={partPcs} onChangeText={(v) => setPartPcs(v.replace(/[^0-9]/g, ''))}
+                      keyboardType="number-pad" placeholder="0" placeholderTextColor={colors.mutedText} style={styles.input} />
+                  </View>
+                )}
+                <View style={styles.fieldColFlex}>
+                  <Text style={styles.label}>Weight back now (g)</Text>
+                  <TextInput testID="part-weight" value={partWeight} onChangeText={(v) => setPartWeight(v.replace(/[^0-9.]/g, ''))}
+                    keyboardType="decimal-pad" placeholder="0.000" placeholderTextColor={colors.mutedText} style={styles.input} autoFocus />
+                </View>
+              </View>
+              <Text style={[styles.diffHint, pw >= ps.outW && { color: colors.onError }]} testID="part-left">
+                {pw >= ps.outW ? 'That is everything still out — use "All back" instead.'
+                  : `Still with ${sample.karigar_name} after this: ${(sample.pc_count ?? 1) > 1 ? `${Math.max(0, ps.outPcs - pp)} pc · ` : ''}${round3(ps.outW - pw).toFixed(3)}g. Any shortfall is settled when the rest comes back.`}
+              </Text>
+            </>
+          ) : (
+            <>
+              <Text style={styles.label}>Received weight (g)</Text>
+              <TextInput
+                testID="received-weight" value={receivedWeight}
+                onChangeText={(v) => setReceivedWeight(v.replace(/[^0-9.]/g, ''))}
+                keyboardType="decimal-pad" placeholder="0.000"
+                placeholderTextColor={colors.mutedText} style={styles.input}
+              />
+
+              {!!receivedWeight && (
+                <Text style={[styles.diffHint, diff !== 0 && { color: diff > 0 ? colors.onWarning : colors.onSuccess }]}>
+                  {diff === 0 ? `Matches the ${hasParts ? 'weight still out' : 'issued weight'} exactly.` : `${diff > 0 ? '+' : ''}${diff.toFixed(3)}g vs ${hasParts ? 'still out' : 'issued'} — expected the same weight back.`}
+                </Text>
+              )}
+            </>
           )}
 
           {/* Only when there's a gap — an exact match just posts the plain
               receive entry above, nothing to choose. */}
-          {diff !== 0 && (
+          {mode === 'all' && diff !== 0 && (
             <>
               <Text style={styles.label}>How to handle the gap</Text>
               <View style={styles.gapChoiceRow}>
@@ -256,7 +340,7 @@ export default function ReceiveSampleScreen() {
             style={[styles.saveBtn, busy && { opacity: 0.6 }]} disabled={busy}
             onPress={submit} testID="confirm-receive-sample-btn"
           >
-            {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.saveBtnText}>{isEdit ? 'Save Changes' : 'Confirm Receipt'}</Text>}
+            {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.saveBtnText}>{isEdit ? 'Save Changes' : mode === 'part' ? 'Receive Part' : 'Confirm Receipt'}</Text>}
           </Pressable>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -312,10 +396,19 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   gapChipText: { color: colors.onSurfaceSecondary, fontSize: 12.5, fontWeight: '700' },
   gapChipTextActive: { color: colors.onBrandPrimary },
 
+  partRow: { flexDirection: 'row', gap: spacing.md },
   settleRow: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.md },
   fieldColFlex: { flex: 1 },
   settleHint: { color: colors.mutedText, fontSize: 11, marginTop: 4 },
 
+  partsCard: { backgroundColor: colors.brandTertiary, borderRadius: radius.md, padding: spacing.md, marginTop: spacing.md, gap: 3 },
+  partsTitle: { color: colors.brandSecondary, fontSize: 13.5, fontWeight: '800' },
+  partsLine: { color: colors.onSurfaceSecondary, fontSize: 12.5 },
+  modeRow: { flexDirection: 'row', gap: 6, marginTop: spacing.lg, padding: 3, borderRadius: radius.md, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border },
+  modeBtn: { flex: 1, alignItems: 'center', paddingVertical: 9, borderRadius: radius.md - 2 },
+  modeBtnActive: { backgroundColor: colors.brandPrimary },
+  modeText: { color: colors.onSurfaceSecondary, fontSize: 13.5, fontWeight: '700' },
+  modeTextActive: { color: colors.onBrandPrimary },
   saveBtn: { backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: 14, alignItems: 'center', marginTop: spacing.xl },
   saveBtnText: { color: colors.onBrandPrimary, fontWeight: '800', fontSize: 14 },
 });
