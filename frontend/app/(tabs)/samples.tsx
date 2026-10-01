@@ -11,6 +11,7 @@ import { useTheme } from '@/src/theme/ThemeContext';
 import { ModuleHeader, HeaderButton } from '@/src/components/ui/ModuleHeader';
 import { HeaderSpacer } from '@/src/components/ui/StickyHeader';
 import { useScrolled } from '@/src/components/ui/StickyHeader';
+import { OverdueTag, daysLate } from '@/src/components/OverdueTag';
 import { TabBarSpacer } from '@/src/components/GlassTabBar';
 
 type Sample = {
@@ -151,6 +152,7 @@ export default function SamplesScreen() {
                     {at ? istDateTime(at) : ''}
                     {s.issued_by ? ` · by ${s.issued_by}` : ''}
                   </Text>
+                  {isOverdue && <OverdueTag text="Overdue from karigar" days={daysLate(s.due_date)} testID={`overdue-${s.id}`} />}
                 </View>
                 {/* Status, and Receive under it (not on a row of its own) to keep the card short. */}
                 <View style={styles.cardSide}>
