@@ -44,6 +44,18 @@ from server import (
 
 router = APIRouter()
 
+
+async def _refresh_payroll_for(emp_id: str, *dates: str) -> None:
+    """An attendance change (day edit, correction, leave) can change pay. If that
+    month's payroll was already run and this person isn't paid yet, refresh their
+    saved entry so Payroll matches the calendar (locked or paid months are left as is)."""
+    from routers.payroll import _refresh_unpaid_payroll
+    for ym in sorted({d[:7] for d in dates if d and len(d) >= 7}):
+        try:
+            await _refresh_unpaid_payroll(emp_id, int(ym[:4]), int(ym[5:7]))
+        except Exception:   # noqa: BLE001 — never fail the attendance save over this
+            pass
+
 @router.post('/attendance/check-in')
 async def check_in(body: PunchIn, user=Depends(require_employee)):
     store = await _get_store()
@@ -476,6 +488,7 @@ async def edit_day(emp_id: str, d: str, body: AttendanceDayIn, user=Depends(requ
         await db.attendance.insert_one({'id': att_id, **doc, 'created_at': iso})
     await log_audit(user, 'attendance.edit', 'attendance', att_id, f'{emp_id} · {d}',
                     {'status': body.status, 'check_in': check_in_ts, 'check_out': check_out_ts})
+    await _refresh_payroll_for(emp_id, d)
     return {'ok': True, 'attendance_id': att_id}
 
 
@@ -498,6 +511,7 @@ async def delete_day(emp_id: str, d: str, user=Depends(require_admin), _mod=Depe
     except Exception:
         pass
     await log_audit(user, 'attendance.delete', 'attendance', existing['id'], f'{emp_id} · {d}', {})
+    await _refresh_payroll_for(emp_id, d)
     return {'ok': True}
 
 
@@ -626,6 +640,7 @@ async def _apply_correction(r: dict, t_in: Optional[str], t_out: Optional[str], 
             'id': str(uuid.uuid4()), 'employee_id': r['employee_id'], 'date': r['date'],
             'is_late': False, 'created_at': now_iso, **update,
         })
+    await _refresh_payroll_for(r['employee_id'], r['date'])
     return {'in': t_in, 'out': t_out, 'before': before, 'after': _day_summary(update)}
 
 
@@ -692,6 +707,12 @@ async def decide_leave(lid: str, body: DecisionIn, user=Depends(require_admin_or
         'decision_note': body.note or '',
     }})
     if new_status == 'approved':
+        # Paid leave changes pay for every month it touches.
+        months, cur = set(), date.fromisoformat(l['from_date'][:10]).replace(day=1)
+        while cur.isoformat() <= l['to_date'][:10]:
+            months.add(cur.isoformat())
+            cur = (cur + timedelta(days=32)).replace(day=1)
+        await _refresh_payroll_for(l['employee_id'], *months)
         # Add timeline event
         await db.timeline.insert_one({
             'id': str(uuid.uuid4()), 'employee_id': l['employee_id'], 'type': 'leave',
