@@ -8,6 +8,7 @@ import { istDate } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { LedgerFilter, filterQuery, type LedgerFilterValue } from '@/src/components/LedgerFilter';
+import { GlassButton } from '@/src/components/ui/GlassButton';
 
 type Voucher = {
   id: string; kind: 'karigar' | 'employee' | 'bill' | 'stock'; date: string; party: string; party_id?: string | null;
@@ -74,7 +75,7 @@ export default function DayBookScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="day-book-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} hitSlop={12} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back"><Ionicons name="chevron-back" size={22} color={colors.onSurface} /></Pressable>
+        <GlassButton onPress={() => router.back()} style={styles.iconBtn} hitSlop={12} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back"><Ionicons name="chevron-back" size={22} color={colors.onSurface} /></GlassButton>
         <Text style={styles.title}>Day Book</Text>
         <View style={{ width: 40 }} />
       </View>

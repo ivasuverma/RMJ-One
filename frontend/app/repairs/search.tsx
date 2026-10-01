@@ -7,6 +7,7 @@ import { api } from '@/src/api/client';
 import { REPAIR_STATUS_LABEL, repairStatusColors } from '@/src/utils/repairStatus';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { GlassButton } from '@/src/components/ui/GlassButton';
 
 type Item = {
   id: string; item_code: string; customer_name: string; description: string;
@@ -39,9 +40,9 @@ export default function TagHistorySearchScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="tag-search-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
+        <GlassButton onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-        </Pressable>
+        </GlassButton>
         <Text style={styles.title}>Tag History</Text>
         <View style={{ width: 40 }} />
       </View>

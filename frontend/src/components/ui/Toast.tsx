@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { radius, spacing, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { GlassSurface } from './GlassSurface';
 
 export type ToastKind = 'success' | 'error' | 'info';
 type ToastItem = { id: number; kind: ToastKind; message: string; title?: string };
@@ -90,10 +91,12 @@ function ToastStack({ items, onDismiss }: { items: ToastItem[]; onDismiss: (id: 
       {items.map((t) => {
         const fg = t.kind === 'error' ? colors.onError : t.kind === 'success' ? colors.onSuccess : colors.onSurface;
         return (
-          <View
+          <GlassSurface
             key={t.id}
             accessibilityRole="alert"
             accessibilityLiveRegion="polite"
+            material="thick"
+            color={t.kind === 'error' ? colors.error : t.kind === 'success' ? colors.success : colors.surfaceSecondary}
             style={[styles.toast, t.kind === 'error' ? styles.toastError : t.kind === 'success' ? styles.toastSuccess : styles.toastInfo]}
           >
             <Ionicons
@@ -105,7 +108,7 @@ function ToastStack({ items, onDismiss }: { items: ToastItem[]; onDismiss: (id: 
               {t.title ? <Text style={styles.title}>{t.title}  </Text> : null}
               {t.message}
             </Text>
-          </View>
+          </GlassSurface>
         );
       })}
     </View>
@@ -121,9 +124,9 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: spacing.sm, alignSelf: 'stretch',
     borderRadius: radius.md, borderWidth: 1, paddingHorizontal: spacing.md, paddingVertical: 12,
   },
-  toastSuccess: { backgroundColor: colors.success, borderColor: colors.success },
-  toastError: { backgroundColor: colors.error, borderColor: colors.error },
-  toastInfo: { backgroundColor: colors.surfaceSecondary, borderColor: colors.border },
+  toastSuccess: { borderColor: colors.success },
+  toastError: { borderColor: colors.error },
+  toastInfo: { borderColor: colors.border },
   text: { flex: 1, fontSize: 14, fontWeight: '500', lineHeight: 19 },
   title: { fontWeight: '700' },
 });

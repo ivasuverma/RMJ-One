@@ -8,6 +8,7 @@ import { api } from '@/src/api/client';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { MODULE_ORDER, MODULE_ICONS, type Templates } from './_shared';
+import { GlassButton } from '@/src/components/ui/GlassButton';
 
 // Print Master home — one card per module (Repairs, Stock In/Out, Gold
 // Loan), each drilling into its own list of print templates. See
@@ -41,9 +42,9 @@ export default function PrintMasterHomeScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="print-master-home-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
+        <GlassButton onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-        </Pressable>
+        </GlassButton>
         <Text style={styles.title}>Print Master</Text>
         <View style={{ width: 40 }} />
       </View>

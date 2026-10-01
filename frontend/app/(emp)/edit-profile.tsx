@@ -11,6 +11,7 @@ import { PhotoCaptureModal } from '@/src/components/PhotoCaptureModal';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { TabBarSpacer, useTabBarInset } from '@/src/components/GlassTabBar';
+import { GlassButton } from '@/src/components/ui/GlassButton';
 
 type Emp = {
   name?: string; mobile?: string; address?: string; aadhaar?: string; pan?: string;
@@ -56,7 +57,7 @@ export default function EmployeeEditProfile() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="emp-edit-profile">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} hitSlop={12} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back"><Ionicons name="chevron-back" size={22} color={colors.onSurface} /></Pressable>
+        <GlassButton onPress={() => router.back()} style={styles.iconBtn} hitSlop={12} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back"><Ionicons name="chevron-back" size={22} color={colors.onSurface} /></GlassButton>
         <Text style={styles.title}>My Profile</Text>
         <View style={styles.iconBtn} />
       </View>

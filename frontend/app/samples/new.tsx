@@ -14,6 +14,7 @@ import { DueBackField } from '@/src/components/DueBackField';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { KarigarChooser, createKarigar, resolveKarigar } from '@/src/components/KarigarChooser';
+import { GlassButton } from '@/src/components/ui/GlassButton';
 
 type Karigar = { id: string; name: string; mobile?: string; active: boolean };
 type ItemMaster = { id: string; name: string; purity: number; category: string; active: boolean };
@@ -168,9 +169,9 @@ export default function NewSampleScreen() {
     return (
       <SafeAreaView style={styles.root} edges={['top']}>
         <View style={styles.header}>
-          <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
+          <GlassButton onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
             <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-          </Pressable>
+          </GlassButton>
           <View style={{ flex: 1 }} />
         </View>
         <View style={styles.loader}><ActivityIndicator color={colors.brandPrimary} /></View>
@@ -181,9 +182,9 @@ export default function NewSampleScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="sample-new-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
+        <GlassButton onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-        </Pressable>
+        </GlassButton>
         <Text style={styles.title}>{isEdit ? 'Edit Sample' : 'Issue Sample'}</Text>
         <View style={{ width: 40 }} />
       </View>

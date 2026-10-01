@@ -25,6 +25,7 @@ import { RateTicker, QuickRow, QuickItem, NeedsSection, NotificationsSection, QU
 import { QUICK_ICON } from '@/src/components/home/QuickSheets';
 import { HomeSummary, isOk } from '@/src/components/home/types';
 import { StickyHeader, useScrolled, HeaderSpacer } from '@/src/components/ui/StickyHeader';
+import { GlassButton } from '@/src/components/ui/GlassButton';
 
 
 type Att = {
@@ -253,10 +254,10 @@ export default function EmployeeHome() {
             <Text style={styles.heroCode}>{user?.employee_code} · {user?.designation || '—'}</Text>
           </View>
           <UploadQueueBadge />
-          <Pressable onPress={() => router.push('/notifications' as any)} style={styles.iconBtn} testID="emp-notifications-btn" hitSlop={12}>
+          <GlassButton onPress={() => router.push('/notifications' as any)} style={styles.iconBtn} testID="emp-notifications-btn" hitSlop={12}>
             <Ionicons name="notifications-outline" size={20} color={colors.onSurface} />
             {unread > 0 && <View style={styles.bellDot} />}
-          </Pressable>
+          </GlassButton>
         </View>
       </StickyHeader>
       <ScrollView onScroll={onScroll} scrollEventThrottle={16}

@@ -7,6 +7,7 @@ import { api } from '@/src/api/client';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { useToast } from '@/src/components/ui';
+import { GlassButton } from '@/src/components/ui/GlassButton';
 
 const REPAIR_SAMPLE: Record<string, string> = {
   customer_name: 'Ramesh Kumar', item_code: 'RJ-0231', description: 'Gold ring repair',
@@ -99,9 +100,9 @@ export default function WhatsAppTemplatesScreen() {
     return (
       <SafeAreaView style={styles.root} edges={['top']}>
         <View style={styles.header}>
-          <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
+          <GlassButton onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
             <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-          </Pressable>
+          </GlassButton>
           <View style={{ flex: 1 }} />
           <View style={{ width: 40 }} />
         </View>
@@ -113,13 +114,13 @@ export default function WhatsAppTemplatesScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="whatsapp-templates-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
+        <GlassButton onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-        </Pressable>
+        </GlassButton>
         <Text style={styles.title}>Message Templates</Text>
-        <Pressable onPress={load} style={styles.iconBtn} testID="templates-refresh-btn" hitSlop={12} accessibilityRole="button" accessibilityLabel="Refresh">
+        <GlassButton onPress={load} style={styles.iconBtn} testID="templates-refresh-btn" hitSlop={12} accessibilityRole="button" accessibilityLabel="Refresh">
           <Ionicons name="refresh" size={18} color={colors.onSurface} />
-        </Pressable>
+        </GlassButton>
       </View>
 
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 120 }} keyboardShouldPersistTaps="handled">

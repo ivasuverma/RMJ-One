@@ -8,6 +8,7 @@ import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { useToast } from '@/src/components/ui';
 import { QuickUnlockCard } from '@/src/components/QuickUnlockCard';
+import { GlassButton } from '@/src/components/ui/GlassButton';
 
 // Auto sign-out after inactivity. The owner picks a preset (or Off); every
 // signed-in device reads this and arms an idle timer (see AuthContext).
@@ -54,7 +55,7 @@ export default function SecurityScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="security-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} hitSlop={12} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back"><Ionicons name="chevron-back" size={22} color={colors.onSurface} /></Pressable>
+        <GlassButton onPress={() => router.back()} style={styles.iconBtn} hitSlop={12} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back"><Ionicons name="chevron-back" size={22} color={colors.onSurface} /></GlassButton>
         <Text style={styles.title}>Security</Text>
         <View style={styles.iconBtn} />
       </View>

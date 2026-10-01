@@ -9,6 +9,7 @@ import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { useToast } from '@/src/components/ui';
 import { confirmAction } from '@/src/utils/confirm';
+import { GlassButton } from '@/src/components/ui/GlassButton';
 
 type BackupFile = { id: string; name: string; size: number; created: string };
 type Status = {
@@ -83,9 +84,9 @@ export default function BackupScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="backup-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} hitSlop={12} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back"><Ionicons name="chevron-back" size={22} color={colors.onSurface} /></Pressable>
+        <GlassButton onPress={() => router.back()} style={styles.iconBtn} hitSlop={12} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back"><Ionicons name="chevron-back" size={22} color={colors.onSurface} /></GlassButton>
         <Text style={styles.title}>Backup</Text>
-        <Pressable onPress={load} style={styles.iconBtn} hitSlop={12}><Ionicons name="refresh" size={19} color={colors.onSurface} /></Pressable>
+        <GlassButton onPress={load} style={styles.iconBtn} hitSlop={12}><Ionicons name="refresh" size={19} color={colors.onSurface} /></GlassButton>
       </View>
 
       <ScrollView contentContainerStyle={{ padding: spacing.lg }}>

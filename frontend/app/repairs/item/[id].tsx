@@ -16,6 +16,7 @@ import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { useAuth } from '@/src/auth/AuthContext';
 import { RecordPhotos } from '@/src/components/RecordPhotos';
+import { GlassButton } from '@/src/components/ui/GlassButton';
 
 type Item = {
   id: string; item_code: string; order_id: string; order_no: string; customer_name: string;
@@ -283,9 +284,9 @@ export default function RepairItemDetailScreen() {
     return (
       <SafeAreaView style={styles.root} edges={['top']}>
         <View style={styles.header}>
-          <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
+          <GlassButton onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
             <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-          </Pressable>
+          </GlassButton>
           <View style={{ flex: 1 }} />
         </View>
         <View style={styles.loader}><ActivityIndicator color={colors.brandPrimary} /></View>
@@ -299,9 +300,9 @@ export default function RepairItemDetailScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="repair-item-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
+        <GlassButton onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-        </Pressable>
+        </GlassButton>
         <Text style={styles.title} numberOfLines={1}>{item.item_code}</Text>
         <View style={[styles.statusBadge, { backgroundColor: sc.bg, borderColor: sc.border }]}>
           <Text style={[styles.statusText, { color: sc.fg }]}>{REPAIR_STATUS_LABEL[item.status]}</Text>
@@ -341,9 +342,9 @@ export default function RepairItemDetailScreen() {
           <Modal visible={form === 'edit'} animationType="slide" onRequestClose={() => setForm(null)}>
             <SafeAreaView style={styles.root} edges={['top']} testID="edit-form">
               <View style={styles.header}>
-                <Pressable onPress={() => setForm(null)} style={styles.iconBtn} hitSlop={12} testID="edit-close-btn">
+                <GlassButton onPress={() => setForm(null)} style={styles.iconBtn} hitSlop={12} testID="edit-close-btn">
                   <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-                </Pressable>
+                </GlassButton>
                 <Text style={styles.title} numberOfLines={1}>Edit {item.item_code}</Text>
                 <View style={{ width: 40 }} />
               </View>

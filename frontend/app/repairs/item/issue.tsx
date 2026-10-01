@@ -13,6 +13,7 @@ import { useTheme } from '@/src/theme/ThemeContext';
 import { KarigarChooser, createKarigar, resolveKarigar } from '@/src/components/KarigarChooser';
 import { mobileKey } from '@/src/utils/mobile';
 import { DueBackField } from '@/src/components/DueBackField';
+import { GlassButton } from '@/src/components/ui/GlassButton';
 
 type Item = {
   id: string; item_code: string; description: string; customer_name: string;
@@ -173,9 +174,9 @@ export default function IssueToKarigarScreen() {
     return (
       <SafeAreaView style={styles.root} edges={['top']}>
         <View style={styles.header}>
-          <Pressable onPress={onBack} style={styles.iconBtn} testID="back-btn" hitSlop={12} accessibilityRole="button" accessibilityLabel="Back">
+          <GlassButton onPress={onBack} style={styles.iconBtn} testID="back-btn" hitSlop={12} accessibilityRole="button" accessibilityLabel="Back">
             <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-          </Pressable>
+          </GlassButton>
           <View style={{ flex: 1 }} />
         </View>
         <View style={styles.loader}><ActivityIndicator color={colors.brandPrimary} /></View>
@@ -186,9 +187,9 @@ export default function IssueToKarigarScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="issue-screen">
       <View style={styles.header}>
-        <Pressable onPress={onBack} style={styles.iconBtn} testID="back-btn" hitSlop={12} accessibilityRole="button" accessibilityLabel="Back">
+        <GlassButton onPress={onBack} style={styles.iconBtn} testID="back-btn" hitSlop={12} accessibilityRole="button" accessibilityLabel="Back">
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-        </Pressable>
+        </GlassButton>
         <Text style={styles.title}>{headerTitle}</Text>
         <View style={{ width: 40 }} />
       </View>

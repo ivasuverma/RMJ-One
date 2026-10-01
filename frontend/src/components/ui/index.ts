@@ -20,3 +20,5 @@ export { ToastProvider, useToast } from './Toast';
 export { Sheet } from './Sheet';
 export { StickyHeader, HeaderSpacer, useScrolled } from './StickyHeader';
 export { ModuleHeader, HeaderButton } from './ModuleHeader';
+export { GlassSurface } from './GlassSurface';
+export { GlassButton } from './GlassButton';

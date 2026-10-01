@@ -14,6 +14,7 @@ import { useAccessEditor } from '@/src/hooks/use-access-editor';
 import { NotificationsSection, AccessSection } from '@/src/components/AccessEditorSections';
 import { api } from '@/src/api/client';
 import { confirmAction } from '@/src/utils/confirm';
+import { GlassButton } from '@/src/components/ui/GlassButton';
 
 const ROLE_LABEL: Record<string, string> = { owner: 'Owner', admin: 'Admin', accountant: 'Accountant', employee: 'Sales / Staff' };
 
@@ -67,7 +68,7 @@ export default function PersonScreen() {
   if (editor.loading) {
     return (
       <SafeAreaView style={styles.root} edges={['top']}>
-        <View style={styles.header}><Pressable onPress={() => router.back()} style={styles.iconBtn} hitSlop={12}><Ionicons name="chevron-back" size={22} color={colors.onSurface} /></Pressable><Text style={styles.title}>Person</Text><View style={styles.iconBtn} /></View>
+        <View style={styles.header}><GlassButton onPress={() => router.back()} style={styles.iconBtn} hitSlop={12}><Ionicons name="chevron-back" size={22} color={colors.onSurface} /></GlassButton><Text style={styles.title}>Person</Text><View style={styles.iconBtn} /></View>
         <ActivityIndicator color={colors.brandPrimary} style={{ marginTop: 60 }} />
       </SafeAreaView>
     );
@@ -75,7 +76,7 @@ export default function PersonScreen() {
   if (!acc) {
     return (
       <SafeAreaView style={styles.root} edges={['top']}>
-        <View style={styles.header}><Pressable onPress={() => router.back()} style={styles.iconBtn} hitSlop={12}><Ionicons name="chevron-back" size={22} color={colors.onSurface} /></Pressable><Text style={styles.title}>Person</Text><View style={styles.iconBtn} /></View>
+        <View style={styles.header}><GlassButton onPress={() => router.back()} style={styles.iconBtn} hitSlop={12}><Ionicons name="chevron-back" size={22} color={colors.onSurface} /></GlassButton><Text style={styles.title}>Person</Text><View style={styles.iconBtn} /></View>
         <Text style={styles.empty}>{editor.loadError ? "Couldn't load this account — check your connection." : 'This account could not be loaded.'}</Text>
         {editor.loadError && (
           <Pressable onPress={editor.reload} style={[styles.saveBtn, { marginHorizontal: spacing.lg, marginTop: spacing.md }]} testID="person-retry-btn">
@@ -89,12 +90,12 @@ export default function PersonScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID={`person-${acc.id}`}>
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} hitSlop={12} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back"><Ionicons name="chevron-back" size={22} color={colors.onSurface} /></Pressable>
+        <GlassButton onPress={() => router.back()} style={styles.iconBtn} hitSlop={12} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back"><Ionicons name="chevron-back" size={22} color={colors.onSurface} /></GlassButton>
         <Text style={styles.title} numberOfLines={1}>{acc.name}</Text>
         {canDelete ? (
-          <Pressable onPress={onDelete} disabled={deleting} style={styles.iconBtn} hitSlop={12} testID="delete-user-btn">
+          <GlassButton onPress={onDelete} disabled={deleting} style={styles.iconBtn} hitSlop={12} testID="delete-user-btn">
             {deleting ? <ActivityIndicator size="small" color={colors.onError} /> : <Ionicons name="trash-outline" size={20} color={colors.onError} />}
-          </Pressable>
+          </GlassButton>
         ) : (
           // keeps the title centred without drawing an empty button
           <View style={{ width: 40 }} />

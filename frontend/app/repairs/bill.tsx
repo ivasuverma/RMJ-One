@@ -16,6 +16,7 @@ import { istDate, todayIST } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { useAuth } from '@/src/auth/AuthContext';
+import { GlassButton } from '@/src/components/ui/GlassButton';
 
 type Item = {
   id: string; item_code: string; customer_name: string; description: string;
@@ -395,14 +396,14 @@ export default function RepairBillScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="repair-bill-screen">
       <View style={styles.header}>
-        <Pressable onPress={onBack} style={styles.iconBtn} testID="back-btn" hitSlop={12} accessibilityRole="button" accessibilityLabel="Back">
+        <GlassButton onPress={onBack} style={styles.iconBtn} testID="back-btn" hitSlop={12} accessibilityRole="button" accessibilityLabel="Back">
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-        </Pressable>
+        </GlassButton>
         <Text style={styles.title}>{headerTitle}</Text>
         {mode === 'list' ? (
-          <Pressable onPress={openPicker} style={[styles.iconBtn, styles.addBtn]} testID="new-bill-btn" hitSlop={12}>
+          <GlassButton onPress={openPicker} style={[styles.iconBtn, styles.addBtn]} testID="new-bill-btn" hitSlop={12}>
             <Ionicons name="add" size={22} color={colors.onBrandPrimary} />
-          </Pressable>
+          </GlassButton>
         ) : <View style={{ width: 40 }} />}
       </View>
 

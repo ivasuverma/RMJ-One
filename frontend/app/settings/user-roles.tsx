@@ -10,6 +10,7 @@ import { api } from '@/src/api/client';
 import { confirmAction } from '@/src/utils/confirm';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { GlassButton } from '@/src/components/ui/GlassButton';
 
 type Account = {
   id: string; name: string; username?: string; role: string; account_type: 'user' | 'employee';
@@ -98,9 +99,9 @@ export default function PeopleScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="people-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}><Ionicons name="chevron-back" size={22} color={colors.onSurface} /></Pressable>
+        <GlassButton onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}><Ionicons name="chevron-back" size={22} color={colors.onSurface} /></GlassButton>
         <Text style={styles.title}>Users</Text>
-        <Pressable onPress={() => setShowAdd((v) => !v)} style={[styles.iconBtn, styles.addBtn]} testID="add-staff-btn" hitSlop={12}><Ionicons name={showAdd ? 'close' : 'add'} size={22} color={colors.onBrandPrimary} /></Pressable>
+        <GlassButton onPress={() => setShowAdd((v) => !v)} style={[styles.iconBtn, styles.addBtn]} testID="add-staff-btn" hitSlop={12}><Ionicons name={showAdd ? 'close' : 'add'} size={22} color={colors.onBrandPrimary} /></GlassButton>
       </View>
 
       {loading ? (

@@ -12,6 +12,7 @@ import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { Image } from 'expo-image';
 import { RecordPhotos } from '@/src/components/RecordPhotos';
+import { GlassButton } from '@/src/components/ui/GlassButton';
 
 type Sample = {
   id: string; sample_code: string; description: string; tag_number: string;
@@ -115,9 +116,9 @@ export default function ReceiveSampleScreen() {
     return (
       <SafeAreaView style={styles.root} edges={['top']}>
         <View style={styles.header}>
-          <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
+          <GlassButton onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
             <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-          </Pressable>
+          </GlassButton>
           <View style={{ flex: 1 }} />
         </View>
         <View style={styles.loader}><ActivityIndicator color={colors.brandPrimary} /></View>
@@ -133,14 +134,14 @@ export default function ReceiveSampleScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="receive-sample-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
+        <GlassButton onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-        </Pressable>
+        </GlassButton>
         <Text style={styles.title}>{isEdit ? 'Edit Receive' : 'Receive Sample'}</Text>
         {isEdit ? (
-          <Pressable onPress={removeReceive} disabled={deleting} style={styles.iconBtn} testID="delete-receive-btn" hitSlop={12}>
+          <GlassButton onPress={removeReceive} disabled={deleting} style={styles.iconBtn} testID="delete-receive-btn" hitSlop={12}>
             {deleting ? <ActivityIndicator size="small" color={colors.onError} /> : <Ionicons name="trash-outline" size={18} color={colors.onError} />}
-          </Pressable>
+          </GlassButton>
         ) : (
           <View style={{ width: 40 }} />
         )}

@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { GlassButton } from '@/src/components/ui/GlassButton';
 
 // Every master/screen that feeds attendance or payroll calculations, gathered
 // in one place instead of scattered across People & Access / Masters /
@@ -44,9 +45,9 @@ export default function AttendancePayrollScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="attendance-payroll-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
+        <GlassButton onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-        </Pressable>
+        </GlassButton>
         <Text style={styles.title}>Attendance &amp; Payroll</Text>
         <View style={styles.iconBtn} />
       </View>

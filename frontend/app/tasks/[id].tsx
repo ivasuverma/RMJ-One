@@ -17,6 +17,7 @@ import { RecordPhotos } from '@/src/components/RecordPhotos';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { ToggleSwitch } from '@/src/components/ui/ToggleSwitch';
+import { GlassButton } from '@/src/components/ui/GlassButton';
 
 type Comment = { id: string; author_name: string; author_role: string; text: string; created_at: string };
 type Task = {
@@ -137,9 +138,9 @@ export default function TaskDetailScreen() {
     return (
       <SafeAreaView style={styles.root} edges={['top']}>
         <View style={styles.header}>
-          <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
+          <GlassButton onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
             <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-          </Pressable>
+          </GlassButton>
           <View style={{ flex: 1 }} />
           <View style={{ width: 40 }} />
         </View>
@@ -154,14 +155,14 @@ export default function TaskDetailScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="task-detail-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
+        <GlassButton onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-        </Pressable>
+        </GlassButton>
         <Text style={styles.headerTitle} numberOfLines={1}>Task</Text>
         {isStaff && !editing && (
-          <Pressable onPress={() => setEditing(true)} style={styles.iconBtn} testID="edit-btn" hitSlop={12}>
+          <GlassButton onPress={() => setEditing(true)} style={styles.iconBtn} testID="edit-btn" hitSlop={12}>
             <Ionicons name="create-outline" size={20} color={colors.onSurface} />
-          </Pressable>
+          </GlassButton>
         )}
         {isStaff && editing && <View style={{ width: 40 }} />}
       </View>

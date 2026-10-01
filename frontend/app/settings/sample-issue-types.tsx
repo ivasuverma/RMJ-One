@@ -7,6 +7,7 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import { api } from '@/src/api/client';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { GlassButton } from '@/src/components/ui/GlassButton';
 
 // Just a plain ordered string list on the `samples` settings doc (see
 // GET/PUT /samples/issue-types in routers/samples.py) — no per-item id or
@@ -53,9 +54,9 @@ export default function SampleIssueTypesScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="sample-issue-types-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
+        <GlassButton onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-        </Pressable>
+        </GlassButton>
         <Text style={styles.title}>Sample Issue Types</Text>
         <View style={{ width: 40 }} />
       </View>

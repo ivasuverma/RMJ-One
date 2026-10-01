@@ -15,6 +15,7 @@ import { DateField } from '@/src/components/DateField';
 import { PhotoCaptureModal } from '@/src/components/PhotoCaptureModal';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { GlassButton } from '@/src/components/ui/GlassButton';
 
 type Shift = { id: string; name: string; start: string; end: string };
 type Department = { id: string; name: string };
@@ -160,9 +161,9 @@ export default function EmployeeForm() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="employee-form-screen">
       <View style={styles.headerBar}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="form-back-btn" hitSlop={12}>
+        <GlassButton onPress={() => router.back()} style={styles.iconBtn} testID="form-back-btn" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-        </Pressable>
+        </GlassButton>
         <Text style={styles.headerTitle} numberOfLines={1}>{isEdit ? 'Edit Employee' : 'Add Employee'}</Text>
         <View style={{ width: 40 }} />
       </View>

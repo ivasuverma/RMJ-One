@@ -8,6 +8,7 @@ import { api } from '@/src/api/client';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { MODULE_ORDER, type Templates, summarize } from './_shared';
+import { GlassButton } from '@/src/components/ui/GlassButton';
 
 // Template list within one module (e.g. Repairs: Intake Receipt, Item Tag,
 // Bill/Quotation, Karigar Issue Challan) — tap a row to edit its fields,
@@ -37,9 +38,9 @@ export default function PrintMasterModuleScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="print-master-module-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
+        <GlassButton onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-        </Pressable>
+        </GlassButton>
         <Text style={styles.title}>{moduleLabel}</Text>
         <View style={{ width: 40 }} />
       </View>

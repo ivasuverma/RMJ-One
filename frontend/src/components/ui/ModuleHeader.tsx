@@ -5,6 +5,7 @@ import { useRouter } from 'expo-router';
 import { fonts, spacing, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { StickyHeader } from './StickyHeader';
+import { GlassSurface } from './GlassSurface';
 
 /**
  * The one header every module opened from the Work tab uses, Apple style: a
@@ -67,9 +68,14 @@ export function HeaderButton({ icon, onPress, primary, active, badge, testID, la
   const s = useMemo(() => makeStyles(colors), [colors]);
   const filled = primary || active;
   return (
-    <Pressable onPress={onPress} style={[s.btn, filled && s.btnOn]} hitSlop={8} testID={testID}
-      accessibilityRole="button" accessibilityLabel={label}>
-      <Ionicons name={icon} size={icon === 'chevron-back' ? 24 : 21} color={filled ? colors.onBrandPrimary : tint || colors.onSurface} />
+    <Pressable onPress={onPress} hitSlop={8} testID={testID} accessibilityRole="button" accessibilityLabel={label}
+      style={({ pressed }) => [s.btnShadow, pressed && { transform: [{ scale: 0.94 }] }]}>
+      {/* Glass button (Settings › Glass bar); a primary/active one stays solid gold. */}
+      {filled ? (
+        <View style={[s.btn, s.btnOn]}><Ionicons name={icon} size={icon === 'chevron-back' ? 24 : 21} color={colors.onBrandPrimary} /></View>
+      ) : (
+        <GlassSurface style={s.btn}><Ionicons name={icon} size={icon === 'chevron-back' ? 24 : 21} color={tint || colors.onSurface} /></GlassSurface>
+      )}
       {!!badge && badge > 0 && <View style={s.badge}><Text style={s.badgeText}>{badge}</Text></View>}
     </Pressable>
   );
@@ -81,11 +87,14 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   h1: { color: colors.onSurface, fontSize: 24, fontWeight: '800', fontFamily: fonts.display, letterSpacing: -0.5, flexShrink: 1 },
   sub: { color: colors.onSurfaceSecondary, fontSize: 13.5, marginTop: 1 },
   actions: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  btnShadow: {
+    width: 44, height: 44, borderRadius: 22,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 8, elevation: 2,
+  },
   btn: {
     width: 44, height: 44, borderRadius: 22, backgroundColor: colors.surfaceSecondary,
     borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
     alignItems: 'center', justifyContent: 'center',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 8, elevation: 2,
   },
   btnOn: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
   badge: {

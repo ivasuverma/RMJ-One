@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, Pressable, Modal } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { GlassSurface } from '@/src/components/ui/GlassSurface';
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const WEEK_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
@@ -55,7 +56,8 @@ export function DateField({ label, value, onChange, placeholder = 'Select a date
 
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
         <Pressable style={styles.backdrop} onPress={() => setOpen(false)}>
-          <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
+          <Pressable style={styles.sheetWrap} onPress={(e) => e.stopPropagation()}>
+           <GlassSurface material="thick" color={colors.surface} style={styles.sheet}>
             <View style={styles.calHeader}>
               <Pressable onPress={() => { if (viewMonth === 0) { setViewMonth(11); setViewYear((y) => y - 1); } else setViewMonth((m) => m - 1); }} hitSlop={10} testID="date-prev-month">
                 <Ionicons name="chevron-back" size={20} color={colors.onSurface} />
@@ -86,6 +88,7 @@ export function DateField({ label, value, onChange, placeholder = 'Select a date
             <Pressable onPress={() => { onChange(todayISO); setOpen(false); }} style={styles.todayBtn} testID="date-today-btn">
               <Text style={styles.todayBtnText}>Today</Text>
             </Pressable>
+           </GlassSurface>
           </Pressable>
         </Pressable>
       </Modal>
@@ -103,8 +106,9 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   value: { color: colors.onSurface, fontSize: 14, fontWeight: '600' },
   placeholder: { color: colors.mutedText, fontSize: 14 },
 
-  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', alignItems: 'center', justifyContent: 'center', padding: spacing.lg },
-  sheet: { width: 320, maxWidth: '100%', backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.lg },
+  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.3)', alignItems: 'center', justifyContent: 'center', padding: spacing.lg },
+  sheetWrap: { width: 320, maxWidth: '100%' },
+  sheet: { borderRadius: radius.lg, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, padding: spacing.lg },
   calHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.md },
   calTitle: { color: colors.onSurface, fontSize: 15, fontWeight: '700', fontFamily: fonts.display },
   weekRow: { flexDirection: 'row', marginBottom: spacing.xs },

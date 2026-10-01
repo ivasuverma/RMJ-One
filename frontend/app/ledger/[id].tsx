@@ -15,6 +15,7 @@ import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { ErrorState } from '@/src/components/ui';
 import { StatementSheet } from '@/src/components/StatementSheet';
+import { GlassButton } from '@/src/components/ui/GlassButton';
 
 const fmtINR = (n: number) => `₹${(Math.abs(n) || 0).toLocaleString('en-IN')}`;
 const fmtDate = (s?: string) => istDisplayDate(s);
@@ -84,14 +85,14 @@ export default function EmployeeLedger() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="ledger-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
+        <GlassButton onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-        </Pressable>
+        </GlassButton>
         <Text style={styles.title} numberOfLines={1}>{headerTitle}</Text>
         {!isScoped ? (
-          <Pressable onPress={() => setStmtOpen(true)} style={styles.iconBtn} testID="employee-statement-btn" hitSlop={12}>
+          <GlassButton onPress={() => setStmtOpen(true)} style={styles.iconBtn} testID="employee-statement-btn" hitSlop={12}>
             <Ionicons name="document-text-outline" size={20} color={colors.onSurface} />
-          </Pressable>
+          </GlassButton>
         ) : null}
         {canAdd ? (
           <Pressable

@@ -8,6 +8,7 @@ import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { useToast } from '@/src/components/ui';
 import { ToggleSwitch } from '@/src/components/ui/ToggleSwitch';
+import { GlassButton } from '@/src/components/ui/GlassButton';
 
 // Settings › Home screen. The sections switch is per person (saved to their account,
 // so it follows them to any device); the alert rules below it apply to everyone's Home.
@@ -92,7 +93,7 @@ export default function HomeScreenSettings() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="home-screen-settings">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} hitSlop={12} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back"><Ionicons name="chevron-back" size={22} color={colors.onSurface} /></Pressable>
+        <GlassButton onPress={() => router.back()} style={styles.iconBtn} hitSlop={12} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back"><Ionicons name="chevron-back" size={22} color={colors.onSurface} /></GlassButton>
         <Text style={styles.title}>Home screen</Text>
         <View style={{ width: 40 }} />
       </View>

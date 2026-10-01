@@ -14,6 +14,7 @@ import { useTheme } from '@/src/theme/ThemeContext';
 import { useAuth } from '@/src/auth/AuthContext';
 import { ErrorState, Sheet } from '@/src/components/ui';
 import { StatementSheet } from '@/src/components/StatementSheet';
+import { GlassButton } from '@/src/components/ui/GlassButton';
 
 type Karigar = { id: string; name: string; mobile: string; is_employee: boolean };
 type Entry = {
@@ -245,9 +246,9 @@ export default function KarigarLedgerScreen() {
     return (
       <SafeAreaView style={styles.root} edges={['top']}>
         <View style={styles.header}>
-          <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
+          <GlassButton onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
             <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-          </Pressable>
+          </GlassButton>
           <View style={{ flex: 1 }} />
           <View style={{ width: 40 }} />
         </View>
@@ -263,16 +264,16 @@ export default function KarigarLedgerScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="karigar-ledger-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
+        <GlassButton onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-        </Pressable>
+        </GlassButton>
         <Text style={styles.title} numberOfLines={1}>{karigar.name}</Text>
-        <Pressable onPress={() => setStmtOpen(true)} style={styles.iconBtn} testID="open-statement-btn" hitSlop={12}>
+        <GlassButton onPress={() => setStmtOpen(true)} style={styles.iconBtn} testID="open-statement-btn" hitSlop={12}>
           <Ionicons name="document-text-outline" size={20} color={colors.onSurface} />
-        </Pressable>
-        <Pressable onPress={openSettle} style={styles.iconBtn} testID="open-settle-btn" hitSlop={12}>
+        </GlassButton>
+        <GlassButton onPress={openSettle} style={styles.iconBtn} testID="open-settle-btn" hitSlop={12}>
           <Ionicons name="swap-horizontal-outline" size={20} color={colors.onSurface} />
-        </Pressable>
+        </GlassButton>
       </View>
 
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 60 }}>

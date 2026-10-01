@@ -11,6 +11,7 @@ import { confirmAction } from '@/src/utils/confirm';
 import { istDisplayDateTime, istDate, istTime, displayDateOnlyWithWeekday } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { GlassButton } from '@/src/components/ui/GlassButton';
 
 type Device = { id: string; serial: string; label: string; last_seen: string | null; status: string };
 type Log = { id: string; serial: string; user_id: string; timestamp: string; event_type: string; result: string; reason?: string; employee_name?: string; action?: string };
@@ -112,9 +113,9 @@ export default function BiometricScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="biometric-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
+        <GlassButton onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-        </Pressable>
+        </GlassButton>
         <Text style={styles.title}>Biometric Devices</Text>
         <View style={{ width: 40 }} />
       </View>
