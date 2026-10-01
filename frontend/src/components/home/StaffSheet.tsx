@@ -124,7 +124,7 @@ export function StaffSheet({ person, onClose, canSeePay }: { person: StaffPerson
         ))}
       </View>
       <View style={s.btns}>
-        <Pressable onPress={() => { onClose(); router.push(`/attendance/calendar/${person.id}` as any); }} style={s.btn} testID="staff-edit-day">
+        <Pressable onPress={() => { onClose(); router.push(`/attendance/calendar/${person.id}?year=${ym.y}&month=${ym.m}` as any); }} style={s.btn} testID="staff-edit-day">
           <Text style={s.btnText}>Edit a day</Text>
         </Pressable>
         {canSeePay && (

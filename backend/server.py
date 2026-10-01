@@ -3086,6 +3086,8 @@ async def _attendance_reminder_loop():
             await _check_daily_absentee_summary()
             await _check_repair_sample_followups()
             await _check_auto_advances()
+            from routers.payroll import check_payroll_schedule
+            await check_payroll_schedule()
             await _check_recurring_tasks()
             await _check_overdue_tasks()
             await _check_task_repeat_reminders()
