@@ -1229,6 +1229,12 @@ async def seed():
     await db.users.create_index('username', unique=True)
     await db.employees.create_index('employee_code')
     await db.employees.create_index('biometric_id')
+    # Home / payroll schedule collections: one row each, so unique.
+    for coll, field in (('user_prefs', 'user_id'), ('scheduled_jobs', 'key'), ('rate_daily', 'date')):
+        try:
+            await db[coll].create_index(field, unique=True)
+        except Exception as e:   # e.g. an old duplicate — keep serving, just log it
+            logger.warning(f'index {coll}.{field}: {e}')
     await db.attendance.create_index([('employee_id', 1), ('date', 1)], unique=True)
     await db.attendance_events.create_index('created_at')
     # Added as part of the perf pass — these collections are filtered by
@@ -1529,6 +1535,13 @@ async def on_startup():
     asyncio.create_task(_whatsapp_health_loop())
     asyncio.create_task(_whatsapp_retry_loop())
     from routers.biometric import biometric_health_loop, biometric_log_prune_loop
+    # A restart (e.g. a deploy) can drop punches the device sent while we were
+    # down — ask every device to re-send its recent ones on its next poll.
+    # Duplicates are skipped and the 72h intake window keeps it to recent punches.
+    try:
+        await db.biometric_devices.update_many({}, {'$set': {'force_pull': True}})
+    except Exception as e:
+        logger.warning(f'biometric re-pull on startup failed: {e}')
     asyncio.create_task(biometric_health_loop())
     asyncio.create_task(biometric_log_prune_loop())
     asyncio.create_task(log_retention_loop())
@@ -1562,6 +1575,22 @@ def _minutes(hhmm: str) -> int:
 
 
 async def _apply_punch(emp: dict, kind: str, ts: datetime, extra: Optional[dict] = None) -> dict:
+    """Record a punch (see _apply_punch_impl). If it lands in a month whose payroll was
+    already run — e.g. punches a biometric device uploads late after reconnecting —
+    refresh that person's unpaid entry so Payroll matches the calendar."""
+    result = await _apply_punch_impl(emp, kind, ts, extra)
+    if result.get('ok'):
+        d = ts.astimezone(IST).date()
+        try:
+            if await db.payroll_entries.find_one({'year': d.year, 'month': d.month, 'employee_id': emp['id'], 'paid': {'$ne': True}}, {'_id': 0, 'id': 1}):
+                from routers.payroll import refresh_payroll_month
+                await refresh_payroll_month(d.year, d.month, [emp['id']])
+        except Exception as e:   # noqa: BLE001 — never fail a punch over this
+            logger.warning(f'payroll refresh after punch failed: {e}')
+    return result
+
+
+async def _apply_punch_impl(emp: dict, kind: str, ts: datetime, extra: Optional[dict] = None) -> dict:
     """Shared attendance state machine — the single place shift resolution,
     late/half-day calculation, and the attendance/attendance_events writes
     happen, used by BOTH the app's GPS+selfie check-in/check-out endpoints
@@ -2484,6 +2513,7 @@ NOTIFICATION_SCRIPTS = [
     {'key': 'drive_disconnected', 'module': 'system_health', 'label': 'Google Drive disconnected (reauth needed)', 'admin_only': True},
     {'key': 'whatsapp_disconnected', 'module': 'system_health', 'label': 'WhatsApp gateway disconnected', 'admin_only': True},
     {'key': 'biometric_device_offline', 'module': 'system_health', 'label': 'Biometric device stopped responding', 'admin_only': True},
+    {'key': 'biometric_device_online', 'module': 'system_health', 'label': 'Biometric device back online', 'admin_only': True},
     {'key': 'printer_failed', 'module': 'system_health', 'label': 'Thermal printer unreachable', 'admin_only': True},
     {'key': 'gold_rate_fetched', 'module': 'gold_rate', 'label': 'Gold/silver rate auto-fetched', 'admin_only': False},
 ]
@@ -2641,6 +2671,11 @@ MISSED_ATTENDANCE_GRACE_MIN = 30  # keep in sync with attendance.py's NOT_CHECKE
 
 
 async def _check_missed_attendance():
+    # Punches may be stuck in an offline biometric device — don't tell staff they
+    # missed a punch (or admins they're absent) until it reconnects.
+    from routers.biometric import biometric_offline
+    if await biometric_offline():
+        return
     now_ist = now_utc().astimezone(IST)
     today = now_ist.date().isoformat()
     if now_ist.weekday() == 6:
@@ -2690,6 +2725,11 @@ async def _check_missed_checkout():
     Personal reminder to the employee themselves — not affected by the owner's
     Notification Settings module toggle, same as the morning missed-check-in
     reminder."""
+    # Punches may be stuck in an offline biometric device — don't tell staff they
+    # missed a punch (or admins they're absent) until it reconnects.
+    from routers.biometric import biometric_offline
+    if await biometric_offline():
+        return
     now_ist = now_utc().astimezone(IST)
     today = now_ist.date().isoformat()
     if now_ist.weekday() == 6:
@@ -2739,6 +2779,11 @@ async def _check_attendance_anomalies():
     check-in — see _apply_punch), so this is purely a safety net. Guarded
     per-day via db.attendance_anomaly_reminders so the 15-minute poll
     doesn't re-notify for the same day."""
+    # Punches may be stuck in an offline biometric device — don't tell staff they
+    # missed a punch (or admins they're absent) until it reconnects.
+    from routers.biometric import biometric_offline
+    if await biometric_offline():
+        return
     now_ist = now_utc().astimezone(IST)
     today = now_ist.date().isoformat()
     if await db.attendance_anomaly_reminders.find_one({'date': today}, {'_id': 0}) is not None:
@@ -2766,6 +2811,11 @@ async def _check_daily_absentee_summary():
     never checked in today (no check-in, and not on approved leave/holiday/paid
     off). Guarded by `db.absentee_summaries` so it only fires once even though
     the loop polls every 15 minutes."""
+    # Punches may be stuck in an offline biometric device — don't tell staff they
+    # missed a punch (or admins they're absent) until it reconnects.
+    from routers.biometric import biometric_offline
+    if await biometric_offline():
+        return
     now_ist = now_utc().astimezone(IST)
     today = now_ist.date().isoformat()
     minutes_now = now_ist.hour * 60 + now_ist.minute
@@ -3077,27 +3127,37 @@ async def _check_task_repeat_reminders():
 
 
 async def _attendance_reminder_loop():
+    """Every 15 minutes, run each periodic check on its own — one failing check
+    (a bad record, a network hiccup) must not skip the others that cycle."""
+    async def payroll_schedule():
+        from routers.payroll import check_payroll_schedule
+        await check_payroll_schedule()
+
+    async def doc_reminders():
+        from routers.documents import check_pending_reminders
+        await check_pending_reminders()
+
+    async def loan_interest():
+        from routers.gold_loans import check_interest_due
+        await check_interest_due()
+
+    async def loan_collection():
+        from routers.gold_loans import check_monthly_interest_collection_reminder
+        await check_monthly_interest_collection_reminder()
+
+    checks = [
+        _check_missed_attendance, _check_missed_checkout, _check_attendance_anomalies,
+        _check_daily_absentee_summary, _check_repair_sample_followups, _check_auto_advances,
+        payroll_schedule, _check_recurring_tasks, _check_overdue_tasks, _check_task_repeat_reminders,
+        doc_reminders, loan_interest, loan_collection,
+    ]
     while True:
-        try:
-            await asyncio.sleep(15 * 60)
-            await _check_missed_attendance()
-            await _check_missed_checkout()
-            await _check_attendance_anomalies()
-            await _check_daily_absentee_summary()
-            await _check_repair_sample_followups()
-            await _check_auto_advances()
-            from routers.payroll import check_payroll_schedule
-            await check_payroll_schedule()
-            await _check_recurring_tasks()
-            await _check_overdue_tasks()
-            await _check_task_repeat_reminders()
-            from routers.documents import check_pending_reminders
-            await check_pending_reminders()
-            from routers.gold_loans import check_interest_due, check_monthly_interest_collection_reminder
-            await check_interest_due()
-            await check_monthly_interest_collection_reminder()
-        except Exception as e:
-            logger.warning(f'attendance reminder loop error: {e}')
+        await asyncio.sleep(15 * 60)
+        for check in checks:
+            try:
+                await check()
+            except Exception as e:
+                logger.warning(f'periodic check {getattr(check, "__name__", check)} failed: {e}')
 
 
 # ---------------- Reports (PDF) ----------------

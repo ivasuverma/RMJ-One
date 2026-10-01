@@ -45,6 +45,17 @@ from server import (
 router = APIRouter()
 
 
+async def _refresh_payroll_month_of(d: Optional[str]) -> None:
+    """A holiday changes pay for everyone that month — refresh the run month's unpaid entries."""
+    if not d or len(d) < 7:
+        return
+    from routers.payroll import refresh_payroll_month
+    try:
+        await refresh_payroll_month(int(d[:4]), int(d[5:7]))
+    except Exception:   # noqa: BLE001 — never fail the holiday save over this
+        pass
+
+
 async def _refresh_payroll_for(emp_id: str, *dates: str) -> None:
     """An attendance change (day edit, correction, leave) can change pay. If that
     month's payroll was already run and this person isn't paid yet, refresh their
@@ -768,6 +779,7 @@ async def create_holiday(body: HolidayIn, user: dict = Depends(require_owner), _
     doc = {'id': str(uuid.uuid4()), **body.model_dump(), 'created_at': now_utc().isoformat()}
     await db.holidays.insert_one(dict(doc))
     await log_audit(user, 'holiday.create', 'holiday', doc['id'], body.name)
+    await _refresh_payroll_month_of(doc.get('date'))
     return {k: v for k, v in doc.items() if k != '_id'}
 
 
@@ -777,6 +789,7 @@ async def delete_holiday(hid: str, user: dict = Depends(require_owner), _mod=Dep
     r = await db.holidays.delete_one({'id': hid})
     if r.deleted_count == 0: raise HTTPException(status_code=404, detail='Holiday not found')
     await log_audit(user, 'holiday.delete', 'holiday', hid, (existing or {}).get('name', ''))
+    await _refresh_payroll_month_of((existing or {}).get('date'))
     return {'ok': True}
 
 
