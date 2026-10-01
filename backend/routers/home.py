@@ -667,7 +667,13 @@ async def _notifications(user: dict) -> dict:
         .sort('created_at', -1).to_list(5),
         db.notifications.count_documents({'user_id': user['id'], 'read': False}),
     )
-    return {'unread': unread, 'items': items}
+    out = {'unread': unread, 'items': items}
+    if user.get('role') in ('owner', 'admin'):
+        # Always-visible link to Settings › Staff Notifications: how many staff can get pushes.
+        from routers.notifications import staff_push_status
+        rows = await _shared('staff_push', 60, staff_push_status)
+        out['staff'] = {'on': sum(1 for r in rows if r['devices']), 'total': len(rows)}
+    return out
 # The employee Home has its own, shorter set; the punch card can be moved but not hidden.
 EMP_SECTIONS = [
     {'key': 'rates', 'label': 'Rates ticker'},

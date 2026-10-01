@@ -51,7 +51,7 @@ export type HomeSummary = {
   staff: Maybe<Staff>;
   owed: Maybe<Owed>;
   coming_up: Maybe<ComingUp>;
-  notifications?: Maybe<{ unread: number; items: Notif[] }>;
+  notifications?: Maybe<{ unread: number; items: Notif[]; staff?: { on: number; total: number } }>;
   hidden_sections?: string[];
   section_order?: string[];
   cached?: boolean;
