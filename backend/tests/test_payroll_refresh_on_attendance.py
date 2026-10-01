@@ -40,5 +40,8 @@ def test_paid_off_after_payroll_run_updates_entry():
     r = requests.put(f"{API}/attendance/day/{emp['id']}/{d}", headers=h, json={'status': 'weekly_off'}, timeout=60)
     assert r.status_code == 200, r.text
     after = next(r for r in requests.get(f"{API}/payroll/{y}/{m}", headers=h, timeout=60).json()['rows'] if r['employee_id'] == emp['id'])
-    assert after['weekly_off_days'] == before_off + 1
-    assert after['absent_days'] == before_absent - 1
+    # At least that day moves from absent to paid off (a fully-absent week's Sunday
+    # can turn paid too, so it may be more than one).
+    assert after['weekly_off_days'] >= before_off + 1
+    assert after['absent_days'] <= before_absent - 1
+    assert after['earned'] > row['earned']
