@@ -33,7 +33,7 @@ type Location = { id: string; name: string };
 type PayRow = {
   employee_id: string; name: string; designation: string; photo?: string;
   total_days: number; effective_days: number; advance: number; net_salary: number; paid?: boolean; id?: string;
-  present_days?: number; absent_days?: number; half_days?: number;
+  present_days?: number; absent_days?: number; half_days?: number; late_days?: number;
   earned?: number; bonus?: number; fine?: number; manual_deduction?: number; opening_balance?: number; amount_paid?: number;
   net_salary_exact?: number; base_salary?: number; missing_punch_days?: number; not_employed_days?: number; future_days?: number;
 };
@@ -390,6 +390,7 @@ export default function OwnerAttendance() {
                     <Text style={{ color: colors.onSuccess, fontWeight: '700' }}>{p.present_days ?? 0}P</Text>
                     {'  '}<Text style={{ color: colors.onError, fontWeight: '700' }}>{p.absent_days ?? 0}A</Text>
                     {'  '}<Text style={{ color: colors.onWarning, fontWeight: '700' }}>{p.half_days ?? 0}HD</Text>
+                    {'  '}<Text style={{ color: colors.onInfo, fontWeight: '700' }}>{p.late_days ?? 0}L</Text>
                   </Text>
                   <Text style={styles.payV}>{fmtINR(p.paid ? p.net_salary : payLine(p, fmtINR).payable)}</Text>
                   {p.paid
