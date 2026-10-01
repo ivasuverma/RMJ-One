@@ -280,6 +280,14 @@ async def _store_live_rate(fetched_gold, fetched_silver, gold_rate, silver_rate,
     each one individually.)"""
     fields = {'id': 'gold_rate_live', 'fetched_at': fetched_at, 'error': error}
     if gold_rate is not None:
+        # Remember the rate before the last actual change (not just the last fetch —
+        # most fetches return the same number), so the website can show "▲ ₹650".
+        cur = await db.settings.find_one({'id': 'gold_rate_live'}, {'_id': 0, 'gold_rate': 1, 'silver_rate': 1}) or {}
+        for key, new in (('gold', gold_rate), ('silver', silver_rate)):
+            old = cur.get(f'{key}_rate')
+            if old is not None and new is not None and round(old) != round(new):
+                fields[f'prev_{key}_rate'] = old
+                fields[f'{key}_changed_at'] = fetched_at
         fields.update({
             'fetched_gold': fetched_gold, 'fetched_silver': fetched_silver,
             'gold_margin_applied': cfg.get('gold_margin'), 'silver_margin_applied': cfg.get('silver_margin'),
