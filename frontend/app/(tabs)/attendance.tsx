@@ -13,6 +13,8 @@ import { haptics } from '@/src/utils/haptics';
 import { FilterChips, useToast, ModuleHeader, HeaderButton, HeaderSpacer } from '@/src/components/ui';
 import { TabBarSpacer } from '@/src/components/GlassTabBar';
 import { useScrolled } from '@/src/components/ui/StickyHeader';
+import { useAuth } from '@/src/auth/AuthContext';
+import { confirmAction } from '@/src/utils/confirm';
 
 // Attendance & Payroll — one screen inside Work, three segments (matches the
 // v2 design comp): Today (daily in/out), Calendar (pick a person, edit any
@@ -52,7 +54,7 @@ function payLine(p: PayRow, fmt: (n: number) => string): { text: string; payable
   const payable = Math.max(0, Math.round((p.net_salary || 0) - (p.amount_paid || 0)));
   return { text: `${parts.join(' ')} = ${fmt(payable)} payable`, payable };
 }
-type PayrollResp = { year: number; month: number; rows: PayRow[]; total_net: number };
+type PayrollResp = { year: number; month: number; rows: PayRow[]; total_net: number; saved?: boolean; locked?: boolean };
 type Ev = { id: string; employee_name: string; type: 'check_in' | 'check_out'; timestamp: string; is_late?: boolean; working_hours?: number; source?: string };
 
 type Seg = 'today' | 'live' | 'pay';
@@ -127,6 +129,8 @@ export default function OwnerAttendance() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [running, setRunning] = useState(false);
+  const { user } = useAuth();
+  const isOwner = user?.role === 'owner';
   const [pendingApprovals, setPendingApprovals] = useState(0);
 
   const load = useCallback(async () => {
@@ -189,6 +193,18 @@ export default function OwnerAttendance() {
     setRunning(true);
     try { await api.post('/payroll/save', { year, month }); await loadPay(); toast.success(`${MONTHS[month - 1]} ${year} salary is locked to the current attendance.`); }
     catch (e: any) { notify('Could not run payroll', e?.detail || 'Please try again'); }
+    finally { setRunning(false); }
+  };
+  // A locked month can't be re-run; only the owner can unlock it (then Run payroll again).
+  const unlockPayroll = () => confirmAction(
+    `Unlock ${MONTHS[month - 1]} ${year}?`,
+    'You can then fix attendance and run payroll again. Paid salaries stay as they are.',
+    'Unlock', doUnlock,
+  );
+  const doUnlock = async () => {
+    setRunning(true);
+    try { await api.post(`/payroll/${year}/${month}/unlock`, {}); await loadPay(); toast.success(`${MONTHS[month - 1]} ${year} unlocked — run payroll again after fixing attendance.`); }
+    catch (e: any) { notify('Could not unlock', e?.detail || 'Please try again'); }
     finally { setRunning(false); }
   };
 
@@ -376,9 +392,21 @@ export default function OwnerAttendance() {
             ))}
             {!!pay && pay.rows.length > 0 && (
               <View style={styles.twoBtn}>
-                <Pressable onPress={runPayroll} disabled={running} style={[styles.btn, styles.btnPri, running && { opacity: 0.6 }]} testID="run-payroll">
-                  <Text style={styles.btnPriText}>{running ? 'Saving…' : 'Run payroll'}</Text>
-                </Pressable>
+                {pay.locked ? (
+                  isOwner ? (
+                    <Pressable onPress={unlockPayroll} disabled={running} style={[styles.btn, styles.btnPri, running && { opacity: 0.6 }]} testID="unlock-payroll">
+                      <Text style={styles.btnPriText}>{running ? 'Unlocking…' : 'Unlock month'}</Text>
+                    </Pressable>
+                  ) : (
+                    <View style={[styles.btn, styles.btnGhost]} testID="payroll-locked-note">
+                      <Text style={styles.btnGhostText}>Locked by owner</Text>
+                    </View>
+                  )
+                ) : (
+                  <Pressable onPress={runPayroll} disabled={running} style={[styles.btn, styles.btnPri, running && { opacity: 0.6 }]} testID="run-payroll">
+                    <Text style={styles.btnPriText}>{running ? 'Saving…' : 'Run payroll'}</Text>
+                  </Pressable>
+                )}
                 <Pressable onPress={() => router.push('/(tabs)/payroll?from=work' as any)} style={[styles.btn, styles.btnGhost]} testID="payroll-export">
                   <Text style={styles.btnGhostText}>Export</Text>
                 </Pressable>

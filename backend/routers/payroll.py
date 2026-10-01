@@ -29,6 +29,7 @@ from server import (
     _opening_balance,
     _resolve_attendance_state,
     IST,
+    notify_roles,
 )
 
 router = APIRouter()
@@ -556,6 +557,12 @@ async def payroll_save(body: PayrollGenerateIn, user=Depends(require_payroll_wri
     lock = await db.payroll_locks.find_one({'year': body.year, 'month': body.month}, {'_id': 0})
     if lock and lock.get('locked'):
         raise HTTPException(status_code=400, detail='Payroll is locked for this month')
+    return await _save_payroll(body, user)
+
+
+async def _save_payroll(body: PayrollGenerateIn, user: dict) -> dict:
+    """Run (or re-run) a month's payroll — shared by Run payroll and the automatic run
+    on the 2nd. Paid entries are never touched; the caller checks the lock."""
     rows = await _compute_payroll(body.year, body.month)
     iso = now_utc().isoformat()
 
@@ -971,3 +978,61 @@ async def payroll_pdf(entry_id: str, _: dict = Depends(require_staff), _mod=Depe
         media_type='application/pdf',
         headers={'Content-Disposition': f'inline; filename="rmj-salary-{emp.get("employee_code", "emp")}-{period}.pdf"'},
     )
+
+
+# ---------------- Monthly schedule ----------------
+MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August',
+               'September', 'October', 'November', 'December']
+SYSTEM_ACTOR = {'id': 'system', 'name': 'Automatic payroll', 'role': 'system'}
+
+
+async def _once(key: str) -> bool:
+    """True the first time a scheduled job key is seen (so the 15-minute poll fires it once)."""
+    res = await db.scheduled_jobs.update_one({'key': key}, {'$setOnInsert': {'key': key, 'at': now_utc().isoformat()}}, upsert=True)
+    return res.upserted_id is not None
+
+
+async def check_payroll_schedule() -> None:
+    """Runs from the 15-minute background loop (server.py):
+      - on the 30th (or the month's last day if shorter), from 10 am IST: remind every
+        active employee to check their calendar for attendance mistakes;
+      - on the 2nd, from 10 am IST: run last month's payroll (unless it's locked) and tell
+        owner/admin it's ready to check. The month is not locked, so a fix made later
+        still updates the employee's unpaid entry."""
+    from calendar import monthrange
+    now = now_utc().astimezone(IST)
+    if now.hour < 10:
+        return
+    today = now.date()
+    last_day = monthrange(today.year, today.month)[1]
+
+    if today.day == min(30, last_day) and await _once(f'attendance_check:{today.year:04d}-{today.month:02d}'):
+        month_name = MONTH_NAMES[today.month - 1]
+        remote = {x['name'] async for x in db.shifts.find({'remote': True}, {'_id': 0, 'name': 1})}
+        async for e in db.employees.find({'status': 'active'}, {'_id': 0, 'id': 1, 'shift': 1}):
+            if e.get('shift') in remote:
+                continue   # work-from-home staff don't record attendance
+            # Push only (staff alerts don't go to WhatsApp).
+            await notify_user(e['id'], f'Check your {month_name} attendance',
+                              f'Open your Calendar and report any mistakes now — {month_name} payroll is worked out on the 2nd.',
+                              '/(emp)/calendar', whatsapp=False)
+
+    if today.day == 2:
+        y, m = (today.year - 1, 12) if today.month == 1 else (today.year, today.month - 1)
+        if not await _once(f'payroll_auto:{y:04d}-{m:02d}'):
+            return
+        label = f'{MONTH_NAMES[m - 1]} {y}'
+        lock = await db.payroll_locks.find_one({'year': y, 'month': m}, {'_id': 0})
+        if lock and lock.get('locked'):
+            await notify_roles(['owner', 'admin'], f'{label} payroll is locked',
+                               'It was not re-run automatically. Unlock it in Payroll if attendance changed.',
+                               f'/attendance?seg=pay&year={y}&month={m}')
+            return
+        res = await _save_payroll(PayrollGenerateIn(year=y, month=m), SYSTEM_ACTOR)
+        entries = await db.payroll_entries.find({'year': y, 'month': m}, {'_id': 0, 'net_salary': 1, 'paid': 1}).to_list(1000)
+        total = round(sum(float(e.get('net_salary') or 0) for e in entries))
+        await notify_roles(['owner', 'admin'], f'{label} payroll is finalised',
+                           f"Kindly check it — {len(entries)} employee{'s' if len(entries) != 1 else ''} · ₹{total:,} to pay"
+                           + (f" ({res['kept_paid']} already paid)" if res.get('kept_paid') else '') + '.',
+                           f'/attendance?seg=pay&year={y}&month={m}')
+
