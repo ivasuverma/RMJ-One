@@ -160,7 +160,12 @@
      API actually returns). */
   .metals{display:grid; grid-template-columns:repeat(2,1fr); gap:clamp(12px,1.6vw,18px); margin:clamp(20px,4vw,36px) auto 0; max-width:760px}
   .metal{background:var(--char); border:1px solid #262628; border-radius:var(--r-lg); padding:clamp(20px,2.6vw,30px) clamp(18px,2.4vw,26px); text-align:left}
-  .mhead{font-size:15px; color:var(--gold-lt); font-weight:700}
+  .mhead{font-size:15px; color:var(--gold-lt); font-weight:700; display:flex; align-items:baseline; flex-wrap:wrap; row-gap:4px}
+  .mchg{margin-left:auto; font-style:normal; font-size:12.5px; font-weight:700; font-variant-numeric:tabular-nums; padding:3px 9px; border-radius:999px; white-space:nowrap}
+  .mchg[hidden]{display:none}
+  .mchg.up{color:#4ADE80; background:rgba(74,222,128,.12)}
+  .mchg.down{color:#F87171; background:rgba(248,113,113,.12)}
+  .mchg small{font-weight:500; opacity:.75; margin-left:4px; font-size:11.5px}
   .mhead span{font-size:12.5px; color:#86868B; font-weight:500; margin-left:6px}
   .pair{display:flex; align-items:center; margin-top:16px}
   .pcol{flex:1; text-align:center}
@@ -398,7 +403,7 @@
     </div>
     <div class="metals">
       <div class="metal">
-        <div class="mhead">Gold<span>995 purity · 10 g</span></div>
+        <div class="mhead">Gold<span>995 purity · 10 g</span><em class="mchg" id="goldChg" hidden></em></div>
         <div class="pair">
           <div class="pcol"><span class="plabel">Sell</span><span class="pval sell" id="goldSell">—</span></div>
           <div class="pdiv"></div>
@@ -406,7 +411,7 @@
         </div>
       </div>
       <div class="metal">
-        <div class="mhead">Silver<span>999 purity · 1 kg</span></div>
+        <div class="mhead">Silver<span>999 purity · 1 kg</span><em class="mchg" id="silverChg" hidden></em></div>
         <div class="pair">
           <div class="pcol"><span class="plabel">Sell</span><span class="pval sell" id="silverSell">—</span></div>
           <div class="pdiv"></div>
@@ -633,10 +638,25 @@ function setVal(id, val, fmt){
   shown[id]=val;
 }
 
+/* Change since the rate last moved: "▲ ₹650 · 4:12 PM" (green up, red down). */
+function setChange(id, diff, at){
+  const el=document.getElementById(id);
+  if(diff==null || diff===0){ el.hidden=true; return; }
+  const t=at?new Date(at):null;
+  const when=!t?'':(t.toDateString()===new Date().toDateString()
+    ? t.toLocaleTimeString('en-IN',{hour:'numeric',minute:'2-digit'})
+    : t.toLocaleDateString('en-IN',{day:'numeric',month:'short'}));
+  el.className='mchg '+(diff>0?'up':'down');
+  el.innerHTML=(diff>0?'▲ ':'▼ ')+'₹'+Math.abs(Math.round(diff)).toLocaleString('en-IN')+(when?'<small>since '+when+'</small>':'');
+  el.setAttribute('aria-label',(diff>0?'Up ':'Down ')+Math.abs(Math.round(diff))+' rupees'+(when?' since '+when:''));
+  el.hidden=false;
+}
+
 const rateHero=document.getElementById('top'), unavail=document.getElementById('unavail');
 function showUnavailable(){
   rateHero.classList.add('norates'); unavail.hidden=false;
   ['goldSell','goldBuy','silverSell','silverBuy','xau','xag','usdinr'].forEach(id=>{ document.getElementById(id).textContent='—'; });
+  ['goldChg','silverChg'].forEach(id=>{ document.getElementById(id).hidden=true; });
   document.getElementById('mbarRate').textContent='Rate';
   statusText.textContent='Rates unavailable, retrying'; statusEl.classList.add('stale');
   shown={}; firstPaint=true;
@@ -652,6 +672,8 @@ function paint(data){
   setVal('xag', data.xag_usd, usd);
   setVal('usdinr', data.usd_inr, v=>v==null?'—':'₹'+v.toFixed(2));
   document.getElementById('mbarRate').textContent = data.gold_sell!=null ? inr(data.gold_sell) : 'Rate';
+  setChange('goldChg', data.gold_change, data.gold_changed_at);
+  setChange('silverChg', data.silver_change, data.silver_changed_at);
   firstPaint=false;
 
   // status line

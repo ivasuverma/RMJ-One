@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Image
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '@/src/api/client';
-import { istTime } from '@/src/utils/datetime';
+import { istDate, istDisplayDate, istTime, todayIST } from '@/src/utils/datetime';
 import { spacing, radius, fonts, typography, images, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { useAuth } from '@/src/auth/AuthContext';
@@ -23,6 +23,8 @@ type PublicRates = {
   xau_usd: number | null;
   xag_usd: number | null;
   usd_inr: number | null;
+  gold_change?: number | null; gold_changed_at?: string | null;     // since the rate last moved
+  silver_change?: number | null; silver_changed_at?: string | null;
 };
 type Purity = { key: string; label: string; percent: number; sell: number | null; buy: number | null };
 type Contact = { name: string; phone: string };
@@ -237,7 +239,10 @@ export default function PublicRatesScreen() {
               ) : null}
 
               <View style={styles.metalCard} testID="rate-gold">
-                <Text style={styles.metalLabel}>GOLD <Text style={styles.metalSub}>· 995 Purity / 10g</Text></Text>
+                <View style={styles.metalHeadRow}>
+                  <Text style={styles.metalLabel}>GOLD <Text style={styles.metalSub}>· 995 Purity / 10g</Text></Text>
+                  <ChangePill diff={data?.gold_change} at={data?.gold_changed_at} styles={styles} testID="rate-gold-change" />
+                </View>
                 <View style={styles.buySellRow}>
                   <View style={styles.buySellCol}>
                     <Text style={styles.buySellLabel}>Sell</Text>
@@ -279,7 +284,10 @@ export default function PublicRatesScreen() {
               </View>
 
               <View style={styles.metalCard} testID="rate-silver">
-                <Text style={styles.metalLabel}>SILVER <Text style={styles.metalSub}>· 999 Purity / 1kg</Text></Text>
+                <View style={styles.metalHeadRow}>
+                  <Text style={styles.metalLabel}>SILVER <Text style={styles.metalSub}>· 999 Purity / 1kg</Text></Text>
+                  <ChangePill diff={data?.silver_change} at={data?.silver_changed_at} styles={styles} testID="rate-silver-change" />
+                </View>
                 <View style={styles.buySellRow}>
                   <View style={styles.buySellCol}>
                     <Text style={styles.buySellLabel}>Sell</Text>
@@ -449,6 +457,12 @@ const makeStyles = (colors: ThemeColors, compact: boolean) => {
     letterSpacing: typography.label.letterSpacing, marginBottom: c(spacing.md, spacing.sm),
   },
   metalSub: { color: colors.mutedText, fontWeight: '600' },
+  metalHeadRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6, marginBottom: spacing.sm },
+  chg: { flexDirection: 'row', alignItems: 'baseline', gap: 4, paddingHorizontal: 9, paddingVertical: 3, borderRadius: 999 },
+  chgUp: { backgroundColor: colors.success },
+  chgDown: { backgroundColor: colors.error },
+  chgText: { fontSize: 12.5, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  chgWhen: { fontSize: 11, fontWeight: '500', opacity: 0.8 },
   buySellRow: { flexDirection: 'row', alignItems: 'center' },
   buySellCol: { flex: 1, alignItems: 'center' },
   buySellDivider: { width: 1, height: c(44, 36), backgroundColor: colors.divider },
@@ -518,3 +532,20 @@ const makeStyles = (colors: ThemeColors, compact: boolean) => {
   disclaimerText: { color: colors.mutedText, fontSize: 11, lineHeight: 16, textAlign: 'center' },
   });
 };
+
+/** "▲ ₹650 since 4:12 PM" — how far the rate moved at its last change (green up, red down). */
+function ChangePill({ diff, at, styles, testID }: { diff?: number | null; at?: string | null; styles: any; testID?: string }) {
+  const { colors } = useTheme();
+  if (diff == null || diff === 0) return null;
+  const up = diff > 0;
+  const fg = up ? colors.onSuccess : colors.onError;
+  const today = at && istDate(at) === todayIST();
+  const when = at ? (today ? istTime(at) : istDisplayDate(at)) : '';
+  return (
+    <View style={[styles.chg, up ? styles.chgUp : styles.chgDown]} testID={testID}
+      accessibilityLabel={`${up ? 'Up' : 'Down'} ${Math.abs(Math.round(diff))} rupees${when ? ` since ${when}` : ''}`}>
+      <Text style={[styles.chgText, { color: fg }]}>{up ? '▲' : '▼'} ₹{Math.abs(Math.round(diff)).toLocaleString('en-IN')}</Text>
+      {!!when && <Text style={[styles.chgWhen, { color: fg }]}>since {when}</Text>}
+    </View>
+  );
+}

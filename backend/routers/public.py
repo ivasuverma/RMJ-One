@@ -30,7 +30,16 @@ async def public_rates():
         'xau_usd': live.get('xau_usd'),
         'xag_usd': live.get('xag_usd'),
         'usd_inr': live.get('usd_inr'),
+        # Change since the rate last moved (null until it has changed once).
+        'gold_change': _change(live.get('gold_rate'), live.get('prev_gold_rate')),
+        'gold_changed_at': live.get('gold_changed_at'),
+        'silver_change': _change(live.get('silver_rate'), live.get('prev_silver_rate')),
+        'silver_changed_at': live.get('silver_changed_at'),
     }
+
+
+def _change(now, prev):
+    return round(now - prev) if now is not None and prev is not None else None
 
 
 @router.get('/public/instagram')
