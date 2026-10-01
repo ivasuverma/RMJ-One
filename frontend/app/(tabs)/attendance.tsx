@@ -35,12 +35,25 @@ type PayRow = {
   total_days: number; effective_days: number; advance: number; net_salary: number; paid?: boolean; id?: string;
   present_days?: number; absent_days?: number; half_days?: number;
   earned?: number; bonus?: number; fine?: number; manual_deduction?: number; opening_balance?: number; amount_paid?: number;
-  net_salary_exact?: number;
+  net_salary_exact?: number; base_salary?: number; missing_punch_days?: number; not_employed_days?: number; future_days?: number;
 };
 
 /** Salary − deductions − paid = payable, one line per employee (only the parts that apply). */
 function payLine(p: PayRow, fmt: (n: number) => string): { text: string; payable: number } {
-  const parts: string[] = [`${fmt(p.earned ?? 0)} salary`];
+  // Start from the full monthly salary, then what absence took off (base − earned).
+  const base = p.base_salary ?? p.earned ?? 0;
+  const parts: string[] = [`${fmt(base)} salary`];
+  const daysCut = base - (p.earned ?? base);
+  if (Math.abs(daysCut) >= 0.5) {
+    const why = [
+      p.absent_days ? `${p.absent_days} absent` : '',
+      p.half_days ? `${p.half_days} half day${p.half_days === 1 ? '' : 's'}` : '',
+      p.missing_punch_days ? `${p.missing_punch_days} missing punch` : '',
+      p.not_employed_days ? `${p.not_employed_days} not joined/left` : '',
+      p.future_days ? `${p.future_days} days to come` : '',
+    ].filter(Boolean).join(', ');
+    parts.push(daysCut > 0 ? `− ${fmt(daysCut)} for ${why || 'unpaid days'}` : `+ ${fmt(-daysCut)} Sunday work`);
+  }
   const add = (v: number | undefined, label: string, sign: '+' | '−') => { if (v && Math.abs(v) >= 0.5) parts.push(`${sign} ${fmt(Math.abs(v))} ${label}`); };
   add(p.bonus, 'bonus', '+');
   add(p.advance, 'advance', '−');
@@ -380,7 +393,7 @@ export default function OwnerAttendance() {
                     {'  '}<Text style={{ color: colors.onError, fontWeight: '700' }}>{p.absent_days ?? 0}A</Text>
                     {'  '}<Text style={{ color: colors.onWarning, fontWeight: '700' }}>{p.half_days ?? 0}HD</Text>
                   </Text>
-                  <Text style={styles.payLine} numberOfLines={2} testID={`pay-line-${p.employee_id}`}>{payLine(p, fmtINR).text}</Text>
+                  <Text style={styles.payLine} numberOfLines={3} testID={`pay-line-${p.employee_id}`}>{payLine(p, fmtINR).text}</Text>
                 </View>
                 <View style={{ alignItems: 'flex-end' }}>
                   <Text style={styles.payV}>{fmtINR(p.paid ? p.net_salary : payLine(p, fmtINR).payable)}</Text>
