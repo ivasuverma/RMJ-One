@@ -12,6 +12,7 @@ import { useTheme } from '@/src/theme/ThemeContext';
 import { ModuleHeader, HeaderButton } from '@/src/components/ui/ModuleHeader';
 import { HeaderSpacer, useScrolled } from '@/src/components/ui/StickyHeader';
 import { ErrorState } from '@/src/components/ui';
+import { friendlyDate } from '@/src/utils/friendlyDate';
 
 type Task = {
   id: string; title: string; priority: 'low' | 'normal' | 'urgent'; due_date: string | null; due_time: string | null;
@@ -159,7 +160,7 @@ export default function TasksListScreen() {
                   <Text style={styles.cardTitle} numberOfLines={1}>{t.title}</Text>
                   <Text style={styles.cardMeta}>
                     {t.assigned_to_name}
-                    {t.due_date ? ` · Due ${t.due_date}${t.due_time ? ` ${t.due_time}` : ''}` : ''}
+                    {t.due_date ? ` · Due ${friendlyDate(t.due_date)}${t.due_time ? ` ${t.due_time}` : ''}` : ''}
                     {t.recurring_template_id ? ' · Recurring' : ''}
                     {t.repeat_reminder && t.status === 'open' ? ' · Repeats reminder' : ''}
                   </Text>

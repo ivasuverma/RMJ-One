@@ -170,7 +170,7 @@ export default function MetalLedgerScreen() {
           {totalLoss > 0.001 && (
             <View style={styles.lossBanner} testID="metal-ledger-total-loss">
               <Ionicons name="trending-down-outline" size={16} color={colors.onError} />
-              <Text style={styles.lossBannerText}>{totalLoss.toFixed(3)}g written off as loss (doesn't affect Net Stock)</Text>
+              <Text style={styles.lossBannerText}>{totalLoss.toFixed(3)}g written off as loss (doesn&apos;t affect Net Stock)</Text>
             </View>
           )}
 

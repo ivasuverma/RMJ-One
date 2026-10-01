@@ -98,7 +98,7 @@ export default function HomeBriefing() {
                   <View key={l.id} style={s.loc}>
                     <View style={{ flex: 1 }}>
                       <Text style={s.locName}>{l.name}</Text>
-                      <Text style={s.locSub}>{l.last_entry_at ? `Last entry ${lastEntry(l.last_entry_at, today)}` : 'No entries yet'}</Text>
+                      <Text style={s.locSub}>{l.closed_today ? 'Day closed' : l.last_entry_at ? `Last entry ${lastEntry(l.last_entry_at, today)}` : 'No entries yet'}</Text>
                       <View style={s.bar}><View style={[s.barFill, { width: `${Math.round(l.share * 100)}%` }]} /></View>
                     </View>
                     <Text style={s.locVal}>{inr(l.balance)}</Text>
@@ -110,6 +110,9 @@ export default function HomeBriefing() {
                 </View>
                 <View style={s.mact}>
                   <Pressable onPress={() => go('/cashbook')} style={[s.mBtn, s.mBtnGold]} testID="home-open-cashbook"><Text style={s.mBtnGoldText}>Open Cash Book</Text></Pressable>
+                  {data!.cash.can_edit && data!.cash.locations.some((l) => !l.closed_today) && (
+                    <Pressable onPress={() => go('/cashbook')} style={s.mBtn} testID="home-close-day"><Text style={s.mBtnText}>Close the day</Text></Pressable>
+                  )}
                 </View>
               </View>
             )}

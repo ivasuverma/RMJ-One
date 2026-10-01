@@ -169,7 +169,7 @@ export default function AttendanceSettings() {
           >
             <View style={{ flex: 1 }}>
               <Text style={styles.toggleLabel}>Allow check-in/check-out from the app</Text>
-              <Text style={styles.toggleSub}>Turn off if attendance is tracked only via a biometric device — employees' Check In/Check Out buttons will be disabled</Text>
+              <Text style={styles.toggleSub}>Turn off if attendance is tracked only via a biometric device — employees&apos; Check In/Check Out buttons will be disabled</Text>
             </View>
             <ToggleSwitch value={!!(form.app_checkin_enabled)} />
           </Pressable>
@@ -194,7 +194,7 @@ export default function AttendanceSettings() {
           >
             <View style={{ flex: 1 }}>
               <Text style={styles.toggleLabel}>Unpaid Sunday after an absent week</Text>
-              <Text style={styles.toggleSub}>If an employee is absent every scheduled day Mon–Sat, that week's Sunday isn't auto-paid as a weekly-off either</Text>
+              <Text style={styles.toggleSub}>If an employee is absent every scheduled day Mon–Sat, that week&apos;s Sunday isn&apos;t auto-paid as a weekly-off either</Text>
             </View>
             <ToggleSwitch value={!!(form.unpaid_sunday_after_absent_week)} />
           </Pressable>

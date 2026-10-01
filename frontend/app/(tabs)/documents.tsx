@@ -17,9 +17,8 @@ import { QuickDocCapture } from '@/src/components/QuickDocCapture';
 import { extractPdfJpegs } from '@/src/utils/imagesToPdf';
 import { UploadQueueBadge } from '@/src/components/UploadQueueBadge';
 import { TabBarSpacer } from '@/src/components/GlassTabBar';
-import { useScrolled } from '@/src/components/ui/StickyHeader';
+import { useScrolled , HeaderSpacer } from '@/src/components/ui/StickyHeader';
 import { ModuleHeader } from '@/src/components/ui/ModuleHeader';
-import { HeaderSpacer } from '@/src/components/ui/StickyHeader';
 
 type Doc = {
   id: string; category_key: string; status: 'pending' | 'done'; upload_state: string;

@@ -9,8 +9,7 @@ import { istDateTime, todayIST } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { ModuleHeader, HeaderButton } from '@/src/components/ui/ModuleHeader';
-import { HeaderSpacer } from '@/src/components/ui/StickyHeader';
-import { useScrolled } from '@/src/components/ui/StickyHeader';
+import { HeaderSpacer , useScrolled } from '@/src/components/ui/StickyHeader';
 import { OverdueTag, daysLate } from '@/src/components/OverdueTag';
 import { TabBarSpacer } from '@/src/components/GlassTabBar';
 

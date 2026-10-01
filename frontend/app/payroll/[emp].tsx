@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Platform, Linking, TextInput,
+  View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Linking, TextInput,
 } from 'react-native';
 import { notify } from '@/src/utils/notify';
 import { SafeAreaView } from 'react-native-safe-area-context';

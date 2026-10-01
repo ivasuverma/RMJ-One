@@ -132,7 +132,7 @@ export default function PeopleScreen() {
           )}
 
           <View style={styles.topRow}>
-            <Text style={styles.hint}>Tap a staff login to set their access, notifications, document rights and password. Employee access lives on each employee's own profile.</Text>
+            <Text style={styles.hint}>Tap a staff login to set their access, notifications, document rights and password. Employee access lives on each employee&apos;s own profile.</Text>
             <Pressable onPress={resetAll} disabled={resettingAll} style={styles.resetBtn} testID="reset-all-btn">
               {resettingAll ? <ActivityIndicator size="small" color={colors.onSurfaceSecondary} /> : <Text style={styles.resetText}>Reset All</Text>}
             </Pressable>

@@ -116,8 +116,8 @@ export default function RateMasterScreen() {
           <Text style={styles.hint}>
             One shared refresh schedule for the WhatsApp broadcast draft, the RATE chatbot reply, the public rates
             page, and the dashboard tile. Fetches every N minutes in the window below — once you confirm or send
-            today's rate, it stops touching that draft for the rest of the day, but keeps the others fresh. If
-            "Fully automatic" below is on, the actual send still only happens once a day, at its own time.
+            today&apos;s rate, it stops touching that draft for the rest of the day, but keeps the others fresh. If
+            &quot;Fully automatic&quot; below is on, the actual send still only happens once a day, at its own time.
           </Text>
           <View style={styles.switchRow}>
             <View style={{ flex: 1 }}><Text style={styles.label}>Auto-fetch enabled</Text></View>

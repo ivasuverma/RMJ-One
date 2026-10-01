@@ -97,7 +97,7 @@ export default function ItemMasterScreen() {
           contentContainerStyle={{ padding: spacing.lg }} keyboardShouldPersistTaps="handled"
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}
         >
-          {!showForm && <Text style={styles.hint}>Predefine item types with their gold purity (e.g. 22K = 91.6%). Picking one on a repair item lets the karigar's gold ledger track fine-gold-equivalent weight instead of raw gross grams.</Text>}
+          {!showForm && <Text style={styles.hint}>Predefine item types with their gold purity (e.g. 22K = 91.6%). Picking one on a repair item lets the karigar&apos;s gold ledger track fine-gold-equivalent weight instead of raw gross grams.</Text>}
 
           {showForm && (
             <View style={styles.formCard} testID="add-item-form">

@@ -69,7 +69,7 @@ export function setUnauthorizedHandler(fn: (() => void) | null) {
 }
 
 if (!BASE && __DEV__) {
-  // eslint-disable-next-line no-console
+   
   console.warn(
     '[api] EXPO_PUBLIC_BACKEND_URL is not set — requests will use a relative URL and ' +
     'almost certainly fail to reach the backend. Set it in frontend/.env and restart ' +

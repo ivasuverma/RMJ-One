@@ -236,12 +236,12 @@ export default function PrintMasterTemplateScreen() {
             </Pressable>
           )}
         </View>
-        <Text style={styles.fieldsHint}>The heading naming the slip (e.g. "Loan Against Gold") — follows Overall Text Size until nudged.</Text>
+        <Text style={styles.fieldsHint}>The heading naming the slip (e.g. &quot;Loan Against Gold&quot;) — follows Overall Text Size until nudged.</Text>
 
         <Text style={[styles.sectionLabel, { marginTop: spacing.lg }]}>Fields — order, visibility & size</Text>
         <Text style={styles.fieldsHint}>
-          Tap a field to show/hide it. Use the arrows to reorder. Each field's size follows the overall Text Size above
-          until you nudge it individually. Add a blank line anywhere with "Add Line" below — reorder or remove it the
+          Tap a field to show/hide it. Use the arrows to reorder. Each field&apos;s size follows the overall Text Size above
+          until you nudge it individually. Add a blank line anywhere with &quot;Add Line&quot; below — reorder or remove it the
           same way as a field.
         </Text>
         {rows.map((r, i) => {

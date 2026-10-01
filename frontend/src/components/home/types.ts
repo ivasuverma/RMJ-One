@@ -10,7 +10,7 @@ export type RateItem = { key: string; label: string; rate: number; change: numbe
 export type Broadcast = { state: 'sent' | 'not_sent' | 'template_not_approved'; sent_at: string | null; late: boolean; subscribers: number };
 export type Rates = { items: RateItem[]; fetched_at?: string; can_open: boolean; broadcast: Broadcast | null };
 
-export type CashLocation = { id: string; name: string; balance: number; share: number; last_entry_at: string | null };
+export type CashLocation = { id: string; name: string; balance: number; share: number; last_entry_at: string | null; closed_today?: boolean };
 export type Cash = {
   total: number; received_today: number; paid_today: number; net_today: number;
   locations: CashLocation[]; can_edit: boolean; day_close_available: boolean;

@@ -4,6 +4,17 @@
 // the app can switch between the "Ivory boutique" light palette and the
 // "Emerald vault" dark palette (src/theme/palettes.ts) — following the
 // system's light/dark setting, with an optional manual override in Settings.
+// "Inter" — clean neutral grotesque-sans, the closest widely-available match
+// to Claude.ai's own UI typeface (which is proprietary and can't be bundled
+// here). RMJ-One's real deployment is a web export (see app/+html.tsx, which
+// loads Inter from Google Fonts) — not a native/EAS build — so the family
+// name below is the plain CSS name, one family shared across weights, paired
+// with each component's own `fontWeight` style (400/500/600/700/800 are all
+// loaded). The CDN loader in src/hooks/use-text-fonts.ts is a secondary path
+// that only registers fonts inside the Expo Go client for local dev preview
+// on a phone; it's harmless to leave running but isn't what production uses.
+import { Platform } from 'react-native';
+
 export type { ThemeColors } from './theme/palettes';
 
 export const spacing = {
@@ -45,17 +56,6 @@ export const typography: Record<'display' | 'h1' | 'h2' | 'title' | 'body' | 'bo
 // Apple §1: press feedback must be instant and consistent. One token instead of
 // the 0.7/0.8/0.85/0.9 scatter across screens.
 export const pressedOpacity = 0.85;
-
-// "Inter" — clean neutral grotesque-sans, the closest widely-available match
-// to Claude.ai's own UI typeface (which is proprietary and can't be bundled
-// here). RMJ-One's real deployment is a web export (see app/+html.tsx, which
-// loads Inter from Google Fonts) — not a native/EAS build — so the family
-// name below is the plain CSS name, one family shared across weights, paired
-// with each component's own `fontWeight` style (400/500/600/700/800 are all
-// loaded). The CDN loader in src/hooks/use-text-fonts.ts is a secondary path
-// that only registers fonts inside the Expo Go client for local dev preview
-// on a phone; it's harmless to leave running but isn't what production uses.
-import { Platform } from 'react-native';
 
 // Apple-native type. The v2 design comp is built on the San Francisco system
 // font; on the web export this CSS stack resolves to SF Pro on Apple devices

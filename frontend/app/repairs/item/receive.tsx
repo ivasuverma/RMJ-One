@@ -261,7 +261,7 @@ export default function ReceiveFromKarigarScreen() {
 
       {mode === 'pick' ? (
         <ScrollView contentContainerStyle={{ padding: spacing.lg }}>
-          <Text style={styles.hint}>Pick a tag that's currently with a karigar.</Text>
+          <Text style={styles.hint}>Pick a tag that&apos;s currently with a karigar.</Text>
           {loading ? (
             <ActivityIndicator color={colors.brandPrimary} style={{ marginTop: 40 }} />
           ) : pickList.length === 0 ? (

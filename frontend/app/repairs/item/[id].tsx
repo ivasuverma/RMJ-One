@@ -17,6 +17,7 @@ import { useTheme } from '@/src/theme/ThemeContext';
 import { useAuth } from '@/src/auth/AuthContext';
 import { RecordPhotos } from '@/src/components/RecordPhotos';
 import { GlassButton } from '@/src/components/ui/GlassButton';
+import { friendlyDate } from '@/src/utils/friendlyDate';
 
 type Item = {
   id: string; item_code: string; order_id: string; order_no: string; customer_name: string;
@@ -323,9 +324,9 @@ export default function RepairItemDetailScreen() {
             <MetaCell icon="scale-outline" label="Weight" value={`${item.gross_weight.toFixed(3)}g · ${item.pc_count} pc${item.pc_count === 1 ? '' : 's'}`} colors={colors} />
             {item.fine_weight != null && <MetaCell icon="water-outline" label="Fine Weight" value={`${item.fine_weight.toFixed(3)}g`} colors={colors} />}
             <MetaCell icon="cash-outline" label="Labour" value={`₹${(item.status === 'delivered' ? (item.bill_labour_charge ?? item.labour_charge) : item.labour_charge).toFixed(0)}`} colors={colors} />
-            <MetaCell icon="calendar-outline" label="Due" value={item.due_date || '—'} colors={colors} />
+            <MetaCell icon="calendar-outline" label="Due" value={item.due_date ? friendlyDate(item.due_date) : '—'} colors={colors} />
             {item.karigar_name && <MetaCell icon="hammer-outline" label="Karigar" value={item.karigar_name} colors={colors} />}
-            {item.status === 'with_karigar' && !!item.karigar_due_back && <MetaCell icon="time-outline" label="Due back" value={item.karigar_due_back} colors={colors} />}
+            {item.status === 'with_karigar' && !!item.karigar_due_back && <MetaCell icon="time-outline" label="Due back" value={friendlyDate(item.karigar_due_back)} colors={colors} />}
             {item.billed_amount != null && <MetaCell icon="receipt-outline" label="Billed" value={`₹${item.billed_amount.toFixed(0)}`} colors={colors} />}
             {item.delivered_at && <MetaCell icon="checkmark-done-outline" label="Delivered" value={`${istDate(item.delivered_at)}${item.delivered_by ? ` · by ${item.delivered_by}` : ''}`} colors={colors} />}
             {item.updated_by && <MetaCell icon="pencil-outline" label="Last by" value={item.updated_by} colors={colors} />}

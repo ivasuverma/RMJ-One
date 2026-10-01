@@ -225,6 +225,20 @@ async def _rates(user: dict, today: str, s: dict, now: datetime) -> dict:
     ]
     out = {'items': [r for r in rows if r['rate']], 'fetched_at': live.get('fetched_at'),
            'can_open': can_view(user, 'gold_rate'), 'broadcast': None}
+    # Items with a karigar issued before due back was required — give them a date so
+    # they show up when late (one-time clean-up; disappears once all have one).
+    if user.get('role') in ('owner', 'admin'):
+        missing = 0
+        if can_view(user, 'repairs'):
+            missing += await db.repair_items.count_documents({'status': 'with_karigar', 'karigar_due_back': {'$in': [None, '']}})
+        if can_view(user, 'samples'):
+            missing += await db.samples.count_documents({'status': 'with_karigar', 'due_date': {'$in': [None, '']}})
+        if missing:
+            rows.append({'key': 'due_back_missing', 'severity': 'gold', 'module': 'repairs', 'count': missing,
+                         'title': f"{missing} with karigars have no due-back date",
+                         'detail': 'Set them once so late ones get flagged', 'action': 'Set dates',
+                         'route': '/repairs/due-back', 'can_act': True})
+
     # Staff who can't get push notifications (owner/admin only — they can remind them).
     if user.get('role') in ('owner', 'admin'):
         from routers.notifications import staff_push_status
@@ -297,17 +311,19 @@ async def _cash(user: dict, today: str) -> dict:
     received = round(sum(e['amount'] for e in real if e['type'] == 'received'), 2)
     paid = round(sum(e['amount'] for e in real if e['type'] == 'paid'), 2)
     last_at = {r['_id']: r['at'] for r in last}
+    closed = {x['counter_id'] async for x in db.cashbook_closures.find({'counter_id': {'$in': ids}, 'date': today}, {'_id': 0, 'counter_id': 1})}
     total = round(sum(balances.get(i, 0) for i in ids), 2)
     locs = []
     for c in counters:
         bal = balances.get(c['id'], 0)
         locs.append({'id': c['id'], 'name': c['name'], 'balance': bal,
-                     'share': round(bal / total, 4) if total > 0 and bal > 0 else 0, 'last_entry_at': last_at.get(c['id'])})
+                     'share': round(bal / total, 4) if total > 0 and bal > 0 else 0, 'last_entry_at': last_at.get(c['id']),
+                     'closed_today': c['id'] in closed})
     return {
         'total': total, 'received_today': received, 'paid_today': paid, 'net_today': round(received - paid, 2),
         'locations': locs, 'can_edit': can_edit(user, 'cash_book'),
-        # Cash Book has no close-the-day flow yet; the app opens today's Cash Book instead.
-        'day_close_available': False,
+        # Close the day happens in Cash Book (count, record any difference, lock the day).
+        'day_close_available': True,
     }
 
 

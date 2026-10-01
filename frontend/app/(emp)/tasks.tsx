@@ -8,6 +8,7 @@ import { todayIST } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { TabBarSpacer } from '@/src/components/GlassTabBar';
+import { friendlyDate } from '@/src/utils/friendlyDate';
 
 type Task = {
   id: string; title: string; description: string; priority: 'low' | 'normal' | 'urgent';
@@ -76,7 +77,7 @@ export default function EmployeeTasksScreen() {
 
           <Text style={styles.section}>Open · {open.length}</Text>
           {open.length === 0 ? (
-            <View style={styles.empty}><Ionicons name="checkmark-done-circle-outline" size={36} color={colors.mutedText} /><Text style={styles.emptyText}>Nothing open — you're all caught up.</Text></View>
+            <View style={styles.empty}><Ionicons name="checkmark-done-circle-outline" size={36} color={colors.mutedText} /><Text style={styles.emptyText}>Nothing open — you&apos;re all caught up.</Text></View>
           ) : open.map((t) => {
             const overdue = !!t.due_date && t.due_date < today;
             const dotColor = t.priority === 'urgent' ? colors.onError : t.priority === 'normal' ? colors.brandPrimary : colors.mutedText;
@@ -86,7 +87,7 @@ export default function EmployeeTasksScreen() {
                 <View style={{ flex: 1 }}>
                   <Text style={styles.cardTitle} numberOfLines={1}>{t.title}</Text>
                   <Text style={styles.cardMeta}>
-                    {t.assigned_by} {t.due_date ? `· Due ${t.due_date}${t.due_time ? ` ${t.due_time}` : ''}` : ''} {t.comments?.length ? `· ${t.comments.length} comment${t.comments.length === 1 ? '' : 's'}` : ''}
+                    {t.assigned_by} {t.due_date ? `· Due ${friendlyDate(t.due_date)}${t.due_time ? ` ${t.due_time}` : ''}` : ''} {t.comments?.length ? `· ${t.comments.length} comment${t.comments.length === 1 ? '' : 's'}` : ''}
                   </Text>
                 </View>
                 {!!t.points && (

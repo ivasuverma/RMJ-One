@@ -17,6 +17,7 @@ import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { useAuth } from '@/src/auth/AuthContext';
 import { GlassButton } from '@/src/components/ui/GlassButton';
+import { friendlyDate } from '@/src/utils/friendlyDate';
 
 type Item = {
   id: string; item_code: string; customer_name: string; description: string;
@@ -445,7 +446,7 @@ export default function RepairBillScreen() {
             // looks the same whether you're looking at it there or here.
             const repairMetaBits = [
               `Created ${istDate(b.created_at)}`,
-              b.due_date ? `Due ${b.due_date}` : null,
+              b.due_date ? `Due ${friendlyDate(b.due_date)}` : null,
               b.karigar_name || null,
               b.created_by ? `by ${b.created_by}` : null,
             ].filter(Boolean);
@@ -485,7 +486,7 @@ export default function RepairBillScreen() {
 
       {mode === 'pick' && (
         <ScrollView contentContainerStyle={{ padding: spacing.lg }}>
-          <Text style={styles.hint}>Pick an item that's pending to bill.</Text>
+          <Text style={styles.hint}>Pick an item that&apos;s pending to bill.</Text>
           {loading ? (
             <ActivityIndicator color={colors.brandPrimary} style={{ marginTop: 40 }} />
           ) : readyItems.length === 0 ? (

@@ -20,6 +20,7 @@ import { counterColorOptions, counterToneFor } from '@/src/theme/palettes';
 import { useAuth } from '@/src/auth/AuthContext';
 import { ErrorState } from '@/src/components/ui';
 import { ToggleSwitch } from '@/src/components/ui/ToggleSwitch';
+import { DayClose, Closure } from '@/src/components/cashbook/DayClose';
 import { TabBarSpacer } from '@/src/components/GlassTabBar';
 
 // Same rule as the backend's counter_limit_alert: storage places don't alert by default.
@@ -35,6 +36,7 @@ type Entry = {
 type DayData = {
   date: string; counter_id: string; counter_name: string; opening_balance: number; entries: Entry[];
   total_received: number; total_paid: number; closing_balance: number;
+  closure?: Closure | null;   // set once the day is closed (counted and locked)
 };
 type Counter = {
   id: string; name: string; opening_balance: number; closing_balance: number;
@@ -163,7 +165,7 @@ export default function CashBookScreen() {
     if (openedFromLink.current || (newEntry !== 'received' && newEntry !== 'paid')) return;
     openedFromLink.current = true;
     openAdd(newEntry);
-  }, [newEntry]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [newEntry]);  
   const openEdit = (e: Entry) => {
     setEditing(e); setEntryType(e.type); setAmount(String(e.amount)); setName(e.name); setCategory(e.category || ''); setNote(e.note || '');
     setIsTransfer(false); setTransferCounterId('');
@@ -300,7 +302,7 @@ export default function CashBookScreen() {
       ? (transferOptions.find((c) => c.id === e.transfer_counter_id)?.name || e.name.replace(/^Transfer\s+(to|from)\s+/i, ''))
       : e.name;
     return (
-    <Pressable key={e.id} disabled={!canEdit} onPress={() => openEdit(e)} style={styles.entryRow} testID={`cashbook-entry-${e.id}`}>
+    <Pressable key={e.id} disabled={!canEdit || !!day?.closure} onPress={() => openEdit(e)} style={styles.entryRow} testID={`cashbook-entry-${e.id}`}>
       <View style={{ flex: 1, minWidth: 0 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
           {isTransferEntry && <Ionicons name="swap-horizontal-outline" size={11} color={colors.brandSecondary} />}
@@ -444,13 +446,18 @@ export default function CashBookScreen() {
                 <Text style={styles.counterBalLabel}>Counter Bal (Closing)</Text>
                 <Text style={styles.counterBalValue}>{fmtINR(day?.closing_balance || 0)}</Text>
               </View>
+              {!!day && (
+                <DayClose counterId={day.counter_id} counterName={day.counter_name} date={date} today={todayIST()}
+                  bookBalance={day.closing_balance} closure={day.closure} canClose={canEdit} isOwner={isOwner}
+                  onChanged={() => load(date, counterId)} />
+              )}
               {/* room for the Received / Paid buttons above the bar */}
               <View style={{ height: 64 }} />
               <TabBarSpacer />
             </ScrollView>
           )}
 
-          {counters.length > 0 && (
+          {counters.length > 0 && !day?.closure && (
             <View style={[styles.fabRow, { bottom: spacing.lg + bottomInset }]}>
               <Pressable onPress={() => openAdd('received')} style={[styles.fab, { backgroundColor: colors.brandPrimary }]} testID="cashbook-add-received">
                 <Ionicons name="add" size={18} color={colors.onBrandPrimary} />
@@ -632,7 +639,7 @@ export default function CashBookScreen() {
                   </Pressable>
                 ))}
               </View>
-              <Text style={styles.hint}>Tints this counter's chip, and the whole Cash Book page while it's selected. Leave the first (grey) swatch to use the app's default.</Text>
+              <Text style={styles.hint}>Tints this counter&apos;s chip, and the whole Cash Book page while it&apos;s selected. Leave the first (grey) swatch to use the app&apos;s default.</Text>
 
               {(() => {
                 const on = counterForm.limit_alert ?? defaultLimitAlert(counterForm.name);

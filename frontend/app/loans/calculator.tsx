@@ -84,7 +84,7 @@ export default function GoldValueCalculatorScreen() {
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 60 }} keyboardShouldPersistTaps="handled">
           {!!loanNo && (
-            <Text style={styles.prefillNote} testID="calc-prefill-note">Weight and receivable pre-filled from {loanNo} — adjust anything before it's final.</Text>
+            <Text style={styles.prefillNote} testID="calc-prefill-note">Weight and receivable pre-filled from {loanNo} — adjust anything before it&apos;s final.</Text>
           )}
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Weight</Text>
