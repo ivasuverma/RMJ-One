@@ -141,7 +141,7 @@ export default function PayrollDetail() {
           <Pressable
             style={styles.topBtn}
             testID="modify-attendance-btn"
-            onPress={() => router.push(`/attendance/calendar/${row.employee_id}`)}
+            onPress={() => router.push(`/attendance/calendar/${row.employee_id}?year=${y}&month=${m}` as any)}
           >
             <Ionicons name="calendar-outline" size={16} color={colors.onSurface} />
             <Text style={styles.topBtnText}>Attendance</Text>

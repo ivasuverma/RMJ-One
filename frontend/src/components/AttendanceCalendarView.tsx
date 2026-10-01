@@ -66,8 +66,9 @@ type Shift = { id: string; name: string; start: string; end: string; grace_min: 
  * (`app/(emp)/calendar.tsx`). Pass `onBack` to render a back/close header —
  * omit it when embedding inline in a tab (no navigation chrome needed).
  */
-export default function AttendanceCalendarView({ empId, onBack, title = 'Calendar', footer }: {
+export default function AttendanceCalendarView({ empId, onBack, title = 'Calendar', footer, initialYear, initialMonth }: {
   empId: string; onBack?: () => void; title?: string;
+  initialYear?: number; initialMonth?: number;   // open on this month (e.g. from a payroll month) instead of today's
   footer?: React.ReactNode;   // e.g. <TabBarSpacer /> when shown above the tab bar
 }) {
   const { user } = useAuth();
@@ -76,8 +77,8 @@ export default function AttendanceCalendarView({ empId, onBack, title = 'Calenda
   const statusStyles = useMemo(() => makeStatusStyles(colors, scheme), [colors, scheme]);
   const canEdit = user?.role === 'owner' || user?.role === 'admin';
   const now = new Date();
-  const [year, setYear] = useState(now.getFullYear());
-  const [month, setMonth] = useState(now.getMonth() + 1);
+  const [year, setYear] = useState(initialYear || now.getFullYear());
+  const [month, setMonth] = useState(initialMonth && initialMonth >= 1 && initialMonth <= 12 ? initialMonth : now.getMonth() + 1);
   const [data, setData] = useState<{ days: Day[] } | null>(null);
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [loading, setLoading] = useState(true);
