@@ -165,6 +165,11 @@ export default function PayrollDetail() {
         {row.leave_days > 0 && <Line label="Leave days (paid)" value={String(row.leave_days)} />}
         {row.holiday_days > 0 && <Line label="Holidays (paid)" value={String(row.holiday_days)} />}
         {row.weekly_off_days > 0 && <Line label="Weekly off / Paid off" value={String(row.weekly_off_days)} />}
+        {/* Unpaid days — so Effective / Total always adds up */}
+        {row.absent_days > 0 && <Line label="Absent (unpaid)" value={String(row.absent_days)} neg testID="pay-absent-days" />}
+        {row.missing_punch_days > 0 && <Line label="Missing punch (unpaid)" value={String(row.missing_punch_days)} neg testID="pay-missing-days" />}
+        {row.not_employed_days > 0 && <Line label="Before joining / after leaving" value={String(row.not_employed_days)} />}
+        {(row.future_days ?? 0) > 0 && <Line label="Days still to come" value={String(row.future_days)} />}
         <Line label="Effective / Total" value={`${row.effective_days} / ${row.total_days}`} accent />
 
         <SectionTitle text="Formula" />

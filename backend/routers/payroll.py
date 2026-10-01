@@ -181,6 +181,43 @@ def _month_bounds(year: int, month: int) -> tuple:
     return start, end, last_day
 
 
+async def _wage_state() -> tuple:
+    """All-time wage-ledger balance per employee, and which (employee, 'YYYY-MM')
+    months have had their salary posted."""
+    balances: dict = {}
+    earned: set = set()
+    async for t in db.timeline.find(
+        {'type': {'$in': ['advance', 'bonus', 'fine', 'deduction', 'salary', 'salary_earned', 'salary_paid']}},
+        {'_id': 0, 'employee_id': 1, 'type': 1, 'amount': 1, 'sign': 1, 'year': 1, 'month': 1},
+    ):
+        eid = t.get('employee_id')
+        if not eid:
+            continue
+        tt = t.get('type')
+        if tt == 'salary_earned' and t.get('year') and t.get('month'):
+            earned.add((eid, f"{int(t['year']):04d}-{int(t['month']):02d}"))
+        amt = abs(float(t.get('amount') or 0))
+        if tt in ('salary', 'salary_earned'):
+            d = amt
+        elif tt == 'salary_paid':
+            d = -amt
+        else:
+            d = t.get('sign', _ledger_sign(tt)) * amt
+        balances[eid] = balances.get(eid, 0) + d
+    return balances, earned
+
+
+def _paid_off_from(e: dict, balances: dict, earned: set, month_ym: str) -> bool:
+    """An inactive employee whose final month's salary is posted and who is owed /
+    owes nothing is hidden from the month they left onwards (earlier months, when
+    they were still working, keep their row)."""
+    if e.get('status') != 'inactive' or abs(balances.get(e['id'], 0)) >= 0.5:
+        return False
+    da = e.get('deactivated_at') or e.get('updated_at') or ''
+    left_month = (e.get('left_date') or '')[:7] or da[:7]
+    return bool(left_month) and month_ym >= left_month and (e['id'], left_month) in earned
+
+
 async def _compute_payroll(year: int, month: int) -> list:
     start, end, total_days = _month_bounds(year, month)
     store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
@@ -231,26 +268,7 @@ async def _compute_payroll(year: int, month: int) -> list:
     # Overall wage-ledger balance per employee (all-time) — an inactive
     # employee who has been gone for over a month AND is fully settled (no
     # pending payable/receivable) is dropped from payroll below.
-    all_balances: dict = {}
-    earned_months: set = set()   # (employee id, 'YYYY-MM') whose salary has been posted
-    async for t in db.timeline.find(
-        {'type': {'$in': ['advance', 'bonus', 'fine', 'deduction', 'salary', 'salary_earned', 'salary_paid']}},
-        {'_id': 0, 'employee_id': 1, 'type': 1, 'amount': 1, 'sign': 1, 'year': 1, 'month': 1},
-    ):
-        eid = t.get('employee_id')
-        if not eid:
-            continue
-        if t.get('type') == 'salary_earned' and t.get('year') and t.get('month'):
-            earned_months.add((eid, f"{int(t['year']):04d}-{int(t['month']):02d}"))
-        amt = abs(float(t.get('amount') or 0))
-        tt = t.get('type')
-        if tt in ('salary', 'salary_earned'):
-            d = amt
-        elif tt == 'salary_paid':
-            d = -amt
-        else:
-            d = t.get('sign', _ledger_sign(tt)) * amt
-        all_balances[eid] = all_balances.get(eid, 0) + d
+    all_balances, earned_months = await _wage_state()
     from datetime import timedelta as _timedelta
     inactive_cutoff = (now_utc() - _timedelta(days=30)).isoformat()
 
@@ -267,11 +285,7 @@ async def _compute_payroll(year: int, month: int) -> list:
             settled = abs(all_balances.get(e['id'], 0)) < 0.5
             if settled and da and da < inactive_cutoff:
                 continue
-            # Paid off and gone: once their final month's salary is posted and nothing is
-            # owed either way, hide them from the month they left onwards (earlier months,
-            # when they were still working, keep their row).
-            left_month = ((e.get('left_date') or '')[:7]) or (da or '')[:7]
-            if settled and left_month and month_ym >= left_month and (e['id'], left_month) in earned_months:
+            if _paid_off_from(e, all_balances, earned_months, month_ym):
                 continue
         att_by_date = att_by_emp.get(e['id'], {})
         shift = shifts_by_name.get(e.get('shift'))
@@ -370,6 +384,7 @@ async def _compute_payroll(year: int, month: int) -> list:
         holiday_days = sum(1 for v in day_state.values() if v == 'holiday')
         weekly_off_days = sum(1 for v in day_state.values() if v == 'weekly_off')
         not_employed_days = sum(1 for v in day_state.values() if v == 'not_employed')
+        future_days = sum(1 for v in day_state.values() if v == 'future')
         # Sunday-work bonus: half a day's extra pay for a Sunday that
         # resolved to a real present/half-day (shop opened, employee
         # actually worked it) — on top of normal pay for that day, not
@@ -426,7 +441,7 @@ async def _compute_payroll(year: int, month: int) -> list:
             'absent_days': absent, 'missing_punch_days': missing_punch,
             'sunday_work': sunday_work, 'leave_days': leave_days, 'late_days': late_days,
             'holiday_days': holiday_days, 'weekly_off_days': weekly_off_days,
-            'not_employed_days': not_employed_days,
+            'not_employed_days': not_employed_days, 'future_days': future_days,
             'total_days': total_days, 'effective_days': round(min(effective, total_days), 2),
             'per_day_rate': round(per_day, 2),
             'earned': earned, 'advance': round(month_advance, 2), 'bonus': round(month_bonus, 2),
@@ -598,6 +613,14 @@ async def payroll_get(year: int, month: int, _: dict = Depends(require_staff), _
         computed = await _compute_payroll(year, month)
         return {'year': year, 'month': month, 'rows': computed, 'saved': False,
                 'locked': False, 'total_net': round(sum(r['net_salary'] for r in computed), 2)}
+    # Saved months too: drop ex-employees who are paid off and gone (see _paid_off_from).
+    inactive = {e['id']: e async for e in db.employees.find(
+        {'id': {'$in': [r['employee_id'] for r in rows]}, 'status': 'inactive'},
+        {'_id': 0, 'id': 1, 'status': 1, 'left_date': 1, 'deactivated_at': 1, 'updated_at': 1})}
+    if inactive:
+        balances, earned = await _wage_state()
+        ym = f'{year:04d}-{month:02d}'
+        rows = [r for r in rows if not (r['employee_id'] in inactive and _paid_off_from(inactive[r['employee_id']], balances, earned, ym))]
     return {
         'year': year, 'month': month, 'rows': rows, 'saved': True,
         'locked': bool(lock and lock.get('locked')),
