@@ -29,6 +29,8 @@ def test_owner_gets_every_section():
     assert isinstance(d['needs_you'], list)
     assert {t['key'] for t in d['quick_actions']['tiles']} >= {'cash_in', 'new_repair', 'issue_stock'}
     assert d['cash'] is not None and 'locations' in d['cash']
+    st = d['notifications']['staff']   # always-visible Staff notifications row
+    assert 0 <= st['on'] <= st['total']
     # Second call inside 30 s comes from the per-user cache.
     assert requests.get(f"{API}/home/summary", headers=h, timeout=60).json()['cached'] is True
 

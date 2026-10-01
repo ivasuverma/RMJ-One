@@ -153,7 +153,7 @@ function NeedItem({ r, first, s, colors, onGo }: { r: NeedRow; first: boolean; s
 }
 
 /** The latest few notifications (same list the bell opens), the unread count and View all. */
-export function NotificationsSection({ data }: { data: { unread: number; items: Notif[] } | null }) {
+export function NotificationsSection({ data }: { data: { unread: number; items: Notif[]; staff?: { on: number; total: number } } | null }) {
   const { s, colors } = useHomeStyles();
   const router = useRouter();
   const [readIds, setReadIds] = useState<Set<string>>(new Set());   // tapped here, before the next refresh
@@ -179,6 +179,18 @@ export function NotificationsSection({ data }: { data: { unread: number; items: 
         ) : data.items.map((n, i) => (
           <NotifRow key={n.id} n={readIds.has(n.id) ? { ...n, read: true } : n} first={i === 0} onPress={() => open(n)} testID={`home-notif-${n.id}`} />
         ))}
+        {!!data.staff && (
+          <Pressable style={({ pressed }) => [s.item, s.itemSep, pressed && { backgroundColor: colors.surfaceTertiary }]} onPress={() => router.push('/settings/staff-notifications' as any)} testID="home-staff-notif">
+            <View style={[s.ic, { backgroundColor: data.staff.on < data.staff.total ? colors.warning : colors.success }]}>
+              <Ionicons name="people-outline" size={16} color={data.staff.on < data.staff.total ? colors.onWarning : colors.onSuccess} />
+            </View>
+            <View style={s.mid}>
+              <Text style={s.t1}>Staff notifications</Text>
+              <Text style={s.t2}>{data.staff.on} of {data.staff.total} have them on{data.staff.on < data.staff.total ? ' · tap to remind' : ''}</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={colors.mutedText} />
+          </Pressable>
+        )}
         <Pressable style={({ pressed }) => [s.item, s.itemSep, s.viewAll, pressed && { backgroundColor: colors.surfaceTertiary }]} onPress={() => router.push('/notifications' as any)} testID="home-notif-all">
           <Text style={s.viewAllText}>View all notifications</Text>
           <Ionicons name="chevron-forward" size={16} color={colors.brandSecondary} />
