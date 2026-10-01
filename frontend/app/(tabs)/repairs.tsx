@@ -9,6 +9,7 @@ import { todayIST, istDateTime } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { ErrorState } from '@/src/components/ui';
+import { OverdueTag, daysLate } from '@/src/components/OverdueTag';
 import { TabBarSpacer } from '@/src/components/GlassTabBar';
 import { useScrolled } from '@/src/components/ui/StickyHeader';
 import { ModuleHeader, HeaderButton } from '@/src/components/ui/ModuleHeader';
@@ -18,7 +19,7 @@ type Item = {
   id: string; item_code: string; customer_name: string; description: string;
   status: RepairItemStatus; karigar_name: string | null; repair_type?: string;
   gross_weight: number; due_date: string | null; created_at: string; created_by?: string;
-  issued_by?: string | null; delivered_by?: string | null; delivered_at?: string | null;
+  issued_by?: string | null; delivered_by?: string | null; delivered_at?: string | null; karigar_due_back?: string | null;
 };
 type Pipe = { received: number; with_karigar: number; ready: number; pending_delivery: number; delivered_today: number; overdue: number };
 
@@ -126,8 +127,11 @@ export default function RepairOrdersScreen() {
         ) : items.map((i) => {
           const isOverdue = !!i.due_date && i.due_date < todayISO && i.status !== 'delivered' && i.status !== 'pending_delivery';
           // Pill reflects the item's own live stage in the lifecycle.
-          const pill: { label: string; tone: StageTone } = isOverdue ? { label: 'Overdue', tone: 'bad' }
-            : i.status === 'received' ? { label: 'Pending issue', tone: 'info' }
+          // Late to the customer (past the promised date) and/or late from the karigar
+          // (past the due-back date set at issue) — shown as red tags under the details.
+          const custLate = isOverdue ? daysLate(i.due_date) : 0;
+          const karLate = i.status === 'with_karigar' ? daysLate(i.karigar_due_back) : 0;
+          const pill: { label: string; tone: StageTone } = i.status === 'received' ? { label: 'Pending issue', tone: 'info' }
             : i.status === 'with_karigar' ? { label: 'With karigar', tone: 'warn' }
             : i.status === 'ready' ? { label: 'To bill', tone: 'good' }
             : i.status === 'pending_delivery' ? { label: 'To deliver', tone: 'brand' }
@@ -174,6 +178,8 @@ export default function RepairOrdersScreen() {
                   <Text style={styles.detail} numberOfLines={2}>
                     {detailParts.map((p, idx) => <Text key={idx}>{idx > 0 ? ' · ' : ''}{p}</Text>)}
                   </Text>
+                  {karLate > 0 && <OverdueTag text={`Overdue from ${i.karigar_name || 'karigar'}`} days={karLate} testID={`overdue-karigar-${i.id}`} />}
+                  {custLate > 0 && <OverdueTag text="Overdue to customer" days={custLate} testID={`overdue-customer-${i.id}`} />}
                 </View>
                 <View style={[styles.pill, { backgroundColor: toneBg(pill.tone) }]}><Text style={[styles.pillText, { color: toneColor(pill.tone) }]}>{pill.label}</Text></View>
               </View>
