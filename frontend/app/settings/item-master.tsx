@@ -10,6 +10,7 @@ import { api } from '@/src/api/client';
 import { confirmAction } from '@/src/utils/confirm';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { GlassButton } from '@/src/components/ui/GlassButton';
 
 type ItemMaster = { id: string; name: string; purity: number; category: string; active: boolean };
 
@@ -82,13 +83,13 @@ export default function ItemMasterScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="item-master-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
+        <GlassButton onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-        </Pressable>
+        </GlassButton>
         <Text style={styles.title}>Items & Purity</Text>
-        <Pressable onPress={() => (showForm ? closeForm() : setShowForm(true))} style={[styles.iconBtn, styles.addTopBtn]} testID="show-add-item-btn" hitSlop={12}>
+        <GlassButton onPress={() => (showForm ? closeForm() : setShowForm(true))} style={[styles.iconBtn, styles.addTopBtn]} testID="show-add-item-btn" hitSlop={12}>
           <Ionicons name={showForm ? 'close' : 'add'} size={22} color={colors.onBrandPrimary} />
-        </Pressable>
+        </GlassButton>
       </View>
 
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>

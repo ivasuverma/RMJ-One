@@ -7,6 +7,7 @@ import { api } from '@/src/api/client';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { ErrorState } from '@/src/components/ui';
+import { GlassButton } from '@/src/components/ui/GlassButton';
 
 type Karigar = {
   id: string; name: string; mobile: string; is_employee: boolean; active: boolean;
@@ -49,13 +50,13 @@ export default function KarigarLedgerPickerScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="karigar-ledger-picker-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
+        <GlassButton onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-        </Pressable>
+        </GlassButton>
         <Text style={styles.title}>Karigar Ledger</Text>
-        <Pressable onPress={() => router.push('/karigars' as any)} style={[styles.iconBtn, styles.addBtn]} testID="karigar-manage-btn" hitSlop={12}>
+        <GlassButton onPress={() => router.push('/karigars' as any)} style={[styles.iconBtn, styles.addBtn]} testID="karigar-manage-btn" hitSlop={12}>
           <Ionicons name="add" size={22} color={colors.onBrandPrimary} />
-        </Pressable>
+        </GlassButton>
       </View>
 
       <View style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.md }}>

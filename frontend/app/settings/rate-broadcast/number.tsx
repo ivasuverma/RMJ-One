@@ -8,6 +8,7 @@ import { useTheme } from '@/src/theme/ThemeContext';
 import { useToast } from '@/src/components/ui';
 import { Header, makeStyles, MetaStatus } from './_shared';
 import { HeaderSpacer } from '@/src/components/ui/StickyHeader';
+import { GlassButton } from '@/src/components/ui/GlassButton';
 
 type Diag = {
   app_secret_set: boolean; verify_token_set: boolean;
@@ -100,7 +101,7 @@ export default function BroadcastNumberScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="broadcast-number-screen">
       <Header title="Official number" colors={colors}
-        right={<Pressable onPress={load} style={styles.iconBtn} hitSlop={12} accessibilityRole="button" accessibilityLabel="Refresh status"><Ionicons name="refresh" size={18} color={colors.onSurface} /></Pressable>} />
+        right={<GlassButton onPress={load} style={styles.iconBtn} hitSlop={12} accessibilityRole="button" accessibilityLabel="Refresh status"><Ionicons name="refresh" size={18} color={colors.onSurface} /></GlassButton>} />
       {!loaded ? <View style={styles.centered}><ActivityIndicator color={colors.brandPrimary} /></View> : (
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled"
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}>

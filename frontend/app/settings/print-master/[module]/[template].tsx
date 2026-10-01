@@ -8,6 +8,7 @@ import { api } from '@/src/api/client';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { Templates, TemplateCfg, SAMPLE_VALUES, PREVIEW_HEADINGS, clampSize } from '../_shared';
+import { GlassButton } from '@/src/components/ui/GlassButton';
 
 // One field row in the editor — `size: null` means "use the template's
 // overall Text Size above"; an explicit number is a per-field override.
@@ -152,9 +153,9 @@ export default function PrintMasterTemplateScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="print-master-template-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
+        <GlassButton onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-        </Pressable>
+        </GlassButton>
         <Text style={styles.title} numberOfLines={1}>{meta.label}</Text>
         {saving ? <ActivityIndicator size="small" color={colors.brandPrimary} /> : <View style={{ width: 22 }} />}
       </View>

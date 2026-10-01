@@ -13,6 +13,7 @@ import { istDateTime } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { ErrorState } from '@/src/components/ui';
+import { GlassButton } from '@/src/components/ui/GlassButton';
 
 type InterestMonth = { period: string; date: string; amount: number; paid: boolean; paid_date: string | null };
 type InterestSegment = { from: string; to: string; days: number; balance: number; amount: number };
@@ -139,9 +140,9 @@ export default function GoldLoanDetailScreen() {
     return (
       <SafeAreaView style={styles.root} edges={['top']}>
         <View style={styles.header}>
-          <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
+          <GlassButton onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
             <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-          </Pressable>
+          </GlassButton>
           <View style={{ flex: 1 }} /><View style={{ width: 40 }} />
         </View>
         {loading ? <View style={styles.loader}><ActivityIndicator color={colors.brandPrimary} /></View>
@@ -173,11 +174,11 @@ export default function GoldLoanDetailScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="loan-detail-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
+        <GlassButton onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-        </Pressable>
+        </GlassButton>
         <Text style={styles.title} numberOfLines={1}>{loan.loan_no}</Text>
-        <Pressable
+        <GlassButton
           onPress={() => router.push(
             `/loans/calculator?grossWeight=${loan.weight}&receivable=${loan.total_outstanding}&loanNo=${loan.loan_no}`
             + `&principal=${loan.principal}&interestDue=${loan.interest_due}&interestPaid=${loan.interest_paid}` as any,
@@ -185,16 +186,16 @@ export default function GoldLoanDetailScreen() {
           style={styles.iconBtn} testID="open-calculator-btn" hitSlop={12}
         >
           <Ionicons name="calculator-outline" size={18} color={colors.onSurface} />
-        </Pressable>
+        </GlassButton>
         {isActive && canEdit && (
-          <Pressable onPress={() => router.push(`/loans/new?id=${loan.id}` as any)} style={styles.iconBtn} testID="edit-loan-btn" hitSlop={12}>
+          <GlassButton onPress={() => router.push(`/loans/new?id=${loan.id}` as any)} style={styles.iconBtn} testID="edit-loan-btn" hitSlop={12}>
             <Ionicons name="pencil-outline" size={18} color={colors.onSurface} />
-          </Pressable>
+          </GlassButton>
         )}
         {canDelete && (
-          <Pressable onPress={remove} disabled={deleting} style={styles.iconBtn} testID="delete-loan-btn" hitSlop={12}>
+          <GlassButton onPress={remove} disabled={deleting} style={styles.iconBtn} testID="delete-loan-btn" hitSlop={12}>
             {deleting ? <ActivityIndicator size="small" color={colors.onError} /> : <Ionicons name="trash-outline" size={18} color={colors.onError} />}
-          </Pressable>
+          </GlassButton>
         )}
       </View>
 

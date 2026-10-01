@@ -9,6 +9,7 @@ import { istDisplayDateTime } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { useToast } from '@/src/components/ui';
+import { GlassButton } from '@/src/components/ui/GlassButton';
 
 type Status = { connected: boolean; email?: string | null; env_ready: boolean; connected_at?: string | null };
 
@@ -45,9 +46,9 @@ export default function GoogleDriveScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="google-drive-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} hitSlop={12} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back"><Ionicons name="chevron-back" size={22} color={colors.onSurface} /></Pressable>
+        <GlassButton onPress={() => router.back()} style={styles.iconBtn} hitSlop={12} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back"><Ionicons name="chevron-back" size={22} color={colors.onSurface} /></GlassButton>
         <Text style={styles.title}>Google Drive</Text>
-        <Pressable onPress={load} style={styles.iconBtn} hitSlop={12} testID="drive-refresh" accessibilityRole="button" accessibilityLabel="Refresh"><Ionicons name="refresh" size={19} color={colors.onSurface} /></Pressable>
+        <GlassButton onPress={load} style={styles.iconBtn} hitSlop={12} testID="drive-refresh" accessibilityRole="button" accessibilityLabel="Refresh"><Ionicons name="refresh" size={19} color={colors.onSurface} /></GlassButton>
       </View>
 
       <ScrollView contentContainerStyle={{ padding: spacing.lg }}>

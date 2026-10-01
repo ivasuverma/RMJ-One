@@ -12,6 +12,7 @@ import { confirmAction } from '@/src/utils/confirm';
 import { useAuth } from '@/src/auth/AuthContext';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { GlassButton } from '@/src/components/ui/GlassButton';
 
 const fmtINR = (n: number) => `₹${(n || 0).toLocaleString('en-IN')}`;
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -429,9 +430,9 @@ function Header({ title, onBack }: { title: string; onBack: () => void }) {
   const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <View style={styles.header}>
-      <Pressable onPress={onBack} style={styles.iconBtn} testID="back-btn" hitSlop={12} accessibilityRole="button" accessibilityLabel="Back">
+      <GlassButton onPress={onBack} style={styles.iconBtn} testID="back-btn" hitSlop={12} accessibilityRole="button" accessibilityLabel="Back">
         <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-      </Pressable>
+      </GlassButton>
       <Text style={styles.title}>{title}</Text>
       <View style={{ width: 40 }} />
     </View>

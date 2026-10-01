@@ -10,6 +10,7 @@ import { api } from '@/src/api/client';
 import { confirmAction } from '@/src/utils/confirm';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { GlassButton } from '@/src/components/ui/GlassButton';
 
 type Karigar = { id: string; name: string; mobile: string; is_employee: boolean; employee_id: string | null; active: boolean };
 type Emp = { id: string; name: string; employee_code: string; designation?: string };
@@ -115,13 +116,13 @@ export default function KarigarsScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="karigars-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
+        <GlassButton onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-        </Pressable>
+        </GlassButton>
         <Text style={styles.title}>Karigars</Text>
-        <Pressable onPress={openAdd} style={[styles.iconBtn, styles.addBtn]} testID="new-karigar-btn" hitSlop={12}>
+        <GlassButton onPress={openAdd} style={[styles.iconBtn, styles.addBtn]} testID="new-karigar-btn" hitSlop={12}>
           <Ionicons name={showForm && !editingId ? 'close' : 'add'} size={22} color={colors.onBrandPrimary} />
-        </Pressable>
+        </GlassButton>
       </View>
 
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>

@@ -17,6 +17,7 @@ import { api } from '@/src/api/client';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { ErrorState, SegmentedControl } from '@/src/components/ui';
+import { GlassButton } from '@/src/components/ui/GlassButton';
 
 type Emp = {
   id: string; name: string; employee_code: string; department: string;
@@ -42,6 +43,7 @@ export default function EmployeesScreen() {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [items, setItems] = useState<Emp[]>([]);
+  const [notifOff, setNotifOff] = useState(0);   // staff with notifications off
   const [q, setQ] = useState('');
   const [filter, setFilter] = useState<string>('active');   // open on active staff by default
   const [loading, setLoading] = useState(true);
@@ -66,7 +68,10 @@ export default function EmployeesScreen() {
     }
   }, [q, filter]);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useFocusEffect(useCallback(() => {
+    load();
+    api.get<{ off: number }>('/notifications/staff-status').then((r) => setNotifOff(r.off || 0)).catch(() => {});
+  }, [load]));
 
   const onRefresh = () => { setRefreshing(true); load(); };
 
@@ -105,6 +110,13 @@ export default function EmployeesScreen() {
           <View style={styles.countBadge}>
             <Text style={styles.countBadgeText}>{items.length}</Text>
           </View>
+          {/* Who hasn't turned on notifications (Settings › Staff Notifications). */}
+          <GlassButton onPress={() => router.push('/settings/staff-notifications' as any)} style={styles.notifBtn}
+            testID="staff-notif-btn" accessibilityRole="button"
+            accessibilityLabel={notifOff ? `${notifOff} staff have notifications off` : 'Staff notifications'}>
+            <Ionicons name={notifOff ? 'notifications-off-outline' : 'notifications-outline'} size={20} color={colors.onSurface} />
+            {notifOff > 0 && <View style={styles.notifDot}><Text style={styles.notifDotText}>{notifOff}</Text></View>}
+          </GlassButton>
         </View>
         {from === 'transactions' && <Text style={styles.ledgerHint}>Tap an employee to open their ledger</Text>}
 
@@ -221,6 +233,9 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surfaceSecondary,
     alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border,
   },
+  notifBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surfaceSecondary, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, alignItems: 'center', justifyContent: 'center', marginLeft: spacing.sm },
+  notifDot: { position: 'absolute', top: -4, right: -4, minWidth: 18, height: 18, borderRadius: 9, paddingHorizontal: 4, backgroundColor: colors.onError, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: colors.surface },
+  notifDotText: { color: '#fff', fontSize: 10.5, fontWeight: '800' },
   countBadge: {
     minWidth: 34, height: 26, paddingHorizontal: 10, borderRadius: radius.pill,
     backgroundColor: colors.brandTertiary, alignItems: 'center', justifyContent: 'center',

@@ -8,6 +8,7 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import { api } from '@/src/api/client';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { GlassButton } from '@/src/components/ui/GlassButton';
 
 type Msg = { id: string; role: 'user' | 'assistant'; text: string };
 
@@ -64,9 +65,9 @@ export default function AssistantScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="assistant-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
+        <GlassButton onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-        </Pressable>
+        </GlassButton>
         <View style={{ flex: 1 }}>
           <Text style={styles.title}>RMJ AI</Text>
           <Text style={styles.subtitle}>Read-only assistant · Gemini 3 Flash</Text>

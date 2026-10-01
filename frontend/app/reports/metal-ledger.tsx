@@ -10,6 +10,7 @@ import { istDate } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { LedgerFilter, filterQuery, type LedgerFilterValue } from '@/src/components/LedgerFilter';
+import { GlassButton } from '@/src/components/ui/GlassButton';
 
 type MetalType = 'in' | 'out' | 'loss' | 'opening';
 type MetalEntry = {
@@ -99,9 +100,9 @@ export default function MetalLedgerScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="metal-ledger-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
+        <GlassButton onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-        </Pressable>
+        </GlassButton>
         <Text style={styles.title}>Metal Ledger</Text>
         <View style={{ width: 40 }} />
       </View>

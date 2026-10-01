@@ -7,6 +7,7 @@ import { api } from '@/src/api/client';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { ErrorState } from '@/src/components/ui';
+import { GlassButton } from '@/src/components/ui/GlassButton';
 
 type Employee = {
   id: string; name: string; employee_code: string; designation?: string;
@@ -52,9 +53,9 @@ export default function EmployeeLedgerPickerScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="employee-ledger-picker-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
+        <GlassButton onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-        </Pressable>
+        </GlassButton>
         <Text style={styles.title}>Employee Ledger</Text>
         <View style={{ width: 40 }} />
       </View>

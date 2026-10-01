@@ -14,6 +14,7 @@ import { useTheme } from '@/src/theme/ThemeContext';
 import { Skeleton } from '@/src/components/ui';
 import { StickyHeader, useScrolled, HeaderSpacer } from '@/src/components/ui/StickyHeader';
 import { TabBarSpacer } from '@/src/components/GlassTabBar';
+import { GlassButton } from '@/src/components/ui/GlassButton';
 import { UploadQueueBadge } from '@/src/components/UploadQueueBadge';
 import { makeHomeStyles } from './styles';
 import { StaffSheet } from './StaffSheet';
@@ -239,11 +240,11 @@ export default function HomeBriefing() {
             <Text style={s.hi} numberOfLines={1}>{greeting}{firstName ? `, ${firstName}` : ''}</Text>
           </View>
           <UploadQueueBadge />
-          <Pressable onPress={() => go('/repairs/search')} style={s.roundBtn} accessibilityLabel="Search" testID="home-search"><Ionicons name="search-outline" size={19} color={colors.onSurface} /></Pressable>
-          <Pressable onPress={() => go('/notifications')} style={s.roundBtn} accessibilityLabel="Notifications" testID="home-bell">
+          <GlassButton onPress={() => go('/repairs/search')} style={s.roundBtn} accessibilityLabel="Search" testID="home-search"><Ionicons name="search-outline" size={19} color={colors.onSurface} /></GlassButton>
+          <GlassButton onPress={() => go('/notifications')} style={s.roundBtn} accessibilityLabel="Notifications" testID="home-bell">
             <Ionicons name="notifications-outline" size={19} color={colors.onSurface} />
             {!!header?.unread_notifications && <View style={s.bellDot} />}
-          </Pressable>
+          </GlassButton>
         </View>
       </StickyHeader>
 

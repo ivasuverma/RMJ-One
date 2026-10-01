@@ -13,6 +13,7 @@ import { confirmAction } from '@/src/utils/confirm';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { ToggleSwitch } from '@/src/components/ui/ToggleSwitch';
+import { GlassButton } from '@/src/components/ui/GlassButton';
 
 // Was "Store Settings" — renamed since almost everything on this page (fence,
 // shift hours, app check-in toggle, payroll rules) is attendance/payroll
@@ -109,9 +110,9 @@ export default function AttendanceSettings() {
     return (
       <SafeAreaView style={styles.root} edges={['top']}>
         <View style={styles.header}>
-          <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
+          <GlassButton onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
             <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-          </Pressable>
+          </GlassButton>
           <View style={{ flex: 1 }} />
           <View style={{ width: 40 }} />
         </View>
@@ -123,9 +124,9 @@ export default function AttendanceSettings() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="attendance-settings-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
+        <GlassButton onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-        </Pressable>
+        </GlassButton>
         <Text style={styles.title}>Attendance Settings</Text>
         <View style={{ width: 40 }} />
       </View>

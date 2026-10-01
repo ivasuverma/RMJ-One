@@ -14,6 +14,7 @@ import { DateField } from '@/src/components/DateField';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { PartyByMobile, resolveParty } from '@/src/components/PartyByMobile';
+import { GlassButton } from '@/src/components/ui/GlassButton';
 
 type Customer = { id: string; name: string; mobile: string; address: string };
 type RepairType = { id: string; name: string; default_labour: number; requires_karigar_default: boolean; active: boolean };
@@ -127,9 +128,9 @@ export default function NewRepairOrderScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="repair-new-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
+        <GlassButton onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-        </Pressable>
+        </GlassButton>
         <Text style={styles.title}>New Repair Intake</Text>
         <View style={{ width: 40 }} />
       </View>

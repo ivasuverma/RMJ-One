@@ -9,6 +9,7 @@ import { useAuth } from '@/src/auth/AuthContext';
 import { localDateStr, todayIST } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { GlassButton } from '@/src/components/ui/GlassButton';
 
 // Owner-only repairs dashboard — same day/week/month shape as Cash Book
 // Analytics: how much came in, how much went out, revenue billed, and
@@ -88,9 +89,9 @@ export default function RepairsAnalyticsScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="repairs-analytics-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
+        <GlassButton onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-        </Pressable>
+        </GlassButton>
         <Text style={styles.title}>Repairs Analytics</Text>
         <View style={{ width: 40 }} />
       </View>

@@ -20,6 +20,7 @@ import { DateField } from '@/src/components/DateField';
 import { PhotoCaptureModal } from '@/src/components/PhotoCaptureModal';
 import { useAccessEditor } from '@/src/hooks/use-access-editor';
 import { EmployeeAccessAlerts } from '@/src/components/EmployeeAccessAlerts';
+import { GlassButton } from '@/src/components/ui/GlassButton';
 
 const BASE = process.env.EXPO_PUBLIC_BACKEND_URL || '';
 
@@ -222,9 +223,9 @@ export default function EmployeeProfile() {
     return (
       <SafeAreaView style={styles.root} edges={['top']}>
         <View style={styles.headerBar}>
-          <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
+          <GlassButton onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
             <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-          </Pressable>
+          </GlassButton>
         </View>
         <View style={styles.centered}>
           <ActivityIndicator color={colors.brandPrimary} size="large" />
@@ -252,16 +253,16 @@ export default function EmployeeProfile() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="employee-profile">
       <View style={styles.headerBar}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
+        <GlassButton onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-        </Pressable>
+        </GlassButton>
         <View style={{ flex: 1 }} />
         <Pressable onPress={() => router.push(`/employee/edit/${emp.id}`)} style={styles.editLink} testID="edit-btn" hitSlop={12}>
           <Text style={styles.editLinkText}>Edit</Text>
         </Pressable>
-        <Pressable onPress={() => setMenuOpen(true)} style={[styles.iconBtn, { marginLeft: spacing.sm }]} testID="menu-btn" hitSlop={12}>
+        <GlassButton onPress={() => setMenuOpen(true)} style={[styles.iconBtn, { marginLeft: spacing.sm }]} testID="menu-btn" hitSlop={12}>
           <Ionicons name="ellipsis-horizontal" size={20} color={colors.onSurface} />
-        </Pressable>
+        </GlassButton>
       </View>
 
       <ScrollView

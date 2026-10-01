@@ -9,6 +9,7 @@ import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { ErrorState } from '@/src/components/ui';
 import { StatementSheet } from '@/src/components/StatementSheet';
+import { GlassButton } from '@/src/components/ui/GlassButton';
 
 type Customer = { id: string; name: string; mobile: string; address: string };
 type Order = { id: string; order_no: string; created_at: string; status: string; item_count?: number };
@@ -41,9 +42,9 @@ export default function CustomerDetailScreen() {
     return (
       <SafeAreaView style={styles.root} edges={['top']}>
         <View style={styles.header}>
-          <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
+          <GlassButton onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
             <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-          </Pressable>
+          </GlassButton>
           <View style={{ flex: 1 }} />
           <View style={{ width: 40 }} />
         </View>
@@ -59,13 +60,13 @@ export default function CustomerDetailScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="customer-detail-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
+        <GlassButton onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-        </Pressable>
+        </GlassButton>
         <Text style={styles.title} numberOfLines={1}>{customer.name}</Text>
-        <Pressable onPress={() => setStmtOpen(true)} style={styles.iconBtn} testID="customer-statement-btn" hitSlop={12}>
+        <GlassButton onPress={() => setStmtOpen(true)} style={styles.iconBtn} testID="customer-statement-btn" hitSlop={12}>
           <Ionicons name="document-text-outline" size={20} color={colors.onSurface} />
-        </Pressable>
+        </GlassButton>
       </View>
 
       <ScrollView contentContainerStyle={{ padding: spacing.lg }}>

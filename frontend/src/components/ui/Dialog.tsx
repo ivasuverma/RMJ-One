@@ -4,6 +4,7 @@ import { Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native
 import * as Haptics from 'expo-haptics';
 import { fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { GlassSurface } from './GlassSurface';
 
 export type DialogButton = { label: string; style?: 'default' | 'cancel' | 'destructive'; onPress?: () => void };
 type DialogSpec = { title: string; message?: string; buttons: DialogButton[] };
@@ -51,7 +52,8 @@ export function DialogHost() {
 
   const content = (
     <Pressable style={styles.backdrop} onPress={() => cancel && press(cancel)} accessibilityLabel="Dismiss">
-      <Pressable style={styles.card} accessibilityRole="alert" onPress={() => {}}>
+      <Pressable style={styles.cardWrap} accessibilityRole="alert" onPress={() => {}}>
+       <GlassSurface material="thick" style={styles.card}>
         <View style={styles.body}>
           <Text style={styles.title}>{dialog?.title}</Text>
           {!!dialog?.message && <Text style={styles.message}>{dialog.message}</Text>}
@@ -76,6 +78,7 @@ export function DialogHost() {
             </Pressable>
           ))}
         </View>
+       </GlassSurface>
       </Pressable>
     </Pressable>
   );
@@ -98,8 +101,9 @@ export function DialogHost() {
 
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   webLayer: { position: 'fixed' as any, top: 0, left: 0, right: 0, bottom: 0, zIndex: 100000 },
-  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', alignItems: 'center', justifyContent: 'center', padding: 24 },
-  card: { width: 290, maxWidth: '100%', backgroundColor: colors.surfaceSecondary, borderRadius: 16, overflow: 'hidden' },
+  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.3)', alignItems: 'center', justifyContent: 'center', padding: 24 },
+  cardWrap: { width: 290, maxWidth: '100%' },
+  card: { borderRadius: 16, overflow: 'hidden', borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
   body: { paddingHorizontal: 18, paddingTop: 20, paddingBottom: 18, alignItems: 'center', gap: 6 },
   title: { color: colors.onSurface, fontSize: 17, fontWeight: '600', textAlign: 'center', fontFamily: fonts.display },
   message: { color: colors.onSurfaceSecondary, fontSize: 13, lineHeight: 18, textAlign: 'center' },

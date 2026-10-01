@@ -5,6 +5,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { GlassSurface } from './GlassSurface';
 import { radius, spacing, fonts, ThemeColors } from '@/src/theme';
 
 // A bottom sheet that behaves like a real object (Apple §1–6): it springs in,
@@ -77,12 +78,15 @@ export function Sheet({ visible, onClose, title, children, testID }: {
         </Animated.View>
         <GestureDetector gesture={pan}>
           <Animated.View
-            style={[styles.sheet, sheetStyle]}
+            style={sheetStyle}
             onLayout={(e) => { const h = e.nativeEvent.layout.height; if (h > 0) sheetH.value = h; }}
           >
-            <View style={styles.grab} />
-            {!!title && <Text style={styles.title}>{title}</Text>}
-            {children}
+            {/* Thick glass, like an iOS sheet — blur/tint from Settings › Glass bar. */}
+            <GlassSurface material="thick" color={colors.surface} style={styles.sheet}>
+              <View style={styles.grab} />
+              {!!title && <Text style={styles.title}>{title}</Text>}
+              {children}
+            </GlassSurface>
           </Animated.View>
         </GestureDetector>
       </View>
@@ -92,10 +96,10 @@ export function Sheet({ visible, onClose, title, children, testID }: {
 
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   root: { flex: 1, justifyContent: 'flex-end' },
-  scrim: { backgroundColor: 'rgba(0,0,0,0.45)' },
+  scrim: { backgroundColor: 'rgba(0,0,0,0.3)' },
   sheet: {
-    backgroundColor: colors.surface, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl,
-    borderWidth: 1, borderColor: colors.border, borderBottomWidth: 0,
+    borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, borderBottomWidth: 0,
     paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.xxl,
   },
   grab: { alignSelf: 'center', width: 40, height: 5, borderRadius: 3, backgroundColor: colors.borderStrong, marginBottom: spacing.md },

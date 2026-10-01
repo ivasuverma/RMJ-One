@@ -8,6 +8,7 @@ import { confirmAction } from '@/src/utils/confirm';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { Sheet, useToast } from '@/src/components/ui';
+import { GlassButton } from '@/src/components/ui/GlassButton';
 
 type Cat = {
   id: string; key: string; label: string; icon: keyof typeof Ionicons.glyphMap;
@@ -40,9 +41,9 @@ export default function DocumentCategoriesScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="doc-categories-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} hitSlop={12} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back"><Ionicons name="chevron-back" size={22} color={colors.onSurface} /></Pressable>
+        <GlassButton onPress={() => router.back()} style={styles.iconBtn} hitSlop={12} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back"><Ionicons name="chevron-back" size={22} color={colors.onSurface} /></GlassButton>
         <Text style={styles.title}>Document Categories</Text>
-        <Pressable onPress={openNew} style={styles.iconBtn} hitSlop={12} testID="doc-cat-add"><Ionicons name="add" size={22} color={colors.onSurface} /></Pressable>
+        <GlassButton onPress={openNew} style={styles.iconBtn} hitSlop={12} testID="doc-cat-add"><Ionicons name="add" size={22} color={colors.onSurface} /></GlassButton>
       </View>
 
       {loading ? (

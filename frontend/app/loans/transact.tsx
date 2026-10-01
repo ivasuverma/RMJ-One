@@ -9,6 +9,7 @@ import { DateField } from '@/src/components/DateField';
 import { todayIST } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { GlassButton } from '@/src/components/ui/GlassButton';
 
 type InterestMonth = { period: string; date: string; amount: number; paid: boolean; projected?: boolean };
 type Loan = {
@@ -144,9 +145,9 @@ export default function GoldLoanTransactScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="loan-transact-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
+        <GlassButton onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-        </Pressable>
+        </GlassButton>
         <Text style={styles.title}>{type === 'topup' ? 'Pay Customer More' : 'Record Payment'}</Text>
         <View style={{ width: 40 }} />
       </View>

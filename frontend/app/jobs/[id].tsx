@@ -8,6 +8,7 @@ import { istDate } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { ErrorState } from '@/src/components/ui';
+import { GlassButton } from '@/src/components/ui/GlassButton';
 
 type Row = {
   id: string; date: string; label: string; note: string; by?: string; fine_delta: number; amount_delta: number; held: number; due: number;
@@ -47,7 +48,7 @@ export default function JobStatementScreen() {
 
   const header = (
     <View style={styles.header}>
-      <Pressable onPress={() => router.back()} style={styles.iconBtn} hitSlop={12} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back"><Ionicons name="chevron-back" size={22} color={colors.onSurface} /></Pressable>
+      <GlassButton onPress={() => router.back()} style={styles.iconBtn} hitSlop={12} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back"><Ionicons name="chevron-back" size={22} color={colors.onSurface} /></GlassButton>
       <Text style={styles.title} numberOfLines={1}>{data ? `${data.job.code} · Job statement` : 'Job statement'}</Text>
       <View style={{ width: 40 }} />
     </View>

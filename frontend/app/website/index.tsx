@@ -9,6 +9,7 @@ import { useTheme } from '@/src/theme/ThemeContext';
 import { useToast } from '@/src/components/ui';
 import { Content, Header, OwnSection, PageSection, SITE_URL, makeStyles } from './_shared';
 import { HeaderSpacer } from '@/src/components/ui/StickyHeader';
+import { GlassButton } from '@/src/components/ui/GlassButton';
 
 // Website — rmj.co.in laid out top to bottom, the way a visitor scrolls it.
 // Tap a part to edit its words and photos (or switch it off); the shop's own
@@ -81,7 +82,7 @@ export default function WebsiteScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="website-screen">
       <Header title="Website" colors={colors}
-        right={<Pressable onPress={openSite} style={styles.iconBtn} hitSlop={12} accessibilityRole="link" accessibilityLabel="Open rmj.co.in"><Ionicons name="open-outline" size={18} color={colors.onSurface} /></Pressable>} />
+        right={<GlassButton onPress={openSite} style={styles.iconBtn} hitSlop={12} accessibilityRole="link" accessibilityLabel="Open rmj.co.in"><Ionicons name="open-outline" size={18} color={colors.onSurface} /></GlassButton>} />
       <ScrollView contentContainerStyle={styles.scroll}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}>
         <HeaderSpacer />

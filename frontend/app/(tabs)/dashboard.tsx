@@ -18,6 +18,7 @@ import { LiveRateButton } from '@/src/components/LiveRateButton';
 import { UploadQueueBadge } from '@/src/components/UploadQueueBadge';
 import { TabBarSpacer } from '@/src/components/GlassTabBar';
 import HomeBriefing from '@/src/components/home/HomeBriefing';
+import { GlassButton } from '@/src/components/ui/GlassButton';
 
 type DashboardData = {
   todays_attendance: {
@@ -255,10 +256,10 @@ function LegacyDashboard() {
           </View>
           {hasModule('documents') && <UploadQueueBadge />}
           <LiveRateButton testID="dashboard-rate-btn" />
-          <Pressable onPress={() => router.push('/notifications' as any)} style={styles.iconBtn} testID="notifications-btn" hitSlop={10}>
+          <GlassButton onPress={() => router.push('/notifications' as any)} style={styles.iconBtn} testID="notifications-btn" hitSlop={10}>
             <Ionicons name="notifications-outline" size={19} color={colors.onSurface} />
             {unread > 0 && <View style={styles.bellDot} />}
-          </Pressable>
+          </GlassButton>
         </View>
       )}
     >

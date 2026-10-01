@@ -6,6 +6,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { GlassButton } from '@/src/components/ui/GlassButton';
 
 const COMMON_PURITIES = [
   { label: '24K (99.9%)', value: '99.9' },
@@ -71,13 +72,13 @@ export default function GoldValueCalculatorScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="gold-calculator-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
+        <GlassButton onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-        </Pressable>
+        </GlassButton>
         <Text style={styles.title}>Gold Value Calculator</Text>
-        <Pressable onPress={reset} style={styles.iconBtn} testID="calc-reset-btn" hitSlop={12}>
+        <GlassButton onPress={reset} style={styles.iconBtn} testID="calc-reset-btn" hitSlop={12}>
           <Ionicons name="refresh" size={18} color={colors.onSurface} />
-        </Pressable>
+        </GlassButton>
       </View>
 
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>

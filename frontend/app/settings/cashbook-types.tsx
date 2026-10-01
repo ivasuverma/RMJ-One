@@ -8,6 +8,7 @@ import { api } from '@/src/api/client';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { ToggleSwitch } from '@/src/components/ui/ToggleSwitch';
+import { GlassButton } from '@/src/components/ui/GlassButton';
 
 type EntryType = 'received' | 'paid';
 type QuickName = { id: string; name: string; entry_type: EntryType | null; active?: boolean };
@@ -89,9 +90,9 @@ export default function CashbookTypesScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="cashbook-types-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
+        <GlassButton onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-        </Pressable>
+        </GlassButton>
         <Text style={styles.title}>Cash Pay & Receive Types</Text>
         <View style={{ width: 40 }} />
       </View>
@@ -141,12 +142,12 @@ export default function CashbookTypesScreen() {
                     value={editName} onChangeText={setEditName} onSubmitEditing={() => saveRename(t)} autoFocus
                     style={[styles.input, styles.renameInput]} returnKeyType="done" testID={`cashbook-type-rename-input-${t.id}`}
                   />
-                  <Pressable onPress={() => saveRename(t)} style={styles.iconBtnSm} hitSlop={8} testID={`cashbook-type-rename-save-${t.id}`}>
+                  <GlassButton onPress={() => saveRename(t)} style={styles.iconBtnSm} hitSlop={8} testID={`cashbook-type-rename-save-${t.id}`}>
                     <Ionicons name="checkmark" size={18} color={colors.brandPrimary} />
-                  </Pressable>
-                  <Pressable onPress={() => setEditingId(null)} style={styles.iconBtnSm} hitSlop={8}>
+                  </GlassButton>
+                  <GlassButton onPress={() => setEditingId(null)} style={styles.iconBtnSm} hitSlop={8}>
                     <Ionicons name="close" size={18} color={colors.mutedText} />
-                  </Pressable>
+                  </GlassButton>
                 </>
               ) : (
                 <>
@@ -154,9 +155,9 @@ export default function CashbookTypesScreen() {
                     <Text style={[styles.rowText, t.active === false && styles.rowTextOff]} numberOfLines={1}>{t.name}</Text>
                     {t.active === false && <Text style={styles.offTag}>Hidden · not offered on new entries</Text>}
                   </View>
-                  <Pressable onPress={() => startRename(t)} style={styles.iconBtnSm} hitSlop={8} testID={`cashbook-type-rename-${t.id}`} accessibilityLabel={`Rename ${t.name}`}>
+                  <GlassButton onPress={() => startRename(t)} style={styles.iconBtnSm} hitSlop={8} testID={`cashbook-type-rename-${t.id}`} accessibilityLabel={`Rename ${t.name}`}>
                     <Ionicons name="create-outline" size={18} color={colors.onSurface} />
-                  </Pressable>
+                  </GlassButton>
                   <Pressable onPress={() => toggleActive(t)} hitSlop={8} testID={`cashbook-type-active-${t.id}`}
                     accessibilityRole="switch" accessibilityState={{ checked: t.active !== false }} accessibilityLabel={`${t.name} active`}>
                     <ToggleSwitch value={t.active !== false} />

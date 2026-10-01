@@ -14,6 +14,7 @@ import { makeThumbFromDataUri } from '@/src/utils/imageThumb';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { PartyByMobile, resolveParty } from '@/src/components/PartyByMobile';
+import { GlassButton } from '@/src/components/ui/GlassButton';
 
 type Customer = { id: string; name: string; mobile: string; address: string };
 type GoldLoan = {
@@ -151,9 +152,9 @@ export default function NewGoldLoanScreen() {
     return (
       <SafeAreaView style={styles.root} edges={['top']}>
         <View style={styles.header}>
-          <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
+          <GlassButton onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
             <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-          </Pressable>
+          </GlassButton>
           <View style={{ flex: 1 }} />
         </View>
         <View style={styles.loader}><ActivityIndicator color={colors.brandPrimary} /></View>
@@ -164,9 +165,9 @@ export default function NewGoldLoanScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="loan-new-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
+        <GlassButton onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-        </Pressable>
+        </GlassButton>
         <Text style={styles.title}>{isEdit ? 'Edit Gold Loan' : 'Loan Against Gold'}</Text>
         <View style={{ width: 40 }} />
       </View>

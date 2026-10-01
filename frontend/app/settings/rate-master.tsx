@@ -8,6 +8,7 @@ import { useAuth } from '@/src/auth/AuthContext';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { useToast } from '@/src/components/ui';
+import { GlassButton } from '@/src/components/ui/GlassButton';
 
 type Daily = {
   gold_margin: string; silver_margin: string;
@@ -102,9 +103,9 @@ export default function RateMasterScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="rate-master-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} hitSlop={12} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back"><Ionicons name="chevron-back" size={22} color={colors.onSurface} /></Pressable>
+        <GlassButton onPress={() => router.back()} style={styles.iconBtn} hitSlop={12} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back"><Ionicons name="chevron-back" size={22} color={colors.onSurface} /></GlassButton>
         <Text style={styles.title}>Rate Master</Text>
-        <Pressable onPress={load} style={styles.iconBtn} hitSlop={12}><Ionicons name="refresh" size={18} color={colors.onSurface} /></Pressable>
+        <GlassButton onPress={load} style={styles.iconBtn} hitSlop={12}><Ionicons name="refresh" size={18} color={colors.onSurface} /></GlassButton>
       </View>
 
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 80 }} keyboardShouldPersistTaps="handled"
@@ -179,9 +180,9 @@ export default function RateMasterScreen() {
           <View style={styles.rowHead}>
             <Text style={styles.cardTitle}>Last scrape (diagnostics)</Text>
             {isOwner && (
-              <Pressable onPress={refetchNow} disabled={refetching} style={styles.iconBtn} hitSlop={10} testID="gold-rate-refetch-now">
+              <GlassButton onPress={refetchNow} disabled={refetching} style={styles.iconBtn} hitSlop={10} testID="gold-rate-refetch-now">
                 {refetching ? <ActivityIndicator color={colors.onSurface} size="small" /> : <Ionicons name="cloud-download-outline" size={17} color={colors.onSurface} />}
-              </Pressable>
+              </GlassButton>
             )}
           </View>
           <Text style={styles.hint}>

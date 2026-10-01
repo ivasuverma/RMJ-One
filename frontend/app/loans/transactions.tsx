@@ -10,6 +10,7 @@ import { useAuth } from '@/src/auth/AuthContext';
 import { DateField } from '@/src/components/DateField';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { GlassButton } from '@/src/components/ui/GlassButton';
 
 type Txn = { id: string; type: 'interest_due' | 'payment_interest' | 'payment_principal' | 'topup_principal'; amount: number; date: string; note: string; auto: boolean; created_by: string; created_at: string };
 type Page = { items: Txn[]; total: number; skip: number; limit: number };
@@ -93,9 +94,9 @@ export default function GoldLoanTransactionsScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="loan-transactions-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
+        <GlassButton onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-        </Pressable>
+        </GlassButton>
         <Text style={styles.title}>Transactions{total ? ` (${total})` : ''}</Text>
         <View style={{ width: 40 }} />
       </View>

@@ -12,6 +12,8 @@ import { confirmAction } from '@/src/utils/confirm';
 import { displayDateOnly, displayDateOnlyWithWeekday, istTime24 } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { GlassSurface } from '@/src/components/ui/GlassSurface';
+import { GlassButton } from '@/src/components/ui/GlassButton';
 
 type Day = {
   date: string; weekday: number; status: string; is_sunday: boolean;
@@ -115,9 +117,9 @@ export default function AttendanceCalendarView({ empId, onBack, title = 'Calenda
     <View style={styles.root} testID="calendar-screen">
       {onBack && (
         <View style={styles.header}>
-          <Pressable onPress={onBack} style={styles.iconBtn} testID="back-btn" hitSlop={12} accessibilityRole="button" accessibilityLabel="Back">
+          <GlassButton onPress={onBack} style={styles.iconBtn} testID="back-btn" hitSlop={12} accessibilityRole="button" accessibilityLabel="Back">
             <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-          </Pressable>
+          </GlassButton>
           <Text style={styles.title}>{title}</Text>
           <View style={{ width: 40 }} />
         </View>
@@ -334,7 +336,8 @@ function DayDetail({ day, empId, canEdit, shifts, onClose, onSaved }: {
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalBg}>
         <Pressable style={{ flex: 1 }} onPress={onClose} />
-        <ScrollView style={styles.sheet} contentContainerStyle={{ paddingBottom: 36 }} testID="day-detail-sheet" keyboardShouldPersistTaps="handled">
+        <GlassSurface material="thick" style={styles.sheet}>
+        <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 36 }} testID="day-detail-sheet" keyboardShouldPersistTaps="handled">
           <View style={styles.sheetGrip} />
           <View style={styles.sheetTitleRow}>
             <Text style={styles.sheetTitle}>{displayDateOnlyWithWeekday(day.date)}</Text>
@@ -442,6 +445,7 @@ function DayDetail({ day, empId, canEdit, shifts, onClose, onSaved }: {
             )}
           </View>
         </ScrollView>
+        </GlassSurface>
       </KeyboardAvoidingView>
     </Modal>
   );
@@ -495,11 +499,11 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   legendDot: { width: 12, height: 12, borderRadius: 3, borderWidth: 1.5 },
   legendText: { color: colors.onSurfaceTertiary, fontSize: 11 },
 
-  modalBg: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)' },
+  modalBg: { flex: 1, backgroundColor: 'rgba(0,0,0,0.3)' },
   sheet: {
     maxHeight: '88%',
-    backgroundColor: colors.surfaceSecondary, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg,
-    borderColor: colors.brand, borderTopWidth: 1, padding: spacing.lg, paddingBottom: 36,
+    borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, overflow: 'hidden',
+    borderColor: colors.border, borderTopWidth: StyleSheet.hairlineWidth,
   },
   shiftRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.sm },
   shiftChip: {

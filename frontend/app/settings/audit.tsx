@@ -9,6 +9,7 @@ import { api } from '@/src/api/client';
 import { istDisplayDateTime } from '@/src/utils/datetime';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { GlassButton } from '@/src/components/ui/GlassButton';
 
 type Log = {
   id: string; actor_name: string; actor_role: string; action: string;
@@ -57,9 +58,9 @@ export default function AuditLogsScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="audit-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
+        <GlassButton onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-        </Pressable>
+        </GlassButton>
         <Text style={styles.title}>Audit Logs</Text>
         <View style={{ width: 40 }} />
       </View>

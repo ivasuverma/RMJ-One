@@ -8,6 +8,7 @@ import { notify } from '@/src/utils/notify';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { ToggleSwitch } from '@/src/components/ui/ToggleSwitch';
+import { GlassButton } from '@/src/components/ui/GlassButton';
 
 type Form = {
   enabled: boolean; repair_ready_notice: boolean; repair_ready_template: string;
@@ -69,9 +70,9 @@ export default function WhatsAppSettingsScreen() {
     return (
       <SafeAreaView style={styles.root} edges={['top']}>
         <View style={styles.header}>
-          <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
+          <GlassButton onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
             <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-          </Pressable>
+          </GlassButton>
           <View style={{ flex: 1 }} />
           <View style={{ width: 40 }} />
         </View>
@@ -83,13 +84,13 @@ export default function WhatsAppSettingsScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="whatsapp-settings-screen">
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
+        <GlassButton onPress={() => router.back()} style={styles.iconBtn} testID="back-btn" accessibilityRole="button" accessibilityLabel="Back" hitSlop={12}>
           <Ionicons name="chevron-back" size={22} color={colors.onSurface} />
-        </Pressable>
+        </GlassButton>
         <Text style={styles.title}>WhatsApp</Text>
-        <Pressable onPress={load} style={styles.iconBtn} testID="whatsapp-refresh-btn" hitSlop={12} accessibilityRole="button" accessibilityLabel="Refresh">
+        <GlassButton onPress={load} style={styles.iconBtn} testID="whatsapp-refresh-btn" hitSlop={12} accessibilityRole="button" accessibilityLabel="Refresh">
           <Ionicons name="refresh" size={18} color={colors.onSurface} />
-        </Pressable>
+        </GlassButton>
       </View>
 
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 120 }} keyboardShouldPersistTaps="handled">
