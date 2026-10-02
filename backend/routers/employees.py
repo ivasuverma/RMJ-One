@@ -194,6 +194,42 @@ async def list_employees(
     return docs
 
 
+# What a complete employee profile has. The Home "Needs you today" row and the
+# Incomplete profiles screen both read this list.
+PROFILE_CHECKS = [
+    ('photo', 'Photo'), ('mobile', 'Mobile'), ('address', 'Address'), ('date_of_birth', 'Date of birth'),
+    ('aadhaar', 'Aadhaar'), ('pan', 'PAN'), ('bank', 'Bank details'), ('id_proof', 'ID proof'),
+]
+
+
+async def incomplete_profiles() -> list:
+    """Current employees (not marked as left) whose profile is missing anything in
+    PROFILE_CHECKS: [{id, name, designation, missing: [labels]}], by name."""
+    with_ids = set(await db.documents.distinct('linked_ref.id', {
+        'category_key': 'ids', 'status': 'done', 'deleted': {'$ne': True}, 'linked_ref.type': 'employee'}))
+    proj = {'_id': 0, 'id': 1, 'name': 1, 'designation': 1, 'bank_account': 1, 'bank_ifsc': 1,
+            **{k: 1 for k, _ in PROFILE_CHECKS if k not in ('bank', 'id_proof')}}
+    out = []
+    async for e in db.employees.find({'status': {'$ne': 'inactive'}}, proj).sort('name', 1):
+        def has(key):
+            if key == 'bank':
+                return bool(str(e.get('bank_account') or '').strip() and str(e.get('bank_ifsc') or '').strip())
+            if key == 'id_proof':
+                return e['id'] in with_ids
+            return bool(str(e.get(key) or '').strip())
+        missing = [label for key, label in PROFILE_CHECKS if not has(key)]
+        if missing:
+            out.append({'id': e['id'], 'name': e.get('name') or '', 'designation': e.get('designation') or '', 'missing': missing})
+    return out
+
+
+@router.get('/employees/incomplete')
+async def list_incomplete_profiles(user: dict = Depends(get_current)):
+    if not _can_see_team_data(user):
+        raise HTTPException(status_code=403, detail='No access to employee records')
+    return {'employees': await incomplete_profiles(), 'checks': [label for _, label in PROFILE_CHECKS]}
+
+
 @router.get('/employees/{emp_id}')
 async def get_employee(emp_id: str, user: dict = Depends(get_current)):
     if not _can_see_team_data(user):

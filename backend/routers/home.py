@@ -537,6 +537,18 @@ async def _needs_you(user: dict, s: dict, now: datetime, staff: Optional[dict]) 
                          'title': "Today's rates not sent", 'detail': f"Due by {s['broadcast_deadline']}",
                          'action': 'Check', 'route': '/settings/rate-broadcast', 'can_act': True})
 
+    # Employee profiles still missing details (photo, Aadhaar, bank, ID proof…), by name.
+    if can_view(user, 'team'):
+        from routers.employees import incomplete_profiles
+        todo = await incomplete_profiles()
+        if todo:
+            rows.append({'key': 'profiles_incomplete', 'severity': 'gold', 'module': 'team', 'count': len(todo),
+                         'title': f"{len(todo)} profile{'s' if len(todo) != 1 else ''} to complete",
+                         'detail': (f"{todo[0]['name']}: {', '.join(todo[0]['missing'])}" if len(todo) == 1
+                                    else _names([_first_name(e['name']) for e in todo])),
+                         'action': 'Complete',
+                         'route': f"/employee/{todo[0]['id']}" if len(todo) == 1 else '/employee/incomplete', 'can_act': True})
+
     if staff and staff.get('working_day') and can_view(user, 'attendance'):
         missing = [p for p in staff['people'] if p['status'] == 'not_in']
         if missing:
