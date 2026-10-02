@@ -2067,16 +2067,16 @@ async def _notify_user_impl(user_id: str, title: str, body: str, url: str = '/',
 # None = that channel doesn't exist for this alert. `wa_flow` alerts keep their
 # WhatsApp switch in the WhatsApp settings doc (one source of truth).
 GENERAL_ALERTS = [
-    {'key': 'salary_paid', 'group': 'Payroll', 'label': 'Salary paid', 'to': 'Employee', 'push': True, 'whatsapp': True},
-    {'key': 'ledger_entry', 'group': 'Payroll', 'label': 'Advance, bonus, fine or deduction recorded', 'to': 'Employee', 'push': True, 'whatsapp': True},
-    {'key': 'auto_advance', 'group': 'Payroll', 'label': 'Monthly auto advance credited', 'to': 'Employee', 'push': True, 'whatsapp': True},
-    {'key': 'attendance_check', 'group': 'Payroll', 'label': 'Month-end: check your attendance', 'to': 'Employee', 'push': True, 'whatsapp': False},
-    {'key': 'repair_issued_karigar', 'group': 'Repairs', 'label': 'Repair item issued to karigar', 'to': 'In-house karigar', 'push': True, 'whatsapp': True},
-    {'key': 'repair_ready_notice', 'group': 'Repairs', 'label': 'Repair ready for pickup (Send button)', 'to': 'Customer', 'push': None, 'whatsapp': True, 'wa_flow': True},
-    {'key': 'repair_received_notice', 'group': 'Repairs', 'label': 'Repair received at the shop (Send button)', 'to': 'Customer', 'push': None, 'whatsapp': True, 'wa_flow': True},
-    {'key': 'task_assigned', 'group': 'Tasks', 'label': 'Task assigned', 'to': 'Employee', 'push': True, 'whatsapp': True},
-    {'key': 'task_comment_to_employee', 'group': 'Tasks', 'label': 'Owner/admin commented on their task', 'to': 'Employee', 'push': True, 'whatsapp': True},
-    {'key': 'task_reminder', 'group': 'Tasks', 'label': 'Repeat reminder for a pending task', 'to': 'Employee', 'push': True, 'whatsapp': True},
+    {'key': 'salary_paid', 'module': 'payroll', 'group': 'Payroll', 'label': 'Salary paid', 'to': 'Employee', 'push': True, 'whatsapp': True},
+    {'key': 'ledger_entry', 'module': 'payroll', 'group': 'Payroll', 'label': 'Advance, bonus, fine or deduction recorded', 'to': 'Employee', 'push': True, 'whatsapp': True},
+    {'key': 'auto_advance', 'module': 'payroll', 'group': 'Payroll', 'label': 'Monthly auto advance credited', 'to': 'Employee', 'push': True, 'whatsapp': True},
+    {'key': 'attendance_check', 'module': 'attendance', 'group': 'Payroll', 'label': 'Month-end: check your attendance', 'to': 'Employee', 'push': True, 'whatsapp': False},
+    {'key': 'repair_issued_karigar', 'module': 'repairs', 'group': 'Repairs', 'label': 'Repair item issued to karigar', 'to': 'In-house karigar', 'push': True, 'whatsapp': True},
+    {'key': 'repair_ready_notice', 'module': 'repairs', 'group': 'Repairs', 'label': 'Repair ready for pickup (Send button)', 'to': 'Customer', 'push': None, 'whatsapp': True, 'wa_flow': True},
+    {'key': 'repair_received_notice', 'module': 'repairs', 'group': 'Repairs', 'label': 'Repair received at the shop (Send button)', 'to': 'Customer', 'push': None, 'whatsapp': True, 'wa_flow': True},
+    {'key': 'task_assigned', 'module': 'tasks', 'group': 'Tasks', 'label': 'Task assigned', 'to': 'Employee', 'push': True, 'whatsapp': True},
+    {'key': 'task_comment_to_employee', 'module': 'tasks', 'group': 'Tasks', 'label': 'Owner/admin commented on their task', 'to': 'Employee', 'push': True, 'whatsapp': True},
+    {'key': 'task_reminder', 'module': 'tasks', 'group': 'Tasks', 'label': 'Repeat reminder for a pending task', 'to': 'Employee', 'push': True, 'whatsapp': True},
 ]
 GENERAL_ALERTS_BY_KEY = {a['key']: a for a in GENERAL_ALERTS}
 

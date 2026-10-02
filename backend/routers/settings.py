@@ -411,7 +411,7 @@ async def get_general_alerts(_: dict = Depends(require_owner)):
             whatsapp = bool(wa.get(a['key'], True))
         else:
             whatsapp = None if a['whatsapp'] is None else bool(cur.get('whatsapp', a['whatsapp']))
-        out.append({'key': a['key'], 'group': a['group'], 'label': a['label'], 'to': a['to'], 'push': push, 'whatsapp': whatsapp})
+        out.append({'key': a['key'], 'module': a['module'], 'group': a['group'], 'label': a['label'], 'to': a['to'], 'push': push, 'whatsapp': whatsapp})
     return {'alerts': out}
 
 
