@@ -1,22 +1,24 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { View, Text, Pressable, Switch, ActivityIndicator, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { spacing, radius, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { api } from '@/src/api/client';
 import { AccessEditor, Rights } from '@/src/hooks/use-access-editor';
 
-// Attendance isn't a grantable access module (every employee has their own
-// attendance, nothing to permission), so its alerts get their own card. These
-// are the employee's own alerts (see EMPLOYEE_ATTENDANCE_ALERTS in server.py),
-// each sent by push and/or WhatsApp as chosen here. Unset: push on, WhatsApp off.
-const ATTENDANCE_ALERTS: { key: string; label: string }[] = [
-  { key: 'self_checked_in', label: 'Checked in' },
-  { key: 'self_checked_out', label: 'Checked out' },
-  { key: 'self_missed_checkin', label: 'Missed check-in reminder' },
-  { key: 'self_missed_checkout', label: 'Missed check-out reminder' },
-  { key: 'self_absent', label: 'Marked absent' },
-  { key: 'self_correction_decided', label: 'Correction approved / rejected' },
-  { key: 'self_leave_decided', label: 'Leave approved / rejected' },
+// The employee's own alerts — attendance, pay, tasks, work issued to them (see
+// EMPLOYEE_ATTENDANCE_ALERTS in server.py). This card is the ONLY place they
+// are switched; the owner/admin Notifications page doesn't show them. Each has
+// a default channel (push / WhatsApp) used until it's changed here.
+type OwnAlert = { key: string; group: string; label: string; push: boolean; wa: boolean };
+const OWN_ALERTS_FALLBACK: OwnAlert[] = [
+  { key: 'self_checked_in', group: 'Attendance', label: 'Checked in', push: true, wa: false },
+  { key: 'self_checked_out', group: 'Attendance', label: 'Checked out', push: true, wa: false },
+  { key: 'self_missed_checkin', group: 'Attendance', label: 'Missed check-in reminder', push: true, wa: false },
+  { key: 'self_missed_checkout', group: 'Attendance', label: 'Missed check-out reminder', push: true, wa: false },
+  { key: 'self_absent', group: 'Attendance', label: 'Marked absent', push: true, wa: false },
+  { key: 'self_correction_decided', group: 'Attendance', label: 'Correction approved / rejected', push: true, wa: false },
+  { key: 'self_leave_decided', group: 'Attendance', label: 'Leave approved / rejected', push: true, wa: false },
 ];
 
 const MODULE_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
@@ -76,14 +78,22 @@ export function EmployeeAccessAlerts({ editor, onSave }: { editor: AccessEditor;
     const n = new Set(p); if (n.has(key)) n.delete(key); else n.add(key); return n;
   });
 
+  const [own, setOwn] = useState<OwnAlert[]>(OWN_ALERTS_FALLBACK);
+  useEffect(() => { api.get<OwnAlert[]>('/access/employee-alerts').then(setOwn).catch(() => {}); }, []);
   const onCount = availableModules.filter((m) => mods.has(m.key)).length;
-  const attPush = (k: string) => notifPrefs[k] !== false;
-  const attWa = (k: string) => notifPrefsWhatsapp[k] === true;
-  const attOn = ATTENDANCE_ALERTS.filter((a) => attPush(a.key) || attWa(a.key));
+  const def = (k: string) => own.find((a) => a.key === k);
+  const attPush = (k: string) => (k in notifPrefs ? notifPrefs[k] !== false : def(k)?.push !== false);
+  const attWa = (k: string) => (k in notifPrefsWhatsapp ? notifPrefsWhatsapp[k] === true : !!def(k)?.wa);
+  const attOn = own.filter((a) => attPush(a.key) || attWa(a.key));
   const attSummary = !notifOn ? 'Notifications off' : (() => {
     const p = attOn.filter((a) => attPush(a.key)).length, w = attOn.filter((a) => attWa(a.key)).length;
-    return `${attOn.length} of ${ATTENDANCE_ALERTS.length} alerts · ${p} push · ${w} WhatsApp`;
+    return `${attOn.length} of ${own.length} alerts · ${p} push · ${w} WhatsApp`;
   })();
+  const ownGroups = own.reduce<{ name: string; items: OwnAlert[] }[]>((g, a) => {
+    const last = g[g.length - 1];
+    if (last && last.name === a.group) last.items.push(a); else g.push({ name: a.group, items: [a] });
+    return g;
+  }, []);
 
   return (
     <>
@@ -91,22 +101,22 @@ export function EmployeeAccessAlerts({ editor, onSave }: { editor: AccessEditor;
         <View style={styles.masterRow}>
           <View style={{ flex: 1 }}>
             <Text style={styles.masterTitle}>Allow notifications</Text>
-            <Text style={styles.masterSub}>Push &amp; WhatsApp for modules he can access</Text>
+            <Text style={styles.masterSub}>Push &amp; WhatsApp for this person</Text>
           </View>
           <Switch value={notifOn} onValueChange={setNotifOn} trackColor={{ true: colors.brandPrimary, false: colors.border }} thumbColor={colors.surface} {...({ activeThumbColor: colors.surface } as object)} testID="ea-notif-master" />
         </View>
       </View>
 
-      <Text style={styles.groupLabel}>Attendance</Text>
+      <Text style={styles.groupLabel}>Their own alerts</Text>
       <View style={styles.card}>
         <Pressable
           onPress={() => toggleExpanded('attendance')}
           style={styles.cardHead}
           testID="ea-attendance-head"
         >
-          <View style={styles.modIcon}><Ionicons name="time-outline" size={16} color={colors.brandSecondary} /></View>
+          <View style={styles.modIcon}><Ionicons name="person-circle-outline" size={16} color={colors.brandSecondary} /></View>
           <View style={{ flex: 1, minWidth: 0 }}>
-            <Text style={styles.modTitle}>Attendance</Text>
+            <Text style={styles.modTitle}>Attendance, pay &amp; tasks</Text>
             <Text style={styles.modSub} numberOfLines={1}>{attSummary}</Text>
           </View>
           <Ionicons name={expanded.has('attendance') ? 'chevron-down' : 'chevron-forward'} size={15} color={colors.mutedText} style={{ marginRight: 4 }} />
@@ -116,13 +126,16 @@ export function EmployeeAccessAlerts({ editor, onSave }: { editor: AccessEditor;
             {notifOn ? (
               <>
                 <View style={styles.alertsHead}>
-                  <Text style={[styles.levelNote, { flex: 1 }]}>Their own attendance alerts. Pick push, WhatsApp or both for each.</Text>
+                  <Text style={[styles.levelNote, { flex: 1 }]}>Alerts about their own attendance, pay, tasks and work given to them. Set only here. Pick push, WhatsApp or both.</Text>
                   <View style={styles.channelIcons}>
                     <Ionicons name="notifications-outline" size={13} color={colors.mutedText} />
                     <Ionicons name="logo-whatsapp" size={13} color={colors.mutedText} />
                   </View>
                 </View>
-                {ATTENDANCE_ALERTS.map((al) => {
+                {ownGroups.map((g) => (
+                  <View key={g.name}>
+                  <Text style={styles.ownGroup}>{g.name}</Text>
+                  {g.items.map((al) => {
                   const p = attPush(al.key), w = attWa(al.key);
                   return (
                     <View key={al.key} style={styles.alertRow}>
@@ -131,7 +144,9 @@ export function EmployeeAccessAlerts({ editor, onSave }: { editor: AccessEditor;
                       <ChannelChip icon="logo-whatsapp" on={w} onPress={() => setNotifPrefsWhatsapp((x) => ({ ...x, [al.key]: !w }))} testID={`ea-att-wa-${al.key}`} />
                     </View>
                   );
-                })}
+                  })}
+                  </View>
+                ))}
               </>
             ) : (
               <Text style={styles.levelNote}>Notifications are off for this person.</Text>
@@ -311,6 +326,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   levelBtnText: { color: colors.onSurfaceSecondary, fontSize: 13, fontWeight: '600' },
   levelBtnTextOn: { color: colors.onSurface, fontWeight: '700' },
   levelNote: { color: colors.mutedText, fontSize: 12, marginTop: 6, marginBottom: 6 },
+  ownGroup: { color: colors.brandSecondary, fontSize: 11, fontWeight: '800', letterSpacing: 0.8, textTransform: 'uppercase', marginTop: 12, marginBottom: 2 },
 
   subLabel: { color: colors.mutedText, fontSize: 11.5, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.4, marginTop: spacing.sm, marginBottom: 6 },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },

@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
@@ -14,11 +14,10 @@ import { useAccessEditor, AccessAccount } from '@/src/hooks/use-access-editor';
 import { canReceiveAdminOnly } from '@/src/components/AccessEditorSections';
 import { MODULE_ICON } from '@/src/components/home/sections';
 
-// Settings › Notifications: the one place for owners and admins.
-// Each category shows (1) the alerts the chosen owner/admin gets, and (2) the
-// alerts the shop sends to employees, karigars and customers. Employees keep
-// their simple module on/off on their own profile (Users › employee).
-type General = { key: string; module: string; label: string; to: string; push: boolean | null; whatsapp: boolean | null };
+// Settings › Notifications: alerts to owners and admins, by category — the one
+// place they are set. Everything an employee receives is set only on that
+// employee's profile (Access & Alerts), and customer WhatsApp messages only in
+// WhatsApp settings, so no alert has two switches.
 type Ch = 'push' | 'whatsapp';
 
 const EXTRA_ICON: Record<string, string> = {
@@ -42,22 +41,15 @@ function PersonNotifications({ who, setWho }: { who?: string; setWho: (id: strin
   const { user: me } = useAuth();
   const [people, setPeople] = useState<AccessAccount[]>([]);
   const editor = useAccessEditor(who);
-  const [general, setGeneral] = useState<General[] | null>(null);
-  const [draft, setDraft] = useState<Record<string, Partial<Record<Ch, boolean>>>>({});
 
   useEffect(() => {
     api.get<AccessAccount[]>('/access/accounts')
       .then((a) => setPeople(a.filter((x) => x.account_type === 'user' && x.role !== 'employee')))
       .catch(() => {});
   }, []);
-  const loadGeneral = useCallback(async () => {
-    try { setGeneral((await api.get<{ alerts: General[] }>('/settings/general-alerts')).alerts); } catch { setGeneral([]); }
-  }, []);
-  useFocusEffect(useCallback(() => { loadGeneral(); }, [loadGeneral]));
 
   const { acc, notifOn, setNotifOn, notifModules, notifPrefs, setNotifPrefs, notifPrefsWhatsapp, setNotifPrefsWhatsapp } = editor;
   const adminish = canReceiveAdminOnly(acc?.role);
-  const dirty = Object.keys(draft).length > 0;
 
   // A category switch turns every alert in it on/off together, so nothing
   // underneath is left pointing the other way.
@@ -67,8 +59,6 @@ function PersonNotifications({ who, setWho }: { who?: string; setWho: (id: strin
   };
   const setEvent = (key: string, ch: Ch, v: boolean) =>
     (ch === 'push' ? setNotifPrefs : setNotifPrefsWhatsapp)((p) => ({ ...p, [key]: v }));
-  const genValue = (g: General, ch: Ch) => (draft[g.key]?.[ch] ?? g[ch]);
-  const setGen = (g: General, ch: Ch, v: boolean) => setDraft((d) => ({ ...d, [g.key]: { ...d[g.key], [ch]: v } }));
 
   const [saving, setSaving] = useState(false);
   const save = async () => {
@@ -76,10 +66,6 @@ function PersonNotifications({ who, setWho }: { who?: string; setWho: (id: strin
     try {
       const res = await editor.save();
       if (!res.ok) throw { detail: res.error };
-      for (const [key, chs] of Object.entries(draft)) {
-        for (const [ch, on] of Object.entries(chs)) await api.put('/settings/general-alerts', { key, channel: ch, on });
-      }
-      setDraft({}); await loadGeneral();
       toast.success('Notifications saved');
     } catch (e: any) { toast.error(e?.detail || 'Could not save'); }
     finally { setSaving(false); }
@@ -111,7 +97,7 @@ function PersonNotifications({ who, setWho }: { who?: string; setWho: (id: strin
         {people.length > 1 && (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }} style={{ marginBottom: spacing.md }}>
             {people.map((p) => (
-              <Pressable key={p.id} onPress={() => { if (!dirty && !saving) setWho(p.id); else toast.error('Save first'); }}
+              <Pressable key={p.id} onPress={() => { if (!saving) setWho(p.id); }}
                 style={[styles.chip, who === p.id && styles.chipOn]} testID={`notif-person-${p.id}`}>
                 <Text style={[styles.chipText, who === p.id && styles.chipTextOn]}>{p.id === me?.id ? 'Me' : p.name}</Text>
               </Pressable>
@@ -119,7 +105,7 @@ function PersonNotifications({ who, setWho }: { who?: string; setWho: (id: strin
           </ScrollView>
         )}
 
-        {editor.loading || !acc || !general ? <ActivityIndicator color={colors.brandPrimary} style={{ marginTop: 40 }} /> : (
+        {editor.loading || !acc ? <ActivityIndicator color={colors.brandPrimary} style={{ marginTop: 40 }} /> : (
           <>
             <View style={styles.card}>
               <View style={styles.row}>
@@ -136,8 +122,7 @@ function PersonNotifications({ who, setWho }: { who?: string; setWho: (id: strin
 
             {notifModules.map((m) => {
               const events = (m.events || []).filter((e) => adminish || !e.admin_only);
-              const gen = general.filter((g) => g.module === m.key);
-              if (!events.length && !gen.length) return null;
+              if (!events.length) return null;
               const modOn = notifPrefs[m.key] !== false;
               const modWa = notifPrefsWhatsapp[m.key] !== false;
               const evOn = (k: string, ch: Ch) => (ch === 'push' ? (k in notifPrefs ? notifPrefs[k] !== false : modOn) : (k in notifPrefsWhatsapp ? notifPrefsWhatsapp[k] !== false : modWa));
@@ -152,7 +137,7 @@ function PersonNotifications({ who, setWho }: { who?: string; setWho: (id: strin
                     <Text style={styles.colHead}>WhatsApp</Text>
                   </View>
                   <View style={styles.card}>
-                    {notifOn && events.length > 0 && (
+                    {notifOn ? (
                       <>
                         <View style={[styles.row, styles.allRow]}>
                           <Text style={[styles.label, { flex: 1 }]}>Alerts to {name}</Text>
@@ -167,32 +152,14 @@ function PersonNotifications({ who, setWho }: { who?: string; setWho: (id: strin
                           </View>
                         ))}
                       </>
-                    )}
-                    {gen.length > 0 && (
-                      <>
-                        <View style={[styles.row, (notifOn && events.length > 0) && styles.sep, styles.allRow]}>
-                          <Text style={[styles.label, { flex: 1 }]}>Sent to employees &amp; customers</Text>
-                          <Text style={styles.shop}>Whole shop</Text>
-                        </View>
-                        {gen.map((g) => (
-                          <View key={g.key} style={[styles.row, styles.sep]} testID={`notif-gen-${g.key}`}>
-                            <View style={{ flex: 1, minWidth: 0 }}>
-                              <Text style={styles.evLabel}>{g.label}</Text>
-                              <Text style={styles.sub}>To: {g.to}</Text>
-                            </View>
-                            <Sw value={genValue(g, 'push')} onChange={(v) => setGen(g, 'push', v)} id={`notif-gen-${g.key}-push`} />
-                            <Sw value={genValue(g, 'whatsapp')} onChange={(v) => setGen(g, 'whatsapp', v)} id={`notif-gen-${g.key}-wa`} />
-                          </View>
-                        ))}
-                      </>
-                    )}
+                    ) : <Text style={[styles.sub, { paddingVertical: 12 }]}>Notifications are off for {name}.</Text>}
                   </View>
                 </View>
               );
             })}
 
             <Text style={[styles.hint, { marginTop: spacing.lg }]}>
-              Employees choose by module on their own profile (Users › employee › Notifications): a module on means they get its alerts.
+              Alerts to employees (their pay, tasks, attendance, work issued to them) are set on each employee&apos;s profile: Employees › person › Access &amp; Alerts. Customer WhatsApp messages are in Settings › WhatsApp.
             </Text>
             <Pressable onPress={() => router.push('/settings/staff-notifications' as any)} style={styles.link} testID="notif-staff-link">
               <Ionicons name="people-outline" size={17} color={colors.brandSecondary} />
@@ -232,7 +199,6 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   label: { color: colors.onSurface, fontSize: 14, fontWeight: '700' },
   evLabel: { color: colors.onSurface, fontSize: 14 },
   sub: { color: colors.mutedText, fontSize: 12, marginTop: 1 },
-  shop: { color: colors.mutedText, fontSize: 11.5, fontWeight: '600' },
   col: { width: COL, alignItems: 'center' },
   na: { color: colors.mutedText },
   hint: { color: colors.mutedText, fontSize: 12.5, lineHeight: 18, marginTop: 8 },

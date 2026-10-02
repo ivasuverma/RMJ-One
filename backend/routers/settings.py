@@ -19,8 +19,6 @@ from server import (
     require_admin_or_module_right,
     StoreSettingsIn,
     log_audit,
-    GENERAL_ALERTS,
-    GENERAL_ALERTS_BY_KEY,
     get_whatsapp_status,
     send_whatsapp_channel,
     GOLD_RATE_CHANNEL_ID,
@@ -394,42 +392,3 @@ async def send_gold_rate(body: GoldRateSendIn, user: dict = Depends(require_admi
         led = await push_after_confirm(body.gold_rate, body.silver_rate, force=body.led is True)
     return {'ok': True, 'whatsapp': body.whatsapp, 'led': led, 'status': status}
 
-
-# ---------------- General notifications ----------------
-# Push / WhatsApp switches for alerts that go straight to one person (see
-# GENERAL_ALERTS in server.py). Customer repair notices keep their switch in
-# the WhatsApp settings doc, so both screens show the same value.
-@router.get('/settings/general-alerts')
-async def get_general_alerts(_: dict = Depends(require_owner)):
-    doc = await db.settings.find_one({'id': 'general_alerts'}, {'_id': 0}) or {}
-    wa = await db.settings.find_one({'id': 'whatsapp'}, {'_id': 0}) or {}
-    out = []
-    for a in GENERAL_ALERTS:
-        cur = doc.get(a['key']) or {}
-        push = None if a['push'] is None else cur.get('push', a['push']) is not False
-        if a.get('wa_flow'):
-            whatsapp = bool(wa.get(a['key'], True))
-        else:
-            whatsapp = None if a['whatsapp'] is None else bool(cur.get('whatsapp', a['whatsapp']))
-        out.append({'key': a['key'], 'module': a['module'], 'group': a['group'], 'label': a['label'], 'to': a['to'], 'push': push, 'whatsapp': whatsapp})
-    return {'alerts': out}
-
-
-class GeneralAlertIn(BaseModel):
-    key: str
-    channel: Literal['push', 'whatsapp']
-    on: bool
-
-
-@router.put('/settings/general-alerts')
-async def set_general_alert(body: GeneralAlertIn, user: dict = Depends(require_owner)):
-    a = GENERAL_ALERTS_BY_KEY.get(body.key)
-    if not a or a[body.channel] is None:
-        raise HTTPException(status_code=400, detail='That alert has no such channel')
-    if a.get('wa_flow'):
-        await db.settings.update_one({'id': 'whatsapp'}, {'$set': {body.key: body.on}}, upsert=True)
-    else:
-        await db.settings.update_one({'id': 'general_alerts'}, {'$set': {f'{body.key}.{body.channel}': body.on}}, upsert=True)
-    await log_audit(user, 'settings.general_alert', 'settings', 'general_alerts', a['label'],
-                    {'channel': body.channel, 'on': body.on})
-    return await get_general_alerts(user)
