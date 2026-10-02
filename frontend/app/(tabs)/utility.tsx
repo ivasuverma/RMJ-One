@@ -35,7 +35,7 @@ const GROUPS: GroupDef[] = [
     rows: [
       { key: 'employees', label: 'Employees', sub: 'Your team roster', icon: 'people-outline', route: '/(tabs)/employees' },
       { key: 'user-roles', label: 'Users', sub: 'Access, notifications, documents & logins', icon: 'shield-checkmark-outline', route: '/settings/user-roles' },
-      { key: 'notifications', label: 'Notifications', sub: 'Every alert in one place — for you, admins, employees & customers', icon: 'notifications-outline', route: '/settings/notifications' },
+      { key: 'notifications', label: 'Notifications', sub: 'Shop-wide WhatsApp messages, and owner & admin alerts', icon: 'notifications-outline', route: '/settings/notifications' },
       { key: 'attendance-payroll', label: 'Attendance & Payroll', sub: 'Shifts, holidays, departments, locations, biometric', icon: 'time-outline', route: '/settings/attendance-payroll' },
     ],
   },

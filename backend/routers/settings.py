@@ -158,7 +158,9 @@ async def update_whatsapp_settings(body: WhatsAppSettingsIn, user: dict = Depend
             body.chatbot_rate_template.format(gold_rate=151050, silver_rate=242200, date='04 Sep 2026', time='12:30 PM')
         except Exception as e:
             raise HTTPException(status_code=400, detail=f'Template has an unknown placeholder: {e}')
-    payload = body.model_dump()
+    # Only what was sent — the on/off switches now live on the Notifications
+    # page, so a template save here mustn't write back stale switch values.
+    payload = body.model_dump(exclude_unset=True)
     payload['provider'] = 'openwa'
     payload['id'] = 'whatsapp'
     payload['updated_at'] = now_utc().isoformat()
@@ -253,7 +255,7 @@ class GoldRateConfigIn(BaseModel):
     # once a day, at auto_send_time (IST) — decoupled from refresh_* above,
     # which keeps fetching all day regardless, purely to keep the live rate
     # and the unconfirmed draft fresh.
-    auto_send_enabled: bool = False
+    auto_send_enabled: Optional[bool] = None   # switched on Settings › Notifications › General
     auto_send_time: str = '12:30'
     # Also post the rate to the shop number's WhatsApp Status when it goes to the channel.
     status_enabled: Optional[bool] = None
@@ -315,7 +317,7 @@ async def update_gold_rate_config(body: GoldRateConfigIn, user: dict = Depends(r
         'refresh_enabled': body.refresh_enabled,
         'refresh_interval_min': max(15, body.refresh_interval_min),
         'refresh_start': body.refresh_start, 'refresh_end': body.refresh_end,
-        'auto_send_enabled': body.auto_send_enabled,
+        **({'auto_send_enabled': body.auto_send_enabled} if body.auto_send_enabled is not None else {}),
         **({'status_enabled': body.status_enabled} if body.status_enabled is not None else {}),
         'auto_send_time': body.auto_send_time,
         'skip_weekend_fetch': body.skip_weekend_fetch,
@@ -392,3 +394,48 @@ async def send_gold_rate(body: GoldRateSendIn, user: dict = Depends(require_admi
         led = await push_after_confirm(body.gold_rate, body.silver_rate, force=body.led is True)
     return {'ok': True, 'whatsapp': body.whatsapp, 'led': led, 'status': status}
 
+
+
+# ---------------- General notifications (whole shop) ----------------
+# Shop-wide message switches that aren't about one person: WhatsApp itself,
+# messages to customers, auto-replies and the scheduled rate sends. Shown only
+# in Settings › Notifications › General; each reads/writes the setting it
+# always lived in, so the senders didn't change.
+GENERAL_SWITCHES = [
+    {'key': 'wa_enabled', 'group': 'WhatsApp', 'label': 'Send WhatsApp messages', 'sub': 'Off stops every WhatsApp the app sends', 'doc': 'whatsapp', 'field': 'enabled', 'default': True},
+    {'key': 'repair_ready_notice', 'group': 'Customers', 'label': 'Repair ready for pickup', 'sub': 'WhatsApp when staff tap Send on a ready repair', 'doc': 'whatsapp', 'field': 'repair_ready_notice', 'default': True, 'needs': 'wa_enabled'},
+    {'key': 'repair_received_notice', 'group': 'Customers', 'label': 'Repair received at the shop', 'sub': 'WhatsApp when staff tap Send on a new repair', 'doc': 'whatsapp', 'field': 'repair_received_notice', 'default': True, 'needs': 'wa_enabled'},
+    {'key': 'chatbot_enabled', 'group': 'Auto-replies', 'label': 'Reply to customer messages', 'sub': 'Answers keywords customers send to the shop number', 'doc': 'whatsapp', 'field': 'chatbot_enabled', 'default': False, 'needs': 'wa_enabled'},
+    {'key': 'chatbot_rate_enabled', 'group': 'Auto-replies', 'label': 'RATE → today’s rate', 'sub': '', 'doc': 'whatsapp', 'field': 'chatbot_rate_enabled', 'default': True, 'needs': 'chatbot_enabled'},
+    {'key': 'chatbot_status_enabled', 'group': 'Auto-replies', 'label': 'STATUS → their repair status', 'sub': '', 'doc': 'whatsapp', 'field': 'chatbot_status_enabled', 'default': True, 'needs': 'chatbot_enabled'},
+    {'key': 'gold_auto_send', 'group': 'Gold rate', 'label': 'Post today’s rate to the WhatsApp channel', 'sub': 'Daily, at the time set in Rate Master', 'doc': 'gold_rate_config', 'field': 'auto_send_enabled', 'default': False},
+    {'key': 'gold_status', 'group': 'Gold rate', 'label': 'Also post it to WhatsApp Status', 'sub': '', 'doc': 'gold_rate_config', 'field': 'status_enabled', 'default': True},
+    {'key': 'rb_weekly', 'group': 'Rate broadcast', 'label': 'Weekly rate message to subscribers', 'sub': 'Day and time in Rate Broadcast', 'doc': 'rate_broadcast', 'field': 'weekly_enabled', 'default': False},
+    {'key': 'rb_daily', 'group': 'Rate broadcast', 'label': 'Daily rate message to subscribers', 'sub': 'Time and limit in Rate Broadcast', 'doc': 'rate_broadcast', 'field': 'daily_enabled', 'default': False},
+]
+GENERAL_SWITCHES_BY_KEY = {g['key']: g for g in GENERAL_SWITCHES}
+
+
+@router.get('/settings/general-notifications')
+async def get_general_notifications(_: dict = Depends(require_owner)):
+    docs = {d: (await db.settings.find_one({'id': d}, {'_id': 0}) or {}) for d in {g['doc'] for g in GENERAL_SWITCHES}}
+    return {'switches': [
+        {'key': g['key'], 'group': g['group'], 'label': g['label'], 'sub': g['sub'], 'needs': g.get('needs'),
+         'on': bool(docs[g['doc']].get(g['field'], g['default']))}
+        for g in GENERAL_SWITCHES
+    ]}
+
+
+class GeneralSwitchIn(BaseModel):
+    key: str
+    on: bool
+
+
+@router.put('/settings/general-notifications')
+async def set_general_notification(body: GeneralSwitchIn, user: dict = Depends(require_owner)):
+    g = GENERAL_SWITCHES_BY_KEY.get(body.key)
+    if not g:
+        raise HTTPException(status_code=400, detail='Unknown switch')
+    await db.settings.update_one({'id': g['doc']}, {'$set': {'id': g['doc'], g['field']: body.on}}, upsert=True)
+    await log_audit(user, 'settings.general_notification', 'settings', g['doc'], g['label'], {'on': body.on})
+    return await get_general_notifications(user)

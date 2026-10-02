@@ -534,10 +534,12 @@ async def reset_photo(user: dict = Depends(require_broadcast)):
 
 
 class SettingsIn(BaseModel):
-    weekly_enabled: bool
+    # On/off is switched on Settings › Notifications › General; this screen
+    # only sends it from older app builds.
+    weekly_enabled: Optional[bool] = None
     weekday: int
     time: str
-    daily_enabled: bool = False
+    daily_enabled: Optional[bool] = None
     daily_time: str = '11:30'
     daily_skip_sunday: bool = True
     daily_limit: int
@@ -554,10 +556,10 @@ async def save_settings(body: SettingsIn, user: dict = Depends(require_broadcast
         raise HTTPException(status_code=400, detail='Times must be HH:MM (24-hour), e.g. 11:00')
     if not 1 <= body.daily_limit <= 100000:
         raise HTTPException(status_code=400, detail='Daily limit must be at least 1')
-    data = {**body.model_dump(), 'time': body.time.strip(), 'daily_time': body.daily_time.strip()}
+    data = {**body.model_dump(exclude_none=True), 'time': body.time.strip(), 'daily_time': body.daily_time.strip()}
     await db.settings.update_one({'id': 'rate_broadcast'}, {'$set': {'id': 'rate_broadcast', **data}}, upsert=True)
     await log_audit(user, 'rate_broadcast.settings', 'settings', 'rate_broadcast',
-                    f"weekly {'on' if body.weekly_enabled else 'off'}, daily {'on' if body.daily_enabled else 'off'}")
+                    f"weekday {body.weekday} {body.time}, daily {body.daily_time}")
     return await get_settings()
 
 

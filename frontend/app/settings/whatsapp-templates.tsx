@@ -73,11 +73,8 @@ export default function WhatsAppTemplatesScreen() {
     setSaving(true);
     try {
       await Promise.all([
+        // Wording only; the on/off switches are on Settings › Notifications › General.
         api.put('/settings/whatsapp', {
-          enabled: waSettings.enabled, repair_ready_notice: waSettings.repair_ready_notice,
-          repair_received_notice: waSettings.repair_received_notice,
-          chatbot_enabled: waSettings.chatbot_enabled,
-          chatbot_rate_enabled: waSettings.chatbot_rate_enabled, chatbot_status_enabled: waSettings.chatbot_status_enabled,
           repair_ready_template: repairTemplate || undefined, repair_received_template: repairReceivedTemplate || undefined,
           chatbot_rate_template: chatbotTemplate || undefined,
         }),
@@ -87,7 +84,7 @@ export default function WhatsAppTemplatesScreen() {
           template: goldRateTemplate || undefined,
           refresh_enabled: grConfig.refresh_enabled, refresh_interval_min: grConfig.refresh_interval_min,
           refresh_start: grConfig.refresh_start, refresh_end: grConfig.refresh_end,
-          auto_send_enabled: grConfig.auto_send_enabled, auto_send_time: grConfig.auto_send_time, skip_weekend_fetch: grConfig.skip_weekend_fetch,
+          auto_send_time: grConfig.auto_send_time, skip_weekend_fetch: grConfig.skip_weekend_fetch,
         }),
       ]);
       toast.success('Templates saved');
