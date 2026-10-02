@@ -65,11 +65,7 @@ export function EmployeeIdProofs({ employee, canDelete }: { employee: { id: stri
           {docs.map((d) => (
             <Pressable key={d.id} onPress={() => setViewing(d)} style={styles.tile} testID={`id-doc-${d.id}`}>
               <View style={styles.imgWrap}>
-                {d.file?.mime === 'application/pdf' ? (
-                  <View style={styles.pdf}><Ionicons name="document-text-outline" size={28} color={colors.brandSecondary} /><Text style={styles.pdfText}>PDF</Text></View>
-                ) : token ? (
-                  <Image source={{ uri: fileUri(d.id, true), headers: { Authorization: `Bearer ${token}` } }} style={styles.img} contentFit="cover" cachePolicy="memory-disk" />
-                ) : null}
+                <IdThumb doc={d} token={token} />
               </View>
               <Text style={styles.tileLabel} numberOfLines={1}>{d.note || 'ID proof'}</Text>
               <Text style={styles.tileDate}>{displayDateOnly(d.created_at.slice(0, 10))}</Text>
@@ -85,11 +81,32 @@ export function EmployeeIdProofs({ employee, canDelete }: { employee: { id: stri
           url={fileUri(viewing.id)} token={token}
           name={`${viewing.note || 'ID proof'} ${employee.name}`.replace(/[^\w-]+/g, '-')}
           title={`${viewing.note || 'ID proof'} · ${employee.name}`}
+          docId={viewing.id}
           onClose={() => setViewing(null)}
           onDelete={canDelete ? () => del(viewing) : undefined}
         />
       ) : null}
     </View>
+  );
+}
+
+// A PDF's tile is its first page (drawn by the server), with a PDF badge; an
+// icon if that can't be shown.
+function IdThumb({ doc, token }: { doc: IdDoc; token: string }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+  const [failed, setFailed] = useState(false);
+  const pdf = doc.file?.mime === 'application/pdf';
+  if (!token) return null;
+  if (failed) {
+    return <View style={styles.pdf}><Ionicons name="document-text-outline" size={28} color={colors.brandSecondary} /><Text style={styles.pdfText}>{pdf ? 'PDF' : ''}</Text></View>;
+  }
+  return (
+    <>
+      <Image source={{ uri: fileUri(doc.id, true), headers: { Authorization: `Bearer ${token}` } }} style={styles.img}
+        contentFit="cover" contentPosition={pdf ? 'top' : 'center'} cachePolicy="memory-disk" onError={() => setFailed(true)} />
+      {pdf && <View style={styles.pdfBadge}><Text style={styles.pdfBadgeText}>PDF</Text></View>}
+    </>
   );
 }
 
@@ -237,6 +254,8 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   img: { width: '100%', height: '100%' },
   pdf: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 2 },
   pdfText: { color: colors.brandSecondary, fontSize: 11, fontWeight: '800' },
+  pdfBadge: { position: 'absolute', left: 4, bottom: 4, backgroundColor: 'rgba(0,0,0,0.65)', borderRadius: 6, paddingHorizontal: 5, paddingVertical: 1 },
+  pdfBadgeText: { color: '#fff', fontSize: 10, fontWeight: '800' },
   tileLabel: { color: colors.onSurface, fontSize: 12.5, fontWeight: '700', marginTop: 5 },
   tileDate: { color: colors.mutedText, fontSize: 11 },
   foot: { color: colors.mutedText, fontSize: 11.5, marginTop: spacing.sm, lineHeight: 16 },

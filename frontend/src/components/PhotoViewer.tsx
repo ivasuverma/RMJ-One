@@ -1,23 +1,27 @@
 import { useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, Pressable, ActivityIndicator, Modal, Platform } from 'react-native';
+import { View, Text, StyleSheet, Pressable, ActivityIndicator, Modal, Platform, ScrollView, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { useToast } from '@/src/components/ui';
 import { shareFile, useShareableFile } from '@/src/utils/shareFile';
+import { usePdfPages } from '@/src/utils/pdfPages';
 
 /** A photo (or PDF) full-screen, with Close, Share (the phone's share sheet)
- *  and, when `onDelete` is given, Delete. */
-export function PhotoViewer({ url, token, name, title, onClose, onDelete }: {
-  url: string; token: string; name: string; title?: string; onClose: () => void; onDelete?: () => void;
+ *  and, when `onDelete` is given, Delete. Pass `docId` for a Documents file so
+ *  a PDF shows its pages on screen. */
+export function PhotoViewer({ url, token, name, title, docId, onClose, onDelete }: {
+  url: string; token: string; name: string; title?: string; docId?: string; onClose: () => void; onDelete?: () => void;
 }) {
+  const { width } = useWindowDimensions();
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const toast = useToast();
   const src = useMemo(() => ({ uri: url, headers: { Authorization: `Bearer ${token}` } }), [url, token]);
   const file = useShareableFile(url, token, name);
   const isPdf = file?.type === 'application/pdf';
+  const pages = usePdfPages(isPdf && docId ? docId : null, token);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   useEffect(() => {
     if (!isPdf || !file) { setPdfUrl(null); return; }
@@ -51,22 +55,44 @@ export function PhotoViewer({ url, token, name, title, onClose, onDelete }: {
           </View>
         </View>
         {!!title && <Text style={viewer.title} numberOfLines={1}>{title}</Text>}
-        {isPdf ? (
+        {isPdf && pages && pages.length > 0 ? (
+          <ScrollView contentContainerStyle={{ padding: 8, gap: 8 }} testID="record-photo-pdf-pages">
+            {pages.map((src) => <PdfPage key={src.uri} source={src} width={Math.min(width, 900) - 16} />)}
+            <OpenPdf url={pdfUrl} />
+          </ScrollView>
+        ) : isPdf && docId && pages === undefined ? (
+          <ActivityIndicator color="#fff" size="large" style={{ flex: 1 }} />
+        ) : isPdf ? (
           // Phones don't reliably show a PDF inside a page (Android Chrome shows
           // nothing), so hand it to the phone's own PDF viewer.
           <View style={viewer.pdf}>
             <Ionicons name="document-text-outline" size={56} color="#fff" />
             <Text style={viewer.pdfText}>PDF document</Text>
-            <Pressable onPress={() => pdfUrl && Platform.OS === 'web' && window.open(pdfUrl, '_blank')} style={[viewer.btn, viewer.pdfBtn]} testID="record-photo-open-pdf">
-              {pdfUrl ? <Ionicons name="open-outline" size={18} color="#fff" /> : <ActivityIndicator size="small" color="#fff" />}
-              <Text style={viewer.btnText}>Open PDF</Text>
-            </Pressable>
+            <OpenPdf url={pdfUrl} />
           </View>
         ) : (
           <Image source={src} style={{ flex: 1 }} contentFit="contain" transition={120} />
         )}
       </View>
     </Modal>
+  );
+}
+
+function OpenPdf({ url }: { url: string | null }) {
+  return (
+    <Pressable onPress={() => url && Platform.OS === 'web' && window.open(url, '_blank')} style={[viewer.btn, viewer.pdfBtn]} testID="record-photo-open-pdf">
+      {url ? <Ionicons name="open-outline" size={18} color="#fff" /> : <ActivityIndicator size="small" color="#fff" />}
+      <Text style={viewer.btnText}>Open PDF</Text>
+    </Pressable>
+  );
+}
+
+// One PDF page, at the page's own shape once it has loaded.
+function PdfPage({ source, width }: { source: { uri: string; headers: Record<string, string> }; width: number }) {
+  const [ratio, setRatio] = useState(0.707);   // A4 portrait until we know
+  return (
+    <Image source={source} style={{ width, aspectRatio: ratio, alignSelf: 'center', backgroundColor: '#fff' }} contentFit="contain"
+      onLoad={(e) => { const { width: w, height: h } = e.source; if (w && h) setRatio(w / h); }} />
   );
 }
 
@@ -78,6 +104,6 @@ const viewer = StyleSheet.create({
   btnText: { color: '#fff', fontSize: 15, fontWeight: '600' },
   pdf: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
   pdfText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  pdfBtn: { paddingHorizontal: 20, paddingVertical: 12 },
+  pdfBtn: { paddingHorizontal: 20, paddingVertical: 12, alignSelf: 'center' },
   title: { color: '#fff', fontSize: 15, fontWeight: '700', textAlign: 'center', paddingHorizontal: 14, paddingBottom: 8 },
 });

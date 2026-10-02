@@ -6,8 +6,7 @@ import { notify } from '@/src/utils/notify';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import { api, TOKEN_KEY } from '@/src/api/client';
-import { storage } from '@/src/utils/storage';
+import { api, getToken } from '@/src/api/client';
 import { confirmAction } from '@/src/utils/confirm';
 import { istDate, istDateTime } from '@/src/utils/datetime';
 import { DateField } from '@/src/components/DateField';
@@ -143,7 +142,7 @@ export default function RepairItemDetailScreen() {
   const openPhoto = async (which: 'intake' | 'final', thumb: string) => {
     setPreviewPhoto(thumb);
     try {
-      const token = (await storage.secureGet<string>(TOKEN_KEY, '')) || '';
+      const token = (await getToken()) || '';
       const res = await fetch(`${process.env.EXPO_PUBLIC_BACKEND_URL || ''}/api/repair-items/${id}/photo/${which}`, { headers: { Authorization: `Bearer ${token}` } });
       if (!res.ok) return;
       const blob = await res.blob();
@@ -198,7 +197,7 @@ export default function RepairItemDetailScreen() {
       const base = process.env.EXPO_PUBLIC_BACKEND_URL || '';
       const path = kind === 'bill' ? `/repair-items/${id}/bill/pdf` : `/repair-items/${id}/issue-slip/pdf`;
       const url = `${base}/api${path}`;
-      const token = (await storage.secureGet<string>(TOKEN_KEY, '')) || '';
+      const token = (await getToken()) || '';
       const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
       if (!res.ok) throw new Error(`Print failed (${res.status})`);
       if (Platform.OS === 'web') {
@@ -272,7 +271,7 @@ export default function RepairItemDetailScreen() {
     try {
       const base = process.env.EXPO_PUBLIC_BACKEND_URL || '';
       const url = `${base}/api/repair-orders/${item!.order_id}/slip/pdf`;
-      const token = (await storage.secureGet<string>(TOKEN_KEY, '')) || '';
+      const token = (await getToken()) || '';
       const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
       if (!res.ok) throw new Error(`Print failed (${res.status})`);
       if (Platform.OS === 'web') { const blob = await res.blob(); window.open(URL.createObjectURL(blob), '_blank'); }
