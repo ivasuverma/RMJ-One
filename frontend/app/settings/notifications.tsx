@@ -13,6 +13,8 @@ import { GlassButton } from '@/src/components/ui/GlassButton';
 import { useAccessEditor, AccessAccount } from '@/src/hooks/use-access-editor';
 import { canReceiveAdminOnly } from '@/src/components/AccessEditorSections';
 import { MODULE_ICON } from '@/src/components/home/sections';
+import { isPushSupported, isSubscribed, subscribeToPush, unsubscribeFromPush } from '@/src/utils/push';
+import { notify } from '@/src/utils/notify';
 
 // Settings › Notifications — every on/off in one place, each with one switch:
 //  • General: whole-shop messages (WhatsApp on/off, customer messages,
@@ -34,6 +36,42 @@ export default function NotificationsSettings() {
   const who = picked || me?.id;   // the signed-in person loads a moment after the page
   // Keyed by person so switching starts clean from that person's saved settings.
   return <PersonNotifications key={who || 'none'} who={who} setWho={setWho} tab={tab} setTab={setTab} />;
+}
+
+/** Push on the phone in your hand (each phone/browser signs up on its own). */
+function ThisPhone() {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+  const [on, setOn] = useState(false);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { if (isPushSupported()) isSubscribed().then(setOn); }, []);
+  const toggle = async () => {
+    if (!isPushSupported()) { notify('Not supported', 'Notifications aren’t supported in this browser.'); return; }
+    setBusy(true);
+    try {
+      if (on) { await unsubscribeFromPush(); setOn(false); }
+      else {
+        const res = await subscribeToPush();
+        if (res.ok) setOn(true); else notify('Couldn’t enable notifications', res.reason || 'Please try again');
+      }
+    } finally { setBusy(false); }
+  };
+  return (
+    <View style={[styles.card, { marginBottom: spacing.md }]}>
+      <View style={styles.row}>
+        <Ionicons name="phone-portrait-outline" size={18} color={colors.brandSecondary} style={{ marginRight: 10 }} />
+        <View style={{ flex: 1 }}>
+          <Text style={styles.label}>Push on this phone</Text>
+          <Text style={styles.sub}>Each phone you sign in on is switched on separately</Text>
+        </View>
+        {busy ? <ActivityIndicator color={colors.brandSecondary} /> : (
+          <Pressable onPress={toggle} accessibilityRole="switch" accessibilityState={{ checked: on }} testID="notif-this-phone">
+            <ToggleSwitch value={on} />
+          </Pressable>
+        )}
+      </View>
+    </View>
+  );
 }
 
 function GeneralSection() {
@@ -150,6 +188,7 @@ function PersonNotifications({ who, setWho, tab, setTab }: { who?: string; setWh
       </View>
 
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 130 }}>
+        <ThisPhone />
         <View style={styles.tabs}>
           {([['general', 'General'], ['people', 'Owners & admins']] as const).map(([k, label]) => (
             <Pressable key={k} onPress={() => setTab(k)} style={[styles.tab, tab === k && styles.tabOn]} testID={`notif-tab-${k}`}>
