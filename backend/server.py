@@ -2059,6 +2059,49 @@ async def _notify_user_impl(user_id: str, title: str, body: str, url: str = '/',
         logger.warning(f'notify_user failed: {e}')
 
 
+# ---------------- General notifications (shop-wide, per channel) ----------------
+# Alerts that go straight to one person about their own work or money (an
+# employee, an in-house karigar, a customer) rather than to staff who opted in.
+# Settings > General notifications switches each one on/off for push and for
+# WhatsApp, for everyone. Defaults are what the app always did. push/whatsapp
+# None = that channel doesn't exist for this alert. `wa_flow` alerts keep their
+# WhatsApp switch in the WhatsApp settings doc (one source of truth).
+GENERAL_ALERTS = [
+    {'key': 'salary_paid', 'module': 'payroll', 'group': 'Payroll', 'label': 'Salary paid', 'to': 'Employee', 'push': True, 'whatsapp': True},
+    {'key': 'ledger_entry', 'module': 'payroll', 'group': 'Payroll', 'label': 'Advance, bonus, fine or deduction recorded', 'to': 'Employee', 'push': True, 'whatsapp': True},
+    {'key': 'auto_advance', 'module': 'payroll', 'group': 'Payroll', 'label': 'Monthly auto advance credited', 'to': 'Employee', 'push': True, 'whatsapp': True},
+    {'key': 'attendance_check', 'module': 'attendance', 'group': 'Payroll', 'label': 'Month-end: check your attendance', 'to': 'Employee', 'push': True, 'whatsapp': False},
+    {'key': 'repair_issued_karigar', 'module': 'repairs', 'group': 'Repairs', 'label': 'Repair item issued to karigar', 'to': 'In-house karigar', 'push': True, 'whatsapp': True},
+    {'key': 'repair_ready_notice', 'module': 'repairs', 'group': 'Repairs', 'label': 'Repair ready for pickup (Send button)', 'to': 'Customer', 'push': None, 'whatsapp': True, 'wa_flow': True},
+    {'key': 'repair_received_notice', 'module': 'repairs', 'group': 'Repairs', 'label': 'Repair received at the shop (Send button)', 'to': 'Customer', 'push': None, 'whatsapp': True, 'wa_flow': True},
+    {'key': 'task_assigned', 'module': 'tasks', 'group': 'Tasks', 'label': 'Task assigned', 'to': 'Employee', 'push': True, 'whatsapp': True},
+    {'key': 'task_comment_to_employee', 'module': 'tasks', 'group': 'Tasks', 'label': 'Owner/admin commented on their task', 'to': 'Employee', 'push': True, 'whatsapp': True},
+    {'key': 'task_reminder', 'module': 'tasks', 'group': 'Tasks', 'label': 'Repeat reminder for a pending task', 'to': 'Employee', 'push': True, 'whatsapp': True},
+]
+GENERAL_ALERTS_BY_KEY = {a['key']: a for a in GENERAL_ALERTS}
+
+
+async def general_alert_channels(key: str) -> tuple:
+    """(push, whatsapp) for one general alert, from Settings > General notifications."""
+    a = GENERAL_ALERTS_BY_KEY[key]
+    doc = await db.settings.find_one({'id': 'general_alerts'}, {'_id': 0}) or {}
+    cur = doc.get(key) or {}
+    push = a['push'] is not None and cur.get('push', a['push']) is not False
+    wa = a['whatsapp'] is not None and bool(cur.get('whatsapp', a['whatsapp']))
+    return push, wa
+
+
+async def notify_general(key: str, user_id: str, title: str, body: str, url: str = '/') -> None:
+    """Send a general alert to one person on whichever channels are switched on.
+    Both switches must agree: this shop-wide one, and the person's own master
+    switch (Users > person > Notifications) — off on either means no push or
+    WhatsApp. It still lands in their in-app list, like every other alert."""
+    push, wa = await general_alert_channels(key)
+    if (push or wa) and await _muted_account_ids([user_id]):
+        push = wa = False
+    await notify_user(user_id, title, body, url, push=push, whatsapp=wa)
+
+
 async def notify_user(user_id: str, title: str, body: str, url: str = '/', push: bool = True, whatsapp: bool = True):
     # Fire-and-forget: notification storage + web-push delivery involve
     # several sequential DB writes and outbound HTTP calls to push services,
@@ -2494,7 +2537,7 @@ NOTIFICATION_SCRIPTS = [
     {'key': 'attendance_leave_request', 'module': 'attendance', 'label': 'New leave request', 'admin_only': True},
     {'key': 'task_overdue', 'module': 'tasks', 'label': 'Task overdue', 'admin_only': True},
     {'key': 'task_comment', 'module': 'tasks', 'label': 'Employee commented on a task', 'admin_only': True},
-    {'key': 'payroll_auto_advance', 'module': 'payroll', 'label': 'Auto advance recorded', 'admin_only': True},
+    {'key': 'payroll_auto_advance', 'module': 'payroll', 'label': 'Auto advance recorded (owner/admin copy — the employee\'s own alert is in General Notifications)', 'admin_only': True},
     {'key': 'repair_new_order', 'module': 'repairs', 'label': 'New repair order created', 'admin_only': False},
     {'key': 'repair_item_ready', 'module': 'repairs', 'label': 'Repair item ready / back from karigar', 'admin_only': False},
     {'key': 'repair_followup', 'module': 'repairs', 'label': 'Follow-up: issue to / receive from karigar (daily, noon)', 'admin_only': False},
@@ -2994,8 +3037,8 @@ async def _check_auto_advances():
             {'$set': {'employee_id': emp['id'], 'month': for_month, 'amount': amount, 'created_at': iso}},
             upsert=True,
         )
-        await notify_user(emp['id'], 'Advance credited',
-                           f"₹{amount:.0f} advance has been recorded for you this month.", '/')
+        await notify_general('auto_advance', emp['id'], 'Advance credited',
+                             f"₹{amount:.0f} advance has been recorded for you this month.", '/')
         await _notify_module('payroll', 'Auto advance recorded',
                               f"₹{amount:.0f} auto-advance recorded for {emp['name']}", '/(tabs)/payroll',
                               script='payroll_auto_advance', admin_only=True)
@@ -3080,7 +3123,7 @@ async def _check_recurring_tasks():
             'created_at': iso, 'completed_at': None,
         })
         await db.task_templates.update_one({'id': tpl['id']}, {'$inc': {'generated_count': 1}})
-        await notify_user(tpl['assigned_to'], 'New task assigned', title, '/(emp)/tasks')
+        await notify_general('task_assigned', tpl['assigned_to'], 'New task assigned', title, '/(emp)/tasks')
 
 
 async def _check_overdue_tasks():
@@ -3123,7 +3166,7 @@ async def _check_task_repeat_reminders():
         if reference and reference > cutoff:
             continue
         await db.tasks.update_one({'id': t['id']}, {'$set': {'last_reminded_at': now_iso}, '$inc': {'reminder_count': 1}})
-        await notify_user(t['assigned_to'], 'Task reminder', f"Still pending: {t['title']}", '/(emp)/tasks')
+        await notify_general('task_reminder', t['assigned_to'], 'Task reminder', f"Still pending: {t['title']}", '/(emp)/tasks')
 
 
 async def _attendance_reminder_loop():

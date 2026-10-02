@@ -42,7 +42,7 @@ from server import (
     delete_gold_ledger_entries,
     log_audit,
     assert_mobile_unique,
-    notify_user,
+    notify_general,
     _notify_module,
     _notify_system_health,
     _pdf_response,
@@ -781,7 +781,7 @@ async def issue_to_karigar(item_id: str, body: IssueToKarigarIn, user=Depends(re
     }})
     await log_audit(user, 'repair_item.issue', 'repair_item', item_id, item['item_code'], {'karigar': karigar['name'], 'weight': weight})
     if karigar.get('is_employee') and karigar.get('employee_id'):
-        await notify_user(karigar['employee_id'], 'Repair item issued to you', f"{item['item_code']} — {item['description']}", '/(emp)/tasks')
+        await notify_general('repair_issued_karigar', karigar['employee_id'], 'Repair item issued to you', f"{item['item_code']} — {item['description']}", '/(emp)/tasks')
     return await db.repair_items.find_one({'id': item_id}, {'_id': 0})
 
 

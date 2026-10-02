@@ -22,7 +22,7 @@ from server import (
     TaskCommentIn,
     TaskTemplateIn,
     log_audit,
-    notify_user,
+    notify_general,
     _notify_module,
 )
 
@@ -46,7 +46,7 @@ async def create_task(body: TaskIn, user=Depends(require_admin_or_module('tasks'
     }
     await db.tasks.insert_one(dict(doc))
     await log_audit(user, 'task.create', 'task', doc['id'], body.title, {'assigned_to': emp['name']})
-    await notify_user(body.assigned_to, 'New task assigned', body.title, '/(emp)/tasks')
+    await notify_general('task_assigned', body.assigned_to, 'New task assigned', body.title, '/(emp)/tasks')
     return {k: v for k, v in doc.items() if k != '_id'}
 
 
@@ -127,7 +127,7 @@ async def update_task(task_id: str, body: TaskUpdateIn, user=Depends(require_adm
         if not emp: raise HTTPException(status_code=404, detail='Employee not found')
         upd['assigned_to_name'] = emp['name']
         if upd['assigned_to'] != t['assigned_to']:
-            await notify_user(upd['assigned_to'], 'Task assigned to you', t['title'], '/(emp)/tasks')
+            await notify_general('task_assigned', upd['assigned_to'], 'Task assigned to you', t['title'], '/(emp)/tasks')
     if upd:
         await db.tasks.update_one({'id': task_id}, {'$set': upd})
         await log_audit(user, 'task.update', 'task', task_id, upd.get('title', t.get('title', '')))
@@ -202,7 +202,7 @@ async def add_task_comment(task_id: str, body: TaskCommentIn, user=Depends(get_c
         await _notify_module('tasks', f"Comment on: {t['title']}", f"{user['name']}: {comment['text']}", '/tasks',
                               script='task_comment', admin_only=True)
     else:
-        await notify_user(t['assigned_to'], f"Comment on: {t['title']}", f"{user['name']}: {comment['text']}", '/(emp)/tasks')
+        await notify_general('task_comment_to_employee', t['assigned_to'], f"Comment on: {t['title']}", f"{user['name']}: {comment['text']}", '/(emp)/tasks')
     return comment
 
 

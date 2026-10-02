@@ -122,7 +122,12 @@ export default function PersonScreen() {
         )}
 
         <Section title="Notifications">
-          <NotificationsSection editor={editor} testIdPrefix="person" />
+          {acc.role === 'employee' ? <NotificationsSection editor={editor} testIdPrefix="person" /> : (
+            <Pressable onPress={() => router.push(`/settings/notifications?account=${acc.id}` as any)} style={styles.notifLink} testID="person-notif-link">
+              <Text style={styles.notifLinkText}>Set {acc.name}&apos;s alerts on the Notifications page</Text>
+              <Ionicons name="chevron-forward" size={16} color={colors.brandSecondary} />
+            </Pressable>
+          )}
         </Section>
 
         <Section title="Access">
@@ -165,6 +170,8 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   section: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.md },
   sectionTitle: { color: colors.brandSecondary, fontSize: 11, letterSpacing: 0.8, textTransform: 'uppercase', fontWeight: '800', marginBottom: spacing.sm },
 
+  notifLink: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6 },
+  notifLinkText: { flex: 1, color: colors.brandSecondary, fontSize: 14, fontWeight: '700' },
   fieldLabel: { color: colors.onSurfaceSecondary, fontSize: 12, marginBottom: 6 },
   input: { backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, color: colors.onSurface, paddingHorizontal: spacing.md, paddingVertical: 11, fontSize: 14 },
 

@@ -20,7 +20,7 @@ function animateNext() {
 // server.py's NOTIFICATION_SCRIPTS) — showing that toggle to anyone else
 // would be a switch that visibly does nothing, so it's filtered out per the
 // account being edited rather than shown identically to everyone.
-function canReceiveAdminOnly(role?: string) {
+export function canReceiveAdminOnly(role?: string) {
   return role === 'owner' || role === 'admin';
 }
 
