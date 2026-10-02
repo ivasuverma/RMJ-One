@@ -24,14 +24,14 @@ import { GlassButton } from '@/src/components/ui/GlassButton';
 // never writes back a stale copy of theirs.
 type Form = {
   name: string; latitude: string; longitude: string; radius_m: string;
-  work_start: string; work_end: string; grace_min: string; round_net_salary: boolean; notify_employee_payments: boolean;
+  work_start: string; work_end: string; grace_min: string; round_net_salary: boolean;
   unpaid_sunday_after_absent_week: boolean;
   app_checkin_enabled: boolean;
 };
 
 const EMPTY: Form = {
   name: '', latitude: '', longitude: '', radius_m: '150',
-  work_start: '10:00', work_end: '19:30', grace_min: '15', round_net_salary: false, notify_employee_payments: true,
+  work_start: '10:00', work_end: '19:30', grace_min: '15', round_net_salary: false,
   unpaid_sunday_after_absent_week: true,
   app_checkin_enabled: true,
 };
@@ -56,7 +56,6 @@ export default function AttendanceSettings() {
             radius_m: String(s.radius_m ?? 150), work_start: s.work_start || '10:00',
             work_end: s.work_end || '19:30', grace_min: String(s.grace_min ?? 15),
             round_net_salary: !!s.round_net_salary,
-            notify_employee_payments: s.notify_employee_payments !== false,
             unpaid_sunday_after_absent_week: s.unpaid_sunday_after_absent_week !== false,
             app_checkin_enabled: s.app_checkin_enabled !== false,
           }));
@@ -98,7 +97,6 @@ export default function AttendanceSettings() {
         work_start: form.work_start, work_end: form.work_end,
         grace_min: parseInt(form.grace_min || '15', 10),
         round_net_salary: form.round_net_salary,
-        notify_employee_payments: form.notify_employee_payments,
         unpaid_sunday_after_absent_week: form.unpaid_sunday_after_absent_week,
         app_checkin_enabled: form.app_checkin_enabled,
       });
@@ -199,18 +197,6 @@ export default function AttendanceSettings() {
               <Text style={styles.toggleSub}>If an employee is absent every scheduled day Mon–Sat, that week&apos;s Sunday isn&apos;t auto-paid as a weekly-off either</Text>
             </View>
             <ToggleSwitch value={!!(form.unpaid_sunday_after_absent_week)} />
-          </Pressable>
-
-          <Pressable
-            onPress={() => setForm({ ...form, notify_employee_payments: !form.notify_employee_payments })}
-            style={styles.toggleRow}
-            testID="as-payment-alerts-toggle"
-          >
-            <View style={{ flex: 1 }}>
-              <Text style={styles.toggleLabel}>Tell employees about payments</Text>
-              <Text style={styles.toggleSub}>Notify an employee when their salary is paid, or an advance, bonus, fine or deduction is recorded for them</Text>
-            </View>
-            <ToggleSwitch value={!!(form.notify_employee_payments)} />
           </Pressable>
 
           <View style={styles.infoBox}>
