@@ -7,10 +7,12 @@ import { api } from '@/src/api/client';
 import { istDate, todayIST } from '@/src/utils/datetime';
 import { spacing, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
-import { SegmentedControl } from '@/src/components/ui';
+import { SegmentedControl, useToast } from '@/src/components/ui';
 import { ModuleHeader, HeaderButton } from '@/src/components/ui/ModuleHeader';
 import { HeaderSpacer, useScrolled } from '@/src/components/ui/StickyHeader';
 import { Notif, NotifRow, notifTarget } from '@/src/components/notifications/NotifRow';
+import { SwipeRow } from '@/src/components/ui/SwipeRow';
+import { confirmAction } from '@/src/utils/confirm';
 
 const DAY = 86400000;
 
@@ -34,6 +36,7 @@ export default function NotificationsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [markingAll, setMarkingAll] = useState(false);
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
+  const toast = useToast();
 
   const load = useCallback(async () => {
     try { setItems(await api.get<Notif[]>('/notifications')); }
@@ -74,14 +77,28 @@ export default function NotificationsScreen() {
     finally { setMarkingAll(false); }
   };
 
+  // Swipe left to delete one; Clear removes them all.
+  const remove = (n: Notif) => {
+    const prev = items;
+    setItems((l) => l.filter((x) => x.id !== n.id));
+    api.del(`/notifications/${n.id}`).catch(() => { setItems(prev); toast.error('Could not delete'); });
+  };
+  const clearAll = () => confirmAction('Clear all notifications?', 'They are deleted for you only. This cannot be undone.', 'Clear all', async () => {
+    try { await api.del('/notifications'); setItems([]); toast.success('Notifications cleared'); }
+    catch { toast.error('Could not clear'); }
+  });
+
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="notifications-screen">
       <ModuleHeader
         title="Notifications" backLabel="Home" scrolled={scrolled}
         subtitle={loading ? null : unreadCount ? `${unreadCount} unread` : 'All caught up'}
-        actions={unreadCount > 0 ? (
-          markingAll ? <ActivityIndicator color={colors.brandSecondary} />
-            : <HeaderButton icon="checkmark-done" label="Mark all read" onPress={markAllRead} testID="mark-all-read-btn" tint={colors.brandSecondary} />
+        actions={items.length > 0 ? (
+          <>
+            {unreadCount > 0 && (markingAll ? <ActivityIndicator color={colors.brandSecondary} />
+              : <HeaderButton icon="checkmark-done" label="Mark all read" onPress={markAllRead} testID="mark-all-read-btn" tint={colors.brandSecondary} />)}
+            <HeaderButton icon="trash-outline" label="Clear all" onPress={clearAll} testID="clear-all-btn" tint={colors.onError} />
+          </>
         ) : undefined}
       />
       <ScrollView onScroll={onScroll} scrollEventThrottle={16}
@@ -89,6 +106,7 @@ export default function NotificationsScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}
       >
         <HeaderSpacer />
+        {items.length > 0 && <Text style={styles.hint}>Swipe a notification left to delete it.</Text>}
         <View style={{ marginTop: spacing.sm }}>
           <SegmentedControl
             options={[{ key: 'all', label: 'All' }, { key: 'unread', label: unreadCount ? `Unread (${unreadCount})` : 'Unread' }]}
@@ -111,7 +129,11 @@ export default function NotificationsScreen() {
           <View key={g.label}>
             <Text style={styles.groupTitle}>{g.label}</Text>
             <View style={styles.card}>
-              {g.items.map((n, i) => <NotifRow key={n.id} n={n} first={i === 0} onPress={() => openNotif(n)} testID={`notif-${n.id}`} />)}
+              {g.items.map((n, i) => (
+                <SwipeRow key={n.id} label="Delete" icon="trash-outline" onAction={() => remove(n)} testID={`notif-swipe-${n.id}`}>
+                  <NotifRow n={n} first={i === 0} onPress={() => openNotif(n)} testID={`notif-${n.id}`} />
+                </SwipeRow>
+              ))}
             </View>
           </View>
         ))}
@@ -122,6 +144,7 @@ export default function NotificationsScreen() {
 
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
+  hint: { color: colors.mutedText, fontSize: 12.5, marginTop: spacing.sm, marginHorizontal: 4 },
   groupTitle: { color: colors.onSurface, fontSize: 20, fontWeight: '800', letterSpacing: -0.3, marginTop: 22, marginBottom: 8, marginHorizontal: 4 },
   card: { backgroundColor: colors.surfaceSecondary, borderRadius: 18, overflow: 'hidden', borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
   empty: { alignItems: 'center', paddingTop: 80, paddingHorizontal: spacing.xl, gap: 6 },

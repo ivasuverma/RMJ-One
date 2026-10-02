@@ -227,7 +227,7 @@ export default function EmployeeHome() {
     ),
     needs_you: (
       <>
-        <NeedsSection needs={summary ? summary.needs_you : undefined} loading={!summary} />
+        <NeedsSection needs={summary ? summary.needs_you : undefined} loading={!summary} hiddenCount={summary?.needs_hidden || 0} onChanged={brief.refresh} />
       </>
     ),
     notifications: (

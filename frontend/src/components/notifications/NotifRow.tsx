@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { istDisplayDate, istTime } from '@/src/utils/datetime';
 import { ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
+import { useSwipeBlocked } from '@/src/components/ui/SwipeRow';
 
 export type Notif = { id: string; title: string; body: string; url: string; read: boolean; created_at: string };
 
@@ -59,12 +60,13 @@ export function toneColors(tone: Meta['tone'], c: ThemeColors) {
 /** One notification in an inset grouped list: app icon, source + time on top, bold
  * title, two lines of body, and a dot while unread. */
 export function NotifRow({ n, first, onPress, testID }: { n: Notif; first?: boolean; onPress: () => void; testID?: string }) {
+  const swiping = useSwipeBlocked();
   const { colors } = useTheme();
   const s = useMemo(() => makeStyles(colors), [colors]);
   const meta = notifMeta(n.url);
   const tone = toneColors(meta.tone, colors);
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [s.row, pressed && { backgroundColor: colors.surfaceTertiary }]} testID={testID}
+    <Pressable onPress={() => { if (!swiping()) onPress(); }} style={({ pressed }) => [s.row, pressed && { backgroundColor: colors.surfaceTertiary }]} testID={testID}
       accessibilityRole="button" accessibilityLabel={`${n.read ? '' : 'Unread. '}${meta.label}. ${n.title}. ${n.body}`}>
       <View style={s.dotCol}>{!n.read && <View style={s.dot} />}</View>
       <View style={[s.icon, { backgroundColor: tone.bg }]}><Ionicons name={meta.icon} size={17} color={tone.fg} /></View>

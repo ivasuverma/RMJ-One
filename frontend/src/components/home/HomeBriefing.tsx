@@ -134,7 +134,7 @@ export default function HomeBriefing() {
     needs_you: (
       <>
         {/* Needs you today */}
-        <NeedsSection needs={data ? data.needs_you : undefined} loading={!data} />
+        <NeedsSection needs={data ? data.needs_you : undefined} loading={!data} hiddenCount={data?.needs_hidden || 0} onChanged={refresh} />
       </>
     ),
     staff: (

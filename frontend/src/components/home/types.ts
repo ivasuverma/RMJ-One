@@ -48,6 +48,7 @@ export type HomeSummary = {
   cash: Maybe<Cash>;
   quick_actions: Maybe<QuickActions>;
   needs_you: NeedRow[] | Unavailable | null;   // null = hidden in Settings › Home screen
+  needs_hidden?: number;   // rows swiped away today
   staff: Maybe<Staff>;
   owed: Maybe<Owed>;
   coming_up: Maybe<ComingUp>;
