@@ -27,6 +27,7 @@ from server import (
     NOTIFICATION_MODULE_KEYS,
     NOTIFICATION_SCRIPT_KEYS,
     EMPLOYEE_ATTENDANCE_ALERT_KEYS,
+    EMPLOYEE_ATTENDANCE_ALERTS,
     NOTIFICATION_SCRIPTS_BY_MODULE,
     log_audit,
 )
@@ -172,6 +173,13 @@ async def list_notification_modules(_: dict = Depends(require_owner), _mod=Depen
                           for s in NOTIFICATION_SCRIPTS_BY_MODULE.get(m['key'], [])]}
         for m in NOTIFICATION_MODULES
     ]
+
+
+@router.get('/access/employee-alerts')
+async def list_employee_alerts(_: dict = Depends(require_owner), _mod=Depends(require_module('user_roles'))):
+    """An employee's own alerts (attendance, pay, tasks, work issued to them),
+    with the channel each is on by default — set per employee on their profile."""
+    return EMPLOYEE_ATTENDANCE_ALERTS
 
 
 @router.get('/access/accounts')

@@ -79,10 +79,9 @@ export default function RateMasterScreen() {
         gold_margin: parseInt(daily.gold_margin, 10) || 0, silver_margin: parseInt(daily.silver_margin, 10) || 0,
         gold_buy_margin: parseInt(daily.gold_buy_margin, 10) || 0, silver_buy_margin: parseInt(daily.silver_buy_margin, 10) || 0,
         template: broadcastTemplate || undefined, skip_weekend_fetch: daily.skip_weekend_fetch,
-        auto_send_enabled: daily.auto_send_enabled, auto_send_time: daily.auto_send_time,
+        auto_send_time: daily.auto_send_time,
         refresh_enabled: daily.refresh_enabled, refresh_interval_min: parseInt(daily.refresh_interval_min, 10) || 120,
         refresh_start: daily.refresh_start, refresh_end: daily.refresh_end,
-        status_enabled: daily.status_enabled,
       });
       toast.success('Daily rate settings saved'); setDailyDirty(false);
     } catch (e: any) { toast.error(e?.detail || 'Could not save'); }
@@ -153,21 +152,17 @@ export default function RateMasterScreen() {
             <View style={{ flex: 1 }}><Text style={styles.label}>Skip Sunday</Text><Text style={styles.hint}>The market is closed — no fetch on Sunday, and never an automatic send.</Text></View>
             <Switch value={daily.skip_weekend_fetch} onValueChange={(v) => setD({ skip_weekend_fetch: v })} disabled={!isOwner} trackColor={{ true: colors.brandPrimary, false: colors.border }} thumbColor={colors.surface} {...({ activeThumbColor: colors.surface } as object)} testID="gold-rate-skip-weekend-toggle" />
           </View>
-          <View style={styles.switchRow}>
-            <View style={{ flex: 1 }}><Text style={styles.label}>Fully automatic — fetch &amp; send daily</Text><Text style={styles.hint}>Sends once a day, at the time below, straight out with no review. Off means it waits for you on the Rate Updater screen.</Text></View>
-            <Switch value={daily.auto_send_enabled} onValueChange={(v) => setD({ auto_send_enabled: v })} disabled={!isOwner} trackColor={{ true: colors.brandPrimary, false: colors.border }} thumbColor={colors.surface} {...({ activeThumbColor: colors.surface } as object)} testID="gold-rate-auto-send-toggle" />
+          <View style={{ flex: 1, maxWidth: 160 }}>
+            <Text style={styles.label}>Auto-send time (24h, IST)</Text>
+            <TextInput value={daily.auto_send_time} onChangeText={(v) => setD({ auto_send_time: v })} editable={isOwner} placeholder="12:30" placeholderTextColor={colors.mutedText} style={styles.input} testID="gold-rate-auto-send-time" />
           </View>
-          {daily.auto_send_enabled && (
-            <View style={{ flex: 1, maxWidth: 160 }}>
-              <Text style={styles.label}>Send time (24h, IST)</Text>
-              <TextInput value={daily.auto_send_time} onChangeText={(v) => setD({ auto_send_time: v })} editable={isOwner} placeholder="12:30" placeholderTextColor={colors.mutedText} style={styles.input} testID="gold-rate-auto-send-time" />
+          <Pressable onPress={() => router.push('/settings/notifications' as any)} style={styles.switchRow} testID="gold-rate-switches-link">
+            <View style={{ flex: 1 }}>
+              <Text style={styles.label}>Auto-send {daily.auto_send_enabled ? 'on' : 'off'} · WhatsApp Status {daily.status_enabled ? 'on' : 'off'}</Text>
+              <Text style={styles.hint}>Turn these on or off in Settings › Notifications › General.</Text>
             </View>
-          )}
-
-          <View style={styles.switchRow}>
-            <View style={{ flex: 1 }}><Text style={styles.label}>Also post to WhatsApp Status</Text><Text style={styles.hint}>When the rate goes to the WhatsApp Channel, the same rate is posted as a Status from the shop number — once a day. Seen by people who have the shop number saved.</Text></View>
-            <Switch value={daily.status_enabled} onValueChange={(v) => setD({ status_enabled: v })} disabled={!isOwner} trackColor={{ true: colors.brandPrimary, false: colors.border }} thumbColor={colors.surface} {...({ activeThumbColor: colors.surface } as object)} testID="gold-rate-status-toggle" />
-          </View>
+            <Ionicons name="chevron-forward" size={16} color={colors.mutedText} />
+          </Pressable>
 
           {isOwner ? (
             <Pressable onPress={saveDaily} disabled={dailySaving || !dailyDirty} style={[styles.primaryBtn, (dailySaving || !dailyDirty) && { opacity: 0.5 }]} testID="gold-rate-save-config">

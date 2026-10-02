@@ -23,7 +23,7 @@ from server import (
     PayrollGenerateIn,
     PayrollEntryUpdateIn,
     log_audit,
-    notify_general,
+    notify_employee_alert,
     _ledger_sign,
     _iter_month_dates,
     _opening_balance,
@@ -60,8 +60,8 @@ async def add_ledger_entry(body: LedgerEntryIn, user=Depends(require_staff), _mo
     # Personal alert to the employee when money is recorded against/for them.
     if body.entry_type in ('advance', 'bonus', 'fine', 'deduction'):
         label = title_map.get(body.entry_type, 'Ledger entry')
-        await notify_general(
-            'ledger_entry', body.employee_id,
+        await notify_employee_alert(
+            'self_ledger_entry', body.employee_id,
             f'{label}: ₹{float(body.amount):,.0f}',
             (body.note or '').strip() or f'{label} recorded on your account.',
             '/(emp)/profile',
@@ -772,7 +772,7 @@ async def add_payroll_payment(entry_id: str, body: PayrollPaymentIn, user=Depend
 
     if fully_paid:
         # Each payment already posted its own salary_paid ledger entry above.
-        await notify_general('salary_paid', entry['employee_id'], 'Salary paid',
+        await notify_employee_alert('self_salary_paid', entry['employee_id'], 'Salary paid',
                            f"Your salary for {ym} (₹{net:.0f}) has been paid", '/profile')
     await log_audit(user, 'payroll.payment.add', 'payroll_entry', entry_id, entry.get('employee_code', ''),
                      {'mode': body.payment_mode, 'amount': body.amount, 'fully_paid': fully_paid})
@@ -1031,7 +1031,7 @@ async def check_payroll_schedule() -> None:
         async for e in db.employees.find({'status': 'active'}, {'_id': 0, 'id': 1, 'shift': 1}):
             if e.get('shift') in remote:
                 continue   # work-from-home staff don't record attendance
-            await notify_general('attendance_check', e['id'], f'Check your {month_name} attendance',
+            await notify_employee_alert('self_attendance_check', e['id'], f'Check your {month_name} attendance',
                                  f'Open your Calendar and report any mistakes now — {month_name} payroll is worked out on the 2nd.',
                                  '/(emp)/calendar')
         await _mark_done(check_key)

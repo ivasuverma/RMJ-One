@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { View, Text, ScrollView, Pressable, ActivityIndicator, TextInput, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
 import { confirmAction } from '@/src/utils/confirm';
 import { useTheme } from '@/src/theme/ThemeContext';
@@ -13,6 +13,7 @@ import { HeaderSpacer } from '@/src/components/ui/StickyHeader';
 // Step 4 — send now, the daily/weekly schedule, and recent sends with their
 // delivery results (from Meta's status webhooks).
 export default function BroadcastSendScreen() {
+  const router = useRouter();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const toast = useToast();
@@ -70,7 +71,9 @@ export default function BroadcastSendScreen() {
   const stop = (j: Job) => confirmAction('Stop this send?', 'People not reached yet won’t get it.', 'Stop',
     () => run('stop', async () => { await api.post(`/rate-broadcast/${j.id}/stop`, {}); await load(); }));
   const saveSettings = () => form && run('settings', async () => {
-    const s = await api.put<Settings>('/rate-broadcast/settings', { ...form, daily_limit: Number(form.daily_limit) || 250 });
+    // On/off is saved from Settings › Notifications › General, not here.
+    const { weekly_enabled: _w, daily_enabled: _d, ...rest } = form;
+    const s = await api.put<Settings>('/rate-broadcast/settings', { ...rest, daily_limit: Number(form.daily_limit) || 250 });
     setForm(s);
     toast.success('Schedule saved');
   });
@@ -148,9 +151,9 @@ export default function BroadcastSendScreen() {
         {/* ---- Schedule ---- */}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Schedule</Text>
-          <Pressable onPress={() => setForm((f) => f && { ...f, weekly_enabled: !f.weekly_enabled })} style={styles.row} accessibilityRole="switch" accessibilityState={{ checked: form.weekly_enabled }} testID="rate-broadcast-weekly-toggle">
-            <Text style={[styles.label, styles.flex1]}>Weekly — customer list ({num(ov.counts.weekly)})</Text>
-            <ToggleSwitch value={form.weekly_enabled} />
+          <Pressable onPress={() => router.push('/settings/notifications' as any)} style={styles.row} testID="rate-broadcast-weekly-status">
+            <Text style={[styles.label, styles.flex1]}>Weekly — customer list ({num(ov.counts.weekly)}) · {form.weekly_enabled ? 'On' : 'Off'}</Text>
+            <Text style={styles.small}>On/off in Notifications ›</Text>
           </Pressable>
           <View style={{ opacity: form.weekly_enabled ? 1 : 0.5, gap: 8 }}>
             <View style={styles.chips}>
@@ -167,9 +170,9 @@ export default function BroadcastSendScreen() {
           </View>
 
           <View style={styles.divider} />
-          <Pressable onPress={() => setForm((f) => f && { ...f, daily_enabled: !f.daily_enabled })} style={styles.row} accessibilityRole="switch" accessibilityState={{ checked: form.daily_enabled }} testID="rate-broadcast-daily-toggle">
-            <Text style={[styles.label, styles.flex1]}>Daily — subscribers ({num(ov.counts.daily)})</Text>
-            <ToggleSwitch value={form.daily_enabled} />
+          <Pressable onPress={() => router.push('/settings/notifications' as any)} style={styles.row} testID="rate-broadcast-daily-status">
+            <Text style={[styles.label, styles.flex1]}>Daily — subscribers ({num(ov.counts.daily)}) · {form.daily_enabled ? 'On' : 'Off'}</Text>
+            <Text style={styles.small}>On/off in Notifications ›</Text>
           </Pressable>
           <View style={[styles.row, { opacity: form.daily_enabled ? 1 : 0.5 }]}>
             <View style={styles.flex1}>

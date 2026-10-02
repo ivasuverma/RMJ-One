@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
@@ -13,13 +13,16 @@ import { GlassButton } from '@/src/components/ui/GlassButton';
 import { useAccessEditor, AccessAccount } from '@/src/hooks/use-access-editor';
 import { canReceiveAdminOnly } from '@/src/components/AccessEditorSections';
 import { MODULE_ICON } from '@/src/components/home/sections';
+import { isPushSupported, isSubscribed, subscribeToPush, unsubscribeFromPush } from '@/src/utils/push';
+import { notify } from '@/src/utils/notify';
 
-// Settings › Notifications: the one place for owners and admins.
-// Each category shows (1) the alerts the chosen owner/admin gets, and (2) the
-// alerts the shop sends to employees, karigars and customers. Employees keep
-// their simple module on/off on their own profile (Users › employee).
-type General = { key: string; module: string; label: string; to: string; push: boolean | null; whatsapp: boolean | null };
+// Settings › Notifications — every on/off in one place, each with one switch:
+//  • General: whole-shop messages (WhatsApp on/off, customer messages,
+//    auto-replies, scheduled rate sends). Saved as soon as it's tapped.
+//  • Owners & admins: each person's own alerts, by category.
+// What an employee receives is set only on that employee's profile.
 type Ch = 'push' | 'whatsapp';
+type GeneralSwitch = { key: string; group: string; label: string; sub: string; needs: string | null; on: boolean };
 
 const EXTRA_ICON: Record<string, string> = {
   cash_book: 'wallet-outline', gold_rate: 'trending-up-outline', system_health: 'pulse-outline', samples: 'diamond-outline',
@@ -29,12 +32,102 @@ export default function NotificationsSettings() {
   const { user: me } = useAuth();
   const params = useLocalSearchParams<{ account?: string }>();
   const [picked, setWho] = useState<string | undefined>(params.account);
+  const [tab, setTab] = useState<'general' | 'people'>(params.account ? 'people' : 'general');
   const who = picked || me?.id;   // the signed-in person loads a moment after the page
   // Keyed by person so switching starts clean from that person's saved settings.
-  return <PersonNotifications key={who || 'none'} who={who} setWho={setWho} />;
+  return <PersonNotifications key={who || 'none'} who={who} setWho={setWho} tab={tab} setTab={setTab} />;
 }
 
-function PersonNotifications({ who, setWho }: { who?: string; setWho: (id: string) => void }) {
+/** Push on the phone in your hand (each phone/browser signs up on its own). */
+function ThisPhone() {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+  const [on, setOn] = useState(false);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { if (isPushSupported()) isSubscribed().then(setOn); }, []);
+  const toggle = async () => {
+    if (!isPushSupported()) { notify('Not supported', 'Notifications aren’t supported in this browser.'); return; }
+    setBusy(true);
+    try {
+      if (on) { await unsubscribeFromPush(); setOn(false); }
+      else {
+        const res = await subscribeToPush();
+        if (res.ok) setOn(true); else notify('Couldn’t enable notifications', res.reason || 'Please try again');
+      }
+    } finally { setBusy(false); }
+  };
+  return (
+    <View style={[styles.card, { marginBottom: spacing.md }]}>
+      <View style={styles.row}>
+        <Ionicons name="phone-portrait-outline" size={18} color={colors.brandSecondary} style={{ marginRight: 10 }} />
+        <View style={{ flex: 1 }}>
+          <Text style={styles.label}>Push on this phone</Text>
+          <Text style={styles.sub}>Each phone you sign in on is switched on separately</Text>
+        </View>
+        {busy ? <ActivityIndicator color={colors.brandSecondary} /> : (
+          <Pressable onPress={toggle} accessibilityRole="switch" accessibilityState={{ checked: on }} testID="notif-this-phone">
+            <ToggleSwitch value={on} />
+          </Pressable>
+        )}
+      </View>
+    </View>
+  );
+}
+
+function GeneralSection() {
+  const { colors } = useTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+  const toast = useToast();
+  const [items, setItems] = useState<GeneralSwitch[] | null>(null);
+  useEffect(() => {
+    api.get<{ switches: GeneralSwitch[] }>('/settings/general-notifications').then((r) => setItems(r.switches)).catch(() => setItems([]));
+  }, []);
+  const flip = async (g: GeneralSwitch) => {
+    const prev = items;
+    setItems((l) => l && l.map((x) => (x.key === g.key ? { ...x, on: !g.on } : x)));
+    try { setItems((await api.put<{ switches: GeneralSwitch[] }>('/settings/general-notifications', { key: g.key, on: !g.on })).switches); }
+    catch (e: any) { setItems(prev); toast.error(e?.detail || 'Could not save'); }
+  };
+  if (!items) return <ActivityIndicator color={colors.brandPrimary} style={{ marginTop: 40 }} />;
+  const isOn = (k: string | null): boolean => {
+    if (!k) return true;
+    const x = items.find((i) => i.key === k);
+    return !!x && x.on && isOn(x.needs);
+  };
+  const groups = items.reduce<{ name: string; list: GeneralSwitch[] }[]>((g, x) => {
+    const last = g[g.length - 1];
+    if (last && last.name === x.group) last.list.push(x); else g.push({ name: x.group, list: [x] });
+    return g;
+  }, []);
+  return (
+    <>
+      <Text style={styles.hint}>Messages for the whole shop, sent on WhatsApp. Changes save as soon as you tap. Wording is in WhatsApp Templates; times are in Rate Master and Rate Broadcast.</Text>
+      {groups.map((g) => (
+        <View key={g.name} style={{ marginTop: spacing.lg }}>
+          <View style={styles.catHead}><Text style={styles.catTitle}>{g.name}</Text></View>
+          <View style={styles.card}>
+            {g.list.map((x, i) => {
+              const live = isOn(x.needs);
+              return (
+                <View key={x.key} style={[styles.row, i > 0 && styles.sep, !live && { opacity: 0.45 }]} testID={`gen-${x.key}`}>
+                  <View style={{ flex: 1, minWidth: 0, paddingLeft: x.needs && x.needs !== 'wa_enabled' ? 14 : 0 }}>
+                    <Text style={styles.evLabel}>{x.label}</Text>
+                    {!!x.sub && <Text style={styles.sub}>{x.sub}</Text>}
+                  </View>
+                  <Pressable onPress={() => live && flip(x)} disabled={!live} hitSlop={6} accessibilityRole="switch" accessibilityState={{ checked: x.on }} testID={`gen-${x.key}-switch`}>
+                    <ToggleSwitch value={x.on && live} />
+                  </Pressable>
+                </View>
+              );
+            })}
+          </View>
+        </View>
+      ))}
+    </>
+  );
+}
+
+function PersonNotifications({ who, setWho, tab, setTab }: { who?: string; setWho: (id: string) => void; tab: 'general' | 'people'; setTab: (t: 'general' | 'people') => void }) {
   const router = useRouter();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
@@ -42,22 +135,15 @@ function PersonNotifications({ who, setWho }: { who?: string; setWho: (id: strin
   const { user: me } = useAuth();
   const [people, setPeople] = useState<AccessAccount[]>([]);
   const editor = useAccessEditor(who);
-  const [general, setGeneral] = useState<General[] | null>(null);
-  const [draft, setDraft] = useState<Record<string, Partial<Record<Ch, boolean>>>>({});
 
   useEffect(() => {
     api.get<AccessAccount[]>('/access/accounts')
       .then((a) => setPeople(a.filter((x) => x.account_type === 'user' && x.role !== 'employee')))
       .catch(() => {});
   }, []);
-  const loadGeneral = useCallback(async () => {
-    try { setGeneral((await api.get<{ alerts: General[] }>('/settings/general-alerts')).alerts); } catch { setGeneral([]); }
-  }, []);
-  useFocusEffect(useCallback(() => { loadGeneral(); }, [loadGeneral]));
 
   const { acc, notifOn, setNotifOn, notifModules, notifPrefs, setNotifPrefs, notifPrefsWhatsapp, setNotifPrefsWhatsapp } = editor;
   const adminish = canReceiveAdminOnly(acc?.role);
-  const dirty = Object.keys(draft).length > 0;
 
   // A category switch turns every alert in it on/off together, so nothing
   // underneath is left pointing the other way.
@@ -67,8 +153,6 @@ function PersonNotifications({ who, setWho }: { who?: string; setWho: (id: strin
   };
   const setEvent = (key: string, ch: Ch, v: boolean) =>
     (ch === 'push' ? setNotifPrefs : setNotifPrefsWhatsapp)((p) => ({ ...p, [key]: v }));
-  const genValue = (g: General, ch: Ch) => (draft[g.key]?.[ch] ?? g[ch]);
-  const setGen = (g: General, ch: Ch, v: boolean) => setDraft((d) => ({ ...d, [g.key]: { ...d[g.key], [ch]: v } }));
 
   const [saving, setSaving] = useState(false);
   const save = async () => {
@@ -76,10 +160,6 @@ function PersonNotifications({ who, setWho }: { who?: string; setWho: (id: strin
     try {
       const res = await editor.save();
       if (!res.ok) throw { detail: res.error };
-      for (const [key, chs] of Object.entries(draft)) {
-        for (const [ch, on] of Object.entries(chs)) await api.put('/settings/general-alerts', { key, channel: ch, on });
-      }
-      setDraft({}); await loadGeneral();
       toast.success('Notifications saved');
     } catch (e: any) { toast.error(e?.detail || 'Could not save'); }
     finally { setSaving(false); }
@@ -108,10 +188,19 @@ function PersonNotifications({ who, setWho }: { who?: string; setWho: (id: strin
       </View>
 
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 130 }}>
+        <ThisPhone />
+        <View style={styles.tabs}>
+          {([['general', 'General'], ['people', 'Owners & admins']] as const).map(([k, label]) => (
+            <Pressable key={k} onPress={() => setTab(k)} style={[styles.tab, tab === k && styles.tabOn]} testID={`notif-tab-${k}`}>
+              <Text style={[styles.tabText, tab === k && styles.tabTextOn]}>{label}</Text>
+            </Pressable>
+          ))}
+        </View>
+        {tab === 'general' ? <GeneralSection /> : (<>
         {people.length > 1 && (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }} style={{ marginBottom: spacing.md }}>
             {people.map((p) => (
-              <Pressable key={p.id} onPress={() => { if (!dirty && !saving) setWho(p.id); else toast.error('Save first'); }}
+              <Pressable key={p.id} onPress={() => { if (!saving) setWho(p.id); }}
                 style={[styles.chip, who === p.id && styles.chipOn]} testID={`notif-person-${p.id}`}>
                 <Text style={[styles.chipText, who === p.id && styles.chipTextOn]}>{p.id === me?.id ? 'Me' : p.name}</Text>
               </Pressable>
@@ -119,7 +208,7 @@ function PersonNotifications({ who, setWho }: { who?: string; setWho: (id: strin
           </ScrollView>
         )}
 
-        {editor.loading || !acc || !general ? <ActivityIndicator color={colors.brandPrimary} style={{ marginTop: 40 }} /> : (
+        {editor.loading || !acc ? <ActivityIndicator color={colors.brandPrimary} style={{ marginTop: 40 }} /> : (
           <>
             <View style={styles.card}>
               <View style={styles.row}>
@@ -136,8 +225,7 @@ function PersonNotifications({ who, setWho }: { who?: string; setWho: (id: strin
 
             {notifModules.map((m) => {
               const events = (m.events || []).filter((e) => adminish || !e.admin_only);
-              const gen = general.filter((g) => g.module === m.key);
-              if (!events.length && !gen.length) return null;
+              if (!events.length) return null;
               const modOn = notifPrefs[m.key] !== false;
               const modWa = notifPrefsWhatsapp[m.key] !== false;
               const evOn = (k: string, ch: Ch) => (ch === 'push' ? (k in notifPrefs ? notifPrefs[k] !== false : modOn) : (k in notifPrefsWhatsapp ? notifPrefsWhatsapp[k] !== false : modWa));
@@ -152,7 +240,7 @@ function PersonNotifications({ who, setWho }: { who?: string; setWho: (id: strin
                     <Text style={styles.colHead}>WhatsApp</Text>
                   </View>
                   <View style={styles.card}>
-                    {notifOn && events.length > 0 && (
+                    {notifOn ? (
                       <>
                         <View style={[styles.row, styles.allRow]}>
                           <Text style={[styles.label, { flex: 1 }]}>Alerts to {name}</Text>
@@ -167,32 +255,14 @@ function PersonNotifications({ who, setWho }: { who?: string; setWho: (id: strin
                           </View>
                         ))}
                       </>
-                    )}
-                    {gen.length > 0 && (
-                      <>
-                        <View style={[styles.row, (notifOn && events.length > 0) && styles.sep, styles.allRow]}>
-                          <Text style={[styles.label, { flex: 1 }]}>Sent to employees &amp; customers</Text>
-                          <Text style={styles.shop}>Whole shop</Text>
-                        </View>
-                        {gen.map((g) => (
-                          <View key={g.key} style={[styles.row, styles.sep]} testID={`notif-gen-${g.key}`}>
-                            <View style={{ flex: 1, minWidth: 0 }}>
-                              <Text style={styles.evLabel}>{g.label}</Text>
-                              <Text style={styles.sub}>To: {g.to}</Text>
-                            </View>
-                            <Sw value={genValue(g, 'push')} onChange={(v) => setGen(g, 'push', v)} id={`notif-gen-${g.key}-push`} />
-                            <Sw value={genValue(g, 'whatsapp')} onChange={(v) => setGen(g, 'whatsapp', v)} id={`notif-gen-${g.key}-wa`} />
-                          </View>
-                        ))}
-                      </>
-                    )}
+                    ) : <Text style={[styles.sub, { paddingVertical: 12 }]}>Notifications are off for {name}.</Text>}
                   </View>
                 </View>
               );
             })}
 
             <Text style={[styles.hint, { marginTop: spacing.lg }]}>
-              Employees choose by module on their own profile (Users › employee › Notifications): a module on means they get its alerts.
+              Alerts to employees (their pay, tasks, attendance, work issued to them) are set on each employee&apos;s profile: Employees › person › Access &amp; Alerts. Messages to customers are under General.
             </Text>
             <Pressable onPress={() => router.push('/settings/staff-notifications' as any)} style={styles.link} testID="notif-staff-link">
               <Ionicons name="people-outline" size={17} color={colors.brandSecondary} />
@@ -201,13 +271,14 @@ function PersonNotifications({ who, setWho }: { who?: string; setWho: (id: strin
             </Pressable>
           </>
         )}
+        </>)}
       </ScrollView>
 
-      <View style={styles.footer}>
+      {tab === 'people' && <View style={styles.footer}>
         <Pressable onPress={save} disabled={saving} style={[styles.saveBtn, saving && { opacity: 0.6 }]} testID="notif-save">
           {saving ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.saveText}>Save</Text>}
         </Pressable>
-      </View>
+      </View>}
     </SafeAreaView>
   );
 }
@@ -218,6 +289,11 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg, paddingVertical: spacing.md, gap: spacing.md },
   iconBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surfaceSecondary, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border },
   title: { flex: 1, color: colors.onSurface, fontSize: 20, fontWeight: '700', fontFamily: fonts.display },
+  tabs: { flexDirection: 'row', gap: 4, padding: 3, borderRadius: radius.md, backgroundColor: colors.surfaceSecondary, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, marginBottom: spacing.md },
+  tab: { flex: 1, alignItems: 'center', paddingVertical: 9, borderRadius: radius.md - 2 },
+  tabOn: { backgroundColor: colors.brandPrimary },
+  tabText: { color: colors.onSurfaceSecondary, fontSize: 14, fontWeight: '700' },
+  tabTextOn: { color: colors.onBrandPrimary },
   chip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border },
   chipOn: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
   chipText: { color: colors.onSurface, fontSize: 13.5, fontWeight: '700' },
@@ -232,7 +308,6 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   label: { color: colors.onSurface, fontSize: 14, fontWeight: '700' },
   evLabel: { color: colors.onSurface, fontSize: 14 },
   sub: { color: colors.mutedText, fontSize: 12, marginTop: 1 },
-  shop: { color: colors.mutedText, fontSize: 11.5, fontWeight: '600' },
   col: { width: COL, alignItems: 'center' },
   na: { color: colors.mutedText },
   hint: { color: colors.mutedText, fontSize: 12.5, lineHeight: 18, marginTop: 8 },
