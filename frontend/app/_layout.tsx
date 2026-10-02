@@ -16,6 +16,7 @@ import { DialogHost } from '@/src/components/ui/Dialog';
 import { OfflineBanner } from '@/src/components/OfflineBanner';
 import { LockScreen } from '@/src/components/LockScreen';
 import { startUploadQueue } from '@/src/utils/uploadQueue';
+import { startUpdateWatch } from '@/src/utils/appUpdate';
 
 // Disable logbox errors etc so that users can see the app and agent works as expected.
 LogBox.ignoreAllLogs(true);
@@ -84,6 +85,7 @@ function AppShell() {
     // Resume any document uploads left in the on-device outbox (e.g. the app
     // was closed mid-upload) — they retry automatically in the background.
     startUploadQueue();
+    startUpdateWatch();
   }, []);
 
   useEffect(() => {

@@ -227,7 +227,7 @@ export default function EmployeeHome() {
     ),
     needs_you: (
       <>
-        <NeedsSection needs={summary ? summary.needs_you : undefined} loading={!summary} />
+        <NeedsSection needs={summary ? summary.needs_you : undefined} loading={!summary} hiddenCount={summary?.needs_hidden || 0} onChanged={brief.refresh} />
       </>
     ),
     notifications: (
@@ -250,7 +250,7 @@ export default function EmployeeHome() {
           )}
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={styles.dateText}>{nowISTLongLabel()}</Text>
-            <Text style={styles.heroName} numberOfLines={1}>{user?.name}</Text>
+            <Text style={styles.heroName} numberOfLines={2}>{user?.name}</Text>
             <Text style={styles.heroCode}>{user?.employee_code} · {user?.designation || '—'}</Text>
           </View>
           <UploadQueueBadge />

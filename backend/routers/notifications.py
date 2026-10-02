@@ -117,3 +117,17 @@ async def mark_notification_read(nid: str, user=Depends(get_current)):
 async def mark_all_notifications_read(user=Depends(get_current)):
     await db.notifications.update_many({'user_id': user['id'], 'read': False}, {'$set': {'read': True}})
     return {'ok': True}
+
+
+@router.delete('/notifications/{nid}')
+async def delete_notification(nid: str, user=Depends(get_current)):
+    """Remove one of your own notifications."""
+    await db.notifications.delete_one({'id': nid, 'user_id': user['id']})
+    return {'ok': True}
+
+
+@router.delete('/notifications')
+async def clear_notifications(user=Depends(get_current)):
+    """Remove all of your own notifications."""
+    res = await db.notifications.delete_many({'user_id': user['id']})
+    return {'ok': True, 'deleted': res.deleted_count}

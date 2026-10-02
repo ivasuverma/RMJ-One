@@ -13,13 +13,14 @@ numbers that are Home's own (how many days before a sample counts as out too lon
 broadcast should have gone out, ...) live in Settings › Home (GET/PUT /settings/home).
 """
 import asyncio
+import re
 import logging
 import time
 from calendar import monthrange
 from datetime import date, datetime, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from server import (
@@ -27,6 +28,22 @@ from server import (
 )
 
 router = APIRouter()
+
+
+def _inr(n: float) -> str:
+    """Rupees with Indian grouping: 210257 -> ₹2,10,257."""
+    neg, v = n < 0, str(int(round(abs(n or 0))))
+    if len(v) > 3:
+        head, tail = v[:-3], v[-3:]
+        parts = []
+        while len(head) > 2:
+            parts.insert(0, head[-2:]); head = head[:-2]
+        if head:
+            parts.insert(0, head)
+        v = ','.join(parts) + ',' + tail
+    return ('-' if neg else '') + '₹' + v
+
+
 logger = logging.getLogger('home')
 
 # ---------------- Settings › Home ----------------
@@ -408,7 +425,7 @@ async def _needs_you(user: dict, s: dict, now: datetime, staff: Optional[dict]) 
             oldest = max((_days_since(l['oldest_unpaid_date'], today_d) or 0) for l in pending)
             rows.append({'key': 'loans_overdue', 'severity': 'red', 'module': 'gold_loans', 'count': len(pending),
                          'title': f"{len(pending)} gold loan{'s' if len(pending) != 1 else ''} overdue",
-                         'detail': f"₹{total:,.0f} interest pending · oldest {oldest} days", 'amount': total, 'oldest_days': oldest,
+                         'detail': f"{_inr(total)} interest pending · oldest {oldest} days", 'amount': total, 'oldest_days': oldest,
                          'action': 'Remind all', 'route': '/loans?status=overdue', 'can_act': can_edit(user, 'gold_loans')})
 
     if can_view(user, 'repairs'):
@@ -655,7 +672,7 @@ async def _coming_up(user: dict, s: dict, now: datetime) -> dict:
                 return {'count': len(rows), 'net': round(sum(max(r.get('net_salary') or 0, 0) for r in rows), 2)}
             p = await _shared(f'payday:{pay_d.isoformat()}', 300, load)
             items.append({'date': pay_d.isoformat(), 'kind': 'payday', 'module': 'payroll', 'title': f"Payday · {prev.strftime('%B')} salaries",
-                          'detail': f"{p['count']} employee{'s' if p['count'] != 1 else ''} · ₹{p['net']:,.0f} after advances",
+                          'detail': f"{p['count']} employee{'s' if p['count'] != 1 else ''} · {_inr(p['net'])} after advances",
                           'route': f'/attendance?seg=pay&year={prev.year}&month={prev.month}'})
 
     items.sort(key=lambda x: x['date'])
@@ -786,6 +803,11 @@ async def build_summary(user: dict) -> dict:
     notif_task = asyncio.ensure_future(_section('notifications', _notifications(user))) if show('notifications') else None
     staff = await staff_task if staff_task else None
     needs = await _section('needs_you', _needs_you(user, s, now, staff if staff and not staff.get('unavailable') else None)) if show('needs_you') else None
+    needs_hidden = 0
+    if isinstance(needs, list):   # rows swiped away today stay hidden until tomorrow
+        gone = await _dismissed_today(user, today)
+        needs_hidden = sum(1 for r in needs if r.get('key') in gone)
+        needs = [r for r in needs if r.get('key') not in gone]
     owed = await owed_task if owed_task else None
     if owed and not owed.get('unavailable') and not any(owed.get(k) for k in ('customers', 'loan_interest', 'karigars')):
         owed = None   # nothing here this person may see
@@ -796,6 +818,7 @@ async def build_summary(user: dict) -> dict:
         'cash': await cash_task if cash_task else None,
         'quick_actions': quick,
         'needs_you': needs,
+        'needs_hidden': needs_hidden,
         'staff': staff if show('staff') else None,
         'owed': owed,
         'coming_up': await coming_task if coming_task else None,
@@ -805,6 +828,31 @@ async def build_summary(user: dict) -> dict:
         'settings': s,
         'took_ms': round((time.monotonic() - t0) * 1000),
     }
+
+
+async def _dismissed_today(user: dict, today: str) -> set:
+    prefs = await db.user_prefs.find_one({'user_id': user['id']}, {'_id': 0, 'home_needs_dismissed': 1}) or {}
+    return {k for k, d in (prefs.get('home_needs_dismissed') or {}).items() if d == today}
+
+
+@router.post('/home/needs/{key}/dismiss')
+async def dismiss_need(key: str, user: dict = Depends(get_current)):
+    """Hide one Needs-you row for the rest of today (it returns tomorrow if still due)."""
+    if not re.fullmatch(r'[a-z0-9_:-]{1,80}', key):
+        raise HTTPException(status_code=400, detail='Bad key')
+    today = now_utc().astimezone(IST).date().isoformat()
+    prefs = await db.user_prefs.find_one({'user_id': user['id']}, {'_id': 0, 'home_needs_dismissed': 1}) or {}
+    kept = {k: d for k, d in (prefs.get('home_needs_dismissed') or {}).items() if d == today}   # drop older days
+    kept[key] = today
+    await db.user_prefs.update_one({'user_id': user['id']}, {'$set': {'user_id': user['id'], 'home_needs_dismissed': kept}}, upsert=True)
+    return {'ok': True}
+
+
+@router.post('/home/needs/restore')
+async def restore_needs(user: dict = Depends(get_current)):
+    """Bring back everything hidden today."""
+    await db.user_prefs.update_one({'user_id': user['id']}, {'$set': {'home_needs_dismissed': {}}})
+    return {'ok': True}
 
 
 @router.get('/home/summary')

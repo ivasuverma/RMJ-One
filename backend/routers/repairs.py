@@ -54,6 +54,10 @@ from print_templates import filter_lines, reorder_lines, apply_field_config, inj
 
 router = APIRouter()
 
+# Who stops seeing finished work the day after it's done (delivered repairs,
+# received Stock In/Out). The owner and accountant keep full history.
+HIDE_DONE_ROLES = ('employee', 'admin')
+
 
 async def _mirror_party_account(kind: str, ref: str, name: str, phone: str) -> None:
     """Create a unified-ledger account mirroring a newly-created customer or
@@ -440,11 +444,12 @@ async def list_repair_orders(status_: Optional[str] = Query(default=None, alias=
         st = _order_status(items)
         if status_ and st != status_:
             continue
-        # Same "gone from employee view the day after completion" rule as
-        # the item list (list_repair_items) — an order counts as completed
-        # once every item is delivered, so it drops out the day after the
-        # LAST item's delivery. Owner/admin/accountant always see full history.
-        if st == 'completed' and user.get('role') == 'employee':
+        # Same "gone the day after completion" rule as the item list
+        # (list_repair_items) — an order counts as completed once every item
+        # is delivered, so it drops out the day after the LAST item's
+        # delivery. Applies to employees and store managers (admin); the
+        # owner and accountant always see full history.
+        if st == 'completed' and user.get('role') in HIDE_DONE_ROLES:
             last_delivered = max((i.get('delivered_at') or '' for i in items), default='')
             if not last_delivered.startswith(today):
                 continue
@@ -613,11 +618,11 @@ async def list_repair_items(
             {'description': {'$regex': q_esc, '$options': 'i'}},
             {'customer_name': {'$regex': q_esc, '$options': 'i'}},
         ]
-    if user.get('role') == 'employee':
-        # A delivered item drops out of an employee's view the day after it
-        # was delivered — visible on delivery day (e.g. via the Repair Bill
-        # "All" filter), gone from every filter/search the next day. Owner/
-        # admin/accountant always see full history regardless.
+    if user.get('role') in HIDE_DONE_ROLES:
+        # A delivered item drops out of an employee's or store manager's view
+        # the day after it was delivered — visible on delivery day (e.g. via
+        # the Repair Bill "All" filter), gone from every filter/search the
+        # next day. The owner and accountant always see full history.
         query.setdefault('$and', []).append(
             {'$or': [{'status': {'$ne': 'delivered'}}, {'delivered_at': {'$regex': f'^{today_str()}'}}]}
         )

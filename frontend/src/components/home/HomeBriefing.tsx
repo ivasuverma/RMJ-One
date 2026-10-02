@@ -134,7 +134,7 @@ export default function HomeBriefing() {
     needs_you: (
       <>
         {/* Needs you today */}
-        <NeedsSection needs={data ? data.needs_you : undefined} loading={!data} />
+        <NeedsSection needs={data ? data.needs_you : undefined} loading={!data} hiddenCount={data?.needs_hidden || 0} onChanged={refresh} />
       </>
     ),
     staff: (
@@ -216,7 +216,7 @@ export default function HomeBriefing() {
                   {(i === 0 || arr[i - 1].date !== c.date) && <Text style={s.day}>{dayLabel(c.date, today)}</Text>}
                   <Pressable style={s.item} onPress={() => go(c.route)}>
                     <View style={[s.ic, { backgroundColor: colors.brandTertiary }]}><Ionicons name={MODULE_ICON[c.module] || 'ellipse-outline'} size={16} color={colors.brandSecondary} /></View>
-                    <View style={s.mid}><Text style={s.t1} numberOfLines={1}>{c.title}</Text>{!!c.detail && <Text style={s.t2} numberOfLines={1}>{c.detail}</Text>}</View>
+                    <View style={s.mid}><Text style={s.t1} numberOfLines={2}>{c.title}</Text>{!!c.detail && <Text style={s.t2} numberOfLines={2}>{c.detail}</Text>}</View>
                   </Pressable>
                 </View>
               ))}
@@ -240,7 +240,7 @@ export default function HomeBriefing() {
         <View style={s.top}>
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={s.date}>{longDate(today)}</Text>
-            <Text style={s.hi} numberOfLines={1}>{greeting}{firstName ? `, ${firstName}` : ''}</Text>
+            <Text style={s.hi} numberOfLines={2}>{greeting}{firstName ? `, ${firstName}` : ''}</Text>
           </View>
           <UploadQueueBadge />
           <GlassButton onPress={() => go('/repairs/search')} style={s.roundBtn} accessibilityLabel="Search" testID="home-search"><Ionicons name="search-outline" size={19} color={colors.onSurface} /></GlassButton>

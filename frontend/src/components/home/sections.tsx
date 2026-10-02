@@ -6,7 +6,8 @@ import { api } from '@/src/api/client';
 import { istTime } from '@/src/utils/datetime';
 import { spacing, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
-import { Skeleton } from '@/src/components/ui';
+import { Skeleton, useToast } from '@/src/components/ui';
+import { SwipeRow, useSwipeBlocked } from '@/src/components/ui/SwipeRow';
 import { NotifRow, notifTarget, Notif } from '@/src/components/notifications/NotifRow';
 import { Marquee } from './Marquee';
 import { makeHomeStyles, HomeStyles } from './styles';
@@ -111,23 +112,50 @@ function QuickScroll({ s, children }: { s: HomeStyles; children: React.ReactNode
   return <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.quick}>{children}</ScrollView>;
 }
 
-/** Needs you today: one row per rule that fired, each with its one action; "All clear" when none did. */
-export function NeedsSection({ needs, loading }: { needs: NeedRow[] | { unavailable: true } | null | undefined; loading?: boolean }) {
+/** Needs you today: one row per rule that fired, each with its one action; "All clear" when none did.
+ *  Swipe a row left to hide it for the rest of today (it comes back tomorrow if still due). */
+export function NeedsSection({ needs, loading, hiddenCount = 0, onChanged }: {
+  needs: NeedRow[] | { unavailable: true } | null | undefined; loading?: boolean;
+  hiddenCount?: number; onChanged?: () => void;
+}) {
   const { s, colors } = useHomeStyles();
   const router = useRouter();
+  const toast = useToast();
+  const [gone, setGone] = useState<Set<string>>(new Set());   // hidden here, before the next refresh
   const go = (r: string) => router.push(r as any);
+  const dismiss = (key: string) => {
+    setGone((p) => new Set(p).add(key));
+    api.post(`/home/needs/${encodeURIComponent(key)}/dismiss`, {})
+      .then(() => { toast.success('Hidden for today'); onChanged?.(); })
+      .catch(() => { setGone((p) => { const n = new Set(p); n.delete(key); return n; }); toast.error('Could not hide it'); });
+  };
+  const restore = () => {
+    api.post('/home/needs/restore', {}).then(() => { setGone(new Set()); onChanged?.(); }).catch(() => toast.error('Please try again'));
+  };
   if (needs === null) return null;
   if (Array.isArray(needs)) {
+    const shown = needs.filter((r) => !gone.has(r.key));
+    const hidden = hiddenCount + needs.length - shown.length;
     return (
       <>
-        <SectionHead s={s} title="Needs you today" right={needs.length ? String(needs.length) : undefined} />
+        <SectionHead s={s} title="Needs you today" right={shown.length ? String(shown.length) : undefined} />
         <View style={s.list} testID="home-needs">
-          {needs.length === 0 ? (
+          {shown.length === 0 ? (
             <View style={s.item}>
               <View style={[s.ic, { backgroundColor: colors.success }]}><Ionicons name="checkmark" size={17} color={colors.onSuccess} /></View>
               <View style={s.mid}><Text style={s.t1}>All clear</Text><Text style={s.t2}>Nothing needs you right now</Text></View>
             </View>
-          ) : needs.map((r, i) => <NeedItem key={r.key} r={r} first={i === 0} s={s} colors={colors} onGo={go} />)}
+          ) : shown.map((r, i) => (
+            <SwipeRow key={r.key} label="Hide" icon="eye-off-outline" onAction={() => dismiss(r.key)} testID={`home-need-swipe-${r.key}`}>
+              <NeedItem r={r} first={i === 0} s={s} colors={colors} onGo={go} />
+            </SwipeRow>
+          ))}
+          {hidden > 0 && (
+            <Pressable onPress={restore} style={({ pressed }) => [s.item, s.itemSep, s.viewAll, pressed && { backgroundColor: colors.surfaceTertiary }]} testID="home-needs-restore">
+              <Text style={s.t2}>{hidden} hidden for today</Text>
+              <Text style={s.viewAllText}>Show</Text>
+            </Pressable>
+          )}
         </View>
       </>
     );
@@ -137,15 +165,17 @@ export function NeedsSection({ needs, loading }: { needs: NeedRow[] | { unavaila
 }
 
 function NeedItem({ r, first, s, colors, onGo }: { r: NeedRow; first: boolean; s: HomeStyles; colors: ThemeColors; onGo: (r: string) => void }) {
+  const swiping = useSwipeBlocked();
+  const open = () => { if (!swiping()) onGo(r.route); };
   const tone = r.severity === 'red' ? { bg: colors.error, fg: colors.onError } : r.severity === 'amber' ? { bg: colors.warning, fg: colors.onWarning } : { bg: colors.brandTertiary, fg: colors.brandSecondary };
   return (
-    <Pressable style={[s.item, !first && s.itemSep]} onPress={() => onGo(r.route)} testID={`home-need-${r.key}`}>
+    <Pressable style={[s.item, !first && s.itemSep]} onPress={open} testID={`home-need-${r.key}`}>
       <View style={[s.ic, { backgroundColor: tone.bg }]}><Ionicons name={MODULE_ICON[r.module] || 'alert-circle-outline'} size={16} color={tone.fg} /></View>
       <View style={s.mid}>
-        <Text style={s.t1} numberOfLines={1}>{r.title}</Text>
-        {!!r.detail && <Text style={s.t2} numberOfLines={1}>{r.detail}</Text>}
+        <Text style={s.t1} numberOfLines={2}>{r.title}</Text>
+        {!!r.detail && <Text style={s.t2} numberOfLines={2}>{r.detail}</Text>}
       </View>
-      <Pressable onPress={() => onGo(r.route)} style={s.act} hitSlop={6} testID={`home-need-act-${r.key}`}>
+      <Pressable onPress={open} style={s.act} hitSlop={6} testID={`home-need-act-${r.key}`}>
         <Text style={s.actText}>{r.can_act ? r.action : 'View'}</Text>
       </Pressable>
     </Pressable>
