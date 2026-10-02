@@ -23,7 +23,6 @@ from server import (
     PayrollGenerateIn,
     PayrollEntryUpdateIn,
     log_audit,
-    notify_user,
     notify_general,
     _ledger_sign,
     _iter_month_dates,
