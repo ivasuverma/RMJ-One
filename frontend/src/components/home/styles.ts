@@ -9,7 +9,7 @@ export const makeHomeStyles = (colors: ThemeColors) => StyleSheet.create({
   edgeToEdge: { marginHorizontal: -spacing.lg, flexGrow: 0 },
   top: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   date: { color: colors.mutedText, fontSize: 13, fontWeight: '600' },
-  hi: { color: colors.onSurface, fontSize: 27, fontWeight: '800', letterSpacing: -0.8, fontFamily: fonts.display, marginTop: 1 },
+  hi: { color: colors.onSurface, fontSize: 22, fontWeight: '800', letterSpacing: -0.5, fontFamily: fonts.display, marginTop: 1 },
   roundBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surfaceSecondary, alignItems: 'center', justifyContent: 'center', borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
   bellDot: { position: 'absolute', top: 9, right: 10, width: 8, height: 8, borderRadius: 4, backgroundColor: colors.onError, borderWidth: 1.5, borderColor: colors.surfaceSecondary },
 
