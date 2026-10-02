@@ -4,11 +4,11 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import { api, TOKEN_KEY } from '@/src/api/client';
+import { api, getToken } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthContext';
-import { storage } from '@/src/utils/storage';
 import { istDate, istTime, istDisplayDate, istDisplayDateTime } from '@/src/utils/datetime';
 import { shareFile, useShareableFile } from '@/src/utils/shareFile';
+import { usePdfPages } from '@/src/utils/pdfPages';
 import { confirmAction } from '@/src/utils/confirm';
 import { haptics } from '@/src/utils/haptics';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
@@ -133,7 +133,7 @@ export default function DocumentsScreen() {
   });
 
   const load = useCallback(async () => {
-    setToken((await storage.secureGet<string>(TOKEN_KEY, '')) || '');
+    setToken((await getToken()) || '');
     api.get<Cat[]>('/document-categories').then(setCats).catch(() => {});
     api.get<Summary>('/documents/summary').then(setSummary).catch(() => {});
     // Folder view (Done, no category picked, no search) needs no doc list —
@@ -462,6 +462,10 @@ function QuickView({ doc, categoryLabel, token, fileUri, onClose, onRecord, canR
     () => Object.fromEntries((pagePics || []).map((u) => [u, { uri: u }])),
     [pagePics],
   );
+  // Any other PDF: the server draws each page as a picture, shown right here.
+  const isPdf = !!doc && !multi && doc.file.mime === 'application/pdf';
+  const pdfPages = usePdfPages(isPdf ? doc!.id : null, token);
+  const showPdf = isPdf && !!pdfPages && pdfPages.length > 0;
   const idx = doc ? list.findIndex((x) => x.id === doc.id) : -1;
   const go = (dir: number) => {
     const n = idx + dir;
@@ -501,7 +505,7 @@ function QuickView({ doc, categoryLabel, token, fileUri, onClose, onRecord, canR
             : <View style={styles.qvIconBtn} />}
         </View>
         <View style={styles.qvImgWrap} {...pan.panHandlers} onLayout={(e) => setBox({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
-          {!multi && <Pressable style={StyleSheet.absoluteFill} onPress={() => !isImage && onOpenFile(doc)} />}
+          {!multi && !showPdf && <Pressable style={StyleSheet.absoluteFill} onPress={() => !isImage && onOpenFile(doc)} />}
           {multi && pagePics && pagePics.length > 0
             ? <ScrollView horizontal={zoom > 1} style={StyleSheet.absoluteFill} contentContainerStyle={zoom > 1 ? { width: Math.max(box.w, 1) * zoom } : undefined} testID="qv-pages">
                 <ScrollView style={{ width: Math.max(box.w, 1) * zoom }} contentContainerStyle={{ padding: 8, gap: 8 }}>
@@ -509,6 +513,14 @@ function QuickView({ doc, categoryLabel, token, fileUri, onClose, onRecord, canR
                 </ScrollView>
               </ScrollView>
             : multi && !pagePics
+            ? <ActivityIndicator color="#fff" size="large" />
+            : showPdf
+            ? <ScrollView horizontal={zoom > 1} style={StyleSheet.absoluteFill} contentContainerStyle={zoom > 1 ? { width: Math.max(box.w, 1) * zoom } : undefined} testID="qv-pdf-pages">
+                <ScrollView style={{ width: Math.max(box.w, 1) * zoom }} contentContainerStyle={{ padding: 8, gap: 8 }}>
+                  {pdfPages!.map((src) => <PdfPage key={src.uri} source={src} width={Math.max(box.w, 1) * zoom - 16} />)}
+                </ScrollView>
+              </ScrollView>
+            : isPdf && pdfPages === undefined && !!token
             ? <ActivityIndicator color="#fff" size="large" />
             : isImage && token
             ? (() => {
@@ -558,7 +570,7 @@ function QuickView({ doc, categoryLabel, token, fileUri, onClose, onRecord, canR
                   : <><Ionicons name="document-text-outline" size={doc.pages ? 28 : 64} color={colors.mutedText} /><Text style={{ color: '#fff', fontWeight: '700' }}>{doc.pages ? `Tap to open · ${doc.pages} pages` : 'Tap to open PDF'}</Text></>}
               </View>}
           {isImage && !imgLoaded && <View style={styles.qvImgLoading} pointerEvents="none"><ActivityIndicator color="#fff" size="small" /></View>}
-          {(isImage || multi) && !!token && (
+          {(isImage || multi || showPdf) && !!token && (
             <View style={styles.qvZoom} testID="qv-zoom">
               <Pressable onPress={() => stepZoom(-1)} disabled={zoom <= 1} hitSlop={6} style={[styles.qvZoomBtn, zoom <= 1 && { opacity: 0.4 }]} testID="qv-zoom-out"><Ionicons name="remove" size={20} color="#fff" /></Pressable>
               <Pressable onPress={() => applyZoom(1)} hitSlop={6} testID="qv-zoom-reset"><Text style={styles.qvZoomText}>{Math.round(zoom * 100)}%</Text></Pressable>
@@ -678,8 +690,11 @@ const DocThumb = memo(function DocThumb({ d, size, base, token }: { d: Doc; size
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [loaded, setLoaded] = useState(false);
-  // A merged multi-photo document is a PDF but carries the first photo's thumbnail.
-  const isImg = ((d.file.mime || '').startsWith('image/') || !!d.pages) && !!token;
+  const [failed, setFailed] = useState(false);
+  // A merged multi-photo document is a PDF but carries the first photo's
+  // thumbnail; any other PDF's thumbnail is its first page.
+  const pdf = d.file.mime === 'application/pdf';
+  const isImg = ((d.file.mime || '').startsWith('image/') || !!d.pages || pdf) && !!token && !failed;
   return (
     <View style={[styles.thumb, { width: size, height: size, borderRadius: size > 60 ? 12 : 10 }]}>
       {!!d.pages && d.pages > 1 && (
@@ -690,8 +705,9 @@ const DocThumb = memo(function DocThumb({ d, size, base, token }: { d: Doc; size
       )}
       {isImg ? (
         <>
-          <Image source={{ uri: `${base}/api/documents/${d.id}/file?thumb=1`, headers: { Authorization: `Bearer ${token}` } }} style={{ width: size, height: size }} contentFit="cover" cachePolicy="memory-disk" recyclingKey={d.id} transition={120} onLoadEnd={() => setLoaded(true)} />
+          <Image source={{ uri: `${base}/api/documents/${d.id}/file?thumb=1`, headers: { Authorization: `Bearer ${token}` } }} style={{ width: size, height: size }} contentFit="cover" contentPosition={pdf && !d.pages ? 'top' : 'center'} cachePolicy="memory-disk" recyclingKey={d.id} transition={120} onLoadEnd={() => setLoaded(true)} onError={() => setFailed(true)} />
           {!loaded && <View style={styles.thumbLoading}><ActivityIndicator size="small" color={colors.brandSecondary} /></View>}
+          {pdf && !d.pages && <View style={styles.pdfBadge}><Text style={styles.pdfBadgeText}>PDF</Text></View>}
         </>
       ) : (
         <Ionicons name="document-text-outline" size={size > 60 ? 30 : 22} color={colors.brandSecondary} />
@@ -700,8 +716,19 @@ const DocThumb = memo(function DocThumb({ d, size, base, token }: { d: Doc; size
   );
 });
 
+// One PDF page, at the page's own shape once it has loaded.
+function PdfPage({ source, width }: { source: { uri: string; headers: Record<string, string> }; width: number }) {
+  const [ratio, setRatio] = useState(0.707);   // A4 portrait until we know
+  return (
+    <Image source={source} style={{ width, aspectRatio: ratio, backgroundColor: '#fff' }} contentFit="contain"
+      onLoad={(e) => { const { width: w, height: h } = e.source; if (w && h) setRatio(w / h); }} />
+  );
+}
+
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
+  pdfBadge: { position: 'absolute', left: 3, bottom: 3, backgroundColor: 'rgba(0,0,0,0.65)', borderRadius: 6, paddingHorizontal: 5, paddingVertical: 1 },
+  pdfBadgeText: { color: '#fff', fontSize: 10, fontWeight: '800' },
   recatRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 13, paddingHorizontal: 4, borderBottomWidth: 1, borderBottomColor: colors.border },
   recatRowText: { flex: 1, color: colors.onSurface, fontSize: 16, fontWeight: '600' },
   scroll: { padding: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.xxxl },

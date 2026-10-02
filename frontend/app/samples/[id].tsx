@@ -6,8 +6,7 @@ import { notify } from '@/src/utils/notify';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import { api, TOKEN_KEY } from '@/src/api/client';
-import { storage } from '@/src/utils/storage';
+import { api, getToken } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthContext';
 import { RecordPhotos } from '@/src/components/RecordPhotos';
 import { confirmAction } from '@/src/utils/confirm';
@@ -64,7 +63,7 @@ export default function SampleDetailScreen() {
     try {
       const base = process.env.EXPO_PUBLIC_BACKEND_URL || '';
       const url = `${base}/api/samples/${id}/issue-slip/pdf`;
-      const token = (await storage.secureGet<string>(TOKEN_KEY, '')) || '';
+      const token = (await getToken()) || '';
       const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
       if (!res.ok) throw new Error(`Print failed (${res.status})`);
       if (Platform.OS === 'web') {

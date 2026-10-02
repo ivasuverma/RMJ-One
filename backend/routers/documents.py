@@ -114,6 +114,12 @@ def _cache_drop(doc_id: str) -> None:
             _cache_file(doc_id, variant).unlink(missing_ok=True)
         except Exception:
             pass
+    try:
+        _cache_file(doc_id, 'thumb')   # validates the id
+        for f in DOC_CACHE_DIR.glob(f'{doc_id}.page*'):
+            f.unlink(missing_ok=True)
+    except Exception:
+        pass
 
 # This directory is a TEMPORARY cache, not storage: Google Drive holds the only
 # permanent copy of every document and photo (the shop doesn't want them kept on
@@ -136,7 +142,61 @@ VIEW_QUALITY = 82
 _VIEW_REUSE_BYTES = 600 * 1024   # an already-small JPEG is served as-is
 
 
+MAX_PDF_PAGES = 200   # pages shown in the app; Open / Share still give the whole file
+
+
+def _can_draw_pdfs() -> bool:
+    try:
+        import pypdfium2  # noqa: F401
+        return True
+    except Exception:
+        return False
+
+
+def _is_pdf(raw: bytes) -> bool:
+    return raw[:1024].lstrip().startswith(b'%PDF')
+
+
+def _pdf_page_count_sync(raw: bytes):
+    """Number of pages, or None when PDFs can't be read here (pypdfium2 missing
+    or a broken file) — the app then just offers Open."""
+    try:
+        import pypdfium2
+        pdf = pypdfium2.PdfDocument(raw)
+        try:
+            return len(pdf)
+        finally:
+            pdf.close()
+    except Exception:
+        return None
+
+
+def _pdf_page_jpeg_sync(raw: bytes, index: int, side: int, quality: int):
+    """One PDF page as a JPEG, long side `side` px. None if it can't be drawn."""
+    try:
+        import io
+        import pypdfium2
+        pdf = pypdfium2.PdfDocument(raw)
+        try:
+            if not 0 <= index < len(pdf):
+                return None
+            page = pdf[index]
+            w, h = page.get_size()
+            img = page.render(scale=side / max(w, h, 1)).to_pil()
+        finally:
+            pdf.close()
+        if img.mode != 'RGB':
+            img = img.convert('RGB')
+        out = io.BytesIO()
+        img.save(out, 'JPEG', quality=quality, optimize=True)
+        return out.getvalue()
+    except Exception:
+        return None
+
+
 def _make_thumb_sync(raw: bytes):
+    if _is_pdf(raw):
+        return _pdf_page_jpeg_sync(raw, 0, THUMB_SIDE, 72)   # first page as the cover
     try:
         import io
         from PIL import Image, ImageOps
@@ -898,12 +958,20 @@ async def _load_variant(meta: dict, doc_id: str, variant: str):
             return raw, False
         view = await asyncio.to_thread(_make_view_sync, raw)
         return (view or raw), bool(view)
+    if variant.startswith('page'):
+        if not _can_draw_pdfs():
+            return None, False
+        raw, ok = await _load_variant(meta, doc_id, 'full')
+        if not raw or not ok:
+            return None, False
+        return await asyncio.to_thread(_pdf_page_jpeg_sync, raw, int(variant[4:]), VIEW_MAX_SIDE, VIEW_QUALITY), True
     if variant == 'thumb':
         row = await _blob_get(doc_id, {'thumb_data': 1, 'local_data': 1})
         data = row.get('thumb_data') or (row.get('local_data') if meta.get('local_kind') == 'thumb' else None)
         if data:
             return base64.b64decode(data), True
-        if (meta.get('file') or {}).get('mime', '').startswith('image/'):
+        mime = (meta.get('file') or {}).get('mime', '')
+        if mime.startswith('image/') or (mime == 'application/pdf' and _can_draw_pdfs()):
             raw, ok = await _load_variant(meta, doc_id, 'full')
             if raw and ok:
                 t = await asyncio.to_thread(_make_thumb_sync, raw)
@@ -937,19 +1005,8 @@ async def _load_variant(meta: dict, doc_id: str, variant: str):
         return (base64.b64decode(data) if data else None), False
 
 
-@router.get('/documents/{doc_id}/file')
-async def document_file(
-    doc_id: str, full: bool = Query(default=False), thumb: bool = Query(default=False),
-    original: bool = Query(default=False), user=Depends(get_current),
-):
-    """Serve a document's image. `?thumb=1` is the small grid thumbnail;
-    `?full=1` is the on-screen copy - a readable-size JPEG for images (fast on a
-    phone), the file itself for PDFs; `?original=1` is always the untouched
-    original (for Open / download).
-    Permission-checked against the caller's category visibility exactly as
-    before — but the permission check reads only the document's metadata, and
-    the image itself is served from the on-disk cache once it has been fetched
-    a single time (see DOC_CACHE_DIR above)."""
+async def _doc_for_viewer(doc_id: str, user) -> dict:
+    """The document's metadata, if this person may see it (403/404 otherwise)."""
     d = await _memo(('meta', doc_id), 60, lambda: db.documents.find_one(
         {'id': doc_id, 'deleted': {'$ne': True}}, {'_id': 0, 'local_data': 0, 'thumb_data': 0, 'ocr': 0}))
     if not d:
@@ -959,15 +1016,55 @@ async def document_file(
     rights = await _memo(('rights', user.get('id')), 30, lambda: _account_rights(user))
     if not cat or not _can_see(cat, _role(user), rights):
         raise HTTPException(status_code=403, detail='No access to this document')
+    return d
+
+
+@router.get('/documents/{doc_id}/pages')
+async def document_pages(doc_id: str, user=Depends(get_current)):
+    """How many pages a PDF has, so the app can show each one (?page=N).
+    `pages` is null when it can't be read here — the app falls back to Open."""
+    d = await _doc_for_viewer(doc_id, user)
+    if (d.get('file') or {}).get('mime') != 'application/pdf' or not _can_draw_pdfs():
+        return {'pages': None}
+
+    async def count():
+        raw, ok = await _load_variant(d, doc_id, 'full')
+        if not raw:
+            return None
+        if ok and not _cache_file(doc_id, 'full').is_file():
+            await _cache_write(doc_id, 'full', raw)   # each page is drawn from it next
+        return await asyncio.to_thread(_pdf_page_count_sync, raw)
+    n = await _memo(('pages', doc_id), 3600, count)
+    return {'pages': min(n, MAX_PDF_PAGES) if n else None, 'total': n}
+
+
+@router.get('/documents/{doc_id}/file')
+async def document_file(
+    doc_id: str, full: bool = Query(default=False), thumb: bool = Query(default=False),
+    original: bool = Query(default=False), page: Optional[int] = Query(default=None, ge=0, lt=MAX_PDF_PAGES),
+    user=Depends(get_current),
+):
+    """Serve a document's image. `?thumb=1` is the small grid thumbnail (a PDF's
+    first page); `?full=1` is the on-screen copy - a readable-size JPEG for
+    images (fast on a phone), the file itself for PDFs; `?page=N` is page N of a
+    PDF as a readable-size JPEG; `?original=1` is always the untouched original
+    (for Open / download).
+    Permission-checked against the caller's category visibility exactly as
+    before — but the permission check reads only the document's metadata, and
+    the image itself is served from the on-disk cache once it has been fetched
+    a single time (see DOC_CACHE_DIR above)."""
+    d = await _doc_for_viewer(doc_id, user)
     mime = (d.get('file') or {}).get('mime', 'image/jpeg')
     is_image = mime.startswith('image/')
-    if thumb:
+    if page is not None and mime == 'application/pdf':
+        variant = f'page{page}'
+    elif thumb:
         variant = 'thumb'
     elif original or not is_image:
         variant = 'full'
     else:
         variant = 'view'
-    media_type = 'image/jpeg' if variant in ('thumb', 'view') else mime
+    media_type = 'image/jpeg' if variant in ('thumb', 'view') or variant.startswith('page') else mime
     cache_headers = {'Cache-Control': f'private, max-age={_CACHE_TTL_SECONDS}'}
 
     path = _cache_file(doc_id, variant)
@@ -1009,7 +1106,7 @@ def _evict_sync(synced_ids: set, all_ids: set, done_ids: set = frozenset()) -> d
             except OSError:
                 pass
             continue
-        if variant in ('full', 'view') and doc_id in synced_ids:
+        if (variant in ('full', 'view') or variant.startswith('page')) and doc_id in synced_ids:
             heavy.append((st.st_mtime, st.st_size, f, variant, doc_id))
     total = sum(h[1] for h in heavy)
     for mtime, size, f, variant, doc_id in sorted(heavy):     # oldest first

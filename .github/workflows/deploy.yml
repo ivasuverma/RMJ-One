@@ -111,8 +111,24 @@ jobs:
           }
 
           Write-Host '--- git pull ---'
+          $reqBefore = (git rev-parse HEAD:backend/requirements.txt)
           git fetch origin main
           git reset --hard origin/main
+
+          # New Python packages: install only when requirements.txt changed, into
+          # the backend's own venv (what the service runs - see ops/setup-new-pc.ps1).
+          # Never fails the deploy: the app keeps working without a new optional
+          # package (e.g. PDF previews just show "Open" instead).
+          if ((git rev-parse HEAD:backend/requirements.txt) -ne $reqBefore) {
+            Write-Host '--- requirements.txt changed: pip install ---'
+            $venvPy = Join-Path $repo 'backend\.venv\Scripts\python.exe'
+            if (Test-Path $venvPy) {
+              & $venvPy -m pip install --quiet --disable-pip-version-check -r (Join-Path $repo 'backend\requirements.txt')
+              if ($LASTEXITCODE -ne 0) { Write-Warning "pip install exited with $LASTEXITCODE - continuing" }
+            } else {
+              Write-Warning "No backend venv at $venvPy - skipping pip install"
+            }
+          }
 
           Write-Host '--- restart backend ---'
           # `nssm restart` was observed to stop the service but not reliably

@@ -6,8 +6,7 @@ import { notify } from '@/src/utils/notify';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import { api, TOKEN_KEY } from '@/src/api/client';
-import { storage } from '@/src/utils/storage';
+import { api, getToken } from '@/src/api/client';
 import { confirmAction } from '@/src/utils/confirm';
 import { PhotoCaptureModal } from '@/src/components/PhotoCaptureModal';
 import { DateField } from '@/src/components/DateField';
@@ -362,7 +361,7 @@ export default function RepairBillScreen() {
     try {
       const base = process.env.EXPO_PUBLIC_BACKEND_URL || '';
       const url = `${base}/api/repair-items/${item.id}/bill/pdf`;
-      const token = (await storage.secureGet<string>(TOKEN_KEY, '')) || '';
+      const token = (await getToken()) || '';
       const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
       if (!res.ok) throw new Error(`Bill failed (${res.status})`);
       if (Platform.OS === 'web') {

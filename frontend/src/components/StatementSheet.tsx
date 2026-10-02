@@ -1,8 +1,7 @@
 import { useMemo, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { TOKEN_KEY } from '@/src/api/client';
-import { storage } from '@/src/utils/storage';
+import { getToken } from '@/src/api/client';
 import { Sheet } from '@/src/components/ui';
 import { spacing, radius, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
@@ -34,7 +33,7 @@ export function StatementSheet({ visible, onClose, path, title, filename }: { vi
     if (bad(from) || bad(to)) { setErr('Dates look like 2026-09-30'); return; }
     setBusy(mode); setErr('');
     try {
-      const token = (await storage.secureGet<string>(TOKEN_KEY, '')) || '';
+      const token = (await getToken()) || '';
       const base = process.env.EXPO_PUBLIC_BACKEND_URL || '';
       const q = [from && `from=${from}`, to && `to=${to}`].filter(Boolean).join('&');
       const res = await fetch(`${base}/api${path}${q ? `?${q}` : ''}`, { headers: { Authorization: `Bearer ${token}` } });

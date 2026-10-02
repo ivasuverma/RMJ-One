@@ -4,8 +4,7 @@ import { notify } from '@/src/utils/notify';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { api, TOKEN_KEY } from '@/src/api/client';
-import { storage } from '@/src/utils/storage';
+import { api, getToken } from '@/src/api/client';
 import { istDate, todayIST } from '@/src/utils/datetime';
 import { REPAIR_STATUS_LABEL, repairStatusColors } from '@/src/utils/repairStatus';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
@@ -48,7 +47,7 @@ export default function OutstandingRepairsScreen() {
     try {
       const base = process.env.EXPO_PUBLIC_BACKEND_URL || '';
       const url = `${base}/api/reports/repairs_outstanding/pdf`;
-      const token = (await storage.secureGet<string>(TOKEN_KEY, '')) || '';
+      const token = (await getToken()) || '';
       const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
       if (!res.ok) throw new Error(`Report failed (${res.status})`);
       if (Platform.OS === 'web') {
