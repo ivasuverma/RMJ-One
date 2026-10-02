@@ -7,7 +7,8 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { api, TOKEN_KEY } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthContext';
 import { storage } from '@/src/utils/storage';
-import { istTime, istDisplayDate, istDisplayDateTime } from '@/src/utils/datetime';
+import { istDate, istTime, istDisplayDate, istDisplayDateTime } from '@/src/utils/datetime';
+import { shareFile, useShareableFile } from '@/src/utils/shareFile';
 import { confirmAction } from '@/src/utils/confirm';
 import { haptics } from '@/src/utils/haptics';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
@@ -471,17 +472,30 @@ function QuickView({ doc, categoryLabel, token, fileUri, onClose, onRecord, canR
     onMoveShouldSetPanResponder: (_e, g) => zoomRef.current === 1 && !pinch.current && Math.abs(g.dx) > 24 && Math.abs(g.dx) > Math.abs(g.dy),
     onPanResponderRelease: (_e, g) => { if (g.dx <= -50) go(1); else if (g.dx >= 50) go(-1); },
   }), [idx, list]);
+  // Fetched as soon as the document shows, so Share can open the sheet straight from the tap.
+  const shareName = doc ? `${categoryLabel} ${istDate(doc.created_at)}`.replace(/[\\/:*?"<>|]+/g, '-') : '';
+  const shareable = useShareableFile(doc ? `${fileUri(doc.id)}?full=1` : null, token, shareName);
+  const toast = useToast();
   if (!doc) return null;
   const isImage = (doc.file.mime || '').startsWith('image/');
+  const share = async () => {
+    if (!shareable) { toast.error('Still getting the file ready — try again in a moment'); return; }
+    const r = await shareFile(shareable, shareName);
+    if (r === 'downloaded') toast.success('Saved to your downloads');
+    else if (r === 'failed') toast.error('Could not share this file');
+  };
   return (
     <Modal visible transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.qvRoot}>
         <View style={[styles.qvBar, { paddingTop: insets.top + 8 }]}>
           <Pressable onPress={onClose} hitSlop={10} style={styles.qvCloseBtn} testID="qv-close">
-            <Ionicons name="chevron-back" size={18} color={colors.onSurface} />
+            <Ionicons name="chevron-back" size={18} color="#fff" />
             <Text style={styles.qvClose}>Close</Text>
           </Pressable>
           <Text style={styles.qvCat} numberOfLines={1}>{categoryLabel}</Text>
+          <Pressable onPress={share} hitSlop={10} style={styles.qvIconBtn} accessibilityRole="button" accessibilityLabel="Share" testID="qv-share">
+            {shareable ? <Ionicons name="share-outline" size={19} color="#fff" /> : <ActivityIndicator size="small" color="rgba(255,255,255,0.6)" />}
+          </Pressable>
           {canDelete
             ? <Pressable onPress={() => onDelete(doc.id)} hitSlop={10} style={styles.qvIconBtn} testID="qv-delete"><Ionicons name="trash-outline" size={19} color={colors.onError} /></Pressable>
             : <View style={styles.qvIconBtn} />}
@@ -752,7 +766,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   qvRoot: { flex: 1, backgroundColor: '#000' },
   qvBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm, paddingHorizontal: spacing.md, paddingBottom: spacing.md, backgroundColor: 'rgba(20,20,24,0.96)', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(255,255,255,0.14)' },
   qvCloseBtn: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingVertical: 8, paddingHorizontal: 12, borderRadius: radius.pill, backgroundColor: 'rgba(255,255,255,0.12)' },
-  qvClose: { color: colors.onSurface, fontSize: 15, fontWeight: '700' },
+  qvClose: { color: '#fff', fontSize: 15, fontWeight: '700' },
   qvIconBtn: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.12)' },
   qvCat: { flex: 1, textAlign: 'center', color: '#fff', fontSize: 16, fontWeight: '800' },
   qvImgWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', position: 'relative' },
