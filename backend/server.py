@@ -2075,7 +2075,7 @@ GENERAL_ALERTS = [
     {'key': 'repair_ready_notice', 'group': 'Repairs', 'label': 'Repair ready for pickup (Send button)', 'to': 'Customer', 'push': None, 'whatsapp': True, 'wa_flow': True},
     {'key': 'repair_received_notice', 'group': 'Repairs', 'label': 'Repair received at the shop (Send button)', 'to': 'Customer', 'push': None, 'whatsapp': True, 'wa_flow': True},
     {'key': 'task_assigned', 'group': 'Tasks', 'label': 'Task assigned', 'to': 'Employee', 'push': True, 'whatsapp': True},
-    {'key': 'task_comment', 'group': 'Tasks', 'label': 'Owner/admin commented on their task', 'to': 'Employee', 'push': True, 'whatsapp': True},
+    {'key': 'task_comment_to_employee', 'group': 'Tasks', 'label': 'Owner/admin commented on their task', 'to': 'Employee', 'push': True, 'whatsapp': True},
     {'key': 'task_reminder', 'group': 'Tasks', 'label': 'Repeat reminder for a pending task', 'to': 'Employee', 'push': True, 'whatsapp': True},
 ]
 GENERAL_ALERTS_BY_KEY = {a['key']: a for a in GENERAL_ALERTS}
@@ -2092,10 +2092,14 @@ async def general_alert_channels(key: str) -> tuple:
 
 
 async def notify_general(key: str, user_id: str, title: str, body: str, url: str = '/') -> None:
-    """Send a general alert to one person on whichever channels are switched on."""
+    """Send a general alert to one person on whichever channels are switched on.
+    Both switches must agree: this shop-wide one, and the person's own master
+    switch (Users > person > Notifications) — off on either means no push or
+    WhatsApp. It still lands in their in-app list, like every other alert."""
     push, wa = await general_alert_channels(key)
-    if push or wa:
-        await notify_user(user_id, title, body, url, push=push, whatsapp=wa)
+    if (push or wa) and await _muted_account_ids([user_id]):
+        push = wa = False
+    await notify_user(user_id, title, body, url, push=push, whatsapp=wa)
 
 
 async def notify_user(user_id: str, title: str, body: str, url: str = '/', push: bool = True, whatsapp: bool = True):
@@ -2533,7 +2537,7 @@ NOTIFICATION_SCRIPTS = [
     {'key': 'attendance_leave_request', 'module': 'attendance', 'label': 'New leave request', 'admin_only': True},
     {'key': 'task_overdue', 'module': 'tasks', 'label': 'Task overdue', 'admin_only': True},
     {'key': 'task_comment', 'module': 'tasks', 'label': 'Employee commented on a task', 'admin_only': True},
-    {'key': 'payroll_auto_advance', 'module': 'payroll', 'label': 'Auto advance recorded', 'admin_only': True},
+    {'key': 'payroll_auto_advance', 'module': 'payroll', 'label': 'Auto advance recorded (owner/admin copy — the employee\'s own alert is in General Notifications)', 'admin_only': True},
     {'key': 'repair_new_order', 'module': 'repairs', 'label': 'New repair order created', 'admin_only': False},
     {'key': 'repair_item_ready', 'module': 'repairs', 'label': 'Repair item ready / back from karigar', 'admin_only': False},
     {'key': 'repair_followup', 'module': 'repairs', 'label': 'Follow-up: issue to / receive from karigar (daily, noon)', 'admin_only': False},

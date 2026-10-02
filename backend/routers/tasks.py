@@ -202,7 +202,7 @@ async def add_task_comment(task_id: str, body: TaskCommentIn, user=Depends(get_c
         await _notify_module('tasks', f"Comment on: {t['title']}", f"{user['name']}: {comment['text']}", '/tasks',
                               script='task_comment', admin_only=True)
     else:
-        await notify_general('task_comment', t['assigned_to'], f"Comment on: {t['title']}", f"{user['name']}: {comment['text']}", '/(emp)/tasks')
+        await notify_general('task_comment_to_employee', t['assigned_to'], f"Comment on: {t['title']}", f"{user['name']}: {comment['text']}", '/(emp)/tasks')
     return comment
 
 

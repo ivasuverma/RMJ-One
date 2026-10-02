@@ -69,7 +69,7 @@ export default function GeneralNotificationsScreen() {
       </View>
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 60 }}>
         <Text style={styles.note}>
-          Alerts sent straight to the person concerned. Switching one off stops it for everyone. Staff alerts (check-ins, new repairs, cash) are set per person in Users.
+          Alerts sent straight to the person concerned. Off here stops it for everyone. Someone who has turned their own notifications off in Users won&apos;t get these either. Either way the alert still shows in their in-app list.{'\n\n'}Staff alerts (check-ins, new repairs, cash) and each employee&apos;s attendance alerts are set per person in Users — they are different alerts, so nothing is sent twice.
         </Text>
         {!alerts ? <ActivityIndicator color={colors.brandPrimary} style={{ marginTop: 40 }} /> : groups.map((g) => (
           <View key={g.name} style={{ marginTop: spacing.lg }}>
