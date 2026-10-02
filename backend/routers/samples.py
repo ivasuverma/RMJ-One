@@ -37,7 +37,7 @@ from print_templates import apply_field_config
 # Thermal-printer helpers live in routers/repairs.py (where they were first
 # built) rather than the shared core — reused here as-is instead of
 # duplicating the ESC/POS builder for a second module.
-from routers.repairs import _escpos_receipt, _print_escpos, _thermal_slip_pdf, _dmy
+from routers.repairs import _escpos_receipt, _print_escpos, _thermal_slip_pdf, _dmy, HIDE_DONE_ROLES
 
 router = APIRouter()
 
@@ -150,11 +150,11 @@ async def list_samples(
             {'description': {'$regex': q_esc, '$options': 'i'}},
             {'karigar_name': {'$regex': q_esc, '$options': 'i'}},
         ]
-    if user.get('role') == 'employee':
-        # A received sample drops out of an employee's view the day after it
-        # was received back — visible on receive day, gone from every
-        # filter/search the next day. Owner/admin/accountant always see full
-        # history regardless.
+    if user.get('role') in HIDE_DONE_ROLES:
+        # A received sample drops out of an employee's or store manager's view
+        # the day after it was received back — visible on receive day, gone
+        # from every filter/search the next day. The owner and accountant
+        # always see full history.
         query.setdefault('$and', []).append(
             {'$or': [{'status': {'$ne': 'received'}}, {'received_at': {'$regex': f'^{today_str()}'}}]}
         )
