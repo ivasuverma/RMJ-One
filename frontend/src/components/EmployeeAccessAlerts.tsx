@@ -128,8 +128,8 @@ export function EmployeeAccessAlerts({ editor, onSave }: { editor: AccessEditor;
                 <View style={styles.alertsHead}>
                   <Text style={[styles.levelNote, { flex: 1 }]}>Alerts about their own attendance, pay, tasks and work given to them. Set only here. Pick push, WhatsApp or both.</Text>
                   <View style={styles.channelIcons}>
-                    <Ionicons name="notifications-outline" size={13} color={colors.mutedText} />
-                    <Ionicons name="logo-whatsapp" size={13} color={colors.mutedText} />
+                    <View style={styles.channelIcon}><Ionicons name="notifications-outline" size={14} color={colors.mutedText} /></View>
+                    <View style={styles.channelIcon}><Ionicons name="logo-whatsapp" size={14} color={colors.mutedText} /></View>
                   </View>
                 </View>
                 {ownGroups.map((g) => (
@@ -260,8 +260,8 @@ export function EmployeeAccessAlerts({ editor, onSave }: { editor: AccessEditor;
                       <View style={styles.alertsHead}>
                         <Text style={styles.subLabel}>Alerts</Text>
                         <View style={styles.channelIcons}>
-                          <Ionicons name="notifications-outline" size={13} color={colors.mutedText} />
-                          <Ionicons name="logo-whatsapp" size={13} color={colors.mutedText} />
+                          <View style={styles.channelIcon}><Ionicons name="notifications-outline" size={14} color={colors.mutedText} /></View>
+                    <View style={styles.channelIcon}><Ionicons name="logo-whatsapp" size={14} color={colors.mutedText} /></View>
                         </View>
                       </View>
                       {allEvents.map((ev) => {
@@ -295,12 +295,16 @@ export function EmployeeAccessAlerts({ editor, onSave }: { editor: AccessEditor;
   );
 }
 
+// A checkbox per channel; the bell / WhatsApp icons above each column say which.
 function ChannelChip({ icon, on, onPress, testID }: { icon: keyof typeof Ionicons.glyphMap; on: boolean; onPress: () => void; testID?: string }) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
-    <Pressable onPress={onPress} style={[styles.channelChip, on && styles.channelChipOn]} testID={testID}>
-      <Ionicons name={icon} size={13} color={on ? colors.brandSecondary : colors.mutedText} />
+    <Pressable onPress={onPress} style={styles.channelChip} hitSlop={6} testID={testID}
+      accessibilityRole="checkbox" accessibilityState={{ checked: on }} accessibilityLabel={icon === 'logo-whatsapp' ? 'WhatsApp' : 'Push'}>
+      <View style={[styles.checkbox, on && styles.checkboxOn]}>
+        {on && <Ionicons name="checkmark" size={15} color={colors.onBrandPrimary} />}
+      </View>
     </Pressable>
   );
 }
@@ -340,11 +344,13 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   seeDoneRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.divider, marginTop: 2 },
 
   alertsHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: spacing.sm },
-  channelIcons: { flexDirection: 'row', gap: 10, paddingRight: 4 },
+  channelIcons: { flexDirection: 'row', gap: 8 },
+  channelIcon: { width: 34, alignItems: 'center' },
   alertRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 7, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.divider },
   alertLabel: { flex: 1, color: colors.onSurface, fontSize: 13, lineHeight: 17 },
-  channelChip: { width: 28, height: 28, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceTertiary },
-  channelChipOn: { backgroundColor: colors.brandTertiary },
+  channelChip: { width: 34, height: 30, alignItems: 'center', justifyContent: 'center' },
+  checkbox: { width: 22, height: 22, borderRadius: 6, borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
+  checkboxOn: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
 
   foot: { color: colors.mutedText, fontSize: 11.5, marginTop: spacing.sm, lineHeight: 16 },
 
