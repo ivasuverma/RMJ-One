@@ -556,6 +556,9 @@ class StoreSettingsIn(BaseModel):
     # was a genuine absence (see _compute_payroll in payroll.py). Off means
     # every Sunday is paid regardless of the preceding week's attendance.
     unpaid_sunday_after_absent_week: bool = True
+    # Tell an employee (push + WhatsApp) when salary is paid or an advance,
+    # bonus, fine or deduction is recorded for them. Off = no such alerts.
+    notify_employee_payments: bool = True
     # When False, employees can't self-mark attendance from the app (GPS+selfie
     # check-in/check-out) — the buttons are disabled in their profile. Meant for
     # shops that have switched fully to a biometric device as the attendance
@@ -2059,6 +2062,11 @@ async def _notify_user_impl(user_id: str, title: str, body: str, url: str = '/',
         logger.warning(f'notify_user failed: {e}')
 
 
+async def employee_payment_alerts_on() -> bool:
+    store = await db.settings.find_one({'id': 'store'}, {'_id': 0, 'notify_employee_payments': 1}) or {}
+    return store.get('notify_employee_payments', True) is not False
+
+
 async def notify_user(user_id: str, title: str, body: str, url: str = '/', push: bool = True, whatsapp: bool = True):
     # Fire-and-forget: notification storage + web-push delivery involve
     # several sequential DB writes and outbound HTTP calls to push services,
@@ -2994,8 +3002,9 @@ async def _check_auto_advances():
             {'$set': {'employee_id': emp['id'], 'month': for_month, 'amount': amount, 'created_at': iso}},
             upsert=True,
         )
-        await notify_user(emp['id'], 'Advance credited',
-                           f"₹{amount:.0f} advance has been recorded for you this month.", '/')
+        if await employee_payment_alerts_on():
+            await notify_user(emp['id'], 'Advance credited',
+                               f"₹{amount:.0f} advance has been recorded for you this month.", '/')
         await _notify_module('payroll', 'Auto advance recorded',
                               f"₹{amount:.0f} auto-advance recorded for {emp['name']}", '/(tabs)/payroll',
                               script='payroll_auto_advance', admin_only=True)

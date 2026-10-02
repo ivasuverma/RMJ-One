@@ -24,6 +24,7 @@ from server import (
     PayrollEntryUpdateIn,
     log_audit,
     notify_user,
+    employee_payment_alerts_on,
     _ledger_sign,
     _iter_month_dates,
     _opening_balance,
@@ -58,7 +59,7 @@ async def add_ledger_entry(body: LedgerEntryIn, user=Depends(require_staff), _mo
     await log_audit(user, 'ledger.create', 'ledger', doc['id'], emp.get('employee_code', ''),
                      {'type': body.entry_type, 'amount': body.amount})
     # Personal alert to the employee when money is recorded against/for them.
-    if body.entry_type in ('advance', 'bonus', 'fine', 'deduction'):
+    if body.entry_type in ('advance', 'bonus', 'fine', 'deduction') and await employee_payment_alerts_on():
         label = title_map.get(body.entry_type, 'Ledger entry')
         await notify_user(
             body.employee_id,
@@ -770,7 +771,7 @@ async def add_payroll_payment(entry_id: str, body: PayrollPaymentIn, user=Depend
         upd.update({'paid': True, 'paid_at': iso, 'paid_by': user['name']})
     await db.payroll_entries.update_one({'id': entry_id}, {'$set': upd})
 
-    if fully_paid:
+    if fully_paid and await employee_payment_alerts_on():
         # Each payment already posted its own salary_paid ledger entry above.
         await notify_user(entry['employee_id'], 'Salary paid',
                            f"Your salary for {ym} (₹{net:.0f}) has been paid", '/profile')
