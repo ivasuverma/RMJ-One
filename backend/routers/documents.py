@@ -196,6 +196,13 @@ DEFAULT_CATEGORIES = [
 ]
 
 
+# Employee ID proofs (added on the employee's profile) are documents in this
+# category. They must keep working even when the shop turns the category off,
+# or deletes it, in Settings › Documents — that only hides it from the
+# Documents screen.
+EMPLOYEE_IDS_KEY = 'ids'
+
+
 async def seed_document_categories() -> None:
     if await db.document_categories.count_documents({}) == 0:
         for i, (key, label, icon, vis, rec) in enumerate(DEFAULT_CATEGORIES):
@@ -204,6 +211,15 @@ async def seed_document_categories() -> None:
                 'visible_to_roles': vis, 'can_record_roles': rec, 'sort_order': i,
                 'active': True, 'created_at': now_utc().isoformat(), 'created_by': 'system',
             })
+    if not await db.document_categories.find_one({'key': EMPLOYEE_IDS_KEY}):
+        # Deleted from Documents: bring it back turned off (hidden there), so
+        # employee profiles can still store ID proofs.
+        await db.document_categories.insert_one({
+            'id': str(uuid.uuid4()), 'key': EMPLOYEE_IDS_KEY, 'label': 'IDs', 'icon': 'card-outline',
+            'visible_to_roles': ['owner', 'admin'], 'can_record_roles': ['owner', 'admin'],
+            'sort_order': await db.document_categories.count_documents({}),
+            'active': False, 'created_at': now_utc().isoformat(), 'created_by': 'system',
+        })
 
 
 async def migrate_employee_id_proofs() -> None:
@@ -327,14 +343,16 @@ async def _account_rights(user: dict) -> dict:
 async def _categories_map() -> dict:
     async def load():
         out = {}
-        async for c in db.document_categories.find({'active': {'$ne': False}}, {'_id': 0}):
+        # Active categories, plus employee IDs even when turned off (see
+        # EMPLOYEE_IDS_KEY) — turned-off ones stay out of _visible_keys.
+        async for c in db.document_categories.find({'$or': [{'active': {'$ne': False}}, {'key': EMPLOYEE_IDS_KEY}]}, {'_id': 0}):
             out[c['key']] = c
         return out
     return await _memo('cats_all', 15, load)
 
 
 async def _visible_keys(role: str, rights: dict = None) -> set:
-    return {k for k, c in (await _categories_map()).items() if _can_see(c, role, rights)}
+    return {k for k, c in (await _categories_map()).items() if c.get('active', True) is not False and _can_see(c, role, rights)}
 
 
 # The real Drive uploader is wired once the shop connects its Google account
@@ -664,7 +682,10 @@ async def list_documents(
     limit = max(1, min(limit, 200))
     query: dict = {'deleted': {'$ne': True}, 'category_key': {'$in': list(visible)}}
     if category and category != 'all':
-        if category not in visible:
+        # An employee's ID proofs still list on their profile when IDs is
+        # turned off in Documents.
+        ids_cat = (await _categories_map()).get(category) if category == EMPLOYEE_IDS_KEY and linked_ref_type == 'employee' else None
+        if category not in visible and not (ids_cat and _can_see(ids_cat, role, rights)):
             raise HTTPException(status_code=403, detail='No access to this category')
         query['category_key'] = category
     # Documents linked to one specific record (e.g. an employee's ID proofs) —
