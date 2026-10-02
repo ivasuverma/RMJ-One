@@ -30,7 +30,7 @@ type Entry = {
 };
 type DayData = {
   date: string; counter_id: string; counter_name: string; opening_balance: number; entries: Entry[];
-  total_received: number; total_paid: number; closing_balance: number;
+  total_received: number; total_paid: number; closing_balance: number; transfers_in?: number; transfers_out?: number;
   closure?: Closure | null;   // set once the day is closed (counted and locked)
 };
 type Counter = { id: string; name: string; closing_balance: number; color?: string | null; active: boolean };
@@ -298,10 +298,12 @@ export default function CashBookScreen() {
                 <View style={{ flex: 1 }}>
                   <Text style={styles.heroLabel}>Received</Text>
                   <Text style={[styles.heroSmall, { color: colors.onSuccess }]} testID="cashbook-total-received">{inr(day.total_received)}</Text>
+                  {!!day.transfers_in && <Text style={styles.heroTransfer}>incl. {inr(day.transfers_in)} transfers</Text>}
                 </View>
                 <View style={{ flex: 1, alignItems: 'flex-end' }}>
                   <Text style={styles.heroLabel}>Paid</Text>
                   <Text style={[styles.heroSmall, { color: colors.onError }]} testID="cashbook-total-paid">{inr(day.total_paid)}</Text>
+                  {!!day.transfers_out && <Text style={styles.heroTransfer}>incl. {inr(day.transfers_out)} transfers</Text>}
                 </View>
               </View>
               <View style={styles.heroRule} />
@@ -519,6 +521,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   heroCard: { padding: spacing.md },
   heroTotals: { flexDirection: 'row' },
   heroLabel: { color: colors.mutedText, fontSize: 11, letterSpacing: 0.8, textTransform: 'uppercase' },
+  heroTransfer: { color: colors.mutedText, fontSize: 11.5, marginTop: 1 },
   heroSmall: { fontSize: 17, fontWeight: '700', marginTop: 2 },
   heroRule: { height: 1, backgroundColor: colors.divider, marginVertical: spacing.sm },
   heroCloseRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' },

@@ -35,7 +35,7 @@ type Entry = {
 };
 type DayData = {
   date: string; counter_id: string; counter_name: string; opening_balance: number; entries: Entry[];
-  total_received: number; total_paid: number; closing_balance: number;
+  total_received: number; total_paid: number; closing_balance: number; transfers_in?: number; transfers_out?: number;
   closure?: Closure | null;   // set once the day is closed (counted and locked)
 };
 type Counter = {
@@ -425,6 +425,7 @@ export default function CashBookScreen() {
                     <Text style={styles.colTotalLabel}>Total</Text>
                     <Text style={[styles.colTotalValue, { color: colors.onSuccess }]}>{fmtINR(day?.total_received || 0)}</Text>
                   </View>
+                  {!!day?.transfers_in && <Text style={styles.colTransfer} testID="cashbook-transfers-in">incl. {fmtINR(day.transfers_in)} transfers in</Text>}
                 </View>
 
                 <View style={styles.column}>
@@ -439,6 +440,7 @@ export default function CashBookScreen() {
                     <Text style={styles.colTotalLabel}>Total</Text>
                     <Text style={[styles.colTotalValue, { color: colors.onError }]}>{fmtINR(day?.total_paid || 0)}</Text>
                   </View>
+                  {!!day?.transfers_out && <Text style={styles.colTransfer} testID="cashbook-transfers-out">incl. {fmtINR(day.transfers_out)} transfers out</Text>}
                 </View>
               </View>
 
@@ -761,6 +763,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: 8, marginTop: 4,
   },
   colTotalLabel: { color: colors.onSurfaceSecondary, fontSize: 11.5, fontWeight: '700' },
+  colTransfer: { color: colors.mutedText, fontSize: 11.5, textAlign: 'right', marginTop: 2 },
   colTotalValue: { fontSize: 13, fontWeight: '800' },
 
   counterBalRow: {

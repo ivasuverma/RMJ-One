@@ -63,6 +63,27 @@ async def _get_loan(loan_id: str) -> dict:
     return loan
 
 
+# A loan is overdue once its oldest unpaid month of interest is more than this
+# many days old — a month's interest posted at month-end isn't late the next day.
+OVERDUE_AFTER_DAYS = 30
+
+
+def oldest_unpaid_interest_date(state: dict) -> Optional[str]:
+    unpaid = [m for m in state.get('interest_months') or [] if not m['paid']]
+    return (unpaid[0].get('date') or '')[:10] or None if unpaid else None
+
+
+def loan_is_overdue(loan: dict, state: dict, today: str) -> bool:
+    """Unpaid interest older than OVERDUE_AFTER_DAYS (not the approximate
+    estimated-return date)."""
+    if loan.get('status') != 'active' or state.get('interest_balance', 0) <= 0.01:
+        return False
+    oldest = oldest_unpaid_interest_date(state)
+    if not oldest:
+        return False
+    return oldest < (date.fromisoformat(today) - timedelta(days=OVERDUE_AFTER_DAYS)).isoformat()
+
+
 def _compute_loan_state(loan: dict, txns: list) -> dict:
     """Pure function over an already-fetched transaction list, so callers that
     need many loans at once (list/dashboard) can bulk-fetch transactions in a
@@ -236,10 +257,9 @@ async def list_gold_loans(
 ):
     query: dict = {}
     if status_ == 'overdue':
-        # "Overdue" means unpaid interest, not a missed estimated-return
-        # date (that date is only ever a rough guess) — the interest
-        # balance is derived, so filter for it in Python below instead of
-        # in the Mongo query.
+        # "Overdue" means interest unpaid for over a month (loan_is_overdue),
+        # not a missed estimated-return date (only ever a rough guess) — it's
+        # derived, so filter for it in Python below instead of in the query.
         query['status'] = 'active'
     elif status_ and status_ != 'all':
         query['status'] = status_
@@ -254,9 +274,11 @@ async def list_gold_loans(
     loans = await db.gold_loans.find(query, {'_id': 0, 'photo': 0}).sort('created_at', -1).to_list(1000)
     txns_by_loan = await _bulk_loan_txns([l['id'] for l in loans])
     out = []
+    today = today_str()
     for loan in loans:
-        state = {k: v for k, v in _compute_loan_state(loan, txns_by_loan.get(loan['id'], [])).items() if k != 'interest_months'}
-        overdue = loan['status'] == 'active' and state['interest_balance'] > 0.01
+        full = _compute_loan_state(loan, txns_by_loan.get(loan['id'], []))
+        overdue = loan_is_overdue(loan, full, today)
+        state = {k: v for k, v in full.items() if k != 'interest_months'}
         out.append({**loan, **state, 'overdue': overdue})
     if status_ == 'overdue':
         out = [l for l in out if l['overdue']]
@@ -271,8 +293,8 @@ async def gold_loans_dashboard(_: dict = Depends(require_staff_or_module('gold_l
     active = len(loans)
     txns_by_loan = await _bulk_loan_txns([l['id'] for l in loans])
     states = [_compute_loan_state(l, txns_by_loan.get(l['id'], [])) for l in loans]
-    # Overdue = unpaid interest, not a missed (approximate) estimated-return date.
-    overdue = sum(1 for s in states if s['interest_balance'] > 0.01)
+    # Overdue = interest unpaid for over a month, not a missed (approximate) estimated-return date.
+    overdue = sum(1 for l, s in zip(loans, states) if loan_is_overdue(l, s, today))
     total_outstanding = sum(s['total_outstanding'] for s in states)
     total_interest_pending = sum(max(s['interest_balance'], 0) for s in states)
     return {

@@ -56,6 +56,7 @@ export function RateTicker({ rates, loading }: { rates: Rates | null; loading?: 
       </View>
     ) : null;
   }
+  if (!rates.items.length && !rates.broadcast) return null;   // nothing this person may see
   return (
     <View style={[s.edgeToEdge, s.ticker]}>
       <Marquee testID="home-rates">

@@ -288,6 +288,12 @@ class TestPayroll:
         # Salary is paid through /payments (supports split cash/bank/UPI); the
         # entry flips to paid once the recorded total reaches the net salary.
         y, m = period['year'], period['month']
+        # This month has no attendance in a fresh test DB, so nobody would earn
+        # anything (an all-absent month pays ₹0, Sundays included) — record a
+        # couple of worked days so there is a salary to pay.
+        emps = [e for e in requests.get(f"{API}/employees", headers=_hdr(owner_tok), timeout=30).json() if e.get('status') == 'active']
+        for d in (f'{y:04d}-{m:02d}-03', f'{y:04d}-{m:02d}-04'):
+            requests.put(f"{API}/attendance/day/{emps[0]['id']}/{d}", headers=_hdr(owner_tok), json={'status': 'present', 'check_in_time': '10:00', 'check_out_time': '19:00'}, timeout=30)
         requests.post(f"{API}/payroll/save", headers=_hdr(accountant_tok), json=period, timeout=60)
         rg = requests.get(f"{API}/payroll/{y}/{m}", headers=_hdr(accountant_tok), timeout=30).json()
         assert rg['saved'] is True

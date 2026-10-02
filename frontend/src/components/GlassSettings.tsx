@@ -38,8 +38,8 @@ export function GlassSettings({ testID = 'glass-settings' }: { testID?: string }
         accessibilityRole="button" accessibilityState={{ expanded: open }}>
         <View style={s.rowIcon}><Ionicons name="layers-outline" size={22} color={colors.brandSecondary} /></View>
         <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={s.rowLabel} numberOfLines={1}>Glass bar & headers</Text>
-          <Text style={s.rowSub} numberOfLines={1}>Blur and tint of the bottom bar and headers</Text>
+          <Text style={s.rowLabel} numberOfLines={2}>Glass bar & headers</Text>
+          <Text style={s.rowSub} numberOfLines={2}>Blur and tint of the bottom bar and headers</Text>
         </View>
         <Text style={s.rowValue}>{g.blur === 0 ? 'Clear' : `Blur ${g.blur}`} · {g.tint}%</Text>
         <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={18} color={colors.mutedText} style={{ marginLeft: 6 }} />

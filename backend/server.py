@@ -556,6 +556,8 @@ class StoreSettingsIn(BaseModel):
     # was a genuine absence (see _compute_payroll in payroll.py). Off means
     # every Sunday is paid regardless of the preceding week's attendance.
     unpaid_sunday_after_absent_week: bool = True
+    # A day with fewer hours than this (check-in to check-out) is a half day.
+    half_day_hours: Optional[float] = Field(default=None, ge=1, le=12)
     # When False, employees can't self-mark attendance from the app (GPS+selfie
     # check-in/check-out) — the buttons are disabled in their profile. Meant for
     # shops that have switched fully to a biometric device as the attendance
@@ -1617,6 +1619,22 @@ async def _apply_punch(emp: dict, kind: str, ts: datetime, extra: Optional[dict]
     return result
 
 
+DEFAULT_HALF_DAY_HOURS = 6.0
+
+
+def half_day_hours_of(store: dict) -> float:
+    """Hours below which a worked day counts as a half day (Attendance Settings)."""
+    try:
+        v = float(store.get('half_day_hours') or DEFAULT_HALF_DAY_HOURS)
+    except (TypeError, ValueError):
+        v = DEFAULT_HALF_DAY_HOURS
+    return min(12.0, max(1.0, v))
+
+
+async def half_day_hours() -> float:
+    return half_day_hours_of(await db.settings.find_one({'id': 'store'}, {'_id': 0, 'half_day_hours': 1}) or {})
+
+
 async def _apply_punch_impl(emp: dict, kind: str, ts: datetime, extra: Optional[dict] = None) -> dict:
     """Shared attendance state machine — the single place shift resolution,
     late/half-day calculation, and the attendance/attendance_events writes
@@ -1712,10 +1730,11 @@ async def _apply_punch_impl(emp: dict, kind: str, ts: datetime, extra: Optional[
         late_half_day_after = int(shift.get('late_half_day_after_min') or 0) if shift else 0
         late_by_min = int(existing['check_in'].get('late_by_min') or 0)
         half_day_for_lateness = bool(late_half_day_after) and late_by_min >= late_half_day_after
-        status = 'half_day' if (hours < 4 or half_day_for_lateness) else 'present'
+        min_hours = half_day_hours_of(store)
+        status = 'half_day' if (hours < min_hours or half_day_for_lateness) else 'present'
         half_day_reason = None
         if status == 'half_day':
-            half_day_reason = 'short_hours' if hours < 4 else 'late'
+            half_day_reason = 'short_hours' if hours < min_hours else 'late'
 
         check_out_doc = {
             'timestamp': ts.isoformat(), 'latitude': 0, 'longitude': 0, 'selfie': '', 'distance_m': 0,

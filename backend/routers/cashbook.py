@@ -467,11 +467,15 @@ async def get_cashbook_day(date: str = Query(...), counter_id: str = Query(...),
             e['photo_count'] = counts.get(e['id'], 0)
     total_received = round(sum(e['amount'] for e in entries if e['type'] == 'received'), 2)
     total_paid = round(sum(e['amount'] for e in entries if e['type'] == 'paid'), 2)
+    # The part of each total that only moved between counters (not sales or spending).
+    transfers_in = round(sum(e['amount'] for e in entries if e['type'] == 'received' and e.get('linked_entry_id')), 2)
+    transfers_out = round(sum(e['amount'] for e in entries if e['type'] == 'paid' and e.get('linked_entry_id')), 2)
     closing = round(opening + total_received - total_paid, 2)
     return {
         'date': date, 'counter_id': counter_id, 'counter_name': counter['name'],
         'opening_balance': opening, 'entries': entries,
         'total_received': total_received, 'total_paid': total_paid, 'closing_balance': closing,
+        'transfers_in': transfers_in, 'transfers_out': transfers_out,
         'closure': await _closure(counter_id, date),
     }
 

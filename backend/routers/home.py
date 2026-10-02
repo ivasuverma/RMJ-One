@@ -346,15 +346,16 @@ async def _cash(user: dict, today: str) -> dict:
 
 async def _loan_states() -> list:
     async def load():
-        from routers.gold_loans import _bulk_loan_txns, _compute_loan_state
+        from routers.gold_loans import _bulk_loan_txns, _compute_loan_state, loan_is_overdue, oldest_unpaid_interest_date
         loans = await db.gold_loans.find({'status': 'active'}, {'_id': 0, 'photo': 0}).to_list(5000)
         txns = await _bulk_loan_txns([l['id'] for l in loans])
+        today = _ist_now().date().isoformat()
         out = []
         for l in loans:
             st = _compute_loan_state(l, txns.get(l['id'], []))
-            unpaid = [m for m in st.get('interest_months', []) if not m['paid']]
             out.append({'id': l['id'], 'customer_name': l.get('customer_name'), 'loan_no': l.get('loan_no'),
-                        'interest_balance': st['interest_balance'], 'oldest_unpaid_date': unpaid[0]['date'] if unpaid else None})
+                        'interest_balance': st['interest_balance'], 'oldest_unpaid_date': oldest_unpaid_interest_date(st),
+                        'overdue': loan_is_overdue(l, st, today)})
         return out
     return await _shared('loan_states', 30, load)
 
@@ -419,7 +420,7 @@ async def _needs_you(user: dict, s: dict, now: datetime, staff: Optional[dict]) 
     rows: list = []
 
     if can_view(user, 'gold_loans'):
-        pending = [l for l in await _loan_states() if l['interest_balance'] > 0.01]
+        pending = [l for l in await _loan_states() if l['overdue']]   # interest unpaid for over a month
         if pending:
             total = round(sum(l['interest_balance'] for l in pending), 2)
             oldest = max((_days_since(l['oldest_unpaid_date'], today_d) or 0) for l in pending)
@@ -602,7 +603,8 @@ async def _owed(user: dict, s: dict, today_d: date) -> dict:
     if can_view(user, 'gold_loans'):
         states = await _loan_states()
         pending = [l for l in states if l['interest_balance'] > 0.01]
-        out['loan_interest'] = {'total': round(sum(l['interest_balance'] for l in pending), 2), 'overdue': len(pending)}
+        out['loan_interest'] = {'total': round(sum(l['interest_balance'] for l in pending), 2),
+                                'overdue': sum(1 for l in states if l['overdue'])}
     if can_view(user, 'karigar_ledger'):
         async def load():
             bal = _karigar_ledger_balances(await db.karigar_ledger.find({}, {'_id': 0}).to_list(None))

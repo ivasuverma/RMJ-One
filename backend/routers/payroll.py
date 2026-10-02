@@ -232,17 +232,20 @@ async def _compute_payroll(year: int, month: int) -> list:
 
     # Attendance in month, keyed by date so each employee's day can be
     # looked up and resolved individually.
+    # (From 6 days before the month too: the first Sunday's week can start in
+    # the previous month, and the absent-week rule below looks at that week.)
+    pre_start = (date.fromisoformat(start) - timedelta(days=6)).isoformat()
     att_by_emp: dict = {}
-    async for a in db.attendance.find({'date': {'$gte': start, '$lte': end}}, {'_id': 0, 'check_in.selfie': 0, 'check_out.selfie': 0}):
+    async for a in db.attendance.find({'date': {'$gte': pre_start, '$lte': end}}, {'_id': 0, 'check_in.selfie': 0, 'check_out.selfie': 0}):
         att_by_emp.setdefault(a['employee_id'], {})[a['date']] = a
     # Approved leaves in month
     leaves_by_emp: dict = {}
     async for l in db.leaves.find({'status': 'approved'}, {'_id': 0}):
-        if l['from_date'] <= end and l['to_date'] >= start:
+        if l['from_date'] <= end and l['to_date'] >= pre_start:
             leaves_by_emp.setdefault(l['employee_id'], []).append(l)
     # Holidays in month
     holidays = set()
-    async for h in db.holidays.find({'date': {'$gte': start, '$lte': end}}, {'_id': 0, 'date': 1}):
+    async for h in db.holidays.find({'date': {'$gte': pre_start, '$lte': end}}, {'_id': 0, 'date': 1}):
         holidays.add(h['date'])
     all_month_dates = [d.isoformat() for d in _iter_month_dates(year, month)]
     # Ledger entries in month (advance/bonus/fine/deduction). An entry
@@ -296,14 +299,12 @@ async def _compute_payroll(year: int, month: int) -> list:
         # query above) — a pending/rejected leave request is NOT paid leave,
         # it falls through to a normal attendance/absent day like any other
         # unapproved day off, per the owner/admin-approval rule.
-        leave_days = 0
         leave_dates = set()
         for l in leaves_by_emp.get(e['id'], []):
             try:
                 fd = max(date.fromisoformat(l['from_date']), date.fromisoformat(start))
                 td = min(date.fromisoformat(l['to_date']), date.fromisoformat(end))
                 if td >= fd:
-                    leave_days += (td - fd).days + 1
                     dd = fd
                     while dd <= td:
                         leave_dates.add(dd.isoformat())
@@ -361,24 +362,39 @@ async def _compute_payroll(year: int, month: int) -> list:
         # Sunday pay is forfeited for a week where every scheduled workday
         # (Mon-Sat) was a genuine absence — applied only to a Sunday that
         # would otherwise be the default auto-paid weekly-off, and only
-        # when the full Mon-Sat block preceding it falls entirely inside
-        # this month (a partial week at the very start of the month isn't
-        # judged on data this payroll run doesn't have). Settings-gated
+        # when the full Mon-Sat block preceding it was absent — including, for
+        # the first Sunday, the days of that week in the previous month. Settings-gated
         # (Store Settings > "Unpaid Sunday after an absent week") — off
         # means every Sunday stays auto-paid regardless of that week.
+        def _was_absent(wd: str) -> bool:
+            """A genuine absence on this day — this month's resolved state, or for
+            the days of the previous month that start the first week, the same
+            reading from their attendance."""
+            if wd >= start:
+                return day_state.get(wd) == 'absent'
+            if (join_date and wd < join_date) or (left_date and wd > left_date):
+                return False
+            if wd in holidays or any(l['from_date'] <= wd <= l['to_date'] for l in leaves_by_emp.get(e['id'], [])):
+                return False
+            a_prev = att_by_date.get(wd)
+            if not a_prev:
+                return True
+            return _resolve_attendance_state(a_prev, e, shift, store, False, minutes_now)['status'] == 'absent'
+
         if store.get('unpaid_sunday_after_absent_week', True):
             for ds in all_month_dates:
                 d_obj = date.fromisoformat(ds)
                 if d_obj.weekday() != 6 or day_state.get(ds) != 'weekly_off':
                     continue
                 week_start = d_obj - timedelta(days=6)
-                if week_start.isoformat() < start:
-                    continue
                 week_days = [(week_start + timedelta(days=i)).isoformat() for i in range(6)]
-                if all(day_state.get(wd) == 'absent' for wd in week_days):
+                if all(_was_absent(wd) for wd in week_days):
                     day_state[ds] = 'absent'
 
         present = sum(1 for v in day_state.values() if v == 'present')
+        # Paid leave: an approved leave request, or a day marked Leave on the
+        # attendance calendar — both land here as 'leave' and pay the same.
+        leave_days = sum(1 for v in day_state.values() if v == 'leave')
         half = sum(1 for v in day_state.values() if v == 'half_day')
         missing_punch = sum(1 for v in day_state.values() if v == 'missing_punch')
         absent = sum(1 for v in day_state.values() if v == 'absent')

@@ -213,8 +213,8 @@ function Row({ icon, label, sub, value, valueTone, trailing, onPress, testID }: 
     <Pressable onPress={onPress} style={({ pressed }) => [styles.row, pressed && { opacity: 0.85 }]} testID={testID}>
       <View style={styles.rowIcon}><Ionicons name={icon} size={22} color={colors.brandSecondary} /></View>
       <View style={{ flex: 1, minWidth: 0 }}>
-        <Text style={styles.rowLabel} numberOfLines={1}>{label}</Text>
-        {!!sub && <Text style={styles.rowSub} numberOfLines={1}>{sub}</Text>}
+        <Text style={styles.rowLabel} numberOfLines={2}>{label}</Text>
+        {!!sub && <Text style={styles.rowSub} numberOfLines={2}>{sub}</Text>}
       </View>
       {trailing ?? (value !== undefined ? (
         <Text style={[styles.rowValue, valueTone === 'success' && { color: colors.onSuccess }]}>{value}</Text>

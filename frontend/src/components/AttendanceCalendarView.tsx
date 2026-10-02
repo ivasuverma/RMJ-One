@@ -288,12 +288,16 @@ function DayDetail({ day, empId, canEdit, shifts, onClose, onSaved }: {
     submittingRef.current = true;
     setSaving(true);
     try {
-      await api.put(`/attendance/day/${empId}/${day.date}`, {
+      const res = await api.put<{ status?: string; working_hours?: number }>(`/attendance/day/${empId}/${day.date}`, {
         status: offStatus || 'present',
         check_in_time: offStatus ? null : (inTime || null),
         check_out_time: offStatus ? null : (outTime || null),
       });
       onSaved();
+      // The times decide the day: say so when they make it a half day.
+      if (!offStatus && res?.status === 'half_day') {
+        notify('Saved as a half day', `${res.working_hours ?? 0} hours between check-in and check-out is under the half-day limit (Attendance Settings), or the late limit for this shift.`);
+      }
     } catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
     finally { setSaving(false); submittingRef.current = false; }
   };
