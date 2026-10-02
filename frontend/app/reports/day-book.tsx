@@ -102,7 +102,7 @@ export default function DayBookScreen() {
                   <View style={styles.icon}><Ionicons name={ICON[v.kind]} size={18} color={colors.brandSecondary} /></View>
                   <View style={{ flex: 1, minWidth: 0 }}>
                     <Text style={styles.party} numberOfLines={1}>{v.party || '—'}{v.job ? ` · ${v.job}` : ''}</Text>
-                    <Text style={styles.meta} numberOfLines={1}>{v.label}{v.note ? ` — ${v.note}` : ''}</Text>
+                    <Text style={styles.meta} numberOfLines={3}>{v.label}{v.note ? ` — ${v.note}` : ''}</Text>
                   </View>
                   <View style={{ alignItems: 'flex-end' }}>
                     {Math.abs(v.fine_delta) >= 0.0005 ? <Text style={styles.val}>{v.fine_delta > 0 ? '+' : '−'}{Math.abs(v.fine_delta).toFixed(3)}g</Text> : null}

@@ -23,7 +23,7 @@ type Row = {
 type PayrollResp = { year: number; month: number; rows: Row[]; saved?: boolean; locked?: boolean; total_net: number };
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const fmtINR = (n: number) => `₹${(n || 0).toLocaleString('en-IN')}`;
+const fmtINR = (n: number) => `₹${Math.round(n || 0).toLocaleString('en-IN')}`;   // whole rupees
 
 export default function OwnerPayroll() {
   const router = useRouter();
@@ -34,9 +34,15 @@ export default function OwnerPayroll() {
   const toast = useToast();
   const { user } = useAuth();
   const isAccountantOrOwner = user?.role === 'owner' || user?.role === 'accountant';
+  // In the first days of a month, open last month — it's the one still being
+  // checked and paid — and move on to this month once it's fully paid.
   const now = new Date();
-  const [year, setYear] = useState(now.getFullYear());
-  const [month, setMonth] = useState(now.getMonth() + 1);
+  const early = now.getDate() <= 10;
+  const startY = early && now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
+  const startM = early ? (now.getMonth() === 0 ? 12 : now.getMonth()) : now.getMonth() + 1;
+  const [year, setYear] = useState(startY);
+  const [month, setMonth] = useState(startM);
+  const autoPicked = useRef(!early);
   const [data, setData] = useState<PayrollResp | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -47,6 +53,11 @@ export default function OwnerPayroll() {
     try {
       setError('');
       const res = await api.get<PayrollResp>(`/payroll/${year}/${month}`);
+      if (!autoPicked.current) {
+        autoPicked.current = true;
+        const rows = res?.rows || [];
+        if (rows.length && rows.every((r) => r.paid)) { const t = new Date(); setYear(t.getFullYear()); setMonth(t.getMonth() + 1); return; }
+      }
       setData(res);
     } catch (e: any) {
       setData(null);

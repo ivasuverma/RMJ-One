@@ -14,7 +14,7 @@ import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { GlassButton } from '@/src/components/ui/GlassButton';
 
-const fmtINR = (n: number) => `₹${(n || 0).toLocaleString('en-IN')}`;
+const fmtINR = (n: number) => `₹${Math.round(n || 0).toLocaleString('en-IN')}`;   // whole rupees
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 export default function PayrollDetail() {
@@ -60,7 +60,7 @@ export default function PayrollDetail() {
       await load();
       notify(res.fully_paid ? 'Marked paid' : 'Payment recorded', res.fully_paid
         ? 'Salary receipt is ready to download.'
-        : `₹${res.remaining.toLocaleString('en-IN')} still remaining.`);
+        : `₹${Math.round(res.remaining).toLocaleString('en-IN')} still remaining.`);
     } catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
     finally { payGuard.current = false; }
   };
@@ -336,14 +336,14 @@ function RecordPaymentForm({ remaining, onCancel, onConfirm }: {
     const amt = parseFloat(amount);
     if (!mode) { notify('Select a mode', 'Choose how this payment was made.'); return; }
     if (!amt || amt <= 0) { notify('Invalid amount', 'Enter an amount greater than 0.'); return; }
-    if (amt > remaining + 0.5) { notify('Too much', `That's more than the ₹${remaining.toLocaleString('en-IN')} remaining.`); return; }
+    if (amt > remaining + 0.5) { notify('Too much', `That's more than the ₹${Math.round(remaining).toLocaleString('en-IN')} remaining.`); return; }
     setConfirming(true);
     onConfirm(mode, amt, note);
   };
 
   return (
     <View style={styles.payPicker} testID="pay-mode-picker">
-      <Text style={styles.payPickerTitle}>Record a payment · ₹{remaining.toLocaleString('en-IN')} remaining</Text>
+      <Text style={styles.payPickerTitle}>Record a payment · ₹{Math.round(remaining).toLocaleString('en-IN')} remaining</Text>
       <View style={{ flexDirection: 'row', gap: 6, marginTop: 8 }}>
         {PAY_MODES.map((m) => (
           <Pressable

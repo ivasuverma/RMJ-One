@@ -57,7 +57,7 @@ export default function ReceiveSampleScreen() {
   const submittingRef = useRef(false);
 
   const load = useCallback(async () => {
-    if (!id) return;
+    if (!id) { setLoading(false); return; }
     setLoading(true);
     try {
       const s = await api.get<Sample>(`/samples/${id}`);
@@ -147,7 +147,11 @@ export default function ReceiveSampleScreen() {
           </GlassButton>
           <View style={{ flex: 1 }} />
         </View>
-        <View style={styles.loader}><ActivityIndicator color={colors.brandPrimary} /></View>
+        <View style={styles.loader}>
+          {loading ? <ActivityIndicator color={colors.brandPrimary} /> : (
+            <Text style={styles.diffHint} testID="receive-not-found">This stock entry couldn&apos;t be found. Go back and open it from Stock In/Out.</Text>
+          )}
+        </View>
       </SafeAreaView>
     );
   }

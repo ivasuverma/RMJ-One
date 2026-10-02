@@ -24,14 +24,14 @@ import { GlassButton } from '@/src/components/ui/GlassButton';
 // never writes back a stale copy of theirs.
 type Form = {
   name: string; latitude: string; longitude: string; radius_m: string;
-  work_start: string; work_end: string; grace_min: string; round_net_salary: boolean;
+  work_start: string; work_end: string; grace_min: string; half_day_hours: string; round_net_salary: boolean;
   unpaid_sunday_after_absent_week: boolean;
   app_checkin_enabled: boolean;
 };
 
 const EMPTY: Form = {
   name: '', latitude: '', longitude: '', radius_m: '150',
-  work_start: '10:00', work_end: '19:30', grace_min: '15', round_net_salary: false,
+  work_start: '10:00', work_end: '19:30', grace_min: '15', half_day_hours: '6', round_net_salary: false,
   unpaid_sunday_after_absent_week: true,
   app_checkin_enabled: true,
 };
@@ -54,7 +54,7 @@ export default function AttendanceSettings() {
             ...f,
             name: s.name || '', latitude: String(s.latitude ?? ''), longitude: String(s.longitude ?? ''),
             radius_m: String(s.radius_m ?? 150), work_start: s.work_start || '10:00',
-            work_end: s.work_end || '19:30', grace_min: String(s.grace_min ?? 15),
+            work_end: s.work_end || '19:30', grace_min: String(s.grace_min ?? 15), half_day_hours: String(s.half_day_hours ?? 6),
             round_net_salary: !!s.round_net_salary,
             unpaid_sunday_after_absent_week: s.unpaid_sunday_after_absent_week !== false,
             app_checkin_enabled: s.app_checkin_enabled !== false,
@@ -96,6 +96,7 @@ export default function AttendanceSettings() {
         radius_m: parseInt(form.radius_m || '150', 10),
         work_start: form.work_start, work_end: form.work_end,
         grace_min: parseInt(form.grace_min || '15', 10),
+        half_day_hours: Math.min(12, Math.max(1, parseFloat(form.half_day_hours || '6') || 6)),
         round_net_salary: form.round_net_salary,
         unpaid_sunday_after_absent_week: form.unpaid_sunday_after_absent_week,
         app_checkin_enabled: form.app_checkin_enabled,
@@ -161,6 +162,7 @@ export default function AttendanceSettings() {
             </View>
           </View>
           <F label="Late Grace (minutes)" v={form.grace_min} onC={(v) => setForm({ ...form, grace_min: v.replace(/[^0-9]/g, '') })} kt="numeric" testID="as-grace" />
+          <F label="Half day if worked less than (hours)" v={form.half_day_hours} onC={(v) => setForm({ ...form, half_day_hours: v.replace(/[^0-9.]/g, '') })} kt="numeric" testID="as-half-day-hours" />
 
           <Pressable
             onPress={() => setForm({ ...form, app_checkin_enabled: !form.app_checkin_enabled })}

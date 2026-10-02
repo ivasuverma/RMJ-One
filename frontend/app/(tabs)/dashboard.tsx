@@ -107,10 +107,11 @@ type TileSpec = {
   route: string; dashboardRoute?: string; details?: TileDetailRow[];
 };
 
-/** Owners and admins get the daily briefing; everyone else keeps this dashboard. */
+/** Owners, store managers and the accountant get the daily briefing (each sees only
+ *  what their modules allow); anyone else keeps this dashboard. */
 export default function DashboardScreen() {
   const { user } = useAuth();
-  if (user?.role === 'owner' || user?.role === 'admin') return <HomeBriefing />;
+  if (user?.role === 'owner' || user?.role === 'admin' || user?.role === 'accountant') return <HomeBriefing />;
   return <LegacyDashboard />;
 }
 

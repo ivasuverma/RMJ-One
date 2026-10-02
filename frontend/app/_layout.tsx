@@ -1,6 +1,6 @@
 import { Stack, useRouter } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { BackHandler, LogBox, Platform, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -39,9 +39,16 @@ export default function RootLayout() {
     }
   }, [loaded, error]);
 
+  // Web: the pre-built page is the same for every address (the server sends one
+  // page for all of them), so the first draw must match it exactly — nothing —
+  // or React throws the whole page away and redraws (hydration error #418).
+  // The real screen draws straight after, over the page's own background.
+  const [hydrated, setHydrated] = useState(Platform.OS !== 'web');
+  useEffect(() => { setHydrated(true); }, []);
+
   // If the CDN is unreachable we fall through on error rather than wedging
   // the app — icons will tofu, but the app still boots.
-  if (!loaded && !error) return null;
+  if (!hydrated || (!loaded && !error)) return null;
 
   return (
     <ErrorBoundary>

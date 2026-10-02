@@ -12,6 +12,7 @@ import uuid
 from server import (
     db,
     notify_employee_attendance,
+    half_day_hours,
     now_utc,
     today_str,
     haversine_m,
@@ -469,11 +470,13 @@ async def edit_day(emp_id: str, d: str, body: AttendanceDayIn, user=Depends(requ
             is_late = False
         # Late master: if the employee is late by more than the shift's configured
         # threshold, the day counts as a half-day for payroll even if full hours were
-        # otherwise worked. A short-hours day (<4h) still takes priority either way.
+        # otherwise worked. A short-hours day (under the half-day hours set in
+        # Attendance Settings) still takes priority either way.
         half_day_for_lateness = bool(late_half_day_after) and late_by_min >= late_half_day_after
-        status = 'half_day' if (working_hours < 4 or half_day_for_lateness) else 'present'
+        min_hours = await half_day_hours()
+        status = 'half_day' if (working_hours < min_hours or half_day_for_lateness) else 'present'
         if status == 'half_day':
-            half_day_reason = 'short_hours' if working_hours < 4 else 'late'
+            half_day_reason = 'short_hours' if working_hours < min_hours else 'late'
     elif status in NO_TIME_STATUSES:
         # Paid/unpaid day off — no punch times required, clear any partial ones.
         working_hours = 0
@@ -500,7 +503,9 @@ async def edit_day(emp_id: str, d: str, body: AttendanceDayIn, user=Depends(requ
     await log_audit(user, 'attendance.edit', 'attendance', att_id, f'{emp_id} · {d}',
                     {'status': body.status, 'check_in': check_in_ts, 'check_out': check_out_ts})
     await _refresh_payroll_for(emp_id, d)
-    return {'ok': True, 'attendance_id': att_id}
+    # When the times decided the day differently from what was picked, say so.
+    return {'ok': True, 'attendance_id': att_id, 'status': status, 'working_hours': working_hours or 0,
+            'status_changed': status != body.status and body.status in ('present', 'half_day')}
 
 
 @router.delete('/attendance/day/{emp_id}/{d}')
@@ -638,10 +643,11 @@ async def _apply_correction(r: dict, t_in: Optional[str], t_out: Optional[str], 
             hours = 0
         if hours <= 0:
             raise HTTPException(status_code=400, detail='Check-out must be after check-in')
+    min_hours = await half_day_hours()
     update = {
         'check_in': check_in, 'check_out': check_out, 'working_hours': hours,
-        'status': ('present' if hours >= 4 else 'half_day') if hours else 'present',
-        'half_day_reason': 'short_hours' if 0 < hours < 4 else None,
+        'status': ('present' if hours >= min_hours else 'half_day') if hours else 'present',
+        'half_day_reason': 'short_hours' if 0 < hours < min_hours else None,
         'via_correction': True, 'edited_by': user['name'], 'edited_at': now_iso,
     }
     if existing:
