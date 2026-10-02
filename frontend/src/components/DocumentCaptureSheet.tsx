@@ -14,13 +14,19 @@ export type DocCategory = { id: string; key: string; label: string; icon: keyof 
 // The app ships as a web export, so capture uses a native file input — which
 // gives us camera (capture=environment), photo library, and Files/PDF for free
 // with no extra native module.
-export function pickWebFile(accept: string, capture?: boolean): Promise<File | null> {
+export async function pickWebFile(accept: string, capture?: boolean): Promise<File | null> {
+  return (await pickWebFiles(accept, { capture }))[0] || null;
+}
+
+// Same, but `multiple` lets the person pick several at once from the gallery.
+export function pickWebFiles(accept: string, opts: { capture?: boolean; multiple?: boolean } = {}): Promise<File[]> {
   return new Promise((resolve) => {
-    if (typeof document === 'undefined') { resolve(null); return; }
+    if (typeof document === 'undefined') { resolve([]); return; }
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = accept;
-    if (capture) input.setAttribute('capture', 'environment');
+    if (opts.capture) input.setAttribute('capture', 'environment');
+    if (opts.multiple) input.multiple = true;
     // The input MUST be in the DOM for .click() to open the picker on mobile
     // browsers (iOS Safari/WebView silently ignore a detached input).
     input.style.position = 'fixed';
@@ -28,15 +34,15 @@ export function pickWebFile(accept: string, capture?: boolean): Promise<File | n
     input.style.top = '0';
     input.style.opacity = '0';
     let done = false;
-    const finish = (f: File | null) => {
+    const finish = (fs: File[]) => {
       if (done) return;
       done = true;
       window.removeEventListener('focus', onFocus);
       try { input.remove(); } catch { /* already gone */ }
-      resolve(f);
+      resolve(fs);
     };
-    const onFocus = () => { setTimeout(() => { if (!input.files || input.files.length === 0) finish(null); }, 400); };
-    input.onchange = () => finish(input.files && input.files[0] ? input.files[0] : null);
+    const onFocus = () => { setTimeout(() => { if (!input.files || input.files.length === 0) finish([]); }, 400); };
+    input.onchange = () => finish(input.files ? Array.from(input.files) : []);
     document.body.appendChild(input);
     window.addEventListener('focus', onFocus);
     input.click();

@@ -1,14 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, ActivityIndicator, Pressable, Platform, RefreshControl, Share, Modal, Linking,
+  View, Text, StyleSheet, ScrollView, ActivityIndicator, Pressable, RefreshControl, Share, Modal, Linking,
 } from 'react-native';
 import { notify } from '@/src/utils/notify';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { api, TOKEN_KEY } from '@/src/api/client';
-import { storage } from '@/src/utils/storage';
+import { api } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthContext';
 import { confirmAction } from '@/src/utils/confirm';
 import { displayDateOnly, todayIST } from '@/src/utils/datetime';
@@ -17,14 +16,10 @@ import { useTheme } from '@/src/theme/ThemeContext';
 import { Sheet } from '@/src/components/ui';
 import { SegmentedControl } from '@/src/components/ui/SegmentedControl';
 import { DateField } from '@/src/components/DateField';
-import { PhotoCaptureModal } from '@/src/components/PhotoCaptureModal';
+import { EmployeeIdProofs } from '@/src/components/EmployeeIdProofs';
 import { useAccessEditor } from '@/src/hooks/use-access-editor';
 import { EmployeeAccessAlerts } from '@/src/components/EmployeeAccessAlerts';
 import { GlassButton } from '@/src/components/ui/GlassButton';
-
-const BASE = process.env.EXPO_PUBLIC_BACKEND_URL || '';
-
-type IdDoc = { id: string; created_at: string; file: { mime: string } };
 
 type Emp = {
   id: string; name: string; employee_code: string; department: string; location_id?: string | null;
@@ -70,10 +65,7 @@ export default function EmployeeProfile() {
   const [markingLeft, setMarkingLeft] = useState(false);
   const [addressOpen, setAddressOpen] = useState(false);
   const [balance, setBalance] = useState<number | null>(null);
-  const [idDocs, setIdDocs] = useState<IdDoc[]>([]);
-  const [idToken, setIdToken] = useState('');
-  const [captureOpen, setCaptureOpen] = useState(false);
-  const [uploadingProof, setUploadingProof] = useState(false);
+  const [idsKey, setIdsKey] = useState(0);   // bump to reload the ID proofs
 
   // Access & Alerts editor — shared with Settings > Users' per-person editor
   // (settings/person/[id].tsx) so the two never drift on the underlying data.
@@ -91,23 +83,14 @@ export default function EmployeeProfile() {
     }
   }, [id]);
 
-  const loadIdDocs = useCallback(async () => {
-    if (!id) return;
-    try {
-      const res = await api.get<{ items: IdDoc[] }>(`/documents?category=ids&status=done&linked_ref_type=employee&linked_ref_id=${id}`);
-      setIdDocs(res.items || []);
-    } catch { setIdDocs([]); }
-  }, [id]);
-
   const loadBalance = useCallback(async () => {
     if (!id) return;
     try { setBalance((await api.get<{ closing_balance?: number }>(`/ledger/${id}`)).closing_balance ?? 0); }
     catch { setBalance(null); }
   }, [id]);
 
-  useFocusEffect(useCallback(() => { load(); loadIdDocs(); loadBalance(); }, [load, loadIdDocs, loadBalance]));
+  useFocusEffect(useCallback(() => { load(); loadBalance(); }, [load, loadBalance]));
   useEffect(() => { api.get<Location[]>('/locations').then(setLocations).catch(() => setLocations([])); }, []);
-  useEffect(() => { storage.secureGet<string>(TOKEN_KEY, '').then((t) => setIdToken(t || '')); }, []);
 
   const saveAccess = async () => {
     const res = await editor.save();
@@ -189,36 +172,6 @@ export default function EmployeeProfile() {
     );
   };
 
-  const addIdProof = async (dataUri: string) => {
-    setCaptureOpen(false);
-    if (!emp) return;
-    setUploadingProof(true);
-    try {
-      const blob = await (await fetch(dataUri)).blob();
-      const form = new FormData();
-      form.append('file', blob as any, `id-${Date.now()}.jpg`);
-      form.append('category_key', 'ids');
-      const doc = await api.upload<{ id: string }>('/documents', form);
-      await api.patch(`/documents/${doc.id}/record`, {
-        linked_ref_type: 'employee', linked_ref_id: emp.id, linked_ref_label: emp.name,
-      });
-      await loadIdDocs();
-    } catch (e: any) {
-      notify('Failed', e?.detail || 'Could not add this document');
-    } finally {
-      setUploadingProof(false);
-    }
-  };
-
-  const docFileUri = (docId: string, thumb = false) => `${BASE}/api/documents/${docId}/file${thumb ? '?thumb=1' : '?full=1'}`;
-  const openIdDoc = async (docId: string) => {
-    try {
-      const res = await fetch(docFileUri(docId), { headers: { Authorization: `Bearer ${idToken}` } });
-      if (!res.ok) throw new Error();
-      if (Platform.OS === 'web') window.open(URL.createObjectURL(await res.blob()), '_blank');
-    } catch { /* ignore */ }
-  };
-
   if (loading) {
     return (
       <SafeAreaView style={styles.root} edges={['top']}>
@@ -267,7 +220,7 @@ export default function EmployeeProfile() {
 
       <ScrollView
         contentContainerStyle={{ paddingBottom: spacing.xxxl }}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); loadIdDocs(); loadBalance(); editor.reload(); }} tintColor={colors.brandPrimary} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); setIdsKey((k) => k + 1); loadBalance(); editor.reload(); }} tintColor={colors.brandPrimary} />}
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.identity}>
@@ -336,19 +289,8 @@ export default function EmployeeProfile() {
               <Group>
                 <Row label="Aadhaar" value={maskAadhaar(emp.aadhaar)} />
                 <Row label="PAN" value={emp.pan || 'Not added'} />
-                <Row label="＋ Add ID proof or photo" value="" labelColor={colors.brandPrimary} chevron onPress={() => setCaptureOpen(true)} testID="add-id-proof-row" />
               </Group>
-              {uploadingProof && <ActivityIndicator color={colors.brandPrimary} style={{ marginTop: spacing.sm }} />}
-              {idDocs.length > 0 && (
-                <View style={styles.docGrid}>
-                  {idDocs.map((d) => (
-                    <Pressable key={d.id} onPress={() => openIdDoc(d.id)} style={styles.docTile} testID={`id-doc-${d.id}`}>
-                      {idToken ? <Image source={{ uri: docFileUri(d.id, true), headers: { Authorization: `Bearer ${idToken}` } }} style={styles.docImg} contentFit="cover" /> : null}
-                    </Pressable>
-                  ))}
-                </View>
-              )}
-              <Text style={styles.foot}>ID proofs are stored in Documents and backed up to Google Drive.</Text>
+              <EmployeeIdProofs key={idsKey} employee={emp} canDelete={user?.role === 'owner' || user?.role === 'admin'} />
             </>
           )}
 
@@ -395,7 +337,6 @@ export default function EmployeeProfile() {
         </View>
       </Modal>
 
-      <PhotoCaptureModal visible={captureOpen} title="ID proof or photo" onClose={() => setCaptureOpen(false)} onCapture={addIdProof} highRes />
     </SafeAreaView>
   );
 }
@@ -526,11 +467,6 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   rowLabel: { color: colors.onSurfaceSecondary, fontSize: 14.5, flex: 1 },
   rowValue: { color: colors.onSurface, fontSize: 14.5, textAlign: 'right', flexShrink: 1 },
-  foot: { color: colors.mutedText, fontSize: 11.5, marginTop: spacing.sm, lineHeight: 16 },
-
-  docGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.sm },
-  docTile: { width: 76, height: 76, borderRadius: radius.md, overflow: 'hidden', backgroundColor: colors.surfaceTertiary },
-  docImg: { width: '100%', height: '100%' },
 
   menuRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: 14 },
   menuRowText: { color: colors.onSurface, fontSize: 16, fontWeight: '500' },
