@@ -23,7 +23,7 @@ const QUICK_ROUTE: Record<string, string> = {
 };
 export const MODULE_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
   gold_loans: 'cash-outline', repairs: 'construct-outline', samples: 'diamond-outline', tasks: 'checkbox-outline',
-  documents: 'document-text-outline', rate_broadcast: 'megaphone-outline', attendance: 'people-outline', payroll: 'calendar-outline', notifications: 'notifications-outline',
+  documents: 'document-text-outline', rate_broadcast: 'megaphone-outline', attendance: 'people-outline', payroll: 'calendar-outline', notifications: 'notifications-outline', team: 'person-circle-outline',
 };
 
 function useHomeStyles() {
