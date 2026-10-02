@@ -1,18 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, Pressable, ActivityIndicator, Modal } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { View, Text, StyleSheet, Pressable, ActivityIndicator } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
-import { api, TOKEN_KEY } from '@/src/api/client';
-import { storage } from '@/src/utils/storage';
+import { api, getToken } from '@/src/api/client';
 import { enqueueRecordPhoto, onOutboxChange } from '@/src/utils/uploadQueue';
 import { confirmAction } from '@/src/utils/confirm';
 import { useAuth } from '@/src/auth/AuthContext';
 import { PhotoCaptureModal } from '@/src/components/PhotoCaptureModal';
 import { spacing, radius, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
-import { useToast } from '@/src/components/ui';
-import { shareFile, useShareableFile } from '@/src/utils/shareFile';
+import { PhotoViewer } from '@/src/components/PhotoViewer';
 
 const BASE = process.env.EXPO_PUBLIC_BACKEND_URL || '';
 
@@ -37,7 +34,7 @@ export function RecordPhotos({ refType, refId, label = 'Photos', readOnly = fals
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
-    setToken((await storage.secureGet<string>(TOKEN_KEY, '')) || '');
+    setToken((await getToken()) || '');
     try { setPhotos(await api.get<Photo[]>(`/record-photos?ref_type=${encodeURIComponent(refType)}&ref_id=${encodeURIComponent(refId)}`)); }
     catch { /* ignore */ }
     finally { setLoading(false); }
@@ -147,41 +144,3 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   delBtn: { position: 'absolute', top: 4, right: 4, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 10, width: 20, height: 20, alignItems: 'center', justifyContent: 'center' },
 });
 
-
-/** A photo full-screen, with Share (the phone's share sheet) and Close. */
-function PhotoViewer({ url, token, name, onClose }: { url: string; token: string; name: string; onClose: () => void }) {
-  const { colors } = useTheme();
-  const insets = useSafeAreaInsets();
-  const toast = useToast();
-  const src = useMemo(() => ({ uri: url, headers: { Authorization: `Bearer ${token}` } }), [url, token]);
-  const file = useShareableFile(url, token, name);
-  const share = async () => {
-    if (!file) { toast.error('Still getting the photo ready — try again in a moment'); return; }
-    const r = await shareFile(file, name);
-    if (r === 'downloaded') toast.success('Saved to your downloads');
-    else if (r === 'failed') toast.error('Could not share this photo');
-  };
-  return (
-    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
-      <View style={[viewer.root, { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 8 }]} testID="record-photo-viewer">
-        <View style={viewer.bar}>
-          <Pressable onPress={onClose} hitSlop={10} style={viewer.btn} accessibilityRole="button" accessibilityLabel="Close" testID="record-photo-close">
-            <Ionicons name="close" size={20} color="#fff" /><Text style={viewer.btnText}>Close</Text>
-          </Pressable>
-          <Pressable onPress={share} hitSlop={10} style={viewer.btn} accessibilityRole="button" accessibilityLabel="Share" testID="record-photo-share">
-            {file ? <Ionicons name="share-outline" size={19} color="#fff" /> : <ActivityIndicator size="small" color={colors.mutedText} />}
-            <Text style={viewer.btnText}>Share</Text>
-          </Pressable>
-        </View>
-        <Image source={src} style={{ flex: 1 }} contentFit="contain" transition={120} />
-      </View>
-    </Modal>
-  );
-}
-
-const viewer = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#000' },
-  bar: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 14, paddingBottom: 8 },
-  btn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.14)' },
-  btnText: { color: '#fff', fontSize: 15, fontWeight: '600' },
-});
