@@ -142,8 +142,8 @@ function NeedItem({ r, first, s, colors, onGo }: { r: NeedRow; first: boolean; s
     <Pressable style={[s.item, !first && s.itemSep]} onPress={() => onGo(r.route)} testID={`home-need-${r.key}`}>
       <View style={[s.ic, { backgroundColor: tone.bg }]}><Ionicons name={MODULE_ICON[r.module] || 'alert-circle-outline'} size={16} color={tone.fg} /></View>
       <View style={s.mid}>
-        <Text style={s.t1} numberOfLines={1}>{r.title}</Text>
-        {!!r.detail && <Text style={s.t2} numberOfLines={1}>{r.detail}</Text>}
+        <Text style={s.t1} numberOfLines={2}>{r.title}</Text>
+        {!!r.detail && <Text style={s.t2} numberOfLines={2}>{r.detail}</Text>}
       </View>
       <Pressable onPress={() => onGo(r.route)} style={s.act} hitSlop={6} testID={`home-need-act-${r.key}`}>
         <Text style={s.actText}>{r.can_act ? r.action : 'View'}</Text>

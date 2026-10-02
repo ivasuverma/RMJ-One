@@ -27,6 +27,22 @@ from server import (
 )
 
 router = APIRouter()
+
+
+def _inr(n: float) -> str:
+    """Rupees with Indian grouping: 210257 -> ₹2,10,257."""
+    neg, v = n < 0, str(int(round(abs(n or 0))))
+    if len(v) > 3:
+        head, tail = v[:-3], v[-3:]
+        parts = []
+        while len(head) > 2:
+            parts.insert(0, head[-2:]); head = head[:-2]
+        if head:
+            parts.insert(0, head)
+        v = ','.join(parts) + ',' + tail
+    return ('-' if neg else '') + '₹' + v
+
+
 logger = logging.getLogger('home')
 
 # ---------------- Settings › Home ----------------
@@ -408,7 +424,7 @@ async def _needs_you(user: dict, s: dict, now: datetime, staff: Optional[dict]) 
             oldest = max((_days_since(l['oldest_unpaid_date'], today_d) or 0) for l in pending)
             rows.append({'key': 'loans_overdue', 'severity': 'red', 'module': 'gold_loans', 'count': len(pending),
                          'title': f"{len(pending)} gold loan{'s' if len(pending) != 1 else ''} overdue",
-                         'detail': f"₹{total:,.0f} interest pending · oldest {oldest} days", 'amount': total, 'oldest_days': oldest,
+                         'detail': f"{_inr(total)} interest pending · oldest {oldest} days", 'amount': total, 'oldest_days': oldest,
                          'action': 'Remind all', 'route': '/loans?status=overdue', 'can_act': can_edit(user, 'gold_loans')})
 
     if can_view(user, 'repairs'):
@@ -655,7 +671,7 @@ async def _coming_up(user: dict, s: dict, now: datetime) -> dict:
                 return {'count': len(rows), 'net': round(sum(max(r.get('net_salary') or 0, 0) for r in rows), 2)}
             p = await _shared(f'payday:{pay_d.isoformat()}', 300, load)
             items.append({'date': pay_d.isoformat(), 'kind': 'payday', 'module': 'payroll', 'title': f"Payday · {prev.strftime('%B')} salaries",
-                          'detail': f"{p['count']} employee{'s' if p['count'] != 1 else ''} · ₹{p['net']:,.0f} after advances",
+                          'detail': f"{p['count']} employee{'s' if p['count'] != 1 else ''} · {_inr(p['net'])} after advances",
                           'route': f'/attendance?seg=pay&year={prev.year}&month={prev.month}'})
 
     items.sort(key=lambda x: x['date'])
