@@ -1553,6 +1553,8 @@ async def on_startup():
     asyncio.create_task(media_offload_loop())
     from atlas_mirror import atlas_mirror_loop  # twice-daily online copy of the database in MongoDB Atlas
     asyncio.create_task(atlas_mirror_loop())
+    from routers.website import website_r2_loop  # website photos served from Cloudflare R2 (when set up)
+    asyncio.create_task(website_r2_loop())
     from gold_rate import gold_rate_loop  # daily reference gold-rate fetch
     asyncio.create_task(gold_rate_loop())
     from instagram_service import instagram_loop  # keeps the website's Instagram rail cache fresh

@@ -611,6 +611,9 @@ const CONFIG = {
   SUBSCRIBE_URL: 'https://api.rmj.co.in/api/public/rate-broadcast/subscribe', // wa.me link with START pre-filled
   CONTENT_URL: 'https://api.rmj.co.in/api/public/website/content', // text/photo edits + extra sections from RMJ-One
   API_ORIGIN: 'https://api.rmj.co.in',
+  // Photos and a copy of the photo lists, on Cloudflare R2 (set up in RMJ-One):
+  // used when api.rmj.co.in can't be reached, e.g. the shop computer is off.
+  MEDIA_ORIGIN: 'https://media.rmj.co.in',
   LOGIN_URL: 'https://app.rmj.co.in',                         // ← set to your RMJ One URL
   REFRESH_MS: 60 * 1000,                                  // same cadence as the app's rates screen
   STALE_AFTER_MS: 6 * 60 * 60 * 1000,                     // flag rates older than 6 hours
@@ -860,15 +863,24 @@ function renderRail(items){ // items: [{src, name, metal}]
     return `<a class="piece" href="https://wa.me/919781800888?text=${msg}"><div class="ph"><img loading="lazy" src="${esc(src)}" alt="${esc(n?n+', '+m:m)}"></div><div class="pn">${esc(n||m)}</div><div class="pa">Ask about this piece</div></a>`;
   }).join('');
 }
+// Photo addresses from RMJ-One are either on Cloudflare (full https://media.rmj.co.in/…)
+// or a path on the API.
+function absUrl(u){ return /^https?:\/\//.test(u) ? u : CONFIG.API_ORIGIN+u; }
+// The live answer from RMJ-One; if that can't be reached, the copy RMJ-One keeps
+// on Cloudflare (at most a few minutes old). Throws if neither answers.
+async function getJSON(url, copyName){
+  try{ const r=await fetch(url,{cache:'no-store'}); if(r.ok) return await r.json(); }catch(e){}
+  const r=await fetch(CONFIG.MEDIA_ORIGIN+'/site/'+copyName,{cache:'no-store'});
+  if(!r.ok) throw new Error('unavailable');
+  return await r.json();
+}
 // Built-in set first, so the row is never empty; replaced by the pieces
 // managed in RMJ-One (Settings › Fresh at the Counter) once any exist.
 renderRail(PIECES.map(([f,n,m])=>({src:RAIL_IMG+f, name:n, metal:m})));
 (async()=>{
   try{
-    const res=await fetch(CONFIG.PIECES_URL,{cache:'no-store'});
-    if(!res.ok) return;
-    const {pieces=[]}=await res.json();
-    if(pieces.length) renderRail(pieces.map(p=>({src:CONFIG.API_ORIGIN+p.image_url, name:p.name, metal:p.metal})));
+    const {pieces=[]}=await getJSON(CONFIG.PIECES_URL,'pieces.json');
+    if(pieces.length) renderRail(pieces.map(p=>({src:absUrl(p.image_url), name:p.name, metal:p.metal})));
   }catch(e){ /* keep the built-in set */ }
 })();
 function railScroll(id,d){ document.getElementById(id).scrollBy({left:d*306,behavior:reduce?'auto':'smooth'}); }
@@ -916,9 +928,7 @@ loadInstagram();
    page simply keeps its built-in content. */
 async function loadContent(){
   try{
-    const res=await fetch(CONFIG.CONTENT_URL,{cache:'no-store'});
-    if(!res.ok) return;
-    const c=await res.json();
+    const c=await getJSON(CONFIG.CONTENT_URL,'content.json');
     const texts=c.texts||{}, imgs=c.images||{};
     if(c.brand){   // logo / name size from RMJ-One
       const r=document.documentElement.style;
@@ -926,10 +936,10 @@ async function loadContent(){
       try{ localStorage.setItem('rmj.brand',JSON.stringify(c.brand)); }catch(e){}
     }
     document.querySelectorAll('[data-cms]').forEach(el=>{ const v=texts[el.dataset.cms]; if(v){ el.textContent=v; el.classList.add('cmstext'); } });
-    document.querySelectorAll('[data-cms-img]').forEach(el=>{ const v=imgs[el.dataset.cmsImg]; if(v) el.src=CONFIG.API_ORIGIN+v; });
+    document.querySelectorAll('[data-cms-img]').forEach(el=>{ const v=imgs[el.dataset.cmsImg]; if(v) el.src=absUrl(v); });
     FINDER.forEach(x=>{
       if(texts['finder_'+x.key+'_desc']) x.desc=texts['finder_'+x.key+'_desc'];
-      if(imgs['finder_'+x.key]) x.img=CONFIG.API_ORIGIN+imgs['finder_'+x.key];
+      if(imgs['finder_'+x.key]) x.img=absUrl(imgs['finder_'+x.key]);
     });
     renderFinder();
     (c.hidden||[]).forEach(k=>{
@@ -941,7 +951,7 @@ async function loadContent(){
     host.innerHTML=(c.sections||[]).map((s,i)=>{
       const rid='cmsrail'+i;
       const photos=(s.photos||[]).map(p=>{
-        const src=CONFIG.API_ORIGIN+p.url;
+        const src=absUrl(p.url);
         const msg=encodeURIComponent(`Hello, I'd like to know more about this${p.caption?' '+p.caption:' piece'}: ${src}`);
         return `<a class="piece" href="https://wa.me/919781800888?text=${msg}"><div class="ph"><img loading="lazy" src="${esc(src)}" alt="${esc(p.caption||s.title)}"></div>${p.caption?`<div class="pn">${esc(p.caption)}</div>`:''}<div class="pa">Ask about this</div></a>`;
       }).join('');
