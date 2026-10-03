@@ -43,6 +43,10 @@ export function money(n: number, code: string = BASE_CURRENCY): string {
   return /\d/.test(s.charAt(0)) ? `${code} ${s}` : s;   // a code with no symbol
 }
 
+const plain = new Intl.NumberFormat('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+/** "17,500" — no symbol, for statement columns that already say the currency. */
+export const num = (n: number) => plain.format(Math.abs(n));
+
 export function symbol(code: string): string {
   const parts = formatter(code).formatToParts(0);
   return parts.find((p) => p.type === 'currency')?.value || code;

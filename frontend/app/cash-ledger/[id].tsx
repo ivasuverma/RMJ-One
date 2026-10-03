@@ -21,7 +21,7 @@ import { RecordPhotos } from '@/src/components/RecordPhotos';
 import { CurrencyPicker } from '@/src/components/CurrencyPicker';
 import { pickWebFile, makeThumb } from '@/src/components/DocumentCaptureSheet';
 import { compressImage } from '@/src/components/QuickDocCapture';
-import { Balances, BASE_CURRENCY, money, initials, orderedCodes, symbol } from '@/src/utils/cashLedger';
+import { Balances, BASE_CURRENCY, CURRENCIES, money, num, initials, orderedCodes, symbol } from '@/src/utils/cashLedger';
 
 type Account = { id: string; name: string; phone?: string; note?: string; currency: string; balances: Balances; entries: number };
 type Entry = { id: string; direction: 'gave' | 'got'; amount: number; currency: string; date: string; note?: string; created_by_name?: string; balance_after: number; photos: number };
@@ -29,6 +29,18 @@ type Shot = { id: string; blob: Blob; thumb: string };
 
 const newId = () => ((typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`);
 const monthLabel = (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+const dayLabel = (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const dayMonth = (iso: string) => `${Number(iso.slice(8, 10))} ${MON[Number(iso.slice(5, 7)) - 1]}`;
+const signed = (n: number, code: string) => `${n < 0 ? '−' : ''}${money(n, code)}`;
+
+// Three ways to read the same entries; the choice is remembered on this device.
+type ViewKey = 'list' | 'statement' | 'daily';
+const VIEW_KEY = 'rmj.cash_ledger_view';
+const savedView = (): ViewKey => {
+  try { const v = localStorage.getItem(VIEW_KEY); if (v === 'statement' || v === 'daily') return v; } catch { /* no storage */ }
+  return 'list';
+};
 
 // One person in the Cash Ledger, laid out like an iOS detail screen: the
 // balance up top (one line per currency — never converted), round actions
@@ -49,6 +61,8 @@ export default function CashLedgerAccountScreen() {
   const [acc, setAcc] = useState<Account | null>(null);
   const [entries, setEntries] = useState<Entry[] | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [view, setViewState] = useState<ViewKey>(savedView);
+  const setView = (v: ViewKey) => { setViewState(v); try { localStorage.setItem(VIEW_KEY, v); } catch { /* no storage */ } };
 
   // entry sheet
   const [sheet, setSheet] = useState<null | { mode: 'new' | 'edit'; entry?: Entry }>(null);
@@ -165,6 +179,36 @@ export default function CashLedgerAccountScreen() {
     sections[sections.length - 1].items.push(e);
   }
   const tint = direction === 'gave' ? colors.onError : colors.onSuccess;
+  const balColor = (n: number) => (n > 0 ? colors.onSuccess : n < 0 ? colors.onError : colors.onSurface);
+
+  // Statement: a passbook per currency, oldest first, closing balance on every line.
+  const chron = useMemo(() => [...(entries || [])].reverse(), [entries]);
+  const statements = useMemo(() => {
+    const byCur: Record<string, Entry[]> = {};
+    for (const e of chron) (byCur[e.currency] ||= []).push(e);
+    return orderedCodes(Object.fromEntries(Object.keys(byCur).map((c) => [c, 1]))).map((c) => {
+      const rows = byCur[c];
+      const gave = rows.reduce((t, e) => t + (e.direction === 'gave' ? e.amount : 0), 0);
+      const got = rows.reduce((t, e) => t + (e.direction === 'got' ? e.amount : 0), 0);
+      return { code: c, rows, gave, got, closing: rows[rows.length - 1].balance_after };
+    });
+  }, [chron]);
+
+  // Day-wise: newest day first, each day ends with its closing balance per currency.
+  const days = useMemo(() => {
+    const out: { date: string; items: Entry[]; closing: { code: string; bal: number }[] }[] = [];
+    for (const e of entries || []) {
+      if (!out.length || out[out.length - 1].date !== e.date) out.push({ date: e.date, items: [], closing: [] });
+      out[out.length - 1].items.push(e);
+    }
+    for (const d of out) {
+      d.items.reverse();   // oldest first within the day, so the running balance reads downwards
+      const last: Record<string, number> = {};
+      for (const e of d.items) last[e.currency] = e.balance_after;
+      d.closing = orderedCodes(last).map((code) => ({ code, bal: last[code] }));
+    }
+    return out;
+  }, [entries]);
 
   return (
     <SafeAreaView style={s.root} edges={['top']} testID="cash-ledger-account">
@@ -201,9 +245,68 @@ export default function CashLedgerAccountScreen() {
 
             {!!acc.note && <Text style={s.note}>{acc.note}</Text>}
 
+            {!!entries?.length && (
+              <View style={{ marginTop: spacing.xl }}>
+                <SegmentedControl options={[{ key: 'list', label: 'Entries' }, { key: 'statement', label: 'Statement' }, { key: 'daily', label: 'Day-wise' }]}
+                  value={view} onChange={(k) => setView(k as ViewKey)} testID="cl-view" />
+              </View>
+            )}
+
             {entries && entries.length === 0 ? (
               <Text style={s.emptyText}>No entries yet.</Text>
-            ) : sections.map((sec) => (
+            ) : view === 'statement' ? statements.map((st) => (
+              <View key={st.code} testID={`cl-statement-${st.code}`}>
+                <Text style={s.sectionHeader}>{(CURRENCIES.find((c) => c.code === st.code)?.name || st.code).toUpperCase()} · {symbol(st.code)}</Text>
+                <View style={s.group}>
+                  <View style={[s.tRow, s.tHead]}>
+                    <Text style={[s.tDate, s.tHeadText]}>DATE</Text>
+                    <Text style={[s.tDetails, s.tHeadText]}>DETAILS</Text>
+                    <Text style={[s.tNum, s.tHeadText]}>GAVE</Text>
+                    <Text style={[s.tNum, s.tHeadText]}>GOT</Text>
+                    <Text style={[s.tBal, s.tHeadText]}>BALANCE</Text>
+                  </View>
+                  {st.rows.map((e) => (
+                    <Pressable key={e.id} onPress={() => openEdit(e)} style={({ pressed }) => [s.tRow, s.sepTop, pressed && s.pressed]} testID={`cl-st-${e.id}`}>
+                      <View style={s.tDate}><Text style={s.tCell}>{dayMonth(e.date)}</Text><Text style={s.tYear}>{e.date.slice(0, 4)}</Text></View>
+                      <Text style={[s.tDetails, s.tCell]} numberOfLines={2}>{e.note || (e.direction === 'gave' ? 'You gave' : 'You got')}{e.photos > 0 ? ' 📷' : ''}</Text>
+                      <Text style={[s.tNum, s.tCell, { color: colors.onError }]}>{e.direction === 'gave' ? num(e.amount) : ''}</Text>
+                      <Text style={[s.tNum, s.tCell, { color: colors.onSuccess }]}>{e.direction === 'got' ? num(e.amount) : ''}</Text>
+                      <Text style={[s.tBal, s.tCell, { color: balColor(e.balance_after) }]}>{e.balance_after < 0 ? '−' : ''}{num(e.balance_after)}</Text>
+                    </Pressable>
+                  ))}
+                  <View style={[s.tRow, s.tFoot]}>
+                    <Text style={[s.tDate, s.tFootText]}>Closing</Text>
+                    <Text style={s.tDetails} />
+                    <Text style={[s.tNum, s.tFootText]}>{num(st.gave)}</Text>
+                    <Text style={[s.tNum, s.tFootText]}>{num(st.got)}</Text>
+                    <Text style={[s.tBal, s.tFootText, { color: balColor(st.closing) }]}>{st.closing < 0 ? '−' : ''}{num(st.closing)}</Text>
+                  </View>
+                </View>
+              </View>
+            )) : view === 'daily' ? days.map((d) => (
+              <View key={d.date} testID={`cl-day-${d.date}`}>
+                <Text style={s.sectionHeader}>{dayLabel(d.date).toUpperCase()}</Text>
+                <View style={s.group}>
+                  {d.items.map((e, i) => (
+                    <Pressable key={e.id} onPress={() => openEdit(e)} style={({ pressed }) => [s.dRow, i > 0 && s.sepTop, pressed && s.pressed]} testID={`cl-d-${e.id}`}>
+                      <Text style={s.dNote} numberOfLines={1}>{e.note || (e.direction === 'gave' ? 'You gave' : 'You got')}{e.photos > 0 ? ' 📷' : ''}</Text>
+                      <View style={s.trailing}>
+                        <Text style={[s.dAmt, { color: e.direction === 'gave' ? colors.onError : colors.onSuccess }]}>{e.direction === 'gave' ? '−' : '+'}{money(e.amount, e.currency)}</Text>
+                        <Text style={s.subtitle}>Bal {signed(e.balance_after, e.currency)}</Text>
+                      </View>
+                    </Pressable>
+                  ))}
+                  <View style={[s.dRow, s.dClose]}>
+                    <Text style={s.dCloseLabel}>Closing Balance</Text>
+                    <View style={s.trailing}>
+                      {d.closing.map((c) => (
+                        <Text key={c.code} style={[s.dCloseAmt, { color: balColor(c.bal) }]}>{c.bal === 0 ? 'Settled' : signed(c.bal, c.code)}</Text>
+                      ))}
+                    </View>
+                  </View>
+                </View>
+              </View>
+            )) : sections.map((sec) => (
               <View key={sec.title}>
                 <Text style={s.sectionHeader}>{sec.title.toUpperCase()}</Text>
                 <View style={s.group}>
@@ -232,7 +335,13 @@ export default function CashLedgerAccountScreen() {
                 </View>
               </View>
             ))}
-            {entries && entries.length > 0 && <Text style={s.footer}>− You gave · + You got. Bal is what {first} owes you after each entry.</Text>}
+            {entries && entries.length > 0 && (
+              <Text style={s.footer}>
+                {view === 'statement' ? `Balance is closing balance after each line. Green: ${first} owes you · Red: you owe ${first}.`
+                  : view === 'daily' ? `Closing balance at the end of each day. Green: ${first} owes you · Red: you owe ${first}.`
+                    : `− You gave · + You got. Bal is what ${first} owes you after each entry.`}
+              </Text>
+            )}
           </>
         )}
       </ScrollView>
@@ -364,6 +473,25 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   trailing: { alignItems: 'flex-end', marginLeft: 8 },
   amount: { fontSize: 17, fontWeight: '600', fontVariant: ['tabular-nums'] },
   footer: { color: colors.mutedText, fontSize: 13, marginTop: 8, marginHorizontal: spacing.md },
+  // Statement table
+  tRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 9, gap: 6 },
+  tHead: { paddingVertical: 7 },
+  tHeadText: { color: colors.mutedText, fontSize: 11, fontWeight: '600', letterSpacing: 0.3 },
+  tCell: { color: colors.onSurface, fontSize: 13, fontVariant: ['tabular-nums'] },
+  tDate: { width: 50 },
+  tYear: { color: colors.mutedText, fontSize: 11, fontVariant: ['tabular-nums'] },
+  tDetails: { flex: 1, minWidth: 0 },
+  tNum: { width: 60, textAlign: 'right' },
+  tBal: { width: 70, textAlign: 'right', fontWeight: '600' },
+  tFoot: { backgroundColor: colors.surfaceTertiary },
+  tFootText: { color: colors.onSurface, fontSize: 13, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  // Day-wise
+  dRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.md, paddingVertical: 10, minHeight: 50 },
+  dNote: { flex: 1, minWidth: 0, color: colors.onSurface, fontSize: 16 },
+  dAmt: { fontSize: 16, fontWeight: '600', fontVariant: ['tabular-nums'] },
+  dClose: { backgroundColor: colors.surfaceTertiary },
+  dCloseLabel: { flex: 1, color: colors.onSurface, fontSize: 15, fontWeight: '600' },
+  dCloseAmt: { fontSize: 16, fontWeight: '700', fontVariant: ['tabular-nums'] },
   toolbar: {
     position: 'absolute', left: 0, right: 0, bottom: 0, flexDirection: 'row', gap: 10, paddingHorizontal: spacing.lg, paddingTop: 10,
     backgroundColor: Platform.OS === 'web' ? 'rgba(127,127,127,0.10)' : colors.surface,
