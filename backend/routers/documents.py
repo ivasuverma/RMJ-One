@@ -18,7 +18,7 @@ list, record, view. OCR fields are reserved (Phase 5) and left null.
 """
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query, Response
 from fastapi.responses import HTMLResponse, FileResponse
-from typing import Optional
+from typing import List, Optional
 from pydantic import BaseModel
 import asyncio
 import threading
@@ -893,6 +893,98 @@ async def list_documents(
     if ver == _LIST_VER[0]:   # nothing was written while we were reading
         _LIST_CACHE[ckey] = (time.monotonic(), result)
     return result
+
+
+# ---- "Send to RMJ One" from the iPhone Share menu ----
+# iPhone doesn't let a home-screen web app appear in the Share menu, but Apple's
+# Shortcuts app can: a shortcut there POSTs the shared PDF/photo to
+# /inbox/{key}. Each person gets their own key (one at a time; a new one
+# replaces the old), which can ONLY upload documents - as that person, into a
+# category they can see, landing in Pending exactly like a capture in the app.
+# Only a SHA-256 of the key is stored; the app shows the full link once.
+def _key_hash(key: str) -> str:
+    import hashlib
+    return hashlib.sha256(key.encode('utf-8')).hexdigest()
+
+
+def _account_kind(user: dict) -> str:
+    return 'employee' if _role(user) == 'employee' else 'user'
+
+
+@router.get('/upload-link/me')
+async def my_upload_link(user=Depends(get_current)):
+    r = await db.upload_keys.find_one({'account_id': user['id']}, {'_id': 0, 'key_hash': 0})
+    return {'exists': bool(r), **({k: r.get(k) for k in ('created_at', 'last_used_at', 'uses')} if r else {})}
+
+
+@router.post('/upload-link/me')
+async def create_upload_link(user=Depends(get_current)):
+    """A new personal link (replaces any earlier one). The key is only returned here."""
+    import secrets
+    key = 'rmj' + secrets.token_urlsafe(24)
+    await db.upload_keys.delete_many({'account_id': user['id']})
+    await db.upload_keys.insert_one({
+        'id': str(uuid.uuid4()), 'key_hash': _key_hash(key), 'account_id': user['id'], 'kind': _account_kind(user),
+        'name': user.get('name'), 'created_at': now_utc().isoformat(), 'last_used_at': None, 'uses': 0,
+    })
+    await log_audit(user, 'documents.upload_link.create', 'upload_key', user['id'], '')
+    return {'key': key}
+
+
+@router.delete('/upload-link/me')
+async def delete_my_upload_link(user=Depends(get_current)):
+    await db.upload_keys.delete_many({'account_id': user['id']})
+    await log_audit(user, 'documents.upload_link.delete', 'upload_key', user['id'], '')
+    return {'ok': True}
+
+
+@router.get('/upload-links')
+async def list_upload_links(user=Depends(require_owner)):
+    return await db.upload_keys.find({}, {'_id': 0, 'key_hash': 0}).sort('created_at', -1).to_list(500)
+
+
+@router.delete('/upload-links/{lid}')
+async def delete_upload_link(lid: str, user=Depends(require_owner)):
+    res = await db.upload_keys.delete_one({'id': lid})
+    if not res.deleted_count:
+        raise HTTPException(status_code=404, detail='Not found')
+    await log_audit(user, 'documents.upload_link.revoke', 'upload_key', lid, '')
+    return {'ok': True}
+
+
+def _say(text: str, status: int = 200) -> Response:
+    """Plain text: the shortcut shows it as its notification."""
+    return Response(content=text, media_type='text/plain; charset=utf-8', status_code=status)
+
+
+@router.post('/inbox/{key}')
+async def inbox_upload(key: str, file: List[UploadFile] = File(...), c: str = Query(default='')):
+    """What the "Send to RMJ One" shortcut calls: one or more files, into
+    category `c`, as the person whose link it is."""
+    rec = await db.upload_keys.find_one({'key_hash': _key_hash(key)}, {'_id': 0})
+    if not rec:
+        return _say('This Send to RMJ One link no longer works. Make a new one in RMJ One > Documents > Send from iPhone.', 401)
+    coll = db.employees if rec['kind'] == 'employee' else db.users
+    acc = await coll.find_one({'id': rec['account_id']}, {'_id': 0, 'password_hash': 0, 'photo': 0})
+    if not acc or acc.get('status') == 'inactive' or acc.get('is_active') is False:
+        return _say('This account is turned off in RMJ One.', 403)
+    acc['role'] = acc.get('role') or 'employee'
+    cats = await _categories_map()
+    rights = await _account_rights(acc)
+    visible = [k for k, cat in cats.items() if cat.get('active', True) is not False and _can_see(cat, _role(acc), rights)]
+    if not visible:
+        return _say("You don't have access to Documents in RMJ One.", 403)
+    cat_key = c if c in visible else visible[0]
+    saved = 0
+    for f in file[:20]:
+        try:
+            await create_document(file=f, category_key=cat_key, note='', thumb='', client_id='', pages=0, user=acc)
+            saved += 1
+        except HTTPException as e:
+            return _say(f'Not saved: {e.detail}', e.status_code)
+    await db.upload_keys.update_one({'id': rec['id']}, {'$set': {'last_used_at': now_utc().isoformat()}, '$inc': {'uses': saved}})
+    label = cats[cat_key].get('label', 'Documents')
+    return _say(f"Saved to RMJ One > {label}{f' ({saved} files)' if saved > 1 else ''}. Record it in Documents > Pending.")
 
 
 @router.get('/documents/summary')
