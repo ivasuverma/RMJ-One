@@ -94,3 +94,22 @@ def test_cash_ledger_groups_and_statement():
         for grp in requests.get(f"{API}/khata/{aid}", headers=h, timeout=30).json()['account'].get('groups', []):
             requests.delete(f"{API}/khata/{aid}/groups/{grp['id']}", headers=h, timeout=30)
         requests.delete(f"{API}/khata/{aid}", headers=h, timeout=30)
+
+
+def test_cash_ledger_gold_and_silver_in_grams():
+    """Gold (XAU) and silver (XAG) are kept in grams to 3 decimals, apart from money, and print in the statement."""
+    h = _login('owner', 'Owner@123')
+    a = requests.post(f"{API}/khata", headers=h, json={'name': f'Khata metal {os.urandom(3).hex()}'}, timeout=30).json()
+    aid = a['id']
+    try:
+        for d, amt, cur in (('gave', 10.5, 'XAU'), ('got', 2.125, 'XAU'), ('gave', 500, 'XAG'), ('gave', 1000, 'INR')):
+            r = requests.post(f"{API}/khata/{aid}/entries", headers=h, json={'direction': d, 'amount': amt, 'currency': cur}, timeout=30)
+            assert r.status_code == 200, r.text
+        acc = requests.get(f"{API}/khata/{aid}", headers=h, timeout=30).json()['account']
+        assert acc['balances'] == {'XAU': 8.375, 'XAG': 500, 'INR': 1000}
+        r = requests.get(f"{API}/khata/{aid}/statement", headers=h, timeout=60)
+        assert r.status_code == 200 and r.content[:4] == b'%PDF'
+    finally:
+        for e in requests.get(f"{API}/khata/{aid}", headers=h, timeout=30).json().get('entries', []):
+            requests.delete(f"{API}/khata/{aid}/entries/{e['id']}", headers=h, timeout=30)
+        requests.delete(f"{API}/khata/{aid}", headers=h, timeout=30)

@@ -10,7 +10,8 @@ person, family). Each *entry* is either:
   - 'gave' : cash you gave them      -> they owe you more
   - 'got'  : cash you got from them  -> they owe you less
 and is in one currency (ISO code: INR, USD, AED…; INR when older entries have
-none). Balances are kept PER CURRENCY and never converted into each other -
+none) - or a metal by weight: XAU = gold and XAG = silver (their ISO codes),
+counted in grams to 3 decimals. Balances are kept PER CURRENCY and never converted into each other -
 "Rahul owes you ₹17,500 and $200" - always derived from the entries (never
 stored, so editing or deleting an old entry can't leave one wrong):
   > 0  they owe you ("You'll get")      < 0  you owe them ("You'll give")
@@ -50,6 +51,16 @@ from server import (
 router = APIRouter()
 MOD = 'cash_ledger'
 BASE_CURRENCY = 'INR'
+METALS = {'XAU': 'Gold', 'XAG': 'Silver'}     # weighed in grams, not money
+
+
+def _dp(cur: Optional[str]) -> int:
+    """Decimals kept: grams to the milligram for gold/silver, paise for money."""
+    return 3 if cur in METALS else 2
+
+
+def _cur_label(cur: str) -> str:
+    return f'{METALS[cur]} (grams)' if cur in METALS else cur
 
 
 def _currency(code: Optional[str]) -> str:
@@ -93,7 +104,7 @@ def _clean_date(d: Optional[str]) -> str:
 
 
 def _nonzero(b: dict) -> dict:
-    return {c: round(v, 2) for c, v in b.items() if abs(v) >= 0.005}
+    return {c: round(v, _dp(c)) for c, v in b.items() if abs(v) >= 0.0005}
 
 
 async def _balances(account_ids: Optional[list] = None) -> dict:
@@ -150,7 +161,7 @@ async def _entries(aid: str) -> list:
         e['group_id'] = e.get('group_id') or None
         k = (e['group_id'], e['currency'])
         running[k] = running.get(k, 0.0) + _signed(e)
-        e['balance_after'] = round(running[k], 2)
+        e['balance_after'] = round(running[k], _dp(e['currency']))
     return entries
 
 
@@ -171,7 +182,7 @@ async def list_accounts(q: Optional[str] = None, user=Depends(require_staff_or_m
         for c, v in r['balances'].items():
             t = totals.setdefault(c, {'you_get': 0.0, 'you_give': 0.0})
             t['you_get' if v > 0 else 'you_give'] += abs(v)
-    totals = {c: {k: round(v, 2) for k, v in t.items()} for c, t in totals.items()}
+    totals = {c: {k: round(v, _dp(c)) for k, v in t.items()} for c, t in totals.items()}
     return {'accounts': rows, 'totals': totals, 'base_currency': BASE_CURRENCY}
 
 
@@ -246,7 +257,7 @@ async def add_entry(aid: str, body: EntryIn, user=Depends(require_admin_or_modul
     a = await _account_or_404(aid)
     cur = _currency(body.currency or a.get('currency'))
     doc = {
-        'id': str(uuid.uuid4()), 'account_id': aid, 'direction': body.direction, 'amount': round(body.amount, 2), 'currency': cur,
+        'id': str(uuid.uuid4()), 'account_id': aid, 'direction': body.direction, 'amount': round(body.amount, _dp(cur)), 'currency': cur,
         'date': _clean_date(body.date), 'note': (body.note or '').strip()[:300], 'remark': (body.remark or '').strip()[:300],
         'group_id': _group_id(a, body.group_id),
         'created_at': now_utc().isoformat(), 'created_by': user.get('id'), 'created_by_name': user.get('name'), 'deleted': False,
@@ -266,7 +277,8 @@ async def edit_entry(aid: str, eid: str, body: EntryIn, user=Depends(require_adm
     if not e:
         raise HTTPException(status_code=404, detail='Entry not found')
     a = await _account_or_404(aid)
-    upd = {'direction': body.direction, 'amount': round(body.amount, 2), 'currency': _currency(body.currency or e.get('currency')),
+    cur = _currency(body.currency or e.get('currency'))
+    upd = {'direction': body.direction, 'amount': round(body.amount, _dp(cur)), 'currency': cur,
            'date': _clean_date(body.date), 'note': (body.note or '').strip()[:300], 'remark': (body.remark or '').strip()[:300],
            'group_id': _group_id(a, body.group_id),
            'updated_at': now_utc().isoformat(), 'updated_by_name': user.get('name')}
@@ -304,7 +316,7 @@ async def settle(aid: str, currency: Optional[str] = Query(default=None), date: 
     if currency:
         c = _currency(currency)
         open_ = {k: v for k, v in open_.items() if k[1] == c}
-    open_ = {k: round(v, 2) for k, v in open_.items() if abs(v) >= 0.005}
+    open_ = {k: round(v, _dp(k[1])) for k, v in open_.items() if abs(v) >= 0.0005}
     if not open_:
         raise HTTPException(status_code=400, detail='Already settled')
     made = []
@@ -351,13 +363,14 @@ async def delete_group(aid: str, gid: str, user=Depends(require_admin_or_module_
 
 
 # ---------------------------------------------------------------- statement (PDF)
-def _amt(x: float) -> str:
-    return f'{abs(x):,.2f}' if abs(x) >= 0.005 else ''
+def _amt(x: float, cur: str = BASE_CURRENCY) -> str:
+    d = _dp(cur)
+    return f'{abs(x):,.{d}f}' if abs(x) >= 0.0005 else ''
 
 
-def _bal(x: float) -> str:
+def _bal(x: float, cur: str = BASE_CURRENCY) -> str:
     """Closing balance the accounts way: 17,500.00 Dr (they owe you) / Cr (you owe them)."""
-    return f"{abs(x):,.2f} {'Dr' if x > 0 else 'Cr'}" if abs(x) >= 0.005 else 'Nil'
+    return f"{abs(x):,.{_dp(cur)}f} {'Dr' if x > 0 else 'Cr'}" if abs(x) >= 0.0005 else 'Nil'
 
 
 def _dmy(iso: str) -> str:
@@ -405,15 +418,17 @@ def _statement_pdf_sync(shop: str, a: dict, sections: list, period: str, generat
     cw[1] = W - sum(c for c in cw if c)
     for sec in sections:
         data = [['Date', 'Description', 'Remarks', 'Dr', 'Cr', 'Closing']]
-        data.append(['', Paragraph('<b>Opening Balance</b>', st['cell']), '', '', '', _bal(sec['opening'])])
+        c = sec['currency']
+        data.append(['', Paragraph('<b>Opening Balance</b>', st['cell']), '', '', '', _bal(sec['opening'], c)])
         group_rows = []
         for d, desc, rem, dr, cr, clo, is_group in sec['rows']:
             if is_group:
                 group_rows.append(len(data))
                 desc = f'<b>{desc}</b>'
-            data.append([_dmy(d), Paragraph(desc, st['cell']), Paragraph(rem, st['cell']), _amt(dr), _amt(cr), _bal(clo)])
-        data.append(['', 'Total', '', _amt(sec['dr']) or '0.00', _amt(sec['cr']) or '0.00', ''])
-        data.append(['', 'Closing Balance', '', '', '', _bal(sec['closing'])])
+            data.append([_dmy(d), Paragraph(desc, st['cell']), Paragraph(rem, st['cell']), _amt(dr, c), _amt(cr, c), _bal(clo, c)])
+        zero = f'{0:.{_dp(c)}f}'
+        data.append(['', 'Total', '', _amt(sec['dr'], c) or zero, _amt(sec['cr'], c) or zero, ''])
+        data.append(['', 'Closing Balance', '', '', '', _bal(sec['closing'], c)])
         n = len(data)
         t = Table(data, colWidths=cw, repeatRows=1)
         t.setStyle(TableStyle([
@@ -432,7 +447,8 @@ def _statement_pdf_sync(shop: str, a: dict, sections: list, period: str, generat
         els += [KeepTogether([Paragraph(sec['title'], st['sec']), Spacer(1, 1.5 * mm)]), t, Spacer(1, 6 * mm)]
 
     els += [Spacer(1, 6 * mm), Paragraph('Dr = amount given to the account holder (receivable). Cr = amount received from them. '
-                                         'Closing in Dr means they owe us; in Cr, we owe them. Each currency is shown separately and never converted.', st['small'])]
+                                         'Closing in Dr means they owe us; in Cr, we owe them. Each currency is shown separately and never converted; '
+                                         'gold and silver are in grams.', st['small'])]
 
     def footer(canvas, d):
         canvas.saveState()
@@ -463,7 +479,7 @@ async def statement(aid: str, date_from: Optional[str] = Query(default=None, ali
     names = {g['id']: g['name'] for g in groups}
     entries = await _entries(aid)
     in_range = (lambda e: not ((date_from and e['date'] < date_from) or (date_to and e['date'] > date_to)))
-    cur_key = (lambda c: (c != BASE_CURRENCY, c))
+    cur_key = (lambda c: ([BASE_CURRENCY, *METALS].index(c) if c in (BASE_CURRENCY, *METALS) else 9, c))   # INR, gold, silver, then the rest
     sections = []
 
     def line(e: dict, closing: float) -> tuple:
@@ -492,26 +508,27 @@ async def statement(aid: str, date_from: Optional[str] = Query(default=None, ali
                          f'{len(g_in)} {"entry" if len(g_in) == 1 else "entries"} - details below', gdr, gcr, run, True))
         for r in rows:
             dr, cr = dr + r[3], cr + r[4]
-        sections.append({'title': title, 'currency': cur, 'opening': round(opening, 2), 'rows': rows,
-                         'dr': round(dr, 2), 'cr': round(cr, 2), 'closing': round(run, 2)})
+        d = _dp(cur)
+        sections.append({'title': title, 'currency': cur, 'opening': round(opening, d), 'rows': rows,
+                         'dr': round(dr, d), 'cr': round(cr, d), 'closing': round(run, d)})
 
     if group:
         gid = None if group == 'general' else _group_id(a, group)
         mine = [e for e in entries if e['group_id'] == gid]
         label = 'General' if gid is None else f'Group: {names.get(gid, "")}'
         for cur in sorted({e['currency'] for e in mine}, key=cur_key) or [a.get('currency') or BASE_CURRENCY]:
-            add(f'{label} - {cur}', cur, [e for e in mine if e['currency'] == cur])
+            add(f'{label} - {_cur_label(cur)}', cur, [e for e in mine if e['currency'] == cur])
     else:
         with_groups = [g['id'] for g in groups if any(e['group_id'] == g['id'] for e in entries)]
         for cur in sorted({e['currency'] for e in entries}, key=cur_key) or [a.get('currency') or BASE_CURRENCY]:
             mine = [e for e in entries if e['currency'] == cur]
             gt = [(gid, [e for e in mine if e['group_id'] == gid]) for gid in with_groups]
-            add(f'Account - {cur}' + (' (groups included as totals)' if any(ges for _, ges in gt) else ''), cur,
+            add(f'Account - {_cur_label(cur)}' + (' (groups included as totals)' if any(ges for _, ges in gt) else ''), cur,
                 [e for e in mine if not e['group_id']], [x for x in gt if x[1]])
         for gid in with_groups:
             mine = [e for e in entries if e['group_id'] == gid]
             for cur in sorted({e['currency'] for e in mine}, key=cur_key):
-                add(f'Group: {names.get(gid, "")} - {cur}', cur, [e for e in mine if e['currency'] == cur])
+                add(f'Group: {names.get(gid, "")} - {_cur_label(cur)}', cur, [e for e in mine if e['currency'] == cur])
     store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
     shop = store.get('name') or 'Ram Murti Jewellers'
     period = f"{_dmy(date_from) if date_from else 'Beginning'} to {_dmy(date_to or _today())}"

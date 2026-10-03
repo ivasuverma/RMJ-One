@@ -22,7 +22,7 @@ import { CurrencyPicker } from '@/src/components/CurrencyPicker';
 import { CashStatementSheet } from '@/src/components/CashStatementSheet';
 import { pickWebFile, makeThumb } from '@/src/components/DocumentCaptureSheet';
 import { compressImage } from '@/src/components/QuickDocCapture';
-import { Balances, BASE_CURRENCY, CURRENCIES, money, num, initials, orderedCodes, symbol } from '@/src/utils/cashLedger';
+import { Balances, BASE_CURRENCY, METALS, currencyName, money, num, initials, orderedCodes, symbol } from '@/src/utils/cashLedger';
 
 type Group = { id: string; name: string; balances: Balances; entries: number };
 type Account = { id: string; name: string; phone?: string; note?: string; currency: string; balances: Balances; entries: number; general_balances: Balances; groups: Group[] };
@@ -350,7 +350,7 @@ export default function CashLedgerAccountScreen() {
               <Text style={s.emptyText}>{grp ? 'No entries in this group yet.' : groups.length ? 'No general entries.' : 'No entries yet.'}</Text>
             ) : view === 'statement' ? statements.map((st) => (
               <View key={st.code} testID={`cl-statement-${st.code}`}>
-                <Text style={s.sectionHeader}>{(CURRENCIES.find((c) => c.code === st.code)?.name || st.code).toUpperCase()} · {symbol(st.code)}</Text>
+                <Text style={s.sectionHeader}>{currencyName(st.code).toUpperCase()} · {symbol(st.code)}</Text>
                 <View style={s.group}>
                   <View style={[s.tRow, s.tHead]}>
                     <Text style={[s.tDetails, s.tHeadText]} numberOfLines={1}>DETAILS</Text>
@@ -380,15 +380,15 @@ export default function CashLedgerAccountScreen() {
                         )}
                       </View>
                       <Text style={[s.tNum, s.tCell, { color: r.amt > 0 ? colors.onError : colors.onSuccess }, r.kind === 'group' && { fontWeight: '600' }]} numberOfLines={1}>
-                        {r.amt > 0 ? '−' : '+'}{num(r.amt)}
+                        {r.amt > 0 ? '−' : '+'}{num(r.amt, st.code)}
                       </Text>
-                      <Text style={[s.tBal, s.tCell, { color: balColor(r.bal) }]} numberOfLines={1}>{r.bal < 0 ? '−' : ''}{num(r.bal)}</Text>
+                      <Text style={[s.tBal, s.tCell, { color: balColor(r.bal) }]} numberOfLines={1}>{r.bal < 0 ? '−' : ''}{num(r.bal, st.code)}</Text>
                     </Pressable>
                   ))}
                   <View style={[s.tRow, s.tFoot]}>
                     <View style={s.tDetails}>
                       <Text style={s.tFootText}>Closing Balance</Text>
-                      <Text style={s.tYear} numberOfLines={2}>Gave {num(st.gave)} · Got {num(st.got)}</Text>
+                      <Text style={s.tYear} numberOfLines={2}>Gave {num(st.gave, st.code)} · Got {num(st.got, st.code)}</Text>
                     </View>
                     <Text style={[s.tBal, s.tFootText, { width: narrow ? 130 : 150, color: balColor(st.closing) }]} numberOfLines={1}>{st.closing < 0 ? '−' : ''}{money(st.closing, st.code)}</Text>
                   </View>
@@ -483,7 +483,7 @@ export default function CashLedgerAccountScreen() {
           <TextInput value={amount} onChangeText={(t) => setAmount(t.replace(/[^\d.,]/g, ''))} placeholder="0" placeholderTextColor={colors.mutedText}
             keyboardType="decimal-pad" style={[s.amountInput, { color: tint }]} autoFocus={sheet?.mode === 'new'} testID="cl-amount" />
         </View>
-        <Text style={s.curCode}>{currency}</Text>
+        <Text style={s.curCode}>{METALS[currency] ? `${METALS[currency].name} · grams` : currency}</Text>
 
         <View style={s.formGroup}>
           <View style={s.formPad}><DateField value={date} onChange={setDate} testID="cl-date" /></View>
