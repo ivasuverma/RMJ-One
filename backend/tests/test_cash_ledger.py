@@ -196,3 +196,22 @@ def test_cash_ledger_split_bill():
         for x in requests.get(f"{API}/khata/{aid}", headers=h, timeout=30).json().get('entries', []):
             requests.delete(f"{API}/khata/{aid}/entries/{x['id']}", headers=h, timeout=30)
         requests.delete(f"{API}/khata/{aid}", headers=h, timeout=30)
+
+
+def test_cash_ledger_only_for_people_given_it():
+    """Nobody but the owner gets the Cash Ledger unless the owner gives it to them - not admin, not accountant -
+    on every route (list, person, statement, dashboard, rates, import, adding)."""
+    owner = _login('owner', 'Owner@123')
+    aid = requests.post(f"{API}/khata", headers=owner, json={'name': f'Khata access {os.urandom(3).hex()}'}, timeout=30).json()['id']
+    try:
+        gets = ['/khata', '/khata-dashboard', '/khata-metal-rates', f'/khata/{aid}', f'/khata/{aid}/statement?format=info']
+        for u, p in (('admin', 'Admin@123'), ('accountant', 'Accountant@123')):
+            h = _login(u, p)
+            assert [requests.get(f"{API}{g}", headers=h, timeout=30).status_code for g in gets] == [403] * len(gets), u
+            assert requests.post(f"{API}/khata/{aid}/entries", headers=h, json={'direction': 'gave', 'amount': 1}, timeout=30).status_code == 403
+            assert requests.post(f"{API}/khata", headers=h, json={'name': 'x'}, timeout=30).status_code == 403
+        mods = requests.get(f"{API}/access/modules", headers=owner, timeout=30).json()
+        cl = next(m for m in mods if m['key'] == 'cash_ledger')
+        assert cl['default_roles'] == ['owner'] and cl.get('employee_assignable') is True   # the owner can give it to anyone
+    finally:
+        requests.delete(f"{API}/khata/{aid}", headers=owner, timeout=30)

@@ -23,7 +23,7 @@ import { GlassTabBar } from '@/src/components/GlassTabBar';
 // is focused from the URL segments.
 export const EMP_WORK_MODULES = ['repairs', 'samples', 'cash_book', 'documents'];
 // (Cash Book is on the Work tab, not here.)
-export const EMP_LEDGER_MODULES = ['customer_ledger', 'karigar_ledger'];
+export const EMP_LEDGER_MODULES = ['customer_ledger', 'karigar_ledger', 'cash_ledger'];
 
 export function employeeTabAccess(hasModule: (key: string) => boolean) {
   return {

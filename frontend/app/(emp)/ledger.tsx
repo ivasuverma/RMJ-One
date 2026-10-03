@@ -61,6 +61,8 @@ export default function EmployeeLedgerScreen() {
   rows.push({ key: 'my-ledger', label: 'My Ledger', icon: 'book-outline', route: `/ledger/${user?.id}`, summary: 'Your wages, advances and payments' });
   if (hasCustomer) rows.push({ key: 'customer-ledger', label: 'Customer Ledger', icon: 'person-outline', route: '/reports/customer-ledger', summary: custSummary || '…' });
   if (hasKarigar) rows.push({ key: 'karigar-ledger', label: 'Karigar Ledger', icon: 'hammer-outline', route: '/reports/karigar-ledger', summary: karigarSummary || '…' });
+  // Only when the owner has given this person the Cash Ledger.
+  if (hasModule('cash_ledger')) rows.push({ key: 'cash-ledger', label: 'Cash Ledger', icon: 'wallet-outline', route: '/cash-ledger', summary: 'Cash given and received, person by person' });
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="emp-ledger-screen">

@@ -25,6 +25,7 @@ const MODULE_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
   repairs: 'construct-outline',
   samples: 'swap-horizontal-outline',
   cash_book: 'cash-outline',
+  cash_ledger: 'wallet-outline',
   documents: 'document-text-outline',
   customer_ledger: 'people-outline',
   karigar_ledger: 'hammer-outline',

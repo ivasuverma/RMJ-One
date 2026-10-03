@@ -301,7 +301,8 @@ MODULE_DEFS = [
     # Cash Ledger (routers/cash_ledger.py): cash given to / received from
     # people, account by account, with photos - the owner's own khata. Owner
     # only unless deliberately granted in People.
-    {'key': 'cash_ledger', 'label': 'Cash Ledger', 'default_roles': ['owner']},
+    # Owner only unless the owner turns it on for a person (any role); nobody gets it by default.
+    {'key': 'cash_ledger', 'label': 'Cash Ledger', 'default_roles': ['owner'], 'employee_assignable': True},
 ]
 MODULE_KEYS = {m['key'] for m in MODULE_DEFS}
 MODULE_DEFAULT_ROLES = {m['key']: set(m['default_roles']) for m in MODULE_DEFS}
