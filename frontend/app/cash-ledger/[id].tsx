@@ -218,12 +218,41 @@ export default function CashLedgerAccountScreen() {
     catch (err: any) { toast.error(err?.detail || 'Could not delete'); }
   });
 
-  const settle = () => acc && confirmAction(grp ? `Settle ${grp.name}?` : 'Settle Up?',
-    codes.map((c) => (heroBal[c] > 0 ? `${first} pays you ${money(heroBal[c], c)}` : `You pay ${first} ${money(heroBal[c], c)}`)).join('\n'),
-    'Settle Up', async () => {
-      try { await api.post(`/khata/${id}/settle${group ? `?group=${group}` : ''}`, {}); haptics.success(); load(); }
-      catch (e: any) { toast.error(e?.detail || 'Could not settle'); }
-    });
+  // Settle Up: the whole balance in a currency (every part, as before), or a part payment.
+  const [settleCur, setSettleCur] = useState<string | null>(null);
+  const [settleAmt, setSettleAmt] = useState('');
+  const [settleDate, setSettleDate] = useState(todayIST());
+  const [settleNote, setSettleNote] = useState('');
+  const [settlePart, setSettlePart] = useState<string | null>(null);   // where a part payment is recorded (person page)
+  const [settleBusy, setSettleBusy] = useState(false);
+  const openSettleFor = (c: string) => {
+    setSettleCur(c); setSettleAmt(String(Math.abs(heroBal[c] || 0))); setSettleDate(todayIST()); setSettleNote('');
+    // a part payment goes, by default, to the part owing the most in the same direction
+    const parts = convParts(c).filter((p) => Math.sign(p.v) === Math.sign(heroBal[c] || 0)).sort((x, y) => Math.abs(y.v) - Math.abs(x.v));
+    setSettlePart(parts[0]?.id ?? null);
+  };
+  const settle = () => { if (codes.length) openSettleFor(codes[0]); };
+  const settleBal = settleCur ? heroBal[settleCur] || 0 : 0;
+  const settleN = Number(settleAmt.replace(/,/g, '')) || 0;
+  const settleFull = !!settleCur && Math.abs(settleN - Math.abs(settleBal)) < 0.005;
+  const doSettle = async () => {
+    if (!settleCur || settleBusy) return;
+    if (!(settleN > 0) || settleN > Math.abs(settleBal) + 0.005) { toast.error(`Enter an amount up to ${money(settleBal, settleCur)}`); return; }
+    setSettleBusy(true);
+    try {
+      if (settleFull) {
+        const q = [`currency=${settleCur}`, `date=${settleDate}`, group && `group=${group}`].filter(Boolean).join('&');
+        await api.post(`/khata/${id}/settle?${q}`, {});
+      } else {
+        await api.post(`/khata/${id}/entries`, {
+          direction: settleBal > 0 ? 'got' : 'gave', amount: settleN, currency: settleCur, date: settleDate,
+          note: settleNote.trim() || 'Part payment', group_id: grp ? group : settlePart,
+        });
+      }
+      haptics.success(); setSettleCur(null); load();
+    } catch (e: any) { haptics.error(); toast.error(e?.detail || 'Could not settle'); }
+    finally { setSettleBusy(false); }
+  };
 
   const phoneDigits = (acc?.phone || '').replace(/\D/g, '');
   const waNumber = phoneDigits.length === 10 ? `91${phoneDigits}` : phoneDigits;
@@ -823,6 +852,61 @@ export default function CashLedgerAccountScreen() {
         )}
       </Sheet>
 
+      <Sheet visible={!!settleCur} onClose={() => setSettleCur(null)} title={grp ? `Settle ${grp.name}` : 'Settle Up'} testID="cl-settle-sheet">
+        {settleCur && (
+          <>
+            {codes.length > 1 && (
+              <View style={{ marginBottom: spacing.md }}>
+                <SegmentedControl options={codes.map((c) => ({ key: c, label: symbol(c) }))} value={settleCur} onChange={(c) => openSettleFor(c)} testID="cl-settle-cur" />
+              </View>
+            )}
+            <Text style={s.settleWho}>{settleBal > 0 ? `${first} pays you` : `You pay ${first}`}</Text>
+            <View style={s.amountWrap}>
+              <Text style={[s.curSym, { color: settleBal > 0 ? colors.onSuccess : colors.onError }]}>{symbol(settleCur)}</Text>
+              <TextInput value={settleAmt} onChangeText={(t) => setSettleAmt(t.replace(/[^\d.,]/g, ''))} keyboardType="decimal-pad" placeholder="0"
+                placeholderTextColor={colors.mutedText} style={[s.amountInput, { color: settleBal > 0 ? colors.onSuccess : colors.onError }]} testID="cl-settle-amount" />
+            </View>
+            <View style={s.settleChips}>
+              {[['Full', 1], ['Half', 0.5]].map(([l, f]) => (
+                <Pressable key={l as string} onPress={() => setSettleAmt(String(Math.round(Math.abs(settleBal) * (f as number) * 1000) / 1000))} style={({ pressed }) => [s.pcChip, pressed && { opacity: 0.6 }]} testID={`cl-settle-${l}`}>
+                  <Text style={s.pcChipText}>{l}</Text>
+                </Pressable>
+              ))}
+            </View>
+            <Text style={s.settleLeft} testID="cl-settle-left">
+              {settleFull ? 'Settles the whole balance' : settleN > 0 && settleN < Math.abs(settleBal)
+                ? `Part payment · ${money(Math.abs(settleBal) - settleN, settleCur)} still left` : `Balance ${money(settleBal, settleCur)}`}
+            </Text>
+
+            <View style={[s.formGroup, { marginTop: spacing.md }]}>
+              <View style={s.formPad}><DateField value={settleDate} onChange={setSettleDate} testID="cl-settle-date" /></View>
+              {!settleFull && (
+                <>
+                  <View style={s.formSep} />
+                  <TextInput value={settleNote} onChangeText={setSettleNote} placeholder="Note (Part payment)" placeholderTextColor={colors.mutedText} style={s.formInput} testID="cl-settle-note" />
+                </>
+              )}
+              {!settleFull && !grp && convParts(settleCur).length > 1 && (
+                <>
+                  <View style={s.formSep} />
+                  <View style={[s.formRow, { flexWrap: 'wrap', paddingVertical: 8 }]}>
+                    <Text style={[s.formLabel, { marginRight: 8 }]}>Against</Text>
+                    {convParts(settleCur).map((p) => (
+                      <Pressable key={p.id || 'general'} onPress={() => setSettlePart(p.id)} style={[s.pcChip, settlePart === p.id && { backgroundColor: colors.brandPrimary }]} testID={`cl-settle-part-${p.id || 'general'}`}>
+                        <Text style={[s.pcChipText, settlePart === p.id && { color: colors.onBrandPrimary }]}>{p.name} {signed(p.v, settleCur)}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                </>
+              )}
+            </View>
+            <Pressable onPress={doSettle} disabled={settleBusy} style={({ pressed }) => [s.primary, settleBusy && { opacity: 0.5 }, pressed && { opacity: 0.85 }]} testID="cl-settle-save">
+              {settleBusy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={s.primaryText}>{settleFull ? 'Settle Up' : 'Record Part Payment'}</Text>}
+            </Pressable>
+          </>
+        )}
+      </Sheet>
+
       <Sheet visible={!!conv} onClose={() => setConv(null)} title="Convert" testID="cl-convert-sheet">
         {conv && (
           <>
@@ -1028,6 +1112,9 @@ const makeStyles = (colors: ThemeColors, narrow = false) => StyleSheet.create({
   pcChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, backgroundColor: colors.surfaceTertiary },
   pcChipText: { color: colors.brandPrimary, fontSize: 14, fontWeight: '600' },
   formValue: { flex: 1, textAlign: 'right', color: colors.mutedText, fontSize: 17 },
+  settleWho: { color: colors.mutedText, fontSize: 15, textAlign: 'center' },
+  settleChips: { flexDirection: 'row', gap: 8, justifyContent: 'center', marginTop: 4 },
+  settleLeft: { color: colors.mutedText, fontSize: 14, textAlign: 'center', marginTop: 8 },
   formValue2: { color: colors.mutedText, fontSize: 17, marginLeft: 6 },
   swapBtn: { marginLeft: 8, width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceTertiary },
   curSymSmall: { color: colors.onSurface, fontSize: 20, fontWeight: '600', minWidth: 24 },
