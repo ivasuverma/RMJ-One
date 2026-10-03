@@ -91,6 +91,7 @@ export default function CashLedgerAccountScreen() {
   const [convTo, setConvTo] = useState(BASE_CURRENCY);
   const [convAmt, setConvAmt] = useState('');
   const [convRate, setConvRate] = useState('');
+  const [convInv, setConvInv] = useState(false);   // rate typed as "1 CAD = 62.5 INR" (per unit of the new currency)
   const [convDate, setConvDate] = useState(todayIST());
   const [convNote, setConvNote] = useState('');
   const [convPicking, setConvPicking] = useState(false);
@@ -248,9 +249,10 @@ export default function CashLedgerAccountScreen() {
   });
 
   // Suggest a rate where the app knows one: gold/silver <-> rupees from today's live rate.
-  const suggestRate = (from: string, to: string, rates = metalRates) => {
-    if (METALS[from] && to === BASE_CURRENCY && rates[from]) return String(rates[from]);
-    if (from === BASE_CURRENCY && METALS[to] && rates[to]) return String(Number((1 / (rates[to] as number)).toFixed(6)));
+  // Rupee rates are quoted per unit of the other currency, so from ₹ the rate is typed as "1 CAD = … INR".
+  const suggestRate = (from: string, to: string, rates = metalRates, inv = from === BASE_CURRENCY) => {
+    if (METALS[from] && to === BASE_CURRENCY && rates[from]) return inv ? String(Number((1 / (rates[from] as number)).toFixed(6))) : String(rates[from]);
+    if (from === BASE_CURRENCY && METALS[to] && rates[to]) return inv ? String(rates[to]) : String(Number((1 / (rates[to] as number)).toFixed(6)));
     return '';
   };
   // From the person's page this converts the general balance; a group's balance is converted on the group's page.
@@ -259,26 +261,27 @@ export default function CashLedgerAccountScreen() {
     if (!convertible(from)) { toast.error('This balance is all in groups — open the group to convert it.'); return; }
     const to = from === BASE_CURRENCY ? (codes.find((c) => c !== from) || 'USD') : BASE_CURRENCY;
     setConv({ from }); setConvTo(to); setConvAmt(String(Math.abs(convertible(from)))); setConvDate(todayIST()); setConvNote('');
+    setConvInv(from === BASE_CURRENCY);
     setConvRate(suggestRate(from, to));
     if (!Object.keys(metalRates).length) {
       try {
         const r = await api.get<Record<string, number | null>>('/khata-metal-rates');
         setMetalRates(r);
-        setConvRate((cur) => cur || suggestRate(from, to, r));
+        setConvRate((cur) => cur || suggestRate(from, to, r, from === BASE_CURRENCY));
       } catch { /* no live rate: type it */ }
     }
   };
   const convFromBal = conv ? convertible(conv.from) : 0;
   const convAmtN = Number(convAmt.replace(/,/g, '')) || 0;
   const convRateN = Number(convRate.replace(/,/g, '')) || 0;
-  const convOut = convAmtN * convRateN;
+  const convOut = convRateN ? (convInv ? convAmtN / convRateN : convAmtN * convRateN) : 0;
   const unitOf = (c: string) => (METALS[c] ? `g ${METALS[c].name.toLowerCase()}` : c);
   const doConvert = async () => {
     if (!conv || convBusy) return;
     if (!convAmtN || !convRateN) { toast.error('Enter the amount and the rate'); return; }
     setConvBusy(true);
     try {
-      await api.post(`/khata/${id}/convert`, { from_currency: conv.from, to_currency: convTo, amount: convAmtN, rate: convRateN, date: convDate, note: convNote.trim(), group_id: group || null });
+      await api.post(`/khata/${id}/convert`, { from_currency: conv.from, to_currency: convTo, amount: convAmtN, rate: convRateN, rate_per_to: convInv, date: convDate, note: convNote.trim(), group_id: group || null });
       haptics.success(); setConv(null); load();
     } catch (e: any) { haptics.error(); toast.error(e?.detail || 'Could not convert'); }
     finally { setConvBusy(false); }
@@ -782,14 +785,18 @@ export default function CashLedgerAccountScreen() {
               </Pressable>
               <View style={s.formSep} />
               <View style={s.formRow}>
-                <Text style={[s.formLabel, { flexShrink: 0 }]} numberOfLines={1}>1 {unitOf(conv.from)} =</Text>
+                <Text style={[s.formLabel, { flexShrink: 0 }]} numberOfLines={1}>1 {unitOf(convInv ? convTo : conv.from)} =</Text>
                 <TextInput value={convRate} onChangeText={(t) => setConvRate(t.replace(/[^\d.,]/g, ''))} keyboardType="decimal-pad" placeholder="Rate"
                   placeholderTextColor={colors.mutedText} style={[s.formInput, { flex: 1, minWidth: 0, textAlign: 'right', paddingHorizontal: 0 }]} testID="cl-conv-rate" />
-                <Text style={[s.formValue2, { flexShrink: 0 }]} numberOfLines={1}>{unitOf(convTo)}</Text>
+                <Text style={[s.formValue2, { flexShrink: 0 }]} numberOfLines={1}>{unitOf(convInv ? conv.from : convTo)}</Text>
+                <Pressable onPress={() => { const inv = !convInv; setConvInv(inv); setConvRate(convRateN ? String(Number((1 / convRateN).toFixed(6))) : suggestRate(conv.from, convTo, metalRates, inv)); }}
+                  hitSlop={8} style={({ pressed }) => [s.swapBtn, pressed && { opacity: 0.5 }]} accessibilityLabel="Swap rate direction" testID="cl-conv-swap">
+                  <Ionicons name="swap-horizontal" size={18} color={colors.brandPrimary} />
+                </Pressable>
               </View>
             </View>
-            {(METALS[conv.from] || METALS[convTo]) && !!suggestRate(conv.from, convTo) && (
-              <Pressable onPress={() => setConvRate(suggestRate(conv.from, convTo))} hitSlop={6}>
+            {(METALS[conv.from] || METALS[convTo]) && !!suggestRate(conv.from, convTo, metalRates, convInv) && (
+              <Pressable onPress={() => setConvRate(suggestRate(conv.from, convTo, metalRates, convInv))} hitSlop={6}>
                 <Text style={s.footer}>Today&apos;s live rate: {money(metalRates[METALS[conv.from] ? conv.from : convTo] || 0, BASE_CURRENCY)} per gram ({METALS[conv.from] ? METALS[conv.from].name : METALS[convTo].name}, sell). Tap to use it.</Text>
               </Pressable>
             )}
@@ -813,7 +820,7 @@ export default function CashLedgerAccountScreen() {
         )}
       </Sheet>
       <CurrencyPicker visible={convPicking} value={convTo}
-        onPick={(c) => { setConvPicking(false); if (conv && c !== conv.from) { setConvTo(c); setConvRate(suggestRate(conv.from, c)); } }}
+        onPick={(c) => { setConvPicking(false); if (conv && c !== conv.from) { setConvTo(c); setConvRate(suggestRate(conv.from, c, metalRates, convInv)); } }}
         onClose={() => setConvPicking(false)} />
 
       {acc && (
@@ -937,6 +944,7 @@ const makeStyles = (colors: ThemeColors, narrow = false) => StyleSheet.create({
   pcChipText: { color: colors.brandPrimary, fontSize: 14, fontWeight: '600' },
   formValue: { flex: 1, textAlign: 'right', color: colors.mutedText, fontSize: 17 },
   formValue2: { color: colors.mutedText, fontSize: 17, marginLeft: 6 },
+  swapBtn: { marginLeft: 8, width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceTertiary },
   curSymSmall: { color: colors.onSurface, fontSize: 20, fontWeight: '600', minWidth: 24 },
   tilesHint: { color: colors.mutedText, fontSize: 12, textAlign: 'center', marginTop: 8 },
   convResult: { alignItems: 'center', paddingVertical: spacing.lg },
