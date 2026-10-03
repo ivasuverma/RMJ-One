@@ -123,7 +123,13 @@ export default function CashLedgerAccountScreen() {
   const heroBal: Balances = grp ? grp.balances : acc?.balances || {};
   const codes = orderedCodes(heroBal);
   const totalCodes = acc ? orderedCodes(acc.balances) : [];
-  const scoped = useMemo(() => (entries || []).filter((e) => (group ? e.group_id === group : !e.group_id)), [entries, group]);
+  const scopedAll = useMemo(() => (entries || []).filter((e) => (group ? e.group_id === group : !e.group_id)), [entries, group]);
+  // Currency filter (Rupee / Gold / …) for the three views; only offered when there's more than one.
+  const [curFilter, setCurFilter] = useState<string | null>(null);
+  const [pickingFilter, setPickingFilter] = useState(false);
+  const scopedCodes = useMemo(() => orderedCodes(Object.fromEntries(scopedAll.map((e) => [e.currency, 1]))), [scopedAll]);
+  const activeFilter = curFilter && scopedCodes.includes(curFilter) ? curFilter : null;
+  const scoped = useMemo(() => (activeFilter ? scopedAll.filter((e) => e.currency === activeFilter) : scopedAll), [scopedAll, activeFilter]);
   const groupLabel = (gid: string | null | undefined) => groups.find((g) => g.id === gid)?.name || 'General';
 
   const openNew = (dir: 'gave' | 'got') => {
@@ -304,7 +310,7 @@ export default function CashLedgerAccountScreen() {
     const withGroups = grp ? [] : groups.filter((g) => Object.keys(g.balances).length);
     const all: Balances = Object.fromEntries(Object.keys(byCur).map((c) => [c, 1]));
     for (const g of withGroups) for (const c of Object.keys(g.balances)) all[c] = 1;
-    return orderedCodes(all).map((c) => {
+    return orderedCodes(all).filter((c) => !activeFilter || c === activeFilter).map((c) => {
       const rows: StRow[] = (byCur[c] || []).map((e) => ({ kind: 'entry', e, amt: e.direction === 'gave' ? e.amount : -e.amount, bal: e.balance_after }));
       let bal = rows.length ? rows[rows.length - 1].bal : 0;
       for (const g of withGroups) {
@@ -316,7 +322,7 @@ export default function CashLedgerAccountScreen() {
       const got = rows.reduce((t, r) => t + (r.amt < 0 ? -r.amt : 0), 0);
       return { code: c, rows, gave, got, closing: bal };
     });
-  }, [chron, groups, grp]);
+  }, [chron, groups, grp, activeFilter]);
 
   // Day-wise: newest day first, each day ends with its closing balance per currency.
   const days = useMemo(() => {
@@ -431,14 +437,21 @@ export default function CashLedgerAccountScreen() {
             {!!acc.note && <Text style={s.note}>{acc.note}</Text>}
 
             {!grp && groups.length > 0 && <Text style={s.sectionHeader}>GENERAL ENTRIES</Text>}
-            {!!scoped.length && (
+            {!!scopedAll.length && (
               <View style={{ marginTop: !grp && groups.length > 0 ? 0 : spacing.xl }}>
                 <SegmentedControl options={[{ key: 'list', label: 'Entries' }, { key: 'statement', label: 'Statement' }, { key: 'daily', label: 'Day-wise' }]}
                   value={view} onChange={(k) => setView(k as ViewKey)} testID="cl-view" />
+                {scopedCodes.length > 1 && (
+                  <Pressable onPress={() => setPickingFilter(true)} hitSlop={8} style={({ pressed }) => [s.filterBtn, activeFilter && s.filterBtnOn, pressed && { opacity: 0.6 }]} testID="cl-filter">
+                    <Ionicons name="filter" size={14} color={activeFilter ? colors.onBrandPrimary : colors.brandPrimary} />
+                    <Text style={[s.filterText, activeFilter && { color: colors.onBrandPrimary }]}>{activeFilter ? currencyName(activeFilter).replace(' (grams)', '') : 'All currencies'}</Text>
+                    <Ionicons name="chevron-down" size={13} color={activeFilter ? colors.onBrandPrimary : colors.mutedText} />
+                  </Pressable>
+                )}
               </View>
             )}
 
-            {entries && scoped.length === 0 ? (
+            {entries && scopedAll.length === 0 ? (
               <Text style={s.emptyText}>{grp ? 'No entries in this group yet.' : groups.length ? 'No general entries.' : 'No entries yet.'}</Text>
             ) : view === 'statement' ? statements.map((st) => (
               <View key={st.code} testID={`cl-statement-${st.code}`}>
@@ -663,6 +676,18 @@ export default function CashLedgerAccountScreen() {
         )}
       </Sheet>
       <CurrencyPicker visible={picking} value={currency} onPick={(c) => { setCurrency(c); setPicking(false); }} onClose={() => setPicking(false)} />
+
+      <Sheet visible={pickingFilter} onClose={() => setPickingFilter(false)} title="Show" testID="cl-filter-sheet">
+        <View style={s.formGroup}>
+          {[null, ...scopedCodes].map((c, i) => (
+            <Pressable key={c || 'all'} onPress={() => { setCurFilter(c); setPickingFilter(false); }} style={({ pressed }) => [s.formRow, i > 0 && s.sepTop, pressed && s.pressed]} testID={`cl-filter-${c || 'all'}`}>
+              <Text style={s.filterSym}>{c ? symbol(c) : '∗'}</Text>
+              <Text style={[s.formLabel, { flex: 1 }]}>{c ? currencyName(c).replace(' (grams)', '') : 'All currencies'}</Text>
+              {activeFilter === c && <Ionicons name="checkmark" size={20} color={colors.brandPrimary} />}
+            </Pressable>
+          ))}
+        </View>
+      </Sheet>
 
       <Sheet visible={pickingSplit} onClose={() => setPickingSplit(false)} title="How was this split?" testID="cl-split-picker">
         <View style={s.formGroup}>
@@ -900,6 +925,10 @@ const makeStyles = (colors: ThemeColors, narrow = false) => StyleSheet.create({
   formRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: spacing.md, minHeight: 48 },
   formAction: { color: colors.brandPrimary, fontSize: 17 },
   formLabel: { color: colors.onSurface, fontSize: 17 },
+  filterBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, alignSelf: 'flex-end', marginTop: 10, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, backgroundColor: colors.surfaceSecondary },
+  filterBtnOn: { backgroundColor: colors.brandPrimary },
+  filterText: { color: colors.brandPrimary, fontSize: 14, fontWeight: '600' },
+  filterSym: { width: 30, textAlign: 'center', color: colors.onSurfaceSecondary, fontSize: 16, fontWeight: '600' },
   splitBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'center', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, backgroundColor: colors.surfaceSecondary, marginBottom: 4, maxWidth: '100%' },
   splitBtnText: { color: colors.onSurface, fontSize: 15, fontWeight: '500', flexShrink: 1 },
   splitResult: { textAlign: 'center', fontSize: 15, fontWeight: '600', marginTop: 8, marginBottom: 4 },
