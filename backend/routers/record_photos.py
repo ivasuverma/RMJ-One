@@ -276,6 +276,8 @@ async def delete_record_photo(photo_id: str, user=Depends(get_current)):
     d = await db.record_photos.find_one({'id': photo_id}, {'_id': 0, 'local_data': 0, 'thumb_data': 0})
     if not d:
         raise HTTPException(status_code=404, detail='Photo not found')
+    if d.get('ref_type') == 'cash_ledger_entry':   # only people given the Cash Ledger, not every admin
+        await _require_write(user, 'cash_ledger_entry', d.get('ref_id', ''))
     await db.record_photos.update_one({'id': photo_id}, {'$set': {'deleted': True, 'deleted_at': now_utc().isoformat()}})
     await log_audit(user, 'record_photo.delete', d.get('ref_type', ''), d.get('ref_id', ''), photo_id)
     return {'ok': True}
