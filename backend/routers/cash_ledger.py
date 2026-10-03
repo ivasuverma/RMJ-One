@@ -124,6 +124,7 @@ class ConvertIn(BaseModel):
     amount: float = Field(gt=0, le=10_000_000_000)     # in from_currency; at most the balance
     rate: float = Field(gt=0, le=10_000_000_000)       # 1 from_currency = rate to_currency
     rate_per_to: bool = False                       # the other way round: 1 to_currency = rate from_currency (e.g. 1 CAD = 62.5 INR)
+    all_parts: bool = False                         # the whole balance in this currency: general and every group, each in full
     date: Optional[str] = None
     note: Optional[str] = ''
     group_id: Optional[str] = None
@@ -385,36 +386,60 @@ def _unit(cur: str) -> str:
 
 @router.post('/khata/{aid}/convert')
 async def convert(aid: str, body: ConvertIn, user=Depends(require_admin_or_module(MOD))):
+    """One part (general, or `group_id`) - or with `all_parts`, the person's whole
+    balance in that currency: every part with money in it is converted in full at
+    the same rate, inside its own group, under one conversion_id (so the groups'
+    totals stay right and deleting it undoes all of it)."""
     a = await _account_or_404(aid)
     src, dst = _currency(body.from_currency), _currency(body.to_currency)
     if src == dst:
         raise HTTPException(status_code=400, detail='Pick a different currency to convert into')
-    gid = _group_id(a, body.group_id)
-    bal = sum(_signed(e) for e in await _entries(aid) if e['group_id'] == gid and e['currency'] == src)
-    if abs(bal) < 0.0005:
-        raise HTTPException(status_code=400, detail=f'There is no {_cur_label(src)} balance to convert')
-    amt = round(body.amount, _dp(src))
-    if amt > round(abs(bal), _dp(src)) + 0.0005:
-        raise HTTPException(status_code=400, detail=f'That is more than the {_cur_label(src)} balance')
-    out = round(amt / body.rate if body.rate_per_to else amt * body.rate, _dp(dst))
-    if out <= 0:
-        raise HTTPException(status_code=400, detail='The converted amount comes to zero - check the rate')
-    owes = bal > 0                       # they owe you: take it off in the old currency, put it on in the new
+    entries = await _entries(aid)
+    part_bal: dict = {}
+    for e in entries:
+        if e['currency'] == src:
+            part_bal[e['group_id']] = part_bal.get(e['group_id'], 0.0) + _signed(e)
+    if body.all_parts:
+        parts = [(g, round(v, _dp(src))) for g, v in part_bal.items() if abs(v) >= 0.0005]
+        if not parts:
+            raise HTTPException(status_code=400, detail=f'There is no {_cur_label(src)} balance to convert')
+    else:
+        gid = _group_id(a, body.group_id)
+        bal = part_bal.get(gid, 0.0)
+        if abs(bal) < 0.0005:
+            raise HTTPException(status_code=400, detail=f'There is no {_cur_label(src)} balance to convert')
+        amt = round(body.amount, _dp(src))
+        if amt > round(abs(bal), _dp(src)) + 0.0005:
+            raise HTTPException(status_code=400, detail=f'That is more than the {_cur_label(src)} balance')
+        parts = [(gid, amt if bal > 0 else -amt)]
+    conv = (lambda x: x / body.rate) if body.rate_per_to else (lambda x: x * body.rate)
     cid, now, date = str(uuid.uuid4()), now_utc().isoformat(), _clean_date(body.date)
     remark = f'1 {_unit(dst)} = {_fmt_rate(body.rate)} {_unit(src)}' if body.rate_per_to else f'1 {_unit(src)} = {_fmt_rate(body.rate)} {_unit(dst)}'
-    info = {'from': src, 'to': dst, 'amount': amt, 'rate': (1 / body.rate) if body.rate_per_to else body.rate, 'to_amount': out}
-    base = {'account_id': aid, 'date': date, 'remark': remark, 'group_id': gid, 'conversion_id': cid, 'conversion': info,
-            'created_at': now, 'created_by': user.get('id'), 'created_by_name': user.get('name'), 'deleted': False}
     note = (body.note or '').strip()[:300]
-    legs = [
-        {**base, 'id': str(uuid.uuid4()), 'direction': 'got' if owes else 'gave', 'amount': amt, 'currency': src,
-         'note': note or f'Converted to {METALS.get(dst, dst)}'},
-        {**base, 'id': str(uuid.uuid4()), 'direction': 'gave' if owes else 'got', 'amount': out, 'currency': dst,
-         'note': note or f'Converted from {METALS.get(src, src)}'},
-    ]
+    legs, total_in, total_out = [], 0.0, 0.0
+    for gid, signed_amt in parts:
+        amt = round(abs(signed_amt), _dp(src))
+        out = round(conv(amt), _dp(dst))
+        if out <= 0:
+            raise HTTPException(status_code=400, detail='The converted amount comes to zero - check the rate')
+        owes = signed_amt > 0              # they owe you: take it off in the old currency, put it on in the new
+        info = {'from': src, 'to': dst, 'amount': amt, 'rate': (1 / body.rate) if body.rate_per_to else body.rate, 'to_amount': out}
+        base = {'account_id': aid, 'date': date, 'remark': remark, 'group_id': gid, 'conversion_id': cid, 'conversion': info,
+                'created_at': now, 'created_by': user.get('id'), 'created_by_name': user.get('name'), 'deleted': False}
+        legs += [
+            {**base, 'id': str(uuid.uuid4()), 'direction': 'got' if owes else 'gave', 'amount': amt, 'currency': src,
+             'note': note or f'Converted to {METALS.get(dst, dst)}'},
+            {**base, 'id': str(uuid.uuid4()), 'direction': 'gave' if owes else 'got', 'amount': out, 'currency': dst,
+             'note': note or f'Converted from {METALS.get(src, src)}'},
+        ]
+        total_in += signed_amt
+        total_out += out if owes else -out
     await db.cash_ledger_entries.insert_many([dict(x) for x in legs])
-    await log_audit(user, 'cash_ledger.convert', 'cash_ledger_account', aid, f"{a['name']}: {src} {amt} -> {dst} {out} @ {body.rate}")
-    return {'ok': True, 'conversion_id': cid, **info}
+    await log_audit(user, 'cash_ledger.convert', 'cash_ledger_account', aid,
+                    f"{a['name']}: {src} {round(total_in, _dp(src))} -> {dst} {round(total_out, _dp(dst))} @ {body.rate}"
+                    + (f' ({len(parts)} parts)' if len(parts) > 1 else ''))
+    return {'ok': True, 'conversion_id': cid, 'from': src, 'to': dst, 'amount': round(abs(total_in), _dp(src)),
+            'rate': (1 / body.rate) if body.rate_per_to else body.rate, 'to_amount': round(abs(total_out), _dp(dst)), 'parts': len(parts)}
 
 
 @router.get('/khata-metal-rates')
