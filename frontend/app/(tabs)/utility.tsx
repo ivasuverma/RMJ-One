@@ -63,6 +63,7 @@ const GROUPS: GroupDef[] = [
     title: 'Documents & Printing', ownerOnly: true,
     rows: [
       { key: 'doc-categories', label: 'Document Categories', sub: 'Names & folders (permissions live in Users)', icon: 'folder-outline', route: '/settings/document-categories' },
+      { key: 'send-from-iphone', label: 'Send from iPhone', sub: '"Send to RMJ One" in the Share menu, and whose links are on', icon: 'share-outline', route: '/settings/send-from-iphone' },
       { key: 'pdf-passwords', label: 'PDF Passwords', sub: 'Bank statement passwords, so they unlock by themselves', icon: 'key-outline', route: '/settings/pdf-passwords' },
       { key: 'print-master', label: 'Print Master', sub: 'Fields, text size & shop name per receipt', icon: 'print-outline', route: '/settings/print-master' },
       { key: 'printer', label: 'Printer Settings', sub: 'WiFi thermal receipt printer', icon: 'print-outline', route: '/settings/printer' },

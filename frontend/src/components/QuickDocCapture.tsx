@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Image, Platform, Pressable, ScrollView, StyleSheet, Text, View, ActivityIndicator, TextInput } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
 import { haptics } from '@/src/utils/haptics';
 import { enqueueUpload, updateOutboxNote, kickUpload, cancelUpload, releaseHeld } from '@/src/utils/uploadQueue';
@@ -59,6 +60,7 @@ export function QuickDocCapture({ visible, onClose, onSaved }: {
 }) {
   const { colors } = useTheme();
   const { unlockIfNeeded, prompt: pdfPrompt } = usePdfPassword();
+  const router = useRouter();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [cats, setCats] = useState<DocCategory[]>([]);
   const [catKey, setCatKey] = useState<string | null>(null);
@@ -261,6 +263,11 @@ export function QuickDocCapture({ visible, onClose, onSaved }: {
               </Pressable>
             ))}
           </View>
+          {/* PDFs that arrive in WhatsApp / Mail can come straight in from the Share menu. */}
+          <Pressable onPress={() => { onClose(); router.push('/settings/send-from-iphone' as any); }} style={styles.iphoneLink} testID="quick-send-from-iphone">
+            <Ionicons name="share-outline" size={15} color={colors.brandSecondary} />
+            <Text style={styles.iphoneLinkText}>Send PDFs straight from WhatsApp or Files on iPhone ›</Text>
+          </Pressable>
         </>
       )}
       {pdfPrompt}
@@ -270,6 +277,8 @@ export function QuickDocCapture({ visible, onClose, onSaved }: {
 
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   hint: { color: colors.mutedText, fontSize: 13, marginBottom: spacing.md },
+  iphoneLink: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: spacing.md, paddingVertical: 6 },
+  iphoneLinkText: { color: colors.brandSecondary, fontSize: 13, fontWeight: '600' },
   center: { alignItems: 'center', gap: 10, paddingVertical: spacing.xxl },
   savingText: { color: colors.onSurface, fontSize: 16, fontWeight: '700', marginTop: spacing.sm },
   pillRow: { flexDirection: 'row', gap: spacing.xs, marginBottom: spacing.md },

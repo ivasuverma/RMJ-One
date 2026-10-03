@@ -313,6 +313,10 @@ export default function DocumentsScreen() {
         onRefresh={() => { setRefreshing(true); load(); }} refreshing={refreshing}
         actions={<>
           <UploadQueueBadge />
+          <Pressable onPress={() => router.push('/settings/send-from-iphone' as any)} hitSlop={8} style={styles.drivePill}
+            accessibilityLabel="Send from iPhone" testID="docs-send-from-iphone">
+            <Ionicons name="share-outline" size={14} color={colors.brandSecondary} />
+          </Pressable>
           <View style={styles.drivePill}>
             {summary && summary.uploading_count > 0
               ? <><Ionicons name="cloud-upload-outline" size={13} color={colors.onWarning} /><Text style={[styles.drivePillText, { color: colors.onWarning }]}>{summary.uploading_count} uploading</Text></>
