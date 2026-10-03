@@ -42,8 +42,13 @@ export function pickWebFiles(accept: string, opts: { capture?: boolean; multiple
       try { input.remove(); } catch { /* already gone */ }
       resolve(fs);
     };
-    const onFocus = () => { setTimeout(() => { if (!input.files || input.files.length === 0) finish([]); }, 400); };
+    // Cancel: browsers that have it fire 'cancel'. Older ones only give the
+    // page focus back, so that's used as a fallback — but slowly: a file picked
+    // from iCloud/Files is copied over first, and focus comes back before
+    // 'change' does (a short wait here dropped those picks).
+    const onFocus = () => { setTimeout(() => { if (!input.files || input.files.length === 0) finish([]); }, 2500); };
     input.onchange = () => finish(input.files ? Array.from(input.files) : []);
+    input.addEventListener('cancel', () => finish([]));
     document.body.appendChild(input);
     window.addEventListener('focus', onFocus);
     input.click();

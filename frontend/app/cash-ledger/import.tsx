@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, TextInput, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -12,7 +12,6 @@ import { Sheet, useToast } from '@/src/components/ui';
 import { SegmentedControl } from '@/src/components/ui/SegmentedControl';
 import { ModuleHeader } from '@/src/components/ui/ModuleHeader';
 import { HeaderSpacer, useScrolled } from '@/src/components/ui/StickyHeader';
-import { pickWebFile } from '@/src/components/DocumentCaptureSheet';
 import { CLAccount, money, orderedCodes } from '@/src/utils/cashLedger';
 
 type Preview = {
@@ -58,12 +57,32 @@ export default function SplitwiseImportScreen() {
 
   useEffect(() => { api.get<{ accounts: CLAccount[] }>('/khata').then((r) => setAccounts(r.accounts)).catch(() => {}); }, []);
 
-  const choose = async () => {
-    if (Platform.OS !== 'web') return;
-    const f = await pickWebFile('.csv,text/csv,text/comma-separated-values,text/plain');
-    if (!f) return;
-    const text = await f.text();
-    setCsv(text); setFileName(f.name);
+  // Its own file input that stays on the page and just waits for 'change': on
+  // iPhone a CSV in iCloud/Files is downloaded first, which can take a while,
+  // and a picker that gives up early made the tap look like it did nothing.
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const onFileRef = useRef<(f: File) => void>(() => {});
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof document === 'undefined') return;
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.csv,text/csv,text/comma-separated-values,text/plain,application/vnd.ms-excel';
+    Object.assign(input.style, { position: 'fixed', left: '-9999px', top: '0', opacity: '0' });
+    input.onchange = () => { const f = input.files?.[0]; if (f) onFileRef.current(f); };
+    document.body.appendChild(input);
+    inputRef.current = input;
+    return () => { input.remove(); inputRef.current = null; };
+  }, []);
+  const choose = () => {
+    if (!inputRef.current) { toast.error('Open the RMJ One web app to import a file'); return; }
+    inputRef.current.value = '';   // so picking the same file again still fires
+    inputRef.current.click();
+  };
+  onFileRef.current = async (f: File) => {
+    setFileName(f.name); setLoading(true); setPv(null);
+    let text = '';
+    try { text = await f.text(); } catch { setLoading(false); toast.error("Couldn't read that file — try saving it to On My iPhone first"); return; }
+    setCsv(text);
     const r = await preview(text);
     if (r) {
       // Only an exact name match is chosen for you; a same-first-name match is just offered.
