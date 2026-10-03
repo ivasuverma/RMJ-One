@@ -5,6 +5,7 @@ import { api } from '@/src/api/client';
 import { haptics } from '@/src/utils/haptics';
 import { enqueueUpload, updateOutboxNote, kickUpload, cancelUpload, releaseHeld } from '@/src/utils/uploadQueue';
 import { blobsToPdf } from '@/src/utils/imagesToPdf';
+import { usePdfPassword } from '@/src/utils/pdfUnlock';
 import { Sheet } from '@/src/components/ui';
 import { pickWebFile, makeThumb, type DocCategory } from '@/src/components/DocumentCaptureSheet';
 import { spacing, radius, ThemeColors } from '@/src/theme';
@@ -57,6 +58,7 @@ export function QuickDocCapture({ visible, onClose, onSaved }: {
   visible: boolean; onClose: () => void; onSaved?: () => void;
 }) {
   const { colors } = useTheme();
+  const { unlockIfNeeded, prompt: pdfPrompt } = usePdfPassword();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [cats, setCats] = useState<DocCategory[]>([]);
   const [catKey, setCatKey] = useState<string | null>(null);
@@ -150,8 +152,11 @@ export function QuickDocCapture({ visible, onClose, onSaved }: {
       // mode omits it, which opens the normal file/photo picker instead, and
       // widens the accept type to PDFs since that's the other thing people
       // reach for a file browser to grab rather than the camera.
-      const f = await pickWebFile(galleryMode ? 'image/*,application/pdf' : 'image/*', !galleryMode);
-      if (!f) { shooting.current = false; return; }   // cancelled — stay where we are
+      const picked = await pickWebFile(galleryMode ? 'image/*,application/pdf' : 'image/*', !galleryMode);
+      if (!picked) { shooting.current = false; return; }   // cancelled — stay where we are
+      // A PDF with a password (bank statements): ask for it and save the unlocked copy.
+      const f = await unlockIfNeeded(picked);
+      if (!f) { shooting.current = false; return; }
       setPhase('saving');
       const isImage = f.type.startsWith('image/');
       const blob = await compressImage(f, compress);
@@ -258,6 +263,7 @@ export function QuickDocCapture({ visible, onClose, onSaved }: {
           </View>
         </>
       )}
+      {pdfPrompt}
     </Sheet>
   );
 }

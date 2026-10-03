@@ -8,6 +8,7 @@ import { useTheme } from '@/src/theme/ThemeContext';
 import { Sheet, useToast } from '@/src/components/ui';
 import { SimpleCropper } from '@/src/components/SimpleCropper';
 import { enqueueUpload } from '@/src/utils/uploadQueue';
+import { usePdfPassword } from '@/src/utils/pdfUnlock';
 
 export type DocCategory = { id: string; key: string; label: string; icon: keyof typeof Ionicons.glyphMap; can_record?: boolean; can_view?: boolean };
 
@@ -104,6 +105,7 @@ export function DocumentCaptureSheet({ visible, onClose, onSaved, autoCamera }: 
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const toast = useToast();
+  const { unlockIfNeeded, prompt: pdfPrompt } = usePdfPassword();
   const [cats, setCats] = useState<DocCategory[]>([]);
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -134,7 +136,8 @@ export function DocumentCaptureSheet({ visible, onClose, onSaved, autoCamera }: 
   }, [file]);
 
   const openPicker = async (accept: string, capture?: boolean) => {
-    const f = await pickWebFile(accept, capture);
+    const picked = await pickWebFile(accept, capture);
+    const f = picked && await unlockIfNeeded(picked);   // a PDF with a password is saved unlocked
     if (f) { setFile(f); setPhase('review'); }
   };
 
@@ -274,6 +277,7 @@ export function DocumentCaptureSheet({ visible, onClose, onSaved, autoCamera }: 
       {scanning && file && (
         <SimpleCropper file={file} onCancel={() => setScanning(false)} onResult={(f) => { setFile(f); setScanning(false); }} />
       )}
+      {pdfPrompt}
     </Sheet>
   );
 }

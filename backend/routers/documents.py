@@ -21,6 +21,7 @@ from fastapi.responses import HTMLResponse, FileResponse
 from typing import Optional
 from pydantic import BaseModel
 import asyncio
+import threading
 import base64
 import logging
 import os
@@ -144,6 +145,12 @@ _VIEW_REUSE_BYTES = 600 * 1024   # an already-small JPEG is served as-is
 
 MAX_PDF_PAGES = 200   # pages shown in the app; Open / Share still give the whole file
 
+# PDFium (the PDF engine) must never run on two threads at once - it isn't
+# thread-safe, and overlapping calls crash the whole server process ("double
+# free or corruption"). Opening a PDF asks for all its pages together, so every
+# PDFium call below holds this lock: pages are drawn one after another.
+_PDFIUM = threading.Lock()
+
 
 def _can_draw_pdfs() -> bool:
     try:
@@ -157,18 +164,121 @@ def _is_pdf(raw: bytes) -> bool:
     return raw[:1024].lstrip().startswith(b'%PDF')
 
 
-def _pdf_page_count_sync(raw: bytes):
-    """Number of pages, or None when PDFs can't be read here (pypdfium2 missing
-    or a broken file) — the app then just offers Open."""
+def _pdf_info_sync(raw: bytes) -> tuple:
+    """(pages, locked): pages is None when PDFs can't be read here (pypdfium2
+    missing or a broken file) — the app then just offers Open; locked is True
+    for a password-protected PDF (the app offers to unlock it)."""
     try:
         import pypdfium2
-        pdf = pypdfium2.PdfDocument(raw)
+        with _PDFIUM:
+            pdf = pypdfium2.PdfDocument(raw)
+            try:
+                return len(pdf), False
+            finally:
+                pdf.close()
+    except Exception as e:
+        return None, 'password' in str(e).lower()
+
+
+class PdfPasswordError(Exception):
+    pass
+
+
+def _unlock_pdf_sync(raw: bytes, password: str) -> bytes:
+    """The same PDF with its password removed. Raises PdfPasswordError for a
+    wrong password, ValueError if it isn't a PDF that can be read."""
+    import io
+    import pypdfium2
+    import pypdfium2.raw as pdfium_c
+    with _PDFIUM:
         try:
-            return len(pdf)
+            pdf = pypdfium2.PdfDocument(raw, password=password)
+        except Exception as e:
+            if 'password' in str(e).lower():
+                raise PdfPasswordError() from e
+            raise ValueError('not a readable PDF') from e
+        try:
+            out = io.BytesIO()
+            pdf.save(out, flags=pdfium_c.FPDF_REMOVE_SECURITY)
+            return out.getvalue()
         finally:
             pdf.close()
-    except Exception:
-        return None
+
+
+# ---- Saved PDF passwords ----
+# Banks use the same password for every statement, so passwords that worked are
+# remembered (db.pdf_passwords) and tried first: a statement with a known
+# password unlocks with no question. Only the owner can see or change the list
+# (Settings › PDF passwords). They're stored encrypted with a key made from the
+# server's JWT_SECRET, so the database backups and the Atlas copy never hold
+# them readable. (If JWT_SECRET ever changes, the old ones just stop working.)
+def _pw_box():
+    import hashlib
+    from cryptography.fernet import Fernet
+    from server import JWT_SECRET
+    return Fernet(base64.urlsafe_b64encode(hashlib.sha256(f'rmj-pdf-passwords:{JWT_SECRET}'.encode()).digest()))
+
+
+async def _saved_passwords() -> list:
+    """[(id, password)], most recently used first."""
+    box, out = _pw_box(), []
+    async for r in db.pdf_passwords.find({}, {'_id': 0, 'id': 1, 'secret': 1}).sort([('last_used_at', -1), ('created_at', -1)]):
+        try:
+            out.append((r['id'], box.decrypt(r['secret'].encode()).decode()))
+        except Exception:
+            pass   # made with another JWT_SECRET
+    return out
+
+
+async def _remember_password(password: str, user: dict, label: str = '', used: bool = True) -> None:
+    """Save a password (encrypted) unless it's already saved. `used`: it just
+    unlocked a PDF (vs typed in by the owner in Settings)."""
+    if not password or any(p == password for _, p in await _saved_passwords()):
+        return
+    now = now_utc().isoformat()
+    await db.pdf_passwords.insert_one({
+        'id': str(uuid.uuid4()), 'secret': _pw_box().encrypt(password.encode()).decode(), 'label': label.strip()[:60],
+        'created_at': now, 'created_by': user.get('name'), 'last_used_at': now if used else None, 'uses': 1 if used else 0,
+    })
+
+
+async def _try_saved_passwords(raw: bytes):
+    """The PDF unlocked with a saved password, or None if none of them fit."""
+    for pid, pw in await _saved_passwords():
+        try:
+            out = await asyncio.to_thread(_unlock_pdf_sync, raw, pw)
+        except PdfPasswordError:
+            continue
+        except ValueError:
+            return None
+        await db.pdf_passwords.update_one({'id': pid}, {'$set': {'last_used_at': now_utc().isoformat()}, '$inc': {'uses': 1}})
+        return out
+    return None
+
+
+async def _unlock_or_400(raw: bytes, password: str, user: dict, remember: bool = True) -> tuple:
+    """(unlocked bytes, 'saved' | 'typed'). No password given: the saved ones are
+    tried, and 423 means none fit (ask for it). A typed one that works is
+    remembered unless `remember` is off."""
+    if not _can_draw_pdfs():
+        raise HTTPException(status_code=503, detail='Unlocking PDFs is not available on this server yet')
+    if not _is_pdf(raw):
+        raise HTTPException(status_code=400, detail="That file isn't a PDF")
+    if not password:
+        out = await _try_saved_passwords(raw)
+        if out is None:
+            raise HTTPException(status_code=423, detail='This PDF needs its password')
+        return out, 'saved'
+    try:
+        out = await asyncio.to_thread(_unlock_pdf_sync, raw, password)
+    except PdfPasswordError:
+        raise HTTPException(status_code=400, detail='Wrong password - please check and try again')
+    except ValueError:
+        raise HTTPException(status_code=400, detail="This PDF couldn't be opened")
+    if remember:
+        await _remember_password(password, user)
+    return out, 'typed'
+
 
 
 def _pdf_page_jpeg_sync(raw: bytes, index: int, side: int, quality: int):
@@ -176,15 +286,16 @@ def _pdf_page_jpeg_sync(raw: bytes, index: int, side: int, quality: int):
     try:
         import io
         import pypdfium2
-        pdf = pypdfium2.PdfDocument(raw)
-        try:
-            if not 0 <= index < len(pdf):
-                return None
-            page = pdf[index]
-            w, h = page.get_size()
-            img = page.render(scale=side / max(w, h, 1)).to_pil()
-        finally:
-            pdf.close()
+        with _PDFIUM:
+            pdf = pypdfium2.PdfDocument(raw)
+            try:
+                if not 0 <= index < len(pdf):
+                    return None
+                page = pdf[index]
+                w, h = page.get_size()
+                img = page.render(scale=side / max(w, h, 1)).to_pil()
+            finally:
+                pdf.close()
         if img.mode != 'RGB':
             img = img.convert('RGB')
         out = io.BytesIO()
@@ -568,6 +679,10 @@ async def create_document(
     # above any realistic scanned document.
     if len(raw) > 60 * 1024 * 1024:
         raise HTTPException(status_code=400, detail='File too large (max 60 MB).')
+    # A PDF still locked with a password we know (e.g. uploaded from a flow that
+    # didn't ask): save the unlocked copy instead.
+    if _is_pdf(raw) and _can_draw_pdfs() and (await asyncio.to_thread(_pdf_info_sync, raw))[1]:
+        raw = await _try_saved_passwords(raw) or raw
 
     import drive_service
     connected = await drive_service.is_connected()
@@ -1022,20 +1137,131 @@ async def _doc_for_viewer(doc_id: str, user) -> dict:
 @router.get('/documents/{doc_id}/pages')
 async def document_pages(doc_id: str, user=Depends(get_current)):
     """How many pages a PDF has, so the app can show each one (?page=N).
-    `pages` is null when it can't be read here — the app falls back to Open."""
+    `pages` is null when it can't be read here — the app falls back to Open;
+    `locked` is true for a password-protected PDF (see /unlock)."""
     d = await _doc_for_viewer(doc_id, user)
     if (d.get('file') or {}).get('mime') != 'application/pdf' or not _can_draw_pdfs():
-        return {'pages': None}
+        return {'pages': None, 'locked': False}
 
-    async def count():
+    async def info():
         raw, ok = await _load_variant(d, doc_id, 'full')
         if not raw:
             return None
         if ok and not _cache_file(doc_id, 'full').is_file():
             await _cache_write(doc_id, 'full', raw)   # each page is drawn from it next
-        return await asyncio.to_thread(_pdf_page_count_sync, raw)
-    n = await _memo(('pages', doc_id), 3600, count)
-    return {'pages': min(n, MAX_PDF_PAGES) if n else None, 'total': n}
+        n, locked = await asyncio.to_thread(_pdf_info_sync, raw)
+        if locked:   # a statement saved before its password was known: unlock it now if we can
+            out = await _try_saved_passwords(raw)
+            if out:
+                await _replace_with_unlocked(d, doc_id, out, user)
+                return await asyncio.to_thread(_pdf_info_sync, out)
+        return n, locked
+    res = await _memo(('pages', doc_id), 3600, info)
+    n, locked = res if res else (None, False)
+    return {'pages': min(n, MAX_PDF_PAGES) if n else None, 'total': n, 'locked': bool(locked)}
+
+
+@router.post('/documents/unlock-pdf')
+async def unlock_pdf(file: UploadFile = File(...), password: str = Form(default=''), remember: bool = Form(default=True),
+                     user=Depends(get_current)):
+    """Before uploading: the picked PDF with its password removed, so what gets
+    saved opens (and previews) without one. With no password the saved ones are
+    tried (423 = ask for it). The file itself is not kept."""
+    raw = await file.read()
+    if len(raw) > 60 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail='File too large (max 60 MB).')
+    out, how = await _unlock_or_400(raw, password, user, remember)
+    return Response(content=out, media_type='application/pdf', headers={'X-Unlocked-With': how})
+
+
+class UnlockIn(BaseModel):
+    password: str = ''
+    remember: bool = True
+
+
+async def _replace_with_unlocked(d: dict, doc_id: str, out: bytes, user: dict) -> None:
+    """Swap a saved locked PDF for its unlocked copy, here and in Google Drive
+    (the locked Drive file is removed and the unlocked one uploaded instead)."""
+    _cache_drop(doc_id)
+    await _cache_write(doc_id, 'full', out)
+    old_drive = (d.get('file') or {}).get('drive_file_id')
+    upd = {'file.size': len(out), 'unlocked_at': now_utc().isoformat()}
+    if old_drive:
+        upd.update({'upload_state': 'queued', 'file.drive_file_id': None, 'file.drive_view_link': None, 'file.drive_thumbnail_link': None})
+    await db.documents.update_one({'id': doc_id}, {'$set': upd})
+    if old_drive:
+        try:
+            import drive_service
+            await drive_service.delete_file(await drive_service.get_config(), old_drive)
+        except Exception:
+            pass   # the unlocked copy still goes up; the old one just stays in Drive
+    _LOOKUPS.pop(('pages', doc_id), None)
+    _forget(doc_id)
+    _bump()
+    await log_audit(user, 'documents.unlock', 'document', doc_id, (d.get('file') or {}).get('orig_name', ''))
+
+
+@router.post('/documents/{doc_id}/unlock')
+async def unlock_document(doc_id: str, body: UnlockIn, user=Depends(get_current)):
+    """A password-protected PDF already saved: replace it with the unlocked copy.
+    An empty password tries the saved ones (423 = ask for it)."""
+    d = await _doc_for_viewer(doc_id, user)
+    if (d.get('file') or {}).get('mime') != 'application/pdf':
+        raise HTTPException(status_code=400, detail="That document isn't a PDF")
+    raw, ok = await _load_variant(d, doc_id, 'full')
+    if not raw or not ok:
+        raise HTTPException(status_code=404, detail="The file couldn't be fetched - try again in a moment")
+    out, how = await _unlock_or_400(raw, body.password, user, body.remember)
+    await _replace_with_unlocked(d, doc_id, out, user)
+    return {'ok': True, 'size': len(out), 'with': how}
+
+
+# ---- the owner's list of saved PDF passwords (see _pw_box) ----
+class PdfPasswordIn(BaseModel):
+    password: Optional[str] = None
+    label: Optional[str] = None
+
+
+@router.get('/pdf-passwords')
+async def list_pdf_passwords(user=Depends(require_owner)):
+    box, out = _pw_box(), []
+    async for r in db.pdf_passwords.find({}, {'_id': 0}).sort('created_at', -1):
+        try:
+            pw = box.decrypt(r['secret'].encode()).decode()
+        except Exception:
+            pw = None   # saved under another JWT_SECRET - can't be used any more
+        out.append({'id': r['id'], 'password': pw, 'label': r.get('label') or '', 'created_at': r.get('created_at'),
+                    'created_by': r.get('created_by'), 'last_used_at': r.get('last_used_at'), 'uses': r.get('uses', 0)})
+    return out
+
+
+@router.post('/pdf-passwords')
+async def add_pdf_password(body: PdfPasswordIn, user=Depends(require_owner)):
+    pw = (body.password or '').strip()
+    if not pw:
+        raise HTTPException(status_code=400, detail='Enter the password')
+    if any(p == pw for _, p in await _saved_passwords()):
+        raise HTTPException(status_code=400, detail='That password is already saved')
+    await _remember_password(pw, user, body.label or '', used=False)
+    await log_audit(user, 'documents.pdf_password.add', 'pdf_password', '', body.label or '')
+    return {'ok': True}
+
+
+@router.patch('/pdf-passwords/{pid}')
+async def rename_pdf_password(pid: str, body: PdfPasswordIn, user=Depends(require_owner)):
+    res = await db.pdf_passwords.update_one({'id': pid}, {'$set': {'label': (body.label or '').strip()[:60]}})
+    if not res.matched_count:
+        raise HTTPException(status_code=404, detail='Not found')
+    return {'ok': True}
+
+
+@router.delete('/pdf-passwords/{pid}')
+async def delete_pdf_password(pid: str, user=Depends(require_owner)):
+    res = await db.pdf_passwords.delete_one({'id': pid})
+    if not res.deleted_count:
+        raise HTTPException(status_code=404, detail='Not found')
+    await log_audit(user, 'documents.pdf_password.delete', 'pdf_password', pid, '')
+    return {'ok': True}
 
 
 @router.get('/documents/{doc_id}/file')
