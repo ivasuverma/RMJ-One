@@ -94,3 +94,46 @@ def test_cash_ledger_groups_and_statement():
         for grp in requests.get(f"{API}/khata/{aid}", headers=h, timeout=30).json()['account'].get('groups', []):
             requests.delete(f"{API}/khata/{aid}/groups/{grp['id']}", headers=h, timeout=30)
         requests.delete(f"{API}/khata/{aid}", headers=h, timeout=30)
+
+
+def test_cash_ledger_gold_and_silver_in_grams():
+    """Gold (XAU) and silver (XAG) are kept in grams to 3 decimals, apart from money, and print in the statement."""
+    h = _login('owner', 'Owner@123')
+    a = requests.post(f"{API}/khata", headers=h, json={'name': f'Khata metal {os.urandom(3).hex()}'}, timeout=30).json()
+    aid = a['id']
+    try:
+        for d, amt, cur in (('gave', 10.5, 'XAU'), ('got', 2.125, 'XAU'), ('gave', 500, 'XAG'), ('gave', 1000, 'INR')):
+            r = requests.post(f"{API}/khata/{aid}/entries", headers=h, json={'direction': d, 'amount': amt, 'currency': cur}, timeout=30)
+            assert r.status_code == 200, r.text
+        acc = requests.get(f"{API}/khata/{aid}", headers=h, timeout=30).json()['account']
+        assert acc['balances'] == {'XAU': 8.375, 'XAG': 500, 'INR': 1000}
+        r = requests.get(f"{API}/khata/{aid}/statement", headers=h, timeout=60)
+        assert r.status_code == 200 and r.content[:4] == b'%PDF'
+    finally:
+        for e in requests.get(f"{API}/khata/{aid}", headers=h, timeout=30).json().get('entries', []):
+            requests.delete(f"{API}/khata/{aid}/entries/{e['id']}", headers=h, timeout=30)
+        requests.delete(f"{API}/khata/{aid}", headers=h, timeout=30)
+
+
+def test_cash_ledger_convert_currency():
+    """Converting moves a balance into another currency at the given rate, as a linked pair of entries."""
+    h = _login('owner', 'Owner@123')
+    a = requests.post(f"{API}/khata", headers=h, json={'name': f'Khata convert {os.urandom(3).hex()}'}, timeout=30).json()
+    aid = a['id']
+    try:
+        requests.post(f"{API}/khata/{aid}/entries", headers=h, json={'direction': 'gave', 'amount': 200, 'currency': 'USD'}, timeout=30)
+        conv = lambda **k: requests.post(f"{API}/khata/{aid}/convert", headers=h, json=k, timeout=30)  # noqa: E731
+        assert conv(from_currency='USD', to_currency='INR', amount=300, rate=83).status_code == 400      # more than the balance
+        assert conv(from_currency='USD', to_currency='USD', amount=10, rate=1).status_code == 400
+        r = conv(from_currency='USD', to_currency='INR', amount=200, rate=83.25)
+        assert r.status_code == 200 and r.json()['to_amount'] == 16650
+        acc = requests.get(f"{API}/khata/{aid}", headers=h, timeout=30).json()
+        assert acc['account']['balances'] == {'INR': 16650}
+        leg = next(e for e in acc['entries'] if e.get('conversion_id'))
+        assert requests.put(f"{API}/khata/{aid}/entries/{leg['id']}", headers=h, json={'direction': 'got', 'amount': 1}, timeout=30).status_code == 400
+        requests.delete(f"{API}/khata/{aid}/entries/{leg['id']}", headers=h, timeout=30)     # undoes both sides
+        assert requests.get(f"{API}/khata/{aid}", headers=h, timeout=30).json()['account']['balances'] == {'USD': 200}
+    finally:
+        for e in requests.get(f"{API}/khata/{aid}", headers=h, timeout=30).json().get('entries', []):
+            requests.delete(f"{API}/khata/{aid}/entries/{e['id']}", headers=h, timeout=30)
+        requests.delete(f"{API}/khata/{aid}", headers=h, timeout=30)

@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, RefreshControl, TextInput, Linking, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, RefreshControl, TextInput, Linking, Platform, useWindowDimensions } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
@@ -22,18 +22,16 @@ import { CurrencyPicker } from '@/src/components/CurrencyPicker';
 import { CashStatementSheet } from '@/src/components/CashStatementSheet';
 import { pickWebFile, makeThumb } from '@/src/components/DocumentCaptureSheet';
 import { compressImage } from '@/src/components/QuickDocCapture';
-import { Balances, BASE_CURRENCY, CURRENCIES, money, num, initials, orderedCodes, symbol } from '@/src/utils/cashLedger';
+import { Balances, BASE_CURRENCY, METALS, currencyName, money, num, initials, orderedCodes, symbol } from '@/src/utils/cashLedger';
 
 type Group = { id: string; name: string; balances: Balances; entries: number };
 type Account = { id: string; name: string; phone?: string; note?: string; currency: string; balances: Balances; entries: number; general_balances: Balances; groups: Group[] };
-type Entry = { id: string; direction: 'gave' | 'got'; amount: number; currency: string; date: string; note?: string; remark?: string; group_id?: string | null; created_by_name?: string; balance_after: number; photos: number };
+type Entry = { id: string; direction: 'gave' | 'got'; amount: number; currency: string; date: string; note?: string; remark?: string; group_id?: string | null; conversion_id?: string; created_by_name?: string; balance_after: number; photos: number };
 type Shot = { id: string; blob: Blob; thumb: string };
 
 const newId = () => ((typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`);
 const monthLabel = (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
 const dayLabel = (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
-const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const dayMonth = (iso: string) => `${Number(iso.slice(8, 10))} ${MON[Number(iso.slice(5, 7)) - 1]}`;
 const signed = (n: number, code: string) => `${n < 0 ? '−' : ''}${money(n, code)}`;
 
 // Three ways to read the same entries; the choice is remembered on this device.
@@ -57,7 +55,8 @@ export default function CashLedgerAccountScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
-  const s = useMemo(() => makeStyles(colors), [colors]);
+  const narrow = useWindowDimensions().width < 370;   // small iPhones: tighter number columns
+  const s = useMemo(() => makeStyles(colors, narrow), [colors, narrow]);
   const toast = useToast();
   const { user, hasRight } = useAuth();
   const isOwner = user?.role === 'owner';
@@ -83,6 +82,16 @@ export default function CashLedgerAccountScreen() {
   const [stmtOpen, setStmtOpen] = useState(false);
   const [groupSheet, setGroupSheet] = useState<null | { mode: 'new' | 'edit' }>(null);
   const [groupName, setGroupName] = useState('');
+  // convert sheet: move a balance from one currency/metal into another at a rate
+  const [conv, setConv] = useState<null | { from: string }>(null);
+  const [convTo, setConvTo] = useState(BASE_CURRENCY);
+  const [convAmt, setConvAmt] = useState('');
+  const [convRate, setConvRate] = useState('');
+  const [convDate, setConvDate] = useState(todayIST());
+  const [convNote, setConvNote] = useState('');
+  const [convPicking, setConvPicking] = useState(false);
+  const [convBusy, setConvBusy] = useState(false);
+  const [metalRates, setMetalRates] = useState<Record<string, number | null>>({});
   const [shots, setShots] = useState<Shot[]>([]);
   const [capturing, setCapturing] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -104,7 +113,7 @@ export default function CashLedgerAccountScreen() {
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const first = acc?.name.split(' ')[0] || '';
-  const groups = acc?.groups || [];
+  const groups = useMemo(() => acc?.groups || [], [acc]);
   const grp = group ? groups.find((g) => g.id === group) : undefined;
   // What this screen is about: one group, or the whole person.
   const heroBal: Balances = grp ? grp.balances : acc?.balances || {};
@@ -117,6 +126,15 @@ export default function CashLedgerAccountScreen() {
     setDirection(dir); setAmount(''); setCurrency(acc?.currency || BASE_CURRENCY); setDate(todayIST()); setNote(''); setRemark(''); setEntryGroup(group || null); setShots([]); setSheet({ mode: 'new' });
   };
   const openEdit = (e: Entry) => {
+    if (e.conversion_id) {   // the two sides of a conversion go together: delete and convert again
+      if (canDelete) {
+        confirmAction('Delete Conversion?', `${e.remark || ''}\nBoth entries of this conversion will be removed.`, 'Delete', async () => {
+          try { await api.del(`/khata/${id}/entries/${e.id}`); load(); }
+          catch (err: any) { toast.error(err?.detail || 'Could not delete'); }
+        });
+      } else toast.error("A conversion can't be edited");
+      return;
+    }
     setDirection(e.direction); setAmount(String(e.amount)); setCurrency(e.currency); setDate(e.date); setNote(e.note || ''); setRemark(e.remark || ''); setEntryGroup(e.group_id || null); setShots([]); setSheet({ mode: 'edit', entry: e });
   };
 
@@ -204,6 +222,43 @@ export default function CashLedgerAccountScreen() {
     catch (e: any) { toast.error(e?.detail || 'Could not delete'); }
   });
 
+  // Suggest a rate where the app knows one: gold/silver <-> rupees from today's live rate.
+  const suggestRate = (from: string, to: string, rates = metalRates) => {
+    if (METALS[from] && to === BASE_CURRENCY && rates[from]) return String(rates[from]);
+    if (from === BASE_CURRENCY && METALS[to] && rates[to]) return String(Number((1 / (rates[to] as number)).toFixed(6)));
+    return '';
+  };
+  // From the person's page this converts the general balance; a group's balance is converted on the group's page.
+  const convertible = (c: string) => (grp ? heroBal[c] || 0 : acc?.general_balances?.[c] || 0);
+  const openConvert = async (from: string) => {
+    if (!convertible(from)) { toast.error('This balance is all in groups — open the group to convert it.'); return; }
+    const to = from === BASE_CURRENCY ? (codes.find((c) => c !== from) || 'USD') : BASE_CURRENCY;
+    setConv({ from }); setConvTo(to); setConvAmt(String(Math.abs(convertible(from)))); setConvDate(todayIST()); setConvNote('');
+    setConvRate(suggestRate(from, to));
+    if (!Object.keys(metalRates).length) {
+      try {
+        const r = await api.get<Record<string, number | null>>('/khata-metal-rates');
+        setMetalRates(r);
+        setConvRate((cur) => cur || suggestRate(from, to, r));
+      } catch { /* no live rate: type it */ }
+    }
+  };
+  const convFromBal = conv ? convertible(conv.from) : 0;
+  const convAmtN = Number(convAmt.replace(/,/g, '')) || 0;
+  const convRateN = Number(convRate.replace(/,/g, '')) || 0;
+  const convOut = convAmtN * convRateN;
+  const unitOf = (c: string) => (METALS[c] ? `g ${METALS[c].name.toLowerCase()}` : c);
+  const doConvert = async () => {
+    if (!conv || convBusy) return;
+    if (!convAmtN || !convRateN) { toast.error('Enter the amount and the rate'); return; }
+    setConvBusy(true);
+    try {
+      await api.post(`/khata/${id}/convert`, { from_currency: conv.from, to_currency: convTo, amount: convAmtN, rate: convRateN, date: convDate, note: convNote.trim(), group_id: group || null });
+      haptics.success(); setConv(null); load();
+    } catch (e: any) { haptics.error(); toast.error(e?.detail || 'Could not convert'); }
+    finally { setConvBusy(false); }
+  };
+
   const deleteAcc = () => acc && confirmAction(`Delete ${acc.name}?`, 'Only possible once everything is settled.', 'Delete', async () => {
     try { await api.del(`/khata/${id}`); setEditAcc(false); router.back(); }
     catch (e: any) { toast.error(e?.detail || 'Could not delete'); }
@@ -219,18 +274,30 @@ export default function CashLedgerAccountScreen() {
   const tint = direction === 'gave' ? colors.onError : colors.onSuccess;
   const balColor = (n: number) => (n > 0 ? colors.onSuccess : n < 0 ? colors.onError : colors.onSurface);
 
-  // Statement: a passbook per currency, oldest first, closing balance on every line.
+  // Statement: a passbook per currency, oldest first, closing balance on every
+  // line. On the person's page each group is one total line after the general
+  // entries, so the closing balance is the person's whole balance.
   const chron = useMemo(() => [...scoped].reverse(), [scoped]);
+  type StRow = { kind: 'entry'; e: Entry; amt: number; bal: number } | { kind: 'group'; g: Group; amt: number; bal: number };
   const statements = useMemo(() => {
     const byCur: Record<string, Entry[]> = {};
     for (const e of chron) (byCur[e.currency] ||= []).push(e);
-    return orderedCodes(Object.fromEntries(Object.keys(byCur).map((c) => [c, 1]))).map((c) => {
-      const rows = byCur[c];
-      const gave = rows.reduce((t, e) => t + (e.direction === 'gave' ? e.amount : 0), 0);
-      const got = rows.reduce((t, e) => t + (e.direction === 'got' ? e.amount : 0), 0);
-      return { code: c, rows, gave, got, closing: rows[rows.length - 1].balance_after };
+    const withGroups = grp ? [] : groups.filter((g) => Object.keys(g.balances).length);
+    const all: Balances = Object.fromEntries(Object.keys(byCur).map((c) => [c, 1]));
+    for (const g of withGroups) for (const c of Object.keys(g.balances)) all[c] = 1;
+    return orderedCodes(all).map((c) => {
+      const rows: StRow[] = (byCur[c] || []).map((e) => ({ kind: 'entry', e, amt: e.direction === 'gave' ? e.amount : -e.amount, bal: e.balance_after }));
+      let bal = rows.length ? rows[rows.length - 1].bal : 0;
+      for (const g of withGroups) {
+        if (!g.balances[c]) continue;
+        bal += g.balances[c];
+        rows.push({ kind: 'group', g, amt: g.balances[c], bal });
+      }
+      const gave = rows.reduce((t, r) => t + (r.amt > 0 ? r.amt : 0), 0);
+      const got = rows.reduce((t, r) => t + (r.amt < 0 ? -r.amt : 0), 0);
+      return { code: c, rows, gave, got, closing: bal };
     });
-  }, [chron]);
+  }, [chron, groups, grp]);
 
   // Day-wise: newest day first, each day ends with its closing balance per currency.
   const days = useMemo(() => {
@@ -261,25 +328,42 @@ export default function CashLedgerAccountScreen() {
         <HeaderSpacer />
         {!acc ? <ActivityIndicator color={colors.mutedText} style={{ marginTop: 40 }} /> : (
           <>
+            {/* Who, then one card per currency (or metal) — compact however many there are */}
             <View style={s.hero} testID="cl-balance">
               <View style={s.heroAv}>
-                {grp ? <Ionicons name="folder" size={30} color={colors.brandPrimary} /> : <Text style={s.heroAvText}>{initials(acc.name)}</Text>}
+                {grp ? <Ionicons name="folder" size={24} color={colors.brandPrimary} /> : <Text style={s.heroAvText}>{initials(acc.name)}</Text>}
               </View>
-              {codes.length ? codes.map((c) => (
-                <Text key={c} style={[s.heroAmt, { color: heroBal[c] > 0 ? colors.onSuccess : colors.onError }]}>{money(heroBal[c], c)}</Text>
-              )) : <Text style={[s.heroAmt, { color: colors.onSurface }]}>{money(0, acc.currency)}</Text>}
-              <Text style={s.heroLabel}>
-                {!codes.length ? (grp ? 'Group settled' : 'All settled')
-                  : codes.every((c) => heroBal[c] > 0) ? `${first} owes you${grp ? ' in this group' : ''}`
-                    : codes.every((c) => heroBal[c] < 0) ? `You owe ${first}${grp ? ' in this group' : ''}`
-                      : `Green: ${first} owes you · Red: you owe ${first}`}
-              </Text>
-              {grp ? (
-                <Text style={s.heroSub} testID="cl-total-with">
-                  Total with {first}: {totalCodes.length ? totalCodes.map((c) => signed(acc.balances[c], c)).join(' · ') : 'settled'}
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={s.heroLabel} numberOfLines={1}>
+                  {!codes.length ? (grp ? 'Group settled' : 'All settled')
+                    : codes.every((c) => heroBal[c] > 0) ? `${first} owes you${grp ? ' in this group' : ''}`
+                      : codes.every((c) => heroBal[c] < 0) ? `You owe ${first}${grp ? ' in this group' : ''}`
+                        : `${first} · balances`}
                 </Text>
-              ) : !!acc.phone && <Text style={s.heroSub}>{acc.phone}</Text>}
+                {grp ? (
+                  <Text style={s.heroSub} numberOfLines={2} testID="cl-total-with">
+                    Total with {first}: {totalCodes.length ? totalCodes.map((c) => signed(acc.balances[c], c)).join(' · ') : 'settled'}
+                  </Text>
+                ) : !!acc.phone && <Text style={s.heroSub}>{acc.phone}</Text>}
+              </View>
             </View>
+            <View style={s.tiles}>
+              {(codes.length ? codes : [acc.currency]).map((c, _i, all) => {
+                const mixed = all.some((x) => heroBal[x] > 0) && all.some((x) => heroBal[x] < 0);   // the heading can't say it for all
+                const v = heroBal[c] || 0;
+                return (
+                  <Pressable key={c} onPress={() => v && openConvert(c)} disabled={!v} style={({ pressed }) => [s.tile, codes.length <= 1 && s.tileWide, pressed && { opacity: 0.7 }]} testID={`cl-tile-${c}`}>
+                    <Text style={s.tileLabel} numberOfLines={1}>{currencyName(c).replace(' (grams)', '')}</Text>
+                    <Text style={[s.tileAmt, codes.length <= 1 && s.tileAmtBig, { color: balColor(v) }]} numberOfLines={1} adjustsFontSizeToFit>
+                      {METALS[c] ? `${num(v, c)} g` : money(v, c)}
+                    </Text>
+                    {mixed && <Text style={s.tileSub}>{v > 0 ? `${first} owes you` : `You owe ${first}`}</Text>}
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            {codes.length > 0 && <Text style={s.tilesHint}>Tap a balance to convert it into another currency or metal.</Text>}
 
             <View style={s.actions}>
               <RoundAction s={s} icon="call" label="Call" disabled={!phoneDigits} onPress={() => Linking.openURL(`tel:${phoneDigits}`)} testID="cl-call" />
@@ -339,33 +423,47 @@ export default function CashLedgerAccountScreen() {
               <Text style={s.emptyText}>{grp ? 'No entries in this group yet.' : groups.length ? 'No general entries.' : 'No entries yet.'}</Text>
             ) : view === 'statement' ? statements.map((st) => (
               <View key={st.code} testID={`cl-statement-${st.code}`}>
-                <Text style={s.sectionHeader}>{(CURRENCIES.find((c) => c.code === st.code)?.name || st.code).toUpperCase()} · {symbol(st.code)}</Text>
+                <Text style={s.sectionHeader}>{currencyName(st.code).toUpperCase()} · {symbol(st.code)}</Text>
                 <View style={s.group}>
                   <View style={[s.tRow, s.tHead]}>
-                    <Text style={[s.tDate, s.tHeadText]}>DATE</Text>
-                    <Text style={[s.tDetails, s.tHeadText]}>DETAILS</Text>
-                    <Text style={[s.tNum, s.tHeadText]}>GAVE</Text>
-                    <Text style={[s.tNum, s.tHeadText]}>GOT</Text>
+                    <Text style={[s.tDetails, s.tHeadText]} numberOfLines={1}>DETAILS</Text>
+                    <Text style={[s.tNum, s.tHeadText]}>AMOUNT</Text>
                     <Text style={[s.tBal, s.tHeadText]}>BALANCE</Text>
                   </View>
-                  {st.rows.map((e) => (
-                    <Pressable key={e.id} onPress={() => openEdit(e)} style={({ pressed }) => [s.tRow, s.sepTop, pressed && s.pressed]} testID={`cl-st-${e.id}`}>
-                      <View style={s.tDate}><Text style={s.tCell}>{dayMonth(e.date)}</Text><Text style={s.tYear}>{e.date.slice(0, 4)}</Text></View>
+                  {st.rows.map((r) => (
+                    <Pressable key={r.kind === 'entry' ? r.e.id : `g-${r.g.id}`} testID={r.kind === 'entry' ? `cl-st-${r.e.id}` : `cl-st-group-${r.g.id}`}
+                      onPress={() => (r.kind === 'entry' ? openEdit(r.e) : router.push(`/cash-ledger/${id}?group=${r.g.id}` as any))}
+                      style={({ pressed }) => [s.tRow, s.sepTop, r.kind === 'group' && s.tGroup, pressed && s.pressed]}>
                       <View style={s.tDetails}>
-                        <Text style={s.tCell} numberOfLines={2}>{e.note || (e.direction === 'gave' ? 'You gave' : 'You got')}{e.photos > 0 ? ' 📷' : ''}</Text>
-                        {!!e.remark && <Text style={s.tYear} numberOfLines={1}>{e.remark}</Text>}
+                        {r.kind === 'entry' ? (
+                          <>
+                            <Text style={s.tYear}>{istDisplayDate(r.e.date)}</Text>
+                            <Text style={s.tCell} numberOfLines={2}>{r.e.note || (r.e.direction === 'gave' ? 'You gave' : 'You got')}{r.e.photos > 0 ? ' 📷' : ''}</Text>
+                            {!!r.e.remark && <Text style={s.tYear} numberOfLines={1}>{r.e.remark}</Text>}
+                          </>
+                        ) : (
+                          <>
+                            <Text style={s.tYear}>Group total · {r.g.entries} {r.g.entries === 1 ? 'entry' : 'entries'}</Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                              <Ionicons name="folder" size={13} color={colors.brandPrimary} />
+                              <Text style={[s.tCell, { fontWeight: '600', flexShrink: 1 }]} numberOfLines={1}>{r.g.name}</Text>
+                              <Ionicons name="chevron-forward" size={12} color={colors.mutedText} />
+                            </View>
+                          </>
+                        )}
                       </View>
-                      <Text style={[s.tNum, s.tCell, { color: colors.onError }]}>{e.direction === 'gave' ? num(e.amount) : ''}</Text>
-                      <Text style={[s.tNum, s.tCell, { color: colors.onSuccess }]}>{e.direction === 'got' ? num(e.amount) : ''}</Text>
-                      <Text style={[s.tBal, s.tCell, { color: balColor(e.balance_after) }]}>{e.balance_after < 0 ? '−' : ''}{num(e.balance_after)}</Text>
+                      <Text style={[s.tNum, s.tCell, { color: r.amt > 0 ? colors.onError : colors.onSuccess }, r.kind === 'group' && { fontWeight: '600' }]} numberOfLines={1}>
+                        {r.amt > 0 ? '−' : '+'}{num(r.amt, st.code)}
+                      </Text>
+                      <Text style={[s.tBal, s.tCell, { color: balColor(r.bal) }]} numberOfLines={1}>{r.bal < 0 ? '−' : ''}{num(r.bal, st.code)}</Text>
                     </Pressable>
                   ))}
                   <View style={[s.tRow, s.tFoot]}>
-                    <Text style={[s.tDate, s.tFootText]}>Closing</Text>
-                    <Text style={s.tDetails} />
-                    <Text style={[s.tNum, s.tFootText]}>{num(st.gave)}</Text>
-                    <Text style={[s.tNum, s.tFootText]}>{num(st.got)}</Text>
-                    <Text style={[s.tBal, s.tFootText, { color: balColor(st.closing) }]}>{st.closing < 0 ? '−' : ''}{num(st.closing)}</Text>
+                    <View style={s.tDetails}>
+                      <Text style={s.tFootText}>Closing Balance</Text>
+                      <Text style={s.tYear} numberOfLines={2}>Gave {num(st.gave, st.code)} · Got {num(st.got, st.code)}</Text>
+                    </View>
+                    <Text style={[s.tBal, s.tFootText, { width: narrow ? 130 : 150, color: balColor(st.closing) }]} numberOfLines={1}>{st.closing < 0 ? '−' : ''}{money(st.closing, st.code)}</Text>
                   </View>
                 </View>
               </View>
@@ -401,8 +499,9 @@ export default function CashLedgerAccountScreen() {
                 <View style={s.group}>
                   {sec.items.map((e, i) => (
                     <Pressable key={e.id} onPress={() => openEdit(e)} style={({ pressed }) => [s.entry, pressed && s.pressed]} testID={`cl-entry-${e.id}`}>
-                      <View style={[s.entryIcon, { backgroundColor: e.direction === 'gave' ? colors.error : colors.success }]}>
-                        <Ionicons name={e.direction === 'gave' ? 'arrow-up' : 'arrow-down'} size={15} color={e.direction === 'gave' ? colors.onError : colors.onSuccess} />
+                      <View style={[s.entryIcon, { backgroundColor: e.conversion_id ? colors.surfaceTertiary : e.direction === 'gave' ? colors.error : colors.success }]}>
+                        <Ionicons name={e.conversion_id ? 'swap-horizontal' : e.direction === 'gave' ? 'arrow-up' : 'arrow-down'} size={15}
+                          color={e.conversion_id ? colors.brandPrimary : e.direction === 'gave' ? colors.onError : colors.onSuccess} />
                       </View>
                       <View style={[s.entryBody, i > 0 && s.sepTop]}>
                         <View style={{ flex: 1, minWidth: 0 }}>
@@ -426,7 +525,7 @@ export default function CashLedgerAccountScreen() {
             ))}
             {scoped.length > 0 && (
               <Text style={s.footer}>
-                {view === 'statement' ? `Balance is closing balance after each line. Green: ${first} owes you · Red: you owe ${first}.`
+                {view === 'statement' ? `Balance is the closing balance after each line${!grp && groups.some((g) => Object.keys(g.balances).length) ? '; each group is added as one total line, so the closing balance is the full amount' : ''}. Green: ${first} owes you · Red: you owe ${first}.`
                   : view === 'daily' ? `Closing balance at the end of each day. Green: ${first} owes you · Red: you owe ${first}.`
                     : `− You gave · + You got. Bal is what ${first} owes you after each entry.`}
               </Text>
@@ -458,7 +557,7 @@ export default function CashLedgerAccountScreen() {
           <TextInput value={amount} onChangeText={(t) => setAmount(t.replace(/[^\d.,]/g, ''))} placeholder="0" placeholderTextColor={colors.mutedText}
             keyboardType="decimal-pad" style={[s.amountInput, { color: tint }]} autoFocus={sheet?.mode === 'new'} testID="cl-amount" />
         </View>
-        <Text style={s.curCode}>{currency}</Text>
+        <Text style={s.curCode}>{METALS[currency] ? `${METALS[currency].name} · grams` : currency}</Text>
 
         <View style={s.formGroup}>
           <View style={s.formPad}><DateField value={date} onChange={setDate} testID="cl-date" /></View>
@@ -547,6 +646,70 @@ export default function CashLedgerAccountScreen() {
         )}
       </Sheet>
 
+      <Sheet visible={!!conv} onClose={() => setConv(null)} title="Convert" testID="cl-convert-sheet">
+        {conv && (
+          <>
+            <View style={s.formGroup}>
+              <View style={s.formRow}>
+                <Text style={[s.formLabel, { flex: 1 }]}>From</Text>
+                <Text style={s.formValue} numberOfLines={1}>{money(convFromBal, conv.from)}</Text>
+              </View>
+              <View style={s.formSep} />
+              <View style={s.formRow}>
+                <Text style={[s.curSymSmall]}>{symbol(conv.from)}</Text>
+                <TextInput value={convAmt} onChangeText={(t) => setConvAmt(t.replace(/[^\d.,]/g, ''))} keyboardType="decimal-pad" placeholder="0"
+                  placeholderTextColor={colors.mutedText} style={[s.formInput, { flex: 1, paddingHorizontal: 0, fontWeight: '600' }]} testID="cl-conv-amount" />
+                <Pressable onPress={() => setConvAmt(String(Math.abs(convFromBal)))} hitSlop={8}><Text style={s.formAction}>All</Text></Pressable>
+              </View>
+            </View>
+
+            {(grp || groups.length > 0) && (
+              <Text style={s.footer}>{grp ? `From the ${grp.name} group's balance.` : "From the general balance — a group's balance is converted on the group's page."}</Text>
+            )}
+            <View style={{ alignItems: 'center', marginVertical: 8 }}><Ionicons name="arrow-down-circle" size={28} color={colors.brandPrimary} /></View>
+
+            <View style={s.formGroup}>
+              <Pressable onPress={() => setConvPicking(true)} style={({ pressed }) => [s.formRow, pressed && s.pressed]} testID="cl-conv-to">
+                <Text style={[s.formLabel, { flex: 1 }]}>To</Text>
+                <Text style={s.formValue} numberOfLines={1}>{currencyName(convTo).replace(' (grams)', '')} {symbol(convTo)}</Text>
+                <Ionicons name="chevron-forward" size={16} color={colors.mutedText} />
+              </Pressable>
+              <View style={s.formSep} />
+              <View style={s.formRow}>
+                <Text style={[s.formLabel, { flexShrink: 0 }]} numberOfLines={1}>1 {unitOf(conv.from)} =</Text>
+                <TextInput value={convRate} onChangeText={(t) => setConvRate(t.replace(/[^\d.,]/g, ''))} keyboardType="decimal-pad" placeholder="Rate"
+                  placeholderTextColor={colors.mutedText} style={[s.formInput, { flex: 1, minWidth: 0, textAlign: 'right', paddingHorizontal: 0 }]} testID="cl-conv-rate" />
+                <Text style={[s.formValue2, { flexShrink: 0 }]} numberOfLines={1}>{unitOf(convTo)}</Text>
+              </View>
+            </View>
+            {(METALS[conv.from] || METALS[convTo]) && !!suggestRate(conv.from, convTo) && (
+              <Pressable onPress={() => setConvRate(suggestRate(conv.from, convTo))} hitSlop={6}>
+                <Text style={s.footer}>Today&apos;s live rate: {money(metalRates[METALS[conv.from] ? conv.from : convTo] || 0, BASE_CURRENCY)} per gram ({METALS[conv.from] ? METALS[conv.from].name : METALS[convTo].name}, sell). Tap to use it.</Text>
+              </Pressable>
+            )}
+
+            <View style={s.convResult} testID="cl-conv-result">
+              <Text style={s.convResultLabel}>{convFromBal > 0 ? `${first} will owe you` : `You will owe ${first}`}</Text>
+              <Text style={[s.convResultAmt, { color: balColor(convFromBal) }]} numberOfLines={1} adjustsFontSizeToFit>{convOut ? money(convOut, convTo) : '—'}</Text>
+              <Text style={s.convResultSub}>instead of {money(convAmtN, conv.from)}</Text>
+            </View>
+
+            <View style={s.formGroup}>
+              <View style={s.formPad}><DateField value={convDate} onChange={setConvDate} testID="cl-conv-date" /></View>
+              <View style={s.formSep} />
+              <TextInput value={convNote} onChangeText={setConvNote} placeholder="Note (optional)" placeholderTextColor={colors.mutedText} style={s.formInput} testID="cl-conv-note" />
+            </View>
+            <Pressable onPress={doConvert} disabled={convBusy || !convOut} style={({ pressed }) => [s.primary, (convBusy || !convOut) && { opacity: 0.5 }, pressed && { opacity: 0.85 }]} testID="cl-conv-save">
+              {convBusy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={s.primaryText}>Convert</Text>}
+            </Pressable>
+            <Text style={s.footer}>Saved as two entries with the rate, so the statement still adds up. Delete either one to undo the conversion.</Text>
+          </>
+        )}
+      </Sheet>
+      <CurrencyPicker visible={convPicking} value={convTo}
+        onPick={(c) => { setConvPicking(false); if (conv && c !== conv.from) { setConvTo(c); setConvRate(suggestRate(conv.from, c)); } }}
+        onClose={() => setConvPicking(false)} />
+
       {acc && (
         <CashStatementSheet visible={stmtOpen} onClose={() => setStmtOpen(false)} accountId={id} name={acc.name}
           group={grp ? grp.id : undefined} scopeLabel={grp ? grp.name : 'All'} />
@@ -581,16 +744,22 @@ function RoundAction({ s, icon, label, onPress, disabled, testID }: {
   );
 }
 
-const makeStyles = (colors: ThemeColors) => StyleSheet.create({
+const makeStyles = (colors: ThemeColors, narrow = false) => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   content: { paddingHorizontal: spacing.lg },
   navText: { color: colors.brandPrimary, fontSize: 17 },
-  hero: { alignItems: 'center', paddingTop: spacing.sm, gap: 2 },
-  heroAv: { width: 72, height: 72, borderRadius: 36, backgroundColor: colors.surfaceTertiary, alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
-  heroAvText: { color: colors.onSurfaceSecondary, fontSize: 28, fontWeight: '500' },
-  heroAmt: { fontSize: 34, fontWeight: '700', letterSpacing: -0.8, fontVariant: ['tabular-nums'] },
-  heroLabel: { color: colors.onSurfaceSecondary, fontSize: 15, marginTop: 2 },
-  heroSub: { color: colors.mutedText, fontSize: 13, marginTop: 2 },
+  hero: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingTop: spacing.sm },
+  heroAv: { width: 52, height: 52, borderRadius: 26, backgroundColor: colors.surfaceTertiary, alignItems: 'center', justifyContent: 'center' },
+  heroAvText: { color: colors.onSurfaceSecondary, fontSize: 20, fontWeight: '500' },
+  heroLabel: { color: colors.onSurface, fontSize: 17, fontWeight: '600' },
+  tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: spacing.md },
+  tile: { flexGrow: 1, flexBasis: '45%', backgroundColor: colors.surfaceSecondary, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12 },
+  tileWide: { flexBasis: '100%' },
+  tileLabel: { color: colors.mutedText, fontSize: 13, fontWeight: '500' },
+  tileAmt: { fontSize: 22, fontWeight: '700', letterSpacing: -0.4, marginTop: 2, fontVariant: ['tabular-nums'] },
+  tileAmtBig: { fontSize: 30, letterSpacing: -0.6 },
+  tileSub: { color: colors.mutedText, fontSize: 12, marginTop: 2 },
+  heroSub: { color: colors.mutedText, fontSize: 13, marginTop: 1 },
   actions: { flexDirection: 'row', justifyContent: 'center', gap: 10, marginTop: spacing.lg },
   roundAction: { flex: 1, maxWidth: 110, alignItems: 'center', gap: 5, paddingVertical: 10, borderRadius: 12, backgroundColor: colors.surfaceSecondary },
   roundIcon: { height: 26, alignItems: 'center', justifyContent: 'center' },
@@ -611,15 +780,15 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   amount: { fontSize: 17, fontWeight: '600', fontVariant: ['tabular-nums'] },
   footer: { color: colors.mutedText, fontSize: 13, marginTop: 8, marginHorizontal: spacing.md },
   // Statement table
-  tRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 9, gap: 6 },
+  tRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: narrow ? 10 : 12, paddingVertical: 9, gap: narrow ? 6 : 8 },
   tHead: { paddingVertical: 7 },
-  tHeadText: { color: colors.mutedText, fontSize: 11, fontWeight: '600', letterSpacing: 0.3 },
-  tCell: { color: colors.onSurface, fontSize: 13, fontVariant: ['tabular-nums'] },
-  tDate: { width: 50 },
+  tHeadText: { color: colors.mutedText, fontSize: narrow ? 10 : 11, fontWeight: '600', letterSpacing: 0.3 },
+  tCell: { color: colors.onSurface, fontSize: narrow ? 12 : 13, fontVariant: ['tabular-nums'] },
   tYear: { color: colors.mutedText, fontSize: 11, fontVariant: ['tabular-nums'] },
   tDetails: { flex: 1, minWidth: 0 },
-  tNum: { width: 60, textAlign: 'right' },
-  tBal: { width: 70, textAlign: 'right', fontWeight: '600' },
+  tNum: { width: narrow ? 84 : 100, textAlign: 'right' },
+  tBal: { width: narrow ? 88 : 104, textAlign: 'right', fontWeight: '600' },
+  tGroup: { backgroundColor: colors.surfaceTertiary + '80' },
   tFoot: { backgroundColor: colors.surfaceTertiary },
   tFootText: { color: colors.onSurface, fontSize: 13, fontWeight: '700', fontVariant: ['tabular-nums'] },
   // Day-wise
@@ -651,6 +820,13 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   formAction: { color: colors.brandPrimary, fontSize: 17 },
   formLabel: { color: colors.onSurface, fontSize: 17 },
   formValue: { flex: 1, textAlign: 'right', color: colors.mutedText, fontSize: 17 },
+  formValue2: { color: colors.mutedText, fontSize: 17, marginLeft: 6 },
+  curSymSmall: { color: colors.onSurface, fontSize: 20, fontWeight: '600', minWidth: 24 },
+  tilesHint: { color: colors.mutedText, fontSize: 12, textAlign: 'center', marginTop: 8 },
+  convResult: { alignItems: 'center', paddingVertical: spacing.lg },
+  convResultLabel: { color: colors.mutedText, fontSize: 13 },
+  convResultAmt: { fontSize: 34, fontWeight: '700', letterSpacing: -0.8, fontVariant: ['tabular-nums'], marginTop: 2 },
+  convResultSub: { color: colors.mutedText, fontSize: 13, marginTop: 2 },
   shot: { width: 60, height: 60, borderRadius: 8, overflow: 'hidden' },
   shotImg: { width: 60, height: 60, backgroundColor: colors.surfaceTertiary, alignItems: 'center', justifyContent: 'center' },
   shotX: { position: 'absolute', top: 3, right: 3, width: 18, height: 18, borderRadius: 9, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center' },

@@ -10,7 +10,8 @@ person, family). Each *entry* is either:
   - 'gave' : cash you gave them      -> they owe you more
   - 'got'  : cash you got from them  -> they owe you less
 and is in one currency (ISO code: INR, USD, AED…; INR when older entries have
-none). Balances are kept PER CURRENCY and never converted into each other -
+none) - or a metal by weight: XAU = gold and XAG = silver (their ISO codes),
+counted in grams to 3 decimals. Balances are kept PER CURRENCY and never converted into each other -
 "Rahul owes you ₹17,500 and $200" - always derived from the entries (never
 stored, so editing or deleting an old entry can't leave one wrong):
   > 0  they owe you ("You'll get")      < 0  you owe them ("You'll give")
@@ -29,6 +30,14 @@ Date | Description | Remarks | Dr | Cr | Closing - for a date range, per
 currency, with the opening balance brought forward; the app previews its pages
 as pictures and shares the PDF. Dr = cash you gave (they owe you), Cr = cash
 you got.
+
+*Convert* (/khata/{id}/convert) moves a balance from one currency or metal
+into another at a rate the user gives ("Rahul's $200 -> Rs.16,600 at 83"): two
+linked entries (same conversion_id) - one clears the amount in the old
+currency, the other adds it in the new one - with the rate as the remark, so
+the statement still adds up. The pair is deleted together and can't be edited
+(delete and convert again). For gold/silver <-> INR the app suggests today's
+rate from the live rates (gold is quoted per 10 g, silver per kg).
 
 Module 'cash_ledger': owner by default; the owner can grant it in People.
 Editing or deleting an existing entry follows the same rights as other modules.
@@ -50,6 +59,16 @@ from server import (
 router = APIRouter()
 MOD = 'cash_ledger'
 BASE_CURRENCY = 'INR'
+METALS = {'XAU': 'Gold', 'XAG': 'Silver'}     # weighed in grams, not money
+
+
+def _dp(cur: Optional[str]) -> int:
+    """Decimals kept: grams to the milligram for gold/silver, paise for money."""
+    return 3 if cur in METALS else 2
+
+
+def _cur_label(cur: str) -> str:
+    return f'{METALS[cur]} (grams)' if cur in METALS else cur
 
 
 def _currency(code: Optional[str]) -> str:
@@ -76,6 +95,16 @@ class EntryIn(BaseModel):
     group_id: Optional[str] = None      # one of the person's groups; None = general
 
 
+class ConvertIn(BaseModel):
+    from_currency: str
+    to_currency: str
+    amount: float = Field(gt=0, le=100_000_000)     # in from_currency; at most the balance
+    rate: float = Field(gt=0, le=100_000_000)       # 1 from_currency = rate to_currency
+    date: Optional[str] = None
+    note: Optional[str] = ''
+    group_id: Optional[str] = None
+
+
 class GroupIn(BaseModel):
     name: str = Field(min_length=1, max_length=60)
 
@@ -93,7 +122,7 @@ def _clean_date(d: Optional[str]) -> str:
 
 
 def _nonzero(b: dict) -> dict:
-    return {c: round(v, 2) for c, v in b.items() if abs(v) >= 0.005}
+    return {c: round(v, _dp(c)) for c, v in b.items() if abs(v) >= 0.0005}
 
 
 async def _balances(account_ids: Optional[list] = None) -> dict:
@@ -150,7 +179,7 @@ async def _entries(aid: str) -> list:
         e['group_id'] = e.get('group_id') or None
         k = (e['group_id'], e['currency'])
         running[k] = running.get(k, 0.0) + _signed(e)
-        e['balance_after'] = round(running[k], 2)
+        e['balance_after'] = round(running[k], _dp(e['currency']))
     return entries
 
 
@@ -171,7 +200,7 @@ async def list_accounts(q: Optional[str] = None, user=Depends(require_staff_or_m
         for c, v in r['balances'].items():
             t = totals.setdefault(c, {'you_get': 0.0, 'you_give': 0.0})
             t['you_get' if v > 0 else 'you_give'] += abs(v)
-    totals = {c: {k: round(v, 2) for k, v in t.items()} for c, t in totals.items()}
+    totals = {c: {k: round(v, _dp(c)) for k, v in t.items()} for c, t in totals.items()}
     return {'accounts': rows, 'totals': totals, 'base_currency': BASE_CURRENCY}
 
 
@@ -246,7 +275,7 @@ async def add_entry(aid: str, body: EntryIn, user=Depends(require_admin_or_modul
     a = await _account_or_404(aid)
     cur = _currency(body.currency or a.get('currency'))
     doc = {
-        'id': str(uuid.uuid4()), 'account_id': aid, 'direction': body.direction, 'amount': round(body.amount, 2), 'currency': cur,
+        'id': str(uuid.uuid4()), 'account_id': aid, 'direction': body.direction, 'amount': round(body.amount, _dp(cur)), 'currency': cur,
         'date': _clean_date(body.date), 'note': (body.note or '').strip()[:300], 'remark': (body.remark or '').strip()[:300],
         'group_id': _group_id(a, body.group_id),
         'created_at': now_utc().isoformat(), 'created_by': user.get('id'), 'created_by_name': user.get('name'), 'deleted': False,
@@ -265,8 +294,11 @@ async def edit_entry(aid: str, eid: str, body: EntryIn, user=Depends(require_adm
     e = await db.cash_ledger_entries.find_one({'id': eid, 'account_id': aid, 'deleted': {'$ne': True}}, {'_id': 0})
     if not e:
         raise HTTPException(status_code=404, detail='Entry not found')
+    if e.get('conversion_id'):
+        raise HTTPException(status_code=400, detail="A conversion can't be edited - delete it and convert again.")
     a = await _account_or_404(aid)
-    upd = {'direction': body.direction, 'amount': round(body.amount, 2), 'currency': _currency(body.currency or e.get('currency')),
+    cur = _currency(body.currency or e.get('currency'))
+    upd = {'direction': body.direction, 'amount': round(body.amount, _dp(cur)), 'currency': cur,
            'date': _clean_date(body.date), 'note': (body.note or '').strip()[:300], 'remark': (body.remark or '').strip()[:300],
            'group_id': _group_id(a, body.group_id),
            'updated_at': now_utc().isoformat(), 'updated_by_name': user.get('name')}
@@ -281,7 +313,9 @@ async def delete_entry(aid: str, eid: str, user=Depends(require_admin_or_module_
     e = await db.cash_ledger_entries.find_one({'id': eid, 'account_id': aid, 'deleted': {'$ne': True}}, {'_id': 0})
     if not e:
         raise HTTPException(status_code=404, detail='Entry not found')
-    await db.cash_ledger_entries.update_one({'id': eid}, {'$set': {'deleted': True, 'deleted_at': now_utc().isoformat(), 'deleted_by': user.get('name')}})
+    # Both sides of a conversion go together, or the balance would be left half-converted.
+    which = {'conversion_id': e['conversion_id'], 'account_id': aid} if e.get('conversion_id') else {'id': eid}
+    await db.cash_ledger_entries.update_many(which, {'$set': {'deleted': True, 'deleted_at': now_utc().isoformat(), 'deleted_by': user.get('name')}})
     await log_audit(user, 'cash_ledger.entry.delete', 'cash_ledger_entry', eid, f"{e.get('currency') or BASE_CURRENCY} {e['amount']:,.2f} {e['direction']}")
     return {'ok': True}
 
@@ -304,7 +338,7 @@ async def settle(aid: str, currency: Optional[str] = Query(default=None), date: 
     if currency:
         c = _currency(currency)
         open_ = {k: v for k, v in open_.items() if k[1] == c}
-    open_ = {k: round(v, 2) for k, v in open_.items() if abs(v) >= 0.005}
+    open_ = {k: round(v, _dp(k[1])) for k, v in open_.items() if abs(v) >= 0.0005}
     if not open_:
         raise HTTPException(status_code=400, detail='Already settled')
     made = []
@@ -312,6 +346,58 @@ async def settle(aid: str, currency: Optional[str] = Query(default=None), date: 
         body = EntryIn(direction='got' if bal > 0 else 'gave', amount=abs(bal), currency=c, date=date, note='Settled up', group_id=gid or None)
         made.append(await add_entry(aid, body, user))
     return {'ok': True, 'entries': made}
+
+
+# ---------------------------------------------------------------- convert
+def _fmt_rate(r: float) -> str:
+    return f'{r:,.6f}'.rstrip('0').rstrip('.')
+
+
+def _unit(cur: str) -> str:
+    return f'g {METALS[cur].lower()}' if cur in METALS else cur
+
+
+@router.post('/khata/{aid}/convert')
+async def convert(aid: str, body: ConvertIn, user=Depends(require_admin_or_module(MOD))):
+    a = await _account_or_404(aid)
+    src, dst = _currency(body.from_currency), _currency(body.to_currency)
+    if src == dst:
+        raise HTTPException(status_code=400, detail='Pick a different currency to convert into')
+    gid = _group_id(a, body.group_id)
+    bal = sum(_signed(e) for e in await _entries(aid) if e['group_id'] == gid and e['currency'] == src)
+    if abs(bal) < 0.0005:
+        raise HTTPException(status_code=400, detail=f'There is no {_cur_label(src)} balance to convert')
+    amt = round(body.amount, _dp(src))
+    if amt > round(abs(bal), _dp(src)) + 0.0005:
+        raise HTTPException(status_code=400, detail=f'That is more than the {_cur_label(src)} balance')
+    out = round(amt * body.rate, _dp(dst))
+    if out <= 0:
+        raise HTTPException(status_code=400, detail='The converted amount comes to zero - check the rate')
+    owes = bal > 0                       # they owe you: take it off in the old currency, put it on in the new
+    cid, now, date = str(uuid.uuid4()), now_utc().isoformat(), _clean_date(body.date)
+    remark = f'1 {_unit(src)} = {_fmt_rate(body.rate)} {_unit(dst)}'
+    info = {'from': src, 'to': dst, 'amount': amt, 'rate': body.rate, 'to_amount': out}
+    base = {'account_id': aid, 'date': date, 'remark': remark, 'group_id': gid, 'conversion_id': cid, 'conversion': info,
+            'created_at': now, 'created_by': user.get('id'), 'created_by_name': user.get('name'), 'deleted': False}
+    note = (body.note or '').strip()[:300]
+    legs = [
+        {**base, 'id': str(uuid.uuid4()), 'direction': 'got' if owes else 'gave', 'amount': amt, 'currency': src,
+         'note': note or f'Converted to {METALS.get(dst, dst)}'},
+        {**base, 'id': str(uuid.uuid4()), 'direction': 'gave' if owes else 'got', 'amount': out, 'currency': dst,
+         'note': note or f'Converted from {METALS.get(src, src)}'},
+    ]
+    await db.cash_ledger_entries.insert_many([dict(x) for x in legs])
+    await log_audit(user, 'cash_ledger.convert', 'cash_ledger_account', aid, f"{a['name']}: {src} {amt} -> {dst} {out} @ {body.rate}")
+    return {'ok': True, 'conversion_id': cid, **info}
+
+
+@router.get('/khata-metal-rates')
+async def metal_rates(user=Depends(require_staff_or_module(MOD))):
+    """Today's live sell rates per gram in rupees, to suggest when converting gold/silver."""
+    live = await db.settings.find_one({'id': 'gold_rate_live'}, {'_id': 0}) or {}
+    g, sv = live.get('gold_rate'), live.get('silver_rate')
+    return {'XAU': round(g / 10, 2) if g else None, 'XAG': round(sv / 1000, 2) if sv else None,
+            'date': live.get('date'), 'note': 'Gold 995 per 10 g / silver 999 per kg, divided down to 1 g'}
 
 
 # ---------------------------------------------------------------- groups
@@ -351,13 +437,14 @@ async def delete_group(aid: str, gid: str, user=Depends(require_admin_or_module_
 
 
 # ---------------------------------------------------------------- statement (PDF)
-def _amt(x: float) -> str:
-    return f'{abs(x):,.2f}' if abs(x) >= 0.005 else ''
+def _amt(x: float, cur: str = BASE_CURRENCY) -> str:
+    d = _dp(cur)
+    return f'{abs(x):,.{d}f}' if abs(x) >= 0.0005 else ''
 
 
-def _bal(x: float) -> str:
+def _bal(x: float, cur: str = BASE_CURRENCY) -> str:
     """Closing balance the accounts way: 17,500.00 Dr (they owe you) / Cr (you owe them)."""
-    return f"{abs(x):,.2f} {'Dr' if x > 0 else 'Cr'}" if abs(x) >= 0.005 else 'Nil'
+    return f"{abs(x):,.{_dp(cur)}f} {'Dr' if x > 0 else 'Cr'}" if abs(x) >= 0.0005 else 'Nil'
 
 
 def _dmy(iso: str) -> str:
@@ -365,8 +452,7 @@ def _dmy(iso: str) -> str:
 
 
 def _statement_pdf_sync(shop: str, a: dict, sections: list, period: str, generated: str) -> bytes:
-    """sections: [{title, currency, opening, rows: [(date, desc, remark, dr, cr, closing)], dr, cr, closing}]
-    plus a last 'summary' list of (currency, closing) when there is more than one part."""
+    """sections: [{title, currency, opening, rows: [(date, desc, remark, dr, cr, closing, is_group_total)], dr, cr, closing}]."""
     from io import BytesIO
     from reportlab.lib import colors as rl
     from reportlab.lib.enums import TA_RIGHT
@@ -406,11 +492,17 @@ def _statement_pdf_sync(shop: str, a: dict, sections: list, period: str, generat
     cw[1] = W - sum(c for c in cw if c)
     for sec in sections:
         data = [['Date', 'Description', 'Remarks', 'Dr', 'Cr', 'Closing']]
-        data.append(['', Paragraph('<b>Opening Balance</b>', st['cell']), '', '', '', _bal(sec['opening'])])
-        for d, desc, rem, dr, cr, clo in sec['rows']:
-            data.append([_dmy(d), Paragraph(desc, st['cell']), Paragraph(rem, st['cell']), _amt(dr), _amt(cr), _bal(clo)])
-        data.append(['', 'Total', '', _amt(sec['dr']) or '0.00', _amt(sec['cr']) or '0.00', ''])
-        data.append(['', 'Closing Balance', '', '', '', _bal(sec['closing'])])
+        c = sec['currency']
+        data.append(['', Paragraph('<b>Opening Balance</b>', st['cell']), '', '', '', _bal(sec['opening'], c)])
+        group_rows = []
+        for d, desc, rem, dr, cr, clo, is_group in sec['rows']:
+            if is_group:
+                group_rows.append(len(data))
+                desc = f'<b>{desc}</b>'
+            data.append([_dmy(d), Paragraph(desc, st['cell']), Paragraph(rem, st['cell']), _amt(dr, c), _amt(cr, c), _bal(clo, c)])
+        zero = f'{0:.{_dp(c)}f}'
+        data.append(['', 'Total', '', _amt(sec['dr'], c) or zero, _amt(sec['cr'], c) or zero, ''])
+        data.append(['', 'Closing Balance', '', '', '', _bal(sec['closing'], c)])
         n = len(data)
         t = Table(data, colWidths=cw, repeatRows=1)
         t.setStyle(TableStyle([
@@ -421,30 +513,16 @@ def _statement_pdf_sync(shop: str, a: dict, sections: list, period: str, generat
             ('LINEABOVE', (0, n - 2), (-1, n - 2), 0.8, ink), ('LINEBELOW', (0, n - 1), (-1, n - 1), 1.2, ink),
             ('FONT', (0, n - 2), (-1, n - 1), 'Helvetica-Bold', 8.5), ('BACKGROUND', (0, n - 1), (-1, n - 1), head),
             ('FONT', (5, 1), (5, -1), 'Helvetica-Bold', 8.5),
+            *[('BACKGROUND', (0, r), (-1, r), rl.HexColor('#fbf8f0')) for r in group_rows],
+            *[('FONT', (3, r), (4, r), 'Helvetica-Bold', 8.5) for r in group_rows],
             ('TOPPADDING', (0, 0), (-1, -1), 4), ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
             ('LEFTPADDING', (0, 0), (-1, -1), 4), ('RIGHTPADDING', (0, 0), (-1, -1), 4),
         ]))
         els += [KeepTogether([Paragraph(sec['title'], st['sec']), Spacer(1, 1.5 * mm)]), t, Spacer(1, 6 * mm)]
 
-    summary = [s_ for s_ in sections if s_.get('part_of_total')]
-    if len(summary) > 1:   # more than one part (general + groups): the total they add up to, per currency
-        tot: dict = {}
-        for s_ in summary:
-            tot[s_['currency']] = tot.get(s_['currency'], 0.0) + s_['closing']
-        data = [['Summary', 'Closing']] + [[f"{s_['title']}", _bal(s_['closing'])] for s_ in summary] + \
-               [[f'Total ({c})', _bal(v)] for c, v in sorted(tot.items(), key=lambda kv: (kv[0] != BASE_CURRENCY, kv[0]))]
-        n = len(data)
-        t = Table(data, colWidths=[W - 40 * mm, 40 * mm])
-        t.setStyle(TableStyle([
-            ('FONT', (0, 0), (-1, -1), 'Helvetica', 9), ('FONT', (0, 0), (-1, 0), 'Helvetica-Bold', 9), ('BACKGROUND', (0, 0), (-1, 0), head),
-            ('ALIGN', (1, 0), (1, -1), 'RIGHT'), ('LINEBELOW', (0, 0), (-1, 0), 0.8, ink), ('LINEBELOW', (0, 1), (-1, -1), 0.25, line),
-            ('FONT', (0, n - len(tot)), (-1, -1), 'Helvetica-Bold', 9.5), ('LINEABOVE', (0, n - len(tot)), (-1, n - len(tot)), 0.8, ink),
-            ('TOPPADDING', (0, 0), (-1, -1), 4), ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
-        ]))
-        els += [KeepTogether([t])]
-
     els += [Spacer(1, 6 * mm), Paragraph('Dr = amount given to the account holder (receivable). Cr = amount received from them. '
-                                         'Closing in Dr means they owe us; in Cr, we owe them. Each currency is shown separately and never converted.', st['small'])]
+                                         'Closing in Dr means they owe us; in Cr, we owe them. Each currency is shown separately and never converted; '
+                                         'gold and silver are in grams.', st['small'])]
 
     def footer(canvas, d):
         canvas.saveState()
@@ -462,7 +540,9 @@ async def statement(aid: str, date_from: Optional[str] = Query(default=None, ali
                     group: Optional[str] = Query(default=None), format: Literal['pdf', 'info', 'page'] = 'pdf', page: int = 0,
                     user=Depends(require_staff_or_module(MOD))):
     """The statement PDF. `group`: one group's id, 'general', or nothing for the
-    whole account (general first, then each group, then the total).
+    whole account: per currency, the general entries plus one total line per
+    group (its Dr and Cr for the period), so that table's closing is the
+    person's whole balance; then each group's own entries in detail.
     format=info -> {pages}; format=page&page=N -> that page as a JPEG (the app's preview)."""
     a = await _account_or_404(aid)
     date_from = _clean_date(date_from) if date_from else None
@@ -471,35 +551,58 @@ async def statement(aid: str, date_from: Optional[str] = Query(default=None, ali
         raise HTTPException(status_code=400, detail='From date is after To date')
     groups = a.get('groups') or []
     names = {g['id']: g['name'] for g in groups}
-    if group == 'general':
-        parts = [None]
-    elif group:
-        parts = [_group_id(a, group)]
-    else:
-        parts = [None] + [g['id'] for g in groups]
     entries = await _entries(aid)
+    in_range = (lambda e: not ((date_from and e['date'] < date_from) or (date_to and e['date'] > date_to)))
+    cur_key = (lambda c: ([BASE_CURRENCY, *METALS].index(c) if c in (BASE_CURRENCY, *METALS) else 9, c))   # INR, gold, silver, then the rest
     sections = []
-    for gid in parts:
+
+    def line(e: dict, closing: float) -> tuple:
+        desc = e.get('note') or ('Cash given' if e['direction'] == 'gave' else 'Cash received')
+        return (e['date'], _esc(desc), _esc(e.get('remark') or ''),
+                e['amount'] if e['direction'] == 'gave' else 0.0, e['amount'] if e['direction'] == 'got' else 0.0, closing, False)
+
+    def add(title: str, cur: str, es: list, group_totals: Optional[list] = None):
+        """es: the entries listed line by line; group_totals: [(group_id, its entries)] shown as one total line each."""
+        opening = sum(_signed(e) for e in es if date_from and e['date'] < date_from)
+        for _, ges in group_totals or []:
+            opening += sum(_signed(e) for e in ges if date_from and e['date'] < date_from)
+        run, rows, dr, cr = opening, [], 0.0, 0.0
+        for e in es:
+            if in_range(e):
+                run += _signed(e)
+                rows.append(line(e, run))
+        for gid, ges in group_totals or []:
+            g_in = [e for e in ges if in_range(e)]
+            if not g_in:
+                continue
+            gdr = sum(e['amount'] for e in g_in if e['direction'] == 'gave')
+            gcr = sum(e['amount'] for e in g_in if e['direction'] == 'got')
+            run += gdr - gcr
+            rows.append(('', _esc(f'Group: {names.get(gid, "")} (total)'),
+                         f'{len(g_in)} {"entry" if len(g_in) == 1 else "entries"} - details below', gdr, gcr, run, True))
+        for r in rows:
+            dr, cr = dr + r[3], cr + r[4]
+        d = _dp(cur)
+        sections.append({'title': title, 'currency': cur, 'opening': round(opening, d), 'rows': rows,
+                         'dr': round(dr, d), 'cr': round(cr, d), 'closing': round(run, d)})
+
+    if group:
+        gid = None if group == 'general' else _group_id(a, group)
         mine = [e for e in entries if e['group_id'] == gid]
-        if gid is None and len(parts) > 1 and not mine:
-            continue
-        for cur in sorted({e['currency'] for e in mine}, key=lambda c: (c != BASE_CURRENCY, c)) or ([] if mine else [a.get('currency') or BASE_CURRENCY]):
-            es = [e for e in mine if e['currency'] == cur]
-            opening = sum(_signed(e) for e in es if date_from and e['date'] < date_from)
-            rows, dr, cr = [], 0.0, 0.0
-            for e in es:
-                if (date_from and e['date'] < date_from) or (date_to and e['date'] > date_to):
-                    continue
-                desc = e.get('note') or ('Cash given' if e['direction'] == 'gave' else 'Cash received')
-                gave = e['amount'] if e['direction'] == 'gave' else 0.0
-                got = e['amount'] if e['direction'] == 'got' else 0.0
-                dr, cr = dr + gave, cr + got
-                rows.append((e['date'], _esc(desc), _esc(e.get('remark') or ''), gave, got, e['balance_after']))
-            closing = opening + dr - cr
-            part = 'General' if gid is None else f'Group: {names.get(gid, "")}'
-            title = f'{part} - {cur}' if (len(parts) > 1 or gid is not None) else f'Currency: {cur}'
-            sections.append({'title': title, 'currency': cur, 'opening': round(opening, 2), 'rows': rows,
-                             'dr': round(dr, 2), 'cr': round(cr, 2), 'closing': round(closing, 2), 'part_of_total': len(parts) > 1})
+        label = 'General' if gid is None else f'Group: {names.get(gid, "")}'
+        for cur in sorted({e['currency'] for e in mine}, key=cur_key) or [a.get('currency') or BASE_CURRENCY]:
+            add(f'{label} - {_cur_label(cur)}', cur, [e for e in mine if e['currency'] == cur])
+    else:
+        with_groups = [g['id'] for g in groups if any(e['group_id'] == g['id'] for e in entries)]
+        for cur in sorted({e['currency'] for e in entries}, key=cur_key) or [a.get('currency') or BASE_CURRENCY]:
+            mine = [e for e in entries if e['currency'] == cur]
+            gt = [(gid, [e for e in mine if e['group_id'] == gid]) for gid in with_groups]
+            add(f'Account - {_cur_label(cur)}' + (' (groups included as totals)' if any(ges for _, ges in gt) else ''), cur,
+                [e for e in mine if not e['group_id']], [x for x in gt if x[1]])
+        for gid in with_groups:
+            mine = [e for e in entries if e['group_id'] == gid]
+            for cur in sorted({e['currency'] for e in mine}, key=cur_key):
+                add(f'Group: {names.get(gid, "")} - {_cur_label(cur)}', cur, [e for e in mine if e['currency'] == cur])
     store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
     shop = store.get('name') or 'Ram Murti Jewellers'
     period = f"{_dmy(date_from) if date_from else 'Beginning'} to {_dmy(date_to or _today())}"

@@ -7,9 +7,19 @@ export type CLAccount = {
 
 export const BASE_CURRENCY = 'INR';
 
+// Gold and silver by weight (grams, 3 decimals), under their ISO codes. Like
+// any currency, their balance is kept on its own and never turned into rupees.
+export const METALS: Record<string, { name: string; symbol: string }> = {
+  XAU: { name: 'Gold', symbol: 'Au' },
+  XAG: { name: 'Silver', symbol: 'Ag' },
+};
+const grams = new Intl.NumberFormat('en-IN', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+
 // The common ones first; any other 3-letter code can be typed in.
 export const CURRENCIES: { code: string; name: string }[] = [
   { code: 'INR', name: 'Indian Rupee' },
+  { code: 'XAU', name: 'Gold (grams)' },
+  { code: 'XAG', name: 'Silver (grams)' },
   { code: 'USD', name: 'US Dollar' },
   { code: 'AED', name: 'UAE Dirham' },
   { code: 'EUR', name: 'Euro' },
@@ -37,24 +47,31 @@ function formatter(code: string): Intl.NumberFormat {
   return fmtCache[code];
 }
 
-/** "₹17,500", "$200", "AED 1,250.50" — always positive; the caller says owes / owe. */
+/** "₹17,500", "$200", "AED 1,250.50", "Gold 10.500 g" — always positive; the caller says owes / owe. */
 export function money(n: number, code: string = BASE_CURRENCY): string {
+  if (METALS[code]) return `${METALS[code].name} ${grams.format(Math.abs(n))} g`;
   const s = formatter(code).format(Math.abs(n));
   return /\d/.test(s.charAt(0)) ? `${code} ${s}` : s;   // a code with no symbol
 }
 
 const plain = new Intl.NumberFormat('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
-/** "17,500" — no symbol, for statement columns that already say the currency. */
-export const num = (n: number) => plain.format(Math.abs(n));
+/** "17,500" (or "10.500" grams for gold/silver) — no symbol, for statement columns that already say the currency. */
+export const num = (n: number, code?: string) => (code && METALS[code] ? grams : plain).format(Math.abs(n));
+
+/** "Indian Rupee", "Gold (grams)", or the code itself. */
+export const currencyName = (code: string) => CURRENCIES.find((c) => c.code === code)?.name || code;
 
 export function symbol(code: string): string {
+  if (METALS[code]) return METALS[code].symbol;
   const parts = formatter(code).formatToParts(0);
   return parts.find((p) => p.type === 'currency')?.value || code;
 }
 
-/** Currencies in a stable order: INR first, then the rest alphabetically. */
+/** Currencies in a stable order: INR, gold, silver, then the rest alphabetically. */
+const FIRST = [BASE_CURRENCY, 'XAU', 'XAG'];
+const rank = (c: string) => (FIRST.includes(c) ? FIRST.indexOf(c) : FIRST.length);
 export function orderedCodes(b: Balances): string[] {
-  return Object.keys(b).sort((x, y) => (x === BASE_CURRENCY ? -1 : y === BASE_CURRENCY ? 1 : x.localeCompare(y)));
+  return Object.keys(b).sort((x, y) => rank(x) - rank(y) || x.localeCompare(y));
 }
 
 // Letters only, so "Imran (Dubai)" is "ID", not "I(".
