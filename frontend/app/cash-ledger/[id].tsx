@@ -26,7 +26,7 @@ import { Balances, BASE_CURRENCY, METALS, currencyName, money, num, initials, or
 
 type Group = { id: string; name: string; balances: Balances; entries: number };
 type Account = { id: string; name: string; phone?: string; note?: string; currency: string; balances: Balances; entries: number; general_balances: Balances; groups: Group[] };
-type Entry = { id: string; direction: 'gave' | 'got'; amount: number; currency: string; date: string; note?: string; remark?: string; group_id?: string | null; created_by_name?: string; balance_after: number; photos: number };
+type Entry = { id: string; direction: 'gave' | 'got'; amount: number; currency: string; date: string; note?: string; remark?: string; group_id?: string | null; conversion_id?: string; created_by_name?: string; balance_after: number; photos: number };
 type Shot = { id: string; blob: Blob; thumb: string };
 
 const newId = () => ((typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`);
@@ -82,6 +82,16 @@ export default function CashLedgerAccountScreen() {
   const [stmtOpen, setStmtOpen] = useState(false);
   const [groupSheet, setGroupSheet] = useState<null | { mode: 'new' | 'edit' }>(null);
   const [groupName, setGroupName] = useState('');
+  // convert sheet: move a balance from one currency/metal into another at a rate
+  const [conv, setConv] = useState<null | { from: string }>(null);
+  const [convTo, setConvTo] = useState(BASE_CURRENCY);
+  const [convAmt, setConvAmt] = useState('');
+  const [convRate, setConvRate] = useState('');
+  const [convDate, setConvDate] = useState(todayIST());
+  const [convNote, setConvNote] = useState('');
+  const [convPicking, setConvPicking] = useState(false);
+  const [convBusy, setConvBusy] = useState(false);
+  const [metalRates, setMetalRates] = useState<Record<string, number | null>>({});
   const [shots, setShots] = useState<Shot[]>([]);
   const [capturing, setCapturing] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -116,6 +126,15 @@ export default function CashLedgerAccountScreen() {
     setDirection(dir); setAmount(''); setCurrency(acc?.currency || BASE_CURRENCY); setDate(todayIST()); setNote(''); setRemark(''); setEntryGroup(group || null); setShots([]); setSheet({ mode: 'new' });
   };
   const openEdit = (e: Entry) => {
+    if (e.conversion_id) {   // the two sides of a conversion go together: delete and convert again
+      if (canDelete) {
+        confirmAction('Delete Conversion?', `${e.remark || ''}\nBoth entries of this conversion will be removed.`, 'Delete', async () => {
+          try { await api.del(`/khata/${id}/entries/${e.id}`); load(); }
+          catch (err: any) { toast.error(err?.detail || 'Could not delete'); }
+        });
+      } else toast.error("A conversion can't be edited");
+      return;
+    }
     setDirection(e.direction); setAmount(String(e.amount)); setCurrency(e.currency); setDate(e.date); setNote(e.note || ''); setRemark(e.remark || ''); setEntryGroup(e.group_id || null); setShots([]); setSheet({ mode: 'edit', entry: e });
   };
 
@@ -202,6 +221,43 @@ export default function CashLedgerAccountScreen() {
     try { await api.del(`/khata/${id}/groups/${grp.id}`); setGroupSheet(null); router.back(); }
     catch (e: any) { toast.error(e?.detail || 'Could not delete'); }
   });
+
+  // Suggest a rate where the app knows one: gold/silver <-> rupees from today's live rate.
+  const suggestRate = (from: string, to: string, rates = metalRates) => {
+    if (METALS[from] && to === BASE_CURRENCY && rates[from]) return String(rates[from]);
+    if (from === BASE_CURRENCY && METALS[to] && rates[to]) return String(Number((1 / (rates[to] as number)).toFixed(6)));
+    return '';
+  };
+  // From the person's page this converts the general balance; a group's balance is converted on the group's page.
+  const convertible = (c: string) => (grp ? heroBal[c] || 0 : acc?.general_balances?.[c] || 0);
+  const openConvert = async (from: string) => {
+    if (!convertible(from)) { toast.error('This balance is all in groups — open the group to convert it.'); return; }
+    const to = from === BASE_CURRENCY ? (codes.find((c) => c !== from) || 'USD') : BASE_CURRENCY;
+    setConv({ from }); setConvTo(to); setConvAmt(String(Math.abs(convertible(from)))); setConvDate(todayIST()); setConvNote('');
+    setConvRate(suggestRate(from, to));
+    if (!Object.keys(metalRates).length) {
+      try {
+        const r = await api.get<Record<string, number | null>>('/khata-metal-rates');
+        setMetalRates(r);
+        setConvRate((cur) => cur || suggestRate(from, to, r));
+      } catch { /* no live rate: type it */ }
+    }
+  };
+  const convFromBal = conv ? convertible(conv.from) : 0;
+  const convAmtN = Number(convAmt.replace(/,/g, '')) || 0;
+  const convRateN = Number(convRate.replace(/,/g, '')) || 0;
+  const convOut = convAmtN * convRateN;
+  const unitOf = (c: string) => (METALS[c] ? `g ${METALS[c].name.toLowerCase()}` : c);
+  const doConvert = async () => {
+    if (!conv || convBusy) return;
+    if (!convAmtN || !convRateN) { toast.error('Enter the amount and the rate'); return; }
+    setConvBusy(true);
+    try {
+      await api.post(`/khata/${id}/convert`, { from_currency: conv.from, to_currency: convTo, amount: convAmtN, rate: convRateN, date: convDate, note: convNote.trim(), group_id: group || null });
+      haptics.success(); setConv(null); load();
+    } catch (e: any) { haptics.error(); toast.error(e?.detail || 'Could not convert'); }
+    finally { setConvBusy(false); }
+  };
 
   const deleteAcc = () => acc && confirmAction(`Delete ${acc.name}?`, 'Only possible once everything is settled.', 'Delete', async () => {
     try { await api.del(`/khata/${id}`); setEditAcc(false); router.back(); }
@@ -296,16 +352,18 @@ export default function CashLedgerAccountScreen() {
                 const mixed = all.some((x) => heroBal[x] > 0) && all.some((x) => heroBal[x] < 0);   // the heading can't say it for all
                 const v = heroBal[c] || 0;
                 return (
-                  <View key={c} style={[s.tile, codes.length <= 1 && s.tileWide]} testID={`cl-tile-${c}`}>
+                  <Pressable key={c} onPress={() => v && openConvert(c)} disabled={!v} style={({ pressed }) => [s.tile, codes.length <= 1 && s.tileWide, pressed && { opacity: 0.7 }]} testID={`cl-tile-${c}`}>
                     <Text style={s.tileLabel} numberOfLines={1}>{currencyName(c).replace(' (grams)', '')}</Text>
                     <Text style={[s.tileAmt, codes.length <= 1 && s.tileAmtBig, { color: balColor(v) }]} numberOfLines={1} adjustsFontSizeToFit>
                       {METALS[c] ? `${num(v, c)} g` : money(v, c)}
                     </Text>
                     {mixed && <Text style={s.tileSub}>{v > 0 ? `${first} owes you` : `You owe ${first}`}</Text>}
-                  </View>
+                  </Pressable>
                 );
               })}
             </View>
+
+            {codes.length > 0 && <Text style={s.tilesHint}>Tap a balance to convert it into another currency or metal.</Text>}
 
             <View style={s.actions}>
               <RoundAction s={s} icon="call" label="Call" disabled={!phoneDigits} onPress={() => Linking.openURL(`tel:${phoneDigits}`)} testID="cl-call" />
@@ -441,8 +499,9 @@ export default function CashLedgerAccountScreen() {
                 <View style={s.group}>
                   {sec.items.map((e, i) => (
                     <Pressable key={e.id} onPress={() => openEdit(e)} style={({ pressed }) => [s.entry, pressed && s.pressed]} testID={`cl-entry-${e.id}`}>
-                      <View style={[s.entryIcon, { backgroundColor: e.direction === 'gave' ? colors.error : colors.success }]}>
-                        <Ionicons name={e.direction === 'gave' ? 'arrow-up' : 'arrow-down'} size={15} color={e.direction === 'gave' ? colors.onError : colors.onSuccess} />
+                      <View style={[s.entryIcon, { backgroundColor: e.conversion_id ? colors.surfaceTertiary : e.direction === 'gave' ? colors.error : colors.success }]}>
+                        <Ionicons name={e.conversion_id ? 'swap-horizontal' : e.direction === 'gave' ? 'arrow-up' : 'arrow-down'} size={15}
+                          color={e.conversion_id ? colors.brandPrimary : e.direction === 'gave' ? colors.onError : colors.onSuccess} />
                       </View>
                       <View style={[s.entryBody, i > 0 && s.sepTop]}>
                         <View style={{ flex: 1, minWidth: 0 }}>
@@ -587,6 +646,70 @@ export default function CashLedgerAccountScreen() {
         )}
       </Sheet>
 
+      <Sheet visible={!!conv} onClose={() => setConv(null)} title="Convert" testID="cl-convert-sheet">
+        {conv && (
+          <>
+            <View style={s.formGroup}>
+              <View style={s.formRow}>
+                <Text style={[s.formLabel, { flex: 1 }]}>From</Text>
+                <Text style={s.formValue} numberOfLines={1}>{money(convFromBal, conv.from)}</Text>
+              </View>
+              <View style={s.formSep} />
+              <View style={s.formRow}>
+                <Text style={[s.curSymSmall]}>{symbol(conv.from)}</Text>
+                <TextInput value={convAmt} onChangeText={(t) => setConvAmt(t.replace(/[^\d.,]/g, ''))} keyboardType="decimal-pad" placeholder="0"
+                  placeholderTextColor={colors.mutedText} style={[s.formInput, { flex: 1, paddingHorizontal: 0, fontWeight: '600' }]} testID="cl-conv-amount" />
+                <Pressable onPress={() => setConvAmt(String(Math.abs(convFromBal)))} hitSlop={8}><Text style={s.formAction}>All</Text></Pressable>
+              </View>
+            </View>
+
+            {(grp || groups.length > 0) && (
+              <Text style={s.footer}>{grp ? `From the ${grp.name} group's balance.` : "From the general balance — a group's balance is converted on the group's page."}</Text>
+            )}
+            <View style={{ alignItems: 'center', marginVertical: 8 }}><Ionicons name="arrow-down-circle" size={28} color={colors.brandPrimary} /></View>
+
+            <View style={s.formGroup}>
+              <Pressable onPress={() => setConvPicking(true)} style={({ pressed }) => [s.formRow, pressed && s.pressed]} testID="cl-conv-to">
+                <Text style={[s.formLabel, { flex: 1 }]}>To</Text>
+                <Text style={s.formValue} numberOfLines={1}>{currencyName(convTo).replace(' (grams)', '')} {symbol(convTo)}</Text>
+                <Ionicons name="chevron-forward" size={16} color={colors.mutedText} />
+              </Pressable>
+              <View style={s.formSep} />
+              <View style={s.formRow}>
+                <Text style={[s.formLabel, { flexShrink: 0 }]} numberOfLines={1}>1 {unitOf(conv.from)} =</Text>
+                <TextInput value={convRate} onChangeText={(t) => setConvRate(t.replace(/[^\d.,]/g, ''))} keyboardType="decimal-pad" placeholder="Rate"
+                  placeholderTextColor={colors.mutedText} style={[s.formInput, { flex: 1, minWidth: 0, textAlign: 'right', paddingHorizontal: 0 }]} testID="cl-conv-rate" />
+                <Text style={[s.formValue2, { flexShrink: 0 }]} numberOfLines={1}>{unitOf(convTo)}</Text>
+              </View>
+            </View>
+            {(METALS[conv.from] || METALS[convTo]) && !!suggestRate(conv.from, convTo) && (
+              <Pressable onPress={() => setConvRate(suggestRate(conv.from, convTo))} hitSlop={6}>
+                <Text style={s.footer}>Today&apos;s live rate: {money(metalRates[METALS[conv.from] ? conv.from : convTo] || 0, BASE_CURRENCY)} per gram ({METALS[conv.from] ? METALS[conv.from].name : METALS[convTo].name}, sell). Tap to use it.</Text>
+              </Pressable>
+            )}
+
+            <View style={s.convResult} testID="cl-conv-result">
+              <Text style={s.convResultLabel}>{convFromBal > 0 ? `${first} will owe you` : `You will owe ${first}`}</Text>
+              <Text style={[s.convResultAmt, { color: balColor(convFromBal) }]} numberOfLines={1} adjustsFontSizeToFit>{convOut ? money(convOut, convTo) : '—'}</Text>
+              <Text style={s.convResultSub}>instead of {money(convAmtN, conv.from)}</Text>
+            </View>
+
+            <View style={s.formGroup}>
+              <View style={s.formPad}><DateField value={convDate} onChange={setConvDate} testID="cl-conv-date" /></View>
+              <View style={s.formSep} />
+              <TextInput value={convNote} onChangeText={setConvNote} placeholder="Note (optional)" placeholderTextColor={colors.mutedText} style={s.formInput} testID="cl-conv-note" />
+            </View>
+            <Pressable onPress={doConvert} disabled={convBusy || !convOut} style={({ pressed }) => [s.primary, (convBusy || !convOut) && { opacity: 0.5 }, pressed && { opacity: 0.85 }]} testID="cl-conv-save">
+              {convBusy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={s.primaryText}>Convert</Text>}
+            </Pressable>
+            <Text style={s.footer}>Saved as two entries with the rate, so the statement still adds up. Delete either one to undo the conversion.</Text>
+          </>
+        )}
+      </Sheet>
+      <CurrencyPicker visible={convPicking} value={convTo}
+        onPick={(c) => { setConvPicking(false); if (conv && c !== conv.from) { setConvTo(c); setConvRate(suggestRate(conv.from, c)); } }}
+        onClose={() => setConvPicking(false)} />
+
       {acc && (
         <CashStatementSheet visible={stmtOpen} onClose={() => setStmtOpen(false)} accountId={id} name={acc.name}
           group={grp ? grp.id : undefined} scopeLabel={grp ? grp.name : 'All'} />
@@ -697,6 +820,13 @@ const makeStyles = (colors: ThemeColors, narrow = false) => StyleSheet.create({
   formAction: { color: colors.brandPrimary, fontSize: 17 },
   formLabel: { color: colors.onSurface, fontSize: 17 },
   formValue: { flex: 1, textAlign: 'right', color: colors.mutedText, fontSize: 17 },
+  formValue2: { color: colors.mutedText, fontSize: 17, marginLeft: 6 },
+  curSymSmall: { color: colors.onSurface, fontSize: 20, fontWeight: '600', minWidth: 24 },
+  tilesHint: { color: colors.mutedText, fontSize: 12, textAlign: 'center', marginTop: 8 },
+  convResult: { alignItems: 'center', paddingVertical: spacing.lg },
+  convResultLabel: { color: colors.mutedText, fontSize: 13 },
+  convResultAmt: { fontSize: 34, fontWeight: '700', letterSpacing: -0.8, fontVariant: ['tabular-nums'], marginTop: 2 },
+  convResultSub: { color: colors.mutedText, fontSize: 13, marginTop: 2 },
   shot: { width: 60, height: 60, borderRadius: 8, overflow: 'hidden' },
   shotImg: { width: 60, height: 60, backgroundColor: colors.surfaceTertiary, alignItems: 'center', justifyContent: 'center' },
   shotX: { position: 'absolute', top: 3, right: 3, width: 18, height: 18, borderRadius: 9, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center' },

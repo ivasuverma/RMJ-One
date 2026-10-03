@@ -31,6 +31,14 @@ currency, with the opening balance brought forward; the app previews its pages
 as pictures and shares the PDF. Dr = cash you gave (they owe you), Cr = cash
 you got.
 
+*Convert* (/khata/{id}/convert) moves a balance from one currency or metal
+into another at a rate the user gives ("Rahul's $200 -> Rs.16,600 at 83"): two
+linked entries (same conversion_id) - one clears the amount in the old
+currency, the other adds it in the new one - with the rate as the remark, so
+the statement still adds up. The pair is deleted together and can't be edited
+(delete and convert again). For gold/silver <-> INR the app suggests today's
+rate from the live rates (gold is quoted per 10 g, silver per kg).
+
 Module 'cash_ledger': owner by default; the owner can grant it in People.
 Editing or deleting an existing entry follows the same rights as other modules.
 """
@@ -85,6 +93,16 @@ class EntryIn(BaseModel):
     note: Optional[str] = ''           # the description
     remark: Optional[str] = ''
     group_id: Optional[str] = None      # one of the person's groups; None = general
+
+
+class ConvertIn(BaseModel):
+    from_currency: str
+    to_currency: str
+    amount: float = Field(gt=0, le=100_000_000)     # in from_currency; at most the balance
+    rate: float = Field(gt=0, le=100_000_000)       # 1 from_currency = rate to_currency
+    date: Optional[str] = None
+    note: Optional[str] = ''
+    group_id: Optional[str] = None
 
 
 class GroupIn(BaseModel):
@@ -276,6 +294,8 @@ async def edit_entry(aid: str, eid: str, body: EntryIn, user=Depends(require_adm
     e = await db.cash_ledger_entries.find_one({'id': eid, 'account_id': aid, 'deleted': {'$ne': True}}, {'_id': 0})
     if not e:
         raise HTTPException(status_code=404, detail='Entry not found')
+    if e.get('conversion_id'):
+        raise HTTPException(status_code=400, detail="A conversion can't be edited - delete it and convert again.")
     a = await _account_or_404(aid)
     cur = _currency(body.currency or e.get('currency'))
     upd = {'direction': body.direction, 'amount': round(body.amount, _dp(cur)), 'currency': cur,
@@ -293,7 +313,9 @@ async def delete_entry(aid: str, eid: str, user=Depends(require_admin_or_module_
     e = await db.cash_ledger_entries.find_one({'id': eid, 'account_id': aid, 'deleted': {'$ne': True}}, {'_id': 0})
     if not e:
         raise HTTPException(status_code=404, detail='Entry not found')
-    await db.cash_ledger_entries.update_one({'id': eid}, {'$set': {'deleted': True, 'deleted_at': now_utc().isoformat(), 'deleted_by': user.get('name')}})
+    # Both sides of a conversion go together, or the balance would be left half-converted.
+    which = {'conversion_id': e['conversion_id'], 'account_id': aid} if e.get('conversion_id') else {'id': eid}
+    await db.cash_ledger_entries.update_many(which, {'$set': {'deleted': True, 'deleted_at': now_utc().isoformat(), 'deleted_by': user.get('name')}})
     await log_audit(user, 'cash_ledger.entry.delete', 'cash_ledger_entry', eid, f"{e.get('currency') or BASE_CURRENCY} {e['amount']:,.2f} {e['direction']}")
     return {'ok': True}
 
@@ -324,6 +346,58 @@ async def settle(aid: str, currency: Optional[str] = Query(default=None), date: 
         body = EntryIn(direction='got' if bal > 0 else 'gave', amount=abs(bal), currency=c, date=date, note='Settled up', group_id=gid or None)
         made.append(await add_entry(aid, body, user))
     return {'ok': True, 'entries': made}
+
+
+# ---------------------------------------------------------------- convert
+def _fmt_rate(r: float) -> str:
+    return f'{r:,.6f}'.rstrip('0').rstrip('.')
+
+
+def _unit(cur: str) -> str:
+    return f'g {METALS[cur].lower()}' if cur in METALS else cur
+
+
+@router.post('/khata/{aid}/convert')
+async def convert(aid: str, body: ConvertIn, user=Depends(require_admin_or_module(MOD))):
+    a = await _account_or_404(aid)
+    src, dst = _currency(body.from_currency), _currency(body.to_currency)
+    if src == dst:
+        raise HTTPException(status_code=400, detail='Pick a different currency to convert into')
+    gid = _group_id(a, body.group_id)
+    bal = sum(_signed(e) for e in await _entries(aid) if e['group_id'] == gid and e['currency'] == src)
+    if abs(bal) < 0.0005:
+        raise HTTPException(status_code=400, detail=f'There is no {_cur_label(src)} balance to convert')
+    amt = round(body.amount, _dp(src))
+    if amt > round(abs(bal), _dp(src)) + 0.0005:
+        raise HTTPException(status_code=400, detail=f'That is more than the {_cur_label(src)} balance')
+    out = round(amt * body.rate, _dp(dst))
+    if out <= 0:
+        raise HTTPException(status_code=400, detail='The converted amount comes to zero - check the rate')
+    owes = bal > 0                       # they owe you: take it off in the old currency, put it on in the new
+    cid, now, date = str(uuid.uuid4()), now_utc().isoformat(), _clean_date(body.date)
+    remark = f'1 {_unit(src)} = {_fmt_rate(body.rate)} {_unit(dst)}'
+    info = {'from': src, 'to': dst, 'amount': amt, 'rate': body.rate, 'to_amount': out}
+    base = {'account_id': aid, 'date': date, 'remark': remark, 'group_id': gid, 'conversion_id': cid, 'conversion': info,
+            'created_at': now, 'created_by': user.get('id'), 'created_by_name': user.get('name'), 'deleted': False}
+    note = (body.note or '').strip()[:300]
+    legs = [
+        {**base, 'id': str(uuid.uuid4()), 'direction': 'got' if owes else 'gave', 'amount': amt, 'currency': src,
+         'note': note or f'Converted to {METALS.get(dst, dst)}'},
+        {**base, 'id': str(uuid.uuid4()), 'direction': 'gave' if owes else 'got', 'amount': out, 'currency': dst,
+         'note': note or f'Converted from {METALS.get(src, src)}'},
+    ]
+    await db.cash_ledger_entries.insert_many([dict(x) for x in legs])
+    await log_audit(user, 'cash_ledger.convert', 'cash_ledger_account', aid, f"{a['name']}: {src} {amt} -> {dst} {out} @ {body.rate}")
+    return {'ok': True, 'conversion_id': cid, **info}
+
+
+@router.get('/khata-metal-rates')
+async def metal_rates(user=Depends(require_staff_or_module(MOD))):
+    """Today's live sell rates per gram in rupees, to suggest when converting gold/silver."""
+    live = await db.settings.find_one({'id': 'gold_rate_live'}, {'_id': 0}) or {}
+    g, sv = live.get('gold_rate'), live.get('silver_rate')
+    return {'XAU': round(g / 10, 2) if g else None, 'XAG': round(sv / 1000, 2) if sv else None,
+            'date': live.get('date'), 'note': 'Gold 995 per 10 g / silver 999 per kg, divided down to 1 g'}
 
 
 # ---------------------------------------------------------------- groups
