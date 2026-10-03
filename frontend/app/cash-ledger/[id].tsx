@@ -382,9 +382,13 @@ export default function CashLedgerAccountScreen() {
                 return (
                   <Pressable key={c} onPress={() => v && openConvert(c)} disabled={!v} style={({ pressed }) => [s.tile, codes.length <= 1 && s.tileWide, pressed && { opacity: 0.7 }]} testID={`cl-tile-${c}`}>
                     <Text style={s.tileLabel} numberOfLines={1}>{currencyName(c).replace(' (grams)', '')}</Text>
-                    <Text style={[s.tileAmt, codes.length <= 1 && s.tileAmtBig, { color: balColor(v) }]} numberOfLines={1} adjustsFontSizeToFit>
-                      {METALS[c] ? `${num(v, c)} g` : money(v, c)}
-                    </Text>
+                    {(() => {
+                      // Fit the whole amount: smaller type for longer numbers (the web has no auto-shrink).
+                      const txt = METALS[c] ? `${num(v, c)} g` : money(v, c);
+                      const half = codes.length > 1;
+                      const size = !half ? (txt.length > 16 ? 22 : 26) : txt.length > 13 ? 15 : txt.length > 11 ? 16 : txt.length > 9 ? 18 : 20;
+                      return <Text style={[s.tileAmt, { fontSize: size, color: balColor(v) }]} numberOfLines={1}>{txt}</Text>;
+                    })()}
                     {mixed && <Text style={s.tileSub}>{v > 0 ? `${first} owes you` : `You owe ${first}`}</Text>}
                   </Pressable>
                 );
@@ -869,8 +873,7 @@ const makeStyles = (colors: ThemeColors, narrow = false) => StyleSheet.create({
   tile: { flexGrow: 1, flexBasis: '45%', backgroundColor: colors.surfaceSecondary, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12 },
   tileWide: { flexBasis: '100%' },
   tileLabel: { color: colors.mutedText, fontSize: 13, fontWeight: '500' },
-  tileAmt: { fontSize: 22, fontWeight: '700', letterSpacing: -0.4, marginTop: 2, fontVariant: ['tabular-nums'] },
-  tileAmtBig: { fontSize: 30, letterSpacing: -0.6 },
+  tileAmt: { fontWeight: '700', letterSpacing: -0.3, marginTop: 2, fontVariant: ['tabular-nums'] },
   tileSub: { color: colors.mutedText, fontSize: 12, marginTop: 2 },
   heroSub: { color: colors.mutedText, fontSize: 13, marginTop: 1 },
   actions: { flexDirection: 'row', justifyContent: 'center', gap: 10, marginTop: spacing.lg },
