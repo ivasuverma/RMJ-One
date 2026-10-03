@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, RefreshControl, TextInput, Linking, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, RefreshControl, TextInput, Linking, Platform, useWindowDimensions } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
@@ -32,8 +32,6 @@ type Shot = { id: string; blob: Blob; thumb: string };
 const newId = () => ((typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`);
 const monthLabel = (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
 const dayLabel = (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
-const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const dayMonth = (iso: string) => `${Number(iso.slice(8, 10))} ${MON[Number(iso.slice(5, 7)) - 1]}`;
 const signed = (n: number, code: string) => `${n < 0 ? '−' : ''}${money(n, code)}`;
 
 // Three ways to read the same entries; the choice is remembered on this device.
@@ -57,7 +55,8 @@ export default function CashLedgerAccountScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
-  const s = useMemo(() => makeStyles(colors), [colors]);
+  const narrow = useWindowDimensions().width < 370;   // small iPhones: tighter number columns
+  const s = useMemo(() => makeStyles(colors, narrow), [colors, narrow]);
   const toast = useToast();
   const { user, hasRight } = useAuth();
   const isOwner = user?.role === 'owner';
@@ -104,7 +103,7 @@ export default function CashLedgerAccountScreen() {
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const first = acc?.name.split(' ')[0] || '';
-  const groups = acc?.groups || [];
+  const groups = useMemo(() => acc?.groups || [], [acc]);
   const grp = group ? groups.find((g) => g.id === group) : undefined;
   // What this screen is about: one group, or the whole person.
   const heroBal: Balances = grp ? grp.balances : acc?.balances || {};
@@ -219,18 +218,30 @@ export default function CashLedgerAccountScreen() {
   const tint = direction === 'gave' ? colors.onError : colors.onSuccess;
   const balColor = (n: number) => (n > 0 ? colors.onSuccess : n < 0 ? colors.onError : colors.onSurface);
 
-  // Statement: a passbook per currency, oldest first, closing balance on every line.
+  // Statement: a passbook per currency, oldest first, closing balance on every
+  // line. On the person's page each group is one total line after the general
+  // entries, so the closing balance is the person's whole balance.
   const chron = useMemo(() => [...scoped].reverse(), [scoped]);
+  type StRow = { kind: 'entry'; e: Entry; amt: number; bal: number } | { kind: 'group'; g: Group; amt: number; bal: number };
   const statements = useMemo(() => {
     const byCur: Record<string, Entry[]> = {};
     for (const e of chron) (byCur[e.currency] ||= []).push(e);
-    return orderedCodes(Object.fromEntries(Object.keys(byCur).map((c) => [c, 1]))).map((c) => {
-      const rows = byCur[c];
-      const gave = rows.reduce((t, e) => t + (e.direction === 'gave' ? e.amount : 0), 0);
-      const got = rows.reduce((t, e) => t + (e.direction === 'got' ? e.amount : 0), 0);
-      return { code: c, rows, gave, got, closing: rows[rows.length - 1].balance_after };
+    const withGroups = grp ? [] : groups.filter((g) => Object.keys(g.balances).length);
+    const all: Balances = Object.fromEntries(Object.keys(byCur).map((c) => [c, 1]));
+    for (const g of withGroups) for (const c of Object.keys(g.balances)) all[c] = 1;
+    return orderedCodes(all).map((c) => {
+      const rows: StRow[] = (byCur[c] || []).map((e) => ({ kind: 'entry', e, amt: e.direction === 'gave' ? e.amount : -e.amount, bal: e.balance_after }));
+      let bal = rows.length ? rows[rows.length - 1].bal : 0;
+      for (const g of withGroups) {
+        if (!g.balances[c]) continue;
+        bal += g.balances[c];
+        rows.push({ kind: 'group', g, amt: g.balances[c], bal });
+      }
+      const gave = rows.reduce((t, r) => t + (r.amt > 0 ? r.amt : 0), 0);
+      const got = rows.reduce((t, r) => t + (r.amt < 0 ? -r.amt : 0), 0);
+      return { code: c, rows, gave, got, closing: bal };
     });
-  }, [chron]);
+  }, [chron, groups, grp]);
 
   // Day-wise: newest day first, each day ends with its closing balance per currency.
   const days = useMemo(() => {
@@ -342,30 +353,44 @@ export default function CashLedgerAccountScreen() {
                 <Text style={s.sectionHeader}>{(CURRENCIES.find((c) => c.code === st.code)?.name || st.code).toUpperCase()} · {symbol(st.code)}</Text>
                 <View style={s.group}>
                   <View style={[s.tRow, s.tHead]}>
-                    <Text style={[s.tDate, s.tHeadText]}>DATE</Text>
-                    <Text style={[s.tDetails, s.tHeadText]}>DETAILS</Text>
-                    <Text style={[s.tNum, s.tHeadText]}>GAVE</Text>
-                    <Text style={[s.tNum, s.tHeadText]}>GOT</Text>
+                    <Text style={[s.tDetails, s.tHeadText]} numberOfLines={1}>DETAILS</Text>
+                    <Text style={[s.tNum, s.tHeadText]}>AMOUNT</Text>
                     <Text style={[s.tBal, s.tHeadText]}>BALANCE</Text>
                   </View>
-                  {st.rows.map((e) => (
-                    <Pressable key={e.id} onPress={() => openEdit(e)} style={({ pressed }) => [s.tRow, s.sepTop, pressed && s.pressed]} testID={`cl-st-${e.id}`}>
-                      <View style={s.tDate}><Text style={s.tCell}>{dayMonth(e.date)}</Text><Text style={s.tYear}>{e.date.slice(0, 4)}</Text></View>
+                  {st.rows.map((r) => (
+                    <Pressable key={r.kind === 'entry' ? r.e.id : `g-${r.g.id}`} testID={r.kind === 'entry' ? `cl-st-${r.e.id}` : `cl-st-group-${r.g.id}`}
+                      onPress={() => (r.kind === 'entry' ? openEdit(r.e) : router.push(`/cash-ledger/${id}?group=${r.g.id}` as any))}
+                      style={({ pressed }) => [s.tRow, s.sepTop, r.kind === 'group' && s.tGroup, pressed && s.pressed]}>
                       <View style={s.tDetails}>
-                        <Text style={s.tCell} numberOfLines={2}>{e.note || (e.direction === 'gave' ? 'You gave' : 'You got')}{e.photos > 0 ? ' 📷' : ''}</Text>
-                        {!!e.remark && <Text style={s.tYear} numberOfLines={1}>{e.remark}</Text>}
+                        {r.kind === 'entry' ? (
+                          <>
+                            <Text style={s.tYear}>{istDisplayDate(r.e.date)}</Text>
+                            <Text style={s.tCell} numberOfLines={2}>{r.e.note || (r.e.direction === 'gave' ? 'You gave' : 'You got')}{r.e.photos > 0 ? ' 📷' : ''}</Text>
+                            {!!r.e.remark && <Text style={s.tYear} numberOfLines={1}>{r.e.remark}</Text>}
+                          </>
+                        ) : (
+                          <>
+                            <Text style={s.tYear}>Group total · {r.g.entries} {r.g.entries === 1 ? 'entry' : 'entries'}</Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                              <Ionicons name="folder" size={13} color={colors.brandPrimary} />
+                              <Text style={[s.tCell, { fontWeight: '600', flexShrink: 1 }]} numberOfLines={1}>{r.g.name}</Text>
+                              <Ionicons name="chevron-forward" size={12} color={colors.mutedText} />
+                            </View>
+                          </>
+                        )}
                       </View>
-                      <Text style={[s.tNum, s.tCell, { color: colors.onError }]}>{e.direction === 'gave' ? num(e.amount) : ''}</Text>
-                      <Text style={[s.tNum, s.tCell, { color: colors.onSuccess }]}>{e.direction === 'got' ? num(e.amount) : ''}</Text>
-                      <Text style={[s.tBal, s.tCell, { color: balColor(e.balance_after) }]}>{e.balance_after < 0 ? '−' : ''}{num(e.balance_after)}</Text>
+                      <Text style={[s.tNum, s.tCell, { color: r.amt > 0 ? colors.onError : colors.onSuccess }, r.kind === 'group' && { fontWeight: '600' }]} numberOfLines={1}>
+                        {r.amt > 0 ? '−' : '+'}{num(r.amt)}
+                      </Text>
+                      <Text style={[s.tBal, s.tCell, { color: balColor(r.bal) }]} numberOfLines={1}>{r.bal < 0 ? '−' : ''}{num(r.bal)}</Text>
                     </Pressable>
                   ))}
                   <View style={[s.tRow, s.tFoot]}>
-                    <Text style={[s.tDate, s.tFootText]}>Closing</Text>
-                    <Text style={s.tDetails} />
-                    <Text style={[s.tNum, s.tFootText]}>{num(st.gave)}</Text>
-                    <Text style={[s.tNum, s.tFootText]}>{num(st.got)}</Text>
-                    <Text style={[s.tBal, s.tFootText, { color: balColor(st.closing) }]}>{st.closing < 0 ? '−' : ''}{num(st.closing)}</Text>
+                    <View style={s.tDetails}>
+                      <Text style={s.tFootText}>Closing Balance</Text>
+                      <Text style={s.tYear} numberOfLines={2}>Gave {num(st.gave)} · Got {num(st.got)}</Text>
+                    </View>
+                    <Text style={[s.tBal, s.tFootText, { width: narrow ? 130 : 150, color: balColor(st.closing) }]} numberOfLines={1}>{st.closing < 0 ? '−' : ''}{money(st.closing, st.code)}</Text>
                   </View>
                 </View>
               </View>
@@ -426,7 +451,7 @@ export default function CashLedgerAccountScreen() {
             ))}
             {scoped.length > 0 && (
               <Text style={s.footer}>
-                {view === 'statement' ? `Balance is closing balance after each line. Green: ${first} owes you · Red: you owe ${first}.`
+                {view === 'statement' ? `Balance is the closing balance after each line${!grp && groups.some((g) => Object.keys(g.balances).length) ? '; each group is added as one total line, so the closing balance is the full amount' : ''}. Green: ${first} owes you · Red: you owe ${first}.`
                   : view === 'daily' ? `Closing balance at the end of each day. Green: ${first} owes you · Red: you owe ${first}.`
                     : `− You gave · + You got. Bal is what ${first} owes you after each entry.`}
               </Text>
@@ -581,7 +606,7 @@ function RoundAction({ s, icon, label, onPress, disabled, testID }: {
   );
 }
 
-const makeStyles = (colors: ThemeColors) => StyleSheet.create({
+const makeStyles = (colors: ThemeColors, narrow = false) => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   content: { paddingHorizontal: spacing.lg },
   navText: { color: colors.brandPrimary, fontSize: 17 },
@@ -611,15 +636,15 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   amount: { fontSize: 17, fontWeight: '600', fontVariant: ['tabular-nums'] },
   footer: { color: colors.mutedText, fontSize: 13, marginTop: 8, marginHorizontal: spacing.md },
   // Statement table
-  tRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 9, gap: 6 },
+  tRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: narrow ? 10 : 12, paddingVertical: 9, gap: narrow ? 6 : 8 },
   tHead: { paddingVertical: 7 },
-  tHeadText: { color: colors.mutedText, fontSize: 11, fontWeight: '600', letterSpacing: 0.3 },
-  tCell: { color: colors.onSurface, fontSize: 13, fontVariant: ['tabular-nums'] },
-  tDate: { width: 50 },
+  tHeadText: { color: colors.mutedText, fontSize: narrow ? 10 : 11, fontWeight: '600', letterSpacing: 0.3 },
+  tCell: { color: colors.onSurface, fontSize: narrow ? 12 : 13, fontVariant: ['tabular-nums'] },
   tYear: { color: colors.mutedText, fontSize: 11, fontVariant: ['tabular-nums'] },
   tDetails: { flex: 1, minWidth: 0 },
-  tNum: { width: 60, textAlign: 'right' },
-  tBal: { width: 70, textAlign: 'right', fontWeight: '600' },
+  tNum: { width: narrow ? 84 : 100, textAlign: 'right' },
+  tBal: { width: narrow ? 88 : 104, textAlign: 'right', fontWeight: '600' },
+  tGroup: { backgroundColor: colors.surfaceTertiary + '80' },
   tFoot: { backgroundColor: colors.surfaceTertiary },
   tFootText: { color: colors.onSurface, fontSize: 13, fontWeight: '700', fontVariant: ['tabular-nums'] },
   // Day-wise

@@ -365,8 +365,7 @@ def _dmy(iso: str) -> str:
 
 
 def _statement_pdf_sync(shop: str, a: dict, sections: list, period: str, generated: str) -> bytes:
-    """sections: [{title, currency, opening, rows: [(date, desc, remark, dr, cr, closing)], dr, cr, closing}]
-    plus a last 'summary' list of (currency, closing) when there is more than one part."""
+    """sections: [{title, currency, opening, rows: [(date, desc, remark, dr, cr, closing, is_group_total)], dr, cr, closing}]."""
     from io import BytesIO
     from reportlab.lib import colors as rl
     from reportlab.lib.enums import TA_RIGHT
@@ -407,7 +406,11 @@ def _statement_pdf_sync(shop: str, a: dict, sections: list, period: str, generat
     for sec in sections:
         data = [['Date', 'Description', 'Remarks', 'Dr', 'Cr', 'Closing']]
         data.append(['', Paragraph('<b>Opening Balance</b>', st['cell']), '', '', '', _bal(sec['opening'])])
-        for d, desc, rem, dr, cr, clo in sec['rows']:
+        group_rows = []
+        for d, desc, rem, dr, cr, clo, is_group in sec['rows']:
+            if is_group:
+                group_rows.append(len(data))
+                desc = f'<b>{desc}</b>'
             data.append([_dmy(d), Paragraph(desc, st['cell']), Paragraph(rem, st['cell']), _amt(dr), _amt(cr), _bal(clo)])
         data.append(['', 'Total', '', _amt(sec['dr']) or '0.00', _amt(sec['cr']) or '0.00', ''])
         data.append(['', 'Closing Balance', '', '', '', _bal(sec['closing'])])
@@ -421,27 +424,12 @@ def _statement_pdf_sync(shop: str, a: dict, sections: list, period: str, generat
             ('LINEABOVE', (0, n - 2), (-1, n - 2), 0.8, ink), ('LINEBELOW', (0, n - 1), (-1, n - 1), 1.2, ink),
             ('FONT', (0, n - 2), (-1, n - 1), 'Helvetica-Bold', 8.5), ('BACKGROUND', (0, n - 1), (-1, n - 1), head),
             ('FONT', (5, 1), (5, -1), 'Helvetica-Bold', 8.5),
+            *[('BACKGROUND', (0, r), (-1, r), rl.HexColor('#fbf8f0')) for r in group_rows],
+            *[('FONT', (3, r), (4, r), 'Helvetica-Bold', 8.5) for r in group_rows],
             ('TOPPADDING', (0, 0), (-1, -1), 4), ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
             ('LEFTPADDING', (0, 0), (-1, -1), 4), ('RIGHTPADDING', (0, 0), (-1, -1), 4),
         ]))
         els += [KeepTogether([Paragraph(sec['title'], st['sec']), Spacer(1, 1.5 * mm)]), t, Spacer(1, 6 * mm)]
-
-    summary = [s_ for s_ in sections if s_.get('part_of_total')]
-    if len(summary) > 1:   # more than one part (general + groups): the total they add up to, per currency
-        tot: dict = {}
-        for s_ in summary:
-            tot[s_['currency']] = tot.get(s_['currency'], 0.0) + s_['closing']
-        data = [['Summary', 'Closing']] + [[f"{s_['title']}", _bal(s_['closing'])] for s_ in summary] + \
-               [[f'Total ({c})', _bal(v)] for c, v in sorted(tot.items(), key=lambda kv: (kv[0] != BASE_CURRENCY, kv[0]))]
-        n = len(data)
-        t = Table(data, colWidths=[W - 40 * mm, 40 * mm])
-        t.setStyle(TableStyle([
-            ('FONT', (0, 0), (-1, -1), 'Helvetica', 9), ('FONT', (0, 0), (-1, 0), 'Helvetica-Bold', 9), ('BACKGROUND', (0, 0), (-1, 0), head),
-            ('ALIGN', (1, 0), (1, -1), 'RIGHT'), ('LINEBELOW', (0, 0), (-1, 0), 0.8, ink), ('LINEBELOW', (0, 1), (-1, -1), 0.25, line),
-            ('FONT', (0, n - len(tot)), (-1, -1), 'Helvetica-Bold', 9.5), ('LINEABOVE', (0, n - len(tot)), (-1, n - len(tot)), 0.8, ink),
-            ('TOPPADDING', (0, 0), (-1, -1), 4), ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
-        ]))
-        els += [KeepTogether([t])]
 
     els += [Spacer(1, 6 * mm), Paragraph('Dr = amount given to the account holder (receivable). Cr = amount received from them. '
                                          'Closing in Dr means they owe us; in Cr, we owe them. Each currency is shown separately and never converted.', st['small'])]
@@ -462,7 +450,9 @@ async def statement(aid: str, date_from: Optional[str] = Query(default=None, ali
                     group: Optional[str] = Query(default=None), format: Literal['pdf', 'info', 'page'] = 'pdf', page: int = 0,
                     user=Depends(require_staff_or_module(MOD))):
     """The statement PDF. `group`: one group's id, 'general', or nothing for the
-    whole account (general first, then each group, then the total).
+    whole account: per currency, the general entries plus one total line per
+    group (its Dr and Cr for the period), so that table's closing is the
+    person's whole balance; then each group's own entries in detail.
     format=info -> {pages}; format=page&page=N -> that page as a JPEG (the app's preview)."""
     a = await _account_or_404(aid)
     date_from = _clean_date(date_from) if date_from else None
@@ -471,35 +461,57 @@ async def statement(aid: str, date_from: Optional[str] = Query(default=None, ali
         raise HTTPException(status_code=400, detail='From date is after To date')
     groups = a.get('groups') or []
     names = {g['id']: g['name'] for g in groups}
-    if group == 'general':
-        parts = [None]
-    elif group:
-        parts = [_group_id(a, group)]
-    else:
-        parts = [None] + [g['id'] for g in groups]
     entries = await _entries(aid)
+    in_range = (lambda e: not ((date_from and e['date'] < date_from) or (date_to and e['date'] > date_to)))
+    cur_key = (lambda c: (c != BASE_CURRENCY, c))
     sections = []
-    for gid in parts:
+
+    def line(e: dict, closing: float) -> tuple:
+        desc = e.get('note') or ('Cash given' if e['direction'] == 'gave' else 'Cash received')
+        return (e['date'], _esc(desc), _esc(e.get('remark') or ''),
+                e['amount'] if e['direction'] == 'gave' else 0.0, e['amount'] if e['direction'] == 'got' else 0.0, closing, False)
+
+    def add(title: str, cur: str, es: list, group_totals: Optional[list] = None):
+        """es: the entries listed line by line; group_totals: [(group_id, its entries)] shown as one total line each."""
+        opening = sum(_signed(e) for e in es if date_from and e['date'] < date_from)
+        for _, ges in group_totals or []:
+            opening += sum(_signed(e) for e in ges if date_from and e['date'] < date_from)
+        run, rows, dr, cr = opening, [], 0.0, 0.0
+        for e in es:
+            if in_range(e):
+                run += _signed(e)
+                rows.append(line(e, run))
+        for gid, ges in group_totals or []:
+            g_in = [e for e in ges if in_range(e)]
+            if not g_in:
+                continue
+            gdr = sum(e['amount'] for e in g_in if e['direction'] == 'gave')
+            gcr = sum(e['amount'] for e in g_in if e['direction'] == 'got')
+            run += gdr - gcr
+            rows.append(('', _esc(f'Group: {names.get(gid, "")} (total)'),
+                         f'{len(g_in)} {"entry" if len(g_in) == 1 else "entries"} - details below', gdr, gcr, run, True))
+        for r in rows:
+            dr, cr = dr + r[3], cr + r[4]
+        sections.append({'title': title, 'currency': cur, 'opening': round(opening, 2), 'rows': rows,
+                         'dr': round(dr, 2), 'cr': round(cr, 2), 'closing': round(run, 2)})
+
+    if group:
+        gid = None if group == 'general' else _group_id(a, group)
         mine = [e for e in entries if e['group_id'] == gid]
-        if gid is None and len(parts) > 1 and not mine:
-            continue
-        for cur in sorted({e['currency'] for e in mine}, key=lambda c: (c != BASE_CURRENCY, c)) or ([] if mine else [a.get('currency') or BASE_CURRENCY]):
-            es = [e for e in mine if e['currency'] == cur]
-            opening = sum(_signed(e) for e in es if date_from and e['date'] < date_from)
-            rows, dr, cr = [], 0.0, 0.0
-            for e in es:
-                if (date_from and e['date'] < date_from) or (date_to and e['date'] > date_to):
-                    continue
-                desc = e.get('note') or ('Cash given' if e['direction'] == 'gave' else 'Cash received')
-                gave = e['amount'] if e['direction'] == 'gave' else 0.0
-                got = e['amount'] if e['direction'] == 'got' else 0.0
-                dr, cr = dr + gave, cr + got
-                rows.append((e['date'], _esc(desc), _esc(e.get('remark') or ''), gave, got, e['balance_after']))
-            closing = opening + dr - cr
-            part = 'General' if gid is None else f'Group: {names.get(gid, "")}'
-            title = f'{part} - {cur}' if (len(parts) > 1 or gid is not None) else f'Currency: {cur}'
-            sections.append({'title': title, 'currency': cur, 'opening': round(opening, 2), 'rows': rows,
-                             'dr': round(dr, 2), 'cr': round(cr, 2), 'closing': round(closing, 2), 'part_of_total': len(parts) > 1})
+        label = 'General' if gid is None else f'Group: {names.get(gid, "")}'
+        for cur in sorted({e['currency'] for e in mine}, key=cur_key) or [a.get('currency') or BASE_CURRENCY]:
+            add(f'{label} - {cur}', cur, [e for e in mine if e['currency'] == cur])
+    else:
+        with_groups = [g['id'] for g in groups if any(e['group_id'] == g['id'] for e in entries)]
+        for cur in sorted({e['currency'] for e in entries}, key=cur_key) or [a.get('currency') or BASE_CURRENCY]:
+            mine = [e for e in entries if e['currency'] == cur]
+            gt = [(gid, [e for e in mine if e['group_id'] == gid]) for gid in with_groups]
+            add(f'Account - {cur}' + (' (groups included as totals)' if any(ges for _, ges in gt) else ''), cur,
+                [e for e in mine if not e['group_id']], [x for x in gt if x[1]])
+        for gid in with_groups:
+            mine = [e for e in entries if e['group_id'] == gid]
+            for cur in sorted({e['currency'] for e in mine}, key=cur_key):
+                add(f'Group: {names.get(gid, "")} - {cur}', cur, [e for e in mine if e['currency'] == cur])
     store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
     shop = store.get('name') or 'Ram Murti Jewellers'
     period = f"{_dmy(date_from) if date_from else 'Beginning'} to {_dmy(date_to or _today())}"
