@@ -11,9 +11,20 @@ import { Sheet, useToast } from '@/src/components/ui';
 import { ModuleHeader } from '@/src/components/ui/ModuleHeader';
 import { HeaderSpacer, useScrolled } from '@/src/components/ui/StickyHeader';
 import { CurrencyPicker } from '@/src/components/CurrencyPicker';
-import { BASE_CURRENCY, CLAccount, money, initials, orderedCodes, symbol } from '@/src/utils/cashLedger';
+import { BASE_CURRENCY, CLAccount, METALS, money, num, initials, orderedCodes, symbol } from '@/src/utils/cashLedger';
+
+// Month rows already show the currency/metal on the left, so metals are just "23.833 g".
+const short = (n: number, c: string) => (METALS[c] ? `${num(n, c)} g` : money(n, c));
+const monthName = (ym: string) => new Date(`${ym}-01T00:00:00`).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
 
 type Totals = Record<string, { you_get: number; you_give: number }>;
+type Dash = {
+  people: number; open: number; month: string;
+  this_month: Record<string, { gave: number; got: number; entries: number }>;
+  owe_you_most: { id: string; name: string; balances: Record<string, number> }[];
+  you_owe_most: { id: string; name: string; balances: Record<string, number> }[];
+  recent: { id: string; account_id: string; account_name: string; direction: 'gave' | 'got'; amount: number; currency: string; date: string; note?: string; conversion_id?: string }[];
+};
 
 // Cash Ledger: cash given to and received from people, one account each — a
 // khata like Splitwise. Separate from everything else in the app (it never
@@ -27,6 +38,7 @@ export default function CashLedgerScreen() {
   const { scrolled, onScroll } = useScrolled();
   const [rows, setRows] = useState<CLAccount[] | null>(null);
   const [totals, setTotals] = useState<Totals>({});
+  const [dash, setDash] = useState<Dash | null>(null);
   const [q, setQ] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -38,8 +50,11 @@ export default function CashLedgerScreen() {
 
   const load = useCallback(async () => {
     try {
-      const r = await api.get<{ accounts: CLAccount[]; totals: Totals }>('/khata');
-      setRows(r.accounts); setTotals(r.totals);
+      const [r, d] = await Promise.all([
+        api.get<{ accounts: CLAccount[]; totals: Totals }>('/khata'),
+        api.get<Dash>('/khata-dashboard').catch(() => null),
+      ]);
+      setRows(r.accounts); setTotals(r.totals); setDash(d);
     } catch (e: any) { setRows((x) => x || []); if (e?.status !== 403) toast.error('Could not load the Cash Ledger'); }
     finally { setRefreshing(false); }
   }, [toast]);
@@ -64,9 +79,14 @@ export default function CashLedgerScreen() {
     <SafeAreaView style={s.root} edges={['top']} testID="cash-ledger-screen">
       <ModuleHeader title="Cash Ledger" backLabel="Ledger" scrolled={scrolled}
         actions={(
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          <Pressable onPress={() => router.push('/cash-ledger/import' as any)} hitSlop={10} style={({ pressed }) => [s.navBtn, pressed && { opacity: 0.5 }]} accessibilityLabel="Import from Splitwise" testID="cl-import">
+            <Ionicons name="download-outline" size={23} color={colors.brandPrimary} />
+          </Pressable>
           <Pressable onPress={() => setAdding(true)} hitSlop={10} style={({ pressed }) => [s.navBtn, pressed && { opacity: 0.5 }]} accessibilityLabel="Add person" testID="cl-add-account">
             <Ionicons name="add" size={26} color={colors.brandPrimary} />
           </Pressable>
+          </View>
         )} />
       <ScrollView onScroll={onScroll} scrollEventThrottle={16} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled"
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.mutedText} />}>
@@ -95,12 +115,81 @@ export default function CashLedgerScreen() {
           </View>
         </View>
 
+        {/* Dashboard: this month, who owes the most, the latest entries (hidden while searching) */}
+        {dash && !ql && dash.people > 0 && (
+          <View testID="cl-dashboard">
+            <Text style={s.stats}>{dash.people} {dash.people === 1 ? 'person' : 'people'} · {dash.open} with money pending</Text>
+
+            {Object.keys(dash.this_month).length > 0 && (
+              <>
+                <Text style={s.sectionHeader}>{monthName(dash.month).toUpperCase()}</Text>
+                <View style={s.group}>
+                  {orderedCodes(dash.this_month as any).map((c, i) => (
+                    <View key={c} style={[s.monthRow, i > 0 && s.sepTop]}>
+                      <Text style={[s.monthCode, symbol(c).length > 2 && s.monthCodeLong]} numberOfLines={1}>{symbol(c)}</Text>
+                      <View style={s.monthCol}>
+                        <Text style={s.caption}>YOU GAVE</Text>
+                        <Text style={[s.monthAmt, { color: colors.onError }]} numberOfLines={1}>{short(dash.this_month[c].gave, c)}</Text>
+                      </View>
+                      <View style={s.monthCol}>
+                        <Text style={s.caption}>YOU GOT</Text>
+                        <Text style={[s.monthAmt, { color: colors.onSuccess }]} numberOfLines={1}>{short(dash.this_month[c].got, c)}</Text>
+                      </View>
+                      <Text style={s.monthN}>{dash.this_month[c].entries}</Text>
+                    </View>
+                  ))}
+                </View>
+              </>
+            )}
+
+            {(dash.owe_you_most.length > 0 || dash.you_owe_most.length > 0) && (
+              <View style={s.topWrap}>
+                {([['OWE YOU THE MOST', dash.owe_you_most, colors.onSuccess], ['YOU OWE THE MOST', dash.you_owe_most, colors.onError]] as const).map(([title, list, color]) => (
+                  list.length > 0 && (
+                    <View key={title} style={{ flexBasis: '100%' }}>
+                      <Text style={[s.sectionHeader, { marginTop: spacing.lg }]}>{title}</Text>
+                      <View style={s.group}>
+                        {list.map((r, i) => (
+                          <Pressable key={r.id} onPress={() => router.push(`/cash-ledger/${r.id}` as any)} style={({ pressed }) => [s.topRow, i > 0 && s.sepTop, pressed && s.pressed]} testID={`cl-top-${r.id}`}>
+                            <Text style={s.topName} numberOfLines={1}>{r.name}</Text>
+                            <Text style={[s.topAmt, { color }]} numberOfLines={1}>{money(r.balances[BASE_CURRENCY], BASE_CURRENCY)}</Text>
+                          </Pressable>
+                        ))}
+                      </View>
+                    </View>
+                  )
+                ))}
+              </View>
+            )}
+
+            {dash.recent.length > 0 && (
+              <>
+                <Text style={s.sectionHeader}>RECENT</Text>
+                <View style={s.group}>
+                  {dash.recent.map((e, i) => (
+                    <Pressable key={e.id} onPress={() => router.push(`/cash-ledger/${e.account_id}` as any)} style={({ pressed }) => [s.recentRow, i > 0 && s.sepTop, pressed && s.pressed]} testID={`cl-recent-${e.id}`}>
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text style={s.recentName} numberOfLines={1}>{e.account_name}</Text>
+                        <Text style={s.subtitle} numberOfLines={1}>{istDisplayDate(e.date)}{e.note ? ` · ${e.note}` : ''}</Text>
+                      </View>
+                      <Text style={[s.amount, { color: e.conversion_id ? colors.mutedText : e.direction === 'gave' ? colors.onError : colors.onSuccess }]} numberOfLines={1}>
+                        {e.direction === 'gave' ? '−' : '+'}{money(e.amount, e.currency)}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </>
+            )}
+          </View>
+        )}
+
         {!rows ? <ActivityIndicator color={colors.mutedText} style={{ marginTop: 40 }} /> : rows.length === 0 ? (
           <View style={s.empty}>
             <Ionicons name="wallet-outline" size={44} color={colors.mutedText} />
             <Text style={s.emptyTitle}>No People</Text>
             <Text style={s.emptyText}>Add someone you give cash to or get cash from. Record each amount, with a photo of the chit if you like.</Text>
             <Pressable onPress={() => setAdding(true)} hitSlop={8} testID="cl-empty-add"><Text style={s.link}>Add Person</Text></Pressable>
+            <Pressable onPress={() => router.push('/cash-ledger/import' as any)} hitSlop={8} testID="cl-empty-import"><Text style={s.link}>Import from Splitwise</Text></Pressable>
           </View>
         ) : (
           <>
@@ -181,6 +270,19 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   amount: { fontSize: 16, fontWeight: '600', fontVariant: ['tabular-nums'] },
   settled: { color: colors.mutedText, fontSize: 15 },
   footer: { color: colors.mutedText, fontSize: 13, marginTop: 8, marginHorizontal: spacing.md },
+  stats: { color: colors.mutedText, fontSize: 13, textAlign: 'center', marginTop: 8 },
+  monthRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: spacing.md, paddingVertical: 10 },
+  monthCode: { width: 36, color: colors.onSurfaceSecondary, fontSize: 17, fontWeight: '600', textAlign: 'center' },
+  monthCodeLong: { fontSize: 12 },
+  monthCol: { flex: 1, minWidth: 0 },
+  monthAmt: { fontSize: 17, fontWeight: '600', fontVariant: ['tabular-nums'] },
+  monthN: { color: colors.mutedText, fontSize: 12, minWidth: 22, textAlign: 'right' },
+  topWrap: { flexDirection: 'row', flexWrap: 'wrap', columnGap: 10 },
+  topRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, minHeight: 44 },
+  topName: { flex: 1, color: colors.onSurface, fontSize: 15 },
+  topAmt: { fontSize: 14, fontWeight: '600', fontVariant: ['tabular-nums'] },
+  recentRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: spacing.md, paddingVertical: 10, minHeight: 54 },
+  recentName: { color: colors.onSurface, fontSize: 16 },
   empty: { alignItems: 'center', paddingTop: 70, paddingHorizontal: spacing.xl, gap: 8 },
   emptyTitle: { color: colors.onSurface, fontSize: 22, fontWeight: '700', marginTop: 6 },
   emptyText: { color: colors.mutedText, fontSize: 15, textAlign: 'center', lineHeight: 20 },
