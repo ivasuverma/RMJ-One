@@ -298,6 +298,10 @@ MODULE_DEFS = [
     # (routers/rate_broadcast.py). Sends cost money and reach thousands of
     # people, so owner-only by default; grant it deliberately in Settings › Users.
     {'key': 'rate_broadcast', 'label': 'Rate Broadcast', 'default_roles': ['owner'], 'employee_assignable': True},
+    # Cash Ledger (routers/cash_ledger.py): cash given to / received from
+    # people, account by account, with photos - the owner's own khata. Owner
+    # only unless deliberately granted in People.
+    {'key': 'cash_ledger', 'label': 'Cash Ledger', 'default_roles': ['owner']},
 ]
 MODULE_KEYS = {m['key'] for m in MODULE_DEFS}
 MODULE_DEFAULT_ROLES = {m['key']: set(m['default_roles']) for m in MODULE_DEFS}
@@ -3320,7 +3324,7 @@ def _make_photo_thumb(photo_data_uri: Optional[str]) -> str:
 from routers import (
     auth, employees, settings as settings_router, attendance, tasks, repairs,
     users, payroll, notifications, biometric, reports, assistant, samples,
-    cashbook, ledger, documents, backup, record_photos, gold_loans, whatsapp_bot,
+    cashbook, cash_ledger, ledger, documents, backup, record_photos, gold_loans, whatsapp_bot,
     whatsapp_meta_bot, print_settings, system_health, led_board, rate_master, statements, ledger_home, public,
     instagram, website, rate_broadcast, broadcasts, home,
 )
@@ -3340,6 +3344,7 @@ api.include_router(reports.router)
 api.include_router(assistant.router)
 api.include_router(samples.router)
 api.include_router(cashbook.router)
+api.include_router(cash_ledger.router)
 api.include_router(ledger.router)
 api.include_router(documents.router)
 api.include_router(record_photos.router)

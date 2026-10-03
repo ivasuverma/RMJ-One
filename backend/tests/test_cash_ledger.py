@@ -1,0 +1,96 @@
+"""Cash Ledger (khata): people, cash you gave / got in any currency, balances
+per currency, settle up - and it never touches the Cash Book or Home."""
+import os
+
+import requests
+
+API = os.environ['EXPO_PUBLIC_BACKEND_URL'].rstrip('/') + '/api'
+
+
+def _login(u, p):
+    r = requests.post(f"{API}/auth/login", json={"username": u, "password": p}, timeout=30)
+    assert r.status_code == 200, r.text
+    return {"Authorization": f"Bearer {r.json()['access_token']}"}
+
+
+def _shop_cash(h):
+    """What the Cash Book counters and Home say about cash, to compare before/after."""
+    counters = requests.get(f"{API}/cashbook/counters", headers=h, timeout=30).json()
+    home = requests.get(f"{API}/home/summary?fresh=true", headers=h, timeout=60).json()
+    return counters, home.get('cash')
+
+
+def test_cash_ledger_flow_and_isolation():
+    h = _login('owner', 'Owner@123')
+    before = _shop_cash(h)
+    name = f'Khata test {os.urandom(3).hex()}'
+    a = requests.post(f"{API}/khata", headers=h, json={'name': name, 'phone': '9800000000'}, timeout=30).json()
+    aid = a['id']
+    try:
+        assert a['currency'] == 'INR'
+        assert requests.post(f"{API}/khata", headers=h, json={'name': name.upper()}, timeout=30).status_code == 400
+        for d, amt, cur in (('gave', 5000, 'INR'), ('got', 2000, 'INR'), ('gave', 500, 'INR'), ('gave', 100, 'USD'), ('got', 30, 'usd')):
+            r = requests.post(f"{API}/khata/{aid}/entries", headers=h,
+                              json={'direction': d, 'amount': amt, 'currency': cur, 'date': '2026-09-20'}, timeout=30)
+            assert r.status_code == 200, r.text
+        assert requests.post(f"{API}/khata/{aid}/entries", headers=h, json={'direction': 'gave', 'amount': 1, 'currency': 'RUPEES'}, timeout=30).status_code == 400
+        acc = requests.get(f"{API}/khata/{aid}", headers=h, timeout=30).json()
+        # each currency keeps its own balance - never converted
+        assert acc['account']['balances'] == {'INR': 3500, 'USD': 70}
+        assert acc['account']['currency'] == 'USD'          # next entry starts in the one used last
+        newest = acc['entries'][0]
+        assert newest['currency'] == 'USD' and newest['balance_after'] == 70
+        row = next(x for x in requests.get(f"{API}/khata", headers=h, timeout=30).json()['accounts'] if x['id'] == aid)
+        assert row['balances'] == {'INR': 3500, 'USD': 70}
+        # can't remove with money pending; settle brings every currency to zero
+        assert requests.delete(f"{API}/khata/{aid}", headers=h, timeout=30).status_code == 400
+        s = requests.post(f"{API}/khata/{aid}/settle", headers=h, timeout=30).json()
+        assert sorted((e['currency'], e['direction'], e['amount']) for e in s['entries']) == [('INR', 'got', 3500), ('USD', 'got', 70)]
+        assert requests.get(f"{API}/khata/{aid}", headers=h, timeout=30).json()['account']['balances'] == {}
+        # the store manager doesn't get the owner's khata unless given it
+        assert requests.get(f"{API}/khata", headers=_login('admin', 'Admin@123'), timeout=30).status_code == 403
+        # no effect on any other module: the Cash Book and Home's cash are exactly as before
+        assert _shop_cash(h) == before
+    finally:
+        for e in requests.get(f"{API}/khata/{aid}", headers=h, timeout=30).json().get('entries', []):
+            requests.delete(f"{API}/khata/{aid}/entries/{e['id']}", headers=h, timeout=30)
+        requests.delete(f"{API}/khata/{aid}", headers=h, timeout=30)
+
+
+def test_cash_ledger_groups_and_statement():
+    """A group keeps its own entries and total; the person's balance includes it.
+    The statement is a PDF (and pages for the app's preview) for a date range."""
+    h = _login('owner', 'Owner@123')
+    a = requests.post(f"{API}/khata", headers=h, json={'name': f'Khata group {os.urandom(3).hex()}'}, timeout=30).json()
+    aid = a['id']
+    try:
+        g = requests.post(f"{API}/khata/{aid}/groups", headers=h, json={'name': 'Trip'}, timeout=30).json()
+        assert requests.post(f"{API}/khata/{aid}/groups", headers=h, json={'name': 'trip'}, timeout=30).status_code == 400
+        for d, amt, gid, date in (('gave', 1000, None, '2026-09-01'), ('gave', 500, g['id'], '2026-09-02'),
+                                  ('got', 200, g['id'], '2026-09-10'), ('gave', 300, None, '2026-09-11')):
+            r = requests.post(f"{API}/khata/{aid}/entries", headers=h, timeout=30,
+                              json={'direction': d, 'amount': amt, 'date': date, 'group_id': gid, 'remark': 'r'})
+            assert r.status_code == 200, r.text
+        assert requests.post(f"{API}/khata/{aid}/entries", headers=h, json={'direction': 'gave', 'amount': 1, 'group_id': 'nope'}, timeout=30).status_code == 400
+        acc = requests.get(f"{API}/khata/{aid}", headers=h, timeout=30).json()
+        assert acc['account']['balances'] == {'INR': 1600}
+        assert acc['account']['general_balances'] == {'INR': 1300}
+        assert acc['account']['groups'][0]['balances'] == {'INR': 300} and acc['account']['groups'][0]['entries'] == 2
+        # each part's running balance is its own
+        trip = [e for e in acc['entries'] if e['group_id'] == g['id']]
+        assert [e['balance_after'] for e in trip] == [300, 500]
+        assert requests.delete(f"{API}/khata/{aid}/groups/{g['id']}", headers=h, timeout=30).status_code == 400
+        r = requests.get(f"{API}/khata/{aid}/statement?from=2026-09-02&to=2026-09-30", headers=h, timeout=60)
+        assert r.status_code == 200 and r.content[:4] == b'%PDF'
+        assert requests.get(f"{API}/khata/{aid}/statement?group={g['id']}", headers=h, timeout=60).content[:4] == b'%PDF'
+        assert requests.get(f"{API}/khata/{aid}/statement?from=2026-10-01&to=2026-09-01", headers=h, timeout=30).status_code == 400
+        # settling the group clears only the group
+        requests.post(f"{API}/khata/{aid}/settle?group={g['id']}", headers=h, timeout=30)
+        acc = requests.get(f"{API}/khata/{aid}", headers=h, timeout=30).json()['account']
+        assert acc['groups'][0]['balances'] == {} and acc['balances'] == {'INR': 1300}
+    finally:
+        for e in requests.get(f"{API}/khata/{aid}", headers=h, timeout=30).json().get('entries', []):
+            requests.delete(f"{API}/khata/{aid}/entries/{e['id']}", headers=h, timeout=30)
+        for grp in requests.get(f"{API}/khata/{aid}", headers=h, timeout=30).json()['account'].get('groups', []):
+            requests.delete(f"{API}/khata/{aid}/groups/{grp['id']}", headers=h, timeout=30)
+        requests.delete(f"{API}/khata/{aid}", headers=h, timeout=30)
