@@ -7,15 +7,38 @@ web-friendly JPEG on upload and kept in the database, so they're served
 straight from here with no Drive/Hostinger dependency."""
 import asyncio
 import base64
+import hashlib
+import json
+import logging
 import uuid
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile
 from pydantic import BaseModel
 
+import r2_media
 from server import db, get_current, log_audit, now_utc, resolve_modules
 
-router = APIRouter()
+logger = logging.getLogger('website')
+
+# ---- Cloudflare R2 copy of the website photos (see r2_media.py) ----
+# When R2 is set up, every photo the public site shows is copied there and the
+# public endpoints hand out its media.rmj.co.in address, so customers load
+# photos from Cloudflare, not the shop computer. The database keeps the
+# original (it's in every backup). _R2_KEYS is what's in the bucket now;
+# until a photo has been copied, its address stays the API one.
+_R2_KEYS: set = set()
+_R2_KICK = asyncio.Event()
+
+
+async def _kick_r2_after_change(request: Request):
+    """Router-wide: after any change here, wake the R2 sync straight away."""
+    yield
+    if request.method != 'GET':
+        _R2_KICK.set()
+
+
+router = APIRouter(dependencies=[Depends(_kick_r2_after_change)])
 
 
 def require_website(user=Depends(get_current)):
@@ -46,10 +69,17 @@ def _thumb_jpeg(jpeg: bytes) -> bytes:
     return out.getvalue()
 
 
-def _public(p: dict) -> dict:
+def _piece_key(p: dict) -> str:
+    return f"pieces/{p['id']}-v{p.get('image_version', 1)}.jpg"
+
+
+def _public(p: dict, public: bool = False) -> dict:
+    """`public`: the address the website uses - on Cloudflare once copied there."""
+    key = _piece_key(p)
     return {
         'id': p['id'], 'name': p.get('name') or '', 'metal': p.get('metal') or '',
-        'image_url': f"/api/public/website/pieces/{p['id']}/image?v={p.get('image_version', 1)}",
+        'image_url': r2_media.public_url(key) if public and key in _R2_KEYS
+        else f"/api/public/website/pieces/{p['id']}/image?v={p.get('image_version', 1)}",
     }
 
 
@@ -137,7 +167,7 @@ async def delete_piece(piece_id: str, user: dict = Depends(require_website)):
 @router.get('/public/website/pieces')
 async def public_pieces():
     items = await db.website_pieces.find({'visible': True}, _PUBLIC_PROJ).sort('sort', 1).to_list(_MAX_PIECES)
-    return {'pieces': [_public(p) for p in items]}
+    return {'pieces': [_public(p, public=True) for p in items]}
 
 
 @router.get('/public/website/pieces/{piece_id}/image')
@@ -238,7 +268,10 @@ BRAND_DEFAULT = {'logo': 100, 'name': 85}
 BRAND_RANGE = (60, 140)
 
 
-def _image_url(image_id: str) -> str:
+def _image_url(image_id: str, public: bool = False) -> str:
+    key = f'images/{image_id}.jpg'
+    if public and key in _R2_KEYS:
+        return r2_media.public_url(key)
     return f'/api/public/website/images/{image_id}'
 
 
@@ -261,7 +294,7 @@ async def _store_image(raw: bytes) -> str:
 
 def _section_out(s: dict, admin: bool) -> dict:
     out = {'id': s['id'], 'title': s.get('title') or '', 'text': s.get('text') or '',
-           'photos': [{'id': p['id'], 'caption': p.get('caption') or '', 'url': _image_url(p['id'])} for p in s.get('photos') or []]}
+           'photos': [{'id': p['id'], 'caption': p.get('caption') or '', 'url': _image_url(p['id'], public=not admin)} for p in s.get('photos') or []]}
     if admin:
         out['visible'] = s.get('visible', True)
     return out
@@ -489,7 +522,7 @@ async def public_content():
     sections = await db.website_sections.find({'visible': {'$ne': False}}, {'_id': 0}).sort('sort', 1).to_list(_MAX_SECTIONS)
     return {
         'texts': {k: v for k, v in c['texts'].items() if k in _FIELDS},
-        'images': {k: _image_url(v) for k, v in c['images'].items() if k in _IMAGES},
+        'images': {k: _image_url(v, public=True) for k, v in c['images'].items() if k in _IMAGES},
         'hidden': [h for h in c['hidden'] if h in _HIDEABLE],
         'sections': [_section_out(s, False) for s in sections],
         'brand': c['brand'],
@@ -505,3 +538,73 @@ async def public_image(image_id: str, thumb: bool = False):
     # Every upload gets a new id, so the URL never changes content — cache hard.
     return Response(content=base64.b64decode(data), media_type='image/jpeg',
                     headers={'Cache-Control': 'public, max-age=2592000, immutable'})
+
+
+# ---- keeping R2 in step (started from server startup) ----
+_R2_STATE = 'website_r2'
+_JSON_CACHE = 'public, max-age=60'
+_PHOTO_CACHE = 'public, max-age=31536000, immutable'   # every key names one version of one photo
+
+
+async def sync_r2() -> dict:
+    """Copy what the public site shows to R2, remove what it no longer shows,
+    and publish site/pieces.json + site/content.json - the website reads those
+    when the shop computer can't be reached."""
+    state = await db.settings.find_one({'id': _R2_STATE}, {'_id': 0}) or {}
+    have = set(state.get('keys') or [])
+    _R2_KEYS.clear()
+    _R2_KEYS.update(have)
+    pieces = await db.website_pieces.find({'visible': True}, {'_id': 0, 'id': 1, 'image_version': 1}).to_list(_MAX_PIECES)
+    want = {_piece_key(p): ('piece', p['id']) for p in pieces}
+    async for im in db.website_images.find({}, {'_id': 0, 'id': 1}):
+        want[f"images/{im['id']}.jpg"] = ('image', im['id'])
+    sent = removed = 0
+    for key, (kind, oid) in want.items():
+        if key in have:
+            continue
+        coll = db.website_pieces if kind == 'piece' else db.website_images
+        doc = await coll.find_one({'id': oid}, {'_id': 0, 'image': 1})
+        if not doc or not doc.get('image'):
+            continue
+        await r2_media.put(key, base64.b64decode(doc['image']), 'image/jpeg', _PHOTO_CACHE)
+        have.add(key)
+        _R2_KEYS.add(key)
+        sent += 1
+    for key in sorted(have - set(want)):
+        await r2_media.delete(key)
+        have.discard(key)
+        _R2_KEYS.discard(key)
+        removed += 1
+    # The website's fallback copies, with every photo address on Cloudflare.
+    published = dict(state.get('published') or {})
+    for name, payload in (('site/pieces.json', await public_pieces()), ('site/content.json', await public_content())):
+        body = json.dumps(payload, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
+        digest = hashlib.sha256(body).hexdigest()
+        if published.get(name) != digest:
+            await r2_media.put(name, body, 'application/json; charset=utf-8', _JSON_CACHE)
+            published[name] = digest
+    await db.settings.update_one({'id': _R2_STATE}, {'$set': {
+        'id': _R2_STATE, 'keys': sorted(have), 'published': published, 'last_sync_at': now_utc().isoformat(), 'last_error': None,
+    }}, upsert=True)
+    return {'sent': sent, 'removed': removed, 'objects': len(have)}
+
+
+async def website_r2_loop() -> None:
+    """Every 10 minutes, and straight after any change in Settings › Website."""
+    if not r2_media.enabled():
+        return
+    await asyncio.sleep(20)
+    while True:
+        try:
+            res = await sync_r2()
+            if res['sent'] or res['removed']:
+                logger.info(f"website R2: {res['sent']} sent, {res['removed']} removed, {res['objects']} in the bucket")
+        except Exception as e:
+            logger.warning(f'website R2 sync: {e}')
+            await db.settings.update_one({'id': _R2_STATE}, {'$set': {'id': _R2_STATE, 'last_error': str(e)[:300]}}, upsert=True)
+        try:
+            await asyncio.wait_for(_R2_KICK.wait(), timeout=600)
+            await asyncio.sleep(2)   # let a burst of edits finish first
+        except asyncio.TimeoutError:
+            pass
+        _R2_KICK.clear()
