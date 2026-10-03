@@ -1551,7 +1551,7 @@ async def on_startup():
     asyncio.create_task(record_photo_worker())
     from media_offload import media_offload_loop  # repair photos, selfies, broadcast photos -> Drive
     asyncio.create_task(media_offload_loop())
-    from atlas_mirror import atlas_mirror_loop  # nightly online copy of the database in MongoDB Atlas
+    from atlas_mirror import atlas_mirror_loop  # twice-daily online copy of the database in MongoDB Atlas
     asyncio.create_task(atlas_mirror_loop())
     from gold_rate import gold_rate_loop  # daily reference gold-rate fetch
     asyncio.create_task(gold_rate_loop())

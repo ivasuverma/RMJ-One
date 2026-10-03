@@ -13,7 +13,7 @@ exception is the website's "Fresh at the counter" photos, which rmj.co.in is ser
 from and so stay on the server.
 
 **System backups** — the scheduled task "RMJOne Mongo Backup" runs `backup-nightly.ps1`
-at 02:30 (installed copy: `D:\RMJ-One\mongodbackup-local.ps1` — keep the two in sync):
+twice a day, at 02:30 and 14:30 (the deploy workflow keeps those times set) (installed copy: `D:\RMJ-One\mongodbackup-local.ps1` — keep the two in sync):
 
 | File (in `D:\RMJ-One\mongodbackups`) | What | Kept locally |
 |---|---|---|
@@ -21,15 +21,15 @@ at 02:30 (installed copy: `D:\RMJ-One\mongodbackup-local.ps1` — keep the two 
 | `config-<date>.zip` | .env files, service definitions, backup script, WhatsApp gateway settings | 14 |
 
 The backend (`backup_service.upload_system_backups`, hourly) sends new files to the
-Drive folder **RMJ One Backups** and keeps the newest 30 there. Once a file is in Drive,
+Drive folder **RMJ One Backups** and keeps the newest 70 there (about two weeks). Once a file is in Drive,
 the local copy is deleted after 1 day (the "Kept locally" count above is only the
 fallback for when Drive is not reachable). Log:
 `D:\RMJ-One\mongodb\logackup.log`. Code lives on GitHub.
 
-**Online copy (MongoDB Atlas).** Every night after 3 AM the backend
+**Online copy (MongoDB Atlas).** Twice a day, after 3 AM and 3 PM, the backend
 (`backend/atlas_mirror.py`) copies the whole database to the free Atlas cluster
-(Cluster0, Mumbai), replacing the previous night's copy — one ready-to-run copy,
-not a history. Turned on by `ATLAS_MIRROR_URL=mongodb+srv://…` in `backend/.env`;
+(Cluster0, Mumbai), replacing the previous copy — one ready-to-run copy,
+not a history (times: `ATLAS_MIRROR_HOURS`, default `3,15`). Turned on by `ATLAS_MIRROR_URL=mongodb+srv://…` in `backend/.env`;
 status and "Copy online now" are in Settings › Backup. If the server is lost:
 point `MONGO_URL` at the Atlas address (same database name) on any PC and start
 the backend.

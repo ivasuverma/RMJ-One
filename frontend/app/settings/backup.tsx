@@ -94,7 +94,7 @@ export default function BackupScreen() {
           <ActivityIndicator color={colors.brandPrimary} style={{ marginTop: 40 }} />
         ) : (
           <>
-            <Text style={styles.intro}>Every night the server makes a full database backup and sends it to Google Drive (folder “RMJ One Backups”) along with its configuration. Those nightly files are restored on the server (see ops/backup); the older in-app copies listed here can still be restored from this screen, and “Back up now” makes an extra one-off copy.</Text>
+            <Text style={styles.intro}>Twice a day (2:30 AM and 2:30 PM) the server makes a full database backup and sends it to Google Drive (folder “RMJ One Backups”) along with its configuration. Those files are restored on the server (see ops/backup); the older in-app copies listed here can still be restored from this screen, and “Back up now” makes an extra one-off copy.</Text>
 
             {!status.drive_connected && (
               <View style={styles.warn}>
@@ -142,9 +142,9 @@ export default function BackupScreen() {
                         ? 'Add ATLAS_MIRROR_URL to backend/.env on the server to turn it on.'
                         : status.atlas_mirror.last_at
                           ? `${istDisplayDateTime(status.atlas_mirror.last_at)} · ${status.atlas_mirror.last_documents ?? '—'} records · ${fmtSize(status.atlas_mirror.last_bytes ?? 0)}`
-                          : 'Runs by itself every night after 3 AM.'}
+                          : 'Runs by itself twice a day, after 3 AM and 3 PM.'}
                     </Text>
-                    <Text style={styles.cardSub}>{"A complete copy of last night's data, replaced each night. The dated backups in Drive stay the history."}</Text>
+                    <Text style={styles.cardSub}>{"A complete copy of the latest data, replaced twice a day. The dated backups in Drive stay the history."}</Text>
                     {status.atlas_mirror.last_error ? <Text style={styles.err}>Last error: {status.atlas_mirror.last_error}</Text> : null}
                   </View>
                 </View>

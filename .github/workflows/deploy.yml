@@ -130,6 +130,21 @@ jobs:
             }
           }
 
+          # Database backup twice a day: make sure the "RMJOne Mongo Backup" task
+          # (ops/backup/backup-nightly.ps1) runs at 02:30 and 14:30. Only changes it
+          # when it differs; never fails the deploy.
+          try {
+            $task = Get-ScheduledTask -TaskName 'RMJOne Mongo Backup' -ErrorAction Stop
+            $starts = @($task.Triggers | ForEach-Object { $_.StartBoundary }) -join ' '
+            if (@($task.Triggers).Count -ne 2 -or $starts -notmatch 'T02:30' -or $starts -notmatch 'T14:30') {
+              $triggers = @((New-ScheduledTaskTrigger -Daily -At '02:30'), (New-ScheduledTaskTrigger -Daily -At '14:30'))
+              Set-ScheduledTask -TaskName 'RMJOne Mongo Backup' -Trigger $triggers | Out-Null
+              Write-Host '--- backup task now runs at 02:30 and 14:30 ---'
+            }
+          } catch {
+            Write-Warning "Could not set the backup task's times: $($_.Exception.Message)"
+          }
+
           Write-Host '--- restart backend ---'
           # `nssm restart` was observed to stop the service but not reliably
           # bring it back up on this box (confirmed: a plain `nssm start`

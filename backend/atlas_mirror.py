@@ -1,12 +1,13 @@
-"""Nightly online copy of the whole database in MongoDB Atlas.
+"""Online copy of the whole database in MongoDB Atlas, twice a day.
 
-The database runs on the shop server. Once a night (after ATLAS_MIRROR_AFTER_HOUR
-IST) every collection is copied to the free Atlas cluster, replacing the previous
-night's copy, so there is always a complete, ready-to-use copy online: if the
-server is lost, point MONGO_URL at Atlas on any PC and the app runs again.
+The database runs on the shop server. Twice a day (after each hour in
+ATLAS_MIRROR_HOURS, IST — 3 AM and 3 PM by default) every collection is copied
+to the free Atlas cluster, replacing the previous copy, so there is always a
+complete, ready-to-use copy online that is never more than about 12 hours old:
+if the server is lost, point MONGO_URL at Atlas on any PC and the app runs again.
 
-It is ONE copy (last night's), not a history — a mistake copied tonight replaces
-yesterday's. The dated backups in Google Drive (backup_service.py) stay the history.
+It is ONE copy (the latest), not a history — a mistake copied now replaces the
+previous copy. The dated backups in Google Drive (backup_service.py) stay the history.
 
 Turned on by one line in backend/.env:
     ATLAS_MIRROR_URL=mongodb+srv://<user>:<password>@cluster0.l9rc4lu.mongodb.net/
@@ -29,9 +30,10 @@ logger = logging.getLogger('atlas_mirror')
 
 MIRROR_URL = os.environ.get('ATLAS_MIRROR_URL', '').strip()
 MIRROR_DB = os.environ.get('ATLAS_MIRROR_DB', '').strip() or DB_NAME
-AFTER_HOUR = int(os.environ.get('ATLAS_MIRROR_AFTER_HOUR', '3'))   # IST; the local nightly dump runs at 02:30
+# IST hours after which a copy runs; the local database dumps run at 02:30 and 14:30.
+HOURS = sorted({int(h) for h in os.environ.get('ATLAS_MIRROR_HOURS', '3,15').split(',') if h.strip().isdigit() and int(h) < 24}) or [3, 15]
 MAX_BYTES = 450 * 1024 * 1024          # the free (M0) cluster stores 512 MB including indexes
-RETRY_AFTER_S = 3 * 3600               # after a failed copy, try again this much later (same night)
+RETRY_AFTER_S = 3 * 3600               # after a failed copy, try again this much later
 BATCH = 500
 META = '_mirror_meta'
 TMP = '_mirror_tmp_'
@@ -103,6 +105,16 @@ async def run_mirror() -> dict:
         client.close()
 
 
+def current_slot(local) -> str:
+    """The copy that should exist by now, e.g. '2026-10-03@15'. Before the day's
+    first hour it is yesterday's last one."""
+    from datetime import timedelta
+    done = [h for h in HOURS if local.hour >= h]
+    if done:
+        return f"{local.date().isoformat()}@{done[-1]}"
+    return f"{(local.date() - timedelta(days=1)).isoformat()}@{HOURS[-1]}"
+
+
 async def mirror_and_record() -> dict:
     try:
         res = await run_mirror()
@@ -114,6 +126,7 @@ async def mirror_and_record() -> dict:
             'id': 'atlas_mirror', 'last_at': now.isoformat(), 'last_date': now.astimezone(IST).date().isoformat(),
             'last_documents': res['documents'], 'last_collections': res['collections'], 'last_bytes': res['bytes'],
             'last_seconds': res['seconds'], 'last_error': None, 'last_attempt_at': now.isoformat(),
+            'last_slot': current_slot(now.astimezone(IST)),
         }}, upsert=True)
         logger.info(f"atlas mirror: {res['documents']} documents in {res['collections']} collections, {res['seconds']}s")
     else:
@@ -123,12 +136,12 @@ async def mirror_and_record() -> dict:
         logger.warning(f"atlas mirror failed: {res.get('error')}")
         if MIRROR_URL:
             await _notify_system_health('atlas_mirror_failed', 'Online database copy failed',
-                                         f"Last night's copy to MongoDB Atlas didn't finish: {res.get('error')}", '/settings/backup')
+                                         f"The copy to MongoDB Atlas didn't finish: {res.get('error')}", '/settings/backup')
     return res
 
 
 async def atlas_mirror_loop() -> None:
-    """Checks every 30 minutes; runs once per IST day, after AFTER_HOUR."""
+    """Checks every 30 minutes; copies once per slot (after each hour in HOURS)."""
     if not MIRROR_URL:
         return
     await asyncio.sleep(180)
@@ -137,13 +150,16 @@ async def atlas_mirror_loop() -> None:
             st = await db.settings.find_one({'id': 'atlas_mirror'}, {'_id': 0}) or {}
             now = now_utc()
             local = now.astimezone(IST)
-            done_today = st.get('last_date') == local.date().isoformat()
+            slot = current_slot(local)
+            # A copy made before slots existed counts for that day's first slot.
+            done = st.get('last_slot') == slot or (not st.get('last_slot') and st.get('last_date') == local.date().isoformat()
+                                                   and slot.endswith(f'@{HOURS[0]}'))
             last_try = st.get('last_attempt_at')
             recently_tried = False
             if last_try and st.get('last_error'):
                 from datetime import datetime
                 recently_tried = (now - datetime.fromisoformat(last_try)).total_seconds() < RETRY_AFTER_S
-            if local.hour >= AFTER_HOUR and not done_today and not recently_tried:
+            if not done and not recently_tried:
                 await mirror_and_record()
         except Exception as e:
             logger.warning(f'atlas mirror loop: {e}')
