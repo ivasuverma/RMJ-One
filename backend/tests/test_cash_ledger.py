@@ -173,3 +173,22 @@ def test_cash_ledger_splitwise_import_and_dashboard():
         for e in requests.get(f"{API}/khata/{aid}", headers=h, timeout=30).json().get('entries', []):
             requests.delete(f"{API}/khata/{aid}/entries/{e['id']}", headers=h, timeout=30)
         requests.delete(f"{API}/khata/{aid}", headers=h, timeout=30)
+
+
+def test_cash_ledger_split_bill():
+    """A shared bill: equal = half goes into the balance, custom = the share given, full = all of it; the bill is kept."""
+    h = _login('owner', 'Owner@123')
+    a = requests.post(f"{API}/khata", headers=h, json={'name': f'Khata split {os.urandom(3).hex()}'}, timeout=30).json()
+    aid = a['id']
+    try:
+        post = lambda **k: requests.post(f"{API}/khata/{aid}/entries", headers=h, json=k, timeout=30)  # noqa: E731
+        e = post(direction='gave', amount=2000, note='Food', split={'mode': 'equal', 'total': 2000}).json()
+        assert e['amount'] == 1000 and e['split'] == {'mode': 'equal', 'total': 2000}
+        assert post(direction='got', amount=300, split={'mode': 'custom', 'total': 900}).json()['amount'] == 300
+        assert post(direction='got', amount=1000, split={'mode': 'custom', 'total': 900}).status_code == 400
+        assert post(direction='gave', amount=1, split={'mode': 'full', 'total': 500}).json()['amount'] == 500
+        assert requests.get(f"{API}/khata/{aid}", headers=h, timeout=30).json()['account']['balances'] == {'INR': 1200}
+    finally:
+        for x in requests.get(f"{API}/khata/{aid}", headers=h, timeout=30).json().get('entries', []):
+            requests.delete(f"{API}/khata/{aid}/entries/{x['id']}", headers=h, timeout=30)
+        requests.delete(f"{API}/khata/{aid}", headers=h, timeout=30)

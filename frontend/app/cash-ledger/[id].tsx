@@ -26,7 +26,7 @@ import { Balances, BASE_CURRENCY, METALS, currencyName, money, num, initials, or
 
 type Group = { id: string; name: string; balances: Balances; entries: number };
 type Account = { id: string; name: string; phone?: string; note?: string; currency: string; balances: Balances; entries: number; general_balances: Balances; groups: Group[] };
-type Entry = { id: string; direction: 'gave' | 'got'; amount: number; currency: string; date: string; note?: string; remark?: string; group_id?: string | null; conversion_id?: string; created_by_name?: string; balance_after: number; photos: number };
+type Entry = { id: string; direction: 'gave' | 'got'; amount: number; currency: string; date: string; note?: string; remark?: string; group_id?: string | null; conversion_id?: string; split?: { mode: 'equal' | 'custom'; total: number } | null; created_by_name?: string; balance_after: number; photos: number };
 type Shot = { id: string; blob: Blob; thumb: string };
 
 const newId = () => ((typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`);
@@ -77,6 +77,10 @@ export default function CashLedgerAccountScreen() {
   const [date, setDate] = useState(todayIST());
   const [note, setNote] = useState('');
   const [remark, setRemark] = useState('');
+  // a shared bill (like Splitwise): the amount typed is the whole bill
+  const [splitMode, setSplitMode] = useState<'full' | 'equal' | 'custom'>('full');
+  const [share, setShare] = useState('');
+  const [pickingSplit, setPickingSplit] = useState(false);
   const [entryGroup, setEntryGroup] = useState<string | null>(null);
   const [pickingGroup, setPickingGroup] = useState(false);
   const [stmtOpen, setStmtOpen] = useState(false);
@@ -123,7 +127,7 @@ export default function CashLedgerAccountScreen() {
   const groupLabel = (gid: string | null | undefined) => groups.find((g) => g.id === gid)?.name || 'General';
 
   const openNew = (dir: 'gave' | 'got') => {
-    setDirection(dir); setAmount(''); setCurrency(acc?.currency || BASE_CURRENCY); setDate(todayIST()); setNote(''); setRemark(''); setEntryGroup(group || null); setShots([]); setSheet({ mode: 'new' });
+    setDirection(dir); setAmount(''); setCurrency(acc?.currency || BASE_CURRENCY); setDate(todayIST()); setNote(''); setRemark(''); setSplitMode('full'); setShare(''); setEntryGroup(group || null); setShots([]); setSheet({ mode: 'new' });
   };
   const openEdit = (e: Entry) => {
     if (e.conversion_id) {   // the two sides of a conversion go together: delete and convert again
@@ -135,7 +139,8 @@ export default function CashLedgerAccountScreen() {
       } else toast.error("A conversion can't be edited");
       return;
     }
-    setDirection(e.direction); setAmount(String(e.amount)); setCurrency(e.currency); setDate(e.date); setNote(e.note || ''); setRemark(e.remark || ''); setEntryGroup(e.group_id || null); setShots([]); setSheet({ mode: 'edit', entry: e });
+    setSplitMode(e.split?.mode || 'full'); setShare(e.split ? String(e.amount) : '');
+    setDirection(e.direction); setAmount(String(e.split ? e.split.total : e.amount)); setCurrency(e.currency); setDate(e.date); setNote(e.note || ''); setRemark(e.remark || ''); setEntryGroup(e.group_id || null); setShots([]); setSheet({ mode: 'edit', entry: e });
   };
 
   const shoot = async (gallery: boolean) => {
@@ -153,12 +158,26 @@ export default function CashLedgerAccountScreen() {
     finally { setCapturing(false); }
   };
 
+  // What actually goes into the balance for this bill.
+  const billN = Number(amount.replace(/,/g, '')) || 0;
+  const owedNow = splitMode === 'full' ? billN : splitMode === 'equal' ? billN / 2 : Number(share.replace(/,/g, '')) || 0;
+  const splitLabel = (dir: 'gave' | 'got', mode: 'full' | 'equal' | 'custom') => {
+    const them = (acc?.name.split(' ')[0]) || 'They';
+    if (mode === 'equal') return dir === 'gave' ? 'You paid, split equally' : `${them} paid, split equally`;
+    if (mode === 'custom') return dir === 'gave' ? `You paid, ${them}'s share` : `${them} paid, your share`;
+    return dir === 'gave' ? 'You are owed the full amount' : `${them} is owed the full amount`;
+  };
+
   const save = async () => {
     const amt = Number(amount.replace(/,/g, ''));
     if (!amt || amt <= 0 || busy) { toast.error('Enter the amount'); return; }
+    if (splitMode === 'custom' && !(owedNow > 0 && owedNow <= amt)) { toast.error('Enter a share between zero and the bill'); return; }
     setBusy(true);
     try {
-      const body = { direction, amount: amt, currency, date, note: note.trim(), remark: remark.trim(), group_id: entryGroup };
+      const body = {
+        direction, amount: splitMode === 'full' ? amt : owedNow, currency, date, note: note.trim(), remark: remark.trim(), group_id: entryGroup,
+        split: splitMode === 'full' ? null : { mode: splitMode, total: amt },
+      };
       let entryId = sheet?.entry?.id || '';
       if (sheet?.mode === 'edit' && entryId) await api.put(`/khata/${id}/entries/${entryId}`, body);
       else entryId = (await api.post<{ id: string }>(`/khata/${id}/entries`, body)).id;
@@ -507,7 +526,7 @@ export default function CashLedgerAccountScreen() {
                         <View style={{ flex: 1, minWidth: 0 }}>
                           <Text style={s.title} numberOfLines={1}>{e.note || (e.direction === 'gave' ? 'You gave' : 'You got')}</Text>
                           <View style={s.metaRow}>
-                            <Text style={s.subtitle} numberOfLines={1}>{istDisplayDate(e.date)}{e.remark ? ` · ${e.remark}` : ''}</Text>
+                            <Text style={s.subtitle} numberOfLines={1}>{istDisplayDate(e.date)}{e.split ? ` · ${money(e.split.total, e.currency)} bill, ${e.split.mode === 'equal' ? 'split equally' : 'shared'}` : ''}{e.remark ? ` · ${e.remark}` : ''}</Text>
                             {e.photos > 0 && <><Ionicons name="image-outline" size={12} color={colors.mutedText} /><Text style={s.subtitle}>{e.photos}</Text></>}
                           </View>
                         </View>
@@ -557,7 +576,37 @@ export default function CashLedgerAccountScreen() {
           <TextInput value={amount} onChangeText={(t) => setAmount(t.replace(/[^\d.,]/g, ''))} placeholder="0" placeholderTextColor={colors.mutedText}
             keyboardType="decimal-pad" style={[s.amountInput, { color: tint }]} autoFocus={sheet?.mode === 'new'} testID="cl-amount" />
         </View>
-        <Text style={s.curCode}>{METALS[currency] ? `${METALS[currency].name} · grams` : currency}</Text>
+        <Text style={s.curCode}>{splitMode !== 'full' ? 'Total bill · ' : ''}{METALS[currency] ? `${METALS[currency].name} · grams` : currency}</Text>
+
+        {/* How was it split? Like Splitwise; the balance only takes the share that's owed */}
+        <Pressable onPress={() => setPickingSplit(true)} style={({ pressed }) => [s.splitBtn, pressed && { opacity: 0.6 }]} testID="cl-split">
+          <Ionicons name="people-outline" size={16} color={colors.brandPrimary} />
+          <Text style={s.splitBtnText} numberOfLines={1}>{splitLabel(direction, splitMode)}</Text>
+          <Ionicons name="chevron-down" size={14} color={colors.mutedText} />
+        </Pressable>
+        {splitMode === 'custom' && (
+          <View style={[s.formGroup, { marginTop: 10 }]}>
+            <View style={s.formRow}>
+              <Text style={[s.formLabel, { flexShrink: 0 }]}>{direction === 'gave' ? `${first}'s share` : 'Your share'}</Text>
+              <TextInput value={share} onChangeText={(t) => setShare(t.replace(/[^\d.,]/g, ''))} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={colors.mutedText}
+                style={[s.formInput, { flex: 1, minWidth: 0, textAlign: 'right', paddingHorizontal: 0 }]} testID="cl-split-share" />
+            </View>
+            <View style={s.formSep} />
+            <View style={[s.formRow, { gap: 8 }]}>
+              {[25, 50, 75].map((pc) => (
+                <Pressable key={pc} onPress={() => billN && setShare(String(Math.round(billN * pc) / 100))} style={({ pressed }) => [s.pcChip, pressed && { opacity: 0.6 }]} testID={`cl-split-${pc}`}>
+                  <Text style={s.pcChipText}>{pc}%</Text>
+                </Pressable>
+              ))}
+              <Text style={[s.subtitle, { flex: 1, textAlign: 'right' }]}>{billN && owedNow ? `${Math.round((owedNow / billN) * 1000) / 10}% of the bill` : ''}</Text>
+            </View>
+          </View>
+        )}
+        {splitMode !== 'full' && billN > 0 && (
+          <Text style={[s.splitResult, { color: direction === 'gave' ? colors.onSuccess : colors.onError }]} testID="cl-split-result">
+            {direction === 'gave' ? `${first} owes you` : `You owe ${first}`} {money(owedNow, currency)}
+          </Text>
+        )}
 
         <View style={s.formGroup}>
           <View style={s.formPad}><DateField value={date} onChange={setDate} testID="cl-date" /></View>
@@ -614,6 +663,38 @@ export default function CashLedgerAccountScreen() {
         )}
       </Sheet>
       <CurrencyPicker visible={picking} value={currency} onPick={(c) => { setCurrency(c); setPicking(false); }} onClose={() => setPicking(false)} />
+
+      <Sheet visible={pickingSplit} onClose={() => setPickingSplit(false)} title="How was this split?" testID="cl-split-picker">
+        <View style={s.formGroup}>
+          {([['gave', 'equal'], ['gave', 'full'], ['got', 'equal'], ['got', 'full']] as const).map(([d, m], i) => {
+            const half = billN ? money(m === 'equal' ? billN / 2 : billN, currency) : '';
+            return (
+              <Pressable key={`${d}-${m}`} onPress={() => { setDirection(d); setSplitMode(m); setPickingSplit(false); }}
+                style={({ pressed }) => [s.splitRow, i > 0 && s.sepTop, pressed && s.pressed]} testID={`cl-split-${d}-${m}`}>
+                <View style={[s.entryIcon, { backgroundColor: d === 'gave' ? colors.success : colors.error }]}>
+                  <Ionicons name={m === 'equal' ? 'git-compare-outline' : 'person'} size={14} color={d === 'gave' ? colors.onSuccess : colors.onError} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.formLabel}>{splitLabel(d, m)}</Text>
+                  {!!half && <Text style={[s.subtitle, { color: d === 'gave' ? colors.onSuccess : colors.onError }]}>{d === 'gave' ? `${first} owes you ${half}` : `You owe ${first} ${half}`}</Text>}
+                </View>
+                {direction === d && splitMode === m && <Ionicons name="checkmark" size={20} color={colors.brandPrimary} />}
+              </Pressable>
+            );
+          })}
+        </View>
+        <Text style={[s.sectionHeader, { marginTop: spacing.lg }]}>MORE OPTIONS</Text>
+        <View style={s.formGroup}>
+          {(['gave', 'got'] as const).map((d, i) => (
+            <Pressable key={d} onPress={() => { setDirection(d); setSplitMode('custom'); if (!share && billN) setShare(String(billN / 2)); setPickingSplit(false); }}
+              style={({ pressed }) => [s.splitRow, i > 0 && s.sepTop, pressed && s.pressed]} testID={`cl-split-${d}-custom`}>
+              <Ionicons name="options-outline" size={20} color={colors.mutedText} />
+              <Text style={[s.formLabel, { flex: 1 }]}>{splitLabel(d, 'custom')} (enter amount)</Text>
+              {direction === d && splitMode === 'custom' && <Ionicons name="checkmark" size={20} color={colors.brandPrimary} />}
+            </Pressable>
+          ))}
+        </View>
+      </Sheet>
 
       <Sheet visible={pickingGroup} onClose={() => setPickingGroup(false)} title="Group" testID="cl-group-picker">
         <View style={s.formGroup}>
@@ -819,6 +900,12 @@ const makeStyles = (colors: ThemeColors, narrow = false) => StyleSheet.create({
   formRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: spacing.md, minHeight: 48 },
   formAction: { color: colors.brandPrimary, fontSize: 17 },
   formLabel: { color: colors.onSurface, fontSize: 17 },
+  splitBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'center', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, backgroundColor: colors.surfaceSecondary, marginBottom: 4, maxWidth: '100%' },
+  splitBtnText: { color: colors.onSurface, fontSize: 15, fontWeight: '500', flexShrink: 1 },
+  splitResult: { textAlign: 'center', fontSize: 15, fontWeight: '600', marginTop: 8, marginBottom: 4 },
+  splitRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: spacing.md, paddingVertical: 10, minHeight: 56 },
+  pcChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, backgroundColor: colors.surfaceTertiary },
+  pcChipText: { color: colors.brandPrimary, fontSize: 14, fontWeight: '600' },
   formValue: { flex: 1, textAlign: 'right', color: colors.mutedText, fontSize: 17 },
   formValue2: { color: colors.mutedText, fontSize: 17, marginLeft: 6 },
   curSymSmall: { color: colors.onSurface, fontSize: 20, fontWeight: '600', minWidth: 24 },

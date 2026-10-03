@@ -85,6 +85,15 @@ class AccountIn(BaseModel):
     currency: Optional[str] = None      # the one new entries start in
 
 
+class SplitIn(BaseModel):
+    """How a bill was shared (like Splitwise). `total` is the whole bill; the
+    entry's amount is the part the other person owes (or you owe them):
+    equal = half of it, custom = the amount given, full = all of it. Who paid
+    is the entry's direction: gave = you paid, got = they paid."""
+    mode: Literal['full', 'equal', 'custom']
+    total: float = Field(gt=0, le=100_000_000)
+
+
 class EntryIn(BaseModel):
     direction: Literal['gave', 'got']
     amount: float = Field(gt=0, le=100_000_000)
@@ -93,6 +102,20 @@ class EntryIn(BaseModel):
     note: Optional[str] = ''           # the description
     remark: Optional[str] = ''
     group_id: Optional[str] = None      # one of the person's groups; None = general
+    split: Optional[SplitIn] = None     # a shared bill; amount is then their share
+
+
+def _amount_and_split(body: EntryIn, cur: str) -> tuple:
+    """(amount that goes into the balance, split info to keep or None)."""
+    d = _dp(cur)
+    sp = body.split
+    if not sp or sp.mode == 'full':
+        return round(sp.total if sp else body.amount, d), None
+    total = round(sp.total, d)
+    share = round(total / 2, d) if sp.mode == 'equal' else round(body.amount, d)
+    if share <= 0 or share > total + 0.0005:
+        raise HTTPException(status_code=400, detail='The share must be more than zero and not more than the bill')
+    return share, {'mode': sp.mode, 'total': total}
 
 
 class ConvertIn(BaseModel):
@@ -274,8 +297,9 @@ async def delete_account(aid: str, user=Depends(require_admin_or_module_right(MO
 async def add_entry(aid: str, body: EntryIn, user=Depends(require_admin_or_module(MOD))):
     a = await _account_or_404(aid)
     cur = _currency(body.currency or a.get('currency'))
+    amt, split = _amount_and_split(body, cur)
     doc = {
-        'id': str(uuid.uuid4()), 'account_id': aid, 'direction': body.direction, 'amount': round(body.amount, _dp(cur)), 'currency': cur,
+        'id': str(uuid.uuid4()), 'account_id': aid, 'direction': body.direction, 'amount': amt, 'currency': cur, 'split': split,
         'date': _clean_date(body.date), 'note': (body.note or '').strip()[:300], 'remark': (body.remark or '').strip()[:300],
         'group_id': _group_id(a, body.group_id),
         'created_at': now_utc().isoformat(), 'created_by': user.get('id'), 'created_by_name': user.get('name'), 'deleted': False,
@@ -298,7 +322,8 @@ async def edit_entry(aid: str, eid: str, body: EntryIn, user=Depends(require_adm
         raise HTTPException(status_code=400, detail="A conversion can't be edited - delete it and convert again.")
     a = await _account_or_404(aid)
     cur = _currency(body.currency or e.get('currency'))
-    upd = {'direction': body.direction, 'amount': round(body.amount, _dp(cur)), 'currency': cur,
+    amt, split = _amount_and_split(body, cur)
+    upd = {'direction': body.direction, 'amount': amt, 'currency': cur, 'split': split,
            'date': _clean_date(body.date), 'note': (body.note or '').strip()[:300], 'remark': (body.remark or '').strip()[:300],
            'group_id': _group_id(a, body.group_id),
            'updated_at': now_utc().isoformat(), 'updated_by_name': user.get('name')}
@@ -558,7 +583,12 @@ async def statement(aid: str, date_from: Optional[str] = Query(default=None, ali
 
     def line(e: dict, closing: float) -> tuple:
         desc = e.get('note') or ('Cash given' if e['direction'] == 'gave' else 'Cash received')
-        return (e['date'], _esc(desc), _esc(e.get('remark') or ''),
+        rem = e.get('remark') or ''
+        if e.get('split'):   # a shared bill: say what the whole bill was
+            sp = e['split']
+            how = 'split equally' if sp['mode'] == 'equal' else 'their share' if e['direction'] == 'gave' else 'your share'
+            rem = ' · '.join(x for x in (rem, f"Bill {_amt(sp['total'], e['currency'])}, {how}") if x)
+        return (e['date'], _esc(desc), _esc(rem),
                 e['amount'] if e['direction'] == 'gave' else 0.0, e['amount'] if e['direction'] == 'got' else 0.0, closing, False)
 
     def add(title: str, cur: str, es: list, group_totals: Optional[list] = None):
