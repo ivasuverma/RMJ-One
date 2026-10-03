@@ -137,3 +137,39 @@ def test_cash_ledger_convert_currency():
         for e in requests.get(f"{API}/khata/{aid}", headers=h, timeout=30).json().get('entries', []):
             requests.delete(f"{API}/khata/{aid}/entries/{e['id']}", headers=h, timeout=30)
         requests.delete(f"{API}/khata/{aid}", headers=h, timeout=30)
+
+
+SPLITWISE_CSV = """Note: does not include group expenses
+
+Date,Description,Category,Cost,Currency,Test Owner,Friend Xyz
+
+2025-10-24,AU,General,220.70,AUD,-220.70,220.70
+2025-10-25,Self,General,940000.00,INR,940000.00,-940000.00
+2026-02-18,Owner paid Friend,Payment,5000.00,INR,5000.00,-5000.00
+2026-04-21,Friend paid Owner,Payment,500000.00,INR,-500000.00,500000.00
+
+2026-10-03,Total balance, , ,AUD,-220.70,220.70
+2026-10-03,Total balance, , ,INR,445000.00,-445000.00
+"""
+
+
+def test_cash_ledger_splitwise_import_and_dashboard():
+    """A Splitwise friend export imports as gave/got from 'me', matches its Total balance lines, and re-importing adds nothing."""
+    h = _login('owner', 'Owner@123')
+    name = f'Friend Xyz {os.urandom(3).hex()}'
+    p = requests.post(f"{API}/khata-import/splitwise/preview", headers=h, json={'csv': SPLITWISE_CSV, 'me': 'Test Owner'}, timeout=30).json()
+    assert p['lines'] == 4 and p['people'] == ['Test Owner', 'Friend Xyz']
+    assert p['balances'] == {'AUD': -220.7, 'INR': 445000} and p['matches_file'] is True
+    assert requests.post(f"{API}/khata-import/splitwise/preview", headers=h, json={'csv': 'a,b\n1,2\n'}, timeout=30).status_code == 400
+    r = requests.post(f"{API}/khata-import/splitwise", headers=h, json={'csv': SPLITWISE_CSV, 'me': 'Test Owner', 'new_name': name}, timeout=30).json()
+    aid = r['account_id']
+    try:
+        assert r['added'] == 4 and r['balances'] == {'AUD': -220.7, 'INR': 445000}
+        again = requests.post(f"{API}/khata-import/splitwise", headers=h, json={'csv': SPLITWISE_CSV, 'me': 'Test Owner', 'account_id': aid}, timeout=30).json()
+        assert again['added'] == 0 and again['skipped'] == 4
+        d = requests.get(f"{API}/khata-dashboard", headers=h, timeout=30).json()
+        assert d['people'] >= 1 and 'INR' in d['totals'] and isinstance(d['recent'], list)
+    finally:
+        for e in requests.get(f"{API}/khata/{aid}", headers=h, timeout=30).json().get('entries', []):
+            requests.delete(f"{API}/khata/{aid}/entries/{e['id']}", headers=h, timeout=30)
+        requests.delete(f"{API}/khata/{aid}", headers=h, timeout=30)

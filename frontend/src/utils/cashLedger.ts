@@ -39,7 +39,9 @@ const fmtCache: Record<string, Intl.NumberFormat> = {};
 function formatter(code: string): Intl.NumberFormat {
   if (!fmtCache[code]) {
     try {
-      fmtCache[code] = new Intl.NumberFormat('en-IN', { style: 'currency', currency: code, currencyDisplay: 'narrowSymbol', minimumFractionDigits: 0, maximumFractionDigits: 2 });
+      // ₹ $ € £ for the big four; everything else keeps a clear prefix (A$, CA$, AED…) so AUD never looks like USD.
+      const display = ['INR', 'USD', 'EUR', 'GBP'].includes(code) ? 'narrowSymbol' : 'symbol';
+      fmtCache[code] = new Intl.NumberFormat('en-IN', { style: 'currency', currency: code, currencyDisplay: display, minimumFractionDigits: 0, maximumFractionDigits: 2 });
     } catch {
       fmtCache[code] = new Intl.NumberFormat('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
     }

@@ -623,3 +623,207 @@ async def statement(aid: str, date_from: Optional[str] = Query(default=None, ali
 
 def _esc(t: str) -> str:
     return t.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+
+
+# ---------------------------------------------------------------- Splitwise import
+# Splitwise's "Export as spreadsheet" for one friend is a CSV:
+#   Note: does not include group expenses
+#   Date,Description,Category,Cost,Currency,<Person A>,<Person B>
+#   2025-10-24,AU,General,220.70,AUD,-220.70,220.70
+#   ...
+#   2026-10-03,Total balance, , ,AUD,-1332.98,1332.98
+# Each person's column is their net share of that line: positive = they paid
+# (the other owes them more). So from "me": > 0 -> 'gave', < 0 -> 'got', and the
+# sum of my column per currency is the balance (matches its Total balance rows).
+# Re-importing the same file skips lines already imported (import_key).
+class SplitwiseIn(BaseModel):
+    csv: str = Field(min_length=10, max_length=5_000_000)
+    me: Optional[str] = None                 # which person column is you
+    account_id: Optional[str] = None         # import into this person...
+    new_name: Optional[str] = None           # ...or a new one with this name
+    group_id: Optional[str] = None           # an existing group of that person
+    new_group: Optional[str] = None          # or a new group with this name
+
+
+def _num(v: str) -> float:
+    try:
+        return float((v or '').replace(',', '').strip() or 0)
+    except ValueError:
+        return 0.0
+
+
+def _parse_splitwise(text: str) -> dict:
+    import csv
+    import io
+    rows = list(csv.reader(io.StringIO(text.lstrip('﻿'))))
+    head = next((i for i, r in enumerate(rows) if len(r) >= 7 and r[0].strip() == 'Date' and 'Currency' in [c.strip() for c in r]), None)
+    if head is None:
+        raise HTTPException(status_code=400, detail="This doesn't look like a Splitwise export (no Date, Description, ... Currency header).")
+    hdr = [c.strip() for c in rows[head]]
+    ci = hdr.index('Currency')
+    people = [h for h in hdr[ci + 1:] if h]
+    lines, totals = [], {}
+    for r in rows[head + 1:]:
+        if not r or not any(c.strip() for c in r):
+            continue
+        r = r + [''] * (len(hdr) - len(r))
+        date, desc, cat, cur = r[0].strip(), r[1].strip(), r[2].strip(), r[ci].strip().upper()
+        if not re.fullmatch(r'\d{4}-\d{2}-\d{2}', date) or not re.fullmatch(r'[A-Z]{3}', cur):
+            continue
+        vals = {p: _num(r[ci + 1 + k]) for k, p in enumerate(people)}
+        if desc == 'Total balance':
+            totals[cur] = vals
+            continue
+        lines.append({'date': date, 'desc': desc, 'category': cat, 'cost': _num(r[3]), 'currency': cur, 'vals': vals})
+    if not lines:
+        raise HTTPException(status_code=400, detail='No expenses found in this file')
+    return {'people': people, 'lines': lines, 'totals': totals}
+
+
+def _import_keys(lines: list, me: str) -> list:
+    """A stable key per line; identical lines in one file get #1, #2… so both import."""
+    import hashlib
+    seen: dict = {}
+    out = []
+    for ln in lines:
+        base = f"{ln['date']}|{ln['desc']}|{ln['cost']:.2f}|{ln['currency']}|{ln['vals'].get(me, 0):.2f}"
+        seen[base] = seen.get(base, 0) + 1
+        out.append('sw:' + hashlib.sha1(f'{base}#{seen[base]}'.encode()).hexdigest())
+    return out
+
+
+def _guess_me(people: list, user: dict) -> str:
+    name = (user.get('name') or user.get('username') or '').lower()
+    first = name.split(' ')[0] if name else ''
+    for p in people:
+        pl = p.lower()
+        if pl == name or (first and pl.split(' ')[0] == first):
+            return p
+    return people[0]
+
+
+@router.post('/khata-import/splitwise/preview')
+async def splitwise_preview(body: SplitwiseIn, user=Depends(require_admin_or_module(MOD))):
+    f = _parse_splitwise(body.csv)
+    people = f['people']
+    me = body.me if body.me in people else _guess_me(people, user)
+    sums: dict = {}
+    for ln in f['lines']:
+        v = ln['vals'].get(me, 0)
+        sums[ln['currency']] = sums.get(ln['currency'], 0.0) + v
+    sums = {c: round(v, _dp(c)) for c, v in sums.items()}
+    file_tot = {c: round(v.get(me, 0), _dp(c)) for c, v in f['totals'].items()}
+    others = [p for p in people if p != me]
+    other = others[0] if others else ''
+    match = None
+    if body.account_id:      # the person chosen in the app
+        match = await _account_or_404(body.account_id)
+    elif other:              # a suggestion: same name, else same first name
+        o = other.lower()
+        accts = await db.cash_ledger_accounts.find({'deleted': {'$ne': True}}, {'_id': 0, 'id': 1, 'name': 1, 'groups': 1}).to_list(2000)
+        match = next((a for a in accts if a['name'].lower() == o), None) or \
+            next((a for a in accts if a['name'].lower().split(' ')[0] == o.split(' ')[0]), None)
+    already = 0
+    if match:
+        keys = _import_keys(f['lines'], me)
+        already = await db.cash_ledger_entries.count_documents({'account_id': match['id'], 'import_key': {'$in': keys}, 'deleted': {'$ne': True}})
+    dates = sorted(ln['date'] for ln in f['lines'])
+    return {
+        'people': people, 'me': me, 'other': other, 'lines': len(f['lines']), 'from': dates[0], 'to': dates[-1],
+        'balances': _nonzero(sums), 'file_totals': file_tot,
+        'matches_file': bool(file_tot) and all(abs(sums.get(c, 0) - v) < 0.01 for c, v in file_tot.items()),
+        'account': {'id': match['id'], 'name': match['name'], 'groups': [{'id': g['id'], 'name': g['name']} for g in match.get('groups') or []],
+                    'exact': match['name'].lower() == other.lower() or bool(body.account_id)} if match else None,
+        'already_imported': already, 'too_many_people': len(people) != 2,
+        'sample': [{'date': ln['date'], 'desc': ln['desc'], 'currency': ln['currency'], 'value': ln['vals'].get(me, 0)} for ln in f['lines'][-5:]][::-1],
+    }
+
+
+@router.post('/khata-import/splitwise')
+async def splitwise_import(body: SplitwiseIn, user=Depends(require_admin_or_module(MOD))):
+    f = _parse_splitwise(body.csv)
+    if len(f['people']) != 2:
+        raise HTTPException(status_code=400, detail='This file has more than two people. Export the balance with one friend from Splitwise.')
+    if body.me not in f['people']:
+        raise HTTPException(status_code=400, detail='Choose which person in the file is you')
+    if body.account_id:
+        a = await _account_or_404(body.account_id)
+    elif body.new_name and body.new_name.strip():
+        a = await add_account(AccountIn(name=body.new_name.strip()), user)
+    else:
+        raise HTTPException(status_code=400, detail='Choose the person to import into')
+    aid = a['id']
+    gid = None
+    if body.new_group and body.new_group.strip():
+        gid = (await add_group(aid, GroupIn(name=body.new_group.strip()), user))['id']
+    elif body.group_id:
+        gid = _group_id(a, body.group_id)
+    keys = _import_keys(f['lines'], body.me)
+    have = {d['import_key'] async for d in db.cash_ledger_entries.find(
+        {'account_id': aid, 'import_key': {'$in': keys}, 'deleted': {'$ne': True}}, {'_id': 0, 'import_key': 1})}
+    now, docs, skipped, zero = now_utc().isoformat(), [], 0, 0
+    for ln, key in zip(f['lines'], keys):
+        v = ln['vals'].get(body.me, 0)
+        if key in have:
+            skipped += 1
+            continue
+        if abs(v) < 0.0005:
+            zero += 1
+            continue
+        cur = _currency(ln['currency'])
+        docs.append({
+            'id': str(uuid.uuid4()), 'account_id': aid, 'direction': 'gave' if v > 0 else 'got', 'amount': round(abs(v), _dp(cur)),
+            'currency': cur, 'date': ln['date'], 'note': ln['desc'][:300] or ('Payment' if ln['category'] == 'Payment' else 'Splitwise'),
+            'remark': 'Splitwise' + (f" · {ln['category']}" if ln['category'] and ln['category'] != 'General' else ''),
+            'group_id': gid, 'import_key': key, 'source': 'splitwise',
+            'created_at': now, 'created_by': user.get('id'), 'created_by_name': user.get('name'), 'deleted': False,
+        })
+    if docs:
+        await db.cash_ledger_entries.insert_many([dict(d) for d in docs])
+    await log_audit(user, 'cash_ledger.import.splitwise', 'cash_ledger_account', aid, f"{a['name']}: {len(docs)} added, {skipped} already there")
+    bal = (await _balances([aid])).get(aid, {}).get('balances', {})
+    return {'ok': True, 'account_id': aid, 'added': len(docs), 'skipped': skipped, 'zero': zero, 'balances': bal, 'group_id': gid}
+
+
+# ---------------------------------------------------------------- dashboard
+@router.get('/khata-dashboard')
+async def dashboard(user=Depends(require_staff_or_module(MOD))):
+    """The Cash Ledger at a glance: totals per currency, this month's movement,
+    who owes the most, and the latest entries."""
+    accounts = await db.cash_ledger_accounts.find({'deleted': {'$ne': True}}, {'_id': 0, 'id': 1, 'name': 1}).to_list(2000)
+    names = {a['id']: a['name'] for a in accounts}
+    bal = await _balances(list(names))
+    totals: dict = {}
+    for b in bal.values():
+        for c, v in b['balances'].items():
+            t = totals.setdefault(c, {'you_get': 0.0, 'you_give': 0.0, 'net': 0.0})
+            t['you_get' if v > 0 else 'you_give'] += abs(v)
+            t['net'] += v
+    totals = {c: {k: round(v, _dp(c)) for k, v in t.items()} for c, t in totals.items()}
+    month = _today()[:7]
+    this_month: dict = {}
+    async for g in db.cash_ledger_entries.aggregate([
+        {'$match': {'deleted': {'$ne': True}, 'date': {'$gte': f'{month}-01', '$lte': f'{month}-31'}, 'account_id': {'$in': list(names)},
+                    'conversion_id': {'$exists': False}}},
+        {'$group': {'_id': {'c': {'$ifNull': ['$currency', BASE_CURRENCY]}, 'd': '$direction'}, 'amt': {'$sum': '$amount'}, 'n': {'$sum': 1}}},
+    ]):
+        m = this_month.setdefault(g['_id']['c'], {'gave': 0.0, 'got': 0.0, 'entries': 0})
+        m[g['_id']['d']] = round(g['amt'], _dp(g['_id']['c']))
+        m['entries'] += g['n']
+
+    def top(sign: int) -> list:
+        rows = [{'id': aid, 'name': names[aid], 'balances': b['balances']} for aid, b in bal.items()
+                if aid in names and b['balances'].get(BASE_CURRENCY, 0) * sign > 0]
+        rows.sort(key=lambda r: -abs(r['balances'][BASE_CURRENCY]))
+        return rows[:3]
+    recent = await db.cash_ledger_entries.find({'deleted': {'$ne': True}, 'account_id': {'$in': list(names)}},
+                                               {'_id': 0, 'id': 1, 'account_id': 1, 'direction': 1, 'amount': 1, 'currency': 1, 'date': 1, 'note': 1, 'conversion_id': 1}) \
+        .sort([('date', -1), ('created_at', -1)]).to_list(5)
+    for e in recent:
+        e['account_name'] = names.get(e['account_id'], '')
+        e['currency'] = e.get('currency') or BASE_CURRENCY
+    return {
+        'people': len(accounts), 'open': sum(1 for b in bal.values() if b['balances']),
+        'totals': totals, 'this_month': this_month, 'month': month,
+        'owe_you_most': top(1), 'you_owe_most': top(-1), 'recent': recent,
+    }
