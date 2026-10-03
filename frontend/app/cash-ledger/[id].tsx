@@ -19,12 +19,14 @@ import { HeaderSpacer, useScrolled } from '@/src/components/ui/StickyHeader';
 import { DateField } from '@/src/components/DateField';
 import { RecordPhotos } from '@/src/components/RecordPhotos';
 import { CurrencyPicker } from '@/src/components/CurrencyPicker';
+import { CashStatementSheet } from '@/src/components/CashStatementSheet';
 import { pickWebFile, makeThumb } from '@/src/components/DocumentCaptureSheet';
 import { compressImage } from '@/src/components/QuickDocCapture';
 import { Balances, BASE_CURRENCY, CURRENCIES, money, num, initials, orderedCodes, symbol } from '@/src/utils/cashLedger';
 
-type Account = { id: string; name: string; phone?: string; note?: string; currency: string; balances: Balances; entries: number };
-type Entry = { id: string; direction: 'gave' | 'got'; amount: number; currency: string; date: string; note?: string; created_by_name?: string; balance_after: number; photos: number };
+type Group = { id: string; name: string; balances: Balances; entries: number };
+type Account = { id: string; name: string; phone?: string; note?: string; currency: string; balances: Balances; entries: number; general_balances: Balances; groups: Group[] };
+type Entry = { id: string; direction: 'gave' | 'got'; amount: number; currency: string; date: string; note?: string; remark?: string; group_id?: string | null; created_by_name?: string; balance_after: number; photos: number };
 type Shot = { id: string; blob: Blob; thumb: string };
 
 const newId = () => ((typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`);
@@ -46,8 +48,12 @@ const savedView = (): ViewKey => {
 // balance up top (one line per currency — never converted), round actions
 // like Contacts, entries grouped by month like Wallet, and a translucent
 // toolbar with "You Gave" / "You Got".
+// Groups: `?group=<id>` shows one group of this person — its own entries,
+// running balance and total. Without it, the screen shows the person's general
+// entries (those in no group) with the groups listed above them; the balance
+// at the top is always everything, groups included.
 export default function CashLedgerAccountScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, group } = useLocalSearchParams<{ id: string; group?: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
@@ -71,6 +77,12 @@ export default function CashLedgerAccountScreen() {
   const [currency, setCurrency] = useState(BASE_CURRENCY);
   const [date, setDate] = useState(todayIST());
   const [note, setNote] = useState('');
+  const [remark, setRemark] = useState('');
+  const [entryGroup, setEntryGroup] = useState<string | null>(null);
+  const [pickingGroup, setPickingGroup] = useState(false);
+  const [stmtOpen, setStmtOpen] = useState(false);
+  const [groupSheet, setGroupSheet] = useState<null | { mode: 'new' | 'edit' }>(null);
+  const [groupName, setGroupName] = useState('');
   const [shots, setShots] = useState<Shot[]>([]);
   const [capturing, setCapturing] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -92,13 +104,20 @@ export default function CashLedgerAccountScreen() {
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const first = acc?.name.split(' ')[0] || '';
-  const codes = acc ? orderedCodes(acc.balances) : [];
+  const groups = acc?.groups || [];
+  const grp = group ? groups.find((g) => g.id === group) : undefined;
+  // What this screen is about: one group, or the whole person.
+  const heroBal: Balances = grp ? grp.balances : acc?.balances || {};
+  const codes = orderedCodes(heroBal);
+  const totalCodes = acc ? orderedCodes(acc.balances) : [];
+  const scoped = useMemo(() => (entries || []).filter((e) => (group ? e.group_id === group : !e.group_id)), [entries, group]);
+  const groupLabel = (gid: string | null | undefined) => groups.find((g) => g.id === gid)?.name || 'General';
 
   const openNew = (dir: 'gave' | 'got') => {
-    setDirection(dir); setAmount(''); setCurrency(acc?.currency || BASE_CURRENCY); setDate(todayIST()); setNote(''); setShots([]); setSheet({ mode: 'new' });
+    setDirection(dir); setAmount(''); setCurrency(acc?.currency || BASE_CURRENCY); setDate(todayIST()); setNote(''); setRemark(''); setEntryGroup(group || null); setShots([]); setSheet({ mode: 'new' });
   };
   const openEdit = (e: Entry) => {
-    setDirection(e.direction); setAmount(String(e.amount)); setCurrency(e.currency); setDate(e.date); setNote(e.note || ''); setShots([]); setSheet({ mode: 'edit', entry: e });
+    setDirection(e.direction); setAmount(String(e.amount)); setCurrency(e.currency); setDate(e.date); setNote(e.note || ''); setRemark(e.remark || ''); setEntryGroup(e.group_id || null); setShots([]); setSheet({ mode: 'edit', entry: e });
   };
 
   const shoot = async (gallery: boolean) => {
@@ -121,7 +140,7 @@ export default function CashLedgerAccountScreen() {
     if (!amt || amt <= 0 || busy) { toast.error('Enter the amount'); return; }
     setBusy(true);
     try {
-      const body = { direction, amount: amt, currency, date, note: note.trim() };
+      const body = { direction, amount: amt, currency, date, note: note.trim(), remark: remark.trim(), group_id: entryGroup };
       let entryId = sheet?.entry?.id || '';
       if (sheet?.mode === 'edit' && entryId) await api.put(`/khata/${id}/entries/${entryId}`, body);
       else entryId = (await api.post<{ id: string }>(`/khata/${id}/entries`, body)).id;
@@ -141,10 +160,10 @@ export default function CashLedgerAccountScreen() {
     catch (err: any) { toast.error(err?.detail || 'Could not delete'); }
   });
 
-  const settle = () => acc && confirmAction('Settle Up?',
-    codes.map((c) => (acc.balances[c] > 0 ? `${first} pays you ${money(acc.balances[c], c)}` : `You pay ${first} ${money(acc.balances[c], c)}`)).join('\n'),
+  const settle = () => acc && confirmAction(grp ? `Settle ${grp.name}?` : 'Settle Up?',
+    codes.map((c) => (heroBal[c] > 0 ? `${first} pays you ${money(heroBal[c], c)}` : `You pay ${first} ${money(heroBal[c], c)}`)).join('\n'),
     'Settle Up', async () => {
-      try { await api.post(`/khata/${id}/settle`, {}); haptics.success(); load(); }
+      try { await api.post(`/khata/${id}/settle${group ? `?group=${group}` : ''}`, {}); haptics.success(); load(); }
       catch (e: any) { toast.error(e?.detail || 'Could not settle'); }
     });
 
@@ -152,11 +171,12 @@ export default function CashLedgerAccountScreen() {
   const waNumber = phoneDigits.length === 10 ? `91${phoneDigits}` : phoneDigits;
   const remind = () => {
     if (!acc) return;
-    const owed = codes.filter((c) => acc.balances[c] > 0).map((c) => money(acc.balances[c], c));
-    const owe = codes.filter((c) => acc.balances[c] < 0).map((c) => money(acc.balances[c], c));
+    const owed = codes.filter((c) => heroBal[c] > 0).map((c) => money(heroBal[c], c));
+    const owe = codes.filter((c) => heroBal[c] < 0).map((c) => money(heroBal[c], c));
+    const what = grp ? ` for ${grp.name}` : '';
     const text = owed.length
-      ? `Hi ${first}, a gentle reminder: ${owed.join(' and ')} is pending as per my records. — ${user?.name || 'RMJ'}`
-      : `Hi ${first}, as per my records I owe you ${owe.join(' and ')}. — ${user?.name || 'RMJ'}`;
+      ? `Hi ${first}, a gentle reminder: ${owed.join(' and ')} is pending${what} as per my records. — ${user?.name || 'RMJ'}`
+      : `Hi ${first}, as per my records I owe you ${owe.join(' and ')}${what}. — ${user?.name || 'RMJ'}`;
     Linking.openURL(`https://wa.me/${waNumber}?text=${encodeURIComponent(text)}`);
   };
 
@@ -166,6 +186,24 @@ export default function CashLedgerAccountScreen() {
     try { await api.put(`/khata/${id}`, { name: accName.trim(), phone: accPhone.trim(), note: accNote.trim(), currency: acc?.currency }); setEditAcc(false); load(); }
     catch (e: any) { toast.error(e?.detail || 'Could not save'); }
   };
+  const openGroupSheet = (mode: 'new' | 'edit') => { setGroupName(mode === 'edit' ? grp?.name || '' : ''); setGroupSheet({ mode }); };
+  const saveGroup = async () => {
+    const n = groupName.trim();
+    if (!n) return;
+    try {
+      if (groupSheet?.mode === 'edit' && grp) await api.put(`/khata/${id}/groups/${grp.id}`, { name: n });
+      else {
+        const g = await api.post<Group>(`/khata/${id}/groups`, { name: n });
+        if (sheet) setEntryGroup(g.id);   // made from the entry sheet: put this entry in it
+      }
+      haptics.success(); setGroupSheet(null); load();
+    } catch (e: any) { toast.error(e?.detail || 'Could not save'); }
+  };
+  const deleteGroup = () => grp && confirmAction(`Delete ${grp.name}?`, 'Only possible once the group has no entries.', 'Delete', async () => {
+    try { await api.del(`/khata/${id}/groups/${grp.id}`); setGroupSheet(null); router.back(); }
+    catch (e: any) { toast.error(e?.detail || 'Could not delete'); }
+  });
+
   const deleteAcc = () => acc && confirmAction(`Delete ${acc.name}?`, 'Only possible once everything is settled.', 'Delete', async () => {
     try { await api.del(`/khata/${id}`); setEditAcc(false); router.back(); }
     catch (e: any) { toast.error(e?.detail || 'Could not delete'); }
@@ -173,7 +211,7 @@ export default function CashLedgerAccountScreen() {
 
   // Entries grouped by month, newest first (Wallet-style sections).
   const sections: { title: string; items: Entry[] }[] = [];
-  for (const e of entries || []) {
+  for (const e of scoped) {
     const t = monthLabel(e.date);
     if (!sections.length || sections[sections.length - 1].title !== t) sections.push({ title: t, items: [] });
     sections[sections.length - 1].items.push(e);
@@ -182,7 +220,7 @@ export default function CashLedgerAccountScreen() {
   const balColor = (n: number) => (n > 0 ? colors.onSuccess : n < 0 ? colors.onError : colors.onSurface);
 
   // Statement: a passbook per currency, oldest first, closing balance on every line.
-  const chron = useMemo(() => [...(entries || [])].reverse(), [entries]);
+  const chron = useMemo(() => [...scoped].reverse(), [scoped]);
   const statements = useMemo(() => {
     const byCur: Record<string, Entry[]> = {};
     for (const e of chron) (byCur[e.currency] ||= []).push(e);
@@ -197,7 +235,7 @@ export default function CashLedgerAccountScreen() {
   // Day-wise: newest day first, each day ends with its closing balance per currency.
   const days = useMemo(() => {
     const out: { date: string; items: Entry[]; closing: { code: string; bal: number }[] }[] = [];
-    for (const e of entries || []) {
+    for (const e of scoped) {
       if (!out.length || out[out.length - 1].date !== e.date) out.push({ date: e.date, items: [], closing: [] });
       out[out.length - 1].items.push(e);
     }
@@ -208,13 +246,13 @@ export default function CashLedgerAccountScreen() {
       d.closing = orderedCodes(last).map((code) => ({ code, bal: last[code] }));
     }
     return out;
-  }, [entries]);
+  }, [scoped]);
 
   return (
     <SafeAreaView style={s.root} edges={['top']} testID="cash-ledger-account">
-      <ModuleHeader title={acc?.name || ''} backLabel="Cash Ledger" scrolled={scrolled}
+      <ModuleHeader title={grp ? grp.name : acc?.name || ''} backLabel={grp ? first : 'Cash Ledger'} scrolled={scrolled}
         actions={canEdit ? (
-          <Pressable onPress={openAccEdit} hitSlop={10} style={({ pressed }) => [pressed && { opacity: 0.5 }]} testID="cl-edit-account">
+          <Pressable onPress={grp ? () => openGroupSheet('edit') : openAccEdit} hitSlop={10} style={({ pressed }) => [pressed && { opacity: 0.5 }]} testID="cl-edit-account">
             <Text style={s.navText}>Edit</Text>
           </Pressable>
         ) : undefined} />
@@ -224,36 +262,81 @@ export default function CashLedgerAccountScreen() {
         {!acc ? <ActivityIndicator color={colors.mutedText} style={{ marginTop: 40 }} /> : (
           <>
             <View style={s.hero} testID="cl-balance">
-              <View style={s.heroAv}><Text style={s.heroAvText}>{initials(acc.name)}</Text></View>
+              <View style={s.heroAv}>
+                {grp ? <Ionicons name="folder" size={30} color={colors.brandPrimary} /> : <Text style={s.heroAvText}>{initials(acc.name)}</Text>}
+              </View>
               {codes.length ? codes.map((c) => (
-                <Text key={c} style={[s.heroAmt, { color: acc.balances[c] > 0 ? colors.onSuccess : colors.onError }]}>{money(acc.balances[c], c)}</Text>
+                <Text key={c} style={[s.heroAmt, { color: heroBal[c] > 0 ? colors.onSuccess : colors.onError }]}>{money(heroBal[c], c)}</Text>
               )) : <Text style={[s.heroAmt, { color: colors.onSurface }]}>{money(0, acc.currency)}</Text>}
               <Text style={s.heroLabel}>
-                {!codes.length ? 'All settled'
-                  : codes.every((c) => acc.balances[c] > 0) ? `${first} owes you`
-                    : codes.every((c) => acc.balances[c] < 0) ? `You owe ${first}`
+                {!codes.length ? (grp ? 'Group settled' : 'All settled')
+                  : codes.every((c) => heroBal[c] > 0) ? `${first} owes you${grp ? ' in this group' : ''}`
+                    : codes.every((c) => heroBal[c] < 0) ? `You owe ${first}${grp ? ' in this group' : ''}`
                       : `Green: ${first} owes you · Red: you owe ${first}`}
               </Text>
-              {!!acc.phone && <Text style={s.heroSub}>{acc.phone}</Text>}
+              {grp ? (
+                <Text style={s.heroSub} testID="cl-total-with">
+                  Total with {first}: {totalCodes.length ? totalCodes.map((c) => signed(acc.balances[c], c)).join(' · ') : 'settled'}
+                </Text>
+              ) : !!acc.phone && <Text style={s.heroSub}>{acc.phone}</Text>}
             </View>
 
             <View style={s.actions}>
               <RoundAction s={s} icon="call" label="Call" disabled={!phoneDigits} onPress={() => Linking.openURL(`tel:${phoneDigits}`)} testID="cl-call" />
               <RoundAction s={s} icon="logo-whatsapp" label="Remind" disabled={!phoneDigits || !codes.length} onPress={remind} testID="cl-remind" />
               <RoundAction s={s} icon="checkmark-done" label="Settle Up" disabled={!codes.length} onPress={settle} testID="cl-settle" />
+              <RoundAction s={s} icon="document-text" label="Statement" disabled={!scoped.length && !(!grp && acc.entries)} onPress={() => setStmtOpen(true)} testID="cl-statement-open" />
             </View>
+
+            {!grp && (groups.length > 0 || canEdit) && (
+              <View testID="cl-groups">
+                <Text style={s.sectionHeader}>GROUPS</Text>
+                <View style={s.group}>
+                  {groups.map((g, i) => {
+                    const gc = orderedCodes(g.balances);
+                    return (
+                      <Pressable key={g.id} onPress={() => router.push(`/cash-ledger/${id}?group=${g.id}` as any)} style={({ pressed }) => [s.entry, pressed && s.pressed]} testID={`cl-group-${g.id}`}>
+                        <View style={[s.entryIcon, { backgroundColor: colors.surfaceTertiary }]}><Ionicons name="folder" size={15} color={colors.brandPrimary} /></View>
+                        <View style={[s.entryBody, i > 0 && s.sepTop]}>
+                          <View style={{ flex: 1, minWidth: 0 }}>
+                            <Text style={s.title} numberOfLines={1}>{g.name}</Text>
+                            <Text style={s.subtitle}>{g.entries} {g.entries === 1 ? 'entry' : 'entries'}</Text>
+                          </View>
+                          <View style={s.trailing}>
+                            {gc.length ? gc.map((c) => (
+                              <Text key={c} style={[s.amount, { color: balColor(g.balances[c]) }]}>{signed(g.balances[c], c)}</Text>
+                            )) : <Text style={s.subtitle}>Settled</Text>}
+                          </View>
+                          <Ionicons name="chevron-forward" size={16} color={colors.mutedText} style={{ marginLeft: 6 }} />
+                        </View>
+                      </Pressable>
+                    );
+                  })}
+                  {canEdit && (
+                    <Pressable onPress={() => openGroupSheet('new')} style={({ pressed }) => [s.entry, pressed && s.pressed]} testID="cl-new-group">
+                      <View style={[s.entryIcon, { backgroundColor: 'transparent' }]}><Ionicons name="add-circle" size={22} color={colors.brandPrimary} /></View>
+                      <View style={[s.entryBody, groups.length > 0 && s.sepTop, { minHeight: 46 }]}><Text style={[s.title, { color: colors.brandPrimary }]}>New Group</Text></View>
+                    </Pressable>
+                  )}
+                </View>
+                {groups.length > 0 && (
+                  <Text style={s.footer}>Each group keeps its own entries and total. The balance at the top includes them.</Text>
+                )}
+              </View>
+            )}
 
             {!!acc.note && <Text style={s.note}>{acc.note}</Text>}
 
-            {!!entries?.length && (
-              <View style={{ marginTop: spacing.xl }}>
+            {!grp && groups.length > 0 && <Text style={s.sectionHeader}>GENERAL ENTRIES</Text>}
+            {!!scoped.length && (
+              <View style={{ marginTop: !grp && groups.length > 0 ? 0 : spacing.xl }}>
                 <SegmentedControl options={[{ key: 'list', label: 'Entries' }, { key: 'statement', label: 'Statement' }, { key: 'daily', label: 'Day-wise' }]}
                   value={view} onChange={(k) => setView(k as ViewKey)} testID="cl-view" />
               </View>
             )}
 
-            {entries && entries.length === 0 ? (
-              <Text style={s.emptyText}>No entries yet.</Text>
+            {entries && scoped.length === 0 ? (
+              <Text style={s.emptyText}>{grp ? 'No entries in this group yet.' : groups.length ? 'No general entries.' : 'No entries yet.'}</Text>
             ) : view === 'statement' ? statements.map((st) => (
               <View key={st.code} testID={`cl-statement-${st.code}`}>
                 <Text style={s.sectionHeader}>{(CURRENCIES.find((c) => c.code === st.code)?.name || st.code).toUpperCase()} · {symbol(st.code)}</Text>
@@ -268,7 +351,10 @@ export default function CashLedgerAccountScreen() {
                   {st.rows.map((e) => (
                     <Pressable key={e.id} onPress={() => openEdit(e)} style={({ pressed }) => [s.tRow, s.sepTop, pressed && s.pressed]} testID={`cl-st-${e.id}`}>
                       <View style={s.tDate}><Text style={s.tCell}>{dayMonth(e.date)}</Text><Text style={s.tYear}>{e.date.slice(0, 4)}</Text></View>
-                      <Text style={[s.tDetails, s.tCell]} numberOfLines={2}>{e.note || (e.direction === 'gave' ? 'You gave' : 'You got')}{e.photos > 0 ? ' 📷' : ''}</Text>
+                      <View style={s.tDetails}>
+                        <Text style={s.tCell} numberOfLines={2}>{e.note || (e.direction === 'gave' ? 'You gave' : 'You got')}{e.photos > 0 ? ' 📷' : ''}</Text>
+                        {!!e.remark && <Text style={s.tYear} numberOfLines={1}>{e.remark}</Text>}
+                      </View>
                       <Text style={[s.tNum, s.tCell, { color: colors.onError }]}>{e.direction === 'gave' ? num(e.amount) : ''}</Text>
                       <Text style={[s.tNum, s.tCell, { color: colors.onSuccess }]}>{e.direction === 'got' ? num(e.amount) : ''}</Text>
                       <Text style={[s.tBal, s.tCell, { color: balColor(e.balance_after) }]}>{e.balance_after < 0 ? '−' : ''}{num(e.balance_after)}</Text>
@@ -289,7 +375,10 @@ export default function CashLedgerAccountScreen() {
                 <View style={s.group}>
                   {d.items.map((e, i) => (
                     <Pressable key={e.id} onPress={() => openEdit(e)} style={({ pressed }) => [s.dRow, i > 0 && s.sepTop, pressed && s.pressed]} testID={`cl-d-${e.id}`}>
-                      <Text style={s.dNote} numberOfLines={1}>{e.note || (e.direction === 'gave' ? 'You gave' : 'You got')}{e.photos > 0 ? ' 📷' : ''}</Text>
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text style={s.dNote} numberOfLines={1}>{e.note || (e.direction === 'gave' ? 'You gave' : 'You got')}{e.photos > 0 ? ' 📷' : ''}</Text>
+                        {!!e.remark && <Text style={s.subtitle} numberOfLines={1}>{e.remark}</Text>}
+                      </View>
                       <View style={s.trailing}>
                         <Text style={[s.dAmt, { color: e.direction === 'gave' ? colors.onError : colors.onSuccess }]}>{e.direction === 'gave' ? '−' : '+'}{money(e.amount, e.currency)}</Text>
                         <Text style={s.subtitle}>Bal {signed(e.balance_after, e.currency)}</Text>
@@ -319,7 +408,7 @@ export default function CashLedgerAccountScreen() {
                         <View style={{ flex: 1, minWidth: 0 }}>
                           <Text style={s.title} numberOfLines={1}>{e.note || (e.direction === 'gave' ? 'You gave' : 'You got')}</Text>
                           <View style={s.metaRow}>
-                            <Text style={s.subtitle}>{istDisplayDate(e.date)}</Text>
+                            <Text style={s.subtitle} numberOfLines={1}>{istDisplayDate(e.date)}{e.remark ? ` · ${e.remark}` : ''}</Text>
                             {e.photos > 0 && <><Ionicons name="image-outline" size={12} color={colors.mutedText} /><Text style={s.subtitle}>{e.photos}</Text></>}
                           </View>
                         </View>
@@ -335,7 +424,7 @@ export default function CashLedgerAccountScreen() {
                 </View>
               </View>
             ))}
-            {entries && entries.length > 0 && (
+            {scoped.length > 0 && (
               <Text style={s.footer}>
                 {view === 'statement' ? `Balance is closing balance after each line. Green: ${first} owes you · Red: you owe ${first}.`
                   : view === 'daily' ? `Closing balance at the end of each day. Green: ${first} owes you · Red: you owe ${first}.`
@@ -374,7 +463,19 @@ export default function CashLedgerAccountScreen() {
         <View style={s.formGroup}>
           <View style={s.formPad}><DateField value={date} onChange={setDate} testID="cl-date" /></View>
           <View style={s.formSep} />
-          <TextInput value={note} onChangeText={setNote} placeholder="Note" placeholderTextColor={colors.mutedText} style={s.formInput} testID="cl-note" />
+          <TextInput value={note} onChangeText={setNote} placeholder="Description" placeholderTextColor={colors.mutedText} style={s.formInput} testID="cl-note" />
+          <View style={s.formSep} />
+          <TextInput value={remark} onChangeText={setRemark} placeholder="Remark" placeholderTextColor={colors.mutedText} style={s.formInput} testID="cl-remark" />
+          {(groups.length > 0 || canEdit) && (
+            <>
+              <View style={s.formSep} />
+              <Pressable onPress={() => setPickingGroup(true)} style={({ pressed }) => [s.formRow, pressed && s.pressed]} testID="cl-entry-group">
+                <Text style={[s.formLabel]}>Group</Text>
+                <Text style={s.formValue} numberOfLines={1}>{groupLabel(entryGroup)}</Text>
+                <Ionicons name="chevron-forward" size={16} color={colors.mutedText} />
+              </Pressable>
+            </>
+          )}
         </View>
 
         {sheet?.mode === 'edit' && sheet.entry ? (
@@ -414,6 +515,42 @@ export default function CashLedgerAccountScreen() {
         )}
       </Sheet>
       <CurrencyPicker visible={picking} value={currency} onPick={(c) => { setCurrency(c); setPicking(false); }} onClose={() => setPicking(false)} />
+
+      <Sheet visible={pickingGroup} onClose={() => setPickingGroup(false)} title="Group" testID="cl-group-picker">
+        <View style={s.formGroup}>
+          {[{ id: null as string | null, name: 'General' }, ...groups].map((g, i) => (
+            <Pressable key={g.id || 'general'} onPress={() => { setEntryGroup(g.id); setPickingGroup(false); }} style={({ pressed }) => [s.formRow, i > 0 && s.sepTop, pressed && s.pressed]} testID={`cl-pick-group-${g.id || 'general'}`}>
+              <Ionicons name={g.id ? 'folder-outline' : 'person-outline'} size={18} color={colors.mutedText} />
+              <Text style={[s.formLabel, { flex: 1 }]} numberOfLines={1}>{g.name}</Text>
+              {entryGroup === g.id && <Ionicons name="checkmark" size={20} color={colors.brandPrimary} />}
+            </Pressable>
+          ))}
+          {canEdit && (
+            <Pressable onPress={() => { setPickingGroup(false); openGroupSheet('new'); }} style={({ pressed }) => [s.formRow, s.sepTop, pressed && s.pressed]} testID="cl-pick-group-new">
+              <Ionicons name="add-circle" size={18} color={colors.brandPrimary} /><Text style={s.formAction}>New Group</Text>
+            </Pressable>
+          )}
+        </View>
+        <Text style={s.footer}>General entries and each group keep separate totals; all of them add up to {first}&apos;s balance.</Text>
+      </Sheet>
+
+      <Sheet visible={!!groupSheet} onClose={() => setGroupSheet(null)} title={groupSheet?.mode === 'edit' ? 'Edit Group' : 'New Group'} testID="cl-group-sheet">
+        <View style={s.formGroup}>
+          <TextInput value={groupName} onChangeText={setGroupName} placeholder="Group name, e.g. Dubai trip" placeholderTextColor={colors.mutedText}
+            style={s.formInput} autoFocus onSubmitEditing={saveGroup} testID="cl-group-name" />
+        </View>
+        <Pressable onPress={saveGroup} disabled={!groupName.trim()} style={({ pressed }) => [s.primary, !groupName.trim() && { opacity: 0.5 }, pressed && { opacity: 0.85 }]} testID="cl-group-save">
+          <Text style={s.primaryText}>{groupSheet?.mode === 'edit' ? 'Save' : 'Create Group'}</Text>
+        </Pressable>
+        {groupSheet?.mode === 'edit' && canDelete && (
+          <Pressable onPress={deleteGroup} style={({ pressed }) => [s.destructive, pressed && s.pressed]} testID="cl-group-delete"><Text style={s.destructiveText}>Delete Group</Text></Pressable>
+        )}
+      </Sheet>
+
+      {acc && (
+        <CashStatementSheet visible={stmtOpen} onClose={() => setStmtOpen(false)} accountId={id} name={acc.name}
+          group={grp ? grp.id : undefined} scopeLabel={grp ? grp.name : 'All'} />
+      )}
 
       <Sheet visible={editAcc} onClose={() => setEditAcc(false)} title="Edit" testID="cl-account-sheet">
         <View style={s.formGroup}>
@@ -512,6 +649,8 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   formSep: { height: StyleSheet.hairlineWidth, backgroundColor: colors.divider, marginLeft: spacing.md },
   formRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: spacing.md, minHeight: 48 },
   formAction: { color: colors.brandPrimary, fontSize: 17 },
+  formLabel: { color: colors.onSurface, fontSize: 17 },
+  formValue: { flex: 1, textAlign: 'right', color: colors.mutedText, fontSize: 17 },
   shot: { width: 60, height: 60, borderRadius: 8, overflow: 'hidden' },
   shotImg: { width: 60, height: 60, backgroundColor: colors.surfaceTertiary, alignItems: 'center', justifyContent: 'center' },
   shotX: { position: 'absolute', top: 3, right: 3, width: 18, height: 18, borderRadius: 9, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center' },
