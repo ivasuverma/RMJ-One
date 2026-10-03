@@ -130,7 +130,21 @@ export default function CashLedgerAccountScreen() {
   const [pickingFilter, setPickingFilter] = useState(false);
   const scopedCodes = useMemo(() => orderedCodes(Object.fromEntries(scopedAll.map((e) => [e.currency, 1]))), [scopedAll]);
   const activeFilter = curFilter && scopedCodes.includes(curFilter) ? curFilter : null;
-  const scoped = useMemo(() => (activeFilter ? scopedAll.filter((e) => e.currency === activeFilter) : scopedAll), [scopedAll, activeFilter]);
+  // Settled up: once a currency's running balance comes back to zero, everything up to that point is done
+  // and hidden (like Splitwise). Only what's happened since the last zero shows, unless asked.
+  const [showSettled, setShowSettled] = useState(false);
+  const settledIds = useMemo(() => {
+    const ids = new Set<string>();
+    const chronAll = [...scopedAll].reverse();   // the list is newest first
+    const lastZero: Record<string, number> = {};
+    chronAll.forEach((e, i) => { if (Math.abs(e.balance_after) < 0.0005) lastZero[e.currency] = i; });
+    chronAll.forEach((e, i) => { if (lastZero[e.currency] !== undefined && i <= lastZero[e.currency]) ids.add(e.id); });
+    return ids;
+  }, [scopedAll]);
+  const filtered = useMemo(() => (activeFilter ? scopedAll.filter((e) => e.currency === activeFilter) : scopedAll), [scopedAll, activeFilter]);
+  const hiddenCount = showSettled ? 0 : filtered.filter((e) => settledIds.has(e.id)).length;
+  const settledInView = filtered.filter((e) => settledIds.has(e.id)).length;
+  const scoped = useMemo(() => (showSettled ? filtered : filtered.filter((e) => !settledIds.has(e.id))), [filtered, settledIds, showSettled]);
   const groupLabel = (gid: string | null | undefined) => groups.find((g) => g.id === gid)?.name || 'General';
 
   const openNew = (dir: 'gave' | 'got') => {
@@ -401,7 +415,7 @@ export default function CashLedgerAccountScreen() {
               <RoundAction s={s} icon="call" label="Call" disabled={!phoneDigits} onPress={() => Linking.openURL(`tel:${phoneDigits}`)} testID="cl-call" />
               <RoundAction s={s} icon="logo-whatsapp" label="Remind" disabled={!phoneDigits || !codes.length} onPress={remind} testID="cl-remind" />
               <RoundAction s={s} icon="checkmark-done" label="Settle Up" disabled={!codes.length} onPress={settle} testID="cl-settle" />
-              <RoundAction s={s} icon="document-text" label="Statement" disabled={!scoped.length && !(!grp && acc.entries)} onPress={() => setStmtOpen(true)} testID="cl-statement-open" />
+              <RoundAction s={s} icon="document-text" label="Statement" disabled={!scopedAll.length && !(!grp && acc.entries)} onPress={() => setStmtOpen(true)} testID="cl-statement-open" />
             </View>
 
             {!grp && (groups.length > 0 || canEdit) && (
@@ -455,6 +469,22 @@ export default function CashLedgerAccountScreen() {
                     <Ionicons name="chevron-down" size={13} color={activeFilter ? colors.onBrandPrimary : colors.mutedText} />
                   </Pressable>
                 )}
+                {settledInView > 0 && (
+                  <Pressable onPress={() => setShowSettled((v) => !v)} hitSlop={8} style={({ pressed }) => [s.settledRow, pressed && { opacity: 0.6 }]} testID="cl-settled-toggle">
+                    <Ionicons name={showSettled ? 'eye-off-outline' : 'checkmark-done-circle-outline'} size={16} color={colors.mutedText} />
+                    <Text style={s.settledText}>
+                      {showSettled ? 'Hide settled entries' : `${hiddenCount} settled ${hiddenCount === 1 ? 'entry' : 'entries'} hidden · `}
+                      {!showSettled && <Text style={{ color: colors.brandPrimary, fontWeight: '600' }}>Show</Text>}
+                    </Text>
+                  </Pressable>
+                )}
+              </View>
+            )}
+            {!!scopedAll.length && scoped.length === 0 && (
+              <View style={s.allSettled} testID="cl-all-settled">
+                <Ionicons name="checkmark-circle" size={30} color={colors.onSuccess} />
+                <Text style={s.allSettledTitle}>All settled up</Text>
+                <Text style={s.allSettledText}>Earlier entries are hidden. Tap Show to see them.</Text>
               </View>
             )}
 
@@ -961,6 +991,11 @@ const makeStyles = (colors: ThemeColors, narrow = false) => StyleSheet.create({
   formRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: spacing.md, minHeight: 48 },
   formAction: { color: colors.brandPrimary, fontSize: 17 },
   formLabel: { color: colors.onSurface, fontSize: 17 },
+  settledRow: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'center', marginTop: 12, paddingHorizontal: 10, paddingVertical: 4 },
+  settledText: { color: colors.mutedText, fontSize: 14 },
+  allSettled: { alignItems: 'center', gap: 4, paddingVertical: spacing.xl },
+  allSettledTitle: { color: colors.onSurface, fontSize: 17, fontWeight: '600', marginTop: 4 },
+  allSettledText: { color: colors.mutedText, fontSize: 14, textAlign: 'center' },
   filterBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, alignSelf: 'flex-end', marginTop: 10, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, backgroundColor: colors.surfaceSecondary },
   filterBtnOn: { backgroundColor: colors.brandPrimary },
   filterText: { color: colors.brandPrimary, fontSize: 14, fontWeight: '600' },
