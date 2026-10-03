@@ -473,7 +473,7 @@ function QuickView({ doc, categoryLabel, token, fileUri, onClose, onRecord, canR
   const [unlocks, setUnlocks] = useState(0);
   const unlock = async () => {
     if (!doc) return;
-    const ok = await askPassword(doc.file.orig_name || 'PDF', async (password) => { await api.post(`/documents/${doc.id}/unlock`, { password }); });
+    const ok = await askPassword(doc.file.orig_name || 'PDF', async (password, remember) => { await api.post(`/documents/${doc.id}/unlock`, { password, remember }); });
     if (ok) { setUnlocks((n) => n + 1); reloadPdf(); toast.success('Unlocked — the password is removed'); }
   };
   const idx = doc ? list.findIndex((x) => x.id === doc.id) : -1;

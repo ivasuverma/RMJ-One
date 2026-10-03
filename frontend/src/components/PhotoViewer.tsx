@@ -29,7 +29,7 @@ export function PhotoViewer({ url, token, name, title, docId, onClose, onDelete 
   const { askPassword, prompt: pdfPrompt } = usePdfPassword();
   const unlock = async () => {
     if (!docId) return;
-    const ok = await askPassword(title || name, async (password) => { await api.post(`/documents/${docId}/unlock`, { password }); });
+    const ok = await askPassword(title || name, async (password, remember) => { await api.post(`/documents/${docId}/unlock`, { password, remember }); });
     if (ok) { setUnlocks((n) => n + 1); reload(); toast.success('Unlocked — the password is removed'); }
   };
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
