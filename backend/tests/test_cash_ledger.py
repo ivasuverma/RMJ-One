@@ -127,12 +127,16 @@ def test_cash_ledger_convert_currency():
         assert conv(from_currency='USD', to_currency='USD', amount=10, rate=1).status_code == 400
         r = conv(from_currency='USD', to_currency='INR', amount=200, rate=83.25)
         assert r.status_code == 200 and r.json()['to_amount'] == 16650
+        # the other way round, as rupee rates are quoted: 1 CAD = 62.5 INR -> 1,250 INR is 20 CAD
+        requests.post(f"{API}/khata/{aid}/entries", headers=h, json={'direction': 'gave', 'amount': 1250, 'currency': 'INR'}, timeout=30)
+        r2 = conv(from_currency='INR', to_currency='CAD', amount=1250, rate=62.5, rate_per_to=True)
+        assert r2.status_code == 200 and r2.json()['to_amount'] == 20
         acc = requests.get(f"{API}/khata/{aid}", headers=h, timeout=30).json()
-        assert acc['account']['balances'] == {'INR': 16650}
-        leg = next(e for e in acc['entries'] if e.get('conversion_id'))
+        assert acc['account']['balances'] == {'INR': 16650, 'CAD': 20}
+        leg = next(e for e in acc['entries'] if e.get('conversion_id') and e['currency'] == 'USD')
         assert requests.put(f"{API}/khata/{aid}/entries/{leg['id']}", headers=h, json={'direction': 'got', 'amount': 1}, timeout=30).status_code == 400
         requests.delete(f"{API}/khata/{aid}/entries/{leg['id']}", headers=h, timeout=30)     # undoes both sides
-        assert requests.get(f"{API}/khata/{aid}", headers=h, timeout=30).json()['account']['balances'] == {'USD': 200}
+        assert requests.get(f"{API}/khata/{aid}", headers=h, timeout=30).json()['account']['balances'] == {'USD': 200, 'CAD': 20}
     finally:
         for e in requests.get(f"{API}/khata/{aid}", headers=h, timeout=30).json().get('entries', []):
             requests.delete(f"{API}/khata/{aid}/entries/{e['id']}", headers=h, timeout=30)

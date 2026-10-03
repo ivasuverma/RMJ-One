@@ -49,9 +49,10 @@ function formatter(code: string): Intl.NumberFormat {
   return fmtCache[code];
 }
 
-/** "₹17,500", "$200", "AED 1,250.50", "Gold 10.500 g" — always positive; the caller says owes / owe. */
+/** "₹17,500", "$200", "AED 1,250.50", "10.500 g" (gold), "500.000 g Ag" (silver) — always positive; the caller says owes / owe. */
 export function money(n: number, code: string = BASE_CURRENCY): string {
-  if (METALS[code]) return `${METALS[code].name} ${grams.format(Math.abs(n))} g`;
+  // Gold is just grams; silver keeps "Ag" so the two can't be mixed up in a list.
+  if (METALS[code]) return `${grams.format(Math.abs(n))} g${code === 'XAG' ? ' Ag' : ''}`;
   const s = formatter(code).format(Math.abs(n));
   return /\d/.test(s.charAt(0)) ? `${code} ${s}` : s;   // a code with no symbol
 }
