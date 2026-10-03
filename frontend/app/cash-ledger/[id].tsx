@@ -91,6 +91,7 @@ export default function CashLedgerAccountScreen() {
   const [convTo, setConvTo] = useState(BASE_CURRENCY);
   const [convAmt, setConvAmt] = useState('');
   const [convRate, setConvRate] = useState('');
+  const [convInv, setConvInv] = useState(false);   // rate typed as "1 CAD = 62.5 INR" (per unit of the new currency)
   const [convDate, setConvDate] = useState(todayIST());
   const [convNote, setConvNote] = useState('');
   const [convPicking, setConvPicking] = useState(false);
@@ -123,7 +124,13 @@ export default function CashLedgerAccountScreen() {
   const heroBal: Balances = grp ? grp.balances : acc?.balances || {};
   const codes = orderedCodes(heroBal);
   const totalCodes = acc ? orderedCodes(acc.balances) : [];
-  const scoped = useMemo(() => (entries || []).filter((e) => (group ? e.group_id === group : !e.group_id)), [entries, group]);
+  const scopedAll = useMemo(() => (entries || []).filter((e) => (group ? e.group_id === group : !e.group_id)), [entries, group]);
+  // Currency filter (Rupee / Gold / …) for the three views; only offered when there's more than one.
+  const [curFilter, setCurFilter] = useState<string | null>(null);
+  const [pickingFilter, setPickingFilter] = useState(false);
+  const scopedCodes = useMemo(() => orderedCodes(Object.fromEntries(scopedAll.map((e) => [e.currency, 1]))), [scopedAll]);
+  const activeFilter = curFilter && scopedCodes.includes(curFilter) ? curFilter : null;
+  const scoped = useMemo(() => (activeFilter ? scopedAll.filter((e) => e.currency === activeFilter) : scopedAll), [scopedAll, activeFilter]);
   const groupLabel = (gid: string | null | undefined) => groups.find((g) => g.id === gid)?.name || 'General';
 
   const openNew = (dir: 'gave' | 'got') => {
@@ -242,9 +249,10 @@ export default function CashLedgerAccountScreen() {
   });
 
   // Suggest a rate where the app knows one: gold/silver <-> rupees from today's live rate.
-  const suggestRate = (from: string, to: string, rates = metalRates) => {
-    if (METALS[from] && to === BASE_CURRENCY && rates[from]) return String(rates[from]);
-    if (from === BASE_CURRENCY && METALS[to] && rates[to]) return String(Number((1 / (rates[to] as number)).toFixed(6)));
+  // Rupee rates are quoted per unit of the other currency, so from ₹ the rate is typed as "1 CAD = … INR".
+  const suggestRate = (from: string, to: string, rates = metalRates, inv = from === BASE_CURRENCY) => {
+    if (METALS[from] && to === BASE_CURRENCY && rates[from]) return inv ? String(Number((1 / (rates[from] as number)).toFixed(6))) : String(rates[from]);
+    if (from === BASE_CURRENCY && METALS[to] && rates[to]) return inv ? String(rates[to]) : String(Number((1 / (rates[to] as number)).toFixed(6)));
     return '';
   };
   // From the person's page this converts the general balance; a group's balance is converted on the group's page.
@@ -253,26 +261,27 @@ export default function CashLedgerAccountScreen() {
     if (!convertible(from)) { toast.error('This balance is all in groups — open the group to convert it.'); return; }
     const to = from === BASE_CURRENCY ? (codes.find((c) => c !== from) || 'USD') : BASE_CURRENCY;
     setConv({ from }); setConvTo(to); setConvAmt(String(Math.abs(convertible(from)))); setConvDate(todayIST()); setConvNote('');
+    setConvInv(from === BASE_CURRENCY);
     setConvRate(suggestRate(from, to));
     if (!Object.keys(metalRates).length) {
       try {
         const r = await api.get<Record<string, number | null>>('/khata-metal-rates');
         setMetalRates(r);
-        setConvRate((cur) => cur || suggestRate(from, to, r));
+        setConvRate((cur) => cur || suggestRate(from, to, r, from === BASE_CURRENCY));
       } catch { /* no live rate: type it */ }
     }
   };
   const convFromBal = conv ? convertible(conv.from) : 0;
   const convAmtN = Number(convAmt.replace(/,/g, '')) || 0;
   const convRateN = Number(convRate.replace(/,/g, '')) || 0;
-  const convOut = convAmtN * convRateN;
+  const convOut = convRateN ? (convInv ? convAmtN / convRateN : convAmtN * convRateN) : 0;
   const unitOf = (c: string) => (METALS[c] ? `g ${METALS[c].name.toLowerCase()}` : c);
   const doConvert = async () => {
     if (!conv || convBusy) return;
     if (!convAmtN || !convRateN) { toast.error('Enter the amount and the rate'); return; }
     setConvBusy(true);
     try {
-      await api.post(`/khata/${id}/convert`, { from_currency: conv.from, to_currency: convTo, amount: convAmtN, rate: convRateN, date: convDate, note: convNote.trim(), group_id: group || null });
+      await api.post(`/khata/${id}/convert`, { from_currency: conv.from, to_currency: convTo, amount: convAmtN, rate: convRateN, rate_per_to: convInv, date: convDate, note: convNote.trim(), group_id: group || null });
       haptics.success(); setConv(null); load();
     } catch (e: any) { haptics.error(); toast.error(e?.detail || 'Could not convert'); }
     finally { setConvBusy(false); }
@@ -304,7 +313,7 @@ export default function CashLedgerAccountScreen() {
     const withGroups = grp ? [] : groups.filter((g) => Object.keys(g.balances).length);
     const all: Balances = Object.fromEntries(Object.keys(byCur).map((c) => [c, 1]));
     for (const g of withGroups) for (const c of Object.keys(g.balances)) all[c] = 1;
-    return orderedCodes(all).map((c) => {
+    return orderedCodes(all).filter((c) => !activeFilter || c === activeFilter).map((c) => {
       const rows: StRow[] = (byCur[c] || []).map((e) => ({ kind: 'entry', e, amt: e.direction === 'gave' ? e.amount : -e.amount, bal: e.balance_after }));
       let bal = rows.length ? rows[rows.length - 1].bal : 0;
       for (const g of withGroups) {
@@ -316,7 +325,7 @@ export default function CashLedgerAccountScreen() {
       const got = rows.reduce((t, r) => t + (r.amt < 0 ? -r.amt : 0), 0);
       return { code: c, rows, gave, got, closing: bal };
     });
-  }, [chron, groups, grp]);
+  }, [chron, groups, grp, activeFilter]);
 
   // Day-wise: newest day first, each day ends with its closing balance per currency.
   const days = useMemo(() => {
@@ -336,7 +345,7 @@ export default function CashLedgerAccountScreen() {
 
   return (
     <SafeAreaView style={s.root} edges={['top']} testID="cash-ledger-account">
-      <ModuleHeader title={grp ? grp.name : acc?.name || ''} backLabel={grp ? first : 'Cash Ledger'} scrolled={scrolled}
+      <ModuleHeader title={grp ? grp.name : acc?.name || ''} backLabel={grp ? first : 'Cash Ledger'} scrolled={scrolled} fitTitle
         actions={canEdit ? (
           <Pressable onPress={grp ? () => openGroupSheet('edit') : openAccEdit} hitSlop={10} style={({ pressed }) => [pressed && { opacity: 0.5 }]} testID="cl-edit-account">
             <Text style={s.navText}>Edit</Text>
@@ -353,14 +362,14 @@ export default function CashLedgerAccountScreen() {
                 {grp ? <Ionicons name="folder" size={24} color={colors.brandPrimary} /> : <Text style={s.heroAvText}>{initials(acc.name)}</Text>}
               </View>
               <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={s.heroLabel} numberOfLines={1}>
+                <Text style={s.heroLabel}>
                   {!codes.length ? (grp ? 'Group settled' : 'All settled')
                     : codes.every((c) => heroBal[c] > 0) ? `${first} owes you${grp ? ' in this group' : ''}`
                       : codes.every((c) => heroBal[c] < 0) ? `You owe ${first}${grp ? ' in this group' : ''}`
                         : `${first} · balances`}
                 </Text>
                 {grp ? (
-                  <Text style={s.heroSub} numberOfLines={2} testID="cl-total-with">
+                  <Text style={s.heroSub} testID="cl-total-with">
                     Total with {first}: {totalCodes.length ? totalCodes.map((c) => signed(acc.balances[c], c)).join(' · ') : 'settled'}
                   </Text>
                 ) : !!acc.phone && <Text style={s.heroSub}>{acc.phone}</Text>}
@@ -372,10 +381,14 @@ export default function CashLedgerAccountScreen() {
                 const v = heroBal[c] || 0;
                 return (
                   <Pressable key={c} onPress={() => v && openConvert(c)} disabled={!v} style={({ pressed }) => [s.tile, codes.length <= 1 && s.tileWide, pressed && { opacity: 0.7 }]} testID={`cl-tile-${c}`}>
-                    <Text style={s.tileLabel} numberOfLines={1}>{currencyName(c).replace(' (grams)', '')}</Text>
-                    <Text style={[s.tileAmt, codes.length <= 1 && s.tileAmtBig, { color: balColor(v) }]} numberOfLines={1} adjustsFontSizeToFit>
-                      {METALS[c] ? `${num(v, c)} g` : money(v, c)}
-                    </Text>
+                    <Text style={s.tileLabel}>{currencyName(c).replace(' (grams)', '')}</Text>
+                    {(() => {
+                      // Fit the whole amount: smaller type for longer numbers (the web has no auto-shrink).
+                      const txt = METALS[c] ? `${num(v, c)} g` : money(v, c);
+                      const half = codes.length > 1;
+                      const size = !half ? (txt.length > 18 ? 18 : txt.length > 16 ? 22 : 26) : txt.length > 15 ? 13 : txt.length > 13 ? 15 : txt.length > 11 ? 16 : txt.length > 9 ? 18 : 20;
+                      return <Text style={[s.tileAmt, { fontSize: size, color: balColor(v) }]} numberOfLines={1}>{txt}</Text>;
+                    })()}
                     {mixed && <Text style={s.tileSub}>{v > 0 ? `${first} owes you` : `You owe ${first}`}</Text>}
                   </Pressable>
                 );
@@ -402,7 +415,7 @@ export default function CashLedgerAccountScreen() {
                         <View style={[s.entryIcon, { backgroundColor: colors.surfaceTertiary }]}><Ionicons name="folder" size={15} color={colors.brandPrimary} /></View>
                         <View style={[s.entryBody, i > 0 && s.sepTop]}>
                           <View style={{ flex: 1, minWidth: 0 }}>
-                            <Text style={s.title} numberOfLines={1}>{g.name}</Text>
+                            <Text style={s.title}>{g.name}</Text>
                             <Text style={s.subtitle}>{g.entries} {g.entries === 1 ? 'entry' : 'entries'}</Text>
                           </View>
                           <View style={s.trailing}>
@@ -431,70 +444,100 @@ export default function CashLedgerAccountScreen() {
             {!!acc.note && <Text style={s.note}>{acc.note}</Text>}
 
             {!grp && groups.length > 0 && <Text style={s.sectionHeader}>GENERAL ENTRIES</Text>}
-            {!!scoped.length && (
+            {!!scopedAll.length && (
               <View style={{ marginTop: !grp && groups.length > 0 ? 0 : spacing.xl }}>
                 <SegmentedControl options={[{ key: 'list', label: 'Entries' }, { key: 'statement', label: 'Statement' }, { key: 'daily', label: 'Day-wise' }]}
                   value={view} onChange={(k) => setView(k as ViewKey)} testID="cl-view" />
+                {scopedCodes.length > 1 && (
+                  <Pressable onPress={() => setPickingFilter(true)} hitSlop={8} style={({ pressed }) => [s.filterBtn, activeFilter && s.filterBtnOn, pressed && { opacity: 0.6 }]} testID="cl-filter">
+                    <Ionicons name="filter" size={14} color={activeFilter ? colors.onBrandPrimary : colors.brandPrimary} />
+                    <Text style={[s.filterText, activeFilter && { color: colors.onBrandPrimary }]}>{activeFilter ? currencyName(activeFilter).replace(' (grams)', '') : 'All currencies'}</Text>
+                    <Ionicons name="chevron-down" size={13} color={activeFilter ? colors.onBrandPrimary : colors.mutedText} />
+                  </Pressable>
+                )}
               </View>
             )}
 
-            {entries && scoped.length === 0 ? (
+            {entries && scopedAll.length === 0 ? (
               <Text style={s.emptyText}>{grp ? 'No entries in this group yet.' : groups.length ? 'No general entries.' : 'No entries yet.'}</Text>
-            ) : view === 'statement' ? statements.map((st) => (
+            ) : view === 'statement' ? statements.map((st) => {
+              // Widen the number columns to the longest number in this table so none is ever cut.
+              const longest = Math.max(...st.rows.map((r) => Math.max(num(r.amt, st.code).length + 1, num(r.bal, st.code).length + 1)), 6);
+              const colW = { width: Math.max(narrow ? 84 : 100, Math.ceil(longest * (narrow ? 7.4 : 8.2)) + 4) };
+              // Very long numbers (crores): each line puts the amount and balance under the details instead of in
+              // narrow columns, so neither the text nor the numbers get squeezed.
+              const stacked = longest > (narrow ? 11 : 12);
+              return (
               <View key={st.code} testID={`cl-statement-${st.code}`}>
                 <Text style={s.sectionHeader}>{currencyName(st.code).toUpperCase()} · {symbol(st.code)}</Text>
                 <View style={s.group}>
                   <View style={[s.tRow, s.tHead]}>
                     <Text style={[s.tDetails, s.tHeadText]} numberOfLines={1}>DETAILS</Text>
-                    <Text style={[s.tNum, s.tHeadText]}>AMOUNT</Text>
-                    <Text style={[s.tBal, s.tHeadText]}>BALANCE</Text>
+                    {stacked ? <Text style={[s.tHeadText, { textAlign: 'right' }]}>AMOUNT · BALANCE</Text> : (
+                      <>
+                        <Text style={[s.tNum, s.tHeadText, colW]}>AMOUNT</Text>
+                        <Text style={[s.tBal, s.tHeadText, colW]}>BALANCE</Text>
+                      </>
+                    )}
                   </View>
                   {st.rows.map((r) => (
                     <Pressable key={r.kind === 'entry' ? r.e.id : `g-${r.g.id}`} testID={r.kind === 'entry' ? `cl-st-${r.e.id}` : `cl-st-group-${r.g.id}`}
                       onPress={() => (r.kind === 'entry' ? openEdit(r.e) : router.push(`/cash-ledger/${id}?group=${r.g.id}` as any))}
-                      style={({ pressed }) => [s.tRow, s.sepTop, r.kind === 'group' && s.tGroup, pressed && s.pressed]}>
-                      <View style={s.tDetails}>
+                      style={({ pressed }) => [s.tRow, s.sepTop, stacked && s.tRowStacked, r.kind === 'group' && s.tGroup, pressed && s.pressed]}>
+                      <View style={stacked ? null : s.tDetails}>
                         {r.kind === 'entry' ? (
                           <>
                             <Text style={s.tYear}>{istDisplayDate(r.e.date)}</Text>
-                            <Text style={s.tCell} numberOfLines={2}>{r.e.note || (r.e.direction === 'gave' ? 'You gave' : 'You got')}{r.e.photos > 0 ? ' 📷' : ''}</Text>
-                            {!!r.e.remark && <Text style={s.tYear} numberOfLines={1}>{r.e.remark}</Text>}
+                            <Text style={s.tCell}>{r.e.note || (r.e.direction === 'gave' ? 'You gave' : 'You got')}{r.e.photos > 0 ? ' 📷' : ''}</Text>
+                            {!!r.e.remark && <Text style={s.tYear}>{r.e.remark}</Text>}
                           </>
                         ) : (
                           <>
                             <Text style={s.tYear}>Group total · {r.g.entries} {r.g.entries === 1 ? 'entry' : 'entries'}</Text>
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                               <Ionicons name="folder" size={13} color={colors.brandPrimary} />
-                              <Text style={[s.tCell, { fontWeight: '600', flexShrink: 1 }]} numberOfLines={1}>{r.g.name}</Text>
+                              <Text style={[s.tCell, { fontWeight: '600', flexShrink: 1 }]}>{r.g.name}</Text>
                               <Ionicons name="chevron-forward" size={12} color={colors.mutedText} />
                             </View>
                           </>
                         )}
                       </View>
-                      <Text style={[s.tNum, s.tCell, { color: r.amt > 0 ? colors.onError : colors.onSuccess }, r.kind === 'group' && { fontWeight: '600' }]} numberOfLines={1}>
-                        {r.amt > 0 ? '−' : '+'}{num(r.amt, st.code)}
-                      </Text>
-                      <Text style={[s.tBal, s.tCell, { color: balColor(r.bal) }]} numberOfLines={1}>{r.bal < 0 ? '−' : ''}{num(r.bal, st.code)}</Text>
+                      {stacked ? (
+                        <View style={s.tStackNums}>
+                          <Text style={[s.tCell, { color: r.amt > 0 ? colors.onError : colors.onSuccess }, r.kind === 'group' && { fontWeight: '600' }]}>
+                            {r.amt > 0 ? '−' : '+'}{num(r.amt, st.code)}
+                          </Text>
+                          <Text style={[s.tCell, s.tStackBal, { color: balColor(r.bal) }]}>Bal {r.bal < 0 ? '−' : ''}{num(r.bal, st.code)}</Text>
+                        </View>
+                      ) : (
+                        <>
+                          <Text style={[s.tNum, s.tCell, colW, { color: r.amt > 0 ? colors.onError : colors.onSuccess }, r.kind === 'group' && { fontWeight: '600' }]} numberOfLines={1}>
+                            {r.amt > 0 ? '−' : '+'}{num(r.amt, st.code)}
+                          </Text>
+                          <Text style={[s.tBal, s.tCell, colW, { color: balColor(r.bal) }]} numberOfLines={1}>{r.bal < 0 ? '−' : ''}{num(r.bal, st.code)}</Text>
+                        </>
+                      )}
                     </Pressable>
                   ))}
                   <View style={[s.tRow, s.tFoot]}>
                     <View style={s.tDetails}>
                       <Text style={s.tFootText}>Closing Balance</Text>
-                      <Text style={s.tYear} numberOfLines={2}>Gave {num(st.gave, st.code)} · Got {num(st.got, st.code)}</Text>
+                      <Text style={s.tYear}>Gave {num(st.gave, st.code)} · Got {num(st.got, st.code)}</Text>
                     </View>
-                    <Text style={[s.tBal, s.tFootText, { width: narrow ? 130 : 150, color: balColor(st.closing) }]} numberOfLines={1}>{st.closing < 0 ? '−' : ''}{money(st.closing, st.code)}</Text>
+                    <Text style={[s.tBal, s.tFootText, { width: 'auto', flexShrink: 0, maxWidth: '62%', color: balColor(st.closing) }]}>{st.closing < 0 ? '−' : ''}{money(st.closing, st.code)}</Text>
                   </View>
                 </View>
               </View>
-            )) : view === 'daily' ? days.map((d) => (
+              );
+            }) : view === 'daily' ? days.map((d) => (
               <View key={d.date} testID={`cl-day-${d.date}`}>
                 <Text style={s.sectionHeader}>{dayLabel(d.date).toUpperCase()}</Text>
                 <View style={s.group}>
                   {d.items.map((e, i) => (
                     <Pressable key={e.id} onPress={() => openEdit(e)} style={({ pressed }) => [s.dRow, i > 0 && s.sepTop, pressed && s.pressed]} testID={`cl-d-${e.id}`}>
                       <View style={{ flex: 1, minWidth: 0 }}>
-                        <Text style={s.dNote} numberOfLines={1}>{e.note || (e.direction === 'gave' ? 'You gave' : 'You got')}{e.photos > 0 ? ' 📷' : ''}</Text>
-                        {!!e.remark && <Text style={s.subtitle} numberOfLines={1}>{e.remark}</Text>}
+                        <Text style={s.dNote}>{e.note || (e.direction === 'gave' ? 'You gave' : 'You got')}{e.photos > 0 ? ' 📷' : ''}</Text>
+                        {!!e.remark && <Text style={s.subtitle}>{e.remark}</Text>}
                       </View>
                       <View style={s.trailing}>
                         <Text style={[s.dAmt, { color: e.direction === 'gave' ? colors.onError : colors.onSuccess }]}>{e.direction === 'gave' ? '−' : '+'}{money(e.amount, e.currency)}</Text>
@@ -524,9 +567,9 @@ export default function CashLedgerAccountScreen() {
                       </View>
                       <View style={[s.entryBody, i > 0 && s.sepTop]}>
                         <View style={{ flex: 1, minWidth: 0 }}>
-                          <Text style={s.title} numberOfLines={1}>{e.note || (e.direction === 'gave' ? 'You gave' : 'You got')}</Text>
+                          <Text style={s.title}>{e.note || (e.direction === 'gave' ? 'You gave' : 'You got')}</Text>
                           <View style={s.metaRow}>
-                            <Text style={s.subtitle} numberOfLines={1}>{istDisplayDate(e.date)}{e.split ? ` · ${money(e.split.total, e.currency)} bill, ${e.split.mode === 'equal' ? 'split equally' : 'shared'}` : ''}{e.remark ? ` · ${e.remark}` : ''}</Text>
+                            <Text style={s.subtitle}>{istDisplayDate(e.date)}{e.split ? ` · ${money(e.split.total, e.currency)} bill, ${e.split.mode === 'equal' ? 'split equally' : 'shared'}` : ''}{e.remark ? ` · ${e.remark}` : ''}</Text>
                             {e.photos > 0 && <><Ionicons name="image-outline" size={12} color={colors.mutedText} /><Text style={s.subtitle}>{e.photos}</Text></>}
                           </View>
                         </View>
@@ -581,7 +624,7 @@ export default function CashLedgerAccountScreen() {
         {/* How was it split? Like Splitwise; the balance only takes the share that's owed */}
         <Pressable onPress={() => setPickingSplit(true)} style={({ pressed }) => [s.splitBtn, pressed && { opacity: 0.6 }]} testID="cl-split">
           <Ionicons name="people-outline" size={16} color={colors.brandPrimary} />
-          <Text style={s.splitBtnText} numberOfLines={1}>{splitLabel(direction, splitMode)}</Text>
+          <Text style={s.splitBtnText}>{splitLabel(direction, splitMode)}</Text>
           <Ionicons name="chevron-down" size={14} color={colors.mutedText} />
         </Pressable>
         {splitMode === 'custom' && (
@@ -619,7 +662,7 @@ export default function CashLedgerAccountScreen() {
               <View style={s.formSep} />
               <Pressable onPress={() => setPickingGroup(true)} style={({ pressed }) => [s.formRow, pressed && s.pressed]} testID="cl-entry-group">
                 <Text style={[s.formLabel]}>Group</Text>
-                <Text style={s.formValue} numberOfLines={1}>{groupLabel(entryGroup)}</Text>
+                <Text style={s.formValue}>{groupLabel(entryGroup)}</Text>
                 <Ionicons name="chevron-forward" size={16} color={colors.mutedText} />
               </Pressable>
             </>
@@ -664,6 +707,18 @@ export default function CashLedgerAccountScreen() {
       </Sheet>
       <CurrencyPicker visible={picking} value={currency} onPick={(c) => { setCurrency(c); setPicking(false); }} onClose={() => setPicking(false)} />
 
+      <Sheet visible={pickingFilter} onClose={() => setPickingFilter(false)} title="Show" testID="cl-filter-sheet">
+        <View style={s.formGroup}>
+          {[null, ...scopedCodes].map((c, i) => (
+            <Pressable key={c || 'all'} onPress={() => { setCurFilter(c); setPickingFilter(false); }} style={({ pressed }) => [s.formRow, i > 0 && s.sepTop, pressed && s.pressed]} testID={`cl-filter-${c || 'all'}`}>
+              <Text style={s.filterSym}>{c ? symbol(c) : '∗'}</Text>
+              <Text style={[s.formLabel, { flex: 1 }]}>{c ? currencyName(c).replace(' (grams)', '') : 'All currencies'}</Text>
+              {activeFilter === c && <Ionicons name="checkmark" size={20} color={colors.brandPrimary} />}
+            </Pressable>
+          ))}
+        </View>
+      </Sheet>
+
       <Sheet visible={pickingSplit} onClose={() => setPickingSplit(false)} title="How was this split?" testID="cl-split-picker">
         <View style={s.formGroup}>
           {([['gave', 'equal'], ['gave', 'full'], ['got', 'equal'], ['got', 'full']] as const).map(([d, m], i) => {
@@ -701,7 +756,7 @@ export default function CashLedgerAccountScreen() {
           {[{ id: null as string | null, name: 'General' }, ...groups].map((g, i) => (
             <Pressable key={g.id || 'general'} onPress={() => { setEntryGroup(g.id); setPickingGroup(false); }} style={({ pressed }) => [s.formRow, i > 0 && s.sepTop, pressed && s.pressed]} testID={`cl-pick-group-${g.id || 'general'}`}>
               <Ionicons name={g.id ? 'folder-outline' : 'person-outline'} size={18} color={colors.mutedText} />
-              <Text style={[s.formLabel, { flex: 1 }]} numberOfLines={1}>{g.name}</Text>
+              <Text style={[s.formLabel, { flex: 1 }]}>{g.name}</Text>
               {entryGroup === g.id && <Ionicons name="checkmark" size={20} color={colors.brandPrimary} />}
             </Pressable>
           ))}
@@ -733,7 +788,7 @@ export default function CashLedgerAccountScreen() {
             <View style={s.formGroup}>
               <View style={s.formRow}>
                 <Text style={[s.formLabel, { flex: 1 }]}>From</Text>
-                <Text style={s.formValue} numberOfLines={1}>{money(convFromBal, conv.from)}</Text>
+                <Text style={s.formValue}>{money(convFromBal, conv.from)}</Text>
               </View>
               <View style={s.formSep} />
               <View style={s.formRow}>
@@ -752,26 +807,30 @@ export default function CashLedgerAccountScreen() {
             <View style={s.formGroup}>
               <Pressable onPress={() => setConvPicking(true)} style={({ pressed }) => [s.formRow, pressed && s.pressed]} testID="cl-conv-to">
                 <Text style={[s.formLabel, { flex: 1 }]}>To</Text>
-                <Text style={s.formValue} numberOfLines={1}>{currencyName(convTo).replace(' (grams)', '')} {symbol(convTo)}</Text>
+                <Text style={s.formValue}>{currencyName(convTo).replace(' (grams)', '')}</Text>
                 <Ionicons name="chevron-forward" size={16} color={colors.mutedText} />
               </Pressable>
               <View style={s.formSep} />
               <View style={s.formRow}>
-                <Text style={[s.formLabel, { flexShrink: 0 }]} numberOfLines={1}>1 {unitOf(conv.from)} =</Text>
+                <Text style={[s.formLabel, { flexShrink: 0 }]} numberOfLines={1}>1 {unitOf(convInv ? convTo : conv.from)} =</Text>
                 <TextInput value={convRate} onChangeText={(t) => setConvRate(t.replace(/[^\d.,]/g, ''))} keyboardType="decimal-pad" placeholder="Rate"
                   placeholderTextColor={colors.mutedText} style={[s.formInput, { flex: 1, minWidth: 0, textAlign: 'right', paddingHorizontal: 0 }]} testID="cl-conv-rate" />
-                <Text style={[s.formValue2, { flexShrink: 0 }]} numberOfLines={1}>{unitOf(convTo)}</Text>
+                <Text style={[s.formValue2, { flexShrink: 0 }]} numberOfLines={1}>{unitOf(convInv ? conv.from : convTo)}</Text>
+                <Pressable onPress={() => { const inv = !convInv; setConvInv(inv); setConvRate(convRateN ? String(Number((1 / convRateN).toFixed(6))) : suggestRate(conv.from, convTo, metalRates, inv)); }}
+                  hitSlop={8} style={({ pressed }) => [s.swapBtn, pressed && { opacity: 0.5 }]} accessibilityLabel="Swap rate direction" testID="cl-conv-swap">
+                  <Ionicons name="swap-horizontal" size={18} color={colors.brandPrimary} />
+                </Pressable>
               </View>
             </View>
-            {(METALS[conv.from] || METALS[convTo]) && !!suggestRate(conv.from, convTo) && (
-              <Pressable onPress={() => setConvRate(suggestRate(conv.from, convTo))} hitSlop={6}>
+            {(METALS[conv.from] || METALS[convTo]) && !!suggestRate(conv.from, convTo, metalRates, convInv) && (
+              <Pressable onPress={() => setConvRate(suggestRate(conv.from, convTo, metalRates, convInv))} hitSlop={6}>
                 <Text style={s.footer}>Today&apos;s live rate: {money(metalRates[METALS[conv.from] ? conv.from : convTo] || 0, BASE_CURRENCY)} per gram ({METALS[conv.from] ? METALS[conv.from].name : METALS[convTo].name}, sell). Tap to use it.</Text>
               </Pressable>
             )}
 
             <View style={s.convResult} testID="cl-conv-result">
               <Text style={s.convResultLabel}>{convFromBal > 0 ? `${first} will owe you` : `You will owe ${first}`}</Text>
-              <Text style={[s.convResultAmt, { color: balColor(convFromBal) }]} numberOfLines={1} adjustsFontSizeToFit>{convOut ? money(convOut, convTo) : '—'}</Text>
+              <Text style={[s.convResultAmt, { color: balColor(convFromBal) }, !!convOut && money(convOut, convTo).length > 14 ? { fontSize: 26 } : null]}>{convOut ? money(convOut, convTo) : '—'}</Text>
               <Text style={s.convResultSub}>instead of {money(convAmtN, conv.from)}</Text>
             </View>
 
@@ -788,7 +847,7 @@ export default function CashLedgerAccountScreen() {
         )}
       </Sheet>
       <CurrencyPicker visible={convPicking} value={convTo}
-        onPick={(c) => { setConvPicking(false); if (conv && c !== conv.from) { setConvTo(c); setConvRate(suggestRate(conv.from, c)); } }}
+        onPick={(c) => { setConvPicking(false); if (conv && c !== conv.from) { setConvTo(c); setConvRate(suggestRate(conv.from, c, metalRates, convInv)); } }}
         onClose={() => setConvPicking(false)} />
 
       {acc && (
@@ -837,8 +896,7 @@ const makeStyles = (colors: ThemeColors, narrow = false) => StyleSheet.create({
   tile: { flexGrow: 1, flexBasis: '45%', backgroundColor: colors.surfaceSecondary, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12 },
   tileWide: { flexBasis: '100%' },
   tileLabel: { color: colors.mutedText, fontSize: 13, fontWeight: '500' },
-  tileAmt: { fontSize: 22, fontWeight: '700', letterSpacing: -0.4, marginTop: 2, fontVariant: ['tabular-nums'] },
-  tileAmtBig: { fontSize: 30, letterSpacing: -0.6 },
+  tileAmt: { fontWeight: '700', letterSpacing: -0.3, marginTop: 2, fontVariant: ['tabular-nums'] },
   tileSub: { color: colors.mutedText, fontSize: 12, marginTop: 2 },
   heroSub: { color: colors.mutedText, fontSize: 13, marginTop: 1 },
   actions: { flexDirection: 'row', justifyContent: 'center', gap: 10, marginTop: spacing.lg },
@@ -857,8 +915,8 @@ const makeStyles = (colors: ThemeColors, narrow = false) => StyleSheet.create({
   title: { color: colors.onSurface, fontSize: 17, letterSpacing: -0.2 },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 1 },
   subtitle: { color: colors.mutedText, fontSize: 13 },
-  trailing: { alignItems: 'flex-end', marginLeft: 8 },
-  amount: { fontSize: 17, fontWeight: '600', fontVariant: ['tabular-nums'] },
+  trailing: { alignItems: 'flex-end', marginLeft: 8, flexShrink: 0 },
+  amount: { fontSize: 16, fontWeight: '600', fontVariant: ['tabular-nums'] },
   footer: { color: colors.mutedText, fontSize: 13, marginTop: 8, marginHorizontal: spacing.md },
   // Statement table
   tRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: narrow ? 10 : 12, paddingVertical: 9, gap: narrow ? 6 : 8 },
@@ -869,6 +927,9 @@ const makeStyles = (colors: ThemeColors, narrow = false) => StyleSheet.create({
   tDetails: { flex: 1, minWidth: 0 },
   tNum: { width: narrow ? 84 : 100, textAlign: 'right' },
   tBal: { width: narrow ? 88 : 104, textAlign: 'right', fontWeight: '600' },
+  tRowStacked: { flexDirection: 'column', alignItems: 'stretch', gap: 4 },
+  tStackNums: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', gap: 12 },
+  tStackBal: { fontWeight: '700' },
   tGroup: { backgroundColor: colors.surfaceTertiary + '80' },
   tFoot: { backgroundColor: colors.surfaceTertiary },
   tFootText: { color: colors.onSurface, fontSize: 13, fontWeight: '700', fontVariant: ['tabular-nums'] },
@@ -900,6 +961,10 @@ const makeStyles = (colors: ThemeColors, narrow = false) => StyleSheet.create({
   formRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: spacing.md, minHeight: 48 },
   formAction: { color: colors.brandPrimary, fontSize: 17 },
   formLabel: { color: colors.onSurface, fontSize: 17 },
+  filterBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, alignSelf: 'flex-end', marginTop: 10, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, backgroundColor: colors.surfaceSecondary },
+  filterBtnOn: { backgroundColor: colors.brandPrimary },
+  filterText: { color: colors.brandPrimary, fontSize: 14, fontWeight: '600' },
+  filterSym: { width: 30, textAlign: 'center', color: colors.onSurfaceSecondary, fontSize: 16, fontWeight: '600' },
   splitBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'center', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, backgroundColor: colors.surfaceSecondary, marginBottom: 4, maxWidth: '100%' },
   splitBtnText: { color: colors.onSurface, fontSize: 15, fontWeight: '500', flexShrink: 1 },
   splitResult: { textAlign: 'center', fontSize: 15, fontWeight: '600', marginTop: 8, marginBottom: 4 },
@@ -908,6 +973,7 @@ const makeStyles = (colors: ThemeColors, narrow = false) => StyleSheet.create({
   pcChipText: { color: colors.brandPrimary, fontSize: 14, fontWeight: '600' },
   formValue: { flex: 1, textAlign: 'right', color: colors.mutedText, fontSize: 17 },
   formValue2: { color: colors.mutedText, fontSize: 17, marginLeft: 6 },
+  swapBtn: { marginLeft: 8, width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceTertiary },
   curSymSmall: { color: colors.onSurface, fontSize: 20, fontWeight: '600', minWidth: 24 },
   tilesHint: { color: colors.mutedText, fontSize: 12, textAlign: 'center', marginTop: 8 },
   convResult: { alignItems: 'center', paddingVertical: spacing.lg },

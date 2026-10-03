@@ -135,7 +135,7 @@ export default function SplitwiseImportScreen() {
         <Pressable onPress={choose} style={({ pressed }) => [s.group, s.fileRow, pressed && s.pressed]} testID="cl-import-choose">
           <Ionicons name="document-text-outline" size={22} color={colors.brandPrimary} />
           <View style={{ flex: 1, minWidth: 0 }}>
-            <Text style={s.title} numberOfLines={1}>{fileName || 'Choose CSV File'}</Text>
+            <Text style={s.title}>{fileName || 'Choose CSV File'}</Text>
             {pv && <Text style={s.subtitle}>{pv.lines} entries · {istDisplayDate(pv.from)} – {istDisplayDate(pv.to)}</Text>}
           </View>
           {loading ? <ActivityIndicator color={colors.mutedText} /> : <Text style={s.link}>{fileName ? 'Change' : 'Choose'}</Text>}
@@ -173,7 +173,7 @@ export default function SplitwiseImportScreen() {
               </Pressable>
               <Pressable onPress={() => setChoosing(true)} style={({ pressed }) => [s.row, s.sepTop, pressed && s.pressed]} testID="cl-import-other">
                 <Ionicons name="people-outline" size={22} color={colors.mutedText} />
-                <Text style={[s.title, { flex: 1 }]} numberOfLines={1}>
+                <Text style={[s.title, { flex: 1 }]}>
                   {target?.kind === 'existing' && target.id !== pv.account?.id ? target.name : 'Someone else…'}
                 </Text>
                 {target?.kind === 'existing' && target.id !== pv.account?.id ? <Ionicons name="checkmark" size={20} color={colors.brandPrimary} /> : <Ionicons name="chevron-forward" size={16} color={colors.mutedText} />}
@@ -233,7 +233,7 @@ export default function SplitwiseImportScreen() {
                 const full = await api.get<{ account: { id: string; name: string; groups?: { id: string; name: string }[] } }>(`/khata/${a.id}`).catch(() => null);
                 pickTarget({ kind: 'existing', id: a.id, name: a.name, groups: (full?.account.groups || []).map((g) => ({ id: g.id, name: g.name })) });
               }} style={({ pressed }) => [s.row, i > 0 && s.sepTop, pressed && s.pressed]} testID={`cl-import-account-${a.id}`}>
-                <Text style={[s.title, { flex: 1 }]} numberOfLines={1}>{a.name}</Text>
+                <Text style={[s.title, { flex: 1 }]}>{a.name}</Text>
                 {target?.kind === 'existing' && target.id === a.id && <Ionicons name="checkmark" size={20} color={colors.brandPrimary} />}
               </Pressable>
             ))}

@@ -23,7 +23,7 @@ export function CurrencyPicker({ visible, value, onPick, onClose }: {
           {list.map((c, i) => (
             <Pressable key={c.code} onPress={() => onPick(c.code)} style={({ pressed }) => [s.row, i > 0 && s.sep, pressed && s.pressed]} testID={`currency-${c.code}`}>
               <Text style={[s.sym, symbol(c.code).length > 2 && s.symLong]} numberOfLines={1}>{symbol(c.code)}</Text>
-              <Text style={s.name} numberOfLines={1}>{c.name}</Text>
+              <Text style={s.name}>{c.name}</Text>
               <Text style={s.code}>{c.code}</Text>
               <View style={s.check}>{c.code === value && <Ionicons name="checkmark" size={20} color={colors.brandPrimary} />}</View>
             </Pressable>

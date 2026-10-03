@@ -15,7 +15,7 @@ import { GlassSurface } from './GlassSurface';
  * under it (pass `scrolled` from useScrolled()).
  */
 export function ModuleHeader({
-  title, subtitle, backLabel = 'Work', onBack, onRefresh, refreshing, actions, scrolled = false, testID,
+  title, subtitle, backLabel = 'Work', onBack, onRefresh, refreshing, actions, scrolled = false, testID, fitTitle = false,
 }: {
   title: string;
   subtitle?: string | null;
@@ -26,6 +26,8 @@ export function ModuleHeader({
   actions?: ReactNode;
   scrolled?: boolean;
   testID?: string;
+  /** Long titles (people's names) get smaller type and up to two lines instead of being cut off. */
+  fitTitle?: boolean;
 }) {
   const router = useRouter();
   const { colors } = useTheme();
@@ -36,7 +38,7 @@ export function ModuleHeader({
         <HeaderButton icon="chevron-back" onPress={onBack || (() => router.back())} testID="back-btn" label={`Back to ${backLabel}`} />
         <View style={{ flex: 1, minWidth: 0 }}>
           <View style={s.titleInline}>
-            <Text style={s.h1} numberOfLines={1}>{title}</Text>
+            <Text style={[s.h1, fitTitle && title.length > 16 && { fontSize: title.length > 26 ? 18 : 20, letterSpacing: -0.3 }]} numberOfLines={fitTitle ? 2 : 1}>{title}</Text>
             {onRefresh && (
               <Pressable onPress={onRefresh} disabled={refreshing} hitSlop={10} testID="module-refresh-btn"
                 accessibilityRole="button" accessibilityLabel="Refresh">
