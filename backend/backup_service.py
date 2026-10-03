@@ -20,7 +20,8 @@ from server import db, now_utc, _notify_system_health
 
 logger = logging.getLogger('backup')
 
-RETENTION = 30          # keep this many most-recent backups in Drive
+RETENTION = 70          # most-recent backups kept in Drive: ~5 files a day (2 database dumps,
+                        # 2 configuration bundles, 1 app backup), so about two weeks
 BACKUP_EVERY_HOURS = 23  # auto-backup cadence (checked hourly)
 
 
@@ -67,7 +68,7 @@ async def run_backup() -> dict:
         logger.warning(f'backup upload failed: {err}')
         if 'invalid_grant' in err or 'invalid_client' in err:
             await _notify_system_health('drive_disconnected', 'Google Drive disconnected',
-                                         'Google Drive needs to be reconnected — the nightly backup is paused (Settings > Google Drive).', '/settings/google-drive')
+                                         'Google Drive needs to be reconnected — the automatic backup is paused (Settings > Google Drive).', '/settings/google-drive')
         else:
             await _notify_system_health('drive_upload_failed', 'Backup failed',
                                          f'The database backup failed to upload to Google Drive: {err}', '/settings/google-drive')
@@ -91,7 +92,7 @@ _SYSTEM_MAX_AGE_DAYS = 3
 
 
 async def upload_system_backups() -> dict:
-    """Send the server's own nightly backup files (full database dump + configuration
+    """Send the server's own backup files (twice a day) (full database dump + configuration
     bundle, written by the scheduled task in ops/backup) to Google Drive, so Drive is the
     one off-site place for everything. Only new files from the last few days are sent;
     Drive is pruned to the newest RETENTION files afterwards."""

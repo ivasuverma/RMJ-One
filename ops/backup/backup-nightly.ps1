@@ -1,4 +1,5 @@
-# RMJ-One nightly backup (runs as the "RMJOne Mongo Backup" scheduled task at 02:30).
+# RMJ-One backup (runs as the "RMJOne Mongo Backup" scheduled task at 02:30 and 14:30 -
+# the deploy workflow keeps those two times set).
 #   1. Database dump        -> D:\RMJ-One\mongodb\backups\rmj_one-<date>.gz   (keep 14)
 #   2. Configuration bundle -> D:\RMJ-One\mongodb\backups\config-<date>.zip   (keep 14)
 # The backend then uploads both to Google Drive ("RMJ One Backups" folder) within the hour.

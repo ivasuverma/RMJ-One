@@ -93,7 +93,7 @@ async def _upload_queue_counts(collection: str) -> dict:
     return dict(zip(states, counts))
 
 
-# The nightly backup task ("RMJOne Mongo Backup", ops/backup) writes here; the backend sends the
+# The backup task ("RMJOne Mongo Backup", ops/backup) writes here; the backend sends the
 # files to Google Drive (backup_service.upload_system_backups).
 BACKUP_DIR = pathlib.Path(os.environ.get('SYSTEM_BACKUP_DIR', 'D:/RMJ-One/mongodb/backups'))
 BACKUP_LOG = pathlib.Path('D:/RMJ-One/mongodb/log/backup.log')

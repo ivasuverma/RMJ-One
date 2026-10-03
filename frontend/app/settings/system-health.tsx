@@ -157,7 +157,7 @@ export default function SystemHealthScreen() {
               <SectionTitle text="Backups" />
               <Card>
                 <Row
-                  label="Database dump (nightly)"
+                  label="Database dump (twice a day)"
                   value={data.backups.dump ? `${fmtWhen(data.backups.dump.at)} · ${fmtBytes(data.backups.dump.bytes)}` : 'None found'}
                   dot={!data.backups.dump ? 'bad' : ageHours(data.backups.dump.at) > 26 ? 'bad' : 'ok'}
                 />
@@ -172,7 +172,7 @@ export default function SystemHealthScreen() {
                   dot={data.backups.drive_error ? 'bad' : ageHours(data.backups.drive_last_sent_at) > 30 ? 'warn' : 'ok'}
                   onPress={() => router.push('/settings/google-drive' as any)}
                 />
-                {data.backups.log_last ? <Row label="Nightly task" value={data.backups.log_last.replace(/^\S+\s+/, '')} dot={/FAILED/i.test(data.backups.log_last) ? 'bad' : 'off'} last /> : null}
+                {data.backups.log_last ? <Row label="Backup task" value={data.backups.log_last.replace(/^\S+\s+/, '')} dot={/FAILED/i.test(data.backups.log_last) ? 'bad' : 'off'} last /> : null}
               </Card>
             </>
           ) : null}
