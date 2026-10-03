@@ -105,7 +105,7 @@ export default function CashLedgerScreen() {
                     <Text style={s.sumLabel}>{label}</Text>
                     <View style={s.sumVals}>
                       {list.length ? list.map((c) => (
-                        <Text key={c} style={[s.sumAmt, { color }]} numberOfLines={1}>{money(totals[c][key], c)}</Text>
+                        <Text key={c} style={[s.sumAmt, { color }]}>{money(totals[c][key], c)}</Text>
                       )) : <Text style={[s.sumAmt, { color: colors.mutedText }]}>{money(0)}</Text>}
                     </View>
                   </View>
@@ -116,7 +116,7 @@ export default function CashLedgerScreen() {
                   <Text style={s.sumLabel}>{monthName(dash.month).split(' ')[0]}</Text>
                   <View style={s.sumVals}>
                     {orderedCodes(dash.this_month as any).map((c) => (
-                      <Text key={c} style={s.sumMonth} numberOfLines={1}>
+                      <Text key={c} style={s.sumMonth}>
                         {dash.this_month[c].gave > 0 && <>Gave <Text style={{ color: colors.onError }}>{money(dash.this_month[c].gave, c)}</Text></>}
                         {dash.this_month[c].gave > 0 && dash.this_month[c].got > 0 && '  ·  '}
                         {dash.this_month[c].got > 0 && <>Got <Text style={{ color: colors.onSuccess }}>{money(dash.this_month[c].got, c)}</Text></>}
@@ -149,8 +149,8 @@ export default function CashLedgerScreen() {
                     <View style={s.av}><Text style={s.avText}>{initials(r.name)}</Text></View>
                     <View style={[s.rowBody, i > 0 && s.sepTop]}>
                       <View style={{ flex: 1, minWidth: 0 }}>
-                        <Text style={s.title} numberOfLines={1}>{r.name}</Text>
-                        <Text style={s.subtitle} numberOfLines={1}>{r.last_date ? istDisplayDate(r.last_date) : 'No entries'}</Text>
+                        <Text style={s.title}>{r.name}</Text>
+                        <Text style={s.subtitle}>{r.last_date ? istDisplayDate(r.last_date) : 'No entries'}</Text>
                       </View>
                       <View style={s.trailing}>
                         {codes.length ? codes.slice(0, 2).map((c) => (
@@ -208,7 +208,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   sepTop: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.divider },
   title: { color: colors.onSurface, fontSize: 17, letterSpacing: -0.2 },
   subtitle: { color: colors.mutedText, fontSize: 13, marginTop: 1 },
-  trailing: { alignItems: 'flex-end' },
+  trailing: { alignItems: 'flex-end', flexShrink: 0 },
   amount: { fontSize: 15, fontWeight: '600', fontVariant: ['tabular-nums'] },
   settled: { color: colors.mutedText, fontSize: 15 },
   footer: { color: colors.mutedText, fontSize: 13, marginTop: 8, marginHorizontal: spacing.md },

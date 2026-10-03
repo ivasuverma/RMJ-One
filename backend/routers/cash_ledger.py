@@ -91,12 +91,12 @@ class SplitIn(BaseModel):
     equal = half of it, custom = the amount given, full = all of it. Who paid
     is the entry's direction: gave = you paid, got = they paid."""
     mode: Literal['full', 'equal', 'custom']
-    total: float = Field(gt=0, le=100_000_000)
+    total: float = Field(gt=0, le=10_000_000_000)
 
 
 class EntryIn(BaseModel):
     direction: Literal['gave', 'got']
-    amount: float = Field(gt=0, le=100_000_000)
+    amount: float = Field(gt=0, le=10_000_000_000)
     currency: Optional[str] = None      # INR when missing
     date: Optional[str] = None          # YYYY-MM-DD (IST); today when missing
     note: Optional[str] = ''           # the description
@@ -121,8 +121,8 @@ def _amount_and_split(body: EntryIn, cur: str) -> tuple:
 class ConvertIn(BaseModel):
     from_currency: str
     to_currency: str
-    amount: float = Field(gt=0, le=100_000_000)     # in from_currency; at most the balance
-    rate: float = Field(gt=0, le=100_000_000)       # 1 from_currency = rate to_currency
+    amount: float = Field(gt=0, le=10_000_000_000)     # in from_currency; at most the balance
+    rate: float = Field(gt=0, le=10_000_000_000)       # 1 from_currency = rate to_currency
     rate_per_to: bool = False                       # the other way round: 1 to_currency = rate from_currency (e.g. 1 CAD = 62.5 INR)
     date: Optional[str] = None
     note: Optional[str] = ''

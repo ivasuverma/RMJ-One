@@ -84,7 +84,7 @@ export function CashStatementSheet({ visible, onClose, accountId, name, group, s
           </Pressable>
           <View style={{ flex: 1, alignItems: 'center' }}>
             <Text style={s.navTitle} numberOfLines={1}>Statement</Text>
-            <Text style={s.navSub} numberOfLines={1}>{group ? `${name} · ${scopeLabel}` : name}</Text>
+            <Text style={s.navSub} numberOfLines={2}>{group ? `${name} · ${scopeLabel}` : name}</Text>
           </View>
           <Pressable onPress={() => send(false)} disabled={!file} hitSlop={10} style={({ pressed }) => [s.navSide, { alignItems: 'flex-end' }, (!file || pressed) && { opacity: 0.4 }]} testID="cl-statement-share-top">
             <Ionicons name="share-outline" size={24} color={colors.brandPrimary} />
