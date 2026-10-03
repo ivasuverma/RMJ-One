@@ -198,7 +198,13 @@ async def bulk_thumbnails(ref_type: str = Query(...), ref_ids: str = Query(...),
     ids = [x for x in ref_ids.split(',') if x.strip()]
     if not ids:
         return {}
-    await _require_read(user, ref_type)   # same rule as one photo (Cash Ledger: only people given it)
+    if ref_type == 'cash_ledger_entry':
+        await _require_read(user, ref_type)   # only people given the Cash Ledger
+    else:
+        mod = _module_for_ref(ref_type)
+        role = user.get('role')
+        if not (role in ('owner', 'admin', 'accountant') or (role == 'employee' and mod in resolve_modules(user))):
+            raise HTTPException(status_code=403, detail=f'No access to "{mod}"')
     docs = await db.record_photos.find(
         {'ref_type': ref_type, 'ref_id': {'$in': ids}, 'deleted': {'$ne': True}},
         {'_id': 0, 'ref_id': 1, 'thumb_data': 1, 'local_data': 1, 'local_kind': 1, 'file.mime': 1, 'created_at': 1},

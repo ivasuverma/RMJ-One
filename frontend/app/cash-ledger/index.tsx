@@ -5,31 +5,35 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
 import { istDisplayDate } from '@/src/utils/datetime';
-import { spacing, radius, ThemeColors } from '@/src/theme';
+import { spacing, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { Sheet, useToast } from '@/src/components/ui';
 import { ModuleHeader } from '@/src/components/ui/ModuleHeader';
 import { HeaderSpacer, useScrolled } from '@/src/components/ui/StickyHeader';
-import { CLAccount, inr, initials } from '@/src/utils/cashLedger';
+import { CurrencyPicker } from '@/src/components/CurrencyPicker';
+import { BASE_CURRENCY, CLAccount, money, initials, orderedCodes, symbol } from '@/src/utils/cashLedger';
 
-type Totals = { you_get: number; you_give: number; net: number };
+type Totals = Record<string, { you_get: number; you_give: number }>;
 
 // Cash Ledger: cash given to and received from people, one account each — a
-// khata like Splitwise / Khatabook, separate from the shop's Cash Book. The
-// balance is what they owe you (green) or you owe them (red).
+// khata like Splitwise. Separate from everything else in the app (it never
+// touches the Cash Book, Home or any other ledger). Laid out like an iOS
+// Settings/Contacts list: inset grouped sections, colour only on the money.
 export default function CashLedgerScreen() {
   const router = useRouter();
   const { colors } = useTheme();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
+  const s = useMemo(() => makeStyles(colors), [colors]);
   const toast = useToast();
   const { scrolled, onScroll } = useScrolled();
   const [rows, setRows] = useState<CLAccount[] | null>(null);
-  const [totals, setTotals] = useState<Totals | null>(null);
+  const [totals, setTotals] = useState<Totals>({});
   const [q, setQ] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+  const [currency, setCurrency] = useState(BASE_CURRENCY);
+  const [picking, setPicking] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -41,126 +45,152 @@ export default function CashLedgerScreen() {
   }, [toast]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const shown = (rows || []).filter((r) => !q.trim() || r.name.toLowerCase().includes(q.trim().toLowerCase()) || (r.phone || '').includes(q.trim()));
+  const ql = q.trim().toLowerCase();
+  const shown = (rows || []).filter((r) => !ql || r.name.toLowerCase().includes(ql) || (r.phone || '').includes(ql));
+  const totalCodes = orderedCodes(Object.fromEntries(Object.keys(totals).map((c) => [c, 1])));
 
   const add = async () => {
     if (!name.trim() || busy) return;
     setBusy(true);
     try {
-      const a = await api.post<CLAccount>('/khata', { name: name.trim(), phone: phone.trim() });
-      setAdding(false); setName(''); setPhone('');
+      const a = await api.post<CLAccount>('/khata', { name: name.trim(), phone: phone.trim(), currency });
+      setAdding(false); setName(''); setPhone(''); setCurrency(BASE_CURRENCY);
       router.push(`/cash-ledger/${a.id}` as any);
     } catch (e: any) { toast.error(e?.detail || 'Could not add'); }
     finally { setBusy(false); }
   };
 
   return (
-    <SafeAreaView style={styles.root} edges={['top']} testID="cash-ledger-screen">
-      <ModuleHeader title="Cash Ledger" backLabel="Ledger" scrolled={scrolled} subtitle="Cash you gave and got, person by person"
-        onRefresh={() => { setRefreshing(true); load(); }} refreshing={refreshing} />
-      <ScrollView onScroll={onScroll} scrollEventThrottle={16} contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: 120 }}
-        keyboardShouldPersistTaps="handled"
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}>
+    <SafeAreaView style={s.root} edges={['top']} testID="cash-ledger-screen">
+      <ModuleHeader title="Cash Ledger" backLabel="Ledger" scrolled={scrolled}
+        actions={(
+          <Pressable onPress={() => setAdding(true)} hitSlop={10} style={({ pressed }) => [s.navBtn, pressed && { opacity: 0.5 }]} accessibilityLabel="Add person" testID="cl-add-account">
+            <Ionicons name="add" size={26} color={colors.brandPrimary} />
+          </Pressable>
+        )} />
+      <ScrollView onScroll={onScroll} scrollEventThrottle={16} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled"
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.mutedText} />}>
         <HeaderSpacer />
-        <View style={styles.totals} testID="cl-totals">
-          <View style={styles.totalBox}>
-            <Text style={styles.totalLabel}>You&apos;ll get</Text>
-            <Text style={[styles.totalValue, { color: colors.onSuccess }]}>{totals ? inr(totals.you_get) : '…'}</Text>
+
+        <View style={s.searchField}>
+          <Ionicons name="search" size={17} color={colors.mutedText} />
+          <TextInput value={q} onChangeText={setQ} placeholder="Search" placeholderTextColor={colors.mutedText} style={s.searchInput}
+            clearButtonMode="while-editing" testID="cl-search" />
+        </View>
+
+        {/* Totals: one line per currency, never added together */}
+        <View style={[s.group, s.totals]} testID="cl-totals">
+          <View style={s.totalCol}>
+            <Text style={s.caption}>YOU&apos;LL GET</Text>
+            {totalCodes.some((c) => totals[c].you_get) ? totalCodes.filter((c) => totals[c].you_get).map((c) => (
+              <Text key={c} style={[s.totalValue, { color: colors.onSuccess }]}>{money(totals[c].you_get, c)}</Text>
+            )) : <Text style={[s.totalValue, { color: colors.mutedText }]}>{money(0)}</Text>}
           </View>
-          <View style={styles.totalDivider} />
-          <View style={styles.totalBox}>
-            <Text style={styles.totalLabel}>You&apos;ll give</Text>
-            <Text style={[styles.totalValue, { color: colors.onError }]}>{totals ? inr(totals.you_give) : '…'}</Text>
+          <View style={s.totalDivider} />
+          <View style={s.totalCol}>
+            <Text style={s.caption}>YOU&apos;LL GIVE</Text>
+            {totalCodes.some((c) => totals[c].you_give) ? totalCodes.filter((c) => totals[c].you_give).map((c) => (
+              <Text key={c} style={[s.totalValue, { color: colors.onError }]}>{money(totals[c].you_give, c)}</Text>
+            )) : <Text style={[s.totalValue, { color: colors.mutedText }]}>{money(0)}</Text>}
           </View>
         </View>
 
-        {(rows?.length || 0) > 6 && (
-          <View style={styles.search}>
-            <Ionicons name="search" size={16} color={colors.mutedText} />
-            <TextInput value={q} onChangeText={setQ} placeholder="Search name or phone" placeholderTextColor={colors.mutedText} style={styles.searchInput} testID="cl-search" />
-          </View>
-        )}
-
-        {!rows ? <ActivityIndicator color={colors.brandPrimary} style={{ marginTop: 40 }} /> : rows.length === 0 ? (
-          <View style={styles.empty}>
-            <View style={styles.emptyIcon}><Ionicons name="wallet-outline" size={28} color={colors.brandSecondary} /></View>
-            <Text style={styles.emptyTitle}>No one yet</Text>
-            <Text style={styles.emptyText}>Add a person, then record the cash you give them and get from them. Attach a photo of the chit or receipt to any entry.</Text>
+        {!rows ? <ActivityIndicator color={colors.mutedText} style={{ marginTop: 40 }} /> : rows.length === 0 ? (
+          <View style={s.empty}>
+            <Ionicons name="wallet-outline" size={44} color={colors.mutedText} />
+            <Text style={s.emptyTitle}>No People</Text>
+            <Text style={s.emptyText}>Add someone you give cash to or get cash from. Record each amount, with a photo of the chit if you like.</Text>
+            <Pressable onPress={() => setAdding(true)} hitSlop={8} testID="cl-empty-add"><Text style={s.link}>Add Person</Text></Pressable>
           </View>
         ) : (
-          <View style={styles.card}>
-            {shown.map((r, i) => {
-              const owes = r.balance > 0.004, owe = r.balance < -0.004;
-              return (
-                <Pressable key={r.id} onPress={() => router.push(`/cash-ledger/${r.id}` as any)}
-                  style={({ pressed }) => [styles.row, i > 0 && styles.sep, pressed && { backgroundColor: colors.surfaceTertiary }]} testID={`cl-account-${r.id}`}>
-                  <View style={styles.av}><Text style={styles.avText}>{initials(r.name)}</Text></View>
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <Text style={styles.name} numberOfLines={1}>{r.name}</Text>
-                    <Text style={styles.sub} numberOfLines={1}>
-                      {r.last_date ? `Last entry ${istDisplayDate(r.last_date)}` : 'No entries yet'}{r.entries ? ` · ${r.entries} entr${r.entries === 1 ? 'y' : 'ies'}` : ''}
-                    </Text>
-                  </View>
-                  <View style={{ alignItems: 'flex-end' }}>
-                    <Text style={[styles.amt, { color: owes ? colors.onSuccess : owe ? colors.onError : colors.mutedText }]}>{owes || owe ? inr(r.balance) : '—'}</Text>
-                    <Text style={styles.amtLabel}>{owes ? 'owes you' : owe ? 'you owe' : 'settled'}</Text>
-                  </View>
-                </Pressable>
-              );
-            })}
-            {shown.length === 0 && <Text style={[styles.sub, { padding: spacing.md }]}>No one matches “{q}”.</Text>}
-          </View>
+          <>
+            <Text style={s.sectionHeader}>PEOPLE</Text>
+            <View style={s.group}>
+              {shown.map((r, i) => {
+                const codes = orderedCodes(r.balances);
+                return (
+                  <Pressable key={r.id} onPress={() => router.push(`/cash-ledger/${r.id}` as any)}
+                    style={({ pressed }) => [s.row, pressed && s.pressed]} testID={`cl-account-${r.id}`}>
+                    <View style={s.av}><Text style={s.avText}>{initials(r.name)}</Text></View>
+                    <View style={[s.rowBody, i > 0 && s.sepTop]}>
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text style={s.title} numberOfLines={1}>{r.name}</Text>
+                        <Text style={s.subtitle} numberOfLines={1}>{r.last_date ? istDisplayDate(r.last_date) : 'No entries'}</Text>
+                      </View>
+                      <View style={s.trailing}>
+                        {codes.length ? codes.slice(0, 2).map((c) => (
+                          <Text key={c} style={[s.amount, { color: r.balances[c] > 0 ? colors.onSuccess : colors.onError }]}>{money(r.balances[c], c)}</Text>
+                        )) : <Text style={s.settled}>Settled</Text>}
+                        {codes.length > 2 && <Text style={s.subtitle}>+{codes.length - 2} more</Text>}
+                      </View>
+                      <Ionicons name="chevron-forward" size={17} color={colors.mutedText} style={{ opacity: 0.6 }} />
+                    </View>
+                  </Pressable>
+                );
+              })}
+              {shown.length === 0 && <Text style={[s.subtitle, { padding: spacing.md }]}>No results for “{q}”</Text>}
+            </View>
+            <Text style={s.footer}>Green: they owe you. Red: you owe them.</Text>
+          </>
         )}
       </ScrollView>
 
-      <Pressable onPress={() => setAdding(true)} style={styles.fab} testID="cl-add-account">
-        <Ionicons name="person-add" size={18} color={colors.onBrandPrimary} />
-        <Text style={styles.fabText}>Add person</Text>
-      </Pressable>
-
-      <Sheet visible={adding} onClose={() => setAdding(false)} title="Add person" testID="cl-add-sheet">
-        <Text style={styles.label}>Name</Text>
-        <TextInput value={name} onChangeText={setName} placeholder="e.g. Rahul (supplier)" placeholderTextColor={colors.mutedText} style={styles.input} autoFocus testID="cl-new-name" />
-        <Text style={styles.label}>Mobile (optional)</Text>
-        <TextInput value={phone} onChangeText={setPhone} placeholder="For call / WhatsApp reminder" placeholderTextColor={colors.mutedText} style={styles.input} keyboardType="phone-pad" testID="cl-new-phone" />
-        <Pressable onPress={add} disabled={!name.trim() || busy} style={[styles.save, (!name.trim() || busy) && { opacity: 0.5 }]} testID="cl-new-save">
-          {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.saveText}>Add</Text>}
+      <Sheet visible={adding} onClose={() => setAdding(false)} title="New Person" testID="cl-add-sheet">
+        <View style={s.formGroup}>
+          <TextInput value={name} onChangeText={setName} placeholder="Name" placeholderTextColor={colors.mutedText} style={s.formInput} autoFocus testID="cl-new-name" />
+          <View style={s.formSep} />
+          <TextInput value={phone} onChangeText={setPhone} placeholder="Mobile (optional)" placeholderTextColor={colors.mutedText} style={s.formInput} keyboardType="phone-pad" testID="cl-new-phone" />
+          <View style={s.formSep} />
+          <Pressable onPress={() => setPicking(true)} style={({ pressed }) => [s.formRow, pressed && s.pressed]} testID="cl-new-currency">
+            <Text style={s.formLabel}>Currency</Text>
+            <Text style={s.formValue}>{symbol(currency)} {currency}</Text>
+            <Ionicons name="chevron-forward" size={17} color={colors.mutedText} style={{ opacity: 0.6 }} />
+          </Pressable>
+        </View>
+        <Pressable onPress={add} disabled={!name.trim() || busy} style={({ pressed }) => [s.primary, (!name.trim() || busy) && { opacity: 0.4 }, pressed && { opacity: 0.8 }]} testID="cl-new-save">
+          {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={s.primaryText}>Add</Text>}
         </Pressable>
       </Sheet>
+      <CurrencyPicker visible={picking} value={currency} onPick={(c) => { setCurrency(c); setPicking(false); }} onClose={() => setPicking(false)} />
     </SafeAreaView>
   );
 }
 
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
-  totals: { flexDirection: 'row', marginTop: spacing.md, backgroundColor: colors.surfaceSecondary, borderRadius: 18, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, paddingVertical: spacing.md },
-  totalBox: { flex: 1, alignItems: 'center', gap: 2 },
+  content: { paddingHorizontal: spacing.lg, paddingBottom: 60 },
+  navBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+  searchField: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: spacing.sm, backgroundColor: colors.surfaceTertiary, borderRadius: 10, paddingHorizontal: 10 },
+  searchInput: { flex: 1, color: colors.onSurface, paddingVertical: 8, fontSize: 17, ...({ outlineStyle: 'none' } as any) },
+  group: { backgroundColor: colors.surfaceSecondary, borderRadius: 12, overflow: 'hidden' },
+  totals: { flexDirection: 'row', marginTop: spacing.lg, paddingVertical: 14 },
+  totalCol: { flex: 1, alignItems: 'center', gap: 2 },
   totalDivider: { width: StyleSheet.hairlineWidth, backgroundColor: colors.divider },
-  totalLabel: { color: colors.mutedText, fontSize: 12.5, fontWeight: '600' },
-  totalValue: { fontSize: 22, fontWeight: '800' },
-  search: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: spacing.md, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, paddingHorizontal: spacing.md },
-  searchInput: { flex: 1, color: colors.onSurface, paddingVertical: 10, fontSize: 15 },
-  card: { marginTop: spacing.md, backgroundColor: colors.surfaceSecondary, borderRadius: 18, overflow: 'hidden', borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 14, paddingVertical: 12 },
-  sep: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.divider },
-  av: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.brandTertiary, alignItems: 'center', justifyContent: 'center' },
-  avText: { color: colors.brandSecondary, fontWeight: '800', fontSize: 14 },
-  name: { color: colors.onSurface, fontSize: 15.5, fontWeight: '600' },
-  sub: { color: colors.mutedText, fontSize: 12.5, marginTop: 1 },
-  amt: { fontSize: 16, fontWeight: '800' },
-  amtLabel: { color: colors.mutedText, fontSize: 11.5, marginTop: 1 },
-  empty: { alignItems: 'center', paddingTop: 60, paddingHorizontal: spacing.xl, gap: 6 },
-  emptyIcon: { width: 60, height: 60, borderRadius: 30, backgroundColor: colors.brandTertiary, alignItems: 'center', justifyContent: 'center', marginBottom: 6 },
-  emptyTitle: { color: colors.onSurface, fontSize: 18, fontWeight: '700' },
-  emptyText: { color: colors.mutedText, fontSize: 14, textAlign: 'center', lineHeight: 20 },
-  fab: {
-    position: 'absolute', right: spacing.lg, bottom: 28, flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: colors.brandPrimary, paddingHorizontal: 18, paddingVertical: 14, borderRadius: radius.pill,
-    shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 4,
-  },
-  fabText: { color: colors.onBrandPrimary, fontWeight: '800', fontSize: 15 },
-  label: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '600', marginBottom: 6, marginTop: spacing.sm },
-  input: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, color: colors.onSurface, paddingHorizontal: spacing.md, paddingVertical: 12, fontSize: 16 },
-  save: { backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: 14, alignItems: 'center', marginTop: spacing.lg },
-  saveText: { color: colors.onBrandPrimary, fontWeight: '800', fontSize: 16 },
+  caption: { color: colors.mutedText, fontSize: 12, fontWeight: '600', letterSpacing: 0.3, marginBottom: 2 },
+  totalValue: { fontSize: 22, fontWeight: '600', letterSpacing: -0.4, fontVariant: ['tabular-nums'] },
+  sectionHeader: { color: colors.mutedText, fontSize: 13, letterSpacing: 0.2, marginTop: spacing.xl, marginBottom: 6, marginLeft: spacing.md },
+  row: { flexDirection: 'row', alignItems: 'center', paddingLeft: spacing.md },
+  pressed: { backgroundColor: colors.surfaceTertiary },
+  av: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surfaceTertiary, alignItems: 'center', justifyContent: 'center' },
+  avText: { color: colors.onSurfaceSecondary, fontWeight: '600', fontSize: 15 },
+  rowBody: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, marginLeft: 12, paddingVertical: 11, paddingRight: spacing.md, minHeight: 60 },
+  sepTop: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.divider },
+  title: { color: colors.onSurface, fontSize: 17, letterSpacing: -0.2 },
+  subtitle: { color: colors.mutedText, fontSize: 13, marginTop: 1 },
+  trailing: { alignItems: 'flex-end' },
+  amount: { fontSize: 16, fontWeight: '600', fontVariant: ['tabular-nums'] },
+  settled: { color: colors.mutedText, fontSize: 15 },
+  footer: { color: colors.mutedText, fontSize: 13, marginTop: 8, marginHorizontal: spacing.md },
+  empty: { alignItems: 'center', paddingTop: 70, paddingHorizontal: spacing.xl, gap: 8 },
+  emptyTitle: { color: colors.onSurface, fontSize: 22, fontWeight: '700', marginTop: 6 },
+  emptyText: { color: colors.mutedText, fontSize: 15, textAlign: 'center', lineHeight: 20 },
+  link: { color: colors.brandPrimary, fontSize: 17, marginTop: 6 },
+  formGroup: { backgroundColor: colors.surfaceSecondary, borderRadius: 12, overflow: 'hidden' },
+  formInput: { color: colors.onSurface, fontSize: 17, paddingHorizontal: spacing.md, paddingVertical: 13, ...({ outlineStyle: 'none' } as any) },
+  formSep: { height: StyleSheet.hairlineWidth, backgroundColor: colors.divider, marginLeft: spacing.md },
+  formRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: spacing.md, minHeight: 48 },
+  formLabel: { flex: 1, color: colors.onSurface, fontSize: 17 },
+  formValue: { color: colors.mutedText, fontSize: 17 },
+  primary: { backgroundColor: colors.brandPrimary, borderRadius: 12, paddingVertical: 15, alignItems: 'center', marginTop: spacing.lg },
+  primaryText: { color: colors.onBrandPrimary, fontWeight: '600', fontSize: 17 },
 });

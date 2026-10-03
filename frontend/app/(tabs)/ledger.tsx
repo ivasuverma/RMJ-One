@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthContext';
+import { money, orderedCodes } from '@/src/utils/cashLedger';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { ErrorState } from '@/src/components/ui';
@@ -82,10 +83,13 @@ export default function LedgerScreen() {
     } else setFailed(true);
     if (hasModule('cash_ledger') || user?.role === 'owner') {
       try {
-        const c = await api.get<{ totals: { you_get: number; you_give: number } }>('/khata');
-        const parts: string[] = [];
-        if (c.totals.you_get >= 1) parts.push(`You'll get ${inr(c.totals.you_get)}`);
-        if (c.totals.you_give >= 1) parts.push(`you'll give ${inr(c.totals.you_give)}`);
+        const c = await api.get<{ totals: Record<string, { you_get: number; you_give: number }> }>('/khata');
+        const get: string[] = [], give: string[] = [];
+        for (const code of orderedCodes(Object.fromEntries(Object.keys(c.totals).map((k) => [k, 1])))) {
+          if (c.totals[code].you_get >= 0.5) get.push(money(c.totals[code].you_get, code));
+          if (c.totals[code].you_give >= 0.5) give.push(money(c.totals[code].you_give, code));
+        }
+        const parts = [get.length ? `You'll get ${get.join(' + ')}` : '', give.length ? `you'll give ${give.join(' + ')}` : ''].filter(Boolean);
         if (parts.length) next['cash-ledger'] = parts.join(' · ').replace(/^y/, 'Y');
       } catch { /* keep the description */ }
     }
