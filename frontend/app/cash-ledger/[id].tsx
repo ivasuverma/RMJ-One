@@ -272,24 +272,39 @@ export default function CashLedgerAccountScreen() {
         <HeaderSpacer />
         {!acc ? <ActivityIndicator color={colors.mutedText} style={{ marginTop: 40 }} /> : (
           <>
+            {/* Who, then one card per currency (or metal) — compact however many there are */}
             <View style={s.hero} testID="cl-balance">
               <View style={s.heroAv}>
-                {grp ? <Ionicons name="folder" size={30} color={colors.brandPrimary} /> : <Text style={s.heroAvText}>{initials(acc.name)}</Text>}
+                {grp ? <Ionicons name="folder" size={24} color={colors.brandPrimary} /> : <Text style={s.heroAvText}>{initials(acc.name)}</Text>}
               </View>
-              {codes.length ? codes.map((c) => (
-                <Text key={c} style={[s.heroAmt, { color: heroBal[c] > 0 ? colors.onSuccess : colors.onError }]}>{money(heroBal[c], c)}</Text>
-              )) : <Text style={[s.heroAmt, { color: colors.onSurface }]}>{money(0, acc.currency)}</Text>}
-              <Text style={s.heroLabel}>
-                {!codes.length ? (grp ? 'Group settled' : 'All settled')
-                  : codes.every((c) => heroBal[c] > 0) ? `${first} owes you${grp ? ' in this group' : ''}`
-                    : codes.every((c) => heroBal[c] < 0) ? `You owe ${first}${grp ? ' in this group' : ''}`
-                      : `Green: ${first} owes you · Red: you owe ${first}`}
-              </Text>
-              {grp ? (
-                <Text style={s.heroSub} testID="cl-total-with">
-                  Total with {first}: {totalCodes.length ? totalCodes.map((c) => signed(acc.balances[c], c)).join(' · ') : 'settled'}
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={s.heroLabel} numberOfLines={1}>
+                  {!codes.length ? (grp ? 'Group settled' : 'All settled')
+                    : codes.every((c) => heroBal[c] > 0) ? `${first} owes you${grp ? ' in this group' : ''}`
+                      : codes.every((c) => heroBal[c] < 0) ? `You owe ${first}${grp ? ' in this group' : ''}`
+                        : `${first} · balances`}
                 </Text>
-              ) : !!acc.phone && <Text style={s.heroSub}>{acc.phone}</Text>}
+                {grp ? (
+                  <Text style={s.heroSub} numberOfLines={2} testID="cl-total-with">
+                    Total with {first}: {totalCodes.length ? totalCodes.map((c) => signed(acc.balances[c], c)).join(' · ') : 'settled'}
+                  </Text>
+                ) : !!acc.phone && <Text style={s.heroSub}>{acc.phone}</Text>}
+              </View>
+            </View>
+            <View style={s.tiles}>
+              {(codes.length ? codes : [acc.currency]).map((c, _i, all) => {
+                const mixed = all.some((x) => heroBal[x] > 0) && all.some((x) => heroBal[x] < 0);   // the heading can't say it for all
+                const v = heroBal[c] || 0;
+                return (
+                  <View key={c} style={[s.tile, codes.length <= 1 && s.tileWide]} testID={`cl-tile-${c}`}>
+                    <Text style={s.tileLabel} numberOfLines={1}>{currencyName(c).replace(' (grams)', '')}</Text>
+                    <Text style={[s.tileAmt, codes.length <= 1 && s.tileAmtBig, { color: balColor(v) }]} numberOfLines={1} adjustsFontSizeToFit>
+                      {METALS[c] ? `${num(v, c)} g` : money(v, c)}
+                    </Text>
+                    {mixed && <Text style={s.tileSub}>{v > 0 ? `${first} owes you` : `You owe ${first}`}</Text>}
+                  </View>
+                );
+              })}
             </View>
 
             <View style={s.actions}>
@@ -610,12 +625,18 @@ const makeStyles = (colors: ThemeColors, narrow = false) => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   content: { paddingHorizontal: spacing.lg },
   navText: { color: colors.brandPrimary, fontSize: 17 },
-  hero: { alignItems: 'center', paddingTop: spacing.sm, gap: 2 },
-  heroAv: { width: 72, height: 72, borderRadius: 36, backgroundColor: colors.surfaceTertiary, alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
-  heroAvText: { color: colors.onSurfaceSecondary, fontSize: 28, fontWeight: '500' },
-  heroAmt: { fontSize: 34, fontWeight: '700', letterSpacing: -0.8, fontVariant: ['tabular-nums'] },
-  heroLabel: { color: colors.onSurfaceSecondary, fontSize: 15, marginTop: 2 },
-  heroSub: { color: colors.mutedText, fontSize: 13, marginTop: 2 },
+  hero: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingTop: spacing.sm },
+  heroAv: { width: 52, height: 52, borderRadius: 26, backgroundColor: colors.surfaceTertiary, alignItems: 'center', justifyContent: 'center' },
+  heroAvText: { color: colors.onSurfaceSecondary, fontSize: 20, fontWeight: '500' },
+  heroLabel: { color: colors.onSurface, fontSize: 17, fontWeight: '600' },
+  tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: spacing.md },
+  tile: { flexGrow: 1, flexBasis: '45%', backgroundColor: colors.surfaceSecondary, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12 },
+  tileWide: { flexBasis: '100%' },
+  tileLabel: { color: colors.mutedText, fontSize: 13, fontWeight: '500' },
+  tileAmt: { fontSize: 22, fontWeight: '700', letterSpacing: -0.4, marginTop: 2, fontVariant: ['tabular-nums'] },
+  tileAmtBig: { fontSize: 30, letterSpacing: -0.6 },
+  tileSub: { color: colors.mutedText, fontSize: 12, marginTop: 2 },
+  heroSub: { color: colors.mutedText, fontSize: 13, marginTop: 1 },
   actions: { flexDirection: 'row', justifyContent: 'center', gap: 10, marginTop: spacing.lg },
   roundAction: { flex: 1, maxWidth: 110, alignItems: 'center', gap: 5, paddingVertical: 10, borderRadius: 12, backgroundColor: colors.surfaceSecondary },
   roundIcon: { height: 26, alignItems: 'center', justifyContent: 'center' },
