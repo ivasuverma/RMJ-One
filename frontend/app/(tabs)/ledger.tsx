@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
+import { useAuth } from '@/src/auth/AuthContext';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { ErrorState } from '@/src/components/ui';
@@ -27,6 +28,7 @@ const inr = (n: number) => `₹${Math.abs(Math.round(n)).toLocaleString('en-IN')
 export default function LedgerScreen() {
   const { scrolled, onScroll } = useScrolled();
   const router = useRouter();
+  const { user, hasModule } = useAuth();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [order, setOrder] = useState<string[]>([]);
@@ -78,12 +80,24 @@ export default function LedgerScreen() {
       const total = withBalance.reduce((t, x) => t + Math.abs(x.closing_balance || 0), 0);
       next['employee-ledger'] = withBalance.length > 0 ? `${withBalance.length} with balance · ${inr(total)}` : 'All settled';
     } else setFailed(true);
+    if (hasModule('cash_ledger') || user?.role === 'owner') {
+      try {
+        const c = await api.get<{ totals: { you_get: number; you_give: number } }>('/khata');
+        const parts: string[] = [];
+        if (c.totals.you_get >= 1) parts.push(`You'll get ${inr(c.totals.you_get)}`);
+        if (c.totals.you_give >= 1) parts.push(`you'll give ${inr(c.totals.you_give)}`);
+        if (parts.length) next['cash-ledger'] = parts.join(' · ').replace(/^y/, 'Y');
+      } catch { /* keep the description */ }
+    }
     setSum(next);
     setRefreshing(false);
-  }, []);
+  }, [hasModule, user?.role]);
   useFocusEffect(useCallback(() => { load(); loadPrefs(); }, [load, loadPrefs]));
 
   const rows: Row[] = [
+    ...(hasModule('cash_ledger') || user?.role === 'owner'
+      ? [{ key: 'cash-ledger', group: 'People', label: 'Cash Ledger', icon: 'wallet-outline' as const, route: '/cash-ledger', summary: sum['cash-ledger'] || 'Cash you gave and got, person by person' }]
+      : []),
     { key: 'customer-ledger', group: 'People', label: 'Customer Ledger', icon: 'person-outline', route: '/reports/customer-ledger', summary: sum['customer-ledger'] || '…' },
     { key: 'karigar-ledger', group: 'People', label: 'Karigar Ledger', icon: 'hammer-outline', route: '/reports/karigar-ledger', summary: sum['karigar-ledger'] || '…' },
     { key: 'employee-ledger', group: 'People', label: 'Employee Ledger', icon: 'people-outline', route: '/reports/employee-ledger', summary: sum['employee-ledger'] || '…' },

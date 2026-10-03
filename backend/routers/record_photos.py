@@ -53,6 +53,7 @@ _FOLDER_LABEL = {
     'task': 'Task Photos',
     'gold_loan': 'Gold Loan Photos',
     'cashbook_entry': 'Cash Book Receipts',
+    'cash_ledger_entry': 'Cash Ledger',
 }
 
 # Every ref_type this feature supports maps to the module that gates its
@@ -63,7 +64,8 @@ _FOLDER_LABEL = {
 # separately below (_require_task_access) — an employee can always attach a
 # completion photo to their OWN task regardless of whether they hold the
 # 'tasks' staff module, the same as they can already comment on / complete it.
-_REF_MODULE = {'repair_item': 'repairs', 'sample': 'samples', 'employee': 'team', 'gold_loan': 'gold_loans', 'cashbook_entry': 'cash_book'}
+_REF_MODULE = {'repair_item': 'repairs', 'sample': 'samples', 'employee': 'team', 'gold_loan': 'gold_loans', 'cashbook_entry': 'cash_book',
+               'cash_ledger_entry': 'cash_ledger'}
 
 
 def _module_for_ref(ref_type: str) -> str:
@@ -89,7 +91,14 @@ async def _require_read(user: dict, ref_type: str, ref_id: str = '') -> None:
         return
     mod = _module_for_ref(ref_type)
     role = user.get('role')
-    if role in ('owner', 'admin', 'accountant'):
+    if role == 'owner':
+        return
+    # The Cash Ledger is the owner's own khata: only people actually given it see its photos.
+    if mod == 'cash_ledger':
+        if mod in resolve_modules(user):
+            return
+        raise HTTPException(status_code=403, detail=f'No access to "{mod}"')
+    if role in ('admin', 'accountant'):
         return
     if role == 'employee' and mod in resolve_modules(user):
         return
@@ -102,7 +111,13 @@ async def _require_write(user: dict, ref_type: str, ref_id: str = '') -> None:
         return
     mod = _module_for_ref(ref_type)
     role = user.get('role')
-    if role in ('owner', 'admin'):
+    if role == 'owner':
+        return
+    if mod == 'cash_ledger':   # only people given the Cash Ledger, admin included
+        if mod in resolve_modules(user):
+            return
+        raise HTTPException(status_code=403, detail=f'No access to "{mod}"')
+    if role == 'admin':
         return
     # An accountant can record Cash Book entries (see require_admin_or_module), so may attach their receipts too.
     if role == 'accountant' and ref_type == 'cashbook_entry':
@@ -183,10 +198,7 @@ async def bulk_thumbnails(ref_type: str = Query(...), ref_ids: str = Query(...),
     ids = [x for x in ref_ids.split(',') if x.strip()]
     if not ids:
         return {}
-    mod = _module_for_ref(ref_type)
-    role = user.get('role')
-    if not (role in ('owner', 'admin', 'accountant') or (role == 'employee' and mod in resolve_modules(user))):
-        raise HTTPException(status_code=403, detail=f'No access to "{mod}"')
+    await _require_read(user, ref_type)   # same rule as one photo (Cash Ledger: only people given it)
     docs = await db.record_photos.find(
         {'ref_type': ref_type, 'ref_id': {'$in': ids}, 'deleted': {'$ne': True}},
         {'_id': 0, 'ref_id': 1, 'thumb_data': 1, 'local_data': 1, 'local_kind': 1, 'file.mime': 1, 'created_at': 1},
