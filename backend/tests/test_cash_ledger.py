@@ -215,3 +215,33 @@ def test_cash_ledger_only_for_people_given_it():
         assert cl['default_roles'] == ['owner'] and cl.get('employee_assignable') is True   # the owner can give it to anyone
     finally:
         requests.delete(f"{API}/khata/{aid}", headers=owner, timeout=30)
+
+
+def test_cash_ledger_convert_whole_balance_across_groups():
+    """all_parts converts the person's whole balance in a currency - general and every group, each in its own group -
+    at one rate, and deleting one side undoes all of it."""
+    h = _login('owner', 'Owner@123')
+    aid = requests.post(f"{API}/khata", headers=h, json={'name': f'Khata convert all {os.urandom(3).hex()}'}, timeout=30).json()['id']
+    try:
+        g1 = requests.post(f"{API}/khata/{aid}/groups", headers=h, json={'name': 'A'}, timeout=30).json()['id']
+        g2 = requests.post(f"{API}/khata/{aid}/groups", headers=h, json={'name': 'B'}, timeout=30).json()['id']
+        post = lambda **k: requests.post(f"{API}/khata/{aid}/entries", headers=h, json=k, timeout=30)  # noqa: E731
+        post(direction='gave', amount=1250, currency='INR')
+        post(direction='gave', amount=6250, currency='INR', group_id=g1)
+        post(direction='got', amount=625, currency='INR', group_id=g2)
+        r = requests.post(f"{API}/khata/{aid}/convert", headers=h, timeout=30,
+                          json={'from_currency': 'INR', 'to_currency': 'CAD', 'amount': 6875, 'rate': 62.5, 'rate_per_to': True, 'all_parts': True}).json()
+        assert r['parts'] == 3 and r['to_amount'] == 110
+        acc = requests.get(f"{API}/khata/{aid}", headers=h, timeout=30).json()
+        a = acc['account']
+        assert a['balances'] == {'CAD': 110} and a['general_balances'] == {'CAD': 20}
+        assert {g['name']: g['balances'] for g in a['groups']} == {'A': {'CAD': 100}, 'B': {'CAD': -10}}
+        leg = next(e for e in acc['entries'] if e.get('conversion_id'))
+        requests.delete(f"{API}/khata/{aid}/entries/{leg['id']}", headers=h, timeout=30)
+        assert requests.get(f"{API}/khata/{aid}", headers=h, timeout=30).json()['account']['balances'] == {'INR': 6875}
+    finally:
+        for e in requests.get(f"{API}/khata/{aid}", headers=h, timeout=30).json().get('entries', []):
+            requests.delete(f"{API}/khata/{aid}/entries/{e['id']}", headers=h, timeout=30)
+        for g in requests.get(f"{API}/khata/{aid}", headers=h, timeout=30).json()['account'].get('groups', []):
+            requests.delete(f"{API}/khata/{aid}/groups/{g['id']}", headers=h, timeout=30)
+        requests.delete(f"{API}/khata/{aid}", headers=h, timeout=30)

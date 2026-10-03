@@ -218,12 +218,41 @@ export default function CashLedgerAccountScreen() {
     catch (err: any) { toast.error(err?.detail || 'Could not delete'); }
   });
 
-  const settle = () => acc && confirmAction(grp ? `Settle ${grp.name}?` : 'Settle Up?',
-    codes.map((c) => (heroBal[c] > 0 ? `${first} pays you ${money(heroBal[c], c)}` : `You pay ${first} ${money(heroBal[c], c)}`)).join('\n'),
-    'Settle Up', async () => {
-      try { await api.post(`/khata/${id}/settle${group ? `?group=${group}` : ''}`, {}); haptics.success(); load(); }
-      catch (e: any) { toast.error(e?.detail || 'Could not settle'); }
-    });
+  // Settle Up: the whole balance in a currency (every part, as before), or a part payment.
+  const [settleCur, setSettleCur] = useState<string | null>(null);
+  const [settleAmt, setSettleAmt] = useState('');
+  const [settleDate, setSettleDate] = useState(todayIST());
+  const [settleNote, setSettleNote] = useState('');
+  const [settlePart, setSettlePart] = useState<string | null>(null);   // where a part payment is recorded (person page)
+  const [settleBusy, setSettleBusy] = useState(false);
+  const openSettleFor = (c: string) => {
+    setSettleCur(c); setSettleAmt(String(Math.abs(heroBal[c] || 0))); setSettleDate(todayIST()); setSettleNote('');
+    // a part payment goes, by default, to the part owing the most in the same direction
+    const parts = convParts(c).filter((p) => Math.sign(p.v) === Math.sign(heroBal[c] || 0)).sort((x, y) => Math.abs(y.v) - Math.abs(x.v));
+    setSettlePart(parts[0]?.id ?? null);
+  };
+  const settle = () => { if (codes.length) openSettleFor(codes[0]); };
+  const settleBal = settleCur ? heroBal[settleCur] || 0 : 0;
+  const settleN = Number(settleAmt.replace(/,/g, '')) || 0;
+  const settleFull = !!settleCur && Math.abs(settleN - Math.abs(settleBal)) < 0.005;
+  const doSettle = async () => {
+    if (!settleCur || settleBusy) return;
+    if (!(settleN > 0) || settleN > Math.abs(settleBal) + 0.005) { toast.error(`Enter an amount up to ${money(settleBal, settleCur)}`); return; }
+    setSettleBusy(true);
+    try {
+      if (settleFull) {
+        const q = [`currency=${settleCur}`, `date=${settleDate}`, group && `group=${group}`].filter(Boolean).join('&');
+        await api.post(`/khata/${id}/settle?${q}`, {});
+      } else {
+        await api.post(`/khata/${id}/entries`, {
+          direction: settleBal > 0 ? 'got' : 'gave', amount: settleN, currency: settleCur, date: settleDate,
+          note: settleNote.trim() || 'Part payment', group_id: grp ? group : settlePart,
+        });
+      }
+      haptics.success(); setSettleCur(null); load();
+    } catch (e: any) { haptics.error(); toast.error(e?.detail || 'Could not settle'); }
+    finally { setSettleBusy(false); }
+  };
 
   const phoneDigits = (acc?.phone || '').replace(/\D/g, '');
   const waNumber = phoneDigits.length === 10 ? `91${phoneDigits}` : phoneDigits;
@@ -270,9 +299,14 @@ export default function CashLedgerAccountScreen() {
     return '';
   };
   // From the person's page this converts the general balance; a group's balance is converted on the group's page.
-  const convertible = (c: string) => (grp ? heroBal[c] || 0 : acc?.general_balances?.[c] || 0);
+  // On a group's page: that group's balance. On the person's page: the whole balance in that currency —
+  // general and every group (each part is converted in full, inside its own group, at the same rate).
+  const convertible = (c: string) => heroBal[c] || 0;
+  const convParts = (c: string): { id: string | null; name: string; v: number }[] => (grp ? [] : [
+    { id: null, name: 'General', v: acc?.general_balances?.[c] || 0 },
+    ...groups.map((g) => ({ id: g.id, name: g.name, v: g.balances[c] || 0 })),
+  ].filter((p) => Math.abs(p.v) >= 0.0005));
   const openConvert = async (from: string) => {
-    if (!convertible(from)) { toast.error('This balance is all in groups — open the group to convert it.'); return; }
     const to = from === BASE_CURRENCY ? (codes.find((c) => c !== from) || 'USD') : BASE_CURRENCY;
     setConv({ from }); setConvTo(to); setConvAmt(String(Math.abs(convertible(from)))); setConvDate(todayIST()); setConvNote('');
     setConvInv(from === BASE_CURRENCY);
@@ -286,16 +320,22 @@ export default function CashLedgerAccountScreen() {
     }
   };
   const convFromBal = conv ? convertible(conv.from) : 0;
+  const convSplit = conv ? convParts(conv.from) : [];
+  const convAll = convSplit.length > 1;   // several parts: always the whole balance
   const convAmtN = Number(convAmt.replace(/,/g, '')) || 0;
   const convRateN = Number(convRate.replace(/,/g, '')) || 0;
-  const convOut = convRateN ? (convInv ? convAmtN / convRateN : convAmtN * convRateN) : 0;
+  const convIn = convAll ? Math.abs(convFromBal) : convAmtN;
+  const convOut = convRateN ? (convInv ? convIn / convRateN : convIn * convRateN) : 0;
   const unitOf = (c: string) => (METALS[c] ? `g ${METALS[c].name.toLowerCase()}` : c);
   const doConvert = async () => {
     if (!conv || convBusy) return;
-    if (!convAmtN || !convRateN) { toast.error('Enter the amount and the rate'); return; }
+    if (!convIn || !convRateN) { toast.error('Enter the amount and the rate'); return; }
     setConvBusy(true);
     try {
-      await api.post(`/khata/${id}/convert`, { from_currency: conv.from, to_currency: convTo, amount: convAmtN, rate: convRateN, rate_per_to: convInv, date: convDate, note: convNote.trim(), group_id: group || null });
+      await api.post(`/khata/${id}/convert`, { from_currency: conv.from, to_currency: convTo, amount: convIn, rate: convRateN, rate_per_to: convInv, date: convDate, note: convNote.trim(),
+        // a single part: this group's page, or the one part (general or a group) that holds this currency
+        group_id: convAll ? null : group || convSplit[0]?.id || null,
+        all_parts: convAll });
       haptics.success(); setConv(null); load();
     } catch (e: any) { haptics.error(); toast.error(e?.detail || 'Could not convert'); }
     finally { setConvBusy(false); }
@@ -812,6 +852,61 @@ export default function CashLedgerAccountScreen() {
         )}
       </Sheet>
 
+      <Sheet visible={!!settleCur} onClose={() => setSettleCur(null)} title={grp ? `Settle ${grp.name}` : 'Settle Up'} testID="cl-settle-sheet">
+        {settleCur && (
+          <>
+            {codes.length > 1 && (
+              <View style={{ marginBottom: spacing.md }}>
+                <SegmentedControl options={codes.map((c) => ({ key: c, label: symbol(c) }))} value={settleCur} onChange={(c) => openSettleFor(c)} testID="cl-settle-cur" />
+              </View>
+            )}
+            <Text style={s.settleWho}>{settleBal > 0 ? `${first} pays you` : `You pay ${first}`}</Text>
+            <View style={s.amountWrap}>
+              <Text style={[s.curSym, { color: settleBal > 0 ? colors.onSuccess : colors.onError }]}>{symbol(settleCur)}</Text>
+              <TextInput value={settleAmt} onChangeText={(t) => setSettleAmt(t.replace(/[^\d.,]/g, ''))} keyboardType="decimal-pad" placeholder="0"
+                placeholderTextColor={colors.mutedText} style={[s.amountInput, { color: settleBal > 0 ? colors.onSuccess : colors.onError }]} testID="cl-settle-amount" />
+            </View>
+            <View style={s.settleChips}>
+              {[['Full', 1], ['Half', 0.5]].map(([l, f]) => (
+                <Pressable key={l as string} onPress={() => setSettleAmt(String(Math.round(Math.abs(settleBal) * (f as number) * 1000) / 1000))} style={({ pressed }) => [s.pcChip, pressed && { opacity: 0.6 }]} testID={`cl-settle-${l}`}>
+                  <Text style={s.pcChipText}>{l}</Text>
+                </Pressable>
+              ))}
+            </View>
+            <Text style={s.settleLeft} testID="cl-settle-left">
+              {settleFull ? 'Settles the whole balance' : settleN > 0 && settleN < Math.abs(settleBal)
+                ? `Part payment · ${money(Math.abs(settleBal) - settleN, settleCur)} still left` : `Balance ${money(settleBal, settleCur)}`}
+            </Text>
+
+            <View style={[s.formGroup, { marginTop: spacing.md }]}>
+              <View style={s.formPad}><DateField value={settleDate} onChange={setSettleDate} testID="cl-settle-date" /></View>
+              {!settleFull && (
+                <>
+                  <View style={s.formSep} />
+                  <TextInput value={settleNote} onChangeText={setSettleNote} placeholder="Note (Part payment)" placeholderTextColor={colors.mutedText} style={s.formInput} testID="cl-settle-note" />
+                </>
+              )}
+              {!settleFull && !grp && convParts(settleCur).length > 1 && (
+                <>
+                  <View style={s.formSep} />
+                  <View style={[s.formRow, { flexWrap: 'wrap', paddingVertical: 8 }]}>
+                    <Text style={[s.formLabel, { marginRight: 8 }]}>Against</Text>
+                    {convParts(settleCur).map((p) => (
+                      <Pressable key={p.id || 'general'} onPress={() => setSettlePart(p.id)} style={[s.pcChip, settlePart === p.id && { backgroundColor: colors.brandPrimary }]} testID={`cl-settle-part-${p.id || 'general'}`}>
+                        <Text style={[s.pcChipText, settlePart === p.id && { color: colors.onBrandPrimary }]}>{p.name} {signed(p.v, settleCur)}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                </>
+              )}
+            </View>
+            <Pressable onPress={doSettle} disabled={settleBusy} style={({ pressed }) => [s.primary, settleBusy && { opacity: 0.5 }, pressed && { opacity: 0.85 }]} testID="cl-settle-save">
+              {settleBusy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={s.primaryText}>{settleFull ? 'Settle Up' : 'Record Part Payment'}</Text>}
+            </Pressable>
+          </>
+        )}
+      </Sheet>
+
       <Sheet visible={!!conv} onClose={() => setConv(null)} title="Convert" testID="cl-convert-sheet">
         {conv && (
           <>
@@ -821,17 +916,27 @@ export default function CashLedgerAccountScreen() {
                 <Text style={s.formValue}>{money(convFromBal, conv.from)}</Text>
               </View>
               <View style={s.formSep} />
+              {convAll ? (
+                <View style={[s.formRow, { flexDirection: 'column', alignItems: 'stretch', paddingVertical: 10, gap: 4 }]} testID="cl-conv-parts">
+                  {convSplit.map((p) => (
+                    <View key={p.name} style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 10 }}>
+                      <Text style={s.subtitle}>{p.name}</Text>
+                      <Text style={[s.subtitle, { color: balColor(p.v) }]}>{signed(p.v, conv.from)}</Text>
+                    </View>
+                  ))}
+                </View>
+              ) : (
               <View style={s.formRow}>
                 <Text style={[s.curSymSmall]}>{symbol(conv.from)}</Text>
                 <TextInput value={convAmt} onChangeText={(t) => setConvAmt(t.replace(/[^\d.,]/g, ''))} keyboardType="decimal-pad" placeholder="0"
                   placeholderTextColor={colors.mutedText} style={[s.formInput, { flex: 1, paddingHorizontal: 0, fontWeight: '600' }]} testID="cl-conv-amount" />
                 <Pressable onPress={() => setConvAmt(String(Math.abs(convFromBal)))} hitSlop={8}><Text style={s.formAction}>All</Text></Pressable>
               </View>
+              )}
             </View>
 
-            {(grp || groups.length > 0) && (
-              <Text style={s.footer}>{grp ? `From the ${grp.name} group's balance.` : "From the general balance — a group's balance is converted on the group's page."}</Text>
-            )}
+            {grp ? <Text style={s.footer}>From the {grp.name} group&apos;s balance.</Text>
+              : convAll ? <Text style={s.footer}>The whole balance is converted at one rate; each group&apos;s share stays in its group.</Text> : null}
             <View style={{ alignItems: 'center', marginVertical: 8 }}><Ionicons name="arrow-down-circle" size={28} color={colors.brandPrimary} /></View>
 
             <View style={s.formGroup}>
@@ -861,7 +966,7 @@ export default function CashLedgerAccountScreen() {
             <View style={s.convResult} testID="cl-conv-result">
               <Text style={s.convResultLabel}>{convFromBal > 0 ? `${first} will owe you` : `You will owe ${first}`}</Text>
               <Text style={[s.convResultAmt, { color: balColor(convFromBal) }, !!convOut && money(convOut, convTo).length > 14 ? { fontSize: 26 } : null]}>{convOut ? money(convOut, convTo) : '—'}</Text>
-              <Text style={s.convResultSub}>instead of {money(convAmtN, conv.from)}</Text>
+              <Text style={s.convResultSub}>instead of {money(convIn, conv.from)}</Text>
             </View>
 
             <View style={s.formGroup}>
@@ -1007,6 +1112,9 @@ const makeStyles = (colors: ThemeColors, narrow = false) => StyleSheet.create({
   pcChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, backgroundColor: colors.surfaceTertiary },
   pcChipText: { color: colors.brandPrimary, fontSize: 14, fontWeight: '600' },
   formValue: { flex: 1, textAlign: 'right', color: colors.mutedText, fontSize: 17 },
+  settleWho: { color: colors.mutedText, fontSize: 15, textAlign: 'center' },
+  settleChips: { flexDirection: 'row', gap: 8, justifyContent: 'center', marginTop: 4 },
+  settleLeft: { color: colors.mutedText, fontSize: 14, textAlign: 'center', marginTop: 8 },
   formValue2: { color: colors.mutedText, fontSize: 17, marginLeft: 6 },
   swapBtn: { marginLeft: 8, width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceTertiary },
   curSymSmall: { color: colors.onSurface, fontSize: 20, fontWeight: '600', minWidth: 24 },
