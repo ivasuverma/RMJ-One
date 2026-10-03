@@ -9,6 +9,7 @@ import { useAuth } from '@/src/auth/AuthContext';
 import { istDate, istTime, istDisplayDate, istDisplayDateTime } from '@/src/utils/datetime';
 import { shareFile, useShareableFile } from '@/src/utils/shareFile';
 import { usePdfPages } from '@/src/utils/pdfPages';
+import { usePdfPassword } from '@/src/utils/pdfUnlock';
 import { confirmAction } from '@/src/utils/confirm';
 import { haptics } from '@/src/utils/haptics';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
@@ -462,10 +463,19 @@ function QuickView({ doc, categoryLabel, token, fileUri, onClose, onRecord, canR
     () => Object.fromEntries((pagePics || []).map((u) => [u, { uri: u }])),
     [pagePics],
   );
+  const toast = useToast();
   // Any other PDF: the server draws each page as a picture, shown right here.
   const isPdf = !!doc && !multi && doc.file.mime === 'application/pdf';
-  const pdfPages = usePdfPages(isPdf ? doc!.id : null, token);
+  const { pages: pdfPages, locked: pdfLocked, reload: reloadPdf } = usePdfPages(isPdf ? doc!.id : null, token);
   const showPdf = isPdf && !!pdfPages && pdfPages.length > 0;
+  // A PDF saved with its password: Unlock replaces it with the unlocked copy.
+  const { askPassword, prompt: pdfPrompt } = usePdfPassword();
+  const [unlocks, setUnlocks] = useState(0);
+  const unlock = async () => {
+    if (!doc) return;
+    const ok = await askPassword(doc.file.orig_name || 'PDF', async (password) => { await api.post(`/documents/${doc.id}/unlock`, { password }); });
+    if (ok) { setUnlocks((n) => n + 1); reloadPdf(); toast.success('Unlocked — the password is removed'); }
+  };
   const idx = doc ? list.findIndex((x) => x.id === doc.id) : -1;
   const go = (dir: number) => {
     const n = idx + dir;
@@ -478,8 +488,7 @@ function QuickView({ doc, categoryLabel, token, fileUri, onClose, onRecord, canR
   }), [idx, list]);
   // Fetched as soon as the document shows, so Share can open the sheet straight from the tap.
   const shareName = doc ? `${categoryLabel} ${istDate(doc.created_at)}`.replace(/[\\/:*?"<>|]+/g, '-') : '';
-  const shareable = useShareableFile(doc ? `${fileUri(doc.id)}?full=1` : null, token, shareName);
-  const toast = useToast();
+  const shareable = useShareableFile(doc ? `${fileUri(doc.id)}?full=1${unlocks ? `&u=${unlocks}` : ''}` : null, token, shareName);
   if (!doc) return null;
   const isImage = (doc.file.mime || '').startsWith('image/');
   const share = async () => {
@@ -505,7 +514,7 @@ function QuickView({ doc, categoryLabel, token, fileUri, onClose, onRecord, canR
             : <View style={styles.qvIconBtn} />}
         </View>
         <View style={styles.qvImgWrap} {...pan.panHandlers} onLayout={(e) => setBox({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
-          {!multi && !showPdf && <Pressable style={StyleSheet.absoluteFill} onPress={() => !isImage && onOpenFile(doc)} />}
+          {!multi && !showPdf && !pdfLocked && <Pressable style={StyleSheet.absoluteFill} onPress={() => !isImage && onOpenFile(doc)} />}
           {multi && pagePics && pagePics.length > 0
             ? <ScrollView horizontal={zoom > 1} style={StyleSheet.absoluteFill} contentContainerStyle={zoom > 1 ? { width: Math.max(box.w, 1) * zoom } : undefined} testID="qv-pages">
                 <ScrollView style={{ width: Math.max(box.w, 1) * zoom }} contentContainerStyle={{ padding: 8, gap: 8 }}>
@@ -522,6 +531,16 @@ function QuickView({ doc, categoryLabel, token, fileUri, onClose, onRecord, canR
               </ScrollView>
             : isPdf && pdfPages === undefined && !!token
             ? <ActivityIndicator color="#fff" size="large" />
+            : pdfLocked
+            ? <View style={{ alignItems: 'center', gap: 10, paddingHorizontal: 24 }} testID="qv-pdf-locked">
+                <Ionicons name="lock-closed-outline" size={48} color={colors.mutedText} />
+                <Text style={{ color: '#fff', fontWeight: '700', fontSize: 16 }}>This PDF has a password</Text>
+                <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 13, textAlign: 'center' }}>Unlock it once to see the pages here. The password is removed for good.</Text>
+                <Pressable onPress={unlock} style={styles.qvUnlock} testID="qv-pdf-unlock">
+                  <Ionicons name="lock-open-outline" size={18} color={colors.onBrandPrimary} />
+                  <Text style={{ color: colors.onBrandPrimary, fontWeight: '700', fontSize: 15 }}>Unlock</Text>
+                </Pressable>
+              </View>
             : isImage && token
             ? (() => {
                 const zoomed = zoom > 1 && box.w > 0;
@@ -606,6 +625,7 @@ function QuickView({ doc, categoryLabel, token, fileUri, onClose, onRecord, canR
           </View>
         </View>
       </View>
+      {pdfPrompt}
     </Modal>
   );
 }
@@ -727,6 +747,7 @@ function PdfPage({ source, width }: { source: { uri: string; headers: Record<str
 
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
+  qvUnlock: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.brandPrimary, paddingHorizontal: 22, paddingVertical: 12, borderRadius: 999, marginTop: 6 },
   pdfBadge: { position: 'absolute', left: 3, bottom: 3, backgroundColor: 'rgba(0,0,0,0.65)', borderRadius: 6, paddingHorizontal: 5, paddingVertical: 1 },
   pdfBadgeText: { color: '#fff', fontSize: 10, fontWeight: '800' },
   recatRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 13, paddingHorizontal: 4, borderBottomWidth: 1, borderBottomColor: colors.border },

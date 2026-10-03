@@ -10,6 +10,7 @@ import { useTheme } from '@/src/theme/ThemeContext';
 import { Sheet, useToast } from '@/src/components/ui';
 import { pickWebFiles, shrinkImage, makeThumb } from '@/src/components/DocumentCaptureSheet';
 import { PhotoViewer } from '@/src/components/PhotoViewer';
+import { usePdfPassword } from '@/src/utils/pdfUnlock';
 
 const BASE = process.env.EXPO_PUBLIC_BACKEND_URL || '';
 
@@ -120,6 +121,7 @@ function AddIdProofSheet({ visible, employee, onClose, onAdded }: {
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [added, setAdded] = useState<{ label: string; count: number }[]>([]);
   const [error, setError] = useState('');
+  const { unlockIfNeeded, prompt: pdfPrompt } = usePdfPassword();
 
   useEffect(() => { if (!visible) { setType(null); setOther(''); setProgress(null); setAdded([]); setError(''); } }, [visible]);
 
@@ -149,7 +151,12 @@ function AddIdProofSheet({ visible, employee, onClose, onAdded }: {
 
   const pick = async (accept: string, opts: { capture?: boolean; multiple?: boolean }) => {
     if (!label || progress) return;
-    const files = await pickWebFiles(accept, opts);
+    const picked = await pickWebFiles(accept, opts);
+    const files: File[] = [];
+    for (const f of picked) {   // a PDF with a password is saved unlocked
+      const ready = await unlockIfNeeded(f);
+      if (ready) files.push(ready);
+    }
     if (!files.length) return;
     setError('');
     let ok = 0;
@@ -238,6 +245,7 @@ function AddIdProofSheet({ visible, employee, onClose, onAdded }: {
           )}
         </>
       )}
+      {pdfPrompt}
     </Sheet>
   );
 }

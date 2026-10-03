@@ -157,18 +157,56 @@ def _is_pdf(raw: bytes) -> bool:
     return raw[:1024].lstrip().startswith(b'%PDF')
 
 
-def _pdf_page_count_sync(raw: bytes):
-    """Number of pages, or None when PDFs can't be read here (pypdfium2 missing
-    or a broken file) — the app then just offers Open."""
+def _pdf_info_sync(raw: bytes) -> tuple:
+    """(pages, locked): pages is None when PDFs can't be read here (pypdfium2
+    missing or a broken file) — the app then just offers Open; locked is True
+    for a password-protected PDF (the app offers to unlock it)."""
     try:
         import pypdfium2
         pdf = pypdfium2.PdfDocument(raw)
         try:
-            return len(pdf)
+            return len(pdf), False
         finally:
             pdf.close()
-    except Exception:
-        return None
+    except Exception as e:
+        return None, 'password' in str(e).lower()
+
+
+class PdfPasswordError(Exception):
+    pass
+
+
+def _unlock_pdf_sync(raw: bytes, password: str) -> bytes:
+    """The same PDF with its password removed. Raises PdfPasswordError for a
+    wrong password, ValueError if it isn't a PDF that can be read."""
+    import io
+    import pypdfium2
+    import pypdfium2.raw as pdfium_c
+    try:
+        pdf = pypdfium2.PdfDocument(raw, password=password)
+    except Exception as e:
+        if 'password' in str(e).lower():
+            raise PdfPasswordError() from e
+        raise ValueError('not a readable PDF') from e
+    try:
+        out = io.BytesIO()
+        pdf.save(out, flags=pdfium_c.FPDF_REMOVE_SECURITY)
+        return out.getvalue()
+    finally:
+        pdf.close()
+
+
+async def _unlock_or_400(raw: bytes, password: str) -> bytes:
+    if not _can_draw_pdfs():
+        raise HTTPException(status_code=503, detail='Unlocking PDFs is not available on this server yet')
+    if not _is_pdf(raw):
+        raise HTTPException(status_code=400, detail="That file isn't a PDF")
+    try:
+        return await asyncio.to_thread(_unlock_pdf_sync, raw, password or '')
+    except PdfPasswordError:
+        raise HTTPException(status_code=400, detail='Wrong password - please check and try again')
+    except ValueError:
+        raise HTTPException(status_code=400, detail="This PDF couldn't be opened")
 
 
 def _pdf_page_jpeg_sync(raw: bytes, index: int, side: int, quality: int):
@@ -1022,20 +1060,69 @@ async def _doc_for_viewer(doc_id: str, user) -> dict:
 @router.get('/documents/{doc_id}/pages')
 async def document_pages(doc_id: str, user=Depends(get_current)):
     """How many pages a PDF has, so the app can show each one (?page=N).
-    `pages` is null when it can't be read here — the app falls back to Open."""
+    `pages` is null when it can't be read here — the app falls back to Open;
+    `locked` is true for a password-protected PDF (see /unlock)."""
     d = await _doc_for_viewer(doc_id, user)
     if (d.get('file') or {}).get('mime') != 'application/pdf' or not _can_draw_pdfs():
-        return {'pages': None}
+        return {'pages': None, 'locked': False}
 
-    async def count():
+    async def info():
         raw, ok = await _load_variant(d, doc_id, 'full')
         if not raw:
             return None
         if ok and not _cache_file(doc_id, 'full').is_file():
             await _cache_write(doc_id, 'full', raw)   # each page is drawn from it next
-        return await asyncio.to_thread(_pdf_page_count_sync, raw)
-    n = await _memo(('pages', doc_id), 3600, count)
-    return {'pages': min(n, MAX_PDF_PAGES) if n else None, 'total': n}
+        return await asyncio.to_thread(_pdf_info_sync, raw)
+    res = await _memo(('pages', doc_id), 3600, info)
+    n, locked = res if res else (None, False)
+    return {'pages': min(n, MAX_PDF_PAGES) if n else None, 'total': n, 'locked': bool(locked)}
+
+
+@router.post('/documents/unlock-pdf')
+async def unlock_pdf(file: UploadFile = File(...), password: str = Form(default=''), user=Depends(get_current)):
+    """Before uploading: the picked PDF with its password removed, so what gets
+    saved opens (and previews) without one. Nothing is stored here."""
+    raw = await file.read()
+    if len(raw) > 60 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail='File too large (max 60 MB).')
+    out = await _unlock_or_400(raw, password)
+    return Response(content=out, media_type='application/pdf')
+
+
+class UnlockIn(BaseModel):
+    password: str
+
+
+@router.post('/documents/{doc_id}/unlock')
+async def unlock_document(doc_id: str, body: UnlockIn, user=Depends(get_current)):
+    """A password-protected PDF already saved: replace it with the unlocked copy,
+    here and in Google Drive (the locked Drive file is removed and the unlocked
+    one uploaded in its place)."""
+    d = await _doc_for_viewer(doc_id, user)
+    if (d.get('file') or {}).get('mime') != 'application/pdf':
+        raise HTTPException(status_code=400, detail="That document isn't a PDF")
+    raw, ok = await _load_variant(d, doc_id, 'full')
+    if not raw or not ok:
+        raise HTTPException(status_code=404, detail="The file couldn't be fetched - try again in a moment")
+    out = await _unlock_or_400(raw, body.password)
+    _cache_drop(doc_id)
+    await _cache_write(doc_id, 'full', out)
+    old_drive = (d.get('file') or {}).get('drive_file_id')
+    upd = {'file.size': len(out), 'unlocked_at': now_utc().isoformat()}
+    if old_drive:
+        upd.update({'upload_state': 'queued', 'file.drive_file_id': None, 'file.drive_view_link': None, 'file.drive_thumbnail_link': None})
+    await db.documents.update_one({'id': doc_id}, {'$set': upd})
+    if old_drive:
+        try:
+            import drive_service
+            await drive_service.delete_file(await drive_service.get_config(), old_drive)
+        except Exception:
+            pass   # the unlocked copy still goes up; the old one just stays in Drive
+    _LOOKUPS.pop(('pages', doc_id), None)
+    _forget(doc_id)
+    _bump()
+    await log_audit(user, 'documents.unlock', 'document', doc_id, (d.get('file') or {}).get('orig_name', ''))
+    return {'ok': True, 'size': len(out)}
 
 
 @router.get('/documents/{doc_id}/file')

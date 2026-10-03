@@ -7,6 +7,8 @@ import { useTheme } from '@/src/theme/ThemeContext';
 import { useToast } from '@/src/components/ui';
 import { shareFile, useShareableFile } from '@/src/utils/shareFile';
 import { usePdfPages } from '@/src/utils/pdfPages';
+import { usePdfPassword } from '@/src/utils/pdfUnlock';
+import { api } from '@/src/api/client';
 
 /** A photo (or PDF) full-screen, with Close, Share (the phone's share sheet)
  *  and, when `onDelete` is given, Delete. Pass `docId` for a Documents file so
@@ -19,9 +21,17 @@ export function PhotoViewer({ url, token, name, title, docId, onClose, onDelete 
   const insets = useSafeAreaInsets();
   const toast = useToast();
   const src = useMemo(() => ({ uri: url, headers: { Authorization: `Bearer ${token}` } }), [url, token]);
-  const file = useShareableFile(url, token, name);
+  const [unlocks, setUnlocks] = useState(0);
+  const file = useShareableFile(unlocks ? `${url}${url.includes('?') ? '&' : '?'}u=${unlocks}` : url, token, name);
   const isPdf = file?.type === 'application/pdf';
-  const pages = usePdfPages(isPdf && docId ? docId : null, token);
+  const { pages, locked, reload } = usePdfPages(isPdf && docId ? docId : null, token);
+  // A PDF saved with its password: Unlock replaces it with the unlocked copy.
+  const { askPassword, prompt: pdfPrompt } = usePdfPassword();
+  const unlock = async () => {
+    if (!docId) return;
+    const ok = await askPassword(title || name, async (password) => { await api.post(`/documents/${docId}/unlock`, { password }); });
+    if (ok) { setUnlocks((n) => n + 1); reload(); toast.success('Unlocked — the password is removed'); }
+  };
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   useEffect(() => {
     if (!isPdf || !file) { setPdfUrl(null); return; }
@@ -62,6 +72,15 @@ export function PhotoViewer({ url, token, name, title, docId, onClose, onDelete 
           </ScrollView>
         ) : isPdf && docId && pages === undefined ? (
           <ActivityIndicator color="#fff" size="large" style={{ flex: 1 }} />
+        ) : isPdf && locked ? (
+          <View style={viewer.pdf} testID="record-photo-pdf-locked">
+            <Ionicons name="lock-closed-outline" size={52} color="#fff" />
+            <Text style={viewer.pdfText}>This PDF has a password</Text>
+            <Pressable onPress={unlock} style={[viewer.btn, viewer.pdfBtn]} testID="record-photo-unlock">
+              <Ionicons name="lock-open-outline" size={18} color="#fff" />
+              <Text style={viewer.btnText}>Unlock</Text>
+            </Pressable>
+          </View>
         ) : isPdf ? (
           // Phones don't reliably show a PDF inside a page (Android Chrome shows
           // nothing), so hand it to the phone's own PDF viewer.
@@ -74,6 +93,7 @@ export function PhotoViewer({ url, token, name, title, docId, onClose, onDelete 
           <Image source={src} style={{ flex: 1 }} contentFit="contain" transition={120} />
         )}
       </View>
+      {pdfPrompt}
     </Modal>
   );
 }
