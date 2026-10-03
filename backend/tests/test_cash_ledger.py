@@ -160,7 +160,7 @@ def test_cash_ledger_splitwise_import_and_dashboard():
     p = requests.post(f"{API}/khata-import/splitwise/preview", headers=h, json={'csv': SPLITWISE_CSV, 'me': 'Test Owner'}, timeout=30).json()
     assert p['lines'] == 4 and p['people'] == ['Test Owner', 'Friend Xyz']
     assert p['balances'] == {'AUD': -220.7, 'INR': 445000} and p['matches_file'] is True
-    assert requests.post(f"{API}/khata-import/splitwise/preview", headers=h, json={'csv': 'a,b\n1,2\n'}, timeout=30).status_code == 400
+    assert requests.post(f"{API}/khata-import/splitwise/preview", headers=h, json={'csv': 'name,amount\nhello,12\n'}, timeout=30).status_code == 400
     r = requests.post(f"{API}/khata-import/splitwise", headers=h, json={'csv': SPLITWISE_CSV, 'me': 'Test Owner', 'new_name': name}, timeout=30).json()
     aid = r['account_id']
     try:
