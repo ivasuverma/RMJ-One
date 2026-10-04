@@ -1,5 +1,5 @@
-"""Documents: the OS button's Customer Outstanding folder, moving a just-uploaded
-slip there, and the owner-only "delete documents older than N months" per folder."""
+"""Documents: the OS button's Customer Outstanding folder (record + file a slip
+there), select-and-delete, and the owner-only "delete older than N months"."""
 import io
 import os
 
@@ -34,8 +34,9 @@ def test_outstanding_folder_move_and_purge():
     d = requests.post(f"{API}/documents", headers=owner, timeout=60, files={'file': ('slip.png', _png(), 'image/png')},
                       data={'category_key': key, 'note': 'slip', 'client_id': cid}).json()
     try:
-        moved = requests.post(f"{API}/documents/move-by-client", headers=owner, json={'client_ids': [cid], 'category_key': os1['key']}, timeout=30).json()
-        assert moved['moved'] == 1
+        assert requests.patch(f"{API}/documents/{d['id']}/record", headers=owner, json={'note': 'Anita', 'linked_ref_label': 'Anita'}, timeout=30).status_code == 200
+        moved = requests.patch(f"{API}/documents/{d['id']}/category", headers=owner, json={'category_key': os1['key']}, timeout=30).json()
+        assert moved['category_key'] == os1['key'] and moved['status'] == 'done'
         # purge: owner only; nothing in a folder is older than a month yet, so nothing goes
         admin = _login('admin', 'Admin@123')
         assert requests.get(f"{API}/documents/purge-preview", headers=admin, params={'category_key': key, 'months': 1}, timeout=30).status_code == 403
@@ -46,6 +47,12 @@ def test_outstanding_folder_move_and_purge():
         assert r['ok'] is True
         assert requests.get(f"{API}/documents/{d['id']}/file", headers=owner, timeout=30).status_code == 200   # a new one stays
         assert requests.post(f"{API}/documents/purge", headers=owner, json={'category_key': key, 'months': 0}, timeout=30).status_code == 422
+        # select and delete: owner/admin only, gone everywhere
+        acc = _login('accountant', 'Accountant@123')
+        assert requests.post(f"{API}/documents/delete-many", headers=acc, json={'ids': [d['id']]}, timeout=30).status_code == 403
+        r = requests.post(f"{API}/documents/delete-many", headers=admin, json={'ids': [d['id'], d['id'], 'nope']}, timeout=60).json()
+        assert r['deleted'] == 1
+        assert requests.get(f"{API}/documents/{d['id']}/file", headers=owner, timeout=30).status_code == 404
     finally:
         requests.delete(f"{API}/documents/{d['id']}", headers=owner, timeout=30)
         requests.delete(f"{API}/document-categories/{cat['id']}", headers=owner, timeout=30)

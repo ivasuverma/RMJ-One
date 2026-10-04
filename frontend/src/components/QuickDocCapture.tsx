@@ -4,10 +4,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { api } from '@/src/api/client';
 import { haptics } from '@/src/utils/haptics';
-import { enqueueUpload, updateOutboxNote, updateOutboxCategory, kickUpload, cancelUpload, releaseHeld } from '@/src/utils/uploadQueue';
+import { enqueueUpload, updateOutboxNote, kickUpload, cancelUpload, releaseHeld } from '@/src/utils/uploadQueue';
 import { blobsToPdf } from '@/src/utils/imagesToPdf';
 import { usePdfPassword } from '@/src/utils/pdfUnlock';
-import { Sheet, useToast } from '@/src/components/ui';
+import { Sheet } from '@/src/components/ui';
 import { pickWebFile, makeThumb, type DocCategory } from '@/src/components/DocumentCaptureSheet';
 import { spacing, radius, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
@@ -94,13 +94,11 @@ export function QuickDocCapture({ visible, onClose, onSaved }: {
 
   // End the current stretch: turn what was captured into its one document (or
   // documents, if a PDF was picked alongside photos) and let it upload.
-  const finalize = async (keyOverride?: string) => {
+  const finalize = async () => {
     const batch = shotsRef.current;
     if (batch.length === 0 || finalizing.current) return;
     finalizing.current = true;
-    const key = keyOverride || catKey || '';
-    // OS: every photo of this stretch goes to the outstanding folder instead.
-    if (keyOverride) for (const s of batch) await updateOutboxCategory(s.id, keyOverride);
+    const key = catKey || '';
     const note = caption.trim();
     const images = batch.filter((s) => s.isImage);
     const others = batch.filter((s) => !s.isImage);   // e.g. a PDF picked in gallery mode: its own document
@@ -140,23 +138,6 @@ export function QuickDocCapture({ visible, onClose, onSaved }: {
   };
 
   const close = async () => { await finalize(); kickUpload(); onClose(); };
-
-  // OS (outstanding): for customer slips — file this stretch in Customer Outstanding instead of the slips folder.
-  const toast = useToast();
-  const isSlip = !!selectedCat && /slip/i.test(`${selectedCat.key} ${selectedCat.label}`);
-  const [osBusy, setOsBusy] = useState(false);
-  const saveAsOutstanding = async () => {
-    if (!catKey || osBusy) return;
-    setOsBusy(true);
-    try {
-      const os = await api.post<{ key: string; label: string }>('/document-categories/outstanding', { from_key: catKey });
-      await finalize(os.key);
-      haptics.success();
-      toast.success(`Saved to ${os.label}`);
-      kickUpload(); onClose();
-    } catch (e: any) { haptics.error(); toast.error(e?.detail || 'Could not save to Customer Outstanding'); }
-    finally { setOsBusy(false); }
-  };
 
   const removeShot = async (id: string) => {
     await cancelUpload(id);
@@ -256,13 +237,7 @@ export function QuickDocCapture({ visible, onClose, onSaved }: {
               <Ionicons name="camera" size={20} color={colors.onBrandPrimary} />
               <Text style={styles.btnPrimaryText}>Capture another</Text>
             </Pressable>
-            {isSlip && (
-              <Pressable onPress={saveAsOutstanding} disabled={busy || osBusy} style={[styles.btnGhost, styles.btnOs]} testID="quick-os"
-                accessibilityLabel="Save to Customer Outstanding">
-                {osBusy ? <ActivityIndicator color={colors.onWarning} /> : <Text style={[styles.btnGhostText, { color: colors.onWarning }]}>OS</Text>}
-              </Pressable>
-            )}
-            <Pressable onPress={() => close()} disabled={busy || osBusy} style={[styles.btnGhost, { flex: 1 }]} testID="quick-done">
+            <Pressable onPress={close} disabled={busy} style={[styles.btnGhost, { flex: 1 }]} testID="quick-done">
               <Text style={styles.btnGhostText}>Done</Text>
             </Pressable>
           </View>
@@ -343,6 +318,5 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   btnPrimary: { backgroundColor: colors.brandPrimary },
   btnPrimaryText: { color: colors.onBrandPrimary, fontSize: 15, fontWeight: '800' },
   btnGhost: { alignItems: 'center', justifyContent: 'center', paddingVertical: 12, borderRadius: radius.md, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border },
-  btnOs: { minWidth: 64, paddingHorizontal: 14, borderColor: colors.warning, backgroundColor: colors.warning },
   btnGhostText: { color: colors.onSurface, fontWeight: '700' },
 });

@@ -7,7 +7,7 @@ import { spacing, radius, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { Sheet, useToast } from '@/src/components/ui';
 import { SimpleCropper } from '@/src/components/SimpleCropper';
-import { enqueueUpload, updateOutboxCategory } from '@/src/utils/uploadQueue';
+import { enqueueUpload } from '@/src/utils/uploadQueue';
 import { usePdfPassword } from '@/src/utils/pdfUnlock';
 
 export type DocCategory = { id: string; key: string; label: string; icon: keyof typeof Ionicons.glyphMap; can_record?: boolean; can_view?: boolean };
@@ -172,7 +172,6 @@ export function DocumentCaptureSheet({ visible, onClose, onSaved, autoCamera }: 
       // Save to the on-device outbox and return instantly — the upload happens
       // in the background and survives an app close, so no photo is ever lost.
       await enqueueUpload({ id, blob, filename: name, category_key: cat.key, note: remark, thumb });
-      setLastId(id);
       haptics.success();
       onSaved?.();
       setPhase('saved');
@@ -186,22 +185,6 @@ export function DocumentCaptureSheet({ visible, onClose, onSaved, autoCamera }: 
   const addAnother = () => { setFile(null); setNote(''); setCatKey(null); setPhase('capture'); autoFired.current = false; };
 
   const selectedCat = cats.find((c) => c.key === catKey);
-  // OS (outstanding): a customer slip just saved goes to Customer Outstanding instead —
-  // switched while it's still waiting to upload, or moved on the server if it already went up.
-  const [lastId, setLastId] = useState<string | null>(null);
-  const [osBusy, setOsBusy] = useState(false);
-  const isSlip = !!selectedCat && /slip/i.test(`${selectedCat.key} ${selectedCat.label}`);
-  const saveAsOutstanding = async () => {
-    if (!lastId || !catKey || osBusy) return;
-    setOsBusy(true);
-    try {
-      const os = await api.post<{ key: string; label: string }>('/document-categories/outstanding', { from_key: catKey });
-      const switched = await updateOutboxCategory(lastId, os.key);
-      if (!switched) await api.post('/documents/move-by-client', { client_ids: [lastId], category_key: os.key });
-      haptics.success(); toast.success(`Saved to ${os.label}`); onSaved?.(); onClose();
-    } catch (e: any) { haptics.error(); toast.error(e?.detail || 'Could not move it to Customer Outstanding'); }
-    finally { setOsBusy(false); }
-  };
 
   return (
     <Sheet visible={visible} onClose={onClose} title={phase === 'saved' ? 'Saved' : 'Add document'} testID="doc-capture-sheet">
@@ -220,11 +203,6 @@ export function DocumentCaptureSheet({ visible, onClose, onSaved, autoCamera }: 
               <Ionicons name="camera" size={20} color={colors.onBrandPrimary} />
               <Text style={styles.optPrimaryText}>Capture another</Text>
             </Pressable>
-            {isSlip && (
-              <Pressable onPress={saveAsOutstanding} disabled={osBusy} style={[styles.savedDone, styles.osBtn]} testID="doc-os" accessibilityLabel="Save to Customer Outstanding">
-                {osBusy ? <ActivityIndicator color={colors.onWarning} /> : <Text style={[styles.altText, { color: colors.onWarning }]}>OS</Text>}
-              </Pressable>
-            )}
             <Pressable onPress={onClose} style={styles.savedDone} testID="doc-done">
               <Text style={styles.altText}>Done</Text>
             </Pressable>
@@ -354,7 +332,6 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   savedTitle: { color: colors.onSurface, fontSize: 22, fontWeight: '800' },
   savedSub: { color: colors.mutedText, fontSize: 13.5, textAlign: 'center', lineHeight: 19, paddingHorizontal: spacing.md },
   savedBtns: { alignSelf: 'stretch', gap: spacing.sm, marginTop: spacing.sm },
-  osBtn: { backgroundColor: colors.warning, borderColor: colors.warning },
   savedDone: {
     alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderRadius: radius.md,
     backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border,

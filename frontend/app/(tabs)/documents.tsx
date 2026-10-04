@@ -103,6 +103,28 @@ export default function DocumentsScreen() {
     return role === 'owner' || (c?.can_record_roles || []).includes(role);
   };
   const canDelete = role === 'owner' || role === 'admin';
+  // Quick select: tap photos to pick them, then delete them all at once (owner/admin).
+  const [selecting, setSelecting] = useState(false);
+  const [selected, setSelected] = useState<Record<string, boolean>>({});
+  const [deleting, setDeleting] = useState(false);
+  const pickedIds = Object.keys(selected).filter((k) => selected[k]);
+  const toggleSel = (id: string) => { haptics.selection(); setSelected((m) => ({ ...m, [id]: !m[id] })); };
+  const stopSelecting = () => { setSelecting(false); setSelected({}); };
+  const allPicked = docs.length > 0 && docs.every((d) => selected[d.id]);
+  const pickAll = () => { haptics.selection(); setSelected(allPicked ? {} : Object.fromEntries(docs.map((d) => [d.id, true]))); };
+  const deletePicked = () => {
+    const n = pickedIds.length;
+    if (!n) return;
+    confirmAction(`Delete ${n} ${n === 1 ? 'document' : 'documents'}?`, 'Permanently removes them from RMJ One and from Google Drive. This cannot be undone.', 'Delete', async () => {
+      setDeleting(true);
+      try {
+        const r = await api.post<{ deleted: number }>('/documents/delete-many', { ids: pickedIds });
+        haptics.success(); toast.success(`Deleted ${r.deleted} ${r.deleted === 1 ? 'document' : 'documents'}`);
+        stopSelecting(); load();
+      } catch (e: any) { haptics.error(); toast.error(e?.detail || 'Could not delete'); }
+      finally { setDeleting(false); }
+    });
+  };
   // Owner only: delete a folder's documents older than 1/2/3 months, everywhere, for good.
   const [purgeOpen, setPurgeOpen] = useState(false);
   const [purgeCounts, setPurgeCounts] = useState<Record<number, { count: number; before: string } | undefined>>({});
@@ -197,6 +219,9 @@ export default function DocumentsScreen() {
   };
 
   const switchTab = (t: 'pending' | 'done') => { if (t === tab) return; haptics.selection(); setTab(t); setDoneCat(null); setLoading(true); };
+  // A selection belongs to the list it was made in.
+  useEffect(() => { setSelecting(false); setSelected({}); }, [tab, doneCat, catFilter, appliedQ]);
+  const listSelectable = canDelete && docs.length > 0 && (tab === 'pending' || !!doneCat);
 
   // If this person can't browse Done (e.g. deep-linked there), snap to Pending.
   useEffect(() => {
@@ -225,6 +250,13 @@ export default function DocumentsScreen() {
     );
   };
 
+  const selectToggle = () => (canDelete ? (
+    <Pressable onPress={() => (selecting ? stopSelecting() : setSelecting(true))} style={styles.expandAllBtn} hitSlop={8} testID="doc-select">
+      <Ionicons name={selecting ? 'close-circle-outline' : 'checkmark-circle-outline'} size={14} color={colors.brandSecondary} />
+      <Text style={styles.expandAllText}>{selecting ? 'Cancel' : 'Select'}</Text>
+    </Pressable>
+  ) : null);
+
   const gridView = () => {
     const days = groupByDay(docs);
     const allOpen = days.length > 0 && days.every((g, gi) => openDays[g.day] ?? (gi === 0));
@@ -237,10 +269,13 @@ export default function DocumentsScreen() {
         {q.length > 0 && <Pressable onPress={() => { setQ(''); setAppliedQ(''); }} hitSlop={8}><Ionicons name="close-circle" size={16} color={colors.mutedText} /></Pressable>}
       </View>
       {docs.length > 0 && (
-        <Pressable onPress={toggleAll} style={styles.expandAllBtn} hitSlop={8} testID="doc-expand-all">
-          <Ionicons name={allOpen ? 'chevron-collapse' : 'chevron-expand'} size={14} color={colors.brandSecondary} />
-          <Text style={styles.expandAllText}>{allOpen ? 'Collapse all' : 'Expand all'}</Text>
-        </Pressable>
+        <View style={styles.listTools}>
+          {selectToggle()}
+          <Pressable onPress={toggleAll} style={styles.expandAllBtn} hitSlop={8} testID="doc-expand-all">
+            <Ionicons name={allOpen ? 'chevron-collapse' : 'chevron-expand'} size={14} color={colors.brandSecondary} />
+            <Text style={styles.expandAllText}>{allOpen ? 'Collapse all' : 'Expand all'}</Text>
+          </Pressable>
+        </View>
       )}
       {docs.length === 0 ? <View style={styles.empty}><Text style={styles.emptyText}>{appliedQ ? 'No matches.' : 'Empty folder.'}</Text></View> : (
         days.map((g, gi) => {
@@ -257,10 +292,11 @@ export default function DocumentsScreen() {
                 {g.items.map((d) => {
                   const cap = (d.note || d.linked_ref?.label || '').trim();
                   return (
-                    <Pressable key={d.id} onPress={() => setViewer(d)} style={[styles.gridItem, { width: GRID }]} testID={`doc-grid-${d.id}`}>
+                    <Pressable key={d.id} onPress={() => (selecting ? toggleSel(d.id) : setViewer(d))} style={[styles.gridItem, { width: GRID }]} testID={`doc-grid-${d.id}`}>
                       <View>
                         <DocThumb d={d} size={GRID} base={base} token={token} />
-                        {d.upload_state === 'synced' && <View style={styles.syncBadge}><Ionicons name="cloud-done" size={11} color={colors.onSuccess} /></View>}
+                        {d.upload_state === 'synced' && !selecting && <View style={styles.syncBadge}><Ionicons name="cloud-done" size={11} color={colors.onSuccess} /></View>}
+                        {selecting && <View style={[styles.pickShade, selected[d.id] && styles.pickShadeOn]}><Ionicons name={selected[d.id] ? 'checkmark-circle' : 'ellipse-outline'} size={22} color={selected[d.id] ? colors.brandPrimary : '#fff'} style={styles.pickMark} /></View>}
                       </View>
                       {!!cap && <Text style={styles.gridCaption} numberOfLines={2}>{cap}</Text>}
                     </Pressable>
@@ -313,29 +349,31 @@ export default function DocumentsScreen() {
   const pendingView = () => (
     loading ? <ActivityIndicator color={colors.brandPrimary} style={{ marginTop: 30 }} /> :
       docs.length === 0 ? <View style={styles.empty}><Ionicons name="checkmark-circle-outline" size={34} color={colors.mutedText} /><Text style={styles.emptyText}>Nothing pending — all slips recorded.</Text></View> :
-        docs.map((d) => {
+        <>{canDelete && <View style={styles.listTools}>{selectToggle()}</View>}{docs.map((d) => {
           const uploading = d.upload_state === 'queued' || d.upload_state === 'uploading';
           return (
-            <View key={d.id} style={styles.row} testID={`doc-${d.id}`}>
-              <Pressable onPress={() => setViewer(d)} style={styles.rowMain}>
+            <View key={d.id} style={[styles.row, selecting && selected[d.id] && styles.rowPicked]} testID={`doc-${d.id}`}>
+              <Pressable onPress={() => (selecting ? toggleSel(d.id) : setViewer(d))} style={styles.rowMain}>
+                {selecting && <Ionicons name={selected[d.id] ? 'checkmark-circle' : 'ellipse-outline'} size={22} color={selected[d.id] ? colors.brandPrimary : colors.mutedText} />}
                 <DocThumb d={d} size={46} base={base} token={token} />
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <Text style={styles.docName} numberOfLines={1}>{docTitle(d, catMap[d.category_key]?.label)}</Text>
                   <Text style={styles.docMeta} numberOfLines={1}>{catMap[d.category_key]?.label || d.category_key} · {istTime(d.created_at)}{d.uploaded_by_name ? ` · ${d.uploaded_by_name}` : ''}{uploading ? ' · uploading' : ''}</Text>
                 </View>
               </Pressable>
-              {canRecord(d.category_key) && (
+              {!selecting && canRecord(d.category_key) && (
                 <Pressable onPress={() => setRecordDoc(d)} style={styles.recBtn} testID={`doc-record-${d.id}`}><Text style={styles.recBtnText}>Record</Text></Pressable>
               )}
             </View>
           );
-        })
+        })}</>
   );
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="documents-screen">
       <ModuleHeader
         title={doneCat ? (catMap[doneCat]?.label || 'Documents') : 'Documents'}
+        fitTitle
         subtitle={doneCat ? null : 'Snap · record · filed & searchable.'}
         backLabel={doneCat ? 'Folders' : 'Work'} onBack={() => (doneCat ? setDoneCat(null) : router.back())} scrolled={scrolled}
         onRefresh={() => { setRefreshing(true); load(); }} refreshing={refreshing}
@@ -407,6 +445,17 @@ export default function DocumentsScreen() {
         <TabBarSpacer />
       </ScrollView>
 
+      {selecting && listSelectable && (
+        <View style={styles.selBar} testID="doc-select-bar">
+          <Pressable onPress={pickAll} hitSlop={8} testID="doc-select-all"><Text style={styles.selAll}>{allPicked ? 'Clear' : 'Select all'}</Text></Pressable>
+          <Text style={styles.selCount}>{pickedIds.length ? `${pickedIds.length} selected` : 'Tap to select'}</Text>
+          <Pressable onPress={deletePicked} disabled={!pickedIds.length || deleting} style={[styles.selDel, (!pickedIds.length || deleting) && { opacity: 0.4 }]} testID="doc-select-delete">
+            {deleting ? <ActivityIndicator size="small" color="#fff" /> : <Ionicons name="trash-outline" size={17} color="#fff" />}
+            <Text style={styles.selDelText}>Delete</Text>
+          </Pressable>
+        </View>
+      )}
+
       <Sheet visible={purgeOpen} onClose={() => setPurgeOpen(false)} title="Delete old documents" testID="docs-purge-sheet">
         <Text style={styles.purgeText}>
           Removes everything in {doneCat ? (catMap[doneCat]?.label || 'this folder') : 'this folder'} older than the time you pick — from the app, Google Drive and the online copy. It can&apos;t be undone.
@@ -431,7 +480,7 @@ export default function DocumentsScreen() {
 
       <QuickDocCapture visible={captureOpen} onClose={() => setCaptureOpen(false)} onSaved={load} />
       <RecordSheet doc={recordDoc} categoryLabel={recordDoc ? (catMap[recordDoc.category_key]?.label || recordDoc.category_key) : ''}
-        onClose={() => setRecordDoc(null)} onDone={() => { setRecordDoc(null); setViewer(null); haptics.success(); toast.success('Recorded'); load(); }} />
+        onClose={() => setRecordDoc(null)} onDone={(msg) => { setRecordDoc(null); setViewer(null); haptics.success(); toast.success(msg || 'Recorded'); load(); }} />
       <QuickView doc={viewer} categoryLabel={viewer ? (catMap[viewer.category_key]?.label || viewer.category_key) : ''} token={token} fileUri={fileUri}
         onClose={() => setViewer(null)} onRecord={(d) => setRecordDoc(d)} canRecord={viewer ? canRecord(viewer.category_key) : false}
         canDelete={canDelete} onDelete={del} onUndo={undo} onOpenFile={openFile} opening={opening}
@@ -690,38 +739,52 @@ function QuickView({ doc, categoryLabel, token, fileUri, onClose, onRecord, canR
 }
 
 /* ---------------- Move to Done sheet — a single searchable remark ---------------- */
-function RecordSheet({ doc, categoryLabel, onClose, onDone }: { doc: Doc | null; categoryLabel: string; onClose: () => void; onDone: () => void }) {
+function RecordSheet({ doc, categoryLabel, onClose, onDone }: { doc: Doc | null; categoryLabel: string; onClose: () => void; onDone: (msg?: string) => void }) {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const toast = useToast();
   const [note, setNote] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<'' | 'done' | 'os'>('');
   useEffect(() => { setNote(doc?.note || ''); }, [doc?.id]);
 
   const empty = !note.trim();
 
-  const submit = async () => {
+  // OS (outstanding): a customer slip that's done but still owed — recorded the
+  // same way, then filed in the Customer Outstanding folder.
+  const submit = async (os = false) => {
     if (!doc || busy) return;
     const n = note.trim();
     if (!n) { toast.error('Add a remark before marking as done'); return; }
-    setBusy(true);
+    setBusy(os ? 'os' : 'done');
     try {
+      const target = os ? (await api.post<{ key: string; label: string }>('/document-categories/outstanding', { from_key: doc.category_key })) : null;
       // Store the remark as both note and linked label so it's searchable and
       // shows on the Done row (name + phone in one box for easy lookup).
       await api.patch(`/documents/${doc.id}/record`, { note: n, linked_ref_label: n });
-      setBusy(false); onDone();
-    } catch (e: any) { toast.error(e?.detail || 'Could not save'); setBusy(false); }
+      if (target) await api.patch(`/documents/${doc.id}/category`, { category_key: target.key });
+      setBusy(''); onDone(target ? `Moved to ${target.label}` : undefined);
+    } catch (e: any) { toast.error(e?.detail || 'Could not save'); setBusy(''); }
   };
 
   const isDone = doc?.status === 'done';
+  const showOs = !isDone && /slip/i.test(categoryLabel);
   return (
     <Sheet visible={!!doc} onClose={onClose} title={isDone ? 'Edit remark' : 'Move to Done'} testID="doc-record-sheet">
       <Text style={styles.recHint}>{categoryLabel} · a remark is required so it&apos;s easy to find later — name, phone, invoice no.</Text>
       <TextInput value={note} onChangeText={setNote} placeholder="e.g. Anita Sharma · 98xxxxxxxx" placeholderTextColor={colors.mutedText} style={styles.noteInput} autoFocus testID="rec-note" />
       <View style={{ height: spacing.md }} />
-      <Pressable onPress={submit} disabled={busy || empty} style={[styles.recPrimary, (busy || empty) && { opacity: 0.5 }]} testID="rec-confirm">
-        {busy ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.recPrimaryText}>{isDone ? 'Save' : 'Done'}</Text>}
-      </Pressable>
+      <View style={{ flexDirection: 'row', gap: 10 }}>
+        {showOs && (
+          <Pressable onPress={() => submit(true)} disabled={!!busy || empty} style={[styles.recPrimary, styles.recOs, (!!busy || empty) && { opacity: 0.5 }]} testID="rec-os"
+            accessibilityLabel="Done, and file in Customer Outstanding">
+            {busy === 'os' ? <ActivityIndicator color={colors.onWarning} /> : <Text style={[styles.recPrimaryText, { color: colors.onWarning }]}>OS</Text>}
+          </Pressable>
+        )}
+        <Pressable onPress={() => submit()} disabled={!!busy || empty} style={[styles.recPrimary, { flex: 1 }, (!!busy || empty) && { opacity: 0.5 }]} testID="rec-confirm">
+          {busy === 'done' ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.recPrimaryText}>{isDone ? 'Save' : 'Done'}</Text>}
+        </Pressable>
+      </View>
+      {showOs && <Text style={styles.recOsHint}>OS — customer still owes: done, and filed in Customer Outstanding.</Text>}
     </Sheet>
   );
 }
@@ -850,7 +913,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   thumbLoading: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceTertiary },
   dayHeader: { color: colors.mutedText, fontSize: 12, fontWeight: '800', letterSpacing: 0.4, textTransform: 'uppercase', marginTop: spacing.md, marginBottom: 2 },
   dayHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  expandAllBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, alignSelf: 'flex-end', marginTop: spacing.md },
+  expandAllBtn: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   expandAllText: { color: colors.brandSecondary, fontSize: 12.5, fontWeight: '700' },
   dayCount: { color: colors.mutedText, fontSize: 12, fontWeight: '700' },
   docName: { color: colors.onSurface, fontSize: 15, fontWeight: '600' },
@@ -921,6 +984,20 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   changeText: { color: colors.brandSecondary, fontSize: 13, fontWeight: '700' },
   recPrimary: { backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: 14, alignItems: 'center' },
   recPrimaryText: { color: colors.onBrandPrimary, fontSize: 15, fontWeight: '700' },
+  recOs: { width: 96, backgroundColor: colors.warning },
+  recOsHint: { color: colors.mutedText, fontSize: 12.5, marginTop: 8 },
+  listTools: { flexDirection: 'row', justifyContent: 'flex-end', gap: 16, marginTop: spacing.md, marginBottom: 4 },
+  rowPicked: { borderColor: colors.brandPrimary },
+  pickShade: { ...StyleSheet.absoluteFillObject, borderRadius: 8, backgroundColor: 'rgba(0,0,0,0.12)' },
+  pickShadeOn: { backgroundColor: 'rgba(0,0,0,0.38)' },
+  pickMark: { position: 'absolute', right: 4, top: 4 },
+  selBar: { position: 'absolute', left: spacing.lg, right: spacing.lg, bottom: 96, flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: colors.surfaceSecondary, borderRadius: 16, paddingVertical: 10, paddingLeft: 16, paddingRight: 10, borderWidth: 1, borderColor: colors.border,
+    ...({ boxShadow: '0 6px 24px rgba(0,0,0,0.18)' } as any) },
+  selAll: { color: colors.brandSecondary, fontSize: 15, fontWeight: '600' },
+  selCount: { flex: 1, textAlign: 'center', color: colors.onSurface, fontSize: 15 },
+  selDel: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#D93025', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 9 },
+  selDelText: { color: '#fff', fontSize: 15, fontWeight: '600' },
   recGhost: { paddingVertical: 12, alignItems: 'center', marginTop: 4 },
   recGhostText: { color: colors.mutedText, fontSize: 14, fontWeight: '600' },
   loadMoreBtn: {

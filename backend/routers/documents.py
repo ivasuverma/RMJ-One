@@ -1133,6 +1133,12 @@ async def delete_document(doc_id: str, user=Depends(get_current)):
     d = await db.documents.find_one({'id': doc_id}, {'_id': 0, 'local_data': 0})
     if not d:
         raise HTTPException(status_code=404, detail='Document not found')
+    await _delete_doc(d, user)
+    return {'ok': True}
+
+
+async def _delete_doc(d: dict, user: dict):
+    doc_id = d['id']
     # Delete everywhere: remove the original from Google Drive (if synced), then
     # remove the record + any local bytes from this server.
     drive_id = (d.get('file') or {}).get('drive_file_id')
@@ -1149,7 +1155,6 @@ async def delete_document(doc_id: str, user=Depends(get_current)):
     _cache_drop(doc_id)
     _forget(doc_id)
     await log_audit(user, 'documents.delete', 'document', doc_id, (d.get('file') or {}).get('orig_name', ''))
-    return {'ok': True}
 
 
 async def _load_variant(meta: dict, doc_id: str, variant: str):
@@ -1598,8 +1603,8 @@ async def upload_worker():
 
 
 # ---------------- Customer Outstanding (the "OS" button) ----------------
-# Quick Capture of a customer slip has an OS button beside Done: the photos go
-# to the Customer Outstanding folder instead. This finds that folder (one whose
+# Moving a customer slip to Done has an OS button beside Done: it's recorded and
+# filed in the Customer Outstanding folder instead. This finds that folder (one whose
 # key or name says "outstanding") or, the first time, creates it with the same
 # who-can-see / who-can-record as the slips folder it was started from.
 OUTSTANDING_KEY = 'customer_outstanding'
@@ -1639,22 +1644,23 @@ async def outstanding_category(body: OutstandingIn, user=Depends(get_current)):
     return {'key': found['key'], 'label': found.get('label') or 'Customer Outstanding'}
 
 
-class MoveByClientIn(BaseModel):
-    client_ids: list
-    category_key: str
+class DeleteManyIn(BaseModel):
+    ids: List[str] = Field(min_length=1, max_length=500)
 
 
-@router.post('/documents/move-by-client')
-async def move_by_client(body: MoveByClientIn, user=Depends(get_current)):
-    """Move just-uploaded documents (found by the phone's upload id) into another
-    folder - the OS button after a photo has already gone up."""
-    moved = 0
-    for cid in (body.client_ids or [])[:50]:
-        d = await db.documents.find_one({'client_id': str(cid), 'deleted': {'$ne': True}}, {'_id': 0, 'id': 1})
+@router.post('/documents/delete-many')
+async def delete_many_documents(body: DeleteManyIn, user=Depends(get_current)):
+    """Select and delete: the same delete-everywhere as one document, for a
+    picked set (owner/admin)."""
+    if _role(user) not in ('owner', 'admin'):
+        raise HTTPException(status_code=403, detail='Only owner/admin can delete documents')
+    deleted = 0
+    for doc_id in dict.fromkeys(body.ids):
+        d = await db.documents.find_one({'id': doc_id}, {'_id': 0, 'local_data': 0})
         if d:
-            await recategorize_document(d['id'], RecategorizeIn(category_key=body.category_key), user)
-            moved += 1
-    return {'moved': moved}
+            await _delete_doc(d, user)
+            deleted += 1
+    return {'ok': True, 'deleted': deleted}
 
 
 # ---------------- Delete old documents from a folder, everywhere ----------------

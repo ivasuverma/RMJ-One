@@ -190,15 +190,6 @@ export async function updateOutboxNote(id: string, note: string): Promise<void> 
   try { await idbPut(item); } catch { /* ignore */ }
 }
 
-/** Move a waiting upload to another document folder. False when it has already gone up. */
-export async function updateOutboxCategory(id: string, categoryKey: string): Promise<boolean> {
-  if (!hasIDB()) return false;
-  const item = await idbGet(id).catch(() => undefined);
-  if (!item) return false;
-  item.category_key = categoryKey;
-  try { await idbPut(item); return true; } catch { return false; }
-}
-
 export async function clearOutbox(): Promise<void> {
   if (!hasIDB()) return;
   const items = await idbAll();
