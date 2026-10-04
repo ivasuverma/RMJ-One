@@ -766,7 +766,8 @@ function RecordSheet({ doc, categoryLabel, onClose, onDone }: { doc: Doc | null;
   };
 
   const isDone = doc?.status === 'done';
-  const showOs = !isDone && /slip/i.test(categoryLabel);
+  // Customer folders ("Customer", "Customer Slips"…) — not KYC, and not the Outstanding folder itself.
+  const showOs = !isDone && /customer|slip/i.test(categoryLabel) && !/outstanding|kyc/i.test(categoryLabel);
   return (
     <Sheet visible={!!doc} onClose={onClose} title={isDone ? 'Edit remark' : 'Move to Done'} testID="doc-record-sheet">
       <Text style={styles.recHint}>{categoryLabel} · a remark is required so it&apos;s easy to find later — name, phone, invoice no.</Text>
