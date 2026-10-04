@@ -103,7 +103,7 @@ export default function DocumentsScreen() {
     return role === 'owner' || (c?.can_record_roles || []).includes(role);
   };
   const canDelete = role === 'owner' || role === 'admin';
-  // Quick select: tap photos to pick them, then delete them all at once (owner/admin).
+  // Quick select inside a Done folder: tap photos to pick them, then delete them all at once (owner/admin).
   const [selecting, setSelecting] = useState(false);
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [deleting, setDeleting] = useState(false);
@@ -221,7 +221,7 @@ export default function DocumentsScreen() {
   const switchTab = (t: 'pending' | 'done') => { if (t === tab) return; haptics.selection(); setTab(t); setDoneCat(null); setLoading(true); };
   // A selection belongs to the list it was made in.
   useEffect(() => { setSelecting(false); setSelected({}); }, [tab, doneCat, catFilter, appliedQ]);
-  const listSelectable = canDelete && docs.length > 0 && (tab === 'pending' || !!doneCat);
+  const listSelectable = canDelete && docs.length > 0 && tab === 'done' && !!doneCat;
 
   // If this person can't browse Done (e.g. deep-linked there), snap to Pending.
   useEffect(() => {
@@ -349,24 +349,23 @@ export default function DocumentsScreen() {
   const pendingView = () => (
     loading ? <ActivityIndicator color={colors.brandPrimary} style={{ marginTop: 30 }} /> :
       docs.length === 0 ? <View style={styles.empty}><Ionicons name="checkmark-circle-outline" size={34} color={colors.mutedText} /><Text style={styles.emptyText}>Nothing pending — all slips recorded.</Text></View> :
-        <>{canDelete && <View style={styles.listTools}>{selectToggle()}</View>}{docs.map((d) => {
+        docs.map((d) => {
           const uploading = d.upload_state === 'queued' || d.upload_state === 'uploading';
           return (
-            <View key={d.id} style={[styles.row, selecting && selected[d.id] && styles.rowPicked]} testID={`doc-${d.id}`}>
-              <Pressable onPress={() => (selecting ? toggleSel(d.id) : setViewer(d))} style={styles.rowMain}>
-                {selecting && <Ionicons name={selected[d.id] ? 'checkmark-circle' : 'ellipse-outline'} size={22} color={selected[d.id] ? colors.brandPrimary : colors.mutedText} />}
+            <View key={d.id} style={styles.row} testID={`doc-${d.id}`}>
+              <Pressable onPress={() => setViewer(d)} style={styles.rowMain}>
                 <DocThumb d={d} size={46} base={base} token={token} />
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <Text style={styles.docName} numberOfLines={1}>{docTitle(d, catMap[d.category_key]?.label)}</Text>
                   <Text style={styles.docMeta} numberOfLines={1}>{catMap[d.category_key]?.label || d.category_key} · {istTime(d.created_at)}{d.uploaded_by_name ? ` · ${d.uploaded_by_name}` : ''}{uploading ? ' · uploading' : ''}</Text>
                 </View>
               </Pressable>
-              {!selecting && canRecord(d.category_key) && (
+              {canRecord(d.category_key) && (
                 <Pressable onPress={() => setRecordDoc(d)} style={styles.recBtn} testID={`doc-record-${d.id}`}><Text style={styles.recBtnText}>Record</Text></Pressable>
               )}
             </View>
           );
-        })}</>
+        })
   );
 
   return (
@@ -987,7 +986,6 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   recOs: { width: 96, backgroundColor: colors.warning },
   recOsHint: { color: colors.mutedText, fontSize: 12.5, marginTop: 8 },
   listTools: { flexDirection: 'row', justifyContent: 'flex-end', gap: 16, marginTop: spacing.md, marginBottom: 4 },
-  rowPicked: { borderColor: colors.brandPrimary },
   pickShade: { ...StyleSheet.absoluteFillObject, borderRadius: 8, backgroundColor: 'rgba(0,0,0,0.12)' },
   pickShadeOn: { backgroundColor: 'rgba(0,0,0,0.38)' },
   pickMark: { position: 'absolute', right: 4, top: 4 },
