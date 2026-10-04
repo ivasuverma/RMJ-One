@@ -844,11 +844,19 @@ async def check_pending_reminders() -> None:
             pass
 
 
+def _ist_day_start_utc(day: str, plus_days: int = 0) -> str:
+    from datetime import datetime, timezone
+    d = datetime.strptime(day, '%Y-%m-%d') + timedelta(days=plus_days) - timedelta(hours=5, minutes=30)
+    return d.replace(tzinfo=timezone.utc).isoformat()
+
+
 @router.get('/documents')
 async def list_documents(
     status: Optional[str] = None, category: Optional[str] = None, q: Optional[str] = None,
     cursor: Optional[str] = None, limit: int = 50,
     linked_ref_type: Optional[str] = None, linked_ref_id: Optional[str] = None,
+    from_date: Optional[str] = Query(None, pattern=r'^\d{4}-\d{2}-\d{2}$'),
+    to_date: Optional[str] = Query(None, pattern=r'^\d{4}-\d{2}-\d{2}$'),
     user=Depends(get_current),
 ):
     role = _role(user)
@@ -880,8 +888,16 @@ async def list_documents(
             {'file.orig_name': {'$regex': q_esc, '$options': 'i'}},
             {'linked_ref.label': {'$regex': q_esc, '$options': 'i'}},
         ]
+    # From / To are shop (IST) days, inclusive; created_at is stored in UTC.
+    created: dict = {}
+    if from_date:
+        created['$gte'] = _ist_day_start_utc(from_date)
+    if to_date:
+        created['$lt'] = _ist_day_start_utc(to_date, 1)
     if cursor:
-        query['created_at'] = {'$lt': cursor}
+        created['$lt'] = min(cursor, created['$lt']) if '$lt' in created else cursor
+    if created:
+        query['created_at'] = created
     ckey = (repr(sorted(query.items(), key=lambda kv: kv[0])), limit)
     hit = _LIST_CACHE.get(ckey)
     if hit and time.monotonic() - hit[0] < 120:

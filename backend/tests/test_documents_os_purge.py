@@ -56,3 +56,15 @@ def test_outstanding_folder_move_and_purge():
     finally:
         requests.delete(f"{API}/documents/{d['id']}", headers=owner, timeout=30)
         requests.delete(f"{API}/document-categories/{cat['id']}", headers=owner, timeout=30)
+
+
+def test_list_from_to_dates():
+    owner = _login('owner', 'Owner@123')
+    from datetime import date, timedelta
+    today = date.today()
+    far = (today - timedelta(days=4000)).isoformat()
+    r = requests.get(f"{API}/documents", headers=owner, params={'status': 'done', 'from_date': far, 'to_date': far}, timeout=30)
+    assert r.status_code == 200 and r.json()['items'] == []
+    r = requests.get(f"{API}/documents", headers=owner, params={'from_date': far, 'to_date': (today + timedelta(days=1)).isoformat()}, timeout=30)
+    assert r.status_code == 200
+    assert requests.get(f"{API}/documents", headers=owner, params={'from_date': '04-10-2026'}, timeout=30).status_code == 422
