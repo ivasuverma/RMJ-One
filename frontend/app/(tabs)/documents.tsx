@@ -103,6 +103,34 @@ export default function DocumentsScreen() {
     return role === 'owner' || (c?.can_record_roles || []).includes(role);
   };
   const canDelete = role === 'owner' || role === 'admin';
+  // Owner only: delete a folder's documents older than 1/2/3 months, everywhere, for good.
+  const [purgeOpen, setPurgeOpen] = useState(false);
+  const [purgeCounts, setPurgeCounts] = useState<Record<number, { count: number; before: string } | undefined>>({});
+  const [purging, setPurging] = useState<number | null>(null);
+  const openPurge = async () => {
+    if (!doneCat) return;
+    setPurgeCounts({}); setPurgeOpen(true);
+    for (const m of [1, 2, 3]) {
+      api.get<{ count: number; before: string }>(`/documents/purge-preview?category_key=${encodeURIComponent(doneCat)}&months=${m}`)
+        .then((r) => setPurgeCounts((p) => ({ ...p, [m]: r }))).catch(() => {});
+    }
+  };
+  const runPurge = (m: number) => {
+    const info = purgeCounts[m];
+    if (!doneCat || !info?.count) return;
+    const label = catMap[doneCat]?.label || 'this folder';
+    confirmAction(`Delete ${info.count} ${info.count === 1 ? 'document' : 'documents'} for good?`,
+      `Everything in ${label} from before ${istDisplayDate(info.before)} is removed from the app, Google Drive and the online copy. This can't be undone.`,
+      'Delete for good', async () => {
+        setPurging(m);
+        try {
+          const r = await api.post<{ deleted: number }>('/documents/purge', { category_key: doneCat, months: m });
+          haptics.success(); toast.success(`Deleted ${r.deleted} ${r.deleted === 1 ? 'document' : 'documents'}`);
+          setPurgeOpen(false); load();
+        } catch (e: any) { haptics.error(); toast.error(e?.detail || 'Could not delete'); }
+        finally { setPurging(null); }
+      });
+  };
   // Stable across renders (base never actually changes) — QuickView's own
   // pinch-zoom state changes many times a second, and depending on a
   // fileUri that's a fresh closure every render would keep invalidating
@@ -312,6 +340,11 @@ export default function DocumentsScreen() {
         backLabel={doneCat ? 'Folders' : 'Work'} onBack={() => (doneCat ? setDoneCat(null) : router.back())} scrolled={scrolled}
         onRefresh={() => { setRefreshing(true); load(); }} refreshing={refreshing}
         actions={<>
+          {doneCat && role === 'owner' && (
+            <Pressable onPress={openPurge} hitSlop={8} style={styles.drivePill} accessibilityLabel="Delete old documents" testID="docs-purge">
+              <Ionicons name="trash-outline" size={14} color={colors.onError} />
+            </Pressable>
+          )}
           <UploadQueueBadge />
           <Pressable onPress={() => router.push('/settings/send-from-iphone' as any)} hitSlop={8} style={styles.drivePill}
             accessibilityLabel="Send from iPhone" testID="docs-send-from-iphone">
@@ -373,6 +406,28 @@ export default function DocumentsScreen() {
         <View style={{ height: spacing.xxxl }} />
         <TabBarSpacer />
       </ScrollView>
+
+      <Sheet visible={purgeOpen} onClose={() => setPurgeOpen(false)} title="Delete old documents" testID="docs-purge-sheet">
+        <Text style={styles.purgeText}>
+          Removes everything in {doneCat ? (catMap[doneCat]?.label || 'this folder') : 'this folder'} older than the time you pick — from the app, Google Drive and the online copy. It can&apos;t be undone.
+        </Text>
+        <View style={styles.purgeGroup}>
+          {[1, 2, 3].map((m, i) => {
+            const info = purgeCounts[m];
+            return (
+              <Pressable key={m} onPress={() => runPurge(m)} disabled={!info?.count || purging !== null}
+                style={({ pressed }) => [styles.purgeRow, i > 0 && styles.purgeSep, pressed && { opacity: 0.6 }, info && !info.count && { opacity: 0.45 }]} testID={`docs-purge-${m}`}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.purgeTitle}>Older than {m} {m === 1 ? 'month' : 'months'}</Text>
+                  <Text style={styles.purgeSub}>{info ? `${info.count} ${info.count === 1 ? 'document' : 'documents'} · before ${istDisplayDate(info.before)}` : 'Counting…'}</Text>
+                </View>
+                {purging === m ? <ActivityIndicator color={colors.onError} /> : <Ionicons name="trash-outline" size={18} color={info?.count ? colors.onError : colors.mutedText} />}
+              </Pressable>
+            );
+          })}
+        </View>
+        <Text style={styles.purgeNote}>The shop&apos;s automatic backups still hold them until those roll over (about two weeks). ID proofs attached to an employee&apos;s profile are never deleted here.</Text>
+      </Sheet>
 
       <QuickDocCapture visible={captureOpen} onClose={() => setCaptureOpen(false)} onSaved={load} />
       <RecordSheet doc={recordDoc} categoryLabel={recordDoc ? (catMap[recordDoc.category_key]?.label || recordDoc.category_key) : ''}
@@ -763,6 +818,13 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   h1: { color: colors.onSurface, fontSize: 32, fontWeight: '800', fontFamily: fonts.display, letterSpacing: -0.6 },
   sub: { color: colors.onSurfaceSecondary, fontSize: 15, marginTop: 6 },
   drivePill: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 6, borderRadius: radius.pill, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border },
+  purgeText: { color: colors.onSurfaceSecondary, fontSize: 14, lineHeight: 20, marginBottom: spacing.md },
+  purgeGroup: { backgroundColor: colors.surfaceSecondary, borderRadius: 12, overflow: 'hidden' },
+  purgeRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: spacing.md, paddingVertical: 12 },
+  purgeSep: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+  purgeTitle: { color: colors.onError, fontSize: 16, fontWeight: '600' },
+  purgeSub: { color: colors.mutedText, fontSize: 13, marginTop: 2 },
+  purgeNote: { color: colors.mutedText, fontSize: 12.5, lineHeight: 18, marginTop: spacing.md },
   titleInline: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   drivePillText: { fontSize: 12, fontWeight: '700' },
 

@@ -19,7 +19,7 @@ list, record, view. OCR fields are reserved (Phase 5) and left null.
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query, Response
 from fastapi.responses import HTMLResponse, FileResponse
 from typing import List, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import asyncio
 import threading
 import base64
@@ -1595,3 +1595,148 @@ async def upload_worker():
         except Exception:
             pass
         await asyncio.sleep(6)
+
+
+# ---------------- Customer Outstanding (the "OS" button) ----------------
+# Quick Capture of a customer slip has an OS button beside Done: the photos go
+# to the Customer Outstanding folder instead. This finds that folder (one whose
+# key or name says "outstanding") or, the first time, creates it with the same
+# who-can-see / who-can-record as the slips folder it was started from.
+OUTSTANDING_KEY = 'customer_outstanding'
+
+
+class OutstandingIn(BaseModel):
+    from_key: str
+
+
+@router.post('/document-categories/outstanding')
+async def outstanding_category(body: OutstandingIn, user=Depends(get_current)):
+    cats = await _categories_map()
+    src = cats.get(body.from_key)
+    rights = await _account_rights(user)
+    if not src or not _can_record(src, _role(user), rights):
+        raise HTTPException(status_code=403, detail='No access to that folder')
+    found = next((c for c in cats.values() if c['key'] == OUTSTANDING_KEY or 'outstanding' in (c.get('label') or '').lower()), None)
+    if not found:
+        found = {
+            'id': str(uuid.uuid4()), 'key': OUTSTANDING_KEY, 'label': 'Customer Outstanding', 'icon': 'time-outline',
+            'visible_to_roles': list(src.get('visible_to_roles') or ['owner', 'admin']),
+            'can_record_roles': list(src.get('can_record_roles') or ['owner', 'admin']),
+            'sort_order': (src.get('sort_order') or 0) + 1, 'active': True,
+            'created_at': now_utc().isoformat(), 'created_by': user.get('name') or 'system',
+        }
+        await db.document_categories.insert_one(dict(found))
+        found.pop('_id', None)
+        _bump()
+        _LOOKUPS.pop('cats_all', None)    # seen at once (the folder list is memoised for a few seconds)
+        _LOOKUPS.pop(('cats',), None)
+        await log_audit(user, 'documents.category.create', 'document_category', found['id'], 'Customer Outstanding (OS button)')
+    elif found.get('active') is False:
+        await db.document_categories.update_one({'id': found['id']}, {'$set': {'active': True}})
+        _bump()
+        _LOOKUPS.pop('cats_all', None)
+        _LOOKUPS.pop(('cats',), None)
+    return {'key': found['key'], 'label': found.get('label') or 'Customer Outstanding'}
+
+
+class MoveByClientIn(BaseModel):
+    client_ids: list
+    category_key: str
+
+
+@router.post('/documents/move-by-client')
+async def move_by_client(body: MoveByClientIn, user=Depends(get_current)):
+    """Move just-uploaded documents (found by the phone's upload id) into another
+    folder - the OS button after a photo has already gone up."""
+    moved = 0
+    for cid in (body.client_ids or [])[:50]:
+        d = await db.documents.find_one({'client_id': str(cid), 'deleted': {'$ne': True}}, {'_id': 0, 'id': 1})
+        if d:
+            await recategorize_document(d['id'], RecategorizeIn(category_key=body.category_key), user)
+            moved += 1
+    return {'moved': moved}
+
+
+# ---------------- Delete old documents from a folder, everywhere ----------------
+# Owner only. Every document in the folder captured more than N months ago is
+# removed for good: from Google Drive (a permanent delete, not Drive's trash),
+# this server's database and image cache, and the activity-log lines that named
+# them - then the online copy (Atlas) is refreshed so it drops them too. Only
+# the shop's rolling backups still hold them, until those age out.
+# Employee ID proofs attached to a profile are never touched here.
+class PurgeIn(BaseModel):
+    category_key: str
+    months: int = Field(ge=1, le=24)
+
+
+def _months_ago(months: int) -> str:
+    today = now_utc().date()
+    y, m = today.year, today.month - months
+    while m <= 0:
+        m += 12
+        y -= 1
+    import calendar
+    d = min(today.day, calendar.monthrange(y, m)[1])
+    return f'{y:04d}-{m:02d}-{d:02d}'
+
+
+def _purge_query(key: str, cutoff: str) -> dict:
+    # everything in the folder from before the cutoff, except ID proofs kept on an employee's profile
+    return {'category_key': key, 'created_at': {'$lt': cutoff}, 'linked_ref.type': {'$ne': 'employee'}}
+
+
+@router.get('/documents/purge-preview')
+async def purge_preview(category_key: str = Query(...), months: int = Query(..., ge=1, le=24), user=Depends(require_owner)):
+    cutoff = _months_ago(months)
+    n = await db.documents.count_documents(_purge_query(category_key, cutoff))
+    return {'count': n, 'before': cutoff}
+
+
+@router.post('/documents/purge')
+async def purge_documents(body: PurgeIn, user=Depends(require_owner)):
+    cats = await _categories_map()
+    if body.category_key not in cats:
+        raise HTTPException(status_code=404, detail='Unknown folder')
+    cutoff = _months_ago(body.months)
+    docs = await db.documents.find(_purge_query(body.category_key, cutoff), {'_id': 0, 'id': 1, 'file': 1}).to_list(20000)
+    ids = [d['id'] for d in docs]
+    drive_failed = 0
+    if docs:
+        cfg = None
+        try:
+            import drive_service
+            cfg = await drive_service.get_config()
+        except Exception:
+            cfg = None
+        for d in docs:
+            drive_id = (d.get('file') or {}).get('drive_file_id')
+            if drive_id and cfg:
+                try:
+                    await drive_service.delete_file(cfg, drive_id)
+                except Exception:
+                    drive_failed += 1
+            _cache_drop(d['id'])
+            _forget(d['id'])
+        for i in range(0, len(ids), 500):
+            chunk = ids[i:i + 500]
+            await db.documents.delete_many({'id': {'$in': chunk}})
+            await db.document_blobs.delete_many({'id': {'$in': chunk}})
+            await db.audit_logs.delete_many({'entity_type': 'document', 'entity_id': {'$in': chunk}})
+        _bump()
+    # Only the folder and how many - nothing about what they were.
+    await log_audit(user, 'documents.purge', 'document_category', body.category_key, f'{len(ids)} older than {cutoff}')
+    if ids:
+        try:   # refresh the online copy now, so it doesn't keep them until the next scheduled sync
+            import atlas_mirror
+            from routers import backup as backup_router
+            if atlas_mirror.MIRROR_URL and not backup_router._atlas_running[0]:
+                async def _go():
+                    backup_router._atlas_running[0] = True
+                    try:
+                        await atlas_mirror.mirror_and_record()
+                    finally:
+                        backup_router._atlas_running[0] = False
+                asyncio.create_task(_go())
+        except Exception:
+            pass
+    return {'ok': True, 'deleted': len(ids), 'before': cutoff, 'drive_failed': drive_failed}
