@@ -21,6 +21,7 @@ import { UploadQueueBadge } from '@/src/components/UploadQueueBadge';
 import { TabBarSpacer } from '@/src/components/GlassTabBar';
 import { useScrolled , HeaderSpacer } from '@/src/components/ui/StickyHeader';
 import { ModuleHeader } from '@/src/components/ui/ModuleHeader';
+import { DateField } from '@/src/components/DateField';
 
 type Doc = {
   id: string; category_key: string; status: 'pending' | 'done'; upload_state: string;
@@ -92,6 +93,10 @@ export default function DocumentsScreen() {
   // render their thumbnails, so only the day you open loads images — keeps a
   // big Done folder fast to open.
   const [openDays, setOpenDays] = useState<Record<string, boolean>>({});
+  // From / To (shop days, inclusive) inside a Done folder.
+  const [fromD, setFromD] = useState('');
+  const [toD, setToD] = useState('');
+  useEffect(() => { setFromD(''); setToD(''); }, [doneCat]);
 
   const base = process.env.EXPO_PUBLIC_BACKEND_URL || '';
   const catMap = useMemo(() => Object.fromEntries(cats.map((c) => [c.key, c])), [cats]);
@@ -195,12 +200,13 @@ export default function DocumentsScreen() {
     const cat = tab === 'done' ? doneCat! : (catFilter !== 'all' ? catFilter : '');
     if (cat) params.set('category', cat);
     if (appliedQ.trim()) params.set('q', appliedQ.trim());
+    if (tab === 'done' && doneCat) { if (fromD) params.set('from_date', fromD); if (toD) params.set('to_date', toD); }
     try {
       const res = await api.get<{ items: Doc[]; next_cursor: string | null }>(`/documents?${params.toString()}`);
       setDocs(res.items); setNextCursor(res.next_cursor);
     } catch { setDocs([]); setNextCursor(null); }
     finally { setLoading(false); setRefreshing(false); }
-  }, [tab, catFilter, appliedQ, doneCat]);
+  }, [tab, catFilter, appliedQ, doneCat, fromD, toD]);
   useFocusEffect(useCallback(() => { setLoading(true); load(); }, [load]));
 
   const loadMoreDocs = async () => {
@@ -211,6 +217,7 @@ export default function DocumentsScreen() {
       const cat = tab === 'done' ? doneCat! : (catFilter !== 'all' ? catFilter : '');
       if (cat) params.set('category', cat);
       if (appliedQ.trim()) params.set('q', appliedQ.trim());
+      if (tab === 'done' && doneCat) { if (fromD) params.set('from_date', fromD); if (toD) params.set('to_date', toD); }
       const res = await api.get<{ items: Doc[]; next_cursor: string | null }>(`/documents?${params.toString()}`);
       setDocs((prev) => [...prev, ...res.items]);
       setNextCursor(res.next_cursor);
@@ -220,7 +227,7 @@ export default function DocumentsScreen() {
 
   const switchTab = (t: 'pending' | 'done') => { if (t === tab) return; haptics.selection(); setTab(t); setDoneCat(null); setLoading(true); };
   // A selection belongs to the list it was made in.
-  useEffect(() => { setSelecting(false); setSelected({}); }, [tab, doneCat, catFilter, appliedQ]);
+  useEffect(() => { setSelecting(false); setSelected({}); }, [tab, doneCat, catFilter, appliedQ, fromD, toD]);
   const listSelectable = canDelete && docs.length > 0 && tab === 'done' && !!doneCat;
 
   // If this person can't browse Done (e.g. deep-linked there), snap to Pending.
@@ -259,7 +266,7 @@ export default function DocumentsScreen() {
 
   const gridView = () => {
     const days = groupByDay(docs);
-    const allOpen = days.length > 0 && days.every((g, gi) => openDays[g.day] ?? (gi === 0));
+    const allOpen = days.length > 0 && days.every((g) => openDays[g.day] ?? true);
     const toggleAll = () => setOpenDays(Object.fromEntries(days.map((g) => [g.day, !allOpen])));
     return (
     <>
@@ -268,6 +275,16 @@ export default function DocumentsScreen() {
         <TextInput value={q} onChangeText={setQ} onSubmitEditing={() => setAppliedQ(q)} placeholder="Search by name, remark or date" placeholderTextColor={colors.mutedText} style={styles.searchInput} returnKeyType="search" testID="doc-done-search" />
         {q.length > 0 && <Pressable onPress={() => { setQ(''); setAppliedQ(''); }} hitSlop={8}><Ionicons name="close-circle" size={16} color={colors.mutedText} /></Pressable>}
       </View>
+      <View style={styles.rangeRow}>
+        <View style={{ flex: 1 }}><DateField value={fromD} onChange={(v) => { setLoading(true); setFromD(v); }} placeholder="From" testID="doc-from" /></View>
+        <View style={{ flex: 1 }}><DateField value={toD} onChange={(v) => { setLoading(true); setToD(v); }} placeholder="To" testID="doc-to" /></View>
+        {(!!fromD || !!toD) && (
+          <Pressable onPress={() => { setLoading(true); setFromD(''); setToD(''); }} hitSlop={8} accessibilityLabel="Clear dates" testID="doc-range-clear">
+            <Ionicons name="close-circle" size={20} color={colors.mutedText} />
+          </Pressable>
+        )}
+      </View>
+      {!!fromD && !!toD && fromD > toD && <Text style={styles.rangeErr}>From is after To.</Text>}
       {docs.length > 0 && (
         <View style={styles.listTools}>
           {selectToggle()}
@@ -278,8 +295,8 @@ export default function DocumentsScreen() {
         </View>
       )}
       {docs.length === 0 ? <View style={styles.empty}><Text style={styles.emptyText}>{appliedQ ? 'No matches.' : 'Empty folder.'}</Text></View> : (
-        days.map((g, gi) => {
-          const open = openDays[g.day] ?? (gi === 0);   // newest day open by default
+        days.map((g) => {
+          const open = openDays[g.day] ?? true;   // every day open by default
           return (
           <View key={g.day}>
             <Pressable onPress={() => setOpenDays((m) => ({ ...m, [g.day]: !open }))} style={styles.dayHeaderRow} testID={`doc-day-${g.day}`}>
@@ -766,7 +783,8 @@ function RecordSheet({ doc, categoryLabel, onClose, onDone }: { doc: Doc | null;
   };
 
   const isDone = doc?.status === 'done';
-  const showOs = !isDone && /slip/i.test(categoryLabel);
+  // Customer folders ("Customer", "Customer Slips"…) — not KYC, and not the Outstanding folder itself.
+  const showOs = !isDone && /customer|slip/i.test(categoryLabel) && !/outstanding|kyc/i.test(categoryLabel);
   return (
     <Sheet visible={!!doc} onClose={onClose} title={isDone ? 'Edit remark' : 'Move to Done'} testID="doc-record-sheet">
       <Text style={styles.recHint}>{categoryLabel} · a remark is required so it&apos;s easy to find later — name, phone, invoice no.</Text>
@@ -985,6 +1003,8 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   recPrimaryText: { color: colors.onBrandPrimary, fontSize: 15, fontWeight: '700' },
   recOs: { width: 96, backgroundColor: colors.warning },
   recOsHint: { color: colors.mutedText, fontSize: 12.5, marginTop: 8 },
+  rangeRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: spacing.sm },
+  rangeErr: { color: colors.onError, fontSize: 12.5, marginTop: 6 },
   listTools: { flexDirection: 'row', justifyContent: 'flex-end', gap: 16, marginTop: spacing.md, marginBottom: 4 },
   pickShade: { ...StyleSheet.absoluteFillObject, borderRadius: 8, backgroundColor: 'rgba(0,0,0,0.12)' },
   pickShadeOn: { backgroundColor: 'rgba(0,0,0,0.38)' },
