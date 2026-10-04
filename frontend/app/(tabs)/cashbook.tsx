@@ -18,7 +18,7 @@ import { ModuleHeader, HeaderButton } from '@/src/components/ui/ModuleHeader';
 import { HeaderSpacer } from '@/src/components/ui/StickyHeader';
 import { counterColorOptions, counterToneFor } from '@/src/theme/palettes';
 import { useAuth } from '@/src/auth/AuthContext';
-import { ErrorState } from '@/src/components/ui';
+import { ErrorState, Sheet } from '@/src/components/ui';
 import { ToggleSwitch } from '@/src/components/ui/ToggleSwitch';
 import { DayClose, Closure } from '@/src/components/cashbook/DayClose';
 import { TabBarSpacer } from '@/src/components/GlassTabBar';
@@ -323,6 +323,34 @@ export default function CashBookScreen() {
     router.back();
   };
 
+  // Owner only: delete entries older than a week / a month, everywhere. Balances stay the same
+  // (the server carries the removed total into each counter's starting balance).
+  const [purgeOpen, setPurgeOpen] = useState(false);
+  const [purgeInfo, setPurgeInfo] = useState<Record<string, { before: string; entries: number; photos: number } | undefined>>({});
+  const [purging, setPurging] = useState<string | null>(null);
+  const openPurge = () => {
+    setPurgeInfo({}); setPurgeOpen(true);
+    for (const per of ['week', 'month']) {
+      api.get<{ before: string; entries: number; photos: number }>(`/cashbook/purge-preview?period=${per}`)
+        .then((r) => setPurgeInfo((x) => ({ ...x, [per]: r }))).catch(() => {});
+    }
+  };
+  const runPurge = (per: string) => {
+    const info = purgeInfo[per];
+    if (!info?.entries) return;
+    confirmAction(`Delete ${info.entries} ${info.entries === 1 ? 'entry' : 'entries'} for good?`,
+      `Every Cash Book entry dated before ${info.before.split('-').reverse().join('-')}${info.photos ? ` and its ${info.photos} receipt photo${info.photos === 1 ? '' : 's'}` : ''} is removed from the app, Google Drive and the online copy. Counter balances stay exactly the same. This can't be undone.`,
+      'Delete for good', async () => {
+        setPurging(per);
+        try {
+          const r = await api.post<{ deleted: number }>('/cashbook/purge', { period: per });
+          notify('Deleted', `${r.deleted} old ${r.deleted === 1 ? 'entry' : 'entries'} removed. Balances unchanged.`);
+          setPurgeOpen(false); load(date, counterId);
+        } catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
+        finally { setPurging(null); }
+      });
+  };
+
   return (
     <SafeAreaView style={[styles.root, pageTone && { backgroundColor: pageTone.pageBg }]} edges={['top']} testID="cashbook-screen">
       <ModuleHeader
@@ -331,6 +359,7 @@ export default function CashBookScreen() {
         onRefresh={mode === 'view' ? () => { setRefreshing(true); load(date, counterId); } : undefined} refreshing={refreshing}
         actions={mode === 'view' ? <>
           <HeaderButton icon="sparkles-outline" tint={colors.brandSecondary} label="Switch to the new Cash Book view" testID="cashbook-new-view-btn" onPress={() => router.push('/cashbook/v2' as any)} />
+          {isOwner && <HeaderButton icon="trash-outline" tint={colors.onError} label="Delete old Cash Book entries" testID="cashbook-purge-btn" onPress={openPurge} />}
           {isOwner && <HeaderButton icon="settings-outline" label="Cash Book counters" testID="cashbook-settings-btn" onPress={openManageCounters} />}
         </> : undefined}
       />
@@ -695,11 +724,37 @@ export default function CashBookScreen() {
           <TabBarSpacer />
         </ScrollView>
       )}
+      <Sheet visible={purgeOpen} onClose={() => setPurgeOpen(false)} title="Delete old entries" testID="cashbook-purge-sheet">
+        <Text style={styles.purgeText}>Removes old entries on every counter — with their receipt photos — from the app, Google Drive and the online copy. Counter balances don&apos;t change.</Text>
+        <View style={styles.purgeGroup}>
+          {([['week', 'Before 1 week'], ['month', 'Before 1 month']] as const).map(([per, label], i) => {
+            const info = purgeInfo[per];
+            return (
+              <Pressable key={per} onPress={() => runPurge(per)} disabled={!info?.entries || purging !== null}
+                style={({ pressed }) => [styles.purgeRow, i > 0 && styles.purgeSep, pressed && { opacity: 0.6 }, info && !info.entries && { opacity: 0.45 }]} testID={`cashbook-purge-${per}`}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.purgeTitle}>{label}</Text>
+                  <Text style={styles.purgeSub}>{info ? `${info.entries} ${info.entries === 1 ? 'entry' : 'entries'}${info.photos ? ` · ${info.photos} photo${info.photos === 1 ? '' : 's'}` : ''} · before ${info.before.split('-').reverse().join('-')}` : 'Counting…'}</Text>
+                </View>
+                {purging === per ? <ActivityIndicator color={colors.onError} /> : <Ionicons name="trash-outline" size={18} color={info?.entries ? colors.onError : colors.mutedText} />}
+              </Pressable>
+            );
+          })}
+        </View>
+        <Text style={styles.purgeNote}>The shop&apos;s automatic backups still hold them until those roll over (about two weeks).</Text>
+      </Sheet>
     </SafeAreaView>
   );
 }
 
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
+  purgeText: { color: colors.onSurfaceSecondary, fontSize: 14, lineHeight: 20, marginBottom: spacing.md },
+  purgeGroup: { backgroundColor: colors.surfaceSecondary, borderRadius: 12, overflow: 'hidden' },
+  purgeRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: spacing.md, paddingVertical: 12 },
+  purgeSep: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+  purgeTitle: { color: colors.onError, fontSize: 16, fontWeight: '600' },
+  purgeSub: { color: colors.mutedText, fontSize: 13, marginTop: 2 },
+  purgeNote: { color: colors.mutedText, fontSize: 12.5, lineHeight: 18, marginTop: spacing.md },
   limitRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.md, padding: spacing.md, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceSecondary },
   limitTitle: { color: colors.onSurface, fontSize: 14, fontWeight: '700' },
   root: { flex: 1, backgroundColor: colors.surface },

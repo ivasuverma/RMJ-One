@@ -790,3 +790,99 @@ async def cashbook_analytics(
         'trend': trend,
         'by_counter': by_counter_rows,
     }
+
+
+# ---------------- Delete old entries (owner only) ----------------
+# Removes every Cash Book entry dated before the cutoff (1 week or 1 month ago),
+# on all counters, for good - with their receipt photos (Google Drive too),
+# day-close records and activity-log lines - and refreshes the online copy.
+# Balances don't move: each counter's base opening_balance takes in the net of
+# what was removed (that's exactly what the removed lines added up to), so
+# every later day's opening and closing, the Home cash card and day close all
+# show the same figures as before.
+class CashbookPurgeIn(BaseModel):
+    period: str   # 'week' | 'month'
+
+
+def _purge_cutoff(period: str) -> str:
+    today = (now_utc() + timedelta(hours=5, minutes=30)).date()   # IST
+    if period == 'week':
+        return (today - timedelta(days=7)).isoformat()
+    if period == 'month':
+        y, m = (today.year, today.month - 1) if today.month > 1 else (today.year - 1, 12)
+        import calendar
+        return _date(y, m, min(today.day, calendar.monthrange(y, m)[1])).isoformat()
+    raise HTTPException(status_code=400, detail="Choose 'week' or 'month'")
+
+
+@router.get('/cashbook/purge-preview')
+async def cashbook_purge_preview(period: str = Query(...), user=Depends(require_owner)):
+    cutoff = _purge_cutoff(period)
+    ids = [e['id'] async for e in db.cashbook_entries.find({'date': {'$lt': cutoff}}, {'_id': 0, 'id': 1})]
+    photos = await db.record_photos.count_documents({'ref_type': 'cashbook_entry', 'ref_id': {'$in': ids}}) if ids else 0
+    return {'before': cutoff, 'entries': len(ids), 'photos': photos}
+
+
+@router.post('/cashbook/purge')
+async def cashbook_purge(body: CashbookPurgeIn, user=Depends(require_owner)):
+    cutoff = _purge_cutoff(body.period)
+    old = await db.cashbook_entries.find({'date': {'$lt': cutoff}}, {'_id': 0, 'id': 1, 'counter_id': 1, 'type': 1, 'amount': 1}).to_list(200000)
+    if not old:
+        return {'ok': True, 'deleted': 0, 'photos': 0, 'before': cutoff}
+    # 1. carry what's being removed into each counter's base, so no balance changes
+    net: dict = {}
+    for e in old:
+        net[e['counter_id']] = net.get(e['counter_id'], 0.0) + (e['amount'] if e['type'] == 'received' else -e['amount'])
+    for cid, v in net.items():
+        c = await db.cashbook_counters.find_one({'id': cid}, {'_id': 0, 'opening_balance': 1})
+        if c is not None:
+            await db.cashbook_counters.update_one({'id': cid}, {'$set': {
+                'opening_balance': round((c.get('opening_balance') or 0) + v, 2), 'opening_as_of': cutoff}})
+    ids = [e['id'] for e in old]
+    # 2. their receipt photos, everywhere (Drive permanently, the server's copies, the records)
+    photos = await db.record_photos.find({'ref_type': 'cashbook_entry', 'ref_id': {'$in': ids}},
+                                         {'_id': 0, 'id': 1, 'file': 1}).to_list(100000)
+    if photos:
+        cfg = None
+        try:
+            import drive_service
+            cfg = await drive_service.get_config()
+        except Exception:
+            cfg = None
+        from routers.record_photos import _view_path
+        for p in photos:
+            fid = (p.get('file') or {}).get('drive_file_id')
+            if fid and cfg:
+                try:
+                    await drive_service.delete_file(cfg, fid)
+                except Exception:
+                    pass
+            try:
+                _view_path(p['id']).unlink(missing_ok=True)
+            except Exception:
+                pass
+        pids = [p['id'] for p in photos]
+        for i in range(0, len(pids), 500):
+            await db.record_photos.delete_many({'id': {'$in': pids[i:i + 500]}})
+            await db.audit_logs.delete_many({'entity_id': {'$in': pids[i:i + 500]}})
+    # 3. the entries, their day-close records and the activity-log lines naming them
+    for i in range(0, len(ids), 500):
+        chunk = ids[i:i + 500]
+        await db.cashbook_entries.delete_many({'id': {'$in': chunk}})
+        await db.audit_logs.delete_many({'entity_type': 'cashbook_entry', 'entity_id': {'$in': chunk}})
+    await db.cashbook_closures.delete_many({'date': {'$lt': cutoff}})
+    await log_audit(user, 'cashbook.purge', 'cashbook', 'all', f'{len(ids)} entries before {cutoff}')
+    try:   # refresh the online copy now, not at the next scheduled sync
+        import atlas_mirror
+        from routers import backup as backup_router
+        if atlas_mirror.MIRROR_URL and not backup_router._atlas_running[0]:
+            async def _go():
+                backup_router._atlas_running[0] = True
+                try:
+                    await atlas_mirror.mirror_and_record()
+                finally:
+                    backup_router._atlas_running[0] = False
+            asyncio.create_task(_go())
+    except Exception:
+        pass
+    return {'ok': True, 'deleted': len(ids), 'photos': len(photos), 'before': cutoff}
