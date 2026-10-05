@@ -130,32 +130,34 @@ export default function DocumentsScreen() {
       finally { setDeleting(false); }
     });
   };
-  // Owner only: delete a folder's documents older than 1/2/3 months, everywhere, for good.
+  // Owner only: delete a folder's documents from before a day you pick, everywhere, for good.
+  const monthAgo = () => { const d = new Date(); d.setMonth(d.getMonth() - 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
   const [purgeOpen, setPurgeOpen] = useState(false);
-  const [purgeCounts, setPurgeCounts] = useState<Record<number, { count: number; before: string } | undefined>>({});
-  const [purging, setPurging] = useState<number | null>(null);
-  const openPurge = async () => {
-    if (!doneCat) return;
-    setPurgeCounts({}); setPurgeOpen(true);
-    for (const m of [1, 2, 3]) {
-      api.get<{ count: number; before: string }>(`/documents/purge-preview?category_key=${encodeURIComponent(doneCat)}&months=${m}`)
-        .then((r) => setPurgeCounts((p) => ({ ...p, [m]: r }))).catch(() => {});
-    }
-  };
-  const runPurge = (m: number) => {
-    const info = purgeCounts[m];
-    if (!doneCat || !info?.count) return;
+  const [purgeBefore, setPurgeBefore] = useState('');
+  const [purgeCount, setPurgeCount] = useState<number | null>(null);
+  const [purging, setPurging] = useState(false);
+  const openPurge = () => { if (!doneCat) return; setPurgeBefore(monthAgo()); setPurgeOpen(true); };
+  useEffect(() => {
+    if (!purgeOpen || !doneCat || !purgeBefore) return;
+    let dead = false;
+    setPurgeCount(null);
+    api.get<{ count: number }>(`/documents/purge-preview?category_key=${encodeURIComponent(doneCat)}&before=${purgeBefore}`)
+      .then((r) => { if (!dead) setPurgeCount(r.count); }).catch(() => {});
+    return () => { dead = true; };
+  }, [purgeOpen, doneCat, purgeBefore]);
+  const runPurge = () => {
+    if (!doneCat || !purgeCount) return;
     const label = catMap[doneCat]?.label || 'this folder';
-    confirmAction(`Delete ${info.count} ${info.count === 1 ? 'document' : 'documents'} for good?`,
-      `Everything in ${label} from before ${istDisplayDate(info.before)} is removed from the app, Google Drive and the online copy. This can't be undone.`,
+    confirmAction(`Delete ${purgeCount} ${purgeCount === 1 ? 'document' : 'documents'} for good?`,
+      `Everything in ${label} from before ${istDisplayDate(purgeBefore)} is removed from the app, Google Drive and the online copy. This can't be undone.`,
       'Delete for good', async () => {
-        setPurging(m);
+        setPurging(true);
         try {
-          const r = await api.post<{ deleted: number }>('/documents/purge', { category_key: doneCat, months: m });
+          const r = await api.post<{ deleted: number }>('/documents/purge', { category_key: doneCat, before: purgeBefore });
           haptics.success(); toast.success(`Deleted ${r.deleted} ${r.deleted === 1 ? 'document' : 'documents'}`);
           setPurgeOpen(false); load();
         } catch (e: any) { haptics.error(); toast.error(e?.detail || 'Could not delete'); }
-        finally { setPurging(null); }
+        finally { setPurging(false); }
       });
   };
   // Stable across renders (base never actually changes) — QuickView's own
@@ -180,7 +182,16 @@ export default function DocumentsScreen() {
     finally { setOpening(false); }
   };
   const del = (id: string) => confirmAction('Delete document?', 'Permanently removes it from RMJ One and from Google Drive. This cannot be undone.', 'Delete', async () => {
-    try { await api.del(`/documents/${id}`); setViewer(null); toast.success('Deleted'); load(); }
+    try {
+      await api.del(`/documents/${id}`);
+      // Stay in the viewer on the next photo (or the one before, if it was the last).
+      const i = docs.findIndex((d) => d.id === id);
+      const rest = docs.filter((d) => d.id !== id);
+      setDocs(rest);
+      setViewer(rest.length ? rest[Math.min(Math.max(i, 0), rest.length - 1)] : null);
+      haptics.success(); toast.success('Deleted');
+      api.get<Summary>('/documents/summary').then(setSummary).catch(() => {});
+    }
     catch (e: any) { toast.error(e?.detail || 'Could not delete'); }
   });
   const undo = (id: string) => confirmAction('Undo record?', 'Moves this document back to Pending, as if it was never recorded.', 'Undo', async () => {
@@ -209,8 +220,10 @@ export default function DocumentsScreen() {
   }, [tab, catFilter, appliedQ, doneCat, fromD, toD]);
   useFocusEffect(useCallback(() => { setLoading(true); load(); }, [load]));
 
+  const moreBusy = useRef(false);
   const loadMoreDocs = async () => {
-    if (!nextCursor || loadingMore) return;
+    if (!nextCursor || loadingMore || moreBusy.current) return;
+    moreBusy.current = true;
     setLoadingMore(true);
     try {
       const params = new URLSearchParams({ status: tab, cursor: nextCursor });
@@ -222,7 +235,13 @@ export default function DocumentsScreen() {
       setDocs((prev) => [...prev, ...res.items]);
       setNextCursor(res.next_cursor);
     } catch { /* keep what's already loaded */ }
-    finally { setLoadingMore(false); }
+    finally { setLoadingMore(false); moreBusy.current = false; }
+  };
+  // Scrolling near the bottom loads the next page by itself.
+  const onListScroll = (e: any) => {
+    onScroll(e);
+    const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
+    if (nextCursor && !loading && contentOffset.y + layoutMeasurement.height > contentSize.height - 800) loadMoreDocs();
   };
 
   const switchTab = (t: 'pending' | 'done') => { if (t === tab) return; haptics.selection(); setTab(t); setDoneCat(null); setLoading(true); };
@@ -413,7 +432,7 @@ export default function DocumentsScreen() {
           </View>
         </>}
       />
-      <ScrollView onScroll={onScroll} scrollEventThrottle={16} contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled"
+      <ScrollView onScroll={onListScroll} scrollEventThrottle={16} contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled"
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}>
         <HeaderSpacer />
 
@@ -474,23 +493,16 @@ export default function DocumentsScreen() {
 
       <Sheet visible={purgeOpen} onClose={() => setPurgeOpen(false)} title="Delete old documents" testID="docs-purge-sheet">
         <Text style={styles.purgeText}>
-          Removes everything in {doneCat ? (catMap[doneCat]?.label || 'this folder') : 'this folder'} older than the time you pick — from the app, Google Drive and the online copy. It can&apos;t be undone.
+          Removes everything in {doneCat ? (catMap[doneCat]?.label || 'this folder') : 'this folder'} captured before the day you pick — from the app, Google Drive and the online copy. It can&apos;t be undone.
         </Text>
-        <View style={styles.purgeGroup}>
-          {[1, 2, 3].map((m, i) => {
-            const info = purgeCounts[m];
-            return (
-              <Pressable key={m} onPress={() => runPurge(m)} disabled={!info?.count || purging !== null}
-                style={({ pressed }) => [styles.purgeRow, i > 0 && styles.purgeSep, pressed && { opacity: 0.6 }, info && !info.count && { opacity: 0.45 }]} testID={`docs-purge-${m}`}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.purgeTitle}>Older than {m} {m === 1 ? 'month' : 'months'}</Text>
-                  <Text style={styles.purgeSub}>{info ? `${info.count} ${info.count === 1 ? 'document' : 'documents'} · before ${istDisplayDate(info.before)}` : 'Counting…'}</Text>
-                </View>
-                {purging === m ? <ActivityIndicator color={colors.onError} /> : <Ionicons name="trash-outline" size={18} color={info?.count ? colors.onError : colors.mutedText} />}
-              </Pressable>
-            );
-          })}
-        </View>
+        <DateField label="Delete everything before" value={purgeBefore} onChange={setPurgeBefore} testID="docs-purge-date" />
+        <Text style={styles.purgeSub}>
+          {purgeCount === null ? 'Counting…' : `${purgeCount} ${purgeCount === 1 ? 'document' : 'documents'} from before ${istDisplayDate(purgeBefore)}`}
+        </Text>
+        <Pressable onPress={runPurge} disabled={!purgeCount || purging}
+          style={({ pressed }) => [styles.purgeBtn, (!purgeCount || purging) && { opacity: 0.45 }, pressed && { opacity: 0.7 }]} testID="docs-purge-run">
+          {purging ? <ActivityIndicator color="#fff" /> : <><Ionicons name="trash-outline" size={18} color="#fff" /><Text style={styles.purgeBtnText}>Delete {purgeCount || ''}</Text></>}
+        </Pressable>
         <Text style={styles.purgeNote}>The shop&apos;s automatic backups still hold them until those roll over (about two weeks). ID proofs attached to an employee&apos;s profile are never deleted here.</Text>
       </Sheet>
 
@@ -899,11 +911,9 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   sub: { color: colors.onSurfaceSecondary, fontSize: 15, marginTop: 6 },
   drivePill: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 6, borderRadius: radius.pill, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border },
   purgeText: { color: colors.onSurfaceSecondary, fontSize: 14, lineHeight: 20, marginBottom: spacing.md },
-  purgeGroup: { backgroundColor: colors.surfaceSecondary, borderRadius: 12, overflow: 'hidden' },
-  purgeRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: spacing.md, paddingVertical: 12 },
-  purgeSep: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
-  purgeTitle: { color: colors.onError, fontSize: 16, fontWeight: '600' },
-  purgeSub: { color: colors.mutedText, fontSize: 13, marginTop: 2 },
+  purgeSub: { color: colors.mutedText, fontSize: 13, marginTop: 8 },
+  purgeBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: spacing.md, backgroundColor: '#D93025', borderRadius: radius.md, paddingVertical: 14 },
+  purgeBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
   purgeNote: { color: colors.mutedText, fontSize: 12.5, lineHeight: 18, marginTop: spacing.md },
   titleInline: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   drivePillText: { fontSize: 12, fontWeight: '700' },

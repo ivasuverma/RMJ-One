@@ -39,20 +39,30 @@ def test_outstanding_folder_move_and_purge():
         assert moved['category_key'] == os1['key'] and moved['status'] == 'done'
         # purge: owner only; nothing in a folder is older than a month yet, so nothing goes
         admin = _login('admin', 'Admin@123')
-        assert requests.get(f"{API}/documents/purge-preview", headers=admin, params={'category_key': key, 'months': 1}, timeout=30).status_code == 403
-        assert requests.post(f"{API}/documents/purge", headers=admin, json={'category_key': key, 'months': 1}, timeout=30).status_code == 403
-        pv = requests.get(f"{API}/documents/purge-preview", headers=owner, params={'category_key': os1['key'], 'months': 1}, timeout=30).json()
-        assert pv['count'] >= 0 and len(pv['before']) == 10
-        r = requests.post(f"{API}/documents/purge", headers=owner, json={'category_key': os1['key'], 'months': 1}, timeout=60).json()
-        assert r['ok'] is True
+        before = '2000-01-01'
+        assert requests.get(f"{API}/documents/purge-preview", headers=admin, params={'category_key': key, 'before': before}, timeout=30).status_code == 403
+        assert requests.post(f"{API}/documents/purge", headers=admin, json={'category_key': key, 'before': before}, timeout=30).status_code == 403
+        pv = requests.get(f"{API}/documents/purge-preview", headers=owner, params={'category_key': os1['key'], 'before': before}, timeout=30).json()
+        assert pv['count'] == 0 and pv['before'] == before
+        r = requests.post(f"{API}/documents/purge", headers=owner, json={'category_key': os1['key'], 'before': before}, timeout=60).json()
+        assert r['ok'] is True and r['deleted'] == 0
         assert requests.get(f"{API}/documents/{d['id']}/file", headers=owner, timeout=30).status_code == 200   # a new one stays
-        assert requests.post(f"{API}/documents/purge", headers=owner, json={'category_key': key, 'months': 0}, timeout=30).status_code == 422
+        assert requests.post(f"{API}/documents/purge", headers=owner, json={'category_key': key, 'before': '1-1-2026'}, timeout=30).status_code == 422
+        # a date after today catches it
+        from datetime import date, timedelta
+        tomorrow = (date.today() + timedelta(days=2)).isoformat()
+        assert requests.get(f"{API}/documents/purge-preview", headers=owner, params={'category_key': os1['key'], 'before': tomorrow}, timeout=30).json()['count'] >= 1
         # select and delete: owner/admin only, gone everywhere
         acc = _login('accountant', 'Accountant@123')
         assert requests.post(f"{API}/documents/delete-many", headers=acc, json={'ids': [d['id']]}, timeout=30).status_code == 403
         r = requests.post(f"{API}/documents/delete-many", headers=admin, json={'ids': [d['id'], d['id'], 'nope']}, timeout=60).json()
         assert r['deleted'] == 1
         assert requests.get(f"{API}/documents/{d['id']}/file", headers=owner, timeout=30).status_code == 404
+        # no trace: no activity-log line still names it
+        logs = requests.get(f"{API}/audit/logs", headers=owner, params={'entity_type': 'document', 'limit': 500}, timeout=30)
+        if logs.status_code == 200:
+            items = logs.json()['items'] if isinstance(logs.json(), dict) else logs.json()
+            assert not [x for x in items if x.get('entity_id') == d['id']]
     finally:
         requests.delete(f"{API}/documents/{d['id']}", headers=owner, timeout=30)
         requests.delete(f"{API}/document-categories/{cat['id']}", headers=owner, timeout=30)
