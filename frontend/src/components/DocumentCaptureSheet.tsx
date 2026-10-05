@@ -11,6 +11,10 @@ import { enqueueUpload } from '@/src/utils/uploadQueue';
 import { usePdfPassword } from '@/src/utils/pdfUnlock';
 
 export type DocCategory = { id: string; key: string; label: string; icon: keyof typeof Ionicons.glyphMap; can_record?: boolean; can_view?: boolean };
+/** The Customer Outstanding folder is only filled by the OS button when a slip
+ *  is moved to Done — never offered as a place to capture into. */
+export const isOutstandingFolder = (c: { key: string; label?: string }) =>
+  c.key === 'customer_outstanding' || /outstanding/i.test(c.label || '');
 
 // The app ships as a web export, so capture uses a native file input — which
 // gives us camera (capture=environment), photo library, and Files/PDF for free
@@ -125,7 +129,7 @@ export function DocumentCaptureSheet({ visible, onClose, onSaved, autoCamera }: 
       // Categories this person may VIEW — uploading into the Pending tab is a
       // view-level right (Record is only needed to mark a doc done). The API
       // already returns only viewable categories, so show them all.
-      api.get<DocCategory[]>('/document-categories').then((cs) => setCats(cs.filter((c) => c.can_view !== false))).catch(() => {});
+      api.get<DocCategory[]>('/document-categories').then((cs) => setCats(cs.filter((c) => c.can_view !== false && !isOutstandingFolder(c)))).catch(() => {});
     } else {
       setFile(null); setNote(''); setCatKey(null); setPhase('capture'); autoFired.current = false;
     }

@@ -1149,11 +1149,16 @@ async def delete_document(doc_id: str, user=Depends(get_current)):
     d = await db.documents.find_one({'id': doc_id}, {'_id': 0, 'local_data': 0})
     if not d:
         raise HTTPException(status_code=404, detail='Document not found')
-    await _delete_doc(d, user)
+    await _delete_doc(d)
+    await log_audit(user, 'documents.delete', 'document', '', '1 document')   # no name, no id - nothing left to trace
+    _refresh_online_copy()
     return {'ok': True}
 
 
-async def _delete_doc(d: dict, user: dict):
+async def _delete_doc(d: dict):
+    """Delete one document with no trace: the Drive file (permanently), the
+    record, its bytes and image cache, every activity-log line that named it,
+    and the bell notifications that quoted its remark."""
     doc_id = d['id']
     # Delete everywhere: remove the original from Google Drive (if synced), then
     # remove the record + any local bytes from this server.
@@ -1167,10 +1172,31 @@ async def _delete_doc(d: dict, user: dict):
             pass   # Drive delete failed — still remove from the app below
     await db.documents.delete_one({'id': doc_id})
     await db.document_blobs.delete_one({'id': doc_id})
+    await db.audit_logs.delete_many({'entity_type': 'document', 'entity_id': doc_id})
+    remark = ((d.get('linked_ref') or {}).get('label') or d.get('note') or '').strip()
+    if remark:
+        await db.notifications.delete_many({'url': {'$regex': '^/documents'}, 'body': remark[:120]})
     _bump()
     _cache_drop(doc_id)
     _forget(doc_id)
-    await log_audit(user, 'documents.delete', 'document', doc_id, (d.get('file') or {}).get('orig_name', ''))
+
+
+def _refresh_online_copy():
+    """Refresh the online copy (Atlas) now, so it drops deleted documents
+    instead of keeping them until the next scheduled sync."""
+    try:
+        import atlas_mirror
+        from routers import backup as backup_router
+        if atlas_mirror.MIRROR_URL and not backup_router._atlas_running[0]:
+            async def _go():
+                backup_router._atlas_running[0] = True
+                try:
+                    await atlas_mirror.mirror_and_record()
+                finally:
+                    backup_router._atlas_running[0] = False
+            asyncio.create_task(_go())
+    except Exception:
+        pass
 
 
 async def _load_variant(meta: dict, doc_id: str, variant: str):
@@ -1674,44 +1700,37 @@ async def delete_many_documents(body: DeleteManyIn, user=Depends(get_current)):
     for doc_id in dict.fromkeys(body.ids):
         d = await db.documents.find_one({'id': doc_id}, {'_id': 0, 'local_data': 0})
         if d:
-            await _delete_doc(d, user)
+            await _delete_doc(d)
             deleted += 1
+    if deleted:
+        await log_audit(user, 'documents.delete', 'document', '', f'{deleted} documents')
+        _refresh_online_copy()
     return {'ok': True, 'deleted': deleted}
 
 
 # ---------------- Delete old documents from a folder, everywhere ----------------
-# Owner only. Every document in the folder captured more than N months ago is
+# Owner only. Every document in the folder captured before the day picked is
 # removed for good: from Google Drive (a permanent delete, not Drive's trash),
 # this server's database and image cache, and the activity-log lines that named
 # them - then the online copy (Atlas) is refreshed so it drops them too. Only
 # the shop's rolling backups still hold them, until those age out.
 # Employee ID proofs attached to a profile are never touched here.
+DATE_RE = r'^\d{4}-\d{2}-\d{2}$'
+
+
 class PurgeIn(BaseModel):
     category_key: str
-    months: int = Field(ge=1, le=24)
+    before: str = Field(pattern=DATE_RE)    # shop day; everything captured before it goes
 
 
-def _months_ago(months: int) -> str:
-    today = now_utc().date()
-    y, m = today.year, today.month - months
-    while m <= 0:
-        m += 12
-        y -= 1
-    import calendar
-    d = min(today.day, calendar.monthrange(y, m)[1])
-    return f'{y:04d}-{m:02d}-{d:02d}'
-
-
-def _purge_query(key: str, cutoff: str) -> dict:
-    # everything in the folder from before the cutoff, except ID proofs kept on an employee's profile
-    return {'category_key': key, 'created_at': {'$lt': cutoff}, 'linked_ref.type': {'$ne': 'employee'}}
+def _purge_query(key: str, before: str) -> dict:
+    # everything in the folder from before that day, except ID proofs kept on an employee's profile
+    return {'category_key': key, 'created_at': {'$lt': _ist_day_start_utc(before)}, 'linked_ref.type': {'$ne': 'employee'}}
 
 
 @router.get('/documents/purge-preview')
-async def purge_preview(category_key: str = Query(...), months: int = Query(..., ge=1, le=24), user=Depends(require_owner)):
-    cutoff = _months_ago(months)
-    n = await db.documents.count_documents(_purge_query(category_key, cutoff))
-    return {'count': n, 'before': cutoff}
+async def purge_preview(category_key: str = Query(...), before: str = Query(..., pattern=DATE_RE), user=Depends(require_owner)):
+    return {'count': await db.documents.count_documents(_purge_query(category_key, before)), 'before': before}
 
 
 @router.post('/documents/purge')
@@ -1719,46 +1738,11 @@ async def purge_documents(body: PurgeIn, user=Depends(require_owner)):
     cats = await _categories_map()
     if body.category_key not in cats:
         raise HTTPException(status_code=404, detail='Unknown folder')
-    cutoff = _months_ago(body.months)
-    docs = await db.documents.find(_purge_query(body.category_key, cutoff), {'_id': 0, 'id': 1, 'file': 1}).to_list(20000)
-    ids = [d['id'] for d in docs]
-    drive_failed = 0
-    if docs:
-        cfg = None
-        try:
-            import drive_service
-            cfg = await drive_service.get_config()
-        except Exception:
-            cfg = None
-        for d in docs:
-            drive_id = (d.get('file') or {}).get('drive_file_id')
-            if drive_id and cfg:
-                try:
-                    await drive_service.delete_file(cfg, drive_id)
-                except Exception:
-                    drive_failed += 1
-            _cache_drop(d['id'])
-            _forget(d['id'])
-        for i in range(0, len(ids), 500):
-            chunk = ids[i:i + 500]
-            await db.documents.delete_many({'id': {'$in': chunk}})
-            await db.document_blobs.delete_many({'id': {'$in': chunk}})
-            await db.audit_logs.delete_many({'entity_type': 'document', 'entity_id': {'$in': chunk}})
-        _bump()
+    docs = await db.documents.find(_purge_query(body.category_key, body.before), {'_id': 0, 'local_data': 0}).to_list(20000)
+    for d in docs:
+        await _delete_doc(d)
     # Only the folder and how many - nothing about what they were.
-    await log_audit(user, 'documents.purge', 'document_category', body.category_key, f'{len(ids)} older than {cutoff}')
-    if ids:
-        try:   # refresh the online copy now, so it doesn't keep them until the next scheduled sync
-            import atlas_mirror
-            from routers import backup as backup_router
-            if atlas_mirror.MIRROR_URL and not backup_router._atlas_running[0]:
-                async def _go():
-                    backup_router._atlas_running[0] = True
-                    try:
-                        await atlas_mirror.mirror_and_record()
-                    finally:
-                        backup_router._atlas_running[0] = False
-                asyncio.create_task(_go())
-        except Exception:
-            pass
-    return {'ok': True, 'deleted': len(ids), 'before': cutoff, 'drive_failed': drive_failed}
+    await log_audit(user, 'documents.purge', 'document_category', body.category_key, f'{len(docs)} from before {body.before}')
+    if docs:
+        _refresh_online_copy()
+    return {'ok': True, 'deleted': len(docs), 'before': body.before}

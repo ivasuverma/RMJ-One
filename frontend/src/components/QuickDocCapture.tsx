@@ -8,7 +8,7 @@ import { enqueueUpload, updateOutboxNote, kickUpload, cancelUpload, releaseHeld 
 import { blobsToPdf } from '@/src/utils/imagesToPdf';
 import { usePdfPassword } from '@/src/utils/pdfUnlock';
 import { Sheet } from '@/src/components/ui';
-import { pickWebFile, makeThumb, type DocCategory } from '@/src/components/DocumentCaptureSheet';
+import { pickWebFile, makeThumb, isOutstandingFolder, type DocCategory } from '@/src/components/DocumentCaptureSheet';
 import { spacing, radius, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 
@@ -83,7 +83,7 @@ export function QuickDocCapture({ visible, onClose, onSaved }: {
 
   useEffect(() => {
     if (visible) {
-      api.get<DocCategory[]>('/document-categories').then((cs) => setCats(cs.filter((c) => c.can_view !== false))).catch(() => {});
+      api.get<DocCategory[]>('/document-categories').then((cs) => setCats(cs.filter((c) => c.can_view !== false && !isOutstandingFolder(c)))).catch(() => {});
     } else {
       setCatKey(null); setPhase('category'); setShots([]); setCaption(''); shooting.current = false; finalizing.current = false;
     }

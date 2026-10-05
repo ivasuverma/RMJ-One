@@ -12,7 +12,7 @@ import { useTheme } from '@/src/theme/ThemeContext';
 import { useToast } from '@/src/components/ui';
 import { ModuleHeader } from '@/src/components/ui/ModuleHeader';
 import { HeaderSpacer, useScrolled } from '@/src/components/ui/StickyHeader';
-import type { DocCategory } from '@/src/components/DocumentCaptureSheet';
+import { isOutstandingFolder, type DocCategory } from '@/src/components/DocumentCaptureSheet';
 
 const BASE = process.env.EXPO_PUBLIC_BACKEND_URL || '';
 
@@ -44,7 +44,7 @@ export default function SendFromIphoneScreen() {
   useFocusEffect(useCallback(() => { load(); }, [load]));
   useEffect(() => {
     api.get<DocCategory[]>('/document-categories').then((cs) => {
-      const list = cs.filter((c) => c.can_view !== false);
+      const list = cs.filter((c) => c.can_view !== false && !isOutstandingFolder(c));
       setCats(list);
       setCat((cur) => cur || (list.find((c) => c.key === 'bank_statements') || list[0])?.key || '');
     }).catch(() => {});
