@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -98,8 +98,19 @@ export default function LedgerScreen() {
   }, [hasModule, user?.role]);
   useFocusEffect(useCallback(() => { load(); loadPrefs(); }, [load, loadPrefs]));
 
+  // Cash Ledger stays out of sight: double-tap the "Ledger" title to show it
+  // (and again to hide it). Hidden again whenever you leave this tab.
+  const [cashOpen, setCashOpen] = useState(false);
+  useFocusEffect(useCallback(() => () => setCashOpen(false), []));
+  const lastTap = useRef(0);
+  const titleTap = () => {
+    const now = Date.now();
+    if (now - lastTap.current < 350) { lastTap.current = 0; setCashOpen((v) => !v); }
+    else lastTap.current = now;
+  };
+
   const rows: Row[] = [
-    ...(hasModule('cash_ledger') || user?.role === 'owner'
+    ...(cashOpen && (hasModule('cash_ledger') || user?.role === 'owner')
       ? [{ key: 'cash-ledger', group: 'People', label: 'Cash Ledger', icon: 'wallet-outline' as const, route: '/cash-ledger', summary: sum['cash-ledger'] || 'Cash you gave and got, person by person' }]
       : []),
     { key: 'customer-ledger', group: 'People', label: 'Customer Ledger', icon: 'person-outline', route: '/reports/customer-ledger', summary: sum['customer-ledger'] || '…' },
@@ -125,7 +136,10 @@ export default function LedgerScreen() {
     <SafeAreaView style={styles.root} edges={['top']} testID="ledger-screen">
       <StickyHeader scrolled={scrolled}>
         <View style={styles.titleRow}>
-          <Text style={styles.h1}>Ledger</Text>
+          {/* Plain text to look at — no button look or press feedback. */}
+          <View onStartShouldSetResponder={() => true} onResponderRelease={titleTap} style={styles.titleTap} testID="ledger-title">
+            <Text style={styles.h1} selectable={false}>Ledger</Text>
+          </View>
           <Pressable onPress={() => setEditOrder((v) => !v)} hitSlop={8} testID="ledger-edit-order">
             <Text style={styles.editOrderText}>{editOrder ? 'Done' : 'Edit'}</Text>
           </Pressable>
@@ -192,6 +206,7 @@ export default function LedgerScreen() {
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   scroll: { padding: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.xxxl },
+  titleTap: { ...({ touchAction: 'manipulation', userSelect: 'none', WebkitTapHighlightColor: 'transparent' } as any) },
   titleRow: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' },
   h1: { color: colors.onSurface, fontSize: 30, fontWeight: '700', fontFamily: fonts.display, letterSpacing: -0.5 },
   sub: { color: colors.onSurfaceSecondary, fontSize: 15, marginTop: 6 },
