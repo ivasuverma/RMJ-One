@@ -122,7 +122,9 @@ async def _require_write(user: dict, ref_type: str, ref_id: str = '') -> None:
     # An accountant can record Cash Book entries (see require_admin_or_module), so may attach their receipts too.
     if role == 'accountant' and ref_type == 'cashbook_entry':
         return
-    if role == 'employee' and mod in resolve_modules(user):
+    # Anyone given the module (employee or accountant login, e.g. the shop's
+    # "Store" account on Stock In/Out) can attach photos to its records.
+    if role in ('accountant', 'employee') and mod in resolve_modules(user):
         return
     raise HTTPException(status_code=403, detail=f'No access to "{mod}"')
 
