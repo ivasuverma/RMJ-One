@@ -182,6 +182,22 @@
   .sval{display:block; font-size:15px; font-weight:700; margin-top:3px; color:#F5F5F7; font-variant-numeric:tabular-nums}
   .sunit{display:block; font-size:10px; color:#86868B; margin-top:1px}
 
+  /* Outside market hours (8 PM – 9 AM, India time) the rates sit blurred
+     under a "Market closed" banner. */
+  .metal{position:relative}
+  .hero.closed .pval, .hero.closed .sval, .hero.closed .mchg{filter:blur(8px); user-select:none; -webkit-user-select:none}
+  .hero.closed .metal::after{content:"Market closed"; position:absolute; left:50%; bottom:clamp(20px,2.8vw,32px); transform:translateX(-50%);
+    padding:7px 14px; border-radius:999px; background:rgba(0,0,0,.78); border:1px solid rgba(255,255,255,.14); color:#F5F5F7;
+    font-size:12.5px; font-weight:700; letter-spacing:.3px; white-space:nowrap; pointer-events:none}
+  .closedNote{max-width:760px; margin:12px auto 0; font-size:13px; color:#A1A1A6}
+  .closedNote[hidden]{display:none}
+  /* Visitor ticker */
+  .visitors{display:inline-flex; align-items:center; gap:8px; margin:12px auto 0; padding:6px 12px; border-radius:999px; background:rgba(255,255,255,.06); border:1px solid #262628; color:#A1A1A6; font-size:12.5px; font-variant-numeric:tabular-nums}
+  .visitors[hidden]{display:none}
+  .visitors i{width:7px; height:7px; border-radius:50%; background:#4ADE80; box-shadow:0 0 0 0 rgba(74,222,128,.6); animation:vpulse 2s infinite}
+  .visitors b{color:#F5F5F7; font-weight:700}
+  @keyframes vpulse{0%{box-shadow:0 0 0 0 rgba(74,222,128,.55)}70%{box-shadow:0 0 0 7px rgba(74,222,128,0)}100%{box-shadow:0 0 0 0 rgba(74,222,128,0)}}
+  @media (prefers-reduced-motion: reduce){.visitors i{animation:none}}
   .unavail{max-width:560px; margin:clamp(32px,5vw,48px) auto 0; background:var(--char); border:1px solid #262628; border-radius:var(--r-lg); padding:26px 24px}
   .unavail b{display:block; font-size:19px; color:#F5F5F7; letter-spacing:-.01em}
   .unavail p{font-size:15px; color:#A1A1A6; margin-top:8px; line-height:1.5}
@@ -424,6 +440,7 @@
       <div class="spot"><span class="slabel">Silver (XAG)</span><span class="sval" id="xag">—</span><span class="sunit">per troy oz</span></div>
       <div class="spot"><span class="slabel">USD/INR</span><span class="sval" id="usdinr">—</span><span class="sunit">spot</span></div>
     </div>
+    <p class="closedNote" id="closedNote" hidden>Market closed for the night — live rates are back at 9:00 AM. Call or WhatsApp us for any rate in the meantime.</p>
     <div class="unavail" id="unavail" hidden>
       <b>Sorry for the inconvenience.</b>
       <p>Live rates are temporarily unavailable. Please call or WhatsApp us for today's rate — this page will update by itself as soon as they're back.</p>
@@ -437,6 +454,7 @@
         <p>Ram Murti Jewellers is not responsible for any loss, claim or decision based on the rates shown here, including anything caused by delays, temporary inaccuracies, interruptions or technical faults.</p>
       </div>
     </details>
+    <div><span class="visitors" id="visitors" hidden aria-live="off"><i aria-hidden="true"></i><span id="visitorsText"></span></span></div>
     <!-- Shown only once RMJ-One returns the official number's subscribe link. -->
     <a class="subscribe" id="subscribeBtn" href="#" hidden>
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
@@ -610,6 +628,8 @@ const CONFIG = {
   PIECES_URL: 'https://api.rmj.co.in/api/public/website/pieces', // Fresh at the counter, managed in RMJ-One
   SUBSCRIBE_URL: 'https://api.rmj.co.in/api/public/rate-broadcast/subscribe', // wa.me link with START pre-filled
   CONTENT_URL: 'https://api.rmj.co.in/api/public/website/content', // text/photo edits + extra sections from RMJ-One
+  VISIT_URL: 'https://api.rmj.co.in/api/public/visit',          // visitor ticker (counts only)
+  MARKET_OPEN_HOUR: 9, MARKET_CLOSE_HOUR: 20,               // India time; rates are blurred outside these hours
   API_ORIGIN: 'https://api.rmj.co.in',
   // Photos and a copy of the photo lists, on Cloudflare R2 (set up in RMJ-One):
   // used when api.rmj.co.in can't be reached, e.g. the shop computer is off.
@@ -656,8 +676,19 @@ function setChange(id, diff, at){
 }
 
 const rateHero=document.getElementById('top'), unavail=document.getElementById('unavail');
+/* 8 PM to 9 AM in India: market closed — rates blurred under a banner. */
+function marketClosed(){
+  const h=+new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Kolkata',hour:'numeric',hourCycle:'h23'}).format(new Date());
+  return h>=CONFIG.MARKET_CLOSE_HOUR || h<CONFIG.MARKET_OPEN_HOUR;
+}
+function applyMarketHours(){
+  const c=marketClosed();
+  rateHero.classList.toggle('closed', c);
+  document.getElementById('closedNote').hidden=!c || rateHero.classList.contains('norates');
+}
 function showUnavailable(){
   rateHero.classList.add('norates'); unavail.hidden=false;
+  applyMarketHours();
   ['goldSell','goldBuy','silverSell','silverBuy','xau','xag','usdinr'].forEach(id=>{ document.getElementById(id).textContent='—'; });
   ['goldChg','silverChg'].forEach(id=>{ document.getElementById(id).hidden=true; });
   document.getElementById('mbarRate').textContent='Rate';
@@ -667,6 +698,7 @@ function showUnavailable(){
 
 function paint(data){
   rateHero.classList.remove('norates'); unavail.hidden=true;
+  applyMarketHours();
   setVal('goldSell', data.gold_sell, inr);
   setVal('goldBuy', data.gold_buy, inr);
   setVal('silverSell', data.silver_sell, inr);
@@ -680,7 +712,10 @@ function paint(data){
   firstPaint=false;
 
   // status line
-  if(data.fetched_at){
+  if(marketClosed()){
+    statusText.textContent='Market closed · rates resume at 9:00 AM'; statusEl.classList.add('stale');
+    document.getElementById('mbarRate').textContent='Rate';
+  } else if(data.fetched_at){
     const t=new Date(data.fetched_at), age=Date.now()-t;
     const when=t.toLocaleTimeString('en-IN',{hour:'numeric',minute:'2-digit'});
     const day=t.toDateString()===new Date().toDateString()?'today':t.toLocaleDateString('en-IN',{day:'numeric',month:'short'});
@@ -724,6 +759,32 @@ rfrBtn.onclick=refreshNow;
 document.addEventListener('visibilitychange',()=>{ if(!document.hidden) refreshNow(); });
 setInterval(tick,1000);
 refreshNow();
+setInterval(applyMarketHours,30*1000);   // flips at 8 PM / 9 AM without a reload
+
+/* Visitor ticker: "3 here now · 128 visits today". The browser makes up a
+   random id per tab (nothing personal is sent); a visit counts once per
+   device per day. Hidden if the server can't be reached. */
+(function(){
+  const box=document.getElementById('visitors'), txt=document.getElementById('visitorsText');
+  let sid=''; try{ sid=sessionStorage.getItem('rmj_sid')||''; }catch(e){}
+  if(!sid){ sid=Math.random().toString(36).slice(2)+Date.now().toString(36); try{ sessionStorage.setItem('rmj_sid',sid); }catch(e){} }
+  const day=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata'}).format(new Date());
+  let isNew=true; try{ isNew=localStorage.getItem('rmj_visit_day')!==day; }catch(e){}
+  const n=v=>Number(v||0).toLocaleString('en-IN');
+  async function ping(){
+    if(document.hidden) return;
+    try{
+      const r=await fetch(CONFIG.VISIT_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sid,new:isNew})});
+      if(!r.ok) throw 0;
+      const d=await r.json();
+      if(isNew){ isNew=false; try{ localStorage.setItem('rmj_visit_day',day); }catch(e){} }
+      txt.innerHTML=`<b>${n(d.online)}</b> here now · <b>${n(d.today)}</b> ${d.today===1?'visit':'visits'} today`;
+      box.hidden=false;
+    }catch(e){ box.hidden=true; }
+  }
+  ping(); setInterval(ping,60*1000);
+  document.addEventListener('visibilitychange',()=>{ if(!document.hidden) ping(); });
+})();
 
 /* nav: dark over the hero, light after */
 const nav=document.getElementById('nav'), hero=document.getElementById('top');
