@@ -10,6 +10,7 @@ import base64
 import hashlib
 import json
 import logging
+import re
 import uuid
 from typing import List, Optional
 
@@ -210,7 +211,7 @@ PAGE = [
         _f('hero_fine', 'Disclaimer — first paragraph', 'Rates are indicative and exclude making charges, wastage and GST — they can change through the day, and the rate applicable to any transaction is the one in effect at billing, not the rate shown here. Buyback is offered only on items purchased from us, subject to purity verification.', True),
     ], 'images': []},
     {'key': 'showcase', 'label': 'Showcase', 'hideable': True, 'fields': [
-        _f('showcase_title', 'Heading', 'Three generations of craftsmanship.'),
+        _f('showcase_title', 'Heading', 'Jewellers for generations. Real sunaars.'),
         _f('showcase_text', 'Text', 'From everyday gold to wedding sets and one-of-a-kind pieces, everything still comes out of the same Ludhiana counter our family has run since 1932.', True),
     ], 'images': [_img('showcase_photo', 'Main photo', 'assets/photos/dsc_0033-YBg891rw9PtK9XaM.JPG')]},
     {'key': 'collections', 'label': 'Find your piece', 'hideable': True, 'fields': [
@@ -239,8 +240,8 @@ PAGE = [
         _f('promise4_text', 'Promise 4 — text', 'Resizing, clasps, stone setting and polishing, with a receipt for every piece.', True),
     ], 'images': []},
     {'key': 'about', 'label': 'About', 'hideable': True, 'fields': [
-        _f('about_title', 'Heading', 'Three generations, one family counter.'),
-        _f('about_p1', 'First paragraph', "Ram Murti Jewellers was founded in 1932 by Sh. Ram Murti, whose name we still carry with pride. His son, Mr. Jugal Kishore Verma, carried the counter forward for decades, and today it's run by Mr. Vasu Verma — the same family, the same street, for over nine decades.", True),
+        _f('about_title', 'Heading', 'Jewellers for generations, real sunaars.'),
+        _f('about_p1', 'First paragraph', "Ram Murti Jewellers was set up in 1932 by Sh. Ram Murti under his father's guidance, and we still carry his name with pride. His son, Mr. Jugal Kishore Verma, carried the counter forward for decades, and today it's run by Mr. Vasu Verma — the same family, the same street, for over nine decades.", True),
         _f('about_p2', 'Second paragraph', "Our counter holds a carefully chosen range of hallmarked gold jewellery — fine necklaces and bracelets, detailed earrings and rings — each piece made with care and finished by hand. Alongside it sits our diamond collection: stones we handpick for their quality and brilliance, set into engagement rings, statement pendants and earrings made for life's biggest moments.", True),
         _f('about_p3', 'Third paragraph', "Many families who bought their wedding jewellery here now bring their children, and we look after every visit the same way. We take the time to understand what you're looking for, explain every rate and charge clearly, and help you find a piece that suits you — for your own collection or as a gift for someone you love. Come and see us at Field Ganj, Ludhiana.", True),
     ], 'images': [_img('about_photo', 'Photo', 'assets/photos/dsc_0021-m5K2JDwG4zs2MZbz.JPG')]},
@@ -255,9 +256,17 @@ _IMAGES = {i['key']: i for s in PAGE for i in s['images']}
 _HIDEABLE = {s['key'] for s in PAGE if s['hideable']}
 
 
+# Old wording retired from the site: a saved edit that still says it falls
+# back to the current text (the "three generations" line was replaced with
+# "jewellers for generations, real sunaars", set up in 1932 by Sh. Ram Murti
+# under his father's guidance).
+_RETIRED = re.compile(r'\b(three|3) generations\b', re.I)
+
+
 async def _content_doc() -> dict:
     d = await db.settings.find_one({'id': 'website_content'}, {'_id': 0}) or {}
-    return {'texts': d.get('texts') or {}, 'images': d.get('images') or {}, 'hidden': d.get('hidden') or [],
+    texts = {k: v for k, v in (d.get('texts') or {}).items() if not (isinstance(v, str) and _RETIRED.search(v))}
+    return {'texts': texts, 'images': d.get('images') or {}, 'hidden': d.get('hidden') or [],
             'brand': {**BRAND_DEFAULT, **(d.get('brand') or {})}}
 
 

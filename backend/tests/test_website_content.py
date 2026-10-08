@@ -122,3 +122,15 @@ def test_logo_and_name_size_settings(admin):
     assert r.status_code == 200 and r.json()['brand'] == {'logo': 120, 'name': 70}
     assert requests.get(f"{API}/public/website/content", timeout=30).json()['brand'] == {'logo': 120, 'name': 70}
     requests.put(f"{API}/website/content/brand", headers=h, json={'logo': 100, 'name': 85}, timeout=30)
+
+
+def test_retired_generations_wording_falls_back(admin):
+    """A saved heading still saying "three generations" no longer shows; the
+    current wording (jewellers for generations, real sunaars) is used."""
+    r = requests.put(f"{API}/website/content/texts", headers=admin, json={'texts': {'about_title': 'Three generations, one family counter.'}}, timeout=30)
+    assert r.status_code == 200, r.text
+    try:
+        pub = requests.get(f"{API}/public/website/content", timeout=30).json()
+        assert 'about_title' not in pub['texts']
+    finally:
+        requests.put(f"{API}/website/content/texts", headers=admin, json={'texts': {'about_title': None}}, timeout=30)
