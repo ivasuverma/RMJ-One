@@ -315,6 +315,23 @@ async def update_access(account_id: str, body: ModuleAccessUpdateIn, user=Depend
 # double-tap the tab's title. Keys are "<tab>:<tile>", e.g. "work:cash" or
 # "ledger:cash-ledger". Only hides the tile - access rules are unchanged.
 HIDDEN_TILES_DEFAULT = ['ledger:cash-ledger']   # the Cash Ledger was the first one hidden this way
+# The modules behind each tile, so Home can hide the same things (Needs you today,
+# Coming up, the cash card) for staff and employees when the tile is hidden.
+TILE_MODULES = {
+    'work:repairs': ['repairs'], 'work:gold_rate': ['gold_rate'], 'work:stock': ['samples'], 'work:loans': ['gold_loans'],
+    'work:cash': ['cash_book'], 'work:tasks': ['tasks'], 'work:documents': ['documents'],
+    'work:attendance': ['attendance', 'payroll'], 'work:rate_broadcast': ['rate_broadcast'], 'work:website': ['website'],
+    'ledger:cash-ledger': ['cash_ledger'],
+}
+
+
+async def hidden_modules(user: dict) -> set:
+    """Modules whose tile the owner has hidden - empty for the owner, who chose them."""
+    if user.get('role') == 'owner':
+        return set()
+    d = await db.settings.find_one({'id': 'hidden_tiles'}, {'_id': 0})
+    keys = d.get('keys', []) if d else HIDDEN_TILES_DEFAULT
+    return {m for k in keys for m in TILE_MODULES.get(k, [])}
 
 
 class HiddenTilesIn(BaseModel):

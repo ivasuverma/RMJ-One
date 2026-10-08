@@ -21,6 +21,11 @@ const QUICK_ROUTE: Record<string, string> = {
   cash_in: '/cashbook?new=received', cash_out: '/cashbook?new=paid', new_repair: '/repairs/new', issue_stock: '/samples/new',
   update_rate: '/gold-rate', send_rates: '/settings/rate-broadcast/send', new_loan: '/loans/new', add_task: '/tasks/new',
 };
+/** A quick action's screen. `add_only` (its module's tile is hidden): the entry form only — it closes after saving, no list or balance. */
+export const quickRoute = (t: { key: string; add_only?: boolean }) => {
+  const r = QUICK_ROUTE[t.key];
+  return r && t.add_only ? `${r}${r.includes('?') ? '&' : '?'}only=1` : r;
+};
 export const MODULE_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
   gold_loans: 'cash-outline', repairs: 'construct-outline', samples: 'diamond-outline', tasks: 'checkbox-outline',
   documents: 'document-text-outline', rate_broadcast: 'megaphone-outline', attendance: 'people-outline', payroll: 'calendar-outline', notifications: 'notifications-outline', team: 'person-circle-outline',

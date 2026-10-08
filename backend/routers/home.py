@@ -793,7 +793,8 @@ async def build_summary(user: dict) -> dict:
     t0 = time.monotonic()
     now = _ist_now()
     today = now.date().isoformat()
-    s, layout = await asyncio.gather(home_settings(), _layout(user))
+    from routers.users import hidden_modules
+    s, layout, off = await asyncio.gather(home_settings(), _layout(user), hidden_modules(user))
     hidden = layout['hidden']
     if user.get('role') == 'employee':
         # The employee Home shows rates, quick actions, Needs you and notifications only.
@@ -811,7 +812,7 @@ async def build_summary(user: dict) -> dict:
     # Staff is also what Needs you reads for late / not-in rows, so it's built when either shows.
     want_staff = can_view(user, 'attendance') and (show('staff') or show('needs_you'))
     staff_task = asyncio.ensure_future(_section('staff', _staff_today(user, s, now))) if want_staff else None
-    cash_task = asyncio.ensure_future(_section('cash', _cash(user, today))) if can_view(user, 'cash_book') and show('cash') else None
+    cash_task = asyncio.ensure_future(_section('cash', _cash(user, today))) if can_view(user, 'cash_book') and 'cash_book' not in off and show('cash') else None
     owed_task = asyncio.ensure_future(_section('owed', _owed(user, s, now.date()))) if show('owed') else None
     coming_task = asyncio.ensure_future(_section('coming_up', _coming_up(user, s, now))) if show('coming_up') else None
     notif_task = asyncio.ensure_future(_section('notifications', _notifications(user))) if show('notifications') else None
@@ -822,7 +823,15 @@ async def build_summary(user: dict) -> dict:
         gone = await _dismissed_today(user, today)
         needs_hidden = sum(1 for r in needs if r.get('key') in gone)
         needs = [r for r in needs if r.get('key') not in gone]
+        needs = [r for r in needs if r.get('module') not in off]   # tiles the owner hid stay out of Home too
     owed = await owed_task if owed_task else None
+    coming = await coming_task if coming_task else None
+    if isinstance(coming, dict) and isinstance(coming.get('items'), list) and off:
+        kept = [i for i in coming['items'] if i.get('module') not in off]
+        coming = {**coming, 'items': kept, 'total': max(len(kept), (coming.get('total') or 0) - (len(coming['items']) - len(kept)))}
+    if isinstance(quick, dict) and off:
+        # Quick actions stay (adding is fine), but a hidden module's tile only opens its entry form - no list or balance.
+        quick = {**quick, **{k: [{**q, 'add_only': True} if q['module'] in off else q for q in quick.get(k) or []] for k in ('tiles', 'available')}}
     if owed and not owed.get('unavailable') and not any(owed.get(k) for k in ('customers', 'loan_interest', 'karigars')):
         owed = None   # nothing here this person may see
     return {
@@ -833,9 +842,9 @@ async def build_summary(user: dict) -> dict:
         'quick_actions': quick,
         'needs_you': needs,
         'needs_hidden': needs_hidden,
-        'staff': staff if show('staff') else None,
+        'staff': staff if show('staff') and 'attendance' not in off else None,
         'owed': owed,
-        'coming_up': await coming_task if coming_task else None,
+        'coming_up': coming,
         'notifications': await notif_task if notif_task else None,
         'hidden_sections': hidden,
         'section_order': layout['order'],
