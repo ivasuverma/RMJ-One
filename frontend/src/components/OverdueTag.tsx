@@ -20,7 +20,7 @@ export function OverdueTag({ text, days, testID }: { text: string; days: number;
   return (
     <View style={s.tag} testID={testID}>
       <Ionicons name="alarm-outline" size={12} color={colors.onError} />
-      <Text style={s.text} numberOfLines={1}>{text} · {days} day{days === 1 ? '' : 's'}</Text>
+      <Text style={s.text}>{text} · {days} day{days === 1 ? '' : 's'}</Text>
     </View>
   );
 }
