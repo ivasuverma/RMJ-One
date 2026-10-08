@@ -973,24 +973,47 @@ def _say(text: str, status: int = 200) -> Response:
     return Response(content=text, media_type='text/plain; charset=utf-8', status_code=status)
 
 
-@router.post('/inbox/{key}')
-async def inbox_upload(key: str, file: List[UploadFile] = File(...), c: str = Query(default='')):
-    """What the "Send to RMJ One" shortcut calls: one or more files, into
-    category `c`, as the person whose link it is."""
+async def _inbox_account(key: str):
+    """(account, categories map, the category keys it can send to) - or a plain-text refusal."""
     rec = await db.upload_keys.find_one({'key_hash': _key_hash(key)}, {'_id': 0})
     if not rec:
-        return _say('This Send to RMJ One link no longer works. Make a new one in RMJ One > Documents > Send from iPhone.', 401)
+        return None, _say('This Send to RMJ One link no longer works. Make a new one in RMJ One > Documents > Send from iPhone.', 401)
     coll = db.employees if rec['kind'] == 'employee' else db.users
     acc = await coll.find_one({'id': rec['account_id']}, {'_id': 0, 'password_hash': 0, 'photo': 0})
     if not acc or acc.get('status') == 'inactive' or acc.get('is_active') is False:
-        return _say('This account is turned off in RMJ One.', 403)
+        return None, _say('This account is turned off in RMJ One.', 403)
     acc['role'] = acc.get('role') or 'employee'
     cats = await _categories_map()
     rights = await _account_rights(acc)
-    visible = [k for k, cat in cats.items() if cat.get('active', True) is not False and _can_see(cat, _role(acc), rights)]
+    # Customer Outstanding is only filled by the OS button, never sent into directly.
+    visible = [k for k, cat in cats.items() if cat.get('active', True) is not False and _can_see(cat, _role(acc), rights)
+               and not (k == OUTSTANDING_KEY or 'outstanding' in (cat.get('label') or '').lower())]
     if not visible:
-        return _say("You don't have access to Documents in RMJ One.", 403)
-    cat_key = c if c in visible else visible[0]
+        return None, _say("You don't have access to Documents in RMJ One.", 403)
+    return (rec, acc, cats, visible), None
+
+
+@router.get('/inbox/{key}/categories')
+async def inbox_categories(key: str):
+    """The shortcut's "Save in which category?" list: one name per line."""
+    got, refusal = await _inbox_account(key)
+    if refusal:
+        return refusal
+    _, _, cats, visible = got
+    return _say('\n'.join(cats[k].get('label') or k for k in visible))
+
+
+@router.post('/inbox/{key}')
+async def inbox_upload(key: str, file: List[UploadFile] = File(...), c: str = Query(default=''), category: str = Form(default='')):
+    """What the "Send to RMJ One" shortcut calls: one or more files, as the
+    person whose link it is, into the category picked on the iPhone (form
+    field `category`, by name) or the one fixed in the link (`?c=`)."""
+    got, refusal = await _inbox_account(key)
+    if refusal:
+        return refusal
+    rec, acc, cats, visible = got
+    want = (category or c).strip().lower()
+    cat_key = next((k for k in visible if want and (k.lower() == want or (cats[k].get('label') or '').strip().lower() == want)), visible[0])
     saved = 0
     for f in file[:20]:
         try:
