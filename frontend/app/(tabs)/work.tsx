@@ -10,6 +10,7 @@ import { useTheme } from '@/src/theme/ThemeContext';
 import { fmtCompactINR } from '@/src/utils/money';
 import { istTime } from '@/src/utils/datetime';
 import { ErrorState } from '@/src/components/ui';
+import { useSecretTiles, SecretTitle, SecretGear, HiddenMark, HiddenTilesSheet } from '@/src/components/SecretTiles';
 import { UploadQueueBadge } from '@/src/components/UploadQueueBadge';
 import { LiveRateButton } from '@/src/components/LiveRateButton';
 import { TabBarSpacer } from '@/src/components/GlassTabBar';
@@ -75,6 +76,8 @@ export default function WorkScreen() {
   const [order, setOrder] = useState<string[]>([]);
   const [hidden, setHidden] = useState<string[]>([]);
   const [editOrder, setEditOrder] = useState(false);
+  // Tiles the owner hides (shop-wide) stay out of sight until the "Work" title is double-tapped.
+  const secret = useSecretTiles('work');
   useFocusEffect(useCallback(() => {
     try { const raw = typeof window !== 'undefined' ? window.localStorage.getItem(ORDER_KEY) : null; if (raw) setOrder(JSON.parse(raw)); } catch { /* ignore */ }
     try { const raw = typeof window !== 'undefined' ? window.localStorage.getItem(HIDDEN_KEY) : null; if (raw) setHidden(JSON.parse(raw)); } catch { /* ignore */ }
@@ -231,7 +234,7 @@ export default function WorkScreen() {
 
   // Apply the user's saved order; unknown/new rows fall to the end.
   const idx = (k: string) => { const i = order.indexOf(k); return i === -1 ? 999 : i; };
-  const sortedRows = [...rows].sort((a, b) => idx(a.key) - idx(b.key));
+  const sortedRows = secret.filter([...rows].sort((a, b) => idx(a.key) - idx(b.key)));
   const move = (key: string, dir: -1 | 1) => {
     const keys = sortedRows.map((r) => r.key);
     const i = keys.indexOf(key); const j = i + dir;
@@ -249,7 +252,10 @@ export default function WorkScreen() {
       <StickyHeader scrolled={scrolled}>
         <View style={styles.titleRow}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.h1}>Work</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <SecretTitle text="Work" style={styles.h1} onTap={secret.onTitleTap} testID="work-title" />
+              {secret.revealed && secret.canChoose && <SecretGear onPress={() => secret.setSettingsOpen(true)} testID="work-hidden-settings" />}
+            </View>
             <Text style={styles.sub}>What&apos;s in progress — and what to do next.</Text>
           </View>
           {hasModule('documents') && <UploadQueueBadge />}
@@ -294,7 +300,7 @@ export default function WorkScreen() {
           >
             <View style={styles.pi}><Ionicons name={r.icon} size={22} color={colors.brandSecondary} /></View>
             <View style={{ flex: 1, minWidth: 0 }}>
-              <Text style={styles.pt}>{r.title}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}><Text style={styles.pt}>{r.title}</Text>{secret.isHidden(r.key) && <HiddenMark />}</View>
               <Text style={styles.pd} numberOfLines={1}>{renderSegs(r.segs, colors)}</Text>
               <Text style={[styles.pd, styles.pd2]} numberOfLines={1}>{renderSegs(r.segs2, colors)}</Text>
             </View>
@@ -318,6 +324,8 @@ export default function WorkScreen() {
         <View style={{ height: spacing.xxl }} />
         <TabBarSpacer />
       </ScrollView>
+      <HiddenTilesSheet visible={secret.settingsOpen} onClose={() => secret.setSettingsOpen(false)} tabLabel="Work"
+        tiles={rows.map((r) => ({ key: r.key, title: r.title, icon: r.icon }))} hidden={secret.hiddenSet} onSave={secret.save} />
     </SafeAreaView>
   );
 }

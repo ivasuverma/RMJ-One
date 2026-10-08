@@ -5,6 +5,9 @@ infrastructure (db, auth deps, models, cross-domain helpers) stays in
 server.py and is imported from here — nothing about behavior changed,
 only where the code lives."""
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
+from typing import List
+import re
 import uuid
 from server import (
     db,
@@ -304,3 +307,29 @@ async def update_access(account_id: str, body: ModuleAccessUpdateIn, user=Depend
         await log_audit(user, 'access.update', 'employee', account_id, e.get('name', ''), upd)
         return {'ok': True}
     raise HTTPException(status_code=404, detail='Account not found')
+
+
+# ---------------- Hidden tiles (Work and Ledger tabs) ----------------
+# Tiles the owner keeps out of sight on the Work and Ledger tabs, shop-wide:
+# hidden for everyone who has them (staff and employees alike) until they
+# double-tap the tab's title. Keys are "<tab>:<tile>", e.g. "work:cash" or
+# "ledger:cash-ledger". Only hides the tile - access rules are unchanged.
+HIDDEN_TILES_DEFAULT = ['ledger:cash-ledger']   # the Cash Ledger was the first one hidden this way
+
+
+class HiddenTilesIn(BaseModel):
+    keys: List[str] = Field(default_factory=list, max_length=100)
+
+
+@router.get('/hidden-tiles')
+async def get_hidden_tiles(user=Depends(get_current)):
+    d = await db.settings.find_one({'id': 'hidden_tiles'}, {'_id': 0})
+    return {'keys': d.get('keys', []) if d else HIDDEN_TILES_DEFAULT}
+
+
+@router.put('/hidden-tiles')
+async def set_hidden_tiles(body: HiddenTilesIn, user=Depends(require_owner)):
+    keys = sorted({k for k in body.keys if re.fullmatch(r'(work|ledger):[a-z0-9_-]{1,40}', k)})
+    await db.settings.update_one({'id': 'hidden_tiles'}, {'$set': {'id': 'hidden_tiles', 'keys': keys}}, upsert=True)
+    await log_audit(user, 'settings.hidden_tiles', 'settings', 'hidden_tiles', ', '.join(keys)[:200])
+    return {'keys': keys}

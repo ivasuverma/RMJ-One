@@ -10,6 +10,7 @@ import { useTheme } from '@/src/theme/ThemeContext';
 import { ErrorState } from '@/src/components/ui';
 import { TabBarSpacer } from '@/src/components/GlassTabBar';
 import { StickyHeader, useScrolled, HeaderSpacer } from '@/src/components/ui/StickyHeader';
+import { useSecretTiles, SecretTitle, HiddenMark } from '@/src/components/SecretTiles';
 
 // Employee Ledger tab — the counterpart to the owner/admin Ledger tab, same
 // row style. Each row only appears when the owner has enabled that module for
@@ -57,6 +58,8 @@ export default function EmployeeLedgerScreen() {
   }, [hasCustomer, hasKarigar]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
+  // Tiles the owner hides stay out of sight until the "Ledger" title is double-tapped.
+  const secret = useSecretTiles('ledger');
   const rows: Row[] = [];
   rows.push({ key: 'my-ledger', label: 'My Ledger', icon: 'book-outline', route: `/ledger/${user?.id}`, summary: 'Your wages, advances and payments' });
   if (hasCustomer) rows.push({ key: 'customer-ledger', label: 'Customer Ledger', icon: 'person-outline', route: '/reports/customer-ledger', summary: custSummary || '…' });
@@ -67,7 +70,7 @@ export default function EmployeeLedgerScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="emp-ledger-screen">
       <StickyHeader scrolled={scrolled}>
-        <Text style={styles.h1}>Ledger</Text>
+        <SecretTitle text="Ledger" style={styles.h1} onTap={secret.onTitleTap} testID="emp-ledger-title" />
         <Text style={styles.sub}>Your account and the ledgers you have access to.</Text>
       </StickyHeader>
       <ScrollView onScroll={onScroll} scrollEventThrottle={16}
@@ -88,7 +91,7 @@ export default function EmployeeLedgerScreen() {
         )}
 
         <Text style={styles.sectionLabel}>Ledgers</Text>
-        {rows.map((r) => (
+        {secret.filter(rows).map((r) => (
           <Pressable
             key={r.key}
             onPress={() => router.push(r.route as any)}
@@ -97,7 +100,7 @@ export default function EmployeeLedgerScreen() {
           >
             <View style={styles.pi}><Ionicons name={r.icon} size={22} color={colors.brandSecondary} /></View>
             <View style={{ flex: 1, minWidth: 0 }}>
-              <Text style={styles.pt}>{r.label}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}><Text style={styles.pt}>{r.label}</Text>{secret.isHidden(r.key) && <HiddenMark />}</View>
               <Text style={styles.pd} numberOfLines={1}>{r.summary}</Text>
             </View>
             <Ionicons name="chevron-forward" size={18} color={colors.mutedText} />
