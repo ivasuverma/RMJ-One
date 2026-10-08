@@ -2,6 +2,7 @@ import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { Image } from 'expo-image';
 import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { api } from '@/src/api/client';
 import { REPAIR_STATUS_LABEL, RepairItemStatus } from '@/src/utils/repairStatus';
@@ -46,6 +47,7 @@ export default function RepairOrdersScreen() {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [items, setItems] = useState<Item[]>([]);
+  const [thumbs, setThumbs] = useState<Record<string, string>>({});
   const [pipe, setPipe] = useState<Pipe | null>(null);
   const initialFilter = (routeFilter && FILTER_KEYS.has(routeFilter as FilterKey) ? routeFilter : 'received') as FilterKey;
   const [filter, setFilter] = useState<FilterKey>(initialFilter);
@@ -65,6 +67,10 @@ export default function RepairOrdersScreen() {
         return;
       }
       setItems(res);
+      // One small photo per tag (taken at intake), in one call — same as Stock In/Out.
+      const ids = res.map((r) => r.id);
+      if (ids.length) api.get<Record<string, string>>(`/record-photos/thumbnails?ref_type=repair_item&ref_ids=${ids.join(',')}`).then(setThumbs).catch(() => setThumbs({}));
+      else setThumbs({});
     } catch (e: any) {
       setItems([]);
       setError(e?.detail || 'Failed to load repairs');
@@ -169,6 +175,13 @@ export default function RepairOrdersScreen() {
               testID={`item-${i.id}`}
             >
               <View style={styles.itemTop}>
+                {thumbs[i.id] ? (
+                  <Image source={{ uri: thumbs[i.id] }} style={styles.thumb} contentFit="cover" testID={`item-thumb-${i.id}`} />
+                ) : (
+                  <View style={styles.thumbFallback} testID={`item-thumb-fallback-${i.id}`}>
+                    <Ionicons name="construct-outline" size={20} color={colors.mutedText} />
+                  </View>
+                )}
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <Text style={styles.code}>{i.customer_name}</Text>
                   <Text style={styles.cust} numberOfLines={2}>
@@ -232,6 +245,9 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     padding: spacing.md, marginBottom: 10,
   },
   itemTop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
+  // The photo runs the full height of the details beside it (no empty space under it).
+  thumb: { width: 72, alignSelf: 'stretch', minHeight: 72, borderRadius: radius.md, backgroundColor: colors.surfaceTertiary, marginRight: 4 },
+  thumbFallback: { width: 72, alignSelf: 'stretch', minHeight: 72, borderRadius: radius.md, backgroundColor: colors.surfaceTertiary, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border, marginRight: 4 },
   code: { color: colors.onSurface, fontSize: 15, fontWeight: '600' },
   cust: { color: colors.mutedText, fontSize: 13, marginTop: 1 },
   cDesc: { color: colors.onSurfaceSecondary, fontWeight: '600' },
