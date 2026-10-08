@@ -12,6 +12,7 @@ import { UploadQueueBadge } from '@/src/components/UploadQueueBadge';
 import { AppSetupBanner } from '@/src/components/AppSetupBanner';
 import { TabBarSpacer } from '@/src/components/GlassTabBar';
 import { StickyHeader, useScrolled, HeaderSpacer } from '@/src/components/ui/StickyHeader';
+import { useSecretTiles, SecretTitle, HiddenMark } from '@/src/components/SecretTiles';
 
 // Employee Work hub — same card language as the admin Work board: an
 // "In progress" list of process rows (each showing its live state before you
@@ -59,6 +60,8 @@ export default function EmployeeWorkScreen() {
   const go = (route: string) => router.push(route as any);
 
   // In-progress process rows (pipeline-style), each gated on access + live data.
+  // Tiles the owner hides stay out of sight until the "Work" title is double-tapped.
+  const secret = useSecretTiles('work');
   const rows: Row[] = [];
   if (hasRepairs && repairDash) {
     rows.push({
@@ -112,7 +115,7 @@ export default function EmployeeWorkScreen() {
     <Pressable key={r.key} onPress={() => go(r.route)} style={({ pressed }) => [styles.prow, pressed && { opacity: 0.85 }]} testID={`emp-work-row-${r.key}`}>
       <View style={styles.pi}><Ionicons name={r.icon} size={22} color={colors.brandSecondary} /></View>
       <View style={{ flex: 1, minWidth: 0 }}>
-        <Text style={styles.pt}>{r.title}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}><Text style={styles.pt}>{r.title}</Text>{secret.isHidden(r.key) && <HiddenMark />}</View>
         <Text style={styles.pd} numberOfLines={1}>
           {r.segs.map((s, i) => (
             <Text key={i} style={s.tone === 'hot' ? { color: colors.onWarning } : s.tone === 'bad' ? { color: colors.onError } : s.tone === 'strong' ? { color: colors.onSurface, fontWeight: '700' } : undefined}>{s.text}</Text>
@@ -128,7 +131,7 @@ export default function EmployeeWorkScreen() {
       <StickyHeader scrolled={scrolled}>
         <View style={styles.titleRow}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.h1}>Work</Text>
+            <SecretTitle text="Work" style={styles.h1} onTap={secret.onTitleTap} testID="emp-work-title" />
             <Text style={styles.sub}>What&apos;s in progress — and what to do next.</Text>
           </View>
           <UploadQueueBadge />
@@ -144,7 +147,7 @@ export default function EmployeeWorkScreen() {
         <AppSetupBanner />
 
         <Text style={styles.sectionLabel}>In progress</Text>
-        {rows.map(renderRow)}
+        {secret.filter(rows).map(renderRow)}
 
         <View style={{ height: spacing.xxl }} />
         <TabBarSpacer />

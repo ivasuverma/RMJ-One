@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,6 +9,7 @@ import { money, orderedCodes } from '@/src/utils/cashLedger';
 import { spacing, radius, fonts, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { ErrorState } from '@/src/components/ui';
+import { useSecretTiles, SecretTitle, SecretGear, HiddenMark, HiddenTilesSheet } from '@/src/components/SecretTiles';
 import { TabBarSpacer } from '@/src/components/GlassTabBar';
 import { StickyHeader, useScrolled, HeaderSpacer } from '@/src/components/ui/StickyHeader';
 
@@ -98,19 +99,12 @@ export default function LedgerScreen() {
   }, [hasModule, user?.role]);
   useFocusEffect(useCallback(() => { load(); loadPrefs(); }, [load, loadPrefs]));
 
-  // Cash Ledger stays out of sight: double-tap the "Ledger" title to show it
-  // (and again to hide it). Hidden again whenever you leave this tab.
-  const [cashOpen, setCashOpen] = useState(false);
-  useFocusEffect(useCallback(() => () => setCashOpen(false), []));
-  const lastTap = useRef(0);
-  const titleTap = () => {
-    const now = Date.now();
-    if (now - lastTap.current < 350) { lastTap.current = 0; setCashOpen((v) => !v); }
-    else lastTap.current = now;
-  };
+  // Tiles the owner hides (shop-wide) stay out of sight until the "Ledger"
+  // title is double-tapped; the owner also gets a gear there to choose them.
+  const secret = useSecretTiles('ledger');
 
-  const rows: Row[] = [
-    ...(cashOpen && (hasModule('cash_ledger') || user?.role === 'owner')
+  const allRows: Row[] = [
+    ...(hasModule('cash_ledger') || user?.role === 'owner'
       ? [{ key: 'cash-ledger', group: 'People', label: 'Cash Ledger', icon: 'wallet-outline' as const, route: '/cash-ledger', summary: sum['cash-ledger'] || 'Cash you gave and got, person by person' }]
       : []),
     { key: 'customer-ledger', group: 'People', label: 'Customer Ledger', icon: 'person-outline', route: '/reports/customer-ledger', summary: sum['customer-ledger'] || '…' },
@@ -120,6 +114,7 @@ export default function LedgerScreen() {
     { key: 'metal-ledger', group: 'Gold', label: 'Metal Ledger', icon: 'diamond-outline', route: '/reports/metal-ledger', summary: sum['metal-ledger'] || '…' },
     { key: 'loss-ledger', group: 'Gold', label: 'Loss Ledger', icon: 'trending-down-outline', route: '/reports/loss-ledger', summary: sum['loss-ledger'] || '…' },
   ];
+  const rows = secret.filter(allRows);
 
   const idx = (k: string) => { const i = order.indexOf(k); return i === -1 ? 999 : i; };
   const inGroup = (g: string) => rows.filter((r) => r.group === g).sort((a, b) => idx(a.key) - idx(b.key));
@@ -136,9 +131,9 @@ export default function LedgerScreen() {
     <SafeAreaView style={styles.root} edges={['top']} testID="ledger-screen">
       <StickyHeader scrolled={scrolled}>
         <View style={styles.titleRow}>
-          {/* Plain text to look at — no button look or press feedback. */}
-          <View onStartShouldSetResponder={() => true} onResponderRelease={titleTap} style={styles.titleTap} testID="ledger-title">
-            <Text style={styles.h1} selectable={false}>Ledger</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <SecretTitle text="Ledger" style={styles.h1} onTap={secret.onTitleTap} testID="ledger-title" />
+            {secret.revealed && secret.canChoose && <SecretGear onPress={() => secret.setSettingsOpen(true)} testID="ledger-hidden-settings" />}
           </View>
           <Pressable onPress={() => setEditOrder((v) => !v)} hitSlop={8} testID="ledger-edit-order">
             <Text style={styles.editOrderText}>{editOrder ? 'Done' : 'Edit'}</Text>
@@ -177,7 +172,7 @@ export default function LedgerScreen() {
                   >
                     <View style={styles.pi}><Ionicons name={r.icon} size={22} color={colors.brandSecondary} /></View>
                     <View style={{ flex: 1, minWidth: 0 }}>
-                      <Text style={styles.pt}>{r.label}</Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center' }}><Text style={styles.pt}>{r.label}</Text>{secret.isHidden(r.key) && <HiddenMark />}</View>
                       <Text style={styles.pd} numberOfLines={1}>{r.summary}</Text>
                     </View>
                     {editOrder ? (
@@ -199,6 +194,8 @@ export default function LedgerScreen() {
         })}
         <TabBarSpacer />
       </ScrollView>
+      <HiddenTilesSheet visible={secret.settingsOpen} onClose={() => secret.setSettingsOpen(false)} tabLabel="Ledger"
+        tiles={allRows.map((r) => ({ key: r.key, title: r.label, icon: r.icon }))} hidden={secret.hiddenSet} onSave={secret.save} />
     </SafeAreaView>
   );
 }
@@ -206,7 +203,6 @@ export default function LedgerScreen() {
 const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   scroll: { padding: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.xxxl },
-  titleTap: { ...({ touchAction: 'manipulation', userSelect: 'none', WebkitTapHighlightColor: 'transparent' } as any) },
   titleRow: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' },
   h1: { color: colors.onSurface, fontSize: 30, fontWeight: '700', fontFamily: fonts.display, letterSpacing: -0.5 },
   sub: { color: colors.onSurfaceSecondary, fontSize: 15, marginTop: 6 },
