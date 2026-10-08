@@ -18,9 +18,8 @@ import { Sheet, useToast } from '@/src/components/ui';
 import { QuickDocCapture } from '@/src/components/QuickDocCapture';
 import { extractPdfJpegs } from '@/src/utils/imagesToPdf';
 import { UploadQueueBadge } from '@/src/components/UploadQueueBadge';
-import { TabBarSpacer } from '@/src/components/GlassTabBar';
 import { useScrolled , HeaderSpacer } from '@/src/components/ui/StickyHeader';
-import { ModuleHeader } from '@/src/components/ui/ModuleHeader';
+import { ModuleHeader, HeaderButton } from '@/src/components/ui/ModuleHeader';
 import { DateField } from '@/src/components/DateField';
 
 type Doc = {
@@ -276,13 +275,6 @@ export default function DocumentsScreen() {
     );
   };
 
-  const selectToggle = () => (canDelete ? (
-    <Pressable onPress={() => (selecting ? stopSelecting() : setSelecting(true))} style={styles.expandAllBtn} hitSlop={8} testID="doc-select">
-      <Ionicons name={selecting ? 'close-circle-outline' : 'checkmark-circle-outline'} size={14} color={colors.brandSecondary} />
-      <Text style={styles.expandAllText}>{selecting ? 'Cancel' : 'Select'}</Text>
-    </Pressable>
-  ) : null);
-
   const gridView = () => {
     const days = groupByDay(docs);
     const allOpen = days.length > 0 && days.every((g) => openDays[g.day] ?? true);
@@ -306,7 +298,6 @@ export default function DocumentsScreen() {
       {!!fromD && !!toD && fromD > toD && <Text style={styles.rangeErr}>From is after To.</Text>}
       {docs.length > 0 && (
         <View style={styles.listTools}>
-          {selectToggle()}
           <Pressable onPress={toggleAll} style={styles.expandAllBtn} hitSlop={8} testID="doc-expand-all">
             <Ionicons name={allOpen ? 'chevron-collapse' : 'chevron-expand'} size={14} color={colors.brandSecondary} />
             <Text style={styles.expandAllText}>{allOpen ? 'Collapse all' : 'Expand all'}</Text>
@@ -413,23 +404,15 @@ export default function DocumentsScreen() {
         backLabel={doneCat ? 'Folders' : 'Work'} onBack={() => (doneCat ? setDoneCat(null) : router.back())} scrolled={scrolled}
         onRefresh={() => { setRefreshing(true); load(); }} refreshing={refreshing}
         actions={<>
+          {/* Inside a folder: just Select (pick photos to delete) and, for the owner, delete-old. */}
+          {doneCat && canDelete && docs.length > 0 && (
+            <HeaderButton icon={selecting ? 'close' : 'checkmark-circle-outline'} active={selecting} label={selecting ? 'Cancel selecting' : 'Select'}
+              onPress={() => (selecting ? stopSelecting() : setSelecting(true))} testID="doc-select" />
+          )}
           {doneCat && role === 'owner' && (
-            <Pressable onPress={openPurge} hitSlop={8} style={styles.drivePill} accessibilityLabel="Delete old documents" testID="docs-purge">
-              <Ionicons name="trash-outline" size={14} color={colors.onError} />
-            </Pressable>
+            <HeaderButton icon="trash-outline" tint={colors.onError} label="Delete old documents" onPress={openPurge} testID="docs-purge" />
           )}
           <UploadQueueBadge />
-          <Pressable onPress={() => router.push('/settings/send-from-iphone' as any)} hitSlop={8} style={styles.drivePill}
-            accessibilityLabel="Send from iPhone" testID="docs-send-from-iphone">
-            <Ionicons name="share-outline" size={14} color={colors.brandSecondary} />
-          </Pressable>
-          <View style={styles.drivePill}>
-            {summary && summary.uploading_count > 0
-              ? <><Ionicons name="cloud-upload-outline" size={13} color={colors.onWarning} /><Text style={[styles.drivePillText, { color: colors.onWarning }]}>{summary.uploading_count} uploading</Text></>
-              : summary?.drive_connected
-                ? <><Ionicons name="cloud-done-outline" size={13} color={colors.onSuccess} /><Text style={[styles.drivePillText, { color: colors.onSuccess }]}>Synced</Text></>
-                : <><Ionicons name="phone-portrait-outline" size={13} color={colors.mutedText} /><Text style={[styles.drivePillText, { color: colors.mutedText }]}>Local</Text></>}
-          </View>
         </>}
       />
       <ScrollView onScroll={onListScroll} scrollEventThrottle={16} contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled"
@@ -477,7 +460,7 @@ export default function DocumentsScreen() {
         )}
 
         <View style={{ height: spacing.xxxl }} />
-        <TabBarSpacer />
+        <View style={{ height: 40 }} />
       </ScrollView>
 
       {selecting && listSelectable && (
@@ -909,14 +892,12 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   titleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
   h1: { color: colors.onSurface, fontSize: 32, fontWeight: '800', fontFamily: fonts.display, letterSpacing: -0.6 },
   sub: { color: colors.onSurfaceSecondary, fontSize: 15, marginTop: 6 },
-  drivePill: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 6, borderRadius: radius.pill, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border },
   purgeText: { color: colors.onSurfaceSecondary, fontSize: 14, lineHeight: 20, marginBottom: spacing.md },
   purgeSub: { color: colors.mutedText, fontSize: 13, marginTop: 8 },
   purgeBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: spacing.md, backgroundColor: '#D93025', borderRadius: radius.md, paddingVertical: 14 },
   purgeBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
   purgeNote: { color: colors.mutedText, fontSize: 12.5, lineHeight: 18, marginTop: spacing.md },
   titleInline: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  drivePillText: { fontSize: 12, fontWeight: '700' },
 
   seg: { flexDirection: 'row', backgroundColor: colors.surfaceTertiary, borderRadius: 12, padding: 4, gap: 3, marginTop: spacing.lg },
   sg: { flex: 1, alignItems: 'center', paddingVertical: 9, borderRadius: 9 },
@@ -1019,7 +1000,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   pickShade: { ...StyleSheet.absoluteFillObject, borderRadius: 8, backgroundColor: 'rgba(0,0,0,0.12)' },
   pickShadeOn: { backgroundColor: 'rgba(0,0,0,0.38)' },
   pickMark: { position: 'absolute', right: 4, top: 4 },
-  selBar: { position: 'absolute', left: spacing.lg, right: spacing.lg, bottom: 96, flexDirection: 'row', alignItems: 'center', gap: 12,
+  selBar: { position: 'absolute', left: spacing.lg, right: spacing.lg, bottom: 28, flexDirection: 'row', alignItems: 'center', gap: 12,
     backgroundColor: colors.surfaceSecondary, borderRadius: 16, paddingVertical: 10, paddingLeft: 16, paddingRight: 10, borderWidth: 1, borderColor: colors.border,
     ...({ boxShadow: '0 6px 24px rgba(0,0,0,0.18)' } as any) },
   selAll: { color: colors.brandSecondary, fontSize: 15, fontWeight: '600' },
