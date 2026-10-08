@@ -145,6 +145,60 @@ jobs:
             Write-Warning "Could not set the backup task's times: $($_.Exception.Message)"
           }
 
+          # ---- What happened since the last deploy (read BEFORE restarting) ----
+          # The deploy log can't easily be read from outside, so the important
+          # bits are also posted as warnings on the run (visible in the Actions
+          # summary and through the GitHub API): the backend's recent errors and
+          # restarts, Windows sleep/crash events, and any watchdog crash reports.
+          function Post-Warning($title, $text) {
+            if (-not $text) { return }
+            $t = ($text -replace '%', '%25' -replace "`r", '' -replace "`n", '%0A')
+            for ($i = 0; $i -lt $t.Length -and $i -lt 12000; $i += 3800) {
+              $len = [Math]::Min(3800, $t.Length - $i)
+              Write-Host ("::warning title={0}::{1}" -f $title, $t.Substring($i, $len))
+            }
+          }
+          try {
+            $errLog = ((nssm get RMJOneBackend AppStderr | Out-String) -replace "`0", '').Trim()
+            if ($errLog -and (Test-Path $errLog)) {
+              $hits = Get-Content $errLog -Tail 4000 | Select-String -Pattern 'Traceback|Error|Exception|Killed|MemoryError|Started server process|Shutting down|Finished server process|Application startup' | Select-Object -Last 40
+              Post-Warning 'Backend log (errors and restarts)' (($hits | ForEach-Object { $_.Line }) -join "`n")
+            }
+            $ev = Get-WinEvent -FilterHashtable @{ LogName = 'System'; StartTime = (Get-Date).AddDays(-2) } -ErrorAction SilentlyContinue |
+              Where-Object { $_.Id -in 41, 42, 107, 6008, 1074 -or ($_.Level -le 2 -and $_.Message -match 'RMJOne|Cloudflared|MongoDB|nssm') } | Select-Object -First 30
+            Post-Warning 'Windows events, last 2 days (sleep/wake, shutdowns, service errors)' (($ev | ForEach-Object { "{0:yyyy-MM-dd HH:mm}  {1} {2}: {3}" -f $_.TimeCreated, $_.ProviderName, $_.Id, (($_.Message -split "`n")[0]) }) -join "`n")
+            $sleep = (powercfg /query SCHEME_CURRENT SUB_SLEEP STANDBYIDLE | Select-String 'Current AC Power Setting Index' | Out-String).Trim()
+            Post-Warning 'PC sleep setting (0x00000000 = never sleeps)' $sleep
+            $incDir = Join-Path $repo 'ops\logs\incidents'
+            if (Test-Path $incDir) {
+              Get-ChildItem $incDir -Filter *.txt | Where-Object { $_.LastWriteTime -gt (Get-Date).AddDays(-14) } | Sort-Object Name | Select-Object -Last 3 |
+                ForEach-Object { Post-Warning "Watchdog report $($_.BaseName)" (Get-Content $_.FullName -Raw) }
+            }
+          } catch { Write-Warning "Could not collect diagnostics: $($_.Exception.Message)" }
+
+          # ---- Keep the server up on its own ----
+          # The backend and web services restart by themselves if they ever
+          # exit, their logs rotate instead of growing forever, and the
+          # "RMJOne Watchdog" task (ops/watchdog/rmj-watchdog.ps1) checks every
+          # 2 minutes that the backend actually answers - restarting it (and
+          # MongoDB / cloudflared) if not, with a crash report saved each time.
+          # Never fails the deploy.
+          foreach ($svc in @('RMJOneBackend', 'RMJOneWeb')) {
+            foreach ($kv in @(@('AppExit', 'Default', 'Restart'), @('AppRestartDelay', '5000'), @('AppRotateFiles', '1'), @('AppRotateOnline', '1'), @('AppRotateBytes', '10485760'))) {
+              try { & nssm set $svc @kv 2>&1 | Out-Null } catch { Write-Warning "nssm set $svc $($kv -join ' ') failed: $($_.Exception.Message)" }
+            }
+          }
+          try {
+            $wd = Join-Path $repo 'ops\watchdog\rmj-watchdog.ps1'
+            $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$wd`" -Repo `"$repo`""
+            $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 2)
+            $settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 5) -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+            Register-ScheduledTask -TaskName 'RMJOne Watchdog' -Action $action -Trigger $trigger -Settings $settings -User 'SYSTEM' -RunLevel Highest -Force | Out-Null
+            Write-Host '--- watchdog task registered (every 2 minutes) ---'
+          } catch {
+            Write-Warning "Could not set up the watchdog: $($_.Exception.Message)"
+          }
+
           Write-Host '--- restart backend ---'
           # `nssm restart` was observed to stop the service but not reliably
           # bring it back up on this box (confirmed: a plain `nssm start`

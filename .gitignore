@@ -101,3 +101,6 @@ RMJOne*.log
 
 # runtime data: cached customer documents/photos (never commit)
 backend/data/
+
+# Watchdog logs and crash reports on the shop PC
+ops/logs/
