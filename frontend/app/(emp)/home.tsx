@@ -21,7 +21,7 @@ import { haptics } from '@/src/utils/haptics';
 import { useToast } from '@/src/components/ui';
 import { TabBarSpacer } from '@/src/components/GlassTabBar';
 import { useCachedLoad } from '@/src/hooks/use-cached-load';
-import { RateTicker, QuickRow, QuickItem, NeedsSection, NotificationsSection, QUICK_ROUTE } from '@/src/components/home/sections';
+import { RateTicker, QuickRow, QuickItem, NeedsSection, NotificationsSection, QUICK_ROUTE, quickRoute } from '@/src/components/home/sections';
 import { QUICK_ICON } from '@/src/components/home/QuickSheets';
 import { HomeSummary, isOk } from '@/src/components/home/types';
 import { StickyHeader, useScrolled, HeaderSpacer } from '@/src/components/ui/StickyHeader';
@@ -219,7 +219,7 @@ export default function EmployeeHome() {
           // My Tasks otherwise lives in the Work hub; with no Work tab this is the way to it.
           ...(!employeeTabAccess(hasModule).work ? [{ key: 'tasks', label: 'My Tasks', icon: 'checkbox-outline', onPress: () => router.push('/(emp)/tasks' as any) }] as QuickItem[] : []),
           ...(isOk(summary?.quick_actions) ? summary!.quick_actions.tiles.filter((t) => QUICK_ROUTE[t.key]).map((t) => ({
-            key: t.key, label: t.label, icon: QUICK_ICON[t.key] || 'ellipse-outline', onPress: () => router.push(QUICK_ROUTE[t.key] as any),
+            key: t.key, label: t.label, icon: QUICK_ICON[t.key] || 'ellipse-outline', onPress: () => router.push(quickRoute(t) as any),
           })) : []),
         ]} />
 

@@ -18,7 +18,7 @@ import { GlassButton } from '@/src/components/ui/GlassButton';
 import { UploadQueueBadge } from '@/src/components/UploadQueueBadge';
 import { makeHomeStyles } from './styles';
 import { StaffSheet } from './StaffSheet';
-import { RateTicker, QuickRow, NeedsSection, NotificationsSection, SectionHead, Unavailable, MODULE_ICON, QUICK_ROUTE } from './sections';
+import { RateTicker, QuickRow, NeedsSection, NotificationsSection, SectionHead, Unavailable, MODULE_ICON, quickRoute } from './sections';
 import { QuickEditSheet, EmployeePickSheet, QUICK_ICON } from './QuickSheets';
 import { HomeSummary, isOk, QuickActions, StaffPerson } from './types';
 
@@ -126,7 +126,7 @@ export default function HomeBriefing() {
         {quick && (quick.tiles.length > 0 || quick.available.length > 0) && (
           <QuickRow onEdit={() => setEditQuick(true)} items={quick.tiles.map((t) => ({
             key: t.key, label: t.label, icon: QUICK_ICON[t.key] || 'ellipse-outline',
-            onPress: () => (t.key === 'advance' ? setPickAdvance(true) : go(QUICK_ROUTE[t.key])),
+            onPress: () => (t.key === 'advance' ? setPickAdvance(true) : go(quickRoute(t))),
           }))} />
         )}
       </>

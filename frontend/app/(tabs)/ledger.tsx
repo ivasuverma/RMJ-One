@@ -24,6 +24,8 @@ type Row = { key: string; group: string; label: string; icon: keyof typeof Ionic
 const GROUPS = ['People', 'Books', 'Gold'];
 const ORDER_KEY = 'rmj.ledger_order';    // the old per-device choice — read once and moved to the server
 const HIDDEN_KEY = 'rmj.ledger_hidden';
+const keepLocal = (o: string[], h: string[]) => { try { window.localStorage.setItem(ORDER_KEY, JSON.stringify(o)); window.localStorage.setItem(HIDDEN_KEY, JSON.stringify(h)); } catch { /* no storage */ } };
+const savePrefs = (o: string[], h: string[]) => { keepLocal(o, h); api.put('/me/ui-prefs', { ledger_order: o, ledger_hidden: h }).catch(() => {}); };
 
 const inr = (n: number) => `₹${Math.abs(Math.round(n)).toLocaleString('en-IN')}`;
 
@@ -33,14 +35,16 @@ export default function LedgerScreen() {
   const { user, hasModule } = useAuth();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
-  const [order, setOrder] = useState<string[]>([]);
-  const [hidden, setHidden] = useState<string[]>([]);
+  // Start from this device's copy of the layout so the tab opens already arranged
+  // (no flash of every row while the saved layout is fetched again).
+  const stored = (k: string): string[] => { try { const v = JSON.parse(window.localStorage.getItem(k) || '[]'); return Array.isArray(v) ? v : []; } catch { return []; } };
+  const [order, setOrder] = useState<string[]>(() => stored(ORDER_KEY));
+  const [hidden, setHidden] = useState<string[]>(() => stored(HIDDEN_KEY));
   const [editOrder, setEditOrder] = useState(false);
   const [sum, setSum] = useState<Record<string, string>>({});
   const [refreshing, setRefreshing] = useState(false);
   const [failed, setFailed] = useState(false);
 
-  const savePrefs = (o: string[], h: string[]) => { api.put('/me/ui-prefs', { ledger_order: o, ledger_hidden: h }).catch(() => {}); };
   const persistOrder = (keys: string[]) => { setOrder(keys); savePrefs(keys, hidden); };
   const toggleHidden = (key: string) => {
     const next = hidden.includes(key) ? hidden.filter((k) => k !== key) : [...hidden, key];
@@ -51,7 +55,7 @@ export default function LedgerScreen() {
   const loadPrefs = useCallback(async () => {
     try {
       const p = await api.get<{ ledger_order: string[]; ledger_hidden: string[] }>('/me/ui-prefs');
-      if (p.ledger_order.length || p.ledger_hidden.length) { setOrder(p.ledger_order); setHidden(p.ledger_hidden); return; }
+      if (p.ledger_order.length || p.ledger_hidden.length) { setOrder(p.ledger_order); setHidden(p.ledger_hidden); keepLocal(p.ledger_order, p.ledger_hidden); return; }
       const lo = typeof window !== 'undefined' ? JSON.parse(window.localStorage.getItem(ORDER_KEY) || '[]') : [];
       const lh = typeof window !== 'undefined' ? JSON.parse(window.localStorage.getItem(HIDDEN_KEY) || '[]') : [];
       if (lo.length || lh.length) { setOrder(lo); setHidden(lh); savePrefs(lo, lh); }

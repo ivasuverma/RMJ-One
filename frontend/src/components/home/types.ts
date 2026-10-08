@@ -16,7 +16,7 @@ export type Cash = {
   locations: CashLocation[]; can_edit: boolean; day_close_available: boolean;
 };
 
-export type QuickTile = { key: string; label: string; module: string };
+export type QuickTile = { key: string; label: string; module: string; add_only?: boolean };
 export type QuickActions = { tiles: QuickTile[]; available: QuickTile[]; hidden: string[] };
 
 export type NeedRow = {

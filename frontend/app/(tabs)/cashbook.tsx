@@ -57,7 +57,10 @@ export default function CashBookScreen() {
   // No bottom bar on Cash Book, so the action buttons sit just above the home indicator.
   const bottomInset = useSafeAreaInsets().bottom;
   const router = useRouter();
-  const { manage, new: newEntry } = useLocalSearchParams<{ manage?: string; new?: string }>();
+  const { manage, new: newEntry, only } = useLocalSearchParams<{ manage?: string; new?: string; only?: string }>();
+  // ?only=1 (Home quick action while the Cash Book tile is hidden): just the entry form — it closes after
+  // saving or Back, and the day's entries and balance are never shown.
+  const addOnly = only === '1' && (newEntry === 'received' || newEntry === 'paid');
   const { colors, scheme } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const { user, hasRight } = useAuth();
@@ -217,6 +220,7 @@ export default function CashBookScreen() {
       } else {
         await api.post('/cashbook/entries', payload);
       }
+      if (addOnly) { notify('Saved', `${entryType === 'received' ? 'Cash received' : 'Cash paid'} recorded`); router.back(); return; }
       setMode('view'); setLoading(true);
       await load(date, counterId);
     } catch (e: any) { notify('Failed', e?.detail || 'Please try again'); }
@@ -319,7 +323,7 @@ export default function CashBookScreen() {
   const headerTitle =mode === 'settings' ? (counterForm ? (counterForm.id ? 'Edit Counter' : 'Add Counter') : 'Cash Book Counters') : mode === 'form' ? (editing ? 'Edit Entry' : entryType === 'received' ? 'Cash Received' : 'Cash Paid') : 'Cash Book';
   const onBack = () => {
     if (mode === 'settings' && counterForm) { setCounterForm(null); return; }
-    if (mode !== 'view') { setMode('view'); return; }
+    if (mode !== 'view' && !addOnly) { setMode('view'); return; }
     router.back();
   };
 
@@ -355,9 +359,9 @@ export default function CashBookScreen() {
     <SafeAreaView style={[styles.root, pageTone && { backgroundColor: pageTone.pageBg }]} edges={['top']} testID="cashbook-screen">
       <ModuleHeader
         title={headerTitle} onBack={onBack}
-        backLabel={mode === 'settings' && counterForm ? 'Counters' : mode !== 'view' ? 'Cash Book' : 'Work'}
-        onRefresh={mode === 'view' ? () => { setRefreshing(true); load(date, counterId); } : undefined} refreshing={refreshing}
-        actions={mode === 'view' ? <>
+        backLabel={addOnly ? 'Home' : mode === 'settings' && counterForm ? 'Counters' : mode !== 'view' ? 'Cash Book' : 'Work'}
+        onRefresh={mode === 'view' && !addOnly ? () => { setRefreshing(true); load(date, counterId); } : undefined} refreshing={refreshing}
+        actions={mode === 'view' && !addOnly ? <>
           <HeaderButton icon="sparkles-outline" tint={colors.brandSecondary} label="Switch to the new Cash Book view" testID="cashbook-new-view-btn" onPress={() => router.push('/cashbook/v2' as any)} />
           {isOwner && <HeaderButton icon="trash-outline" tint={colors.onError} label="Delete old Cash Book entries" testID="cashbook-purge-btn" onPress={openPurge} />}
           {isOwner && <HeaderButton icon="settings-outline" label="Cash Book counters" testID="cashbook-settings-btn" onPress={openManageCounters} />}
@@ -365,7 +369,7 @@ export default function CashBookScreen() {
       />
       <HeaderSpacer />
 
-      {mode === 'view' && (
+      {mode === 'view' && !addOnly && (
         <>
           {!isEmployee && (
             <View style={styles.dayNav}>
