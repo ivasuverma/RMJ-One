@@ -176,7 +176,7 @@ export default function RepairOrdersScreen() {
             >
               <View style={styles.itemTop}>
                 {thumbs[i.id] ? (
-                  <Image source={{ uri: thumbs[i.id] }} style={styles.thumb} testID={`item-thumb-${i.id}`} />
+                  <Image source={{ uri: thumbs[i.id] }} style={styles.thumb} contentFit="cover" testID={`item-thumb-${i.id}`} />
                 ) : (
                   <View style={styles.thumbFallback} testID={`item-thumb-fallback-${i.id}`}>
                     <Ionicons name="construct-outline" size={20} color={colors.mutedText} />
@@ -245,8 +245,9 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     padding: spacing.md, marginBottom: 10,
   },
   itemTop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
-  thumb: { width: 44, height: 44, borderRadius: radius.sm, backgroundColor: colors.surfaceTertiary, marginRight: 4 },
-  thumbFallback: { width: 44, height: 44, borderRadius: radius.sm, backgroundColor: colors.surfaceTertiary, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border, marginRight: 4 },
+  // The photo runs the full height of the details beside it (no empty space under it).
+  thumb: { width: 72, alignSelf: 'stretch', minHeight: 72, borderRadius: radius.md, backgroundColor: colors.surfaceTertiary, marginRight: 4 },
+  thumbFallback: { width: 72, alignSelf: 'stretch', minHeight: 72, borderRadius: radius.md, backgroundColor: colors.surfaceTertiary, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border, marginRight: 4 },
   code: { color: colors.onSurface, fontSize: 15, fontWeight: '600' },
   cust: { color: colors.mutedText, fontSize: 13, marginTop: 1 },
   cDesc: { color: colors.onSurfaceSecondary, fontWeight: '600' },
