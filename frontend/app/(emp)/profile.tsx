@@ -23,7 +23,7 @@ const THEME_LABEL: Record<ThemePreference, string> = { system: 'System', light: 
 
 export default function EmployeeProfile() {
   const { scrolled, onScroll } = useScrolled();
-  const { user, logout } = useAuth();
+  const { user, logout, hasModule } = useAuth();
   const { colors, preference, setPreference } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const router = useRouter();
@@ -116,6 +116,10 @@ export default function EmployeeProfile() {
         <GlassSettings testID="emp-glass-settings" />
         <Row icon="home-outline" label="Home screen" sub="Reorder or hide parts of Home"
           onPress={() => router.push('/settings/home-screen' as any)} testID="emp-settings-home-screen" />
+        {hasModule('documents') && (
+          <Row icon="share-outline" label="Send from iPhone" sub={'"Send to RMJ One" in the iPhone Share menu'}
+            onPress={() => router.push('/settings/send-from-iphone' as any)} testID="emp-settings-send-from-iphone" />
+        )}
 
         {/* Sign in */}
         <Text style={styles.groupTitle}>Sign in</Text>

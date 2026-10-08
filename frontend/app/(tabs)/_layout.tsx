@@ -132,11 +132,11 @@ export default function OwnerTabsLayout() {
           unchanged (a group folder adds no URL segment), so nothing that
           links to /cashbook, /documents, /samples, /loans, or /repairs
           needed updating. Gold Loans, Stock In/Out, Repairs, Attendance and
-          Cash Book hide the bottom bar (their header's back button is the way
-          out); Documents keeps it. */}
+          Cash Book and Documents hide the bottom bar (their header's back button
+          is the way out). */}
       <Tabs.Screen name="cashbook" options={{ href: null, tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="attendance" options={{ href: null, tabBarStyle: { display: 'none' } }} />
-      <Tabs.Screen name="documents" options={{ href: null }} />
+      <Tabs.Screen name="documents" options={{ href: null, tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="samples" options={{ href: null, tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="loans" options={{ href: null, tabBarStyle: { display: 'none' } }} />
       <Tabs.Screen name="repairs" options={{ href: null, tabBarStyle: { display: 'none' } }} />
