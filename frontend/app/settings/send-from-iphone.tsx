@@ -33,7 +33,6 @@ export default function SendFromIphoneScreen() {
   const [mine, setMine] = useState<Mine | null>(null);
   const [key, setKey] = useState<string | null>(null);     // only right after making it
   const [cats, setCats] = useState<DocCategory[]>([]);
-  const [cat, setCat] = useState<string>('');
   const [busy, setBusy] = useState(false);
   const [links, setLinks] = useState<Link[]>([]);
 
@@ -43,14 +42,12 @@ export default function SendFromIphoneScreen() {
   }, [isOwner]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
   useEffect(() => {
-    api.get<DocCategory[]>('/document-categories').then((cs) => {
-      const list = cs.filter((c) => c.can_view !== false && !isOutstandingFolder(c));
-      setCats(list);
-      setCat((cur) => cur || (list.find((c) => c.key === 'bank_statements') || list[0])?.key || '');
-    }).catch(() => {});
+    api.get<DocCategory[]>('/document-categories').then((cs) => setCats(cs.filter((c) => c.can_view !== false && !isOutstandingFolder(c)))).catch(() => {});
   }, []);
 
-  const link = key ? `${BASE}/api/inbox/${key}${cat ? `?c=${encodeURIComponent(cat)}` : ''}` : '';
+  // The shortcut first reads the category list, asks which one, then sends the file there.
+  const link = key ? `${BASE}/api/inbox/${key}` : '';
+  const listLink = link ? `${link}/categories` : '';
 
   const copy = async (text: string, what = 'Copied') => {
     try {
@@ -89,20 +86,18 @@ export default function SendFromIphoneScreen() {
         <View style={styles.card}>
           {!mine ? <ActivityIndicator color={colors.brandPrimary} /> : key ? (
             <>
-              <Text style={styles.label}>Files go into</Text>
-              <View style={styles.chips}>
-                {cats.map((c) => (
-                  <Pressable key={c.key} onPress={() => setCat(c.key)} style={[styles.chip, cat === c.key && styles.chipOn]} testID={`iphone-cat-${c.key}`}>
-                    <Text style={[styles.chipText, cat === c.key && styles.chipTextOn]}>{c.label}</Text>
-                  </Pressable>
-                ))}
-              </View>
-              <Text style={styles.hint}>You can change the category of any document later in the app.</Text>
-              <Text style={styles.link} selectable testID="iphone-link">{link}</Text>
-              <Pressable onPress={() => copy(link, 'Link copied — paste it in step 4 below')} style={styles.primary} testID="iphone-copy-link">
-                <Ionicons name="copy-outline" size={18} color={colors.onBrandPrimary} /><Text style={styles.primaryText}>Copy link</Text>
+              <Text style={styles.hint}>Every time you send, the iPhone asks which category to save in{cats.length ? ` (${cats.map((c) => c.label).join(', ')})` : ''}.</Text>
+              <Text style={styles.label}>A · Category list link (step 4)</Text>
+              <Text style={styles.link} selectable testID="iphone-list-link">{listLink}</Text>
+              <Pressable onPress={() => copy(listLink, 'Category list link copied — paste it in step 4')} style={styles.secondaryWide} testID="iphone-copy-list-link">
+                <Text style={styles.secondaryText}>Copy link A</Text>
               </Pressable>
-              <Text style={styles.warn}>This link uploads documents as you — keep it to your own phone. It&apos;s shown only now.</Text>
+              <Text style={[styles.label, { marginTop: 6 }]}>B · Send link (step 7)</Text>
+              <Text style={styles.link} selectable testID="iphone-link">{link}</Text>
+              <Pressable onPress={() => copy(link, 'Send link copied — paste it in step 7')} style={styles.primary} testID="iphone-copy-link">
+                <Ionicons name="copy-outline" size={18} color={colors.onBrandPrimary} /><Text style={styles.primaryText}>Copy link B</Text>
+              </Pressable>
+              <Text style={styles.warn}>These links upload documents as you — keep them to your own phone. They&apos;re shown only now, so set up the shortcut before leaving this screen.</Text>
             </>
           ) : mine.exists ? (
             <>
@@ -112,7 +107,7 @@ export default function SendFromIphoneScreen() {
                   Set up {mine.created_at ? istDisplayDate(mine.created_at) : ''}{mine.uses ? ` · used ${mine.uses} time${mine.uses === 1 ? '' : 's'}` : ' · not used yet'}
                 </Text>
               </View>
-              <Text style={styles.hint}>For safety the link can&apos;t be shown again. To set up another iPhone, make a new link (the old one stops working).</Text>
+              <Text style={styles.hint}>For safety the link can&apos;t be shown again. To set up another iPhone — or to switch an older shortcut to asking for the category each time — make a new link (the old one stops working).</Text>
               <View style={styles.row2}>
                 <Pressable onPress={remake} disabled={busy} style={styles.secondary} testID="iphone-remake"><Text style={styles.secondaryText}>Make a new link</Text></Pressable>
                 <Pressable onPress={turnOff} style={styles.secondary} testID="iphone-off"><Text style={[styles.secondaryText, { color: colors.onError }]}>Turn off</Text></Pressable>
@@ -130,18 +125,21 @@ export default function SendFromIphoneScreen() {
           <Step n={1} styles={styles}>Open the <Text style={styles.b}>Shortcuts</Text> app (it&apos;s on every iPhone) and tap <Text style={styles.b}>+</Text> at the top right.</Step>
           <Step n={2} styles={styles}>Tap the name at the top and call it <Text style={styles.b}>Send to RMJ One</Text>.</Step>
           <Step n={3} styles={styles}>Tap the <Text style={styles.b}>ⓘ</Text> (or the name › <Text style={styles.b}>Details</Text>), turn on <Text style={styles.b}>Show in Share Sheet</Text>, then <Text style={styles.b}>Done</Text>.</Step>
-          <Step n={4} styles={styles}>Tap <Text style={styles.b}>Search Actions</Text> and add <Text style={styles.b}>Get Contents of URL</Text>. Shortcuts puts <Text style={styles.b}>Shortcut Input</Text> where the address goes — tap it, <Text style={styles.b}>Clear</Text> it, and paste your link there instead.</Step>
-          <Step n={5} styles={styles}>Tap the <Text style={styles.b}>›</Text> on that action: <Text style={styles.b}>Method</Text> → POST, <Text style={styles.b}>Request Body</Text> → Form, <Text style={styles.b}>Add new field</Text> → File. Name it <Text style={styles.code}>file</Text> and for its value choose <Text style={styles.b}>Shortcut Input</Text>.</Step>
-          <Step n={6} styles={styles}>Add the action <Text style={styles.b}>Show Notification</Text> and set its text to <Text style={styles.b}>Contents of URL</Text> — it tells you where the file was saved.</Step>
-          <Step n={7} styles={styles} last>Tap <Text style={styles.b}>Done</Text>. In the Share menu, <Text style={styles.b}>Send to RMJ One</Text> is near the end — tap <Text style={styles.b}>Edit Actions</Text> there to move it up.</Step>
-          <Pressable onPress={() => copy('file', 'Copied “file”')} style={styles.secondaryWide} testID="iphone-copy-file">
-            <Text style={styles.secondaryText}>Copy the field name “file”</Text>
-          </Pressable>
+          <Step n={4} styles={styles}>Tap <Text style={styles.b}>Search Actions</Text> and add <Text style={styles.b}>Get Contents of URL</Text>. Shortcuts puts <Text style={styles.b}>Shortcut Input</Text> where the address goes — tap it, <Text style={styles.b}>Clear</Text> it, and paste <Text style={styles.b}>link A</Text> (the category list).</Step>
+          <Step n={5} styles={styles}>Add <Text style={styles.b}>Split Text</Text> (it splits <Text style={styles.b}>Contents of URL</Text>) and set it to <Text style={styles.b}>New Lines</Text>.</Step>
+          <Step n={6} styles={styles}>Add <Text style={styles.b}>Choose from List</Text> (it uses <Text style={styles.b}>Split Text</Text>). Tap the <Text style={styles.b}>›</Text> and set the prompt to <Text style={styles.b}>Save in which category?</Text></Step>
+          <Step n={7} styles={styles}>Add another <Text style={styles.b}>Get Contents of URL</Text> and put <Text style={styles.b}>link B</Text> as its address. Tap its <Text style={styles.b}>›</Text>: <Text style={styles.b}>Method</Text> → POST, <Text style={styles.b}>Request Body</Text> → Form. <Text style={styles.b}>Add new field</Text> → File, named <Text style={styles.code}>file</Text>, value <Text style={styles.b}>Shortcut Input</Text>. <Text style={styles.b}>Add new field</Text> → Text, named <Text style={styles.code}>category</Text>, value <Text style={styles.b}>Chosen Item</Text>.</Step>
+          <Step n={8} styles={styles}>Add <Text style={styles.b}>Show Notification</Text> and set its text to <Text style={styles.b}>Contents of URL</Text> — it tells you where the file was saved.</Step>
+          <Step n={9} styles={styles} last>Tap <Text style={styles.b}>Done</Text>. In the Share menu, <Text style={styles.b}>Send to RMJ One</Text> is near the end — tap <Text style={styles.b}>Edit Actions</Text> there to move it up.</Step>
+          <View style={styles.row2}>
+            <Pressable onPress={() => copy('file', 'Copied “file”')} style={styles.secondary} testID="iphone-copy-file"><Text style={styles.secondaryText}>Copy “file”</Text></Pressable>
+            <Pressable onPress={() => copy('category', 'Copied “category”')} style={styles.secondary} testID="iphone-copy-category"><Text style={styles.secondaryText}>Copy “category”</Text></Pressable>
+          </View>
         </View>
 
         <Text style={styles.groupTitle}>3 · Use it</Text>
         <View style={styles.card}>
-          <Text style={styles.body}>Open the PDF in WhatsApp, Mail or Files → <Text style={styles.b}>Share</Text> → <Text style={styles.b}>Send to RMJ One</Text>. A notification says it&apos;s saved; record it in Documents › Pending. Several files at once work too.</Text>
+          <Text style={styles.body}>Open the PDF or photo in WhatsApp, Mail or Files → <Text style={styles.b}>Share</Text> → <Text style={styles.b}>Send to RMJ One</Text> → pick the category. A notification says where it&apos;s saved; record it in Documents › Pending. Several files at once work too.</Text>
         </View>
 
         {isOwner && links.length > 0 && (
@@ -184,11 +182,6 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   groupTitle: { color: colors.brandSecondary, fontSize: 11, letterSpacing: 1, textTransform: 'uppercase', marginTop: spacing.lg, marginBottom: spacing.sm, marginHorizontal: 4 },
   card: { backgroundColor: colors.surfaceSecondary, borderRadius: 18, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, padding: spacing.md, gap: 8 },
   label: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: '600' },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface },
-  chipOn: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
-  chipText: { color: colors.onSurface, fontSize: 13, fontWeight: '600' },
-  chipTextOn: { color: colors.onBrandPrimary },
   hint: { color: colors.mutedText, fontSize: 12.5, lineHeight: 18 },
   warn: { color: colors.onWarning, fontSize: 12.5, lineHeight: 18 },
   link: {
