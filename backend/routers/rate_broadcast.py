@@ -6,8 +6,9 @@ message stays on OpenWA, whose shop number a bulk send could get banned.
 
 Two lists, one Rate Subscribers collection (kept apart from the repair
 Customers, which each mirror into the ledger), split by `plan`:
-  daily  — people who asked: sent START/DAILY to the Meta number (the
-           website's "Get the daily rate on WhatsApp" button pre-fills it).
+  daily  — people who asked: sent START/DAILY to the shop's WhatsApp
+           (OpenWA — the website's "Get the daily rate on WhatsApp" button
+           pre-fills it) or to the Meta number.
            Sent every day at `daily_time`.
   weekly — the shop's imported customer list (Excel/CSV), or anyone who
            replied WEEKLY. Sent once a week at `weekday`/`time`.
@@ -427,18 +428,39 @@ async def handle_subscribe_reply(mobile: str, text: str, source: str = 'whatsapp
     return "You'll get our rates once a week. Reply DAILY for every day, or STOP anytime to stop."
 
 
+# The website's "Get the daily rate on WhatsApp" button opens the shop's own
+# WhatsApp (the OpenWA number) with START typed in. START there is answered by
+# routers/whatsapp_bot.py, which puts them on the same daily list as before
+# (source 'shop_whatsapp'). Changeable in Rate Broadcast > Number.
+DEFAULT_SIGNUP_NUMBER = '919781800888'
+
+
+async def signup_number() -> str:
+    doc = await db.settings.find_one({'id': 'rate_broadcast'}, {'_id': 0, 'signup_number': 1}) or {}
+    return doc.get('signup_number') or DEFAULT_SIGNUP_NUMBER
+
+
 async def subscribe_link() -> Optional[str]:
-    """wa.me link to the Meta number with START pre-filled — for the website
-    button and a printable QR at the counter. Cached: the number rarely changes."""
-    import whatsapp_meta
-    cache = await db.settings.find_one({'id': 'rate_broadcast_link'}, {'_id': 0}) or {}
-    phone = cache.get('phone')
-    if not phone and whatsapp_meta.is_configured():
-        st = await whatsapp_meta.get_status()
-        phone = re.sub(r'\D', '', st.get('phone') or '')
-        if phone:
-            await db.settings.update_one({'id': 'rate_broadcast_link'}, {'$set': {'id': 'rate_broadcast_link', 'phone': phone}}, upsert=True)
+    """wa.me link to the shop's WhatsApp with START pre-filled — for the website
+    button and a printable QR at the counter."""
+    phone = await signup_number()
     return f'https://wa.me/{phone}?text=START' if phone else None
+
+
+class SignupNumberIn(BaseModel):
+    number: str
+
+
+@router.put('/rate-broadcast/signup-number')
+async def set_signup_number(body: SignupNumberIn, user: dict = Depends(require_broadcast)):
+    digits = re.sub(r'\D', '', body.number)
+    if len(digits) == 10:
+        digits = '91' + digits
+    if not 11 <= len(digits) <= 15:
+        raise HTTPException(status_code=400, detail='Enter the WhatsApp number with country code, e.g. 91 97818 00888')
+    await db.settings.update_one({'id': 'rate_broadcast'}, {'$set': {'id': 'rate_broadcast', 'signup_number': digits}}, upsert=True)
+    await log_audit(user, 'rate_broadcast.signup_number', 'settings', 'rate_broadcast', digits)
+    return {'number': digits, 'url': await subscribe_link()}
 
 
 # ---------------- public (no auth) ----------------
@@ -476,6 +498,7 @@ async def overview(_: dict = Depends(require_broadcast)):
         'buttons': [b['text'] for b in TEMPLATE_BUTTONS],
         'photo_url': await photo_url(), 'photo_custom': (await photo_url()) != DEFAULT_PHOTO_URL,
         'subscribe_link': await subscribe_link(),
+        'signup_number': await signup_number(),
         'template': {**(await whatsapp_meta.template_status(TEMPLATE_NAME)), 'name': TEMPLATE_NAME},
         'meta_configured': whatsapp_meta.is_configured(),
         'sending': await db.rate_broadcasts.find({'status': 'sending'}, {'_id': 0}).to_list(5),

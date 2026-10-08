@@ -30,6 +30,9 @@ export default function BroadcastNumberScreen() {
   const toast = useToast();
   const [meta, setMeta] = useState<MetaStatus | null>(null);
   const [link, setLink] = useState<string | null>(null);
+  // Sign-ups (the website button / counter QR) go to the shop's own WhatsApp (OpenWA).
+  const [signup, setSignup] = useState('');
+  const [savingSignup, setSavingSignup] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [mobile, setMobile] = useState('');
@@ -48,11 +51,21 @@ export default function BroadcastNumberScreen() {
         api.get<{ url: string | null }>('/public/rate-broadcast/subscribe').catch(() => ({ url: null })),
       ]);
       setMeta(m); setLink(l.url);
+      api.get<{ signup_number?: string }>('/rate-broadcast/overview').then((o) => setSignup(o.signup_number ? `+${o.signup_number}` : '')).catch(() => {});
       api.get<Diag>('/rate-broadcast/diagnostics').then(setDiag).catch(() => setDiag(null));
     } catch (e: any) { toast.error(e?.detail || 'Could not load'); }
     finally { setLoaded(true); setRefreshing(false); }
   }, [toast]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  const saveSignup = async () => {
+    setSavingSignup(true);
+    try {
+      const r = await api.put<{ number: string; url: string }>('/rate-broadcast/signup-number', { number: signup });
+      setSignup(`+${r.number}`); setLink(r.url); toast.success('Sign-up number saved');
+    } catch (e: any) { toast.error(e?.detail || 'Could not save'); }
+    finally { setSavingSignup(false); }
+  };
 
   const sendTest = async () => {
     setSending(true);
@@ -247,15 +260,23 @@ export default function BroadcastNumberScreen() {
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Subscribe link</Text>
             <Text style={styles.body}>
-              Opens WhatsApp to this number with START typed in — one tap and a customer is on the daily list. It’s the
-              “Get the daily rate on WhatsApp” button on rmj.co.in; print it as a QR code for the counter.
+              Opens the shop’s own WhatsApp (OpenWA) with START typed in — one tap and a customer is on the daily list in
+              People. It’s the “Get the daily rate on WhatsApp” button on rmj.co.in; print it as a QR code for the counter.
             </Text>
+            <Text style={styles.hint}>Shop WhatsApp number for sign-ups</Text>
+            <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+              <TextInput value={signup} onChangeText={setSignup} keyboardType="phone-pad" placeholder="+91 97818 00888" placeholderTextColor={colors.mutedText}
+                style={[styles.input, styles.flex1]} testID="broadcast-signup-number" />
+              <Pressable onPress={saveSignup} disabled={savingSignup || !signup.trim()} style={[styles.btn, !signup.trim() && { opacity: 0.5 }]} testID="broadcast-signup-save" accessibilityRole="button">
+                {savingSignup ? <ActivityIndicator color={colors.brandSecondary} /> : <Text style={styles.btnText}>Save</Text>}
+              </Pressable>
+            </View>
             {link ? (
               <Pressable onPress={copyLink} style={styles.linkBox} accessibilityRole="button" accessibilityLabel="Copy subscribe link" testID="broadcast-subscribe-link">
                 <Text style={[styles.linkText, styles.flex1]} numberOfLines={1}>{link}</Text>
                 <Ionicons name="copy-outline" size={16} color={colors.brandSecondary} />
               </Pressable>
-            ) : <Text style={styles.hint}>Appears once the number is connected.</Text>}
+            ) : <Text style={styles.hint}>Appears once a sign-up number is saved.</Text>}
           </View>
 
           <View style={styles.card}>
