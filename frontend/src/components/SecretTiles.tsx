@@ -16,13 +16,29 @@ import { haptics } from '@/src/utils/haptics';
 export type TileTab = 'work' | 'ledger';
 export type TileInfo = { key: string; title: string; icon: keyof typeof Ionicons.glyphMap };
 
+// The last known list, kept in memory and on the device, so a tab opens with its
+// tiles already hidden instead of flashing them while the server is asked again.
+const STORE_KEY = 'rmj.hidden_tiles';
+let memo: string[] | null = null;
+const readStored = (): string[] | null => {
+  if (memo) return memo;
+  try { const v = JSON.parse(localStorage.getItem(STORE_KEY) || 'null'); if (Array.isArray(v)) memo = v; } catch { /* no storage */ }
+  return memo;
+};
+const remember = (keys: string[]) => {
+  memo = keys;
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(keys)); } catch { /* no storage */ }
+};
+
 export function useSecretTiles(tab: TileTab) {
   const { user } = useAuth();
-  const [keys, setKeys] = useState<string[]>(['ledger:cash-ledger']);   // until loaded: the server's default
+  // null = not known yet (first ever open): every tile stays out until the list arrives.
+  const [keys, setKeysState] = useState<string[] | null>(readStored);
+  const setKeys = (k: string[]) => { remember(k); setKeysState(k); };
   const [revealed, setRevealed] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   useFocusEffect(useCallback(() => {
-    api.get<{ keys: string[] }>('/hidden-tiles').then((r) => setKeys(r.keys || [])).catch(() => {});
+    api.get<{ keys: string[] }>('/hidden-tiles').then((r) => setKeys(r.keys || [])).catch(() => { if (!memo) setKeysState(['ledger:cash-ledger']); });
     return () => { setRevealed(false); setSettingsOpen(false); };
   }, []));
   const lastTap = useRef(0);
@@ -31,11 +47,11 @@ export function useSecretTiles(tab: TileTab) {
     if (now - lastTap.current < 350) { lastTap.current = 0; setRevealed((v) => !v); }
     else lastTap.current = now;
   };
-  const hiddenSet = useMemo(() => new Set(keys.filter((k) => k.startsWith(`${tab}:`)).map((k) => k.slice(tab.length + 1))), [keys, tab]);
+  const hiddenSet = useMemo(() => new Set((keys || []).filter((k) => k.startsWith(`${tab}:`)).map((k) => k.slice(tab.length + 1))), [keys, tab]);
   const isHidden = (key: string) => hiddenSet.has(key);
-  const filter = <T extends { key: string }>(rows: T[]) => (revealed ? rows : rows.filter((r) => !hiddenSet.has(r.key)));
+  const filter = <T extends { key: string }>(rows: T[]) => (revealed ? rows : keys === null ? [] : rows.filter((r) => !hiddenSet.has(r.key)));
   const save = async (tabKeys: string[]) => {
-    const next = [...keys.filter((k) => !k.startsWith(`${tab}:`)), ...tabKeys.map((k) => `${tab}:${k}`)];
+    const next = [...(keys || []).filter((k) => !k.startsWith(`${tab}:`)), ...tabKeys.map((k) => `${tab}:${k}`)];
     const r = await api.put<{ keys: string[] }>('/hidden-tiles', { keys: next });
     setKeys(r.keys);
   };
