@@ -31,14 +31,13 @@ type Shot = { id: string; blob: Blob; thumb: string };
 
 const newId = () => ((typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`);
 const monthLabel = (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
-const dayLabel = (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
 const signed = (n: number, code: string) => `${n < 0 ? '−' : ''}${money(n, code)}`;
 
-// Three ways to read the same entries; the choice is remembered on this device.
-type ViewKey = 'list' | 'statement' | 'daily';
+// Two ways to read the same entries; the choice is remembered on this device.
+type ViewKey = 'list' | 'statement';
 const VIEW_KEY = 'rmj.cash_ledger_view';
 const savedView = (): ViewKey => {
-  try { const v = localStorage.getItem(VIEW_KEY); if (v === 'statement' || v === 'daily') return v; } catch { /* no storage */ }
+  try { const v = localStorage.getItem(VIEW_KEY); if (v === 'statement') return v; } catch { /* no storage */ }
   return 'list';
 };
 
@@ -124,11 +123,10 @@ export default function CashLedgerAccountScreen() {
   const heroBal: Balances = grp ? grp.balances : acc?.balances || {};
   const codes = orderedCodes(heroBal);
   const totalCodes = acc ? orderedCodes(acc.balances) : [];
-  // On the person's page, Entries and Day-wise list every entry — general and
-  // every group's, each tagged with its group — and Bal is the person's whole
-  // running balance. The Statement keeps general entries with one total line
-  // per group; a group's own page shows just that group.
-  const allEntries = !group && view !== 'statement';
+  // On the person's page, Entries and Statement list every entry — general and
+  // every group's, each tagged with its group, by date — and the balance is the
+  // person's whole running balance. A group's own page shows just that group.
+  const allEntries = !group;
   const withTotalBal = useMemo(() => {
     const run: Record<string, number> = {};
     const after = new Map<string, number>();
@@ -139,7 +137,7 @@ export default function CashLedgerAccountScreen() {
     return (entries || []).map((e) => ({ ...e, balance_after: after.get(e.id) ?? e.balance_after }));
   }, [entries]);
   const scopedAll = useMemo(() => (group ? (entries || []).filter((e) => e.group_id === group)
-    : allEntries ? withTotalBal : (entries || []).filter((e) => !e.group_id)), [entries, group, allEntries, withTotalBal]);
+    : withTotalBal), [entries, group, withTotalBal]);
   // Currency filter (Rupee / Gold / …) for the three views; only offered when there's more than one.
   const [curFilter, setCurFilter] = useState<string | null>(null);
   const [pickingFilter, setPickingFilter] = useState(false);
@@ -371,46 +369,23 @@ export default function CashLedgerAccountScreen() {
   const tint = direction === 'gave' ? colors.onError : colors.onSuccess;
   const balColor = (n: number) => (n > 0 ? colors.onSuccess : n < 0 ? colors.onError : colors.onSurface);
 
-  // Statement: a passbook per currency, oldest first, closing balance on every
-  // line. On the person's page each group is one total line after the general
-  // entries, so the closing balance is the person's whole balance.
+  // Statement: a passbook per currency, oldest first by date, closing balance on
+  // every line. On the person's page every group's entries are in it too (each
+  // tagged with its group), so the closing balance is the person's whole balance.
   const chron = useMemo(() => [...scoped].reverse(), [scoped]);
-  type StRow = { kind: 'entry'; e: Entry; amt: number; bal: number } | { kind: 'group'; g: Group; amt: number; bal: number };
+  type StRow = { e: Entry; amt: number; bal: number };
   const statements = useMemo(() => {
     const byCur: Record<string, Entry[]> = {};
     for (const e of chron) (byCur[e.currency] ||= []).push(e);
-    const withGroups = grp ? [] : groups.filter((g) => Object.keys(g.balances).length);
     const all: Balances = Object.fromEntries(Object.keys(byCur).map((c) => [c, 1]));
-    for (const g of withGroups) for (const c of Object.keys(g.balances)) all[c] = 1;
     return orderedCodes(all).filter((c) => !activeFilter || c === activeFilter).map((c) => {
-      const rows: StRow[] = (byCur[c] || []).map((e) => ({ kind: 'entry', e, amt: e.direction === 'gave' ? e.amount : -e.amount, bal: e.balance_after }));
-      let bal = rows.length ? rows[rows.length - 1].bal : 0;
-      for (const g of withGroups) {
-        if (!g.balances[c]) continue;
-        bal += g.balances[c];
-        rows.push({ kind: 'group', g, amt: g.balances[c], bal });
-      }
+      const rows: StRow[] = (byCur[c] || []).map((e) => ({ e, amt: e.direction === 'gave' ? e.amount : -e.amount, bal: e.balance_after }));
+      const bal = rows.length ? rows[rows.length - 1].bal : 0;
       const gave = rows.reduce((t, r) => t + (r.amt > 0 ? r.amt : 0), 0);
       const got = rows.reduce((t, r) => t + (r.amt < 0 ? -r.amt : 0), 0);
       return { code: c, rows, gave, got, closing: bal };
     });
-  }, [chron, groups, grp, activeFilter]);
-
-  // Day-wise: newest day first, each day ends with its closing balance per currency.
-  const days = useMemo(() => {
-    const out: { date: string; items: Entry[]; closing: { code: string; bal: number }[] }[] = [];
-    for (const e of scoped) {
-      if (!out.length || out[out.length - 1].date !== e.date) out.push({ date: e.date, items: [], closing: [] });
-      out[out.length - 1].items.push(e);
-    }
-    for (const d of out) {
-      d.items.reverse();   // oldest first within the day, so the running balance reads downwards
-      const last: Record<string, number> = {};
-      for (const e of d.items) last[e.currency] = e.balance_after;
-      d.closing = orderedCodes(last).map((code) => ({ code, bal: last[code] }));
-    }
-    return out;
-  }, [scoped]);
+  }, [chron, activeFilter]);
 
   return (
     <SafeAreaView style={s.root} edges={['top']} testID="cash-ledger-account">
@@ -512,10 +487,10 @@ export default function CashLedgerAccountScreen() {
 
             {!!acc.note && <Text style={s.note}>{acc.note}</Text>}
 
-            {!grp && groups.length > 0 && <Text style={s.sectionHeader}>{allEntries ? 'ALL ENTRIES' : 'GENERAL ENTRIES'}</Text>}
+            {!grp && groups.length > 0 && <Text style={s.sectionHeader}>ALL ENTRIES</Text>}
             {!!scopedAll.length && (
               <View style={{ marginTop: !grp && groups.length > 0 ? 0 : spacing.xl }}>
-                <SegmentedControl options={[{ key: 'list', label: 'Entries' }, { key: 'statement', label: 'Statement' }, { key: 'daily', label: 'Day-wise' }]}
+                <SegmentedControl options={[{ key: 'list', label: 'Entries' }, { key: 'statement', label: 'Statement' }]}
                   value={view} onChange={(k) => setView(k as ViewKey)} testID="cl-view" />
                 {scopedCodes.length > 1 && (
                   <Pressable onPress={() => setPickingFilter(true)} hitSlop={8} style={({ pressed }) => [s.filterBtn, activeFilter && s.filterBtnOn, pressed && { opacity: 0.6 }]} testID="cl-filter">
@@ -544,7 +519,7 @@ export default function CashLedgerAccountScreen() {
             )}
 
             {entries && scopedAll.length === 0 ? (
-              <Text style={s.emptyText}>{grp ? 'No entries in this group yet.' : groups.length && !allEntries ? 'No general entries.' : 'No entries yet.'}</Text>
+              <Text style={s.emptyText}>{grp ? 'No entries in this group yet.' : 'No entries yet.'}</Text>
             ) : view === 'statement' ? statements.map((st) => {
               // Widen the number columns to the longest number in this table so none is ever cut.
               const longest = Math.max(...st.rows.map((r) => Math.max(num(r.amt, st.code).length + 1, num(r.bal, st.code).length + 1)), 6);
@@ -566,37 +541,24 @@ export default function CashLedgerAccountScreen() {
                     )}
                   </View>
                   {st.rows.map((r) => (
-                    <Pressable key={r.kind === 'entry' ? r.e.id : `g-${r.g.id}`} testID={r.kind === 'entry' ? `cl-st-${r.e.id}` : `cl-st-group-${r.g.id}`}
-                      onPress={() => (r.kind === 'entry' ? openEdit(r.e) : router.push(`/cash-ledger/${id}?group=${r.g.id}` as any))}
-                      style={({ pressed }) => [s.tRow, s.sepTop, stacked && s.tRowStacked, r.kind === 'group' && s.tGroup, pressed && s.pressed]}>
+                    <Pressable key={r.e.id} testID={`cl-st-${r.e.id}`} onPress={() => openEdit(r.e)}
+                      style={({ pressed }) => [s.tRow, s.sepTop, stacked && s.tRowStacked, pressed && s.pressed]}>
                       <View style={stacked ? null : s.tDetails}>
-                        {r.kind === 'entry' ? (
-                          <>
-                            <Text style={s.tYear}>{istDisplayDate(r.e.date)}</Text>
-                            <Text style={s.tCell}>{r.e.note || (r.e.direction === 'gave' ? 'You gave' : 'You got')}{r.e.photos > 0 ? ' 📷' : ''}</Text>
-                            {!!r.e.remark && <Text style={s.tYear}>{r.e.remark}</Text>}
-                          </>
-                        ) : (
-                          <>
-                            <Text style={s.tYear}>Group total · {r.g.entries} {r.g.entries === 1 ? 'entry' : 'entries'}</Text>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                              <Ionicons name="folder" size={13} color={colors.brandPrimary} />
-                              <Text style={[s.tCell, { fontWeight: '600', flexShrink: 1 }]}>{r.g.name}</Text>
-                              <Ionicons name="chevron-forward" size={12} color={colors.mutedText} />
-                            </View>
-                          </>
-                        )}
+                        <Text style={s.tYear}>{istDisplayDate(r.e.date)}</Text>
+                        <Text style={s.tCell}>{r.e.note || (r.e.direction === 'gave' ? 'You gave' : 'You got')}{r.e.photos > 0 ? ' 📷' : ''}</Text>
+                        {!grp && !!r.e.group_id && <GroupTag name={groupLabel(r.e.group_id)} />}
+                        {!!r.e.remark && <Text style={s.tYear}>{r.e.remark}</Text>}
                       </View>
                       {stacked ? (
                         <View style={s.tStackNums}>
-                          <Text style={[s.tCell, { color: r.amt > 0 ? colors.onError : colors.onSuccess }, r.kind === 'group' && { fontWeight: '600' }]}>
+                          <Text style={[s.tCell, { color: r.amt > 0 ? colors.onError : colors.onSuccess }]}>
                             {r.amt > 0 ? '−' : '+'}{num(r.amt, st.code)}
                           </Text>
                           <Text style={[s.tCell, s.tStackBal, { color: balColor(r.bal) }]}>Bal {r.bal < 0 ? '−' : ''}{num(r.bal, st.code)}</Text>
                         </View>
                       ) : (
                         <>
-                          <Text style={[s.tNum, s.tCell, colW, { color: r.amt > 0 ? colors.onError : colors.onSuccess }, r.kind === 'group' && { fontWeight: '600' }]} numberOfLines={1}>
+                          <Text style={[s.tNum, s.tCell, colW, { color: r.amt > 0 ? colors.onError : colors.onSuccess }]} numberOfLines={1}>
                             {r.amt > 0 ? '−' : '+'}{num(r.amt, st.code)}
                           </Text>
                           <Text style={[s.tBal, s.tCell, colW, { color: balColor(r.bal) }]} numberOfLines={1}>{r.bal < 0 ? '−' : ''}{num(r.bal, st.code)}</Text>
@@ -614,34 +576,7 @@ export default function CashLedgerAccountScreen() {
                 </View>
               </View>
               );
-            }) : view === 'daily' ? days.map((d) => (
-              <View key={d.date} testID={`cl-day-${d.date}`}>
-                <Text style={s.sectionHeader}>{dayLabel(d.date).toUpperCase()}</Text>
-                <View style={s.group}>
-                  {d.items.map((e, i) => (
-                    <Pressable key={e.id} onPress={() => openEdit(e)} style={({ pressed }) => [s.dRow, i > 0 && s.sepTop, pressed && s.pressed]} testID={`cl-d-${e.id}`}>
-                      <View style={{ flex: 1, minWidth: 0 }}>
-                        <Text style={s.dNote}>{e.note || (e.direction === 'gave' ? 'You gave' : 'You got')}{e.photos > 0 ? ' 📷' : ''}</Text>
-                        {!grp && !!e.group_id && <GroupTag name={groupLabel(e.group_id)} />}
-                        {!!e.remark && <Text style={s.subtitle}>{e.remark}</Text>}
-                      </View>
-                      <View style={s.trailing}>
-                        <Text style={[s.dAmt, { color: e.direction === 'gave' ? colors.onError : colors.onSuccess }]}>{e.direction === 'gave' ? '−' : '+'}{money(e.amount, e.currency)}</Text>
-                        <Text style={s.subtitle}>Bal {signed(e.balance_after, e.currency)}</Text>
-                      </View>
-                    </Pressable>
-                  ))}
-                  <View style={[s.dRow, s.dClose]}>
-                    <Text style={s.dCloseLabel}>Closing Balance</Text>
-                    <View style={s.trailing}>
-                      {d.closing.map((c) => (
-                        <Text key={c.code} style={[s.dCloseAmt, { color: balColor(c.bal) }]}>{c.bal === 0 ? 'Settled' : signed(c.bal, c.code)}</Text>
-                      ))}
-                    </View>
-                  </View>
-                </View>
-              </View>
-            )) : sections.map((sec) => (
+            }) : sections.map((sec) => (
               <View key={sec.title}>
                 <Text style={s.sectionHeader}>{sec.title.toUpperCase()}</Text>
                 <View style={s.group}>
@@ -674,9 +609,8 @@ export default function CashLedgerAccountScreen() {
             ))}
             {scoped.length > 0 && (
               <Text style={s.footer}>
-                {view === 'statement' ? `Balance is the closing balance after each line${!grp && groups.some((g) => Object.keys(g.balances).length) ? '; each group is added as one total line, so the closing balance is the full amount' : ''}. Green: ${first} owes you · Red: you owe ${first}.`
-                  : view === 'daily' ? `Closing balance at the end of each day. Green: ${first} owes you · Red: you owe ${first}.`
-                    : `− You gave · + You got. Bal is what ${first} owes you after each entry${allEntries && groups.length ? ', groups included' : ''}.`}
+                {view === 'statement' ? `Balance is the closing balance after each line${allEntries && groups.length ? ', groups included' : ''}. Green: ${first} owes you · Red: you owe ${first}.`
+                  : `− You gave · + You got. Bal is what ${first} owes you after each entry${allEntries && groups.length ? ', groups included' : ''}.`}
               </Text>
             )}
           </>
@@ -1093,16 +1027,8 @@ const makeStyles = (colors: ThemeColors, narrow = false) => StyleSheet.create({
   tRowStacked: { flexDirection: 'column', alignItems: 'stretch', gap: 4 },
   tStackNums: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', gap: 12 },
   tStackBal: { fontWeight: '700' },
-  tGroup: { backgroundColor: colors.surfaceTertiary + '80' },
   tFoot: { backgroundColor: colors.surfaceTertiary },
   tFootText: { color: colors.onSurface, fontSize: 13, fontWeight: '700', fontVariant: ['tabular-nums'] },
-  // Day-wise
-  dRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.md, paddingVertical: 10, minHeight: 50 },
-  dNote: { flex: 1, minWidth: 0, color: colors.onSurface, fontSize: 16 },
-  dAmt: { fontSize: 16, fontWeight: '600', fontVariant: ['tabular-nums'] },
-  dClose: { backgroundColor: colors.surfaceTertiary },
-  dCloseLabel: { flex: 1, color: colors.onSurface, fontSize: 15, fontWeight: '600' },
-  dCloseAmt: { fontSize: 16, fontWeight: '700', fontVariant: ['tabular-nums'] },
   toolbar: {
     position: 'absolute', left: 0, right: 0, bottom: 0, flexDirection: 'row', gap: 10, paddingHorizontal: spacing.lg, paddingTop: 10,
     backgroundColor: Platform.OS === 'web' ? 'rgba(127,127,127,0.10)' : colors.surface,

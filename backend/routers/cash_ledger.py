@@ -591,9 +591,9 @@ async def statement(aid: str, date_from: Optional[str] = Query(default=None, ali
                     group: Optional[str] = Query(default=None), format: Literal['pdf', 'info', 'page'] = 'pdf', page: int = 0,
                     user=Depends(require_staff_or_module(MOD))):
     """The statement PDF. `group`: one group's id, 'general', or nothing for the
-    whole account: per currency, the general entries plus one total line per
-    group (its Dr and Cr for the period), so that table's closing is the
-    person's whole balance; then each group's own entries in detail.
+    whole account: per currency, every entry - general and every group's, each
+    group entry marked with its group - by date, so the closing is the
+    person's whole balance.
     format=info -> {pages}; format=page&page=N -> that page as a JPEG (the app's preview)."""
     a = await _account_or_404(aid)
     date_from = _clean_date(date_from) if date_from else None
@@ -607,35 +607,28 @@ async def statement(aid: str, date_from: Optional[str] = Query(default=None, ali
     cur_key = (lambda c: ([BASE_CURRENCY, *METALS].index(c) if c in (BASE_CURRENCY, *METALS) else 9, c))   # INR, gold, silver, then the rest
     sections = []
 
-    def line(e: dict, closing: float) -> tuple:
+    def line(e: dict, closing: float, tag_group: bool = False) -> tuple:
         desc = e.get('note') or ('Cash given' if e['direction'] == 'gave' else 'Cash received')
+        if tag_group and e.get('group_id'):
+            desc = f"{_esc(desc)}<br/><font color='#8a6d1f'>Group: {_esc(names.get(e['group_id'], ''))}</font>"
+        else:
+            desc = _esc(desc)
         rem = e.get('remark') or ''
         if e.get('split'):   # a shared bill: say what the whole bill was
             sp = e['split']
             how = 'split equally' if sp['mode'] == 'equal' else 'their share' if e['direction'] == 'gave' else 'your share'
             rem = ' · '.join(x for x in (rem, f"Bill {_amt(sp['total'], e['currency'])}, {how}") if x)
-        return (e['date'], _esc(desc), _esc(rem),
+        return (e['date'], desc, _esc(rem),
                 e['amount'] if e['direction'] == 'gave' else 0.0, e['amount'] if e['direction'] == 'got' else 0.0, closing, False)
 
-    def add(title: str, cur: str, es: list, group_totals: Optional[list] = None):
-        """es: the entries listed line by line; group_totals: [(group_id, its entries)] shown as one total line each."""
+    def add(title: str, cur: str, es: list, tag_groups: bool = False):
+        """es: the entries listed line by line, oldest first."""
         opening = sum(_signed(e) for e in es if date_from and e['date'] < date_from)
-        for _, ges in group_totals or []:
-            opening += sum(_signed(e) for e in ges if date_from and e['date'] < date_from)
         run, rows, dr, cr = opening, [], 0.0, 0.0
         for e in es:
             if in_range(e):
                 run += _signed(e)
-                rows.append(line(e, run))
-        for gid, ges in group_totals or []:
-            g_in = [e for e in ges if in_range(e)]
-            if not g_in:
-                continue
-            gdr = sum(e['amount'] for e in g_in if e['direction'] == 'gave')
-            gcr = sum(e['amount'] for e in g_in if e['direction'] == 'got')
-            run += gdr - gcr
-            rows.append(('', _esc(f'Group: {names.get(gid, "")} (total)'),
-                         f'{len(g_in)} {"entry" if len(g_in) == 1 else "entries"} - details below', gdr, gcr, run, True))
+                rows.append(line(e, run, tag_groups))
         for r in rows:
             dr, cr = dr + r[3], cr + r[4]
         d = _dp(cur)
@@ -649,16 +642,9 @@ async def statement(aid: str, date_from: Optional[str] = Query(default=None, ali
         for cur in sorted({e['currency'] for e in mine}, key=cur_key) or [a.get('currency') or BASE_CURRENCY]:
             add(f'{label} - {_cur_label(cur)}', cur, [e for e in mine if e['currency'] == cur])
     else:
-        with_groups = [g['id'] for g in groups if any(e['group_id'] == g['id'] for e in entries)]
         for cur in sorted({e['currency'] for e in entries}, key=cur_key) or [a.get('currency') or BASE_CURRENCY]:
             mine = [e for e in entries if e['currency'] == cur]
-            gt = [(gid, [e for e in mine if e['group_id'] == gid]) for gid in with_groups]
-            add(f'Account - {_cur_label(cur)}' + (' (groups included as totals)' if any(ges for _, ges in gt) else ''), cur,
-                [e for e in mine if not e['group_id']], [x for x in gt if x[1]])
-        for gid in with_groups:
-            mine = [e for e in entries if e['group_id'] == gid]
-            for cur in sorted({e['currency'] for e in mine}, key=cur_key):
-                add(f'Group: {names.get(gid, "")} - {_cur_label(cur)}', cur, [e for e in mine if e['currency'] == cur])
+            add(f'Account - {_cur_label(cur)}' + (' (groups included)' if any(e['group_id'] for e in mine) else ''), cur, mine, True)
     store = await db.settings.find_one({'id': 'store'}, {'_id': 0}) or {}
     shop = store.get('name') or 'Ram Murti Jewellers'
     period = f"{_dmy(date_from) if date_from else 'Beginning'} to {_dmy(date_to or _today())}"
