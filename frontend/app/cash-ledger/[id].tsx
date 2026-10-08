@@ -124,7 +124,22 @@ export default function CashLedgerAccountScreen() {
   const heroBal: Balances = grp ? grp.balances : acc?.balances || {};
   const codes = orderedCodes(heroBal);
   const totalCodes = acc ? orderedCodes(acc.balances) : [];
-  const scopedAll = useMemo(() => (entries || []).filter((e) => (group ? e.group_id === group : !e.group_id)), [entries, group]);
+  // On the person's page, Entries and Day-wise list every entry — general and
+  // every group's, each tagged with its group — and Bal is the person's whole
+  // running balance. The Statement keeps general entries with one total line
+  // per group; a group's own page shows just that group.
+  const allEntries = !group && view !== 'statement';
+  const withTotalBal = useMemo(() => {
+    const run: Record<string, number> = {};
+    const after = new Map<string, number>();
+    for (const e of [...(entries || [])].reverse()) {   // the list is newest first
+      run[e.currency] = (run[e.currency] || 0) + (e.direction === 'gave' ? e.amount : -e.amount);
+      after.set(e.id, Math.round(run[e.currency] * 1000) / 1000);
+    }
+    return (entries || []).map((e) => ({ ...e, balance_after: after.get(e.id) ?? e.balance_after }));
+  }, [entries]);
+  const scopedAll = useMemo(() => (group ? (entries || []).filter((e) => e.group_id === group)
+    : allEntries ? withTotalBal : (entries || []).filter((e) => !e.group_id)), [entries, group, allEntries, withTotalBal]);
   // Currency filter (Rupee / Gold / …) for the three views; only offered when there's more than one.
   const [curFilter, setCurFilter] = useState<string | null>(null);
   const [pickingFilter, setPickingFilter] = useState(false);
@@ -497,7 +512,7 @@ export default function CashLedgerAccountScreen() {
 
             {!!acc.note && <Text style={s.note}>{acc.note}</Text>}
 
-            {!grp && groups.length > 0 && <Text style={s.sectionHeader}>GENERAL ENTRIES</Text>}
+            {!grp && groups.length > 0 && <Text style={s.sectionHeader}>{allEntries ? 'ALL ENTRIES' : 'GENERAL ENTRIES'}</Text>}
             {!!scopedAll.length && (
               <View style={{ marginTop: !grp && groups.length > 0 ? 0 : spacing.xl }}>
                 <SegmentedControl options={[{ key: 'list', label: 'Entries' }, { key: 'statement', label: 'Statement' }, { key: 'daily', label: 'Day-wise' }]}
@@ -529,7 +544,7 @@ export default function CashLedgerAccountScreen() {
             )}
 
             {entries && scopedAll.length === 0 ? (
-              <Text style={s.emptyText}>{grp ? 'No entries in this group yet.' : groups.length ? 'No general entries.' : 'No entries yet.'}</Text>
+              <Text style={s.emptyText}>{grp ? 'No entries in this group yet.' : groups.length && !allEntries ? 'No general entries.' : 'No entries yet.'}</Text>
             ) : view === 'statement' ? statements.map((st) => {
               // Widen the number columns to the longest number in this table so none is ever cut.
               const longest = Math.max(...st.rows.map((r) => Math.max(num(r.amt, st.code).length + 1, num(r.bal, st.code).length + 1)), 6);
@@ -607,6 +622,7 @@ export default function CashLedgerAccountScreen() {
                     <Pressable key={e.id} onPress={() => openEdit(e)} style={({ pressed }) => [s.dRow, i > 0 && s.sepTop, pressed && s.pressed]} testID={`cl-d-${e.id}`}>
                       <View style={{ flex: 1, minWidth: 0 }}>
                         <Text style={s.dNote}>{e.note || (e.direction === 'gave' ? 'You gave' : 'You got')}{e.photos > 0 ? ' 📷' : ''}</Text>
+                        {!grp && !!e.group_id && <GroupTag name={groupLabel(e.group_id)} />}
                         {!!e.remark && <Text style={s.subtitle}>{e.remark}</Text>}
                       </View>
                       <View style={s.trailing}>
@@ -638,6 +654,7 @@ export default function CashLedgerAccountScreen() {
                       <View style={[s.entryBody, i > 0 && s.sepTop]}>
                         <View style={{ flex: 1, minWidth: 0 }}>
                           <Text style={s.title}>{e.note || (e.direction === 'gave' ? 'You gave' : 'You got')}</Text>
+                          {!grp && !!e.group_id && <GroupTag name={groupLabel(e.group_id)} />}
                           <View style={s.metaRow}>
                             <Text style={s.subtitle}>{istDisplayDate(e.date)}{e.split ? ` · ${money(e.split.total, e.currency)} bill, ${e.split.mode === 'equal' ? 'split equally' : 'shared'}` : ''}{e.remark ? ` · ${e.remark}` : ''}</Text>
                             {e.photos > 0 && <><Ionicons name="image-outline" size={12} color={colors.mutedText} /><Text style={s.subtitle}>{e.photos}</Text></>}
@@ -659,7 +676,7 @@ export default function CashLedgerAccountScreen() {
               <Text style={s.footer}>
                 {view === 'statement' ? `Balance is the closing balance after each line${!grp && groups.some((g) => Object.keys(g.balances).length) ? '; each group is added as one total line, so the closing balance is the full amount' : ''}. Green: ${first} owes you · Red: you owe ${first}.`
                   : view === 'daily' ? `Closing balance at the end of each day. Green: ${first} owes you · Red: you owe ${first}.`
-                    : `− You gave · + You got. Bal is what ${first} owes you after each entry.`}
+                    : `− You gave · + You got. Bal is what ${first} owes you after each entry${allEntries && groups.length ? ', groups included' : ''}.`}
               </Text>
             )}
           </>
@@ -1004,6 +1021,17 @@ export default function CashLedgerAccountScreen() {
         )}
       </Sheet>
     </SafeAreaView>
+  );
+}
+
+/** The group an entry belongs to, under its title on the person's page. */
+function GroupTag({ name }: { name: string }) {
+  const { colors } = useTheme();
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
+      <Ionicons name="folder" size={12} color={colors.brandPrimary} />
+      <Text style={{ color: colors.brandPrimary, fontSize: 13, fontWeight: '600', flexShrink: 1 }}>{name}</Text>
+    </View>
   );
 }
 
