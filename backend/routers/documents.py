@@ -95,11 +95,31 @@ def _cache_file(doc_id: str, variant: str) -> pathlib.Path:
     return DOC_CACHE_DIR / f'{doc_id}.{variant}'
 
 
+def replace_file(tmp: pathlib.Path, path: pathlib.Path) -> None:
+    """Move a finished temp file into place. On Windows the move is refused
+    while someone is still reading the old file (e.g. two people opening the
+    same photo at once); then the copy already there is just as good, so the
+    temp file is dropped instead of failing the request."""
+    for attempt in range(3):
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError:
+            if attempt < 2:
+                time.sleep(0.05)
+    try:
+        tmp.unlink()
+    except OSError:
+        pass
+    if not path.exists():
+        raise PermissionError(f'could not write {path.name}')
+
+
 def _cache_write_sync(path: pathlib.Path, raw: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f'{path.name}.{uuid.uuid4().hex}.tmp')
     tmp.write_bytes(raw)
-    os.replace(tmp, path)   # atomic: a reader never sees a half-written file
+    replace_file(tmp, path)   # atomic: a reader never sees a half-written file
 
 
 async def _cache_write(doc_id: str, variant: str, raw: bytes) -> None:

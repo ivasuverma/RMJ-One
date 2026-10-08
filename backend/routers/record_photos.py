@@ -36,14 +36,14 @@ def _view_path(photo_id: str) -> pathlib.Path:
 
 
 def _write_view_sync(path: pathlib.Path, raw: bytes):
-    from routers.documents import _make_view_sync
+    from routers.documents import _make_view_sync, replace_file
     view = _make_view_sync(raw)
     if not view:
         return None
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f'{path.name}.{uuid.uuid4().hex}.tmp')
     tmp.write_bytes(view)
-    os.replace(tmp, path)
+    replace_file(tmp, path)
     return view
 
 _FOLDER_LABEL = {
