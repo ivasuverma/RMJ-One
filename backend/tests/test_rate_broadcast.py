@@ -93,7 +93,8 @@ class TestRateBroadcast:
 
     def test_public_subscribe_link(self):
         r = requests.get(f"{BASE_URL}/api/public/rate-broadcast/subscribe", timeout=30)
-        assert r.status_code == 200 and r.json()['url'] is None  # no Meta line in CI
+        # Opens the shop's own WhatsApp (OpenWA) with START typed in - no Meta line needed.
+        assert r.status_code == 200 and r.json()['url'].startswith('https://wa.me/') and r.json()['url'].endswith('?text=START')
 
 
 def test_whatsapp_provider_is_always_openwa(owner):
@@ -207,3 +208,20 @@ def test_buttons_change_plan_on_official_number(owner):
     assert q()[0]['status'] == 'opted_out'
     _meta_post({'from': frm, 'type': 'button', 'button': {'text': 'Weekly only'}})
     assert q()[0]['status'] == 'active' and q()[0]['plan'] == 'weekly'
+
+
+def test_signup_link_goes_to_shop_whatsapp(owner):
+    """The website's daily-rate button opens the shop's own WhatsApp (OpenWA)
+    with START typed in; the number can be changed and is validated."""
+    h = owner
+    before = requests.get(f"{API}/rate-broadcast/overview", headers=h, timeout=30).json().get('signup_number')
+    try:
+        url = requests.get(f"{API}/public/rate-broadcast/subscribe", timeout=30).json()['url']
+        assert url.startswith('https://wa.me/') and url.endswith('?text=START')
+        r = requests.put(f"{API}/rate-broadcast/signup-number", headers=h, json={'number': '98765 43210'}, timeout=30)
+        assert r.status_code == 200 and r.json()['number'] == '919876543210'
+        assert requests.get(f"{API}/public/rate-broadcast/subscribe", timeout=30).json()['url'] == 'https://wa.me/919876543210?text=START'
+        assert requests.put(f"{API}/rate-broadcast/signup-number", headers=h, json={'number': '123'}, timeout=30).status_code == 400
+    finally:
+        if before:
+            requests.put(f"{API}/rate-broadcast/signup-number", headers=h, json={'number': before}, timeout=30)
