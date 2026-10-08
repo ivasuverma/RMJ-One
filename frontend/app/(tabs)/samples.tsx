@@ -135,7 +135,7 @@ export default function SamplesScreen() {
             <Pressable key={s.id} onPress={() => router.push(`/samples/${s.id}` as any)} style={styles.card} testID={`sample-${s.id}`}>
               <View style={styles.cardTop}>
                 {thumb ? (
-                  <Image source={{ uri: thumb }} style={styles.cardThumb} testID={`sample-thumb-${s.id}`} />
+                  <Image source={{ uri: thumb }} style={styles.cardThumb} contentFit="cover" testID={`sample-thumb-${s.id}`} />
                 ) : (
                   <View style={styles.cardThumbFallback} testID={`sample-thumb-fallback-${s.id}`}>
                     <Ionicons name="diamond-outline" size={20} color={colors.mutedText} />
@@ -224,9 +224,10 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   cardTop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
   // Full card height: the badge top-right, Receive bottom-right.
   cardSide: { alignSelf: 'stretch', alignItems: 'flex-end', justifyContent: 'space-between', gap: spacing.sm },
-  cardThumb: { width: 44, height: 44, borderRadius: radius.sm, backgroundColor: colors.surfaceTertiary },
+  // Same as Repairs: the photo runs the full height of the details beside it.
+  cardThumb: { width: 72, alignSelf: 'stretch', minHeight: 72, borderRadius: radius.md, backgroundColor: colors.surfaceTertiary },
   cardThumbFallback: {
-    width: 44, height: 44, borderRadius: radius.sm, backgroundColor: colors.surfaceTertiary,
+    width: 72, alignSelf: 'stretch', minHeight: 72, borderRadius: radius.md, backgroundColor: colors.surfaceTertiary,
     alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border,
   },
   recvBtn: { backgroundColor: colors.brandPrimary, borderRadius: 8, paddingVertical: 6, paddingHorizontal: 12 },
