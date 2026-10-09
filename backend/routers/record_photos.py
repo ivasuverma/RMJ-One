@@ -49,6 +49,7 @@ def _write_view_sync(path: pathlib.Path, raw: bytes):
 _FOLDER_LABEL = {
     'repair_item': 'Repair Photos',
     'sample': 'Sample Photos',
+    'sample_receive': 'Sample Photos',
     'employee': 'Employee Photos',
     'task': 'Task Photos',
     'gold_loan': 'Gold Loan Photos',
@@ -64,7 +65,7 @@ _FOLDER_LABEL = {
 # separately below (_require_task_access) — an employee can always attach a
 # completion photo to their OWN task regardless of whether they hold the
 # 'tasks' staff module, the same as they can already comment on / complete it.
-_REF_MODULE = {'repair_item': 'repairs', 'sample': 'samples', 'employee': 'team', 'gold_loan': 'gold_loans', 'cashbook_entry': 'cash_book',
+_REF_MODULE = {'repair_item': 'repairs', 'sample': 'samples', 'sample_receive': 'samples', 'employee': 'team', 'gold_loan': 'gold_loans', 'cashbook_entry': 'cash_book',
                'cash_ledger_entry': 'cash_ledger'}
 
 

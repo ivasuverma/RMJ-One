@@ -15,6 +15,9 @@ import { useTheme } from '@/src/theme/ThemeContext';
 import { Image } from 'expo-image';
 import { RecordPhotos } from '@/src/components/RecordPhotos';
 import { GlassButton } from '@/src/components/ui/GlassButton';
+import { PhotoCaptureModal } from '@/src/components/PhotoCaptureModal';
+import { enqueueRecordPhoto } from '@/src/utils/uploadQueue';
+import { makeThumbFromDataUri } from '@/src/utils/imageThumb';
 
 type Sample = {
   id: string; sample_code: string; description: string; tag_number: string;
@@ -54,6 +57,18 @@ export default function ReceiveSampleScreen() {
   const [partWeight, setPartWeight] = useState('');
   const [partPcs, setPartPcs] = useState('');
   const [deleting, setDeleting] = useState(false);
+  // A photo of what came back is compulsory for every receive (all or part).
+  const [photo, setPhoto] = useState('');
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const savePhoto = async (sid: string) => {
+    if (!photo) return;
+    try {
+      const full = await (await fetch(photo)).blob();
+      const thumb = await makeThumbFromDataUri(photo);
+      const pid = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `${Date.now()}`;
+      await enqueueRecordPhoto({ id: pid, blob: full, filename: `sample-received-${sid}.jpg`, thumb, ref_type: 'sample_receive', ref_id: sid });
+    } catch { /* the upload queue retries; don't block the receive */ }
+  };
   const submittingRef = useRef(false);
 
   const load = useCallback(async () => {
@@ -85,10 +100,12 @@ export default function ReceiveSampleScreen() {
     if (submittingRef.current || !sample) return;
     const w = parseFloat(partWeight);
     if (!w || w <= 0) { notify('Missing', 'Enter the weight that came back'); return; }
+    if (!photo) { notify('Missing', 'Take a photo of what came back before saving'); return; }
     submittingRef.current = true;
     setBusy(true);
     try {
       await api.post(`/samples/${sample.id}/receive-part`, { weight: w, pieces: parseInt(partPcs, 10) || 0 });
+      await savePhoto(sample.id);
       router.back();
     } catch (e: any) {
       notify('Failed', e?.detail || 'Please try again');
@@ -103,6 +120,7 @@ export default function ReceiveSampleScreen() {
     if (submittingRef.current || !sample) return;
     const w = parseFloat(receivedWeight);
     if (!w || w <= 0) { notify('Missing', 'Enter the weight received back'); return; }
+    if (!isEdit && !photo) { notify('Missing', 'Take a photo of what came back before saving'); return; }
     submittingRef.current = true;
     setBusy(true);
     try {
@@ -114,6 +132,7 @@ export default function ReceiveSampleScreen() {
       };
       if (isEdit) await api.put(`/samples/${sample.id}/receive`, payload);
       else await api.post(`/samples/${sample.id}/receive`, payload);
+      await savePhoto(sample.id);
       router.back();
     } catch (e: any) {
       notify('Failed', e?.detail || 'Please try again');
@@ -340,6 +359,23 @@ export default function ReceiveSampleScreen() {
             </>
           )}
 
+          {/* Compulsory photo of what came back (all or part). */}
+          {(!isEdit || mode === 'part') && (
+            <>
+              <Text style={styles.label}>Photo of what came back <Text style={{ color: colors.onError }}>*</Text></Text>
+              <Pressable onPress={() => setCameraOpen(true)} style={[styles.recvPhotoBtn, !photo && { borderColor: colors.brandPrimary }]} testID="receive-photo-btn" accessibilityRole="button" accessibilityLabel={photo ? 'Retake photo' : 'Take photo'}>
+                {photo ? <Image source={{ uri: photo }} style={styles.recvPhotoImg} contentFit="cover" />
+                  : (<><Ionicons name="camera-outline" size={22} color={colors.brandSecondary} /><Text style={styles.recvPhotoText}>Take photo (required)</Text></>)}
+              </Pressable>
+              {!!photo && (
+                <Pressable onPress={() => setCameraOpen(true)} hitSlop={6} style={{ alignSelf: 'flex-end', marginTop: 6 }} testID="receive-photo-retake">
+                  <Text style={[styles.recvPhotoText, { fontSize: 12 }]}>Retake</Text>
+                </Pressable>
+              )}
+            </>
+          )}
+          {isEdit && mode !== 'part' && <RecordPhotos refType="sample_receive" refId={sample.id} label="Photos when received" />}
+
           <Pressable
             style={[styles.saveBtn, busy && { opacity: 0.6 }]} disabled={busy}
             onPress={submit} testID="confirm-receive-sample-btn"
@@ -348,6 +384,8 @@ export default function ReceiveSampleScreen() {
           </Pressable>
         </ScrollView>
       </KeyboardAvoidingView>
+      <PhotoCaptureModal visible={cameraOpen} title="What came back" onClose={() => setCameraOpen(false)} highRes
+        onCapture={async (p) => { setPhoto(p); setCameraOpen(false); }} />
     </SafeAreaView>
   );
 }
@@ -365,6 +403,12 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   title: { flex: 1, color: colors.onSurface, fontSize: 18, fontWeight: '600', fontFamily: fonts.display },
 
+  recvPhotoBtn: {
+    marginTop: 6, minHeight: 120, borderRadius: radius.lg, borderWidth: 1.5, borderStyle: 'dashed', borderColor: colors.border,
+    backgroundColor: colors.surfaceTertiary, alignItems: 'center', justifyContent: 'center', gap: 6, overflow: 'hidden',
+  },
+  recvPhotoImg: { width: '100%', height: 220 },
+  recvPhotoText: { color: colors.brandSecondary, fontSize: 14, fontWeight: '700' },
   issuePhoto: { width: '100%', height: 220, borderRadius: radius.lg, backgroundColor: colors.surfaceTertiary, marginTop: spacing.md },
   pickedCard: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.lg },
   cName: { color: colors.onSurface, fontWeight: '700', fontSize: 13 },
