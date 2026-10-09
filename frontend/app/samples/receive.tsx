@@ -57,7 +57,7 @@ export default function ReceiveSampleScreen() {
   const [partWeight, setPartWeight] = useState('');
   const [partPcs, setPartPcs] = useState('');
   const [deleting, setDeleting] = useState(false);
-  // A photo of what came back is compulsory for every receive (all or part).
+  // An optional photo of what came back (only issuing needs one).
   const [photo, setPhoto] = useState('');
   const [cameraOpen, setCameraOpen] = useState(false);
   const savePhoto = async (sid: string) => {
@@ -100,7 +100,6 @@ export default function ReceiveSampleScreen() {
     if (submittingRef.current || !sample) return;
     const w = parseFloat(partWeight);
     if (!w || w <= 0) { notify('Missing', 'Enter the weight that came back'); return; }
-    if (!photo) { notify('Missing', 'Take a photo of what came back before saving'); return; }
     submittingRef.current = true;
     setBusy(true);
     try {
@@ -120,7 +119,6 @@ export default function ReceiveSampleScreen() {
     if (submittingRef.current || !sample) return;
     const w = parseFloat(receivedWeight);
     if (!w || w <= 0) { notify('Missing', 'Enter the weight received back'); return; }
-    if (!isEdit && !photo) { notify('Missing', 'Take a photo of what came back before saving'); return; }
     submittingRef.current = true;
     setBusy(true);
     try {
@@ -359,13 +357,13 @@ export default function ReceiveSampleScreen() {
             </>
           )}
 
-          {/* Compulsory photo of what came back (all or part). */}
+          {/* Optional photo of what came back (all or part). */}
           {(!isEdit || mode === 'part') && (
             <>
-              <Text style={styles.label}>Photo of what came back <Text style={{ color: colors.onError }}>*</Text></Text>
-              <Pressable onPress={() => setCameraOpen(true)} style={[styles.recvPhotoBtn, !photo && { borderColor: colors.brandPrimary }]} testID="receive-photo-btn" accessibilityRole="button" accessibilityLabel={photo ? 'Retake photo' : 'Take photo'}>
+              <Text style={styles.label}>Photo of what came back (optional)</Text>
+              <Pressable onPress={() => setCameraOpen(true)} style={styles.recvPhotoBtn} testID="receive-photo-btn" accessibilityRole="button" accessibilityLabel={photo ? 'Retake photo' : 'Take photo'}>
                 {photo ? <Image source={{ uri: photo }} style={styles.recvPhotoImg} contentFit="cover" />
-                  : (<><Ionicons name="camera-outline" size={22} color={colors.brandSecondary} /><Text style={styles.recvPhotoText}>Take photo (required)</Text></>)}
+                  : (<><Ionicons name="camera-outline" size={22} color={colors.brandSecondary} /><Text style={styles.recvPhotoText}>Take photo</Text></>)}
               </Pressable>
               {!!photo && (
                 <Pressable onPress={() => setCameraOpen(true)} hitSlop={6} style={{ alignSelf: 'flex-end', marginTop: 6 }} testID="receive-photo-retake">
@@ -404,7 +402,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   title: { flex: 1, color: colors.onSurface, fontSize: 18, fontWeight: '600', fontFamily: fonts.display },
 
   recvPhotoBtn: {
-    marginTop: 6, minHeight: 120, borderRadius: radius.lg, borderWidth: 1.5, borderStyle: 'dashed', borderColor: colors.border,
+    marginTop: 6, minHeight: 72, borderRadius: radius.lg, borderWidth: 1.5, borderStyle: 'dashed', borderColor: colors.border,
     backgroundColor: colors.surfaceTertiary, alignItems: 'center', justifyContent: 'center', gap: 6, overflow: 'hidden',
   },
   recvPhotoImg: { width: '100%', height: 220 },
