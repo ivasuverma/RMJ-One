@@ -17,6 +17,10 @@ export type Settings = {
   daily_via?: Via; weekly_via?: Via;
 };
 export type Via = 'openwa' | 'meta';
+export type Sched = {
+  key: string; name: string; builtin: boolean; list_id?: string; count?: number; last?: string | null;
+  enabled: boolean; freq: 'daily' | 'weekly'; weekday: number; time: string; skip_sunday: boolean; via: Via;
+};
 export const VIA_LABEL: Record<Via, string> = { openwa: 'Shop WhatsApp', meta: 'Official (Meta)' };
 export type Job = {
   id: string; created_at: string; trigger: string; audience?: Audience; status: string; total: number;
@@ -41,7 +45,7 @@ export type Overview = {
   rates: { gold: number; silver: number } | null; preview: string; buttons: string[];
   photo_url: string; photo_custom: boolean; subscribe_link: string | null;
   template: Tpl; meta_configured: boolean; sending: Job[]; sent_today: number;
-  my_lists?: number; my_templates?: number; signup_number?: string; daily_preview?: string;
+  my_lists?: number; my_templates?: number; signup_number?: string; daily_preview?: string; schedules?: Sched[];
 };
 export type MetaStatus = { configured: boolean; connected: boolean; phone: string | null; display_name: string | null };
 export type Sub = { id: string; name: string; mobile: string; status: 'active' | 'opted_out'; plan?: Plan | 'none'; source?: string; lists?: string[] };

@@ -81,7 +81,11 @@ DEFAULTS = {'weekly_enabled': False, 'weekday': 0, 'time': '11:00',
             'daily_enabled': False, 'daily_time': '11:30', 'daily_skip_sunday': True, 'daily_limit': 250,
             # Which number each list's rate goes from: 'openwa' (shop WhatsApp,
             # plain text from DEFAULT_RATE_TEXT) or 'meta' (approved template).
-            'daily_via': 'openwa', 'weekly_via': 'meta', 'rate_text': ''}
+            'daily_via': 'openwa', 'weekly_via': 'meta', 'rate_text': '',
+            # Each list keeps its own schedule (see list_schedules): how often,
+            # which day for weekly, skip Sunday for daily.
+            'weekly_freq': 'weekly', 'weekly_skip_sunday': True,
+            'daily_freq': 'daily', 'daily_weekday': 0}
 WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 PLANS = ('daily', 'weekly')
 TICK_SEC = 20
@@ -424,24 +428,109 @@ def _due(now_ist, hhmm: str) -> bool:
     return now_ist.hour * 60 + now_ist.minute >= hh * 60 + mm
 
 
-async def _maybe_schedule() -> None:
+# The two built-in lists keep their schedule in the rate_broadcast settings
+# doc (fields below; the on/off is also on Settings › Notifications); custom
+# lists keep theirs on the list (broadcast_lists.schedule).
+_BUILTIN = {
+    'weekly': {'name': 'Customer list', 'enabled': 'weekly_enabled', 'freq': 'weekly_freq', 'weekday': 'weekday',
+               'time': 'time', 'skip_sunday': 'weekly_skip_sunday', 'via': 'weekly_via', 'last': 'last_weekly_date'},
+    'daily': {'name': 'Daily subscribers', 'enabled': 'daily_enabled', 'freq': 'daily_freq', 'weekday': 'daily_weekday',
+              'time': 'daily_time', 'skip_sunday': 'daily_skip_sunday', 'via': 'daily_via', 'last': 'last_daily_date'},
+}
+LIST_SCHEDULE_DEFAULT = {'enabled': False, 'freq': 'weekly', 'weekday': 0, 'time': '11:00', 'skip_sunday': True, 'via': 'meta'}
+
+
+async def list_schedules(with_counts: bool = False) -> List[dict]:
+    """Every list's schedule, built-in lists first: key ('weekly' | 'daily' |
+    'list:<id>'), name, enabled, freq ('daily' | 'weekly'), weekday, time,
+    skip_sunday, via, last (the IST date it last went out)."""
     cfg = await get_settings()
+    out = []
+    for key, f in _BUILTIN.items():
+        out.append({'key': key, 'name': f['name'], 'builtin': True,
+                    **{k: cfg.get(v) for k, v in f.items() if k != 'name'}})
+    for lst in await db.broadcast_lists.find({}, {'_id': 0}).sort('created_at', 1).to_list(200):
+        sch = {**LIST_SCHEDULE_DEFAULT, **(lst.get('schedule') or {})}
+        out.append({'key': f"list:{lst['id']}", 'name': lst['name'], 'builtin': False, 'list_id': lst['id'],
+                    **{k: sch.get(k) for k in (*LIST_SCHEDULE_DEFAULT, 'last')}})
+    if with_counts:
+        counts = await _counts()
+        for sc in out:
+            sc['count'] = (counts[sc['key']] if sc['builtin'] else
+                           await db.rate_subscribers.count_documents({'status': 'active', 'lists': sc['list_id']}))
+    return out
+
+
+def schedule_due(sc: dict, now_ist) -> bool:
+    if not sc.get('enabled') or sc.get('last') == now_ist.date().isoformat() or not _due(now_ist, sc.get('time') or ''):
+        return False
+    if (sc.get('freq') or 'weekly') == 'weekly':
+        return now_ist.weekday() == int(sc.get('weekday') or 0)
+    return not (sc.get('skip_sunday') and now_ist.weekday() == 6)
+
+
+async def _mark_sent(sc: dict, today: str) -> None:
+    if sc['builtin']:
+        await db.settings.update_one({'id': 'rate_broadcast'}, {'$set': {'id': 'rate_broadcast', _BUILTIN[sc['key']]['last']: today}}, upsert=True)
+    else:
+        await db.broadcast_lists.update_one({'id': sc['list_id']}, {'$set': {'schedule.last': today}})
+
+
+async def _maybe_schedule() -> None:
     now_ist = now_utc().astimezone(IST)
     today = now_ist.date().isoformat()
-    plans = []
-    if cfg['weekly_enabled'] and now_ist.weekday() == int(cfg['weekday']) and cfg['last_weekly_date'] != today and _due(now_ist, cfg['time']):
-        plans.append(('weekly', 'last_weekly_date'))
-    if (cfg['daily_enabled'] and cfg['last_daily_date'] != today and _due(now_ist, cfg['daily_time'])
-            and not (cfg['daily_skip_sunday'] and now_ist.weekday() == 6)):
-        plans.append(('daily', 'last_daily_date'))
-    for plan, marker in plans:
+    for sc in await list_schedules():
+        if not schedule_due(sc, now_ist):
+            continue
         # Mark first, so a failure below can't retry every tick all day.
-        await db.settings.update_one({'id': 'rate_broadcast'}, {'$set': {'id': 'rate_broadcast', marker: today}}, upsert=True)
+        await _mark_sent(sc, today)
         try:
-            job = await start_broadcast('schedule', f'{plan.title()} schedule', plan)
-            logger.info(f"{plan} rate broadcast started: {job['total']} recipients")
+            if sc['builtin']:
+                job = await start_broadcast('schedule', f"{sc['name']} schedule", sc['key'], via=sc.get('via'))
+            else:
+                job = await start_broadcast('schedule', f"{sc['name']} schedule", 'list', sc['list_id'], via=sc.get('via'))
+            logger.info(f"{sc['name']} rate broadcast started: {job['total']} recipients")
         except HTTPException as e:
-            logger.info(f'{plan} rate broadcast not started: {e.detail}')
+            logger.info(f"{sc['name']} rate broadcast not started: {e.detail}")
+
+
+class ScheduleIn(BaseModel):
+    enabled: bool
+    freq: Literal['daily', 'weekly'] = 'weekly'
+    weekday: int = 0
+    time: str = '11:00'
+    skip_sunday: bool = True
+    via: Literal['openwa', 'meta'] = 'meta'
+
+
+@router.get('/rate-broadcast/schedules')
+async def get_schedules(_: dict = Depends(require_broadcast)):
+    return await list_schedules(with_counts=True)
+
+
+@router.put('/rate-broadcast/schedules/{key}')
+async def save_schedule(key: str, body: ScheduleIn, user: dict = Depends(require_broadcast)):
+    if not 0 <= body.weekday <= 6:
+        raise HTTPException(status_code=400, detail='Pick a day of the week')
+    t = body.time.strip()
+    if not _HHMM.fullmatch(t):
+        raise HTTPException(status_code=400, detail='Time must be HH:MM (24-hour), e.g. 11:00')
+    vals = {'enabled': body.enabled, 'freq': body.freq, 'weekday': body.weekday, 'time': t,
+            'skip_sunday': body.skip_sunday, 'via': body.via}
+    if key in _BUILTIN:
+        f = _BUILTIN[key]
+        await db.settings.update_one({'id': 'rate_broadcast'},
+                                     {'$set': {'id': 'rate_broadcast', **{f[k]: v for k, v in vals.items()}}}, upsert=True)
+    elif key.startswith('list:'):
+        lid = key[5:]
+        res = await db.broadcast_lists.update_one({'id': lid}, {'$set': {f'schedule.{k}': v for k, v in vals.items()}})
+        if not res.matched_count:
+            raise HTTPException(status_code=404, detail='List not found')
+    else:
+        raise HTTPException(status_code=404, detail='List not found')
+    when = f"{'every day' if body.freq == 'daily' else WEEKDAYS[body.weekday]} {t}"
+    await log_audit(user, 'rate_broadcast.schedule', 'settings', key, f"{'on' if body.enabled else 'off'} · {when} · {body.via}")
+    return next(sc for sc in await list_schedules(with_counts=True) if sc['key'] == key)
 
 
 async def broadcast_loop() -> None:
@@ -595,6 +684,7 @@ async def overview(_: dict = Depends(require_broadcast)):
         'template': {**(await whatsapp_meta.template_status(TEMPLATE_NAME)), 'name': TEMPLATE_NAME},
         'meta_configured': whatsapp_meta.is_configured(),
         'sending': await db.rate_broadcasts.find({'status': 'sending'}, {'_id': 0}).to_list(5),
+        'schedules': await list_schedules(),
         'sent_today': await _sent_today(),
         'my_lists': await db.broadcast_lists.count_documents({}),
         'my_templates': await db.broadcast_templates.count_documents({}),

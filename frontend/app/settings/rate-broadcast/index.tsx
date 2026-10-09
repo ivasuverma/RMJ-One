@@ -40,11 +40,10 @@ export default function RateBroadcastHub() {
     );
   }
 
-  const s = ov.settings;
-  const schedule = [
-    s.weekly_enabled ? `Weekly: ${SHORT_DAYS[s.weekday]} ${s.time}` : 'Weekly: off',
-    s.daily_enabled ? `Daily: ${s.daily_time}` : 'Daily: off',
-  ].join(' · ');
+  const on = (ov.schedules || []).filter((x) => x.enabled);
+  const schedule = on.length
+    ? on.map((x) => `${x.name}: ${x.freq === 'daily' ? 'daily' : SHORT_DAYS[x.weekday]} ${x.time}`).join(' · ')
+    : 'No list on a schedule';
   const steps: Step[] = [
     {
       key: 'people', n: 1, title: 'People', icon: 'people-outline', route: '/settings/rate-broadcast/people',
@@ -53,7 +52,7 @@ export default function RateBroadcastHub() {
     },
     {
       key: 'send', n: 2, title: 'Send & schedule', icon: 'paper-plane-outline', route: '/settings/rate-broadcast/send',
-      ok: s.weekly_enabled || s.daily_enabled,
+      ok: on.length > 0,
       sub: ov.sending.length ? `Sending now · ${num(ov.sent_today)} sent today` : schedule,
     },
   ];
@@ -79,7 +78,7 @@ export default function RateBroadcastHub() {
                 <Ionicons name={st.icon} size={15} color={colors.brandSecondary} />
                 <Text style={styles.label}>{st.title}</Text>
               </View>
-              <Text style={[styles.listMeta, { marginTop: 3 }]} numberOfLines={2}>{st.sub}</Text>
+              <Text style={[styles.listMeta, { marginTop: 3 }]}>{st.sub}</Text>
             </View>
             <Ionicons name="chevron-forward" size={18} color={colors.mutedText} />
           </Pressable>

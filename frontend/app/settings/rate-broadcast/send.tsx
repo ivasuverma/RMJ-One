@@ -1,19 +1,19 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, Text, ScrollView, Pressable, ActivityIndicator, TextInput, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { api } from '@/src/api/client';
 import { confirmAction } from '@/src/utils/confirm';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { useToast } from '@/src/components/ui';
 import { ToggleSwitch } from '@/src/components/ui/ToggleSwitch';
-import { AUDIENCE_LABEL, Audience, VIA_LABEL, Via, BList, Header, Job, KIND_LABEL, MyTpl, Overview, Settings, SHORT_DAYS, jobAudience, makeStyles, num, when } from './_shared';
+import { AUDIENCE_LABEL, Audience, Sched, VIA_LABEL, Via, BList, Header, Job, KIND_LABEL, MyTpl, Overview, Settings, SHORT_DAYS, jobAudience, makeStyles, num, when } from './_shared';
 import { HeaderSpacer } from '@/src/components/ui/StickyHeader';
 
 // Step 4 — send now, the daily/weekly schedule, and recent sends with their
 // delivery results (from Meta's status webhooks).
 export default function BroadcastSendScreen() {
-  const router = useRouter();
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const toast = useToast();
@@ -26,16 +26,20 @@ export default function BroadcastSendScreen() {
   const [listId, setListId] = useState<string | null>(null);
   const [templates, setTemplates] = useState<MyTpl[]>([]);
   const [what, setWhat] = useState<string>(params.template || 'rate');   // 'rate' or one of your template ids
+  const [schedules, setSchedules] = useState<Sched[]>([]);
+  const [openKey, setOpenKey] = useState<string | null>(null);
   const [viaPick, setViaPick] = useState<Via | null>(null);   // null = the list's own setting
   const [busy, setBusy] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const [o, h, l, t] = await Promise.all([
+      const [o, h, l, t, sc] = await Promise.all([
         api.get<Overview>('/rate-broadcast/overview'), api.get<Job[]>('/rate-broadcast/history'),
         api.get<BList[]>('/broadcasts/lists'), api.get<MyTpl[]>('/broadcasts/templates'),
+        api.get<Sched[]>('/rate-broadcast/schedules'),
       ]);
+      setSchedules(sc);
       setOv(o); setForm(o.settings); setHistory(h); setLists(l);
       setTemplates(t.filter((x) => x.status === 'APPROVED'));
       setListId((cur) => cur ?? l[0]?.id ?? null);
@@ -58,7 +62,8 @@ export default function BroadcastSendScreen() {
   // Today's rate goes from the shop's own WhatsApp (OpenWA, plain text, no
   // charge) or the official Meta number (approved template) — by default as
   // set for that list in the schedule below. Your own templates are Meta only.
-  const listVia: Via = (audience === 'daily' ? form?.daily_via || 'openwa' : form?.weekly_via || 'meta');
+  const listKey = audience === 'list' ? `list:${listId}` : audience === 'all' ? 'weekly' : audience;
+  const listVia: Via = schedules.find((x) => x.key === listKey)?.via || (audience === 'daily' ? 'openwa' : 'meta');
   const via: Via = chosenTpl ? 'meta' : viaPick || listVia;
   const viaShop = via === 'openwa';
   const audienceName = audience === 'list' ? `“${lists.find((l) => l.id === listId)?.name ?? ''}”` : AUDIENCE_LABEL[audience].toLowerCase();
@@ -85,7 +90,7 @@ export default function BroadcastSendScreen() {
     const { weekly_enabled: _w, daily_enabled: _d, ...rest } = form;
     const s = await api.put<Settings>('/rate-broadcast/settings', { ...rest, daily_limit: Number(form.daily_limit) || 250 });
     setForm(s);
-    toast.success('Schedule saved');
+    toast.success('Limit saved');
   });
 
   if (!ov || !form) {
@@ -172,55 +177,24 @@ export default function BroadcastSendScreen() {
           </Pressable>
         </View>
 
-        {/* ---- Schedule ---- */}
+        {/* ---- Schedule: one card per list ---- */}
+        <Text style={[styles.cardTitle, { marginTop: 8 }]}>Schedule</Text>
+        <Text style={styles.hint}>Each list sends on its own schedule. Tap a list to change it.</Text>
+        {schedules.map((sc) => (
+          <ListSchedule key={sc.key} sc={sc} styles={styles} colors={colors} open={openKey === sc.key}
+            onToggle={() => setOpenKey((k) => (k === sc.key ? null : sc.key))}
+            onSaved={(n) => { setSchedules((all) => all.map((x) => (x.key === n.key ? n : x))); toast.success(`${n.name}: schedule saved`); }} />
+        ))}
+
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Schedule</Text>
-          <Pressable onPress={() => router.push('/settings/notifications' as any)} style={styles.row} testID="rate-broadcast-weekly-status">
-            <Text style={[styles.label, styles.flex1]}>Weekly — customer list ({num(ov.counts.weekly)}) · {form.weekly_enabled ? 'On' : 'Off'}</Text>
-            <Text style={styles.small}>On/off in Notifications ›</Text>
-          </Pressable>
-          <View style={{ opacity: form.weekly_enabled ? 1 : 0.5, gap: 8 }}>
-            <View style={styles.chips}>
-              {SHORT_DAYS.map((d, i) => (
-                <Pressable key={d} onPress={() => setForm((f) => f && { ...f, weekday: i })} style={[styles.chip, form.weekday === i && styles.chipOn]} accessibilityRole="button" accessibilityState={{ selected: form.weekday === i }}>
-                  <Text style={[styles.chipText, form.weekday === i && styles.chipTextOn]}>{d}</Text>
-                </Pressable>
-              ))}
-            </View>
-            <ViaChips value={form.weekly_via || 'meta'} onChange={(v) => setForm((f) => f && { ...f, weekly_via: v })} styles={styles} id="weekly" />
-            <View>
-              <Text style={styles.small}>Time (24h, IST)</Text>
-              <TextInput value={form.time} onChangeText={(v) => setForm((f) => f && { ...f, time: v })} placeholder="11:00" placeholderTextColor={colors.mutedText} style={styles.input} testID="rate-broadcast-time" />
-            </View>
-          </View>
-
-          <View style={styles.divider} />
-          <Pressable onPress={() => router.push('/settings/notifications' as any)} style={styles.row} testID="rate-broadcast-daily-status">
-            <Text style={[styles.label, styles.flex1]}>Daily — subscribers ({num(ov.counts.daily)}) · {form.daily_enabled ? 'On' : 'Off'}</Text>
-            <Text style={styles.small}>On/off in Notifications ›</Text>
-          </Pressable>
-          <View style={{ opacity: form.daily_enabled ? 1 : 0.5 }}>
-            <ViaChips value={form.daily_via || 'openwa'} onChange={(v) => setForm((f) => f && { ...f, daily_via: v })} styles={styles} id="daily" />
-          </View>
-          <View style={[styles.row, { opacity: form.daily_enabled ? 1 : 0.5 }]}>
-            <View style={styles.flex1}>
-              <Text style={styles.small}>Time (24h, IST)</Text>
-              <TextInput value={form.daily_time} onChangeText={(v) => setForm((f) => f && { ...f, daily_time: v })} placeholder="11:30" placeholderTextColor={colors.mutedText} style={styles.input} testID="rate-broadcast-daily-time" />
-            </View>
-            <Pressable onPress={() => setForm((f) => f && { ...f, daily_skip_sunday: !f.daily_skip_sunday })} style={[styles.row, styles.flex1, { paddingTop: 18 }]} accessibilityRole="switch" accessibilityState={{ checked: form.daily_skip_sunday }}>
-              <Text style={[styles.small, styles.flex1, { marginBottom: 0 }]}>Skip Sunday</Text>
-              <ToggleSwitch value={form.daily_skip_sunday} />
-            </Pressable>
-          </View>
-
-          <View style={styles.divider} />
+          <Text style={styles.cardTitle}>Official (Meta) daily limit</Text>
           <View>
             <Text style={styles.small}>Most Official (Meta) messages a day (all Meta sends together)</Text>
             <TextInput value={String(form.daily_limit)} onChangeText={(v) => setForm((f) => f && { ...f, daily_limit: Number(v.replace(/\D/g, '')) || 0 })} keyboardType="numeric" style={styles.input} testID="rate-broadcast-limit" />
           </View>
-          <Text style={styles.hint}>Meta lets a new number message about 250 different people a day; it rises to 1,000 and more once your business is verified and quality stays good. Over the limit, a send carries on the next day — and next week’s send replaces an unfinished one.</Text>
+          <Text style={styles.hint}>Meta lets a new number message about 250 different people a day; it rises to 1,000 and more once your business is verified and quality stays good. Over the limit, a send carries on the next day — and a list’s next scheduled send replaces an unfinished one. Shop WhatsApp sends don’t count here.</Text>
           <Pressable onPress={saveSettings} disabled={busy === 'settings'} style={styles.primary} testID="rate-broadcast-save-settings" accessibilityRole="button">
-            {busy === 'settings' ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.primaryText}>Save schedule</Text>}
+            {busy === 'settings' ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.primaryText}>Save limit</Text>}
           </Pressable>
         </View>
 
@@ -248,6 +222,81 @@ export default function BroadcastSendScreen() {
         </View>
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+const schedLine = (sc: Sched) => !sc.enabled ? 'Off'
+  : `${sc.freq === 'daily' ? `Every day${sc.skip_sunday ? ' except Sunday' : ''}` : `Every ${DAY_NAMES[sc.weekday]}`} at ${sc.time} · ${VIA_LABEL[sc.via]}`;
+
+/** One list's schedule: a summary row that opens to its own settings and Save. */
+function ListSchedule({ sc, styles, colors, open, onToggle, onSaved }: {
+  sc: Sched; styles: any; colors: any; open: boolean; onToggle: () => void; onSaved: (n: Sched) => void;
+}) {
+  const toast = useToast();
+  const [f, setF] = useState<Sched>(sc);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => { if (!open) setF(sc); }, [open, sc]);
+  const save = async () => {
+    setSaving(true);
+    try {
+      const n = await api.put<Sched>(`/rate-broadcast/schedules/${encodeURIComponent(sc.key)}`, {
+        enabled: f.enabled, freq: f.freq, weekday: f.weekday, time: f.time.trim(), skip_sunday: f.skip_sunday, via: f.via,
+      });
+      onSaved(n); onToggle();
+    } catch (e: any) { toast.error(e?.detail || 'Could not save'); }
+    finally { setSaving(false); }
+  };
+  return (
+    <View style={styles.card} testID={`schedule-${sc.key}`}>
+      <Pressable onPress={onToggle} style={[styles.row, { alignItems: 'flex-start' }]} accessibilityRole="button" accessibilityState={{ expanded: open }} testID={`schedule-open-${sc.key}`}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.label}>{sc.name} · {num(sc.count ?? 0)}</Text>
+          <Text style={[styles.listMeta, { marginTop: 3, color: sc.enabled ? colors.onSurfaceSecondary : colors.mutedText }]}>{schedLine(sc)}</Text>
+        </View>
+        <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={18} color={colors.mutedText} />
+      </Pressable>
+      {open && (
+        <View style={{ gap: 8, marginTop: 8 }}>
+          <Pressable onPress={() => setF((x) => ({ ...x, enabled: !x.enabled }))} style={styles.row} accessibilityRole="switch" accessibilityState={{ checked: f.enabled }} testID={`schedule-${sc.key}-on`}>
+            <Text style={[styles.label, { flex: 1 }]}>Send on a schedule</Text>
+            <ToggleSwitch value={f.enabled} />
+          </Pressable>
+          <View style={{ opacity: f.enabled ? 1 : 0.5, gap: 8 }}>
+            <Text style={styles.small}>How often</Text>
+            <View style={styles.chips}>
+              {(['daily', 'weekly'] as const).map((q) => (
+                <Pressable key={q} onPress={() => setF((x) => ({ ...x, freq: q }))} style={[styles.chip, f.freq === q && styles.chipOn]} accessibilityRole="button" accessibilityState={{ selected: f.freq === q }} testID={`schedule-${sc.key}-freq-${q}`}>
+                  <Text style={[styles.chipText, f.freq === q && styles.chipTextOn]}>{q === 'daily' ? 'Every day' : 'Once a week'}</Text>
+                </Pressable>
+              ))}
+            </View>
+            {f.freq === 'weekly' ? (
+              <View style={styles.chips}>
+                {SHORT_DAYS.map((d, i) => (
+                  <Pressable key={d} onPress={() => setF((x) => ({ ...x, weekday: i }))} style={[styles.chip, f.weekday === i && styles.chipOn]} accessibilityRole="button" accessibilityState={{ selected: f.weekday === i }}>
+                    <Text style={[styles.chipText, f.weekday === i && styles.chipTextOn]}>{d}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            ) : (
+              <Pressable onPress={() => setF((x) => ({ ...x, skip_sunday: !x.skip_sunday }))} style={styles.row} accessibilityRole="switch" accessibilityState={{ checked: f.skip_sunday }}>
+                <Text style={[styles.small, { flex: 1, marginBottom: 0 }]}>Skip Sunday</Text>
+                <ToggleSwitch value={f.skip_sunday} />
+              </Pressable>
+            )}
+            <View>
+              <Text style={styles.small}>Time (24h, IST)</Text>
+              <TextInput value={f.time} onChangeText={(v) => setF((x) => ({ ...x, time: v }))} placeholder="11:00" placeholderTextColor={colors.mutedText} style={styles.input} testID={`schedule-${sc.key}-time`} />
+            </View>
+            <ViaChips value={f.via} onChange={(v) => setF((x) => ({ ...x, via: v }))} styles={styles} id={sc.key} />
+          </View>
+          <Pressable onPress={save} disabled={saving} style={styles.primary} accessibilityRole="button" testID={`schedule-${sc.key}-save`}>
+            {saving ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.primaryText}>Save {sc.name} schedule</Text>}
+          </Pressable>
+        </View>
+      )}
+    </View>
   );
 }
 

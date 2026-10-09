@@ -410,8 +410,8 @@ GENERAL_SWITCHES = [
     {'key': 'chatbot_status_enabled', 'group': 'Auto-replies', 'label': 'STATUS → their repair status', 'sub': '', 'doc': 'whatsapp', 'field': 'chatbot_status_enabled', 'default': True, 'needs': 'chatbot_enabled'},
     {'key': 'gold_auto_send', 'group': 'Gold rate', 'label': 'Post today’s rate to the WhatsApp channel', 'sub': 'Daily, at the time set in Rate Master', 'doc': 'gold_rate_config', 'field': 'auto_send_enabled', 'default': False},
     {'key': 'gold_status', 'group': 'Gold rate', 'label': 'Also post it to WhatsApp Status', 'sub': '', 'doc': 'gold_rate_config', 'field': 'status_enabled', 'default': True},
-    {'key': 'rb_weekly', 'group': 'Rate broadcast', 'label': 'Weekly rate message to subscribers', 'sub': 'Day and time in Rate Broadcast', 'doc': 'rate_broadcast', 'field': 'weekly_enabled', 'default': False},
-    {'key': 'rb_daily', 'group': 'Rate broadcast', 'label': 'Daily rate message to subscribers', 'sub': 'Time and limit in Rate Broadcast', 'doc': 'rate_broadcast', 'field': 'daily_enabled', 'default': False},
+    {'key': 'rb_weekly', 'group': 'Rate broadcast', 'label': 'Customer list rate message', 'sub': 'Its schedule is in Rate Broadcast › Send & schedule', 'doc': 'rate_broadcast', 'field': 'weekly_enabled', 'default': False},
+    {'key': 'rb_daily', 'group': 'Rate broadcast', 'label': 'Daily subscribers rate message', 'sub': 'Its schedule is in Rate Broadcast › Send & schedule', 'doc': 'rate_broadcast', 'field': 'daily_enabled', 'default': False},
 ]
 GENERAL_SWITCHES_BY_KEY = {g['key']: g for g in GENERAL_SWITCHES}
 
