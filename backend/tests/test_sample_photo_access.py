@@ -41,3 +41,19 @@ def test_accountant_with_samples_can_add_sample_photo():
         assert r.status_code == 403
     finally:
         requests.put(f"{API}/access/accounts/{acc['id']}", headers=owner, json={'module_access': before}, timeout=30)
+
+
+def test_received_photo_type_is_kept_apart():
+    """Stock In: the compulsory photo of what came back is its own type
+    (sample_receive), listed separately from the photos taken at issue."""
+    owner = _login('owner', 'Owner@123')
+    rid = 'test-sample-receive-photo'
+    r = requests.post(f"{API}/record-photos", headers=owner, timeout=60, files={'file': ('r.jpg', _jpg(), 'image/jpeg')},
+                      data={'ref_type': 'sample_receive', 'ref_id': rid})
+    assert r.status_code == 200, r.text
+    try:
+        got = requests.get(f"{API}/record-photos?ref_type=sample_receive&ref_id={rid}", headers=owner, timeout=30).json()
+        assert [p['id'] for p in got] == [r.json()['id']]
+        assert requests.get(f"{API}/record-photos?ref_type=sample&ref_id={rid}", headers=owner, timeout=30).json() == []
+    finally:
+        requests.delete(f"{API}/record-photos/{r.json()['id']}", headers=owner, timeout=30)

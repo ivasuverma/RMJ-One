@@ -152,6 +152,9 @@ export default function SampleDetailScreen() {
           {sample.photo ? <Image source={{ uri: sample.photo }} style={styles.photo} /> : null}
 
           <RecordPhotos refType="sample" refId={sample.id} label="Photos" />
+          {(sample.status === 'received' || ps.parts.length > 0) && (
+            <RecordPhotos refType="sample_receive" refId={sample.id} label="Photos when received" readOnly emptyText="No photo was taken when this came back." />
+          )}
 
           <Text style={styles.description}>{sample.description}</Text>
           {!!sample.tag_number && <Text style={styles.tagNumber}>Tag {sample.tag_number}</Text>}
