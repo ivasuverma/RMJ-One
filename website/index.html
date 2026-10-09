@@ -761,7 +761,7 @@ setInterval(tick,1000);
 refreshNow();
 setInterval(applyMarketHours,30*1000);   // flips at 8 PM / 9 AM without a reload
 
-/* Visitor ticker: "3 here now · 128 visits today". The browser makes up a
+/* Visitor ticker: "128 visits today · 4,560 total". The browser makes up a
    random id per tab (nothing personal is sent); a visit counts once per
    device per day. Hidden if the server can't be reached. */
 (function(){
@@ -778,7 +778,7 @@ setInterval(applyMarketHours,30*1000);   // flips at 8 PM / 9 AM without a reloa
       if(!r.ok) throw 0;
       const d=await r.json();
       if(isNew){ isNew=false; try{ localStorage.setItem('rmj_visit_day',day); }catch(e){} }
-      txt.innerHTML=`<b>${n(d.online)}</b> here now · <b>${n(d.today)}</b> ${d.today===1?'visit':'visits'} today`;
+      txt.innerHTML=`<b>${n(d.today)}</b> ${d.today===1?'visit':'visits'} today · <b>${n(d.total)}</b> total`;
       box.hidden=false;
     }catch(e){ box.hidden=true; }
   }
