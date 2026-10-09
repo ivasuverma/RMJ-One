@@ -529,7 +529,7 @@ async def _needs_you(user: dict, s: dict, now: datetime, staff: Optional[dict]) 
         b = await _broadcast_status(s, now)
         if b['state'] == 'template_not_approved':
             rows.append({'key': 'broadcast', 'severity': 'amber', 'module': 'rate_broadcast',
-                         'title': 'Rate broadcast template not approved',
+                         'title': 'Meta rate template not approved',
                          'detail': f"{b['subscribers']:,} customers can't get daily rates yet",
                          'action': 'Check', 'route': '/settings/rate-broadcast', 'can_act': True})
         elif b['late']:

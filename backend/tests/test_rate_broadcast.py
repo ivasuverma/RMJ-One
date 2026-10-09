@@ -237,9 +237,14 @@ def test_daily_rate_goes_from_shop_whatsapp_without_meta(owner):
     assert rate_channel('weekly', None) == 'meta' and rate_channel('all', None) == 'meta'
     text = openwa_rate_text('Rahul', '1,50,850', '2,35,500')
     assert 'Rs. 1,50,850' in text and 'STOP' in text and 'rmj.co.in' in text
+    # the owner's choice wins; their own templates are always Meta
+    assert rate_channel('weekly', None, 'openwa') == 'openwa' and rate_channel('daily', None, 'meta') == 'meta'
+    assert rate_channel('daily', {'id': 'x'}, 'openwa') == 'meta'
+    assert rate_channel('weekly', None, None, {'weekly_via': 'openwa'}) == 'openwa'
+    assert openwa_rate_text('Rahul', '1', '2', 'Hi {name}: {gold_rate}/{silver_rate} on {date} {unknown}', '9 Oct') == 'Hi Rahul: 1/2 on 9 Oct {unknown}'
 
     ov = requests.get(f"{API}/rate-broadcast/overview", headers=owner, timeout=30).json()
-    assert ov['daily_via'] == 'openwa' and 'daily_preview' in ov
+    assert ov['settings']['daily_via'] in ('openwa', 'meta') and 'daily_preview' in ov
     r = requests.post(f"{API}/rate-broadcast/send", headers=owner, json={'audience': 'daily'}, timeout=30)
     if r.status_code == 400:
         # No rate yet / nobody on the daily list here — but never refused for Meta reasons.
@@ -248,3 +253,54 @@ def test_daily_rate_goes_from_shop_whatsapp_without_meta(owner):
     assert r.status_code == 200, r.text
     assert r.json()['channel'] == 'openwa'
     requests.post(f"{API}/rate-broadcast/{r.json()['id']}/stop", headers=owner, timeout=30)
+
+
+def test_rate_text_template(owner, admin):
+    """The shop-WhatsApp rate message is editable (Message Templates); empty = standard text."""
+    url = f"{API}/rate-broadcast/rate-text"
+    assert requests.get(url, headers=admin, timeout=30).status_code == 403
+    cur = requests.get(url, headers=owner, timeout=30).json()
+    assert '{gold_rate}' in cur['default']
+    assert requests.put(url, headers=owner, json={'template': 'Hello {name}'}, timeout=30).status_code == 400
+    try:
+        r = requests.put(url, headers=owner, json={'template': 'Hi {name}, gold {gold_rate}. Reply STOP to stop.'}, timeout=30)
+        assert r.status_code == 200, r.text
+        ov = requests.get(f"{API}/rate-broadcast/overview", headers=owner, timeout=30).json()
+        assert ov['daily_preview'].startswith('Hi Rahul, gold ')
+    finally:
+        requests.put(url, headers=owner, json={'template': cur['template']}, timeout=30)
+
+
+def test_schedules_are_per_list(owner):
+    """Send & schedule: each list (built-in and your own) has its own schedule."""
+    import server  # noqa: F401
+    from datetime import datetime
+    from routers.rate_broadcast import schedule_due
+    mon_noon = datetime(2026, 10, 5, 12, 0)   # a Monday
+    sun_noon = datetime(2026, 10, 11, 12, 0)
+    weekly = {'enabled': True, 'freq': 'weekly', 'weekday': 0, 'time': '11:00', 'skip_sunday': True, 'last': None}
+    assert schedule_due(weekly, mon_noon) and not schedule_due({**weekly, 'weekday': 1}, mon_noon)
+    assert not schedule_due({**weekly, 'last': '2026-10-05'}, mon_noon)
+    assert not schedule_due({**weekly, 'time': '13:00'}, mon_noon)
+    daily = {**weekly, 'freq': 'daily'}
+    assert schedule_due(daily, mon_noon) and not schedule_due(daily, sun_noon)
+    assert schedule_due({**daily, 'skip_sunday': False}, sun_noon)
+    assert not schedule_due({**daily, 'enabled': False}, mon_noon)
+
+    keys = [s['key'] for s in requests.get(f"{API}/rate-broadcast/schedules", headers=owner, timeout=30).json()]
+    assert keys[:2] == ['weekly', 'daily']
+    import uuid
+    lst = requests.post(f"{API}/broadcasts/lists", headers=owner, json={'name': f'Sched {uuid.uuid4().hex[:6]}'}, timeout=30)
+    assert lst.status_code == 200, lst.text
+    lid = lst.json()['id']
+    try:
+        url = f"{API}/rate-broadcast/schedules/list:{lid}"
+        assert requests.put(url, headers=owner, json={'enabled': True, 'time': '25:00'}, timeout=30).status_code == 400
+        r = requests.put(url, headers=owner, json={'enabled': True, 'freq': 'daily', 'time': '10:15', 'skip_sunday': False, 'via': 'openwa'}, timeout=30)
+        assert r.status_code == 200, r.text
+        assert r.json()['freq'] == 'daily' and r.json()['via'] == 'openwa' and r.json()['enabled'] is True
+        got = {s['key']: s for s in requests.get(f"{API}/rate-broadcast/schedules", headers=owner, timeout=30).json()}
+        assert got[f'list:{lid}']['time'] == '10:15'
+        assert requests.put(f"{API}/rate-broadcast/schedules/nope", headers=owner, json={'enabled': False}, timeout=30).status_code == 404
+    finally:
+        requests.delete(f"{API}/broadcasts/lists/{lid}", headers=owner, timeout=30)

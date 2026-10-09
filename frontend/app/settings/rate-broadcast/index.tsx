@@ -7,15 +7,13 @@ import { api } from '@/src/api/client';
 import { spacing, radius, ThemeColors } from '@/src/theme';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { useToast } from '@/src/components/ui';
-import { Header, makeStyles, MetaStatus, Overview, SHORT_DAYS, num, templateLine } from './_shared';
+import { Header, makeStyles, Overview, SHORT_DAYS, num } from './_shared';
 import { HeaderSpacer } from '@/src/components/ui/StickyHeader';
 
 type Step = { key: string; n: number; title: string; sub: string; ok: boolean; route: string; icon: keyof typeof Ionicons.glyphMap };
 
-// Rate Broadcast hub — the four parts in the order they're set up: the
-// official number, the message template, the people, then sending. Each
-// opens its own screen; every other WhatsApp message stays on OpenWA
-// (Settings › WhatsApp).
+// Message Broadcast hub — the people, then sending. The official (Meta) number
+// and its templates are set up in Settings › WhatsApp.
 export default function RateBroadcastHub() {
   const router = useRouter();
   const { colors } = useTheme();
@@ -23,16 +21,11 @@ export default function RateBroadcastHub() {
   const hub = useMemo(() => hubStyles(colors), [colors]);
   const toast = useToast();
   const [ov, setOv] = useState<Overview | null>(null);
-  const [meta, setMeta] = useState<MetaStatus | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const [o, m] = await Promise.all([
-        api.get<Overview>('/rate-broadcast/overview'),
-        api.get<MetaStatus>('/settings/whatsapp-meta').catch(() => null),
-      ]);
-      setOv(o); setMeta(m);
+      setOv(await api.get<Overview>('/rate-broadcast/overview'));
     } catch (e: any) { toast.error(e?.detail || 'Could not load'); }
     finally { setRefreshing(false); }
   }, [toast]);
@@ -41,48 +34,38 @@ export default function RateBroadcastHub() {
   if (!ov) {
     return (
       <SafeAreaView style={styles.root} edges={['top']} testID="rate-broadcast-screen">
-        <Header title="Rate Broadcast" colors={colors} />
+        <Header title="Message Broadcast" colors={colors} />
         <View style={styles.centered}><ActivityIndicator color={colors.brandPrimary} /></View>
       </SafeAreaView>
     );
   }
 
-  const s = ov.settings;
-  const schedule = [
-    s.weekly_enabled ? `Weekly: ${SHORT_DAYS[s.weekday]} ${s.time}` : 'Weekly: off',
-    s.daily_enabled ? `Daily: ${s.daily_time}` : 'Daily: off',
-  ].join(' · ');
+  const on = (ov.schedules || []).filter((x) => x.enabled);
+  const schedule = on.length
+    ? on.map((x) => `${x.name}: ${x.freq === 'daily' ? 'daily' : SHORT_DAYS[x.weekday]} ${x.time}`).join(' · ')
+    : 'No list on a schedule';
   const steps: Step[] = [
     {
-      key: 'number', n: 1, title: 'Official number', icon: 'shield-checkmark-outline', route: '/settings/rate-broadcast/number',
-      ok: !!meta?.connected,
-      sub: !meta ? 'Checking…' : !meta.configured ? 'Not set up yet' : meta.connected ? `Connected · ${meta.display_name || meta.phone}` : 'Set up, but not connecting — open to check',
-    },
-    {
-      key: 'templates', n: 2, title: 'Templates', icon: 'document-text-outline', route: '/settings/rate-broadcast/templates',
-      ok: ov.template.status === 'APPROVED', sub: `Rate update · ${templateLine(ov)}${ov.my_templates ? ` · ${num(ov.my_templates)} of your own` : ''}`,
-    },
-    {
-      key: 'people', n: 3, title: 'People', icon: 'people-outline', route: '/settings/rate-broadcast/people',
+      key: 'people', n: 1, title: 'People', icon: 'people-outline', route: '/settings/rate-broadcast/people',
       ok: ov.counts.weekly + ov.counts.daily > 0,
       sub: `${num(ov.counts.weekly)} customers · ${num(ov.counts.daily)} daily · ${num(ov.counts.opted_out)} stopped${ov.my_lists ? ` · ${num(ov.my_lists)} lists` : ''}`,
     },
     {
-      key: 'send', n: 4, title: 'Send & schedule', icon: 'paper-plane-outline', route: '/settings/rate-broadcast/send',
-      ok: s.weekly_enabled || s.daily_enabled,
+      key: 'send', n: 2, title: 'Send & schedule', icon: 'paper-plane-outline', route: '/settings/rate-broadcast/send',
+      ok: on.length > 0,
       sub: ov.sending.length ? `Sending now · ${num(ov.sent_today)} sent today` : schedule,
     },
   ];
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="rate-broadcast-screen">
-      <Header title="Rate Broadcast" colors={colors} />
+      <Header title="Message Broadcast" colors={colors} />
       <ScrollView contentContainerStyle={styles.scroll}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}>
         <HeaderSpacer />
         <Text style={styles.hint}>
-          Rates and offers to customers on WhatsApp, from the official (Meta) number only — the shop’s OpenWA number is
-          never used for these, so a big send can’t get it banned. Set up each part in order.
+          Today’s rate and offers to customers on WhatsApp — from the shop’s WhatsApp or the official (Meta) number,
+          chosen in Send & schedule.
         </Text>
 
         {steps.map((st) => (
@@ -95,14 +78,14 @@ export default function RateBroadcastHub() {
                 <Ionicons name={st.icon} size={15} color={colors.brandSecondary} />
                 <Text style={styles.label}>{st.title}</Text>
               </View>
-              <Text style={[styles.listMeta, { marginTop: 3 }]} numberOfLines={2}>{st.sub}</Text>
+              <Text style={[styles.listMeta, { marginTop: 3 }]}>{st.sub}</Text>
             </View>
             <Ionicons name="chevron-forward" size={18} color={colors.mutedText} />
           </Pressable>
         ))}
 
         <Pressable onPress={() => router.push('/settings/whatsapp' as any)} hitSlop={6} style={{ marginTop: spacing.lg }} accessibilityRole="link">
-          <Text style={styles.hint}>Repair notices, staff alerts, the chatbot and the rate channel use the shop’s number — Settings › WhatsApp.</Text>
+          <Text style={styles.hint}>The official (Meta) number, Meta templates and the rate message wording are in Settings › WhatsApp.</Text>
         </Pressable>
       </ScrollView>
     </SafeAreaView>

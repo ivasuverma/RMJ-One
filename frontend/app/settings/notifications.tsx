@@ -101,7 +101,7 @@ function GeneralSection() {
   }, []);
   return (
     <>
-      <Text style={styles.hint}>Messages for the whole shop, sent on WhatsApp. Changes save as soon as you tap. Wording is in WhatsApp Templates; times are in Rate Master and Rate Broadcast.</Text>
+      <Text style={styles.hint}>Messages for the whole shop, sent on WhatsApp. Changes save as soon as you tap. Wording is in WhatsApp Templates; times are in Rate Master and Message Broadcast.</Text>
       {groups.map((g) => (
         <View key={g.name} style={{ marginTop: spacing.lg }}>
           <View style={styles.catHead}><Text style={styles.catTitle}>{g.name}</Text></View>
