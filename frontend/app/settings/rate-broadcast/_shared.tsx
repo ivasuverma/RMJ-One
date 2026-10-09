@@ -3,7 +3,7 @@ import { StyleSheet } from 'react-native';
 import { spacing, radius, ThemeColors } from '@/src/theme';
 import { ModuleHeader } from '@/src/components/ui/ModuleHeader';
 
-// Shared types, labels and styles for the Rate Broadcast screens (index =
+// Shared types, labels and styles for the Message Broadcast screens (index =
 // hub, number, templates, people, send) — not a route itself (expo-router
 // ignores files prefixed with `_`). Backend: routers/rate_broadcast.py; the
 // official number itself: whatsapp_meta.py via /settings/whatsapp-meta.
@@ -75,7 +75,7 @@ export function templateLine(ov: Overview): string {
 // The shared Apple-style module header (see ModuleHeader). The module's own
 // front page goes back to Work; its inner pages go back to the module.
 export function Header({ title, right, backLabel }: { title: string; colors?: ThemeColors; right?: ReactNode; backLabel?: string }) {
-  return <ModuleHeader title={title} backLabel={backLabel || (title === 'Rate Broadcast' ? 'Work' : 'Rate Broadcast')} actions={right} />;
+  return <ModuleHeader title={title} backLabel={backLabel || (title === 'Message Broadcast' ? 'Work' : 'Message Broadcast')} actions={right} />;
 }
 
 

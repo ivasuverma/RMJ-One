@@ -297,7 +297,7 @@ MODULE_DEFS = [
     # WhatsApp rate/offer broadcasts to customers from the official number
     # (routers/rate_broadcast.py). Sends cost money and reach thousands of
     # people, so owner-only by default; grant it deliberately in Settings › Users.
-    {'key': 'rate_broadcast', 'label': 'Rate Broadcast', 'default_roles': ['owner'], 'employee_assignable': True},
+    {'key': 'rate_broadcast', 'label': 'Message Broadcast', 'default_roles': ['owner'], 'employee_assignable': True},
     # Cash Ledger (routers/cash_ledger.py): cash given to / received from
     # people, account by account, with photos - the owner's own khata. Owner
     # only unless deliberately granted in People.

@@ -12,7 +12,7 @@ import { HeaderSpacer } from '@/src/components/ui/StickyHeader';
 
 type Step = { key: string; n: number; title: string; sub: string; ok: boolean; route: string; icon: keyof typeof Ionicons.glyphMap };
 
-// Rate Broadcast hub — the people, then sending. The official (Meta) number
+// Message Broadcast hub — the people, then sending. The official (Meta) number
 // and its templates are set up in Settings › WhatsApp.
 export default function RateBroadcastHub() {
   const router = useRouter();
@@ -34,7 +34,7 @@ export default function RateBroadcastHub() {
   if (!ov) {
     return (
       <SafeAreaView style={styles.root} edges={['top']} testID="rate-broadcast-screen">
-        <Header title="Rate Broadcast" colors={colors} />
+        <Header title="Message Broadcast" colors={colors} />
         <View style={styles.centered}><ActivityIndicator color={colors.brandPrimary} /></View>
       </SafeAreaView>
     );
@@ -59,7 +59,7 @@ export default function RateBroadcastHub() {
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="rate-broadcast-screen">
-      <Header title="Rate Broadcast" colors={colors} />
+      <Header title="Message Broadcast" colors={colors} />
       <ScrollView contentContainerStyle={styles.scroll}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}>
         <HeaderSpacer />

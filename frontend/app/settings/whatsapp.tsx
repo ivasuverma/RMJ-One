@@ -69,7 +69,7 @@ export default function WhatsAppSettingsScreen() {
           <View style={styles.navIcon}><Ionicons name="document-text-outline" size={20} color={colors.brandSecondary} /></View>
           <View style={{ flex: 1 }}>
             <Text style={styles.toggleLabel}>Message Templates</Text>
-            <Text style={styles.toggleSub}>Repair notices, chatbot RATE reply, rate channel post and the Rate Broadcast message</Text>
+            <Text style={styles.toggleSub}>Repair notices, chatbot RATE reply, rate channel post and the Message Broadcast message</Text>
           </View>
           <Ionicons name="chevron-forward" size={18} color={colors.mutedText} />
         </Pressable>
@@ -93,7 +93,7 @@ export default function WhatsAppSettingsScreen() {
           <Ionicons name="chevron-forward" size={18} color={colors.mutedText} />
         </Pressable>
 
-        {/* The official Meta number sends only Rate Broadcast messages (when "Official (Meta)" is picked there). */}
+        {/* The official Meta number sends only Message Broadcast messages (when "Official (Meta)" is picked there). */}
         <Text style={styles.groupTitle}>Official number (Meta)</Text>
         <Pressable onPress={() => router.push('/settings/rate-broadcast/number' as any)} style={styles.navRow} testID="whatsapp-meta-link">
           <View style={styles.navIcon}><Ionicons name="shield-checkmark-outline" size={20} color={colors.brandSecondary} /></View>

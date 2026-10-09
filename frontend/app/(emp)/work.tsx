@@ -94,7 +94,7 @@ export default function EmployeeWorkScreen() {
       ],
   });
   if (hasModule('rate_broadcast')) {
-    rows.push({ key: 'rate_broadcast', title: 'Rate Broadcast', icon: 'megaphone-outline', route: '/settings/rate-broadcast', segs: [{ text: 'Rates to customers on WhatsApp' }] });
+    rows.push({ key: 'rate_broadcast', title: 'Message Broadcast', icon: 'megaphone-outline', route: '/settings/rate-broadcast', segs: [{ text: 'Rates and offers to customers on WhatsApp' }] });
   }
   if (hasModule('website')) {
     rows.push({ key: 'website', title: 'Website', icon: 'globe-outline', route: '/website', segs: [{ text: 'Edit rmj.co.in — words, photos, sections' }] });

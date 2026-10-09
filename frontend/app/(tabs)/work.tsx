@@ -209,7 +209,7 @@ export default function WorkScreen() {
   });
 
   if (canBroadcast) rows.push({
-    key: 'rate_broadcast', title: 'Rate Broadcast', icon: 'megaphone-outline', route: '/settings/rate-broadcast',
+    key: 'rate_broadcast', title: 'Message Broadcast', icon: 'megaphone-outline', route: '/settings/rate-broadcast',
     segs: broadcast ? [
       { text: `${broadcast.customers.toLocaleString('en-IN')} customers` }, { text: ' · ' },
       { text: `${broadcast.daily.toLocaleString('en-IN')} daily subscribers` },

@@ -46,10 +46,10 @@ router = APIRouter()
 
 
 def require_broadcast(user=Depends(get_current)):
-    """Owner, or anyone the owner gave the Rate Broadcast module (Settings › Users)."""
+    """Owner, or anyone the owner gave the Message Broadcast module (Settings › Users)."""
     if user.get('role') == 'owner' or 'rate_broadcast' in resolve_modules(user):
         return user
-    raise HTTPException(status_code=403, detail='No access to "Rate Broadcast"')
+    raise HTTPException(status_code=403, detail='No access to "Message Broadcast"')
 logger = logging.getLogger('rate_broadcast')
 
 TEMPLATE_NAME = 'rmj_rate_update'

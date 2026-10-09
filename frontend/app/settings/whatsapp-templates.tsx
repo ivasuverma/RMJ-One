@@ -52,7 +52,7 @@ export default function WhatsAppTemplatesScreen() {
   const [repairReceivedTemplate, setRepairReceivedTemplate] = useState('');
   const [chatbotTemplate, setChatbotTemplate] = useState('');
   const [goldRateTemplate, setGoldRateTemplate] = useState('');
-  // Rate Broadcast's shop-WhatsApp message; null = no access to Rate Broadcast (section hidden).
+  // Message Broadcast's shop-WhatsApp message; null = no access to Message Broadcast (section hidden).
   const [broadcastText, setBroadcastText] = useState<string | null>(null);
   const [broadcastDefault, setBroadcastDefault] = useState('');
 
@@ -211,8 +211,8 @@ export default function WhatsAppTemplatesScreen() {
         {broadcastText !== null && (
           <>
             <View style={styles.divider} />
-            <Text style={styles.section}>Rate Broadcast — Shop WhatsApp Message</Text>
-            <Text style={styles.hint}>Sent to Rate Broadcast people when “Shop WhatsApp” is picked. Placeholders: {'{name}'} {'{gold_rate}'} {'{silver_rate}'} {'{date}'} {'{time}'}. Keep the STOP line so people can opt out. Clear it to go back to the standard message.</Text>
+            <Text style={styles.section}>Message Broadcast — Shop WhatsApp Message</Text>
+            <Text style={styles.hint}>Sent to Message Broadcast people when “Shop WhatsApp” is picked. Placeholders: {'{name}'} {'{gold_rate}'} {'{silver_rate}'} {'{date}'} {'{time}'}. Keep the STOP line so people can opt out. Clear it to go back to the standard message.</Text>
             <TextInput
               value={broadcastText}
               onChangeText={setBroadcastText}

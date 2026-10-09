@@ -22,7 +22,7 @@ type Diag = {
 const WEBHOOK_URL = 'https://api.rmj.co.in/api/webhooks/whatsapp-meta';
 const ENV_KEYS = ['META_WA_PHONE_NUMBER_ID', 'META_WA_WABA_ID', 'META_WA_ACCESS_TOKEN', 'META_WA_APP_SECRET', 'META_WA_WEBHOOK_VERIFY_TOKEN', 'META_WA_APP_ID (only if WhatsApp is a different Meta app from Instagram)'];
 
-// Step 1 — the official WhatsApp (Meta) number, used only for Rate Broadcast.
+// Step 1 — the official WhatsApp (Meta) number, used only for Message Broadcast.
 // Connection status, the customer subscribe link, and a test message.
 const HITS_SHOWN = 4;
 
