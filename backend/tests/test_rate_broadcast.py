@@ -225,3 +225,26 @@ def test_signup_link_goes_to_shop_whatsapp(owner):
     finally:
         if before:
             requests.put(f"{API}/rate-broadcast/signup-number", headers=h, json={'number': before}, timeout=30)
+
+
+def test_daily_rate_goes_from_shop_whatsapp_without_meta(owner):
+    """The daily list (people who sent START) gets today's rate from the shop's
+    OpenWA number, so sending doesn't wait for Meta to approve the template."""
+    import server  # noqa: F401 — load the app before the router
+    from routers.rate_broadcast import openwa_rate_text, rate_channel
+    assert rate_channel('daily', None) == 'openwa'
+    assert rate_channel('daily', {'id': 'x'}) == 'meta'
+    assert rate_channel('weekly', None) == 'meta' and rate_channel('all', None) == 'meta'
+    text = openwa_rate_text('Rahul', '1,50,850', '2,35,500')
+    assert 'Rs. 1,50,850' in text and 'STOP' in text and 'rmj.co.in' in text
+
+    ov = requests.get(f"{API}/rate-broadcast/overview", headers=owner, timeout=30).json()
+    assert ov['daily_via'] == 'openwa' and 'daily_preview' in ov
+    r = requests.post(f"{API}/rate-broadcast/send", headers=owner, json={'audience': 'daily'}, timeout=30)
+    if r.status_code == 400:
+        # No rate yet / nobody on the daily list here — but never refused for Meta reasons.
+        assert 'Meta' not in r.json()['detail'], r.text
+        return
+    assert r.status_code == 200, r.text
+    assert r.json()['channel'] == 'openwa'
+    requests.post(f"{API}/rate-broadcast/{r.json()['id']}/stop", headers=owner, timeout=30)

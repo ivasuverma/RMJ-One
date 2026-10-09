@@ -20,6 +20,7 @@ export type Job = {
   states?: Record<string, number>; delivery?: Record<string, number>;
   list_id?: string | null; list_name?: string | null; template_id?: string | null; template_label?: string | null;
   taps?: Record<string, number>;   // quick-reply button taps, per button
+  channel?: 'openwa' | 'meta';
 };
 // Custom lists and the owner's own templates — routers/broadcasts.py.
 export type BList = { id: string; name: string; count: number };
@@ -37,7 +38,7 @@ export type Overview = {
   rates: { gold: number; silver: number } | null; preview: string; buttons: string[];
   photo_url: string; photo_custom: boolean; subscribe_link: string | null;
   template: Tpl; meta_configured: boolean; sending: Job[]; sent_today: number;
-  my_lists?: number; my_templates?: number;
+  my_lists?: number; my_templates?: number; signup_number?: string; daily_via?: 'openwa' | 'meta'; daily_preview?: string;
 };
 export type MetaStatus = { configured: boolean; connected: boolean; phone: string | null; display_name: string | null };
 export type Sub = { id: string; name: string; mobile: string; status: 'active' | 'opted_out'; plan?: Plan | 'none'; source?: string; lists?: string[] };

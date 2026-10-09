@@ -54,17 +54,22 @@ export default function BroadcastSendScreen() {
     return a === 'all' ? ov.counts.daily + ov.counts.weekly : ov.counts[a];
   };
   const chosenTpl = templates.find((t) => t.id === what) || null;
+  // Today's rate to the daily list goes from the shop's own WhatsApp (OpenWA):
+  // no Meta template or charge. Everything else goes on the Meta number.
+  const viaShop = !chosenTpl && audience === 'daily';
   const audienceName = audience === 'list' ? `“${lists.find((l) => l.id === listId)?.name ?? ''}”` : AUDIENCE_LABEL[audience].toLowerCase();
 
   const sendNow = () => ov && confirmAction(
     chosenTpl ? `Send “${chosenTpl.label}” now?` : 'Send rates now?',
-    `${num(audienceCount(audience))} people (${audienceName}) will get this message on WhatsApp. Meta charges about ₹1 for each.`,
+    viaShop
+      ? `${num(audienceCount(audience))} people (${audienceName}) will get today’s rate from the shop’s WhatsApp, a few every minute. No charge.`
+      : `${num(audienceCount(audience))} people (${audienceName}) will get this message on WhatsApp. Meta charges about ₹1 for each.`,
     'Send',
     () => run('send', async () => {
       const j = await api.post<Job>('/rate-broadcast/send', {
         audience, list_id: audience === 'list' ? listId : null, template_id: chosenTpl ? chosenTpl.id : null,
       });
-      toast.success(`Sending to ${num(j.total)} — up to ${form?.daily_limit ?? 250} a day`);
+      toast.success(viaShop ? `Sending to ${num(j.total)} from the shop’s WhatsApp` : `Sending to ${num(j.total)} — up to ${form?.daily_limit ?? 250} a day`);
       await load();
     }),
   );
@@ -87,7 +92,7 @@ export default function BroadcastSendScreen() {
     );
   }
   const rateApproved = ov.template.status === 'APPROVED';
-  const approved = chosenTpl ? true : rateApproved;
+  const approved = chosenTpl || viaShop ? true : rateApproved;
 
   return (
     <SafeAreaView style={styles.root} edges={['top']} testID="broadcast-send-screen">
@@ -96,7 +101,7 @@ export default function BroadcastSendScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brandPrimary} />}>
         <HeaderSpacer />
 
-        {!rateApproved && !templates.length && (
+        {!rateApproved && !templates.length && !viaShop && (
           <View style={[styles.status, styles.warn]}>
             <Text style={[styles.statusText, { color: colors.onWarning }]}>Sending starts once the rate template is approved by Meta (Templates).</Text>
           </View>
@@ -124,7 +129,8 @@ export default function BroadcastSendScreen() {
               </Pressable>
             ))}
           </View>
-          {what === 'rate' && !rateApproved && <Text style={styles.hint}>The rate template isn’t approved yet (Templates).</Text>}
+          {viaShop && <Text style={styles.hint} testID="broadcast-via-shop">Daily subscribers get it from the shop’s WhatsApp ({ov.signup_number ? `+${ov.signup_number}` : 'OpenWA'}) as a plain message, a few every minute — no Meta approval or charge.</Text>}
+          {what === 'rate' && !rateApproved && !viaShop && <Text style={styles.hint}>The rate template isn’t approved yet (Templates).</Text>}
           {!templates.length && <Text style={styles.hint}>Your own templates show here once Meta approves them (Templates → New template).</Text>}
           <Text style={styles.small}>To</Text>
           <View style={styles.chips}>
@@ -174,6 +180,7 @@ export default function BroadcastSendScreen() {
             <Text style={[styles.label, styles.flex1]}>Daily — subscribers ({num(ov.counts.daily)}) · {form.daily_enabled ? 'On' : 'Off'}</Text>
             <Text style={styles.small}>On/off in Notifications ›</Text>
           </Pressable>
+          <Text style={styles.hint}>Sent from the shop’s WhatsApp — doesn’t need the Meta template.</Text>
           <View style={[styles.row, { opacity: form.daily_enabled ? 1 : 0.5 }]}>
             <View style={styles.flex1}>
               <Text style={styles.small}>Time (24h, IST)</Text>
@@ -187,7 +194,7 @@ export default function BroadcastSendScreen() {
 
           <View style={styles.divider} />
           <View>
-            <Text style={styles.small}>Most messages a day (all sends together)</Text>
+            <Text style={styles.small}>Most Meta messages a day (all Meta sends together)</Text>
             <TextInput value={String(form.daily_limit)} onChangeText={(v) => setForm((f) => f && { ...f, daily_limit: Number(v.replace(/\D/g, '')) || 0 })} keyboardType="numeric" style={styles.input} testID="rate-broadcast-limit" />
           </View>
           <Text style={styles.hint}>Meta lets a new number message about 250 different people a day; it rises to 1,000 and more once your business is verified and quality stays good. Over the limit, a send carries on the next day — and next week’s send replaces an unfinished one.</Text>

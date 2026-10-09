@@ -3,6 +3,9 @@ Meta MARKETING template: a photo on top, the rate, a link to rmj.co.in, and
 buttons (See live rates / Call the shop / Stop updates). Goes out on the
 official Meta number, which is used for nothing else — every other WhatsApp
 message stays on OpenWA, whose shop number a bulk send could get banned.
+The exception is the daily list: those people asked for the rate on the
+shop's WhatsApp, so they get it from there as plain text, slowly
+(_drain_openwa), with no Meta template needed.
 
 Two lists, one Rate Subscribers collection (kept apart from the repair
 Customers, which each mirror into the ledger), split by `plan`:
@@ -81,6 +84,26 @@ PLANS = ('daily', 'weekly')
 TICK_SEC = 20
 PER_TICK = 20          # sends per loop tick, ~1 per second
 SEND_GAP_SEC = 1.0
+# The daily rate goes to people who asked for it (START on the shop's
+# WhatsApp), so it's sent from that same OpenWA number as plain text — no Meta
+# template needed. Slow and spread out, so the shop number isn't flagged.
+OPENWA_PER_TICK = 2
+OPENWA_GAP_SEC = 8.0
+
+
+def openwa_rate_text(name: str, gold: str, silver: str) -> str:
+    return (f'Namaste {name},\n\n'
+            "Today's rates at Ram Murti Jewellers, Ludhiana:\n"
+            f'Gold (995, 10 g): Rs. {gold}\n'
+            f'Silver (999, 1 kg): Rs. {silver}\n\n'
+            'Live rate anytime: https://rmj.co.in\n\n'
+            'Reply WEEKLY for once a week, or STOP to stop.')
+
+
+def rate_channel(audience: str, template) -> str:
+    """'openwa' for the daily rate (opted-in people, shop number); 'meta' for
+    everything else (the big customer list, custom lists, your templates)."""
+    return 'openwa' if audience == 'daily' and not template else 'meta'
 
 
 # ---------------- helpers ----------------
@@ -224,7 +247,7 @@ def _ist_day_start_utc_iso() -> str:
 
 async def _sent_today() -> int:
     return await db.rate_broadcast_recipients.count_documents(
-        {'state': {'$in': ['sent', 'failed']}, 'sent_at': {'$gte': _ist_day_start_utc_iso()}})
+        {'state': {'$in': ['sent', 'failed']}, 'sent_at': {'$gte': _ist_day_start_utc_iso()}, 'channel': {'$ne': 'openwa'}})
 
 
 async def _stop_job(bid: str, status: str = 'stopped') -> int:
@@ -268,8 +291,10 @@ async def start_broadcast(trigger: str, actor: str, audience: str, list_id: Opti
         raise HTTPException(status_code=400, detail='Nobody on this list yet.')
     bid = str(uuid.uuid4())
     now = now_utc().isoformat()
+    channel = rate_channel(audience, template)
     job = {'id': bid, 'created_at': now, 'created_by': actor, 'trigger': trigger, 'audience': audience, 'status': 'sending',
-           'list_id': list_id, 'list_name': list_name, 'total': len(subs), 'template': None, 'template_id': None}
+           'list_id': list_id, 'list_name': list_name, 'total': len(subs), 'template': None, 'template_id': None,
+           'channel': channel}
     if template:
         job.update({'template': template, 'template_id': template['id']})
     else:
@@ -277,28 +302,58 @@ async def start_broadcast(trigger: str, actor: str, audience: str, list_id: Opti
     await db.rate_broadcasts.insert_one(job)
     await db.rate_broadcast_recipients.insert_many([
         {'id': str(uuid.uuid4()), 'broadcast_id': bid, 'subscriber_id': s['id'], 'name': s.get('name') or '',
-         'mobile': s['mobile'], 'state': 'pending', 'created_at': now} for s in subs
+         'mobile': s['mobile'], 'state': 'pending', 'created_at': now, 'channel': channel} for s in subs
     ])
-    out = {'id': bid, 'total': len(subs), 'audience': audience, 'list_name': list_name}
+    out = {'id': bid, 'total': len(subs), 'audience': audience, 'list_name': list_name, 'channel': channel}
     if rates:
         out.update({'gold': rates['gold'], 'silver': rates['silver']})
     return out
 
 
 async def _drain_once() -> None:
+    """One tick: a few Meta sends (within the daily cap) and, separately, a
+    couple of slow OpenWA sends, so neither holds the other up."""
+    await _drain_meta()
+    await _drain_openwa()
+
+
+async def _next_job(channel: str) -> Optional[dict]:
+    q = {'status': 'sending', 'channel': 'openwa'} if channel == 'openwa' else {'status': 'sending', 'channel': {'$ne': 'openwa'}}
+    return await db.rate_broadcasts.find_one(q, {'_id': 0}, sort=[('created_at', 1)])
+
+
+async def _pending(job: dict, n: int) -> list:
+    batch = await db.rate_broadcast_recipients.find(
+        {'broadcast_id': job['id'], 'state': 'pending'}, {'_id': 0}).sort('created_at', 1).limit(n).to_list(n)
+    if not batch:
+        await db.rate_broadcasts.update_one({'id': job['id']}, {'$set': {'status': 'done', 'finished_at': now_utc().isoformat()}})
+    return batch
+
+
+async def _still_subscribed(r: dict) -> bool:
+    sub = await db.rate_subscribers.find_one({'id': r['subscriber_id']}, {'_id': 0, 'status': 1})
+    if sub and sub.get('status') == 'active':
+        return True
+    await db.rate_broadcast_recipients.update_one({'id': r['id']}, {'$set': {'state': 'skipped'}})
+    return False
+
+
+async def _mark(r: dict, ok: bool) -> None:
+    await db.rate_broadcast_recipients.update_one(
+        {'id': r['id']}, {'$set': {'state': 'sent' if ok else 'failed', 'sent_at': now_utc().isoformat()}})
+
+
+async def _drain_meta() -> None:
     import whatsapp_meta
-    job = await db.rate_broadcasts.find_one({'status': 'sending'}, {'_id': 0}, sort=[('created_at', 1)])
+    job = await _next_job('meta')
     if not job:
         return
     cfg = await get_settings()
     room = int(cfg['daily_limit']) - await _sent_today()
     if room <= 0:
         return  # carries on after midnight IST
-    n = min(room, PER_TICK)
-    batch = await db.rate_broadcast_recipients.find(
-        {'broadcast_id': job['id'], 'state': 'pending'}, {'_id': 0}).sort('created_at', 1).limit(n).to_list(n)
+    batch = await _pending(job, min(room, PER_TICK))
     if not batch:
-        await db.rate_broadcasts.update_one({'id': job['id']}, {'$set': {'status': 'done', 'finished_at': now_utc().isoformat()}})
         return
     tpl = job.get('template')
     if tpl:
@@ -306,9 +361,7 @@ async def _drain_once() -> None:
     else:
         gold, silver = inr(job['gold']), inr(job['silver'])
     for r in batch:
-        sub = await db.rate_subscribers.find_one({'id': r['subscriber_id']}, {'_id': 0, 'status': 1})
-        if not sub or sub.get('status') != 'active':
-            await db.rate_broadcast_recipients.update_one({'id': r['id']}, {'$set': {'state': 'skipped'}})
+        if not await _still_subscribed(r):
             continue
         if tpl:
             ok = await whatsapp_meta.send_template_components(
@@ -320,9 +373,24 @@ async def _drain_once() -> None:
                 body_params=[r.get('name') or DEFAULT_NAME, gold, silver], flow=f"rate_broadcast:{job['id']}",
                 header_image_link=job.get('photo_url') or DEFAULT_PHOTO_URL,
             )
-        await db.rate_broadcast_recipients.update_one(
-            {'id': r['id']}, {'$set': {'state': 'sent' if ok else 'failed', 'sent_at': now_utc().isoformat()}})
+        await _mark(r, ok)
         await asyncio.sleep(SEND_GAP_SEC)
+
+
+async def _drain_openwa() -> None:
+    from server import send_whatsapp
+    job = await _next_job('openwa')
+    if not job:
+        return
+    batch = await _pending(job, OPENWA_PER_TICK)
+    gold, silver = inr(job['gold']), inr(job['silver'])
+    for r in batch:
+        if not await _still_subscribed(r):
+            continue
+        ok = await send_whatsapp(r['mobile'], openwa_rate_text(r.get('name') or DEFAULT_NAME, gold, silver),
+                                 flow=f"rate_broadcast:{job['id']}")
+        await _mark(r, ok)
+        await asyncio.sleep(OPENWA_GAP_SEC)
 
 
 def _due(now_ist, hhmm: str) -> bool:
@@ -493,6 +561,8 @@ async def overview(_: dict = Depends(require_broadcast)):
     rates = await current_rates()
     return {
         'settings': await get_settings(), 'weekdays': WEEKDAYS, 'counts': await _counts(), 'rates': rates,
+        'daily_via': 'openwa',
+        'daily_preview': openwa_rate_text('Rahul', inr(rates['gold']) if rates else '—', inr(rates['silver']) if rates else '—'),
         'preview': TEMPLATE_BODY.replace('{{1}}', 'Rahul').replace('{{2}}', inr(rates['gold']) if rates else '—')
                                 .replace('{{3}}', inr(rates['silver']) if rates else '—'),
         'buttons': [b['text'] for b in TEMPLATE_BUTTONS],
@@ -699,6 +769,11 @@ class SendIn(BaseModel):
 @router.post('/rate-broadcast/send')
 async def send_now(body: SendIn = SendIn(), user: dict = Depends(require_broadcast)):
     import whatsapp_meta
+    if rate_channel(body.audience, body.template_id) == 'openwa':
+        job = await start_broadcast('manual', user.get('name') or 'Owner', 'daily')
+        await log_audit(user, 'rate_broadcast.send', 'rate_broadcast', job['id'],
+                        f"rate → daily (shop WhatsApp): {job['total']} recipients")
+        return job
     if not whatsapp_meta.is_configured():
         raise HTTPException(status_code=400, detail='The official WhatsApp (Meta) line is not configured.')
     tpl = None
