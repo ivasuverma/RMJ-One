@@ -256,9 +256,13 @@ export default function NewSampleScreen() {
               <Text style={styles.label}>Pieces</Text>
               <TextInput testID="sample-pc-count" value={pcCount} onChangeText={(v) => setPcCount(v.replace(/[^0-9]/g, ''))} keyboardType="number-pad" placeholder="1" placeholderTextColor={colors.mutedText} style={styles.input} />
             </View>
-            <Pressable onPress={() => setCameraOpen(true)} style={styles.photoSmallBtn} testID="sample-photo-btn">
-              {photo ? <Image source={{ uri: photo }} style={styles.photoSmallImg} /> : <Ionicons name="camera-outline" size={20} color={colors.onSurfaceSecondary} />}
-            </Pressable>
+            <View>
+              <Text style={styles.label}>Photo{!isEdit && <Text style={{ color: colors.onError }}> *</Text>}</Text>
+              <Pressable onPress={() => setCameraOpen(true)} style={[styles.photoSmallBtn, !photo && !isEdit && { borderColor: colors.brandPrimary, borderWidth: 1.5 }]}
+                testID="sample-photo-btn" accessibilityRole="button" accessibilityLabel={photo ? 'Retake photo' : 'Take photo (required)'}>
+                {photo ? <Image source={{ uri: photo }} style={styles.photoSmallImg} /> : <Ionicons name="camera-outline" size={20} color={isEdit ? colors.onSurfaceSecondary : colors.brandSecondary} />}
+              </Pressable>
+            </View>
           </View>
           {imPickerOpen && (
             <ScrollView style={styles.pickerList} nestedScrollEnabled keyboardShouldPersistTaps="handled">
