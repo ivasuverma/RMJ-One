@@ -69,7 +69,7 @@ export default function WhatsAppSettingsScreen() {
           <View style={styles.navIcon}><Ionicons name="document-text-outline" size={20} color={colors.brandSecondary} /></View>
           <View style={{ flex: 1 }}>
             <Text style={styles.toggleLabel}>Message Templates</Text>
-            <Text style={styles.toggleSub}>Repair notice, chatbot RATE reply, and gold rate broadcast text</Text>
+            <Text style={styles.toggleSub}>Repair notices, chatbot RATE reply, rate channel post and the Rate Broadcast message</Text>
           </View>
           <Ionicons name="chevron-forward" size={18} color={colors.mutedText} />
         </Pressable>
@@ -93,12 +93,21 @@ export default function WhatsAppSettingsScreen() {
           <Ionicons name="chevron-forward" size={18} color={colors.mutedText} />
         </Pressable>
 
-        {/* The official Meta number now lives in Rate Broadcast — it sends nothing else. */}
+        {/* The official Meta number sends only Rate Broadcast messages (when "Official (Meta)" is picked there). */}
+        <Text style={styles.groupTitle}>Official number (Meta)</Text>
         <Pressable onPress={() => router.push('/settings/rate-broadcast/number' as any)} style={styles.navRow} testID="whatsapp-meta-link">
-          <View style={styles.navIcon}><Ionicons name="megaphone-outline" size={20} color={colors.brandSecondary} /></View>
+          <View style={styles.navIcon}><Ionicons name="shield-checkmark-outline" size={20} color={colors.brandSecondary} /></View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.toggleLabel}>Official WhatsApp (Meta)</Text>
-            <Text style={styles.toggleSub}>Used only for Rate Broadcast — rates and offers to customers. Set up in Rate Broadcast › Official number.</Text>
+            <Text style={styles.toggleLabel}>Official number</Text>
+            <Text style={styles.toggleSub}>Connection, health, messages from Meta and the website sign-up link</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.mutedText} />
+        </Pressable>
+        <Pressable onPress={() => router.push('/settings/rate-broadcast/templates' as any)} style={styles.navRow} testID="whatsapp-meta-templates-link">
+          <View style={styles.navIcon}><Ionicons name="document-text-outline" size={20} color={colors.brandSecondary} /></View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.toggleLabel}>Meta templates</Text>
+            <Text style={styles.toggleSub}>The rate update template and your own offer templates, sent for Meta approval</Text>
           </View>
           <Ionicons name="chevron-forward" size={18} color={colors.mutedText} />
         </Pressable>
@@ -124,6 +133,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border,
   },
   title: { flex: 1, color: colors.onSurface, fontSize: 22, fontWeight: '600', fontFamily: fonts.display },
+  groupTitle: { color: colors.mutedText, fontSize: 13, fontWeight: '600', marginTop: spacing.md, marginBottom: spacing.sm },
   navRow: {
     flexDirection: 'row', alignItems: 'center', gap: spacing.md,
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1,

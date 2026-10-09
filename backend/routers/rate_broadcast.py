@@ -78,7 +78,10 @@ DEFAULT_PHOTO_URL = 'https://rmj.co.in/assets/photos/dsc_0033-YBg891rw9PtK9XaM.J
 DEFAULT_PHOTO_FILE = pathlib.Path(__file__).resolve().parents[2] / 'website' / 'assets' / 'photos' / 'dsc_0033-YBg891rw9PtK9XaM.JPG'
 
 DEFAULTS = {'weekly_enabled': False, 'weekday': 0, 'time': '11:00',
-            'daily_enabled': False, 'daily_time': '11:30', 'daily_skip_sunday': True, 'daily_limit': 250}
+            'daily_enabled': False, 'daily_time': '11:30', 'daily_skip_sunday': True, 'daily_limit': 250,
+            # Which number each list's rate goes from: 'openwa' (shop WhatsApp,
+            # plain text from DEFAULT_RATE_TEXT) or 'meta' (approved template).
+            'daily_via': 'openwa', 'weekly_via': 'meta', 'rate_text': ''}
 WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 PLANS = ('daily', 'weekly')
 TICK_SEC = 20
@@ -91,19 +94,35 @@ OPENWA_PER_TICK = 2
 OPENWA_GAP_SEC = 8.0
 
 
-def openwa_rate_text(name: str, gold: str, silver: str) -> str:
-    return (f'Namaste {name},\n\n'
-            "Today's rates at Ram Murti Jewellers, Ludhiana:\n"
-            f'Gold (995, 10 g): Rs. {gold}\n'
-            f'Silver (999, 1 kg): Rs. {silver}\n\n'
-            'Live rate anytime: https://rmj.co.in\n\n'
-            'Reply WEEKLY for once a week, or STOP to stop.')
+VIAS = ('openwa', 'meta')
+# The rate message sent from the shop's WhatsApp — editable in Settings ›
+# WhatsApp › Message Templates. Placeholders: {name} {gold_rate} {silver_rate} {date} {time}.
+DEFAULT_RATE_TEXT = (
+    'Namaste {name},\n\n'
+    "Today's rates at Ram Murti Jewellers, Ludhiana:\n"
+    'Gold (995, 10 g): Rs. {gold_rate}\n'
+    'Silver (999, 1 kg): Rs. {silver_rate}\n\n'
+    'Live rate anytime: https://rmj.co.in\n\n'
+    'Reply WEEKLY for once a week, or STOP to stop.')
 
 
-def rate_channel(audience: str, template) -> str:
-    """'openwa' for the daily rate (opted-in people, shop number); 'meta' for
-    everything else (the big customer list, custom lists, your templates)."""
-    return 'openwa' if audience == 'daily' and not template else 'meta'
+def openwa_rate_text(name: str, gold: str, silver: str, tpl: str = '', date: str = '', time: str = '') -> str:
+    vals = {'name': name, 'gold_rate': gold, 'silver_rate': silver, 'date': date, 'time': time}
+    return re.sub(r'\{(\w+)\}', lambda m: vals.get(m.group(1), m.group(0)), (tpl or '').strip() or DEFAULT_RATE_TEXT)
+
+
+def rate_channel(audience: str, template, via: Optional[str] = None, cfg: Optional[dict] = None) -> str:
+    """Your own templates always go on Meta (they're Meta templates). Today's
+    rate goes the way it's asked (via), else the list's setting: daily list
+    from the shop's WhatsApp, the customer list from Meta, by default."""
+    if template:
+        return 'meta'
+    if via in VIAS:
+        return via
+    cfg = cfg or DEFAULTS
+    if audience == 'daily':
+        return cfg.get('daily_via') or 'openwa'
+    return cfg.get('weekly_via') or 'meta'
 
 
 # ---------------- helpers ----------------
@@ -257,7 +276,7 @@ async def _stop_job(bid: str, status: str = 'stopped') -> int:
 
 
 async def start_broadcast(trigger: str, actor: str, audience: str, list_id: Optional[str] = None,
-                          template: Optional[dict] = None) -> dict:
+                          template: Optional[dict] = None, via: Optional[str] = None) -> dict:
     """audience: 'daily' | 'weekly' | 'all' (rate subscribers) | 'list' (a
     custom list, list_id). template: one of the owner's approved templates
     (routers/broadcasts.py) instead of the rate update."""
@@ -291,14 +310,16 @@ async def start_broadcast(trigger: str, actor: str, audience: str, list_id: Opti
         raise HTTPException(status_code=400, detail='Nobody on this list yet.')
     bid = str(uuid.uuid4())
     now = now_utc().isoformat()
-    channel = rate_channel(audience, template)
+    channel = rate_channel(audience, template, via, await get_settings())
     job = {'id': bid, 'created_at': now, 'created_by': actor, 'trigger': trigger, 'audience': audience, 'status': 'sending',
            'list_id': list_id, 'list_name': list_name, 'total': len(subs), 'template': None, 'template_id': None,
            'channel': channel}
     if template:
         job.update({'template': template, 'template_id': template['id']})
     else:
-        job.update({'gold': rates['gold'], 'silver': rates['silver'], 'photo_url': await photo_url()})
+        now_ist = now_utc().astimezone(IST)
+        job.update({'gold': rates['gold'], 'silver': rates['silver'], 'photo_url': await photo_url(),
+                    'rate_date': now_ist.strftime('%d %b %Y'), 'rate_time': now_ist.strftime('%I:%M %p').lstrip('0')})
     await db.rate_broadcasts.insert_one(job)
     await db.rate_broadcast_recipients.insert_many([
         {'id': str(uuid.uuid4()), 'broadcast_id': bid, 'subscriber_id': s['id'], 'name': s.get('name') or '',
@@ -384,10 +405,12 @@ async def _drain_openwa() -> None:
         return
     batch = await _pending(job, OPENWA_PER_TICK)
     gold, silver = inr(job['gold']), inr(job['silver'])
+    tpl = (await get_settings()).get('rate_text') or ''
     for r in batch:
         if not await _still_subscribed(r):
             continue
-        ok = await send_whatsapp(r['mobile'], openwa_rate_text(r.get('name') or DEFAULT_NAME, gold, silver),
+        text = openwa_rate_text(r.get('name') or DEFAULT_NAME, gold, silver, tpl, job.get('rate_date') or '', job.get('rate_time') or '')
+        ok = await send_whatsapp(r['mobile'], text,
                                  flow=f"rate_broadcast:{job['id']}")
         await _mark(r, ok)
         await asyncio.sleep(OPENWA_GAP_SEC)
@@ -561,8 +584,8 @@ async def overview(_: dict = Depends(require_broadcast)):
     rates = await current_rates()
     return {
         'settings': await get_settings(), 'weekdays': WEEKDAYS, 'counts': await _counts(), 'rates': rates,
-        'daily_via': 'openwa',
-        'daily_preview': openwa_rate_text('Rahul', inr(rates['gold']) if rates else '—', inr(rates['silver']) if rates else '—'),
+        'daily_preview': openwa_rate_text('Rahul', inr(rates['gold']) if rates else '—', inr(rates['silver']) if rates else '—',
+                                          (await get_settings()).get('rate_text') or ''),
         'preview': TEMPLATE_BODY.replace('{{1}}', 'Rahul').replace('{{2}}', inr(rates['gold']) if rates else '—')
                                 .replace('{{3}}', inr(rates['silver']) if rates else '—'),
         'buttons': [b['text'] for b in TEMPLATE_BUTTONS],
@@ -636,6 +659,8 @@ class SettingsIn(BaseModel):
     daily_time: str = '11:30'
     daily_skip_sunday: bool = True
     daily_limit: int
+    daily_via: Optional[Literal['openwa', 'meta']] = None
+    weekly_via: Optional[Literal['openwa', 'meta']] = None
 
 
 _HHMM = re.compile(r'([01]\d|2[0-3]):[0-5]\d')
@@ -654,6 +679,27 @@ async def save_settings(body: SettingsIn, user: dict = Depends(require_broadcast
     await log_audit(user, 'rate_broadcast.settings', 'settings', 'rate_broadcast',
                     f"weekday {body.weekday} {body.time}, daily {body.daily_time}")
     return await get_settings()
+
+
+class RateTextIn(BaseModel):
+    template: str = ''
+
+
+@router.get('/rate-broadcast/rate-text')
+async def get_rate_text(_: dict = Depends(require_broadcast)):
+    return {'template': (await get_settings()).get('rate_text') or '', 'default': DEFAULT_RATE_TEXT}
+
+
+@router.put('/rate-broadcast/rate-text')
+async def set_rate_text(body: RateTextIn, user: dict = Depends(require_broadcast)):
+    t = body.template.strip()
+    if len(t) > 1000:
+        raise HTTPException(status_code=400, detail='Keep the message under 1,000 characters')
+    if t and not ('{gold_rate}' in t or '{silver_rate}' in t):
+        raise HTTPException(status_code=400, detail='Put {gold_rate} or {silver_rate} in the message')
+    await db.settings.update_one({'id': 'rate_broadcast'}, {'$set': {'id': 'rate_broadcast', 'rate_text': t}}, upsert=True)
+    await log_audit(user, 'rate_broadcast.rate_text', 'settings', 'rate_broadcast', 'shop WhatsApp rate message')
+    return {'template': t, 'default': DEFAULT_RATE_TEXT}
 
 
 @router.get('/rate-broadcast/subscribers')
@@ -764,15 +810,16 @@ class SendIn(BaseModel):
     audience: Literal['daily', 'weekly', 'all', 'list'] = 'weekly'
     list_id: Optional[str] = None
     template_id: Optional[str] = None   # one of your own templates instead of the rate
+    via: Optional[Literal['openwa', 'meta']] = None   # today's rate: shop WhatsApp or Meta (default: the list's setting)
 
 
 @router.post('/rate-broadcast/send')
 async def send_now(body: SendIn = SendIn(), user: dict = Depends(require_broadcast)):
     import whatsapp_meta
-    if rate_channel(body.audience, body.template_id) == 'openwa':
-        job = await start_broadcast('manual', user.get('name') or 'Owner', 'daily')
+    if rate_channel(body.audience, body.template_id, body.via, await get_settings()) == 'openwa':
+        job = await start_broadcast('manual', user.get('name') or 'Owner', body.audience, body.list_id, None, 'openwa')
         await log_audit(user, 'rate_broadcast.send', 'rate_broadcast', job['id'],
-                        f"rate → daily (shop WhatsApp): {job['total']} recipients")
+                        f"rate → {job.get('list_name') or body.audience} (shop WhatsApp): {job['total']} recipients")
         return job
     if not whatsapp_meta.is_configured():
         raise HTTPException(status_code=400, detail='The official WhatsApp (Meta) line is not configured.')
@@ -784,7 +831,7 @@ async def send_now(body: SendIn = SendIn(), user: dict = Depends(require_broadca
         st = await whatsapp_meta.template_status(TEMPLATE_NAME)
         if st.get('status') != 'APPROVED':
             raise HTTPException(status_code=400, detail='The rate template is not approved by Meta yet.')
-    job = await start_broadcast('manual', user.get('name') or 'Owner', body.audience, body.list_id, tpl)
+    job = await start_broadcast('manual', user.get('name') or 'Owner', body.audience, body.list_id, tpl, 'meta')
     what = tpl['label'] if tpl else 'rate'
     await log_audit(user, 'rate_broadcast.send', 'rate_broadcast', job['id'],
                     f"{what} → {job.get('list_name') or body.audience}: {job['total']} recipients")

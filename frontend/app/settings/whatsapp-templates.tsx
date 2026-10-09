@@ -27,6 +27,8 @@ const DEFAULT_CHATBOT_RATE_TEMPLATE = "Today's approx rate (as on {date}, {time}
 const GOLD_RATE_SAMPLE: Record<string, string> = { gold_rate: '151050', silver_rate: '242200', date: '04 Sep 2026', time: '12:30 PM' };
 const DEFAULT_GOLD_RATE_TEMPLATE = 'Today approx. rate update: \nGold 24k: {gold_rate} /tola\nSilver : {silver_rate} /kg\n\nClick bell icon above for notification \u{1F514}';
 
+const BROADCAST_SAMPLE: Record<string, string> = { name: 'Rahul', gold_rate: '1,51,050', silver_rate: '2,42,200', date: '04 Sep 2026', time: '11:30 AM' };
+
 function renderPreview(tpl: string, sample: Record<string, string>, fallback: string): string {
   return (tpl || fallback).replace(/\{(\w+)\}/g, (m, k) => (k in sample ? sample[k] : m));
 }
@@ -50,13 +52,19 @@ export default function WhatsAppTemplatesScreen() {
   const [repairReceivedTemplate, setRepairReceivedTemplate] = useState('');
   const [chatbotTemplate, setChatbotTemplate] = useState('');
   const [goldRateTemplate, setGoldRateTemplate] = useState('');
+  // Rate Broadcast's shop-WhatsApp message; null = no access to Rate Broadcast (section hidden).
+  const [broadcastText, setBroadcastText] = useState<string | null>(null);
+  const [broadcastDefault, setBroadcastDefault] = useState('');
 
   const load = async () => {
     try {
-      const [wa, gr] = await Promise.all([
+      const [wa, gr, rb] = await Promise.all([
         api.get<any>('/settings/whatsapp'),
         api.get<any>('/settings/gold-rate'),
+        api.get<{ template: string; default: string }>('/rate-broadcast/rate-text').catch(() => null),
       ]);
+      setBroadcastText(rb ? rb.template || rb.default : null);
+      setBroadcastDefault(rb?.default || '');
       setWaSettings(wa);
       setGrConfig(gr);
       setRepairTemplate(wa.repair_ready_template || '');
@@ -86,6 +94,7 @@ export default function WhatsAppTemplatesScreen() {
           refresh_start: grConfig.refresh_start, refresh_end: grConfig.refresh_end,
           auto_send_time: grConfig.auto_send_time, skip_weekend_fetch: grConfig.skip_weekend_fetch,
         }),
+        broadcastText !== null ? api.put('/rate-broadcast/rate-text', { template: broadcastText }) : Promise.resolve(),
       ]);
       toast.success('Templates saved');
       router.back();
@@ -181,7 +190,7 @@ export default function WhatsAppTemplatesScreen() {
         </View>
 
         <View style={styles.divider} />
-        <Text style={styles.section}>Rate Updater — WhatsApp Broadcast Template</Text>
+        <Text style={styles.section}>Rate Updater — WhatsApp Channel Post</Text>
         <Text style={styles.hint}>Placeholders: {'{gold_rate}'} {'{silver_rate}'} {'{date}'} {'{time}'} — date/time are when the rate was fetched.</Text>
         <TextInput
           value={goldRateTemplate}
@@ -199,6 +208,29 @@ export default function WhatsAppTemplatesScreen() {
             {renderPreview(goldRateTemplate, GOLD_RATE_SAMPLE, DEFAULT_GOLD_RATE_TEMPLATE)}
           </Text>
         </View>
+        {broadcastText !== null && (
+          <>
+            <View style={styles.divider} />
+            <Text style={styles.section}>Rate Broadcast — Shop WhatsApp Message</Text>
+            <Text style={styles.hint}>Sent to Rate Broadcast people when “Shop WhatsApp” is picked. Placeholders: {'{name}'} {'{gold_rate}'} {'{silver_rate}'} {'{date}'} {'{time}'}. Keep the STOP line so people can opt out. Clear it to go back to the standard message.</Text>
+            <TextInput
+              value={broadcastText}
+              onChangeText={setBroadcastText}
+              placeholder={broadcastDefault}
+              placeholderTextColor={colors.mutedText}
+              multiline
+              style={[styles.input, styles.inputMultiline, { minHeight: 200 }]}
+              testID="rate-broadcast-text-input"
+            />
+            <Text style={styles.fieldLabel}>Preview</Text>
+            <View style={styles.infoBox}>
+              <Ionicons name="eye-outline" size={16} color={colors.brandSecondary} />
+              <Text style={styles.infoText} testID="rate-broadcast-text-preview">
+                {renderPreview(broadcastText, BROADCAST_SAMPLE, broadcastDefault)}
+              </Text>
+            </View>
+          </>
+        )}
       </ScrollView>
 
       <View style={styles.footer}>
@@ -238,7 +270,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
     color: colors.onSurface, paddingHorizontal: spacing.md, paddingVertical: 12, fontSize: 14, marginBottom: spacing.md,
   },
-  inputMultiline: { minHeight: 90, textAlignVertical: 'top' },
+  inputMultiline: { minHeight: 150, textAlignVertical: 'top' },
   footer: { position: 'absolute', left: 0, right: 0, bottom: 0, padding: spacing.lg, backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.divider },
   saveBtn: { backgroundColor: colors.brandPrimary, borderRadius: radius.md, paddingVertical: 16, alignItems: 'center' },
   saveText: { color: colors.onBrandPrimary, fontWeight: '700', fontSize: 15 },

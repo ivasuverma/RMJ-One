@@ -7,7 +7,7 @@ import { confirmAction } from '@/src/utils/confirm';
 import { useTheme } from '@/src/theme/ThemeContext';
 import { useToast } from '@/src/components/ui';
 import { ToggleSwitch } from '@/src/components/ui/ToggleSwitch';
-import { AUDIENCE_LABEL, Audience, BList, Header, Job, KIND_LABEL, MyTpl, Overview, Settings, SHORT_DAYS, jobAudience, makeStyles, num, when } from './_shared';
+import { AUDIENCE_LABEL, Audience, VIA_LABEL, Via, BList, Header, Job, KIND_LABEL, MyTpl, Overview, Settings, SHORT_DAYS, jobAudience, makeStyles, num, when } from './_shared';
 import { HeaderSpacer } from '@/src/components/ui/StickyHeader';
 
 // Step 4 — send now, the daily/weekly schedule, and recent sends with their
@@ -26,6 +26,7 @@ export default function BroadcastSendScreen() {
   const [listId, setListId] = useState<string | null>(null);
   const [templates, setTemplates] = useState<MyTpl[]>([]);
   const [what, setWhat] = useState<string>(params.template || 'rate');   // 'rate' or one of your template ids
+  const [viaPick, setViaPick] = useState<Via | null>(null);   // null = the list's own setting
   const [busy, setBusy] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -54,9 +55,12 @@ export default function BroadcastSendScreen() {
     return a === 'all' ? ov.counts.daily + ov.counts.weekly : ov.counts[a];
   };
   const chosenTpl = templates.find((t) => t.id === what) || null;
-  // Today's rate to the daily list goes from the shop's own WhatsApp (OpenWA):
-  // no Meta template or charge. Everything else goes on the Meta number.
-  const viaShop = !chosenTpl && audience === 'daily';
+  // Today's rate goes from the shop's own WhatsApp (OpenWA, plain text, no
+  // charge) or the official Meta number (approved template) — by default as
+  // set for that list in the schedule below. Your own templates are Meta only.
+  const listVia: Via = (audience === 'daily' ? form?.daily_via || 'openwa' : form?.weekly_via || 'meta');
+  const via: Via = chosenTpl ? 'meta' : viaPick || listVia;
+  const viaShop = via === 'openwa';
   const audienceName = audience === 'list' ? `“${lists.find((l) => l.id === listId)?.name ?? ''}”` : AUDIENCE_LABEL[audience].toLowerCase();
 
   const sendNow = () => ov && confirmAction(
@@ -68,6 +72,7 @@ export default function BroadcastSendScreen() {
     () => run('send', async () => {
       const j = await api.post<Job>('/rate-broadcast/send', {
         audience, list_id: audience === 'list' ? listId : null, template_id: chosenTpl ? chosenTpl.id : null,
+        via: chosenTpl ? null : via,
       });
       toast.success(viaShop ? `Sending to ${num(j.total)} from the shop’s WhatsApp` : `Sending to ${num(j.total)} — up to ${form?.daily_limit ?? 250} a day`);
       await load();
@@ -103,7 +108,7 @@ export default function BroadcastSendScreen() {
 
         {!rateApproved && !templates.length && !viaShop && (
           <View style={[styles.status, styles.warn]}>
-            <Text style={[styles.statusText, { color: colors.onWarning }]}>Sending starts once the rate template is approved by Meta (Templates).</Text>
+            <Text style={[styles.statusText, { color: colors.onWarning }]}>Official (Meta) sending starts once the rate template is approved by Meta (Settings › WhatsApp › Meta templates) — or send from the Shop WhatsApp.</Text>
           </View>
         )}
 
@@ -129,25 +134,38 @@ export default function BroadcastSendScreen() {
               </Pressable>
             ))}
           </View>
-          {viaShop && <Text style={styles.hint} testID="broadcast-via-shop">Daily subscribers get it from the shop’s WhatsApp ({ov.signup_number ? `+${ov.signup_number}` : 'OpenWA'}) as a plain message, a few every minute — no Meta approval or charge.</Text>}
-          {what === 'rate' && !rateApproved && !viaShop && <Text style={styles.hint}>The rate template isn’t approved yet (Templates).</Text>}
-          {!templates.length && <Text style={styles.hint}>Your own templates show here once Meta approves them (Templates → New template).</Text>}
+          {what === 'rate' && !rateApproved && !viaShop && <Text style={styles.hint}>The Meta rate template isn’t approved yet (Settings › WhatsApp › Meta templates).</Text>}
+          {!templates.length && <Text style={styles.hint}>Your own templates show here once Meta approves them (Settings › WhatsApp › Meta templates → New template).</Text>}
           <Text style={styles.small}>To</Text>
           <View style={styles.chips}>
             {(['weekly', 'daily', 'all'] as Audience[]).map((a) => (
-              <Pressable key={a} onPress={() => setAudience(a)} style={[styles.chip, audience === a && styles.chipOn]} accessibilityRole="button" accessibilityState={{ selected: audience === a }}>
+              <Pressable key={a} onPress={() => { setAudience(a); setViaPick(null); }} style={[styles.chip, audience === a && styles.chipOn]} accessibilityRole="button" accessibilityState={{ selected: audience === a }}>
                 <Text style={[styles.chipText, audience === a && styles.chipTextOn]}>{AUDIENCE_LABEL[a]} · {num(audienceCount(a))}</Text>
               </Pressable>
             ))}
             {lists.map((l) => {
               const on = audience === 'list' && listId === l.id;
               return (
-                <Pressable key={l.id} onPress={() => { setAudience('list'); setListId(l.id); }} style={[styles.chip, on && styles.chipOn]} accessibilityRole="button" accessibilityState={{ selected: on }} testID={`broadcast-to-list-${l.id}`}>
+                <Pressable key={l.id} onPress={() => { setAudience('list'); setListId(l.id); setViaPick(null); }} style={[styles.chip, on && styles.chipOn]} accessibilityRole="button" accessibilityState={{ selected: on }} testID={`broadcast-to-list-${l.id}`}>
                   <Text style={[styles.chipText, on && styles.chipTextOn]}>{l.name} · {num(l.count)}</Text>
                 </Pressable>
               );
             })}
           </View>
+          {!chosenTpl && (
+            <>
+              <Text style={styles.small}>Send from</Text>
+              <View style={styles.chips}>
+                {(['openwa', 'meta'] as Via[]).map((v) => (
+                  <Pressable key={v} onPress={() => setViaPick(v)} style={[styles.chip, via === v && styles.chipOn]} accessibilityRole="button" accessibilityState={{ selected: via === v }} testID={`broadcast-via-${v}`}>
+                    <Text style={[styles.chipText, via === v && styles.chipTextOn]}>{VIA_LABEL[v]}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </>
+          )}
+          {viaShop && <Text style={styles.hint} testID="broadcast-via-shop">Goes from the shop’s WhatsApp ({ov.signup_number ? `+${ov.signup_number}` : 'OpenWA'}) as a plain message, a few every minute — no Meta approval or charge. Wording: Settings › WhatsApp › Message Templates.</Text>}
+          {viaShop && audienceCount(audience) > 300 && <Text style={[styles.hint, { color: colors.onWarning }]} testID="broadcast-via-shop-warn">That’s a lot of people for the shop number — about {num(Math.ceil(audienceCount(audience) / 6 / 60))} hours of sending, and WhatsApp may block a number that messages many people who never wrote to it. Official (Meta) is safer for big lists.</Text>}
           <Pressable onPress={sendNow} disabled={!approved || !audienceCount(audience) || busy === 'send'}
             style={[styles.primary, (!approved || !audienceCount(audience)) && { opacity: 0.5 }]} testID="rate-broadcast-send-now" accessibilityRole="button">
             {busy === 'send' ? <ActivityIndicator color={colors.onBrandPrimary} /> : <Text style={styles.primaryText}>Send to {num(audienceCount(audience))} people</Text>}
@@ -169,6 +187,7 @@ export default function BroadcastSendScreen() {
                 </Pressable>
               ))}
             </View>
+            <ViaChips value={form.weekly_via || 'meta'} onChange={(v) => setForm((f) => f && { ...f, weekly_via: v })} styles={styles} id="weekly" />
             <View>
               <Text style={styles.small}>Time (24h, IST)</Text>
               <TextInput value={form.time} onChangeText={(v) => setForm((f) => f && { ...f, time: v })} placeholder="11:00" placeholderTextColor={colors.mutedText} style={styles.input} testID="rate-broadcast-time" />
@@ -180,7 +199,9 @@ export default function BroadcastSendScreen() {
             <Text style={[styles.label, styles.flex1]}>Daily — subscribers ({num(ov.counts.daily)}) · {form.daily_enabled ? 'On' : 'Off'}</Text>
             <Text style={styles.small}>On/off in Notifications ›</Text>
           </Pressable>
-          <Text style={styles.hint}>Sent from the shop’s WhatsApp — doesn’t need the Meta template.</Text>
+          <View style={{ opacity: form.daily_enabled ? 1 : 0.5 }}>
+            <ViaChips value={form.daily_via || 'openwa'} onChange={(v) => setForm((f) => f && { ...f, daily_via: v })} styles={styles} id="daily" />
+          </View>
           <View style={[styles.row, { opacity: form.daily_enabled ? 1 : 0.5 }]}>
             <View style={styles.flex1}>
               <Text style={styles.small}>Time (24h, IST)</Text>
@@ -194,7 +215,7 @@ export default function BroadcastSendScreen() {
 
           <View style={styles.divider} />
           <View>
-            <Text style={styles.small}>Most Meta messages a day (all Meta sends together)</Text>
+            <Text style={styles.small}>Most Official (Meta) messages a day (all Meta sends together)</Text>
             <TextInput value={String(form.daily_limit)} onChangeText={(v) => setForm((f) => f && { ...f, daily_limit: Number(v.replace(/\D/g, '')) || 0 })} keyboardType="numeric" style={styles.input} testID="rate-broadcast-limit" />
           </View>
           <Text style={styles.hint}>Meta lets a new number message about 250 different people a day; it rises to 1,000 and more once your business is verified and quality stays good. Over the limit, a send carries on the next day — and next week’s send replaces an unfinished one.</Text>
@@ -227,5 +248,21 @@ export default function BroadcastSendScreen() {
         </View>
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+/** Shop WhatsApp / Official (Meta) choice for one scheduled list. */
+function ViaChips({ value, onChange, styles, id }: { value: Via; onChange: (v: Via) => void; styles: any; id: string }) {
+  return (
+    <View>
+      <Text style={styles.small}>Send from</Text>
+      <View style={styles.chips}>
+        {(['openwa', 'meta'] as Via[]).map((v) => (
+          <Pressable key={v} onPress={() => onChange(v)} style={[styles.chip, value === v && styles.chipOn]} accessibilityRole="button" accessibilityState={{ selected: value === v }} testID={`schedule-${id}-via-${v}`}>
+            <Text style={[styles.chipText, value === v && styles.chipTextOn]}>{VIA_LABEL[v]}</Text>
+          </Pressable>
+        ))}
+      </View>
+    </View>
   );
 }

@@ -24,12 +24,15 @@ const ENV_KEYS = ['META_WA_PHONE_NUMBER_ID', 'META_WA_WABA_ID', 'META_WA_ACCESS_
 
 // Step 1 — the official WhatsApp (Meta) number, used only for Rate Broadcast.
 // Connection status, the customer subscribe link, and a test message.
+const HITS_SHOWN = 4;
+
 export default function BroadcastNumberScreen() {
   const { colors } = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const toast = useToast();
   const [meta, setMeta] = useState<MetaStatus | null>(null);
   const [link, setLink] = useState<string | null>(null);
+  const [allHits, setAllHits] = useState(false);   // the Meta log shows the latest few until expanded
   // Sign-ups (the website button / counter QR) go to the shop's own WhatsApp (OpenWA).
   const [signup, setSignup] = useState('');
   const [savingSignup, setSavingSignup] = useState(false);
@@ -246,7 +249,7 @@ export default function BroadcastNumberScreen() {
               <Text style={styles.label}>Last messages from Meta</Text>
               {diag.hits.length === 0 ? (
                 <Text style={styles.hint}>Nothing received from Meta yet. If you’ve sent START, Meta isn’t delivering — fix any red item above.</Text>
-              ) : diag.hits.map((h, i) => (
+              ) : (allHits ? diag.hits : diag.hits.slice(0, HITS_SHOWN)).map((h, i) => (
                 <View key={i} style={[styles.row, { alignItems: 'flex-start' }]}>
                   <Ionicons name={h.ok ? 'arrow-down-circle-outline' : 'alert-circle-outline'} size={16} color={h.ok ? colors.onSuccess : colors.onError} />
                   <Text style={[styles.listMeta, styles.flex1]}>
@@ -254,6 +257,13 @@ export default function BroadcastNumberScreen() {
                   </Text>
                 </View>
               ))}
+              {diag.hits.length > HITS_SHOWN && (
+                <Pressable onPress={() => setAllHits((v) => !v)} hitSlop={8} style={[styles.row, { alignSelf: 'flex-start', paddingVertical: 4 }]}
+                  accessibilityRole="button" accessibilityState={{ expanded: allHits }} testID="broadcast-hits-toggle">
+                  <Text style={styles.btnText}>{allHits ? 'Show less' : `Show all ${diag.hits.length}`}</Text>
+                  <Ionicons name={allHits ? 'chevron-up' : 'chevron-down'} size={16} color={colors.brandSecondary} />
+                </Pressable>
+              )}
             </View>
           )}
 
