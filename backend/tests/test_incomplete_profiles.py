@@ -24,8 +24,10 @@ def test_incomplete_profile_listed_by_name():
     try:
         rows = requests.get(f"{API}/employees/incomplete", headers=h, timeout=30).json()['employees']
         me = next(x for x in rows if x['id'] == eid)
-        assert 'Aadhaar' in me['missing'] and 'ID proof' in me['missing']
-        assert 'PAN' not in me['missing'] and 'Mobile' not in me['missing']
+        assert 'Bank details' in me['missing'] and 'ID proof' in me['missing']
+        assert 'Mobile' not in me['missing']
+        # Aadhaar and PAN are no longer asked for, so they never count as missing
+        assert 'Aadhaar' not in me['missing'] and 'PAN' not in me['missing']
         needs = requests.get(f"{API}/home/summary", headers=h, timeout=60).json()['needs_you']
         row = next(n for n in needs if n['key'] == 'profiles_incomplete')
         assert row['count'] >= 1 and row['detail']

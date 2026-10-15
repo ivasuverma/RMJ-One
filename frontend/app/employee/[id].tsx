@@ -35,14 +35,6 @@ type Location = { id: string; name: string };
 
 const STATUS_LABEL: Record<Emp['status'], string> = { active: 'Active', on_leave: 'On Leave', inactive: 'Inactive' };
 
-function maskAadhaar(v?: string): string {
-  const digits = (v || '').replace(/\D/g, '');
-  if (!digits) return 'Not added';
-  const last4 = digits.slice(-4);
-  const masked = 'X'.repeat(Math.max(0, digits.length - 4)).match(/.{1,4}/g) || [];
-  return [...masked, last4].join(' ');
-}
-
 const digitsOnly = (v: string) => v.replace(/\D/g, '');
 
 export default function EmployeeProfile() {
@@ -286,10 +278,6 @@ export default function EmployeeProfile() {
               </Group>
 
               <GroupTitle text="Identity" />
-              <Group>
-                <Row label="Aadhaar" value={maskAadhaar(emp.aadhaar)} />
-                <Row label="PAN" value={emp.pan || 'Not added'} />
-              </Group>
               <EmployeeIdProofs key={idsKey} employee={emp} canDelete={user?.role === 'owner' || user?.role === 'admin'} />
             </>
           )}

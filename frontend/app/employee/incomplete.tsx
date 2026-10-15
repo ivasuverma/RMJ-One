@@ -46,7 +46,7 @@ export default function IncompleteProfilesScreen() {
           <View style={styles.empty}>
             <View style={styles.emptyIcon}><Ionicons name="checkmark-done" size={28} color={colors.brandSecondary} /></View>
             <Text style={styles.emptyTitle}>All complete</Text>
-            <Text style={styles.emptyText}>Every current employee has a photo, contact, Aadhaar, PAN, bank details and an ID proof.</Text>
+            <Text style={styles.emptyText}>Every current employee has a photo, contact, date of birth, bank details and an ID proof.</Text>
           </View>
         ) : (
           <>

@@ -198,7 +198,7 @@ async def list_employees(
 # Incomplete profiles screen both read this list.
 PROFILE_CHECKS = [
     ('photo', 'Photo'), ('mobile', 'Mobile'), ('address', 'Address'), ('date_of_birth', 'Date of birth'),
-    ('aadhaar', 'Aadhaar'), ('pan', 'PAN'), ('bank', 'Bank details'), ('id_proof', 'ID proof'),
+    ('bank', 'Bank details'), ('id_proof', 'ID proof'),
 ]
 
 
