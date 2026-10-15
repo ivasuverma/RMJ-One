@@ -366,3 +366,58 @@ async def audit_export(limit: int = 100) -> dict:
         'audience': audience,
         'posts': posts,
     }
+
+
+# ---------------------------------------------------------------------------
+# Queued audit export — the export makes a few hundred Graph API calls and
+# can take minutes, too long to keep the app open waiting on one request.
+# The owner taps "Prepare", this runs in the background, keeps the finished
+# file in db.settings (id='instagram_audit_job'), and notifies the owner
+# (in-app bell, push, WhatsApp — server.notify_user) when it's ready.
+
+AUDIT_JOB_ID = 'instagram_audit_job'
+AUDIT_JOB_STALE_MINUTES = 30  # a 'running' job older than this died with a server restart
+
+
+async def get_audit_job(include_data: bool = False) -> dict:
+    proj = {'_id': 0} if include_data else {'_id': 0, 'data': 0}
+    return await db.settings.find_one({'id': AUDIT_JOB_ID}, proj) or {}
+
+
+def _job_is_live(job: dict) -> bool:
+    if job.get('status') != 'running' or not job.get('started_at'):
+        return False
+    try:
+        age = (now_utc() - datetime.fromisoformat(job['started_at'])).total_seconds() / 60
+    except Exception:
+        return False
+    return age < AUDIT_JOB_STALE_MINUTES
+
+
+async def start_audit_job(user_id: str, limit: int = 100) -> dict:
+    """Queues one export; a second tap while one is running just returns it."""
+    job = await get_audit_job()
+    if _job_is_live(job):
+        return job
+    fields = {'id': AUDIT_JOB_ID, 'status': 'running', 'started_at': now_utc().isoformat(),
+              'finished_at': None, 'error': None, 'post_count': None, 'requested_by': user_id}
+    await db.settings.update_one({'id': AUDIT_JOB_ID}, {'$set': fields, '$unset': {'data': ''}}, upsert=True)
+    asyncio.create_task(_run_audit_job(user_id, limit))
+    return fields
+
+
+async def _run_audit_job(user_id: str, limit: int) -> None:
+    from server import notify_user
+    try:
+        data = await audit_export(limit)
+        await db.settings.update_one({'id': AUDIT_JOB_ID}, {'$set': {
+            'status': 'ready', 'finished_at': now_utc().isoformat(), 'post_count': data['post_count'], 'data': data,
+        }})
+        await notify_user(user_id, 'Instagram audit file is ready',
+                          f"{data['post_count']} posts. Download it from Settings › Instagram.", '/settings/instagram')
+    except Exception as e:
+        msg = str(e)[:300] or 'Export failed'
+        await db.settings.update_one({'id': AUDIT_JOB_ID}, {'$set': {
+            'status': 'failed', 'finished_at': now_utc().isoformat(), 'error': msg,
+        }})
+        await notify_user(user_id, 'Instagram audit file failed', msg, '/settings/instagram')

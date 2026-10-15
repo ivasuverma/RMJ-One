@@ -50,6 +50,34 @@ async def instagram_audit_export(limit: int = 100, user=Depends(require_owner)):
     return JSONResponse(data, headers={'Content-Disposition': f'attachment; filename="{name}"'})
 
 
+@router.post('/instagram/audit-export/start')
+async def instagram_audit_export_start(limit: int = 100, user=Depends(require_owner)):
+    """Queues the audit export in the background and notifies the owner
+    when the file is ready — see instagram_service.start_audit_job."""
+    import instagram_service
+    if not await instagram_service.is_connected():
+        raise HTTPException(status_code=400, detail='Instagram is not connected.')
+    job = await instagram_service.start_audit_job(user['id'], limit)
+    await log_audit(user, 'instagram.audit_export_start', 'settings', 'instagram', '')
+    return job
+
+
+@router.get('/instagram/audit-export/status')
+async def instagram_audit_export_status(user=Depends(require_owner)):
+    import instagram_service
+    return await instagram_service.get_audit_job()
+
+
+@router.get('/instagram/audit-export/file')
+async def instagram_audit_export_file(user=Depends(require_owner)):
+    import instagram_service
+    job = await instagram_service.get_audit_job(include_data=True)
+    if job.get('status') != 'ready' or not job.get('data'):
+        raise HTTPException(status_code=404, detail='No audit file is ready yet.')
+    name = f"instagram-audit-{(job.get('finished_at') or now_utc().isoformat())[:10]}.json"
+    return JSONResponse(job['data'], headers={'Content-Disposition': f'attachment; filename="{name}"'})
+
+
 @router.get('/instagram/callback')
 async def instagram_callback(code: Optional[str] = None, state: Optional[str] = None, error: Optional[str] = None):
     """Facebook redirects the owner's browser here after consent. No bearer
