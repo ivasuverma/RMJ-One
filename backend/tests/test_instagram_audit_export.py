@@ -114,3 +114,92 @@ def test_endpoint_is_owner_only_and_needs_connection():
     owner = _token('owner', 'Owner@123')
     r = requests.get(f'{BASE}/instagram/audit-export', headers={'Authorization': f'Bearer {owner}'})
     assert r.status_code == 400  # Instagram is never connected on a test database
+
+
+# --- queued export (start_audit_job / _run_audit_job) -----------------------
+# db.settings is faked in memory so these don't touch the shared test database.
+
+class _FakeSettings:
+    def __init__(self):
+        self.docs = {}
+
+    async def find_one(self, q, proj=None):
+        d = self.docs.get(q['id'])
+        if d is None:
+            return None
+        return {k: v for k, v in d.items() if not (proj and proj.get(k) == 0)}
+
+    async def update_one(self, q, update, upsert=False):
+        d = self.docs.setdefault(q['id'], {'id': q['id']})
+        d.update(update.get('$set', {}))
+        for k in update.get('$unset', {}):
+            d.pop(k, None)
+
+
+@pytest.fixture
+def fake_job_env(monkeypatch):
+    import server
+    settings = _FakeSettings()
+    monkeypatch.setattr(instagram_service, 'db', type('DB', (), {'settings': settings})())
+    sent = []
+
+    async def notify_user(user_id, title, body, url='/', **kw):
+        sent.append((user_id, title, body, url))
+    monkeypatch.setattr(server, 'notify_user', notify_user)
+    return settings, sent
+
+
+def _run_job(limit=100):
+    async def go():
+        job = await instagram_service.start_audit_job('owner-1', limit)
+        # let the background task finish
+        for t in [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]:
+            await t
+        return job
+    return asyncio.run(go())
+
+
+def test_queued_export_stores_file_and_notifies(fake_job_env, monkeypatch):
+    settings, sent = fake_job_env
+
+    async def fake_export(limit=100):
+        return {'post_count': 3, 'posts': [1, 2, 3]}
+    monkeypatch.setattr(instagram_service, 'audit_export', fake_export)
+    job = _run_job()
+    assert job['status'] == 'running'
+    stored = settings.docs[instagram_service.AUDIT_JOB_ID]
+    assert stored['status'] == 'ready' and stored['post_count'] == 3 and stored['data']['posts'] == [1, 2, 3]
+    assert sent == [('owner-1', 'Instagram audit file is ready',
+                     '3 posts. Download it from Settings › Instagram.', '/settings/instagram')]
+    status = asyncio.run(instagram_service.get_audit_job())
+    assert 'data' not in status and status['status'] == 'ready'
+
+
+def test_queued_export_failure_is_recorded_and_notified(fake_job_env, monkeypatch):
+    settings, sent = fake_job_env
+
+    async def fake_export(limit=100):
+        raise instagram_service.InstagramAuthError('Meta said no')
+    monkeypatch.setattr(instagram_service, 'audit_export', fake_export)
+    _run_job()
+    stored = settings.docs[instagram_service.AUDIT_JOB_ID]
+    assert stored['status'] == 'failed' and stored['error'] == 'Meta said no'
+    assert sent[0][1] == 'Instagram audit file failed'
+
+
+def test_second_start_while_running_does_not_queue_again(fake_job_env, monkeypatch):
+    settings, _ = fake_job_env
+    started = instagram_service.now_utc().isoformat()
+    settings.docs[instagram_service.AUDIT_JOB_ID] = {'id': instagram_service.AUDIT_JOB_ID, 'status': 'running', 'started_at': started}
+    job = asyncio.run(instagram_service.start_audit_job('owner-1'))
+    assert job['started_at'] == started
+
+
+def test_queue_endpoints_owner_only_and_need_connection():
+    admin = _token('admin', 'Admin@123')
+    r = requests.post(f'{BASE}/instagram/audit-export/start', headers={'Authorization': f'Bearer {admin}'})
+    assert r.status_code == 403
+    owner = {'Authorization': f"Bearer {_token('owner', 'Owner@123')}"}
+    assert requests.post(f'{BASE}/instagram/audit-export/start', headers=owner).status_code == 400
+    assert requests.get(f'{BASE}/instagram/audit-export/status', headers=owner).status_code == 200
+    assert requests.get(f'{BASE}/instagram/audit-export/file', headers=owner).status_code == 404
