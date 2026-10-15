@@ -5,7 +5,7 @@ import uuid
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 
 from server import db, now_utc, require_owner, log_audit
 
@@ -33,6 +33,21 @@ async def instagram_auth_url(user=Depends(require_owner)):
     state = str(uuid.uuid4())
     await db.settings.update_one({'id': 'instagram'}, {'$set': {'id': 'instagram', 'oauth_state': state}}, upsert=True)
     return {'url': instagram_service.auth_url(state)}
+
+
+@router.get('/instagram/audit-export')
+async def instagram_audit_export(limit: int = 100, user=Depends(require_owner)):
+    """Owner-only download of recent posts with their numbers (likes,
+    comments, reach, saves, shares, views), captions, hashtags and audience
+    breakdown — see instagram_service.audit_export. Read-only."""
+    import instagram_service
+    try:
+        data = await instagram_service.audit_export(limit)
+    except instagram_service.InstagramAuthError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    await log_audit(user, 'instagram.audit_export', 'settings', 'instagram', f"{data['post_count']} posts")
+    name = f"instagram-audit-{now_utc().strftime('%Y-%m-%d')}.json"
+    return JSONResponse(data, headers={'Content-Disposition': f'attachment; filename="{name}"'})
 
 
 @router.get('/instagram/callback')
