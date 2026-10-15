@@ -20,11 +20,16 @@ add the "Instagram Graph API" product to it):
     META_APP_ID, META_APP_SECRET, META_REDIRECT_URI
 Scopes: instagram_basic (read the account + its media), pages_show_list and
 pages_read_engagement (needed to find which Facebook Page — and so which
-Instagram Business Account — the signed-in user manages).
+Instagram Business Account — the signed-in user manages), and
+instagram_manage_insights (per-post reach/saves/shares/views and audience
+breakdowns for the owner's audit export — see audit_export below; a
+connection made before this scope was added still exports, just without
+those numbers, until the owner taps Reconnect).
 """
 import asyncio
 import logging
 import os
+import re
 from datetime import datetime
 from typing import Optional
 from urllib.parse import urlencode
@@ -38,7 +43,7 @@ logger = logging.getLogger('instagram')
 GRAPH_VERSION = 'v21.0'
 GRAPH_URL = f'https://graph.facebook.com/{GRAPH_VERSION}'
 AUTH_URL = f'https://www.facebook.com/{GRAPH_VERSION}/dialog/oauth'
-SCOPE = 'instagram_basic,pages_show_list,pages_read_engagement'
+SCOPE = 'instagram_basic,pages_show_list,pages_read_engagement,instagram_manage_insights'
 MEDIA_FIELDS = 'id,caption,media_type,media_url,permalink,thumbnail_url,timestamp'
 MEDIA_LIMIT = 12
 
@@ -239,3 +244,125 @@ async def instagram_loop():
         except Exception as e:
             logger.warning(f'instagram loop error: {e}')
         await asyncio.sleep(POLL_SECONDS)
+
+
+# ---------------------------------------------------------------------------
+# Owner's audit export — every recent post with its numbers, as one JSON file
+# the owner downloads from Settings > Instagram and hands to whoever is
+# reviewing the account (posting cadence, captions/hashtags, what earns
+# reach). Read-only against Meta; nothing is stored.
+
+AUDIT_MEDIA_FIELDS = 'id,caption,media_type,media_product_type,permalink,timestamp,like_count,comments_count'
+AUDIT_ACCOUNT_FIELDS = 'username,name,biography,website,followers_count,follows_count,media_count'
+# Asked for in one call per post; `views` is asked for separately because
+# Meta rejects the whole call if any one metric isn't valid for that post.
+AUDIT_POST_METRICS = 'reach,saved,shares,total_interactions'
+AUDIT_MAX_POSTS = 200
+HASHTAG_RE = re.compile(r'#(\w+)', re.UNICODE)
+
+
+async def _graph_get(h: httpx.AsyncClient, path: str, params: dict) -> tuple[Optional[dict], Optional[str]]:
+    r = await h.get(f'{GRAPH_URL}/{path}', params=params)
+    if r.status_code != 200:
+        return None, _graph_error(r, 'Meta refused the request')
+    return r.json(), None
+
+
+def _metric_values(data: Optional[dict]) -> dict:
+    out = {}
+    for m in (data or {}).get('data') or []:
+        vals = m.get('values') or []
+        if vals:
+            out[m['name']] = vals[0].get('value')
+        elif 'total_value' in m:
+            out[m['name']] = (m.get('total_value') or {}).get('value')
+    return out
+
+
+async def _post_insights(h: httpx.AsyncClient, media_id: str, token: str) -> tuple[dict, Optional[str]]:
+    data, err = await _graph_get(h, f'{media_id}/insights', {'metric': AUDIT_POST_METRICS, 'access_token': token})
+    metrics = _metric_values(data)
+    views, _ = await _graph_get(h, f'{media_id}/insights', {'metric': 'views', 'access_token': token})
+    metrics.update(_metric_values(views))
+    return metrics, err
+
+
+async def _audience(h: httpx.AsyncClient, ig_user_id: str, token: str) -> dict:
+    out = {}
+    for breakdown in ('city', 'age', 'gender'):
+        data, err = await _graph_get(h, f'{ig_user_id}/insights', {
+            'metric': 'follower_demographics', 'period': 'lifetime', 'metric_type': 'total_value',
+            'breakdown': breakdown, 'access_token': token,
+        })
+        if err:
+            out[breakdown] = {'error': err}
+            continue
+        rows = []
+        for m in (data or {}).get('data') or []:
+            for b in ((m.get('total_value') or {}).get('breakdowns') or []):
+                for res in b.get('results') or []:
+                    rows.append({'value': ', '.join(res.get('dimension_values') or []), 'followers': res.get('value')})
+        out[breakdown] = sorted(rows, key=lambda r: -(r['followers'] or 0))
+    return out
+
+
+async def audit_export(limit: int = 100) -> dict:
+    """Builds the owner's audit file. Raises InstagramAuthError if not
+    connected or Meta refuses the basic media read; per-post insights that
+    fail (usually: connected before instagram_manage_insights was added)
+    are reported once in `insights_error` instead of failing the export."""
+    cfg = await get_config()
+    if not cfg.get('page_access_token') or not cfg.get('ig_user_id'):
+        raise InstagramAuthError('Instagram is not connected.')
+    cfg = await _maybe_refresh_token(cfg)
+    token, ig_id = cfg['page_access_token'], cfg['ig_user_id']
+    limit = max(1, min(limit, AUDIT_MAX_POSTS))
+
+    async with httpx.AsyncClient(timeout=30) as h:
+        account, err = await _graph_get(h, ig_id, {'fields': AUDIT_ACCOUNT_FIELDS, 'access_token': token})
+        if err:
+            raise InstagramAuthError(err)
+
+        media, after = [], None
+        while len(media) < limit:
+            params = {'fields': AUDIT_MEDIA_FIELDS, 'limit': min(50, limit - len(media)), 'access_token': token}
+            if after:
+                params['after'] = after
+            page, err = await _graph_get(h, f'{ig_id}/media', params)
+            if err:
+                raise InstagramAuthError(err)
+            media.extend(page.get('data') or [])
+            after = ((page.get('paging') or {}).get('cursors') or {}).get('after')
+            if not after or not (page.get('paging') or {}).get('next'):
+                break
+        media = media[:limit]
+
+        insights_error = None
+        posts = []
+        for it in media:
+            caption = it.get('caption') or ''
+            metrics, ierr = await _post_insights(h, it['id'], token)
+            insights_error = insights_error or ierr
+            posts.append({
+                'id': it['id'],
+                'timestamp': it.get('timestamp'),
+                'type': it.get('media_product_type') or it.get('media_type'),  # REELS / FEED / STORY
+                'media_type': it.get('media_type'),  # IMAGE / VIDEO / CAROUSEL_ALBUM
+                'permalink': it.get('permalink'),
+                'caption': caption,
+                'hashtags': HASHTAG_RE.findall(caption),
+                'likes': it.get('like_count'),
+                'comments': it.get('comments_count'),
+                **metrics,
+            })
+
+        audience = await _audience(h, ig_id, token)
+
+    return {
+        'exported_at': now_utc().isoformat(),
+        'account': account,
+        'post_count': len(posts),
+        'insights_error': (f'{insights_error} — tap Reconnect in Settings > Instagram to allow insights.' if insights_error else None),
+        'audience': audience,
+        'posts': posts,
+    }
