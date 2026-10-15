@@ -199,7 +199,7 @@ export default function EmployeeForm() {
           <Field label="Mobile" value={form.mobile} onChangeText={(v) => setField('mobile', v)} keyboardType="phone-pad" testID="field-mobile" />
           <Field label="Address" value={form.address} onChangeText={(v) => setField('address', v)} multiline testID="field-address" />
           <View style={{ marginBottom: spacing.md }}>
-            <DateField label="Date of Birth" value={form.date_of_birth} onChange={(v) => setField('date_of_birth', v)} testID="field-dob" />
+            <DateField label="Date of Birth" value={form.date_of_birth} onChange={(v) => setField('date_of_birth', v)} birthDate testID="field-dob" />
           </View>
 
           <Text style={styles.label}>Gender</Text>
@@ -216,15 +216,6 @@ export default function EmployeeForm() {
                 </Text>
               </Pressable>
             ))}
-          </View>
-
-          <View style={styles.row2}>
-            <View style={{ flex: 1 }}>
-              <Field label="Aadhaar" value={form.aadhaar} onChangeText={(v) => setField('aadhaar', v)} testID="field-aadhaar" />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Field label="PAN" value={form.pan} onChangeText={(v) => setField('pan', v.toUpperCase())} autoCapitalize="characters" testID="field-pan" />
-            </View>
           </View>
 
           <SectionTitle text="Job" />

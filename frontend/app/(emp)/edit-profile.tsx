@@ -14,7 +14,7 @@ import { TabBarSpacer, useTabBarInset } from '@/src/components/GlassTabBar';
 import { GlassButton } from '@/src/components/ui/GlassButton';
 
 type Emp = {
-  name?: string; mobile?: string; address?: string; aadhaar?: string; pan?: string;
+  name?: string; mobile?: string; address?: string;
   bank_account?: string; bank_ifsc?: string; bank_name?: string; photo?: string;
   employee_code?: string; designation?: string; department?: string;
 };
@@ -44,7 +44,6 @@ export default function EmployeeEditProfile() {
     try {
       await api.put('/employees/me', {
         name: form.name?.trim(), mobile: form.mobile ?? '', address: form.address ?? '',
-        aadhaar: form.aadhaar ?? '', pan: form.pan ?? '',
         bank_account: form.bank_account ?? '', bank_ifsc: form.bank_ifsc ?? '', bank_name: form.bank_name ?? '',
         photo: form.photo ?? '',
       });
@@ -78,10 +77,6 @@ export default function EmployeeEditProfile() {
             <Field label="Full name" value={form.name} onChangeText={(v: string) => set('name', v)} styles={styles} />
             <Field label="Mobile" value={form.mobile} onChangeText={(v: string) => set('mobile', v)} keyboardType="phone-pad" styles={styles} />
             <Field label="Address" value={form.address} onChangeText={(v: string) => set('address', v)} multiline styles={styles} />
-
-            <Text style={styles.section}>KYC</Text>
-            <Field label="Aadhaar" value={form.aadhaar} onChangeText={(v: string) => set('aadhaar', v)} keyboardType="number-pad" styles={styles} />
-            <Field label="PAN" value={form.pan} onChangeText={(v: string) => set('pan', v.toUpperCase())} autoCapitalize="characters" styles={styles} />
 
             <Text style={styles.section}>Bank</Text>
             <Field label="Account number" value={form.bank_account} onChangeText={(v: string) => set('bank_account', v)} keyboardType="number-pad" styles={styles} />
